@@ -87,6 +87,23 @@ import type {
 } from './senders.types.js';
 
 /**
+ * The verdicts that can produce a `needs_review` sender in
+ * `getSenderSummary`.
+ *
+ * SHARED WITH MIGRATION 0066. `triage_decisions_actionable_idx` is a
+ * PARTIAL index whose predicate is exactly this list, and the summary's
+ * join carries the same list so the planner can use it. The two must
+ * agree: widening this without widening the index makes the index wrong
+ * to use, and the summary would silently classify fewer senders as
+ * `needs_review` than the product promises — with no error anywhere.
+ *
+ * `senders.read-service.spec.ts` asserts the shipped index predicate
+ * contains every value here, so adding one fails the build until the
+ * index follows.
+ */
+export const NEEDS_REVIEW_VERDICTS = ['unsubscribe', 'archive'] as const;
+
+/**
  * Sorts the service implements at Slice 1. `read` and `recommended` are
  * advertised by the contract but deferred — see `SenderListSort` doc
  * in `senders.types.ts`. The controller maps an unsupported sort to
@@ -197,7 +214,7 @@ function buildActivityPredicate(filter: ActivityFilter): SQL {
  * affects the wire encoding, not the driver decoding). Callers MUST
  * coerce at the map site via `ensureSafeIntegerNumber`.
  */
-function buildRollingWindowSubqueries(): {
+function buildRollingWindowSubqueries(mailboxAccountId: string): {
   last30dMsgs: SQL<number | string>;
   last90dMsgs: SQL<number | string>;
   last90dReadCount: SQL<number | string>;
@@ -246,7 +263,7 @@ function buildRollingWindowSubqueries(): {
         AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
         AND ${mailMessages.isUnread} = false
-        AND ${readStateNotSweeperMarked(getTableName(mailMessages))}
+        AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))}
     )`,
     // The complement, so the product can SAY why a read rate looks low
     // ("324 of 350 marked by Unroll.me") instead of silently
@@ -259,7 +276,7 @@ function buildRollingWindowSubqueries(): {
         AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
         AND ${mailMessages.isUnread} = false
-        AND ${readStateSweeperMarked(getTableName(mailMessages))}
+        AND ${readStateSweeperMarked(mailboxAccountId, getTableName(mailMessages))}
     )`,
     // Count in the prior 30-90 day window (60-day baseline span). Used
     // by the trend bucket: recent / (baseline / 2) ratio compared
@@ -504,7 +521,7 @@ export class SendersReadService {
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
-    } = buildRollingWindowSubqueries();
+    } = buildRollingWindowSubqueries(mailboxAccountId);
 
     // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope
     // refs use `sql.identifier(getTableName(senders))` so a Drizzle
@@ -1303,6 +1320,29 @@ export class SendersReadService {
         LEFT JOIN ${triageDecisions} ltd
           ON ltd.mailbox_account_id = s.mailbox_account_id
          AND ltd.sender_key = s.sender_key
+         -- THE VERDICT FILTER BELONGS IN THE JOIN, NOT ONLY IN THE CASE.
+         -- ltd is read in exactly one place (the needs_review branch
+         -- below) and that branch already requires one of these two
+         -- verdicts, so restricting the join changes no result: a row
+         -- that fails it becomes NULL, and NULL IN (...) is false in
+         -- the CASE exactly as a non-matching verdict was.
+         --
+         -- What it changes is what the planner may read. With the
+         -- predicate only in the CASE, the join had to hash EVERY
+         -- decision row for the mailbox — measured on production
+         -- 2026-08-20 at 8,084 shared buffers, 56% of the whole summary
+         -- query — to reach the 218 of 11,548 rows (1.9%) that can
+         -- actually produce a needs_review. In the join condition it
+         -- can use the partial index from migration 0066 instead.
+         --
+         -- The CONFIDENCE gate deliberately stays in the CASE: it is a
+         -- tunable threshold, and baking it into an index predicate
+         -- would silently stop the index matching the moment the
+         -- constant moved.
+         AND ltd.verdict IN (${sql.join(
+           NEEDS_REVIEW_VERDICTS.map((v) => sql`${v}`),
+           sql`, `,
+         )})
         LEFT JOIN last30 l30 ON l30.sender_key = s.sender_key
         WHERE s.mailbox_account_id = ${mailboxAccountId}${oneTimeClause}${searchClause}
       )
@@ -1433,7 +1473,7 @@ export class SendersReadService {
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
-    } = buildRollingWindowSubqueries();
+    } = buildRollingWindowSubqueries(mailboxAccountId);
     // ADR-0008 §3 ratification: direct triage_decisions read in the
     // senders read service (one of several sites — grep this marker to
     // find them all when ratifying the ADR).
