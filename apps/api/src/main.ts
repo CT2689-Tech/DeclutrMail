@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 
+import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -172,6 +173,32 @@ async function bootstrap(): Promise<void> {
   // exception filter runs, so every request — success or error — carries
   // a correlationId / displayId the response, logs, and Sentry join on.
   app.use(correlationMiddleware);
+  /**
+   * Response compression.
+   *
+   * WHY. Nothing compressed API responses. Measured 2026-08-20 against
+   * the dev mailbox: the six payloads an authed page load pulls total
+   * 145,025 bytes raw and 29,187 gzipped — 80% of that is pure waste on
+   * every request. `/api/screener/queue?limit=50` alone is 73,470 -> 15,575.
+   * It costs twice: on the Vercel -> Cloud Run hop that server-renders the
+   * page, and again on every client-side TanStack refetch, which goes
+   * browser -> API directly (`NEXT_PUBLIC_API_URL`). Nothing else
+   * compresses it — Cloud Run does not, and no CDN fronts the API.
+   *
+   * WHY THIS IS SAFE AGAINST BREACH. Compressing a response that mixes a
+   * secret with attacker-chosen text is the classic BREACH setup, and our
+   * bodies DO mix undo tokens with sender display names an attacker can
+   * choose by emailing the user. The attack still needs to trigger many
+   * authenticated requests and measure their sizes — and it cannot:
+   * `dm_access` is `SameSite=Lax` (see `session-cookies.ts`), so a
+   * cross-origin `fetch`/`img` never carries the session and gets a
+   * constant-size 401. The CSRF token is transported in a cookie + header
+   * (`csrf.guard.ts`), never in a response body.
+   *
+   * THRESHOLD. Below ~1KB gzip costs more bytes than it saves — measured
+   * `/api/undo` at 80 bytes growing to 95. `threshold` leaves those alone.
+   */
+  app.use(compression({ threshold: 1024 }));
   app.use(cookieParser());
   app.useGlobalFilters(new AllExceptionsFilter());
 
