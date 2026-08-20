@@ -93,16 +93,39 @@ function withDeadline<T>(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => {
-      // ABORT, DON'T JUST STOP WAITING. `Promise.race` abandons the
-      // query; it does not stop it. `serverGet` composes its own
-      // `AbortSignal.timeout(3_000)`, so an abandoned read keeps running
-      // for up to a further second while the browser has already been
-      // handed a cache miss and refetches it — the server does the
-      // expensive read twice, and it does so precisely when it is
-      // already slow enough to have missed a 2s deadline. Cancelling
-      // makes the fallback cost one read instead of two.
-      onTimeout();
+      // REJECT FIRST, CANCEL SECOND. If `cancelQueries()` ever threw
+      // synchronously — it walks every query's `onCancel` and aborts its
+      // controller — a throw before `reject` would leave this promise
+      // permanently pending and hang the render forever, which is the
+      // exact failure the deadline exists to prevent. It cannot throw
+      // today; ordering it this way means it never can.
       reject(new PrefetchTimeoutError(surface));
+
+      // ABORT, DON'T JUST STOP WAITING. `Promise.race` abandons the
+      // query; it does not stop it.
+      //
+      // WHAT THIS ACTUALLY SAVES, precisely. Aborting closes the
+      // Next -> API socket and frees this render's wait. It does NOT
+      // stop the API: nothing in `apps/api` observes client disconnect
+      // (no `req.on('close')`, no abort plumbing into postgres), so the
+      // NestJS handler and its query run to completion regardless. An
+      // earlier version of this comment claimed cancelling made the
+      // fallback "cost one read instead of two" — it does not. The
+      // duplicate database work still happens; what stops is this
+      // process holding a socket and a promise for a result it has
+      // already decided not to use. Making the API abort on disconnect
+      // would be the other half, and is not done here.
+      //
+      // WRAPPED, because a throw inside a timer callback is uncaught in
+      // Node and would take the render process down. Rejecting first
+      // already guarantees the render proceeds; this guarantees teardown
+      // cannot turn a slow page into a crashed one.
+      try {
+        onTimeout();
+      } catch {
+        // Teardown is best-effort. The deadline has already been
+        // rejected, so the fallback path is underway either way.
+      }
     }, PREFETCH_DEADLINE_MS);
   });
   return Promise.race([query, deadline]).finally(() => {
