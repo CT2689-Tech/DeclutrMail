@@ -497,10 +497,38 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // module's premise. So an add-only push skips it entirely and pays
     // nothing, while every path that can actually cause drift still
     // self-heals on the next sync.
+    //
+    // The wrote-to recompute is gated SEPARATELY TOO, on the same
+    // principle. It is the most expensive thing in this worker: measured
+    // on production 2026-08-20, the zero-first pass plus the recompute
+    // average 4.5s and 130,413 shared buffers per run — 1.0 GB of buffer
+    // traffic against a 224 MB pool, so a single run evicts the cache
+    // several times over.
+    //
+    // `wrote_to_count` counts DISTINCT OUTBOUND messages whose
+    // `recipient_emails` match a sender. Exactly two things can move that
+    // number: a message appearing or disappearing (which may be outbound,
+    // or may create a sender row that matches outbound mail we already
+    // hold), or a sender row arriving — and sender rows are only ever
+    // created by `handleMessageAdded`. A LABEL CHANGE CANNOT MOVE IT: it
+    // rewrites `label_ids` / `is_unread` and touches neither
+    // `recipient_emails`, `is_outbound`, nor the `senders` table.
+    //
+    // That distinction is worth a gate because label churn dominates.
+    // On the founder's mailbox a third-party sweeper relabels mail
+    // continuously (mig 0064 measured one vendor's label on 20,819 of
+    // 75,689 read messages), so most event-bearing pushes carry label
+    // changes and nothing else — and every one of them was paying for a
+    // full-mailbox recompute that could not change a single row.
+    //
+    // Auto-protection is deliberately NOT behind this gate: it reads
+    // starred and Gmail-important state, which ARE labels, so a
+    // label-only push can legitimately change who qualifies (D245, §2.6).
     let timeseriesReconcile: SenderTimeseriesReconcileResult | null = null;
     if (events.length > 0) {
       timeseriesReconcile = await this.runWroteToAttributionPostPass(mailboxAccountId, client, {
         reconcileTimeseries: labelChanges > 0 || deleted > 0,
+        recomputeAttribution: added > 0 || deleted > 0,
       });
     }
 
@@ -896,7 +924,10 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   private async runWroteToAttributionPostPass(
     mailboxAccountId: string,
     client: GmailMetadataClient,
-    opts: { reconcileTimeseries: boolean } = { reconcileTimeseries: true },
+    opts: { reconcileTimeseries: boolean; recomputeAttribution: boolean } = {
+      reconcileTimeseries: true,
+      recomputeAttribution: true,
+    },
   ): Promise<SenderTimeseriesReconcileResult | null> {
     let reconciled: SenderTimeseriesReconcileResult | null = null;
     await this.deps.db.transaction(async (tx) => {
@@ -928,32 +959,38 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // its evidence must fall to 0; an `UPDATE ... FROM` alone never
       // reaches a row with no matching group and would leave the stale
       // count standing forever.
-      await tx.execute(sql`
-        UPDATE ${senders} AS s
-        SET ${sql.identifier('wrote_to_count')} = 0
-        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-          AND s.${sql.identifier('wrote_to_count')} <> 0
-      `);
-      await tx.execute(sql`
-        UPDATE ${senders} AS s
-        SET ${sql.identifier('wrote_to_count')} = sub.cnt
-        FROM (
-          SELECT
-            m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
-            s2.${sql.identifier('sender_key')} AS sender_key,
-            COUNT(DISTINCT m.${sql.identifier('id')})::integer AS cnt
-          FROM ${mailMessages} AS m
-          CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
-          JOIN ${senders} AS s2
-            ON s2.${sql.identifier('mailbox_account_id')} = m.${sql.identifier('mailbox_account_id')}
-           AND dm_normalize_email(s2.${sql.identifier('email')}::text) = dm_normalize_email(r.addr)
-          WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-            AND m.${sql.identifier('is_outbound')} = true
-          GROUP BY m.${sql.identifier('mailbox_account_id')}, s2.${sql.identifier('sender_key')}
-        ) AS sub
-        WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
-          AND s.${sql.identifier('sender_key')} = sub.sender_key
-      `);
+      // Gated on `recomputeAttribution` — see the call site for why a
+      // label-only push cannot move this number. Both statements are
+      // inside the gate: running the zero-first pass WITHOUT the
+      // recompute would blank every count in the mailbox.
+      if (opts.recomputeAttribution) {
+        await tx.execute(sql`
+          UPDATE ${senders} AS s
+          SET ${sql.identifier('wrote_to_count')} = 0
+          WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+            AND s.${sql.identifier('wrote_to_count')} <> 0
+        `);
+        await tx.execute(sql`
+          UPDATE ${senders} AS s
+          SET ${sql.identifier('wrote_to_count')} = sub.cnt
+          FROM (
+            SELECT
+              m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+              s2.${sql.identifier('sender_key')} AS sender_key,
+              COUNT(DISTINCT m.${sql.identifier('id')})::integer AS cnt
+            FROM ${mailMessages} AS m
+            CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
+            JOIN ${senders} AS s2
+              ON s2.${sql.identifier('mailbox_account_id')} = m.${sql.identifier('mailbox_account_id')}
+             AND dm_normalize_email(s2.${sql.identifier('email')}::text) = dm_normalize_email(r.addr)
+            WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+              AND m.${sql.identifier('is_outbound')} = true
+            GROUP BY m.${sql.identifier('mailbox_account_id')}, s2.${sql.identifier('sender_key')}
+          ) AS sub
+          WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+            AND s.${sql.identifier('sender_key')} = sub.sender_key
+        `);
+      }
 
       // `volume` / `read_count` are derived, not accumulated — a message
       // read after it was indexed arrives here as a label change, never

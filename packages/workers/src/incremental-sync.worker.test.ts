@@ -549,6 +549,106 @@ describe('IncrementalSyncWorker', () => {
     expect(row!.isUnread).toBe(false);
   });
 
+  it('does NOT recompute wrote_to_count on a label-only push, and does not blank it', async () => {
+    // The wrote-to recompute is the most expensive statement in this
+    // worker (measured on production 2026-08-20: 4.5s and 130,413 shared
+    // buffers per run, against a 224 MB buffer pool). A label change
+    // rewrites `label_ids` / `is_unread` and touches neither
+    // `recipient_emails`, `is_outbound`, nor `senders` — so it cannot
+    // move the number, and paying for a full-mailbox recompute is pure
+    // waste. Label churn dominates real pushes, so this is most of them.
+    //
+    // The seeded count is DELIBERATELY WRONG (99 against a true value of
+    // 2). If the recompute runs, it corrects to 2 and this fails — which
+    // is what makes the assertion about the gate rather than a tautology.
+    //
+    // It also guards the catastrophic failure mode: the zero-first
+    // statement must never escape the gate on its own. If it did, this
+    // would read 0 and every sender in the mailbox would silently lose
+    // its attribution.
+    const base = Date.parse('2026-03-01T09:00:00.000Z');
+    const threadId = 'thread-label-only';
+    const senderEmail = 'persona@example.com';
+    const senderKey = 'sk-label-only';
+
+    await db.insert(mailMessages).values([
+      {
+        mailboxAccountId,
+        providerMessageId: 'inbound-lo',
+        providerThreadId: threadId,
+        senderKey,
+        internalDate: new Date(base),
+        isUnread: true,
+      },
+      {
+        mailboxAccountId,
+        providerMessageId: 'reply-lo-0',
+        providerThreadId: threadId,
+        senderKey: '',
+        internalDate: new Date(base + 60_000),
+        isUnread: false,
+        isOutbound: true,
+        recipientEmails: [senderEmail],
+      },
+      {
+        mailboxAccountId,
+        providerMessageId: 'reply-lo-1',
+        providerThreadId: threadId,
+        senderKey: '',
+        internalDate: new Date(base + 120_000),
+        isUnread: false,
+        isOutbound: true,
+        recipientEmails: [senderEmail],
+      },
+    ]);
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey,
+      displayName: 'Persona',
+      email: senderEmail,
+      domain: 'example.com',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(base),
+      lastSeenAt: new Date(base),
+      totalReceived: 1,
+      wroteToCount: 99,
+    });
+
+    // A pure label flip — the user (or a third-party sweeper) marking a
+    // message read. No add, no delete.
+    const records: GmailHistoryRecord[] = [
+      { kind: 'labels_removed', messageId: 'inbound-lo', labelIds: ['UNREAD'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '2000', page: { records, historyId: '2500' } }],
+      new Map(),
+    );
+
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '2000', endHistoryId: '2500' },
+      CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)));
+    expect(row!.wroteToCount).toBe(99);
+
+    // The label change itself still applied — the gate must skip the
+    // recompute, not the push.
+    const [msg] = await db
+      .select()
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, mailboxAccountId),
+          eq(mailMessages.providerMessageId, 'inbound-lo'),
+        ),
+      );
+    expect(msg!.isUnread).toBe(false);
+  });
+
   it('runs the wrote-to attribution + auto-protect post-pass after a batch', async () => {
     // Set up a sender the user has already written to twice (below the
     // auto-protect threshold). The incoming history adds a third — the
