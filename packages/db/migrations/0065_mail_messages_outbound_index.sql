@@ -65,8 +65,18 @@
 -- reads AND writes on the table for the whole build — on a table that is
 -- now live.
 --
--- `-- atlas:txmode none` is required: `CONCURRENTLY` cannot run inside a
--- transaction block, and Atlas wraps each migration in one by default.
+-- The txmode directive at the bottom of this file is required:
+-- `CONCURRENTLY` cannot run inside a transaction block, and Atlas wraps
+-- each migration in one by default.
+--
+-- DO NOT SPELL THAT DIRECTIVE OUT IN PROSE ANYWHERE IN A MIGRATION, not
+-- even quoted inside backticks. Atlas scans comment lines for the token
+-- and takes THE REST OF THE LINE as the directive's value, so a sentence
+-- mentioning it parses as a real directive. That is not hypothetical:
+-- the first version of this file explained itself that way and produced
+--   `unknown txmode "none` is required: `CONCURRENTLY` cannot run inside a"`
+-- which failed `migrate apply` against production on 2026-08-20 and
+-- blocked every migration behind it until the prose was reworded.
 --
 -- THE TRADE `CONCURRENTLY` MAKES: it can leave an INVALID index behind if
 -- the build fails (e.g. a conflicting lock). That is safe — an invalid
