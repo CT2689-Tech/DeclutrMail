@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, getTableName, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  readStateNotSweeperMarked,
   senderHasActionableMail,
   senderInboxActionWhere,
   senderPolicies,
@@ -493,8 +494,18 @@ export class TriageReadService {
         senderKey: mailMessages.senderKey,
         total: count(),
         unread: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
-        last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
-        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
+        // INBOUND only, in both halves. Mail the user SENT is not the
+        // sender's volume, and it is never unread, so counting it
+        // inflated the denominator and the numerator together — worst on
+        // exactly the correspondents a wrong verdict costs most.
+        last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
+        // Decontaminated numerator (mig 0064, F012) — a message a
+        // third-party sweeper marked read is not evidence the USER read
+        // it. #583 applied this to the senders list and the timeseries
+        // reconcile and stopped there, so Triage and Senders reported
+        // DIFFERENT read rates for the same sender on the same day.
+        // Numerator only: the message still arrived.
+        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} AND ${readStateNotSweeperMarked(getTableName(mailMessages))} THEN 1 ELSE 0 END)`,
         lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
       })
       .from(mailMessages)

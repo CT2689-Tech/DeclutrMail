@@ -535,7 +535,7 @@ describe('TriageReadService.listQueue — the age of the engine read (D25)', () 
       .set({ producedAt: scoredAt, expiresAt: daysAgo(13) })
       .where(eq(triageDecisions.senderKey, SENDER_A));
 
-    const rows = await new TriageReadService(db).listQueue({
+    const rows = await new TriageReadService(db as never).listQueue({
       mailboxAccountId: mailboxId,
       limit: 10,
     });
@@ -559,7 +559,7 @@ describe('TriageReadService.listQueue — the age of the engine read (D25)', () 
       .set({ producedAt: daysAgo(60), expiresAt: daysAgo(53) })
       .where(eq(triageDecisions.senderKey, SENDER_A));
 
-    const rows = await new TriageReadService(db).listQueue({
+    const rows = await new TriageReadService(db as never).listQueue({
       mailboxAccountId: mailboxId,
       limit: 10,
     });

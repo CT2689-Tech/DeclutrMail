@@ -336,7 +336,7 @@ describe('ScreenerReadService — the age of the engine read (D25)', () => {
       .set({ producedAt: scoredAt, expiresAt: new Date(Date.now() - 33 * 86_400_000) })
       .where(eq(triageDecisions.senderKey, SENDER_A));
 
-    const rows = await new ScreenerReadService(db).listQueue({
+    const rows = await new ScreenerReadService(db as never).listQueue({
       mailboxAccountId: mailboxId,
       limit: 10,
     });
@@ -357,7 +357,7 @@ describe('ScreenerReadService — the age of the engine read (D25)', () => {
   it('leaves the recommendation null when the engine never scored the sender', async () => {
     await seedQueuedSender(db, mailboxId, SENDER_A, 'unscored@ex.com', { withDecision: false });
 
-    const rows = await new ScreenerReadService(db).listQueue({
+    const rows = await new ScreenerReadService(db as never).listQueue({
       mailboxAccountId: mailboxId,
       limit: 10,
     });

@@ -1,13 +1,13 @@
-import { and, eq, gte, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, getTableName, isNull, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
   activityLog,
   mailMessages,
+  readStateNotSweeperMarked,
   screenerQuarantine,
   senderPolicies,
   senders,
-  senderTimeseries,
   triageDecisions,
 } from '@declutrmail/db';
 import type { schema, TriageVerdict } from '@declutrmail/db';
@@ -632,27 +632,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       )
       .limit(1);
 
-    // 90-day timeseries aggregate — total volume + read count.
     const now = (this.deps.now ?? (() => new Date()))();
     const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
-    const yearMonth90 = ninetyDaysAgo.toISOString().slice(0, 10);
-
-    const tsRows = await this.deps.db
-      .select({
-        volume: senderTimeseries.volume,
-        readCount: senderTimeseries.readCount,
-      })
-      .from(senderTimeseries)
-      .where(
-        and(
-          eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
-          eq(senderTimeseries.senderKey, senderKey),
-          gte(senderTimeseries.yearMonth, yearMonth90),
-        ),
-      );
-
-    const volume90 = tsRows.reduce((sum, r) => sum + r.volume, 0);
-    const reads90 = tsRows.reduce((sum, r) => sum + r.readCount, 0);
 
     // Outbound mail ADDRESSED to this sender in the same window, read
     // from `mail_messages` rather than a per-month counter (mig 0063).
@@ -677,22 +658,65 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         AND dm_normalize_email(r.addr) = dm_normalize_email(${sender.email})
     `);
     const wroteTo90 = Number(firstRow<{ n: number }>(wroteToRows)?.n ?? 0);
-    // Average over 3 months. Math.max(1, …) prevents divide-by-zero
-    // for senders with no recent activity.
-    const monthlyVolume = volume90 / 3;
-    // `null`, not 0 — no mail in the window means the rate is
-    // unmeasurable. See `SenderSignals.readRate90d`.
-    const readRate90d = volume90 > 0 ? reads90 / volume90 : null;
 
-    // `mail_messages` metadata aggregates — total + per-flag counts.
-    // Bodies are NEVER touched; only sender_key, label_ids, is_unread,
-    // internal_date and the List-Unsubscribe capability columns are read.
+    // `mail_messages` metadata aggregates — one scan, every per-sender
+    // fact the cascade reads. Bodies are NEVER touched; only sender_key,
+    // label_ids, is_unread, is_outbound, internal_date and the
+    // List-Unsubscribe capability columns are read.
+    //
+    // The 90-day volume + read count USED to come from
+    // `sender_timeseries`, summing every bucket whose `year_month` was
+    // `>= (now - 90 days)`. `year_month` is a DATE pinned to the first of
+    // the month, so that comparison dropped the oldest bucket WHOLE and
+    // then still divided by three — 3,977 of 14,972 messages (26.6%) on
+    // the founder's mailbox, every scoring run. A rolling 90-day window
+    // cannot be expressed over calendar buckets at all, so the window is
+    // read from the message rows the display path already reads. One
+    // definition, one source (ADR-0037).
+    // EVERY window below is bound from the worker's injected clock, not
+    // from Postgres `now()`. The worker takes `deps.now` so a run is
+    // deterministic; a mix of the two would have the 90-day window
+    // honour the test clock while the spike and starred windows silently
+    // used wall-clock time, which is both untestable and wrong on a
+    // replayed job.
+    const day = 24 * 60 * 60 * 1000;
+    const at = (ms: number) => sql`${new Date(now.getTime() - ms).toISOString()}::timestamptz`;
+    const since90 = at(NINETY_DAYS_MS);
+    const since30 = at(30 * day);
+    const since365 = at(365 * day);
+    const inWindow = sql`${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${since90}`;
     const [msgAgg] = await this.deps.db
       .select({
-        totalMessages: sql<number>`count(*)::int`,
+        // INBOUND only. This counted the user's own sent mail toward the
+        // sender's message count, which decides `insufficient_signal`
+        // (< 3) — a sender the user wrote to repeatedly looked
+        // established on the strength of the user's own messages.
+        totalMessages: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false)::int`,
         hasOneClickUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeOneClick})`,
         hasAnyUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeUrl} is not null or ${mailMessages.unsubscribeMailtoUrl} is not null)`,
-        starredCount: sql<number>`coalesce(sum(case when 'STARRED' = any(${mailMessages.labelIds}) and ${mailMessages.internalDate} >= ${sql.raw(`'${new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000).toISOString()}'::timestamptz`)} then 1 else 0 end), 0)::int`,
+        // `is_outbound = false` added: starring your OWN sent message is
+        // not the sender earning a Keep. The automatic-protection sweep
+        // has always required it (`automatic-protection.ts`); the cascade
+        // signal of the same name did not, so the two disagreed about
+        // what "you starred them" means.
+        starredCount: sql<number>`coalesce(sum(case when 'STARRED' = any(${mailMessages.labelIds}) and ${mailMessages.isOutbound} = false and ${mailMessages.internalDate} >= ${since365} then 1 else 0 end), 0)::int`,
+        volume90: sql<number>`count(*) filter (where ${inWindow})::int`,
+        // Decontaminated numerator (mig 0064, F012): a message a
+        // third-party sweeper marked read is not evidence the USER read
+        // it. Excluded from the numerator only — the message did arrive,
+        // so removing it from the denominator would shrink the sender
+        // instead of correcting the rate. The senders list and the
+        // timeseries reconcile already do this; the engine did not, so
+        // the engine scored on the contaminated rate that suppresses
+        // exactly the unsubscribe suggestions it exists to make.
+        reads90: sql<number>`count(*) filter (where ${inWindow} AND ${mailMessages.isUnread} = false AND ${readStateNotSweeperMarked(getTableName(mailMessages))})::int`,
+        // Spike ratio inputs — a per-day rate over the last 30 days
+        // against the 30-90 day period before it. This replaces a
+        // calendar-month ratio (current month / average of prior
+        // buckets), which reported a crash for every sender on the 2nd
+        // of the month because the current bucket was two days old.
+        recent30: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${since30})::int`,
+        prior30to90: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} < ${since30} AND ${mailMessages.internalDate} >= ${since90})::int`,
       })
       .from(mailMessages)
       .where(
@@ -703,6 +727,13 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       );
 
     const totalMessages = msgAgg?.totalMessages ?? 0;
+    const volume90 = msgAgg?.volume90 ?? 0;
+    const reads90 = msgAgg?.reads90 ?? 0;
+    // Per-month cadence over the SAME 90 days the rate is measured on.
+    const monthlyVolume = volume90 / 3;
+    // `null`, not 0 — no mail in the window means the rate is
+    // unmeasurable. See `SenderSignals.readRate90d`.
+    const readRate90d = volume90 > 0 ? reads90 / volume90 : null;
     // Channel precedence mirrors `senders.unsubscribe_method` (D9):
     // one_click > mailto > none. Derived from the message rows directly
     // so scoring never depends on `building_sender_index` backfill state.
@@ -737,15 +768,24 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     const lastSeenDaysAgo = Math.floor((now.getTime() - sender.lastSeenAt.getTime()) / dayMs);
     const firstSeenMonthsAgo = Math.floor(firstSeenDaysAgo / 30);
 
-    // Spike ratio = current month's volume / 90-day baseline. For a
-    // steady sender the ratio sits near 1.0; spikes pop above 3 (D21
-    // §unsubscribe_score). 90d baseline is the per-month average across
-    // the loaded rows; current-month volume is the latest row's. If we
-    // have one row or fewer, no baseline → ratio = 1 (no spike).
-    const currentMonthVolume = tsRows.at(-1)?.volume ?? 0;
-    const baselineMonthly =
-      tsRows.length > 1 ? (volume90 - currentMonthVolume) / (tsRows.length - 1) : 0;
-    const spikeRatio = baselineMonthly > 0 ? currentMonthVolume / baselineMonthly : 1;
+    // Spike ratio — the last 30 days' per-day rate against the 30-90 day
+    // period before it. For a steady sender it sits near 1.0; spikes pop
+    // above 3 (D21 §unsubscribe_score).
+    //
+    // Rates, not totals: the two windows are 30 and 60 days long, so
+    // comparing raw counts would report every steady sender as halving.
+    //
+    // This replaced a CALENDAR-month ratio — the current month's bucket
+    // over the average of the prior buckets. The current month is
+    // partial by definition, so on the 2nd of a month every sender in
+    // the mailbox looked like it had collapsed, and on the 31st every
+    // sender looked steady. The rolling form has no such edge.
+    //
+    // No baseline mail → ratio 1 (no spike), never a division by zero
+    // and never a fabricated spike for a sender that simply arrived.
+    const recentPerDay = (msgAgg?.recent30 ?? 0) / 30;
+    const baselinePerDay = (msgAgg?.prior30to90 ?? 0) / 60;
+    const spikeRatio = baselinePerDay > 0 ? recentPerDay / baselinePerDay : 1;
 
     return {
       displayName: sender.displayName,
