@@ -154,7 +154,14 @@ export function SenderDetailRoute({ id }: { id: string }) {
   // (D25 `stale_refresh`, founder decision 2026-08-19). Nothing on
   // screen waits for it: the old read stays, with its age, until a
   // fresher row exists.
-  useRefreshStaleRead(id, detail.data?.data.recommendation ?? undefined, {
+  // `null` and `undefined` are DIFFERENT inputs to this hook: `null`
+  // means the engine has never scored this sender (go look), `undefined`
+  // means the read hasn't loaded yet (wait). Collapsing them with
+  // `?? undefined` — as this call did — silently retired the
+  // never-scored branch, so the one sender kind with no opinion at all
+  // was the one kind that never asked for one. Preserve the distinction:
+  // undefined only while the query has no data.
+  useRefreshStaleRead(id, detail.data ? (detail.data.data.recommendation ?? null) : undefined, {
     invalidate: sendersKeys.detail(id),
   });
   const messages = useSenderMessages(id);

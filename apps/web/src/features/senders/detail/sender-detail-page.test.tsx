@@ -854,3 +854,120 @@ describe('SenderDetailRoute', () => {
     });
   });
 });
+
+/**
+ * D25 `stale_refresh` on Sender Detail.
+ *
+ * Nothing in production revisits a sender's read — `sync_complete` scores
+ * once at initial sync, `signal_change` fires only for a first-seen
+ * sender, and the documented weekly `cron_sweep` has no producer. Opening
+ * a sender is therefore the moment to ask for a fresh one.
+ *
+ * These tests exist because browser smoking on 2026-08-19 could not
+ * settle whether the page actually asks: the route flips between server-
+ * and client-rendering across reloads (`useSearchParams` puts it behind
+ * the route's `<Suspense>`), and a fetch spy dies with every reload. The
+ * first attempt at a standalone test hand-rolled its own detail fixture,
+ * never loaded, and "proved" the POST was missing when in fact nothing
+ * had rendered — a blind guard. Hence `installHappyPath`'s proven
+ * fixture, and an explicit assertion that the page LOADED before any
+ * conclusion is drawn about the POST.
+ */
+describe('SenderDetailRoute — refreshing an aged-out read (D25)', () => {
+  let posted: Array<Record<string, unknown>>;
+
+  function stubWithRecommendation(recommendation: Record<string, unknown> | null) {
+    posted = [];
+    window.sessionStorage.clear();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => jsonOk({ data: { ...DETAIL, recommendation } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: TIMESERIES }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/triage/score-sender',
+        respond: async (req: Request) => {
+          posted.push((await req.json()) as Record<string, unknown>);
+          return jsonOk({ data: { idempotencyKey: 'k' } });
+        },
+      },
+    ]);
+  }
+
+  const AGED = {
+    verdict: 'unsubscribe',
+    confidence: 0.87,
+    reasoning: 'Sends roughly 27 messages monthly with a 0% read rate.',
+    generatedBy: 'llm_haiku',
+    scoredAt: '2026-07-31T06:44:56.910Z',
+    stale: true,
+  };
+
+  it('asks for a fresh read when the stored one has aged past its TTL', async () => {
+    stubWithRecommendation(AGED);
+    renderDetail();
+    // Guard the guard: a missing POST proves nothing if the page never
+    // loaded. Fail on the fixture first, not on the assertion under test.
+    await screen.findByText(/Optional suggestion/);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual({ senderId: 'linkedin', reason: 'stale' });
+  });
+
+  it('leaves a read that is still inside its TTL alone', async () => {
+    stubWithRecommendation({ ...AGED, stale: false });
+    renderDetail();
+    await screen.findByText(/Optional suggestion/);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(posted).toHaveLength(0);
+  });
+
+  /**
+   * `stale` absent is UNKNOWN, not "aged out". The wire has carried
+   * `scoredAt` without `stale` since the recommendation first shipped;
+   * treating that as stale would re-score every sender anyone opens.
+   */
+  it('treats an absent staleness flag as unknown', async () => {
+    const { stale: _omitted, ...noFlag } = AGED;
+    stubWithRecommendation(noFlag);
+    renderDetail();
+    await screen.findByText(/Optional suggestion/);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(posted).toHaveLength(0);
+  });
+
+  /**
+   * `null` recommendation = the engine has never scored this sender.
+   * Different fact from "scored and aged out", same correct response.
+   */
+  it('asks when the engine has never scored the sender', async () => {
+    stubWithRecommendation(null);
+    renderDetail();
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toMatchObject({ senderId: 'linkedin' });
+  });
+});
