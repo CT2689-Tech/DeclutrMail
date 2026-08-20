@@ -36,6 +36,8 @@ import {
 
 import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
+import { TRIAGE_QUEUE_KEY } from './api/query-options';
+import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
 import { ActionSheet, type ConfirmDetails } from './action-sheet';
 import type { PreviewCount } from './action-preview';
 import { BatchActionSheet } from './batch-action-sheet';
@@ -191,6 +193,33 @@ export function TriageScreen({
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
   const sessionMessagesMoved = useTriageStore((s) => s.sessionMessagesMoved);
   const addSessionMessagesMoved = useTriageStore((s) => s.addSessionMessagesMoved);
+  const expandedRowId = useTriageStore((s) => s.expandedRowId);
+
+  // D25 `stale_refresh` — expanding a row whose engine read has aged
+  // past its TTL asks for a fresh one. ATTENTION-SCOPED on purpose: the
+  // queue orders by stored confidence and drops a row whose verdict
+  // flips to Keep, so refreshing all twelve on load would re-sort the
+  // list and can retire the card mid-decision. Expanding is the user
+  // pointing at one row, and a change they caused is a change they can
+  // follow (founder decision 2026-08-19, option 1A).
+  //
+  // OFF during onboarding: D112 fixes the practice set for the length
+  // of the step, and a re-score is exactly the thing that would shift
+  // it under the user.
+  const expandedRow =
+    state.kind === 'ready' ? (state.rows.find((r) => r.id === expandedRowId) ?? null) : null;
+  useRefreshStaleRead(
+    expandedRow?.senderId ?? '',
+    // `{ stale }` — never `null`. The hook reads a null read as "never
+    // scored, go refresh"; a queue row is joined FROM a decision, so it
+    // always has one, and passing null when nothing is expanded would
+    // arm the refresh on an empty selection.
+    { stale: expandedRow?.stale === true },
+    {
+      enabled: journey === 'daily' && expandedRow !== null,
+      invalidate: TRIAGE_QUEUE_KEY,
+    },
+  );
 
   const keepIntent = useKeepIntent();
   const unsubIntent = useRecordUnsubscribeIntent();

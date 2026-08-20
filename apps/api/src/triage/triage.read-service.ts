@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, count, desc, eq, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, count, desc, eq, getTableName, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
   activityLog,
   mailMessages,
   mailboxAccounts,
+  readStateNotSweeperMarked,
   senderHasActionableMail,
   senderInboxActionWhere,
   senderPolicies,
@@ -58,6 +59,28 @@ export interface TriageQueueRow {
   verdict: TriageVerdict;
   confidence: number;
   reasoning: string;
+  /**
+   * ISO-8601 — when the engine produced this read.
+   *
+   * `verdict`, `confidence` and `reasoning` are STORED; every stat
+   * beside them on the row (`last90dMessages`, `readRate`, `inboxCount`,
+   * …) is recomputed on each request. The two drift apart the moment
+   * the sender's mail changes, which is how a card came to read
+   * "60 messages monthly, 1% read rate" next to "0% read in 90d ·
+   * 209 messages". Surfaced so the row can state its own age instead of
+   * presenting a three-week-old recommendation as current.
+   */
+  scoredAt: string;
+  /**
+   * Whether the engine's read is past its TTL (`triage_decisions.
+   * expires_at`, D25). Server-computed — the BE owns the TTL. Mirrors
+   * `Recommendation.stale` on Sender Detail so both surfaces mean the
+   * same thing by the word.
+   *
+   * Drives the on-attention refresh, never whether the row is shown: a
+   * visibly old read is honest, a missing one is a blank queue.
+   */
+  stale: boolean;
   signals: string[];
   protectionReason: 'manual' | 'replied' | 'starred' | 'gmail-important' | null;
   /**
@@ -390,6 +413,7 @@ export class TriageReadService {
         confidence: triageDecisions.confidence,
         reasoning: triageDecisions.reasoning,
         producedAt: triageDecisions.producedAt,
+        expiresAt: triageDecisions.expiresAt,
         senderName: senders.displayName,
         senderEmail: senders.email,
         senderDomain: senders.domain,
@@ -470,8 +494,18 @@ export class TriageReadService {
         senderKey: mailMessages.senderKey,
         total: count(),
         unread: sql<number>`SUM(CASE WHEN ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
-        last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
-        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} THEN 1 ELSE 0 END)`,
+        // INBOUND only, in both halves. Mail the user SENT is not the
+        // sender's volume, and it is never unread, so counting it
+        // inflated the denominator and the numerator together — worst on
+        // exactly the correspondents a wrong verdict costs most.
+        last90Total: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz THEN 1 ELSE 0 END)`,
+        // Decontaminated numerator (mig 0064, F012) — a message a
+        // third-party sweeper marked read is not evidence the USER read
+        // it. #583 applied this to the senders list and the timeseries
+        // reconcile and stopped there, so Triage and Senders reported
+        // DIFFERENT read rates for the same sender on the same day.
+        // Numerator only: the message still arrived.
+        last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} AND ${readStateNotSweeperMarked(getTableName(mailMessages))} THEN 1 ELSE 0 END)`,
         lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
       })
       .from(mailMessages)
@@ -573,6 +607,13 @@ export class TriageReadService {
           isProtected && r.verdict !== 'keep'
             ? `This sender is protected (${protectionReason}), so Keep is recommended. Without protection the engine would suggest: ${r.verdict}. ${r.reasoning ?? ''}`.trimEnd()
             : r.reasoning,
+        scoredAt: r.producedAt.toISOString(),
+        // Same rule as `buildRecommendation` on Sender Detail: past the
+        // TTL is stale, and `expires_at` is NOT NULL so there is no
+        // unmeasurable case to guard here. Compared against the `now`
+        // this map already froze, so every row in one response agrees
+        // on what "now" was.
+        stale: r.expiresAt.getTime() <= now,
         signals: buildSignals({
           readRate,
           monthlyVolume,

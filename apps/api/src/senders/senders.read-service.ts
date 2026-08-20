@@ -199,8 +199,9 @@ function buildActivityPredicate(filter: ActivityFilter): SQL {
  */
 function buildRollingWindowSubqueries(): {
   last30dMsgs: SQL<number | string>;
-  last30dReadCount: SQL<number | string>;
-  last30dSweeperReadCount: SQL<number | string>;
+  last90dMsgs: SQL<number | string>;
+  last90dReadCount: SQL<number | string>;
+  last90dSweeperReadCount: SQL<number | string>;
   baselineMsgs: SQL<number | string>;
   inboxCount: SQL<number | string>;
   unreadInboxCount: SQL<number | string>;
@@ -218,6 +219,18 @@ function buildRollingWindowSubqueries(): {
         AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
     )`,
+    // Count of inbound msgs in the ENGINE's window (ADR-0037). This is
+    // what the row displays, because it is what the recommendation
+    // beside it was computed from. `last30dMsgs` above survives for the
+    // TREND comparison only — a different question with its own window.
+    last90dMsgs: sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+    )`,
     // Same window, only msgs the user has read (Gmail removed the
     // UNREAD label) — MINUS the ones a third-party sweeper marked read
     // on their behalf (mig 0064, F012). Drives the read rate.
@@ -225,12 +238,12 @@ function buildRollingWindowSubqueries(): {
     // Numerator only: a swept message still arrived, so it stays in
     // `last30dMsgs`. Dropping it from the denominator would shrink the
     // sender rather than correct the rate.
-    last30dReadCount: sql<number | string>`(
+    last90dReadCount: sql<number | string>`(
       SELECT COUNT(*)::int
       FROM ${mailMessages}
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
         AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
         AND ${mailMessages.isUnread} = false
         AND ${readStateNotSweeperMarked(getTableName(mailMessages))}
@@ -238,12 +251,12 @@ function buildRollingWindowSubqueries(): {
     // The complement, so the product can SAY why a read rate looks low
     // ("324 of 350 marked by Unroll.me") instead of silently
     // compensating. Same window, same denominator.
-    last30dSweeperReadCount: sql<number | string>`(
+    last90dSweeperReadCount: sql<number | string>`(
       SELECT COUNT(*)::int
       FROM ${mailMessages}
       WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
         AND ${mailMessages.senderKey} = ${outerSenderKey}
-        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.ENGINE_WINDOW_DAYS} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
         AND ${mailMessages.isUnread} = false
         AND ${readStateSweeperMarked(getTableName(mailMessages))}
@@ -485,8 +498,9 @@ export class SendersReadService {
     // the correlation quote-trap note.
     const {
       last30dMsgs: last30dMsgsSql,
-      last30dReadCount: last30dReadCountSql,
-      last30dSweeperReadCount: last30dSweeperReadCountSql,
+      last90dMsgs: last90dMsgsSql,
+      last90dReadCount: last90dReadCountSql,
+      last90dSweeperReadCount: last90dSweeperReadCountSql,
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
@@ -657,8 +671,9 @@ export class SendersReadService {
         wroteToCount: senders.wroteToCount,
         unsubscribeMethod: senders.unsubscribeMethod,
         last30dMsgs: last30dMsgsSql,
-        last30dReadCount: last30dReadCountSql,
-        last30dSweeperReadCount: last30dSweeperReadCountSql,
+        last90dMsgs: last90dMsgsSql,
+        last90dReadCount: last90dReadCountSql,
+        last90dSweeperReadCount: last90dSweeperReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
         unreadInboxCount: unreadInboxCountSql,
@@ -715,9 +730,10 @@ export class SendersReadService {
       // every downstream consumer (`computeReadRate`,
       // `computeRollingTrendBucket`, FE wire) sees a real `number`.
       const last30dMsgs = ensureSafeIntegerNumber(row.last30dMsgs, 'senders.last30dMsgs');
-      const last30dReadCount = ensureSafeIntegerNumber(
-        row.last30dReadCount,
-        'senders.last30dReadCount',
+      const last90dMsgs = ensureSafeIntegerNumber(row.last90dMsgs, 'senders.last90dMsgs');
+      const last90dReadCount = ensureSafeIntegerNumber(
+        row.last90dReadCount,
+        'senders.last90dReadCount',
       );
       const baselineMsgs = ensureSafeIntegerNumber(row.baselineMsgs, 'senders.baselineMsgs');
       return {
@@ -735,20 +751,24 @@ export class SendersReadService {
         // `replied_count` — mig 0022 integer column, NOT NULL DEFAULT 0.
         // Drives the Sender Detail "you replied N×" copy.
         wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
-        // `monthlyVolume` wire field now carries last-30-days msg count
-        // (rolling). Replaces the per-sender-latest-year_month sum that
-        // varied across decades. FE renders as "47 in last 30d".
-        monthlyVolume: last30dMsgs,
+        // `monthlyVolume` carries the ENGINE's window (ADR-0037), so the
+        // number shown beside a recommendation is the number that
+        // recommendation was computed from. It was 30 days while the
+        // cascade scored on 90 — on the founder's mailbox one sender
+        // read "0 in last 30d" here and "157 messages" on Triage, on the
+        // same day, both correct and irreconcilable to a reader. FE
+        // renders as "47 in last 90d".
+        monthlyVolume: last90dMsgs,
         // Messages currently in INBOX — what Archive/Later/inbox-Delete
         // can actually reach (see the subquery note above).
         inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
         // The unread subset of the same set — what a Protected sender's
         // protection is shielding from bulk and automatic cleanup.
         unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
-        readRate: computeReadRate(last30dMsgs, last30dReadCount),
+        readRate: computeReadRate(last90dMsgs, last90dReadCount),
         readRateSweeperMarked: ensureSafeIntegerNumber(
-          row.last30dSweeperReadCount,
-          'senders.last30dSweeperReadCount',
+          row.last90dSweeperReadCount,
+          'senders.last90dSweeperReadCount',
         ),
         sparkline: row.sparkline ?? null,
         volumeTrend: computeRollingTrendBucket({
@@ -1373,8 +1393,9 @@ export class SendersReadService {
     // computed from one definition.
     const {
       last30dMsgs: last30dMsgsSql,
-      last30dReadCount: last30dReadCountSql,
-      last30dSweeperReadCount: last30dSweeperReadCountSql,
+      last90dMsgs: last90dMsgsSql,
+      last90dReadCount: last90dReadCountSql,
+      last90dSweeperReadCount: last90dSweeperReadCountSql,
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
@@ -1465,8 +1486,9 @@ export class SendersReadService {
           string | null
         >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
         last30dMsgs: last30dMsgsSql,
-        last30dReadCount: last30dReadCountSql,
-        last30dSweeperReadCount: last30dSweeperReadCountSql,
+        last90dMsgs: last90dMsgsSql,
+        last90dReadCount: last90dReadCountSql,
+        last90dSweeperReadCount: last90dSweeperReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
         unreadInboxCount: unreadInboxCountSql,
@@ -1522,9 +1544,10 @@ export class SendersReadService {
     // matching note in `listSenders` (postgres-js returns them as
     // strings despite the `::int` cast).
     const last30dMsgs = ensureSafeIntegerNumber(row.last30dMsgs, 'senders.last30dMsgs');
-    const last30dReadCount = ensureSafeIntegerNumber(
-      row.last30dReadCount,
-      'senders.last30dReadCount',
+    const last90dMsgs = ensureSafeIntegerNumber(row.last90dMsgs, 'senders.last90dMsgs');
+    const last90dReadCount = ensureSafeIntegerNumber(
+      row.last90dReadCount,
+      'senders.last90dReadCount',
     );
     const baselineMsgs = ensureSafeIntegerNumber(row.baselineMsgs, 'senders.baselineMsgs');
 
@@ -1538,15 +1561,17 @@ export class SendersReadService {
       lastSeenAt: row.lastSeenAt.toISOString(),
       totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
       wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
-      // Identical rolling-30d semantics to the list path — the same
-      // sender reports the same volume / read rate / trend on both.
-      monthlyVolume: last30dMsgs,
+      // Identical semantics to the list path — the same sender reports
+      // the same volume / read rate / trend on both. Volume + read rate
+      // are the ENGINE's 90-day window (ADR-0037); the trend keeps its
+      // own recent-vs-baseline split.
+      monthlyVolume: last90dMsgs,
       inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
       unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
-      readRate: computeReadRate(last30dMsgs, last30dReadCount),
+      readRate: computeReadRate(last90dMsgs, last90dReadCount),
       readRateSweeperMarked: ensureSafeIntegerNumber(
-        row.last30dSweeperReadCount,
-        'senders.last30dSweeperReadCount',
+        row.last90dSweeperReadCount,
+        'senders.last90dSweeperReadCount',
       ),
       // Sparkline not yet wired on this path. Null so the contract holds.
       sparkline: null,

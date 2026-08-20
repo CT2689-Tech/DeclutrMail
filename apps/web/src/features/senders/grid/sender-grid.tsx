@@ -87,7 +87,7 @@ export function SenderGrid({
             key={`group-${entry.domain}`}
             domain={entry.domain}
             senderCount={entry.senderCount}
-            volume30d={entry.volume30d}
+            volume90d={entry.volume90d}
             totalReceived={entry.totalReceived}
             expanded={expanded}
             onToggleExpand={() => toggleDomain(entry.domain)}

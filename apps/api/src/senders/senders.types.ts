@@ -97,13 +97,20 @@ export type UnsubscribeMethod = 'one_click' | 'mailto' | 'none';
 /**
  * One row in `GET /api/senders` — the list-page shape (D39).
  *
- * `monthlyVolume` is the most-recent month's `sender_timeseries.volume`
- * (not a 12-month average) — drives the "47/mo" cadence label on the
- * Senders screen. NULL when the sender has no timeseries rows yet
- * (sync hasn't materialized the rollup); the FE renders that as a "—".
+ * `monthlyVolume` is the count of INBOUND messages in the last
+ * `WINDOWS.ENGINE_WINDOW_DAYS` (90) — the same window the engine scores
+ * on, so the number shown beside a recommendation is the number that
+ * recommendation was computed from (ADR-0037). Rendered as "47 in last
+ * 90d".
  *
- * `readRate` is `read_count / volume` over the most recent month —
- * 0..1 with 2-decimal precision. NULL when `volume = 0` (cannot divide).
+ * This docstring described `sender_timeseries.volume` over "the most
+ * recent month" long after the code had moved to a rolling window over
+ * `mail_messages`, which is the same split-source defect in prose form.
+ *
+ * `readRate` is the read count over that volume — 0..1. The numerator
+ * EXCLUDES messages a third-party sweeper marked read (mig 0064); the
+ * denominator does not, because the message did arrive. NULL when
+ * `volume = 0` (no denominator, so no rate — never a fabricated 0).
  */
 export interface SenderListRow {
   id: string;

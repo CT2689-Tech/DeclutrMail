@@ -1,6 +1,8 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { useNow } from '@/lib/use-now';
 import { fmtCompact, lastSeenLabel, type TriageDecisionRow } from './data';
 
 const { color, font } = tokens;
@@ -20,6 +22,15 @@ const { color, font } = tokens;
  * unsubscribe-method capability).
  */
 export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
+  // `useNow`, not an ambient `new Date()`: this queue is server-rendered
+  // and hydrated (`server-triage-boundary.tsx`), so a clock read during
+  // render gives the server and the client two different answers across
+  // any day boundary — "3 days ago" vs "4 days ago" is a hydration
+  // mismatch on every expanded row. `null` until mount; the label is
+  // decoration and can wait one tick.
+  const now = useNow();
+  const ageLabel =
+    row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
   // `null` means the sender sent nothing in the 90-day window, so there
   // is no denominator and no rate. This card used to print
   // `Math.round(null * 100)` — a confident "0% read" for a sender we
@@ -80,16 +91,45 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
       >
         <div
           style={{
-            fontFamily: font.mono,
-            fontSize: 9.5,
-            fontWeight: 600,
-            color: color.fgMuted,
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 8,
             marginBottom: 4,
           }}
         >
-          Why this is suggested
+          <div
+            style={{
+              fontFamily: font.mono,
+              fontSize: 9.5,
+              fontWeight: 600,
+              color: color.fgMuted,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+            }}
+          >
+            Why this is suggested
+          </div>
+          {/* The sentence above and the STATISTICS on the collapsed row
+              come from different moments: reasoning is stored at score
+              time, the stats are recomputed on every request. Stating
+              the age is what stops the two from reading as one
+              measurement that contradicts itself (D25, founder
+              2026-08-19). Omitted entirely when unknown — the demo
+              fixtures have no engine run behind them, and "Scored
+              today" on a hand-written row is the same untruth. */}
+          {ageLabel !== null && (
+            <span
+              style={{
+                fontFamily: font.mono,
+                fontSize: 9.5,
+                color: color.fgMuted,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {ageLabel}
+            </span>
+          )}
         </div>
         <p style={{ fontSize: 12.5, color: color.fg, margin: 0, lineHeight: 1.55 }}>
           {row.reasoning}

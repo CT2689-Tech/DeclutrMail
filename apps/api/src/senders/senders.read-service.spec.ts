@@ -1925,7 +1925,11 @@ describe('SendersReadService', () => {
 
       const detail = await svc.getSenderDetail(mailboxId, a.id);
       expect(detail).not.toBeNull();
-      expect(detail!.monthlyVolume).toBe(8);
+      // 8 recent + 4 baseline = 12 in the ENGINE's 90-day window
+      // (ADR-0037). `volumeTrend` still compares the 30-day recent half
+      // against the 30-90 day baseline, so it is unchanged — the two
+      // answer different questions and keep different windows.
+      expect(detail!.monthlyVolume).toBe(12);
       expect(detail!.volumeTrend).toBe('up');
       expect(detail!.lastReview).toEqual({
         at: producedAt.toISOString(),
@@ -2009,10 +2013,17 @@ describe('SendersReadService', () => {
       expect(detail!.volumeTrend).toBe(listRow!.volumeTrend);
 
       // Pin the absolute values so the test can't pass by both paths
-      // regressing to the legacy timeseries read together.
-      expect(detail!.monthlyVolume).toBe(0);
-      // NULL, not 0 — "no messages in the window" is not "never read".
-      expect(detail!.readRate).toBeNull();
+      // regressing to the legacy timeseries read together. The legacy
+      // row claims volume 5; the real messages are 3, so the count is
+      // what discriminates here (both would report a 1.0 read rate).
+      //
+      // Those 3 messages sit 45 days back: OUTSIDE the 30-day window
+      // this used to display, INSIDE the ENGINE's 90-day window it
+      // displays now (ADR-0037). The trend still reads 'down' because
+      // its recent half is the last 30 days, which is empty — the two
+      // windows answer different questions and are meant to differ.
+      expect(detail!.monthlyVolume).toBe(3);
+      expect(detail!.readRate).toBe(1);
       expect(detail!.volumeTrend).toBe('down');
     });
   });

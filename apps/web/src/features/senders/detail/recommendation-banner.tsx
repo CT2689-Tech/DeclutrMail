@@ -1,6 +1,8 @@
 'use client';
 
 import { Eyebrow, tokens } from '@declutrmail/shared';
+import { scoredAge } from '@declutrmail/shared/copy';
+import { useNow } from '@/lib/use-now';
 import type { Recommendation, Verdict } from './types';
 
 const { color, font, radius } = tokens;
@@ -37,35 +39,6 @@ const VERDICT_LABEL: Record<Verdict, string> = {
  * under the toolbar would bury the actions it is supposed to sit
  * beside; hiding the age would let a months-old read pass as current.
  */
-/**
- * How long ago the engine looked, in words. Rendered because re-scoring
- * is trigger-driven against a 7-day TTL: most stored verdicts are older
- * than that, and a months-old read presented without its age is the
- * same untruth as history that never happened.
- *
- * Locale + zone independent by construction (pure arithmetic on the
- * elapsed span, no `toLocaleDateString`), so it cannot reintroduce the
- * D200 hydration-determinism class.
- */
-export function scoredAge(iso: string, now: Date = new Date()): string | null {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return null;
-  const days = Math.floor((now.getTime() - then) / 86_400_000);
-  if (days < 0) return null;
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days} days ago`;
-  if (days < 30) {
-    const weeks = Math.round(days / 7);
-    return weeks === 1 ? 'a week ago' : `${weeks} weeks ago`;
-  }
-  if (days < 365) {
-    const months = Math.round(days / 30);
-    return months === 1 ? 'a month ago' : `${months} months ago`;
-  }
-  const years = Math.round(days / 365);
-  return years === 1 ? 'a year ago' : `${years} years ago`;
-}
 
 export function RecommendationBanner({
   recommendation,
@@ -76,7 +49,15 @@ export function RecommendationBanner({
 
   const { verdict, reasoning, signals, scoredAt } = recommendation;
   const verbLabel = VERDICT_LABEL[verdict];
-  const age = scoredAt ? scoredAge(scoredAt) : null;
+  // Hydration-safe clock. `/senders/[id]` server-renders and hydrates
+  // this component, so a bare `new Date()` in the render body gives the
+  // server and the browser two different clocks — across a day boundary
+  // the label flips from "today" to "yesterday" and React logs a
+  // mismatch (D200). `useNow()` returns null until mount; the age is
+  // decoration and can wait one tick. Same guard the triage and
+  // screener rows use; this was the last surface without it.
+  const now = useNow();
+  const age = scoredAt && now !== null ? scoredAge(scoredAt, new Date(now)) : null;
 
   return (
     <details

@@ -39,3 +39,5 @@ export {
   AI_PROCESSING_DISCLOSURE,
   ANALYTICS_PRIVACY_CLAIM,
 } from './action-safety';
+
+export { scoredAge, scoredAgeLabel } from './engine-read-age';

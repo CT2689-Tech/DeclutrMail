@@ -154,7 +154,16 @@ export function SenderDetailRoute({ id }: { id: string }) {
   // (D25 `stale_refresh`, founder decision 2026-08-19). Nothing on
   // screen waits for it: the old read stays, with its age, until a
   // fresher row exists.
-  useRefreshStaleRead(id, detail.data?.data.recommendation ?? undefined);
+  // `null` and `undefined` are DIFFERENT inputs to this hook: `null`
+  // means the engine has never scored this sender (go look), `undefined`
+  // means the read hasn't loaded yet (wait). Collapsing them with
+  // `?? undefined` — as this call did — silently retired the
+  // never-scored branch, so the one sender kind with no opinion at all
+  // was the one kind that never asked for one. Preserve the distinction:
+  // undefined only while the query has no data.
+  useRefreshStaleRead(id, detail.data ? (detail.data.data.recommendation ?? null) : undefined, {
+    invalidate: sendersKeys.detail(id),
+  });
   const messages = useSenderMessages(id);
   const timeseries = useSenderTimeseries(id);
   const history = useSenderHistory(id);
@@ -1192,7 +1201,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       `mail_messages`. Two windows, one sentence, and the
                       pronoun tied the percentage to the wrong one. Name
                       the window instead of implying a denominator. */}
-                  of the last 30 days&rsquo; mail was marked read.
+                  of the last 90 days&rsquo; mail was marked read.
                   {/* THE SPLIT (F012). A third-party sweeper can mark
                       mail read through the API, and on the mailbox this
                       was measured against one did so 20,819 times — 27.5%
@@ -1273,7 +1282,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             unit: stats.readRate !== null ? '%' : null,
             // The micro line carries the window — this cell sits beside
             // lifetime cells, so an unqualified rate reads as lifetime.
-            micro: stats.readRate === null ? 'no data yet' : 'of the last 30 days',
+            micro: stats.readRate === null ? 'no data yet' : 'of the last 90 days',
           },
           {
             label: 'Relationship',

@@ -34,9 +34,8 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, type QueryKey } from '@tanstack/react-query';
 import { requestSenderRescore } from '@/lib/api/senders';
-import { sendersKeys } from './query-keys';
 
 /** How long to wait before looking for the fresh row. */
 export const RESCORE_SETTLE_MS = 4_000;
@@ -63,11 +62,19 @@ function alreadyAsked(senderId: string): boolean {
 export function useRefreshStaleRead(
   senderId: string,
   read: { stale?: boolean } | null | undefined,
-  options: { enabled?: boolean; settleMs?: number } = {},
+  options: { enabled?: boolean; settleMs?: number; invalidate: QueryKey },
 ) {
   const queryClient = useQueryClient();
   const askedFor = useRef<string | null>(null);
-  const { enabled = true, settleMs = RESCORE_SETTLE_MS } = options;
+  const { enabled = true, settleMs = RESCORE_SETTLE_MS, invalidate } = options;
+  // Held in a ref, not a dep. A query key is an array, so a caller
+  // building one inline (`sendersKeys.detail(id)`) hands us a fresh
+  // reference every render — as a dep that re-runs the effect on every
+  // parent render, and the only thing standing between that and a
+  // rescore-per-render is the guard below. The key is read at settle
+  // time, so the latest one is the right one.
+  const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
   // `null` read = never scored; `stale` = scored, past its TTL. Both are
   // worth a look; a fresh read is not.
   const wants = read === null || read?.stale === true;
@@ -82,7 +89,7 @@ export function useRefreshStaleRead(
     void requestSenderRescore(senderId, 'stale')
       .then(() => {
         timer = setTimeout(() => {
-          void queryClient.invalidateQueries({ queryKey: sendersKeys.detail(senderId) });
+          void queryClient.invalidateQueries({ queryKey: invalidateRef.current });
         }, settleMs);
       })
       .catch(() => {

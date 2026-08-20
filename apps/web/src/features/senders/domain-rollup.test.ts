@@ -55,7 +55,7 @@ describe('rollupByDomain', () => {
     expect(group.domain).toBe('amazon.com');
     expect(group.senderCount).toBe(3);
     expect(group.senders.map((s) => s.id)).toEqual(['a1', 'a2', 'a3']);
-    expect(group.volume30d).toBe(13);
+    expect(group.volume90d).toBe(13);
     expect(group.totalReceived).toBe(350);
   });
 
@@ -97,7 +97,7 @@ describe('rollupByDomain', () => {
     const entries = rollupByDomain(list);
     const group = entries[0]!;
     if (group.kind !== 'group') throw new Error('expected group');
-    expect(group.volume30d).toBe(10);
+    expect(group.volume90d).toBe(10);
   });
 
   it('never groups empty domains together', () => {

@@ -384,7 +384,7 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
               stopped mailing you" — an argument for unprotecting that
               the data never made. */}
           {sender.domain}
-          {sender.monthlyVolume != null && ` · ${sender.monthlyVolume}/mo`}
+          {sender.monthlyVolume != null && ` · ${sender.monthlyVolume} in last 90d`}
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: space[2], flexWrap: 'wrap' }}>

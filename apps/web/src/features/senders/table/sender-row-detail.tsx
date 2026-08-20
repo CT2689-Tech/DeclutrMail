@@ -167,7 +167,7 @@ export function SenderRowDetail({
       // 332 of 615 active senders on that mailbox rendered 0% this way.
       k: 'Marked read',
       v: s.readRate !== null ? `${formatReadRatePct(s.readRate)}%` : '—',
-      ...(s.readRate !== null ? { small: 'of last 30d' } : {}),
+      ...(s.readRate !== null ? { small: 'of last 90d' } : {}),
       valueColor:
         s.readRate === null
           ? color.fgMuted
@@ -177,7 +177,7 @@ export function SenderRowDetail({
               ? color.fg
               : color.amber,
     },
-    { k: 'Last 30 days', v: (s.monthlyVolume ?? 0).toLocaleString('en-US'), small: 'messages' },
+    { k: 'Last 90 days', v: (s.monthlyVolume ?? 0).toLocaleString('en-US'), small: 'messages' },
   ];
 
   return (

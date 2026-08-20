@@ -10142,3 +10142,116 @@ brand's mark and we would render it — a phishing-assist risk. See
 FOUNDER-FOLLOWUPS.md 2026-08-14 for the three options.
 
 **Implementation contract:** see ADR-0034.
+
+### D256 — A sender leaves the Screener even if it never repeats
+
+**Status:** Founder-ratified 2026-08-19 (decision menu option 5D + 5A).
+
+**The state this changes.** Phase B routes every "too new to judge"
+sender into `screener_quarantine`. The quarantine lifts at three
+messages — so a sender that sends exactly one, ever, can never leave.
+
+Measured on the founder's mailbox: 3,304 senders pending, oldest queued
+2026-07-02. 2,490 had sent exactly one message and 784 had sent two.
+**Twenty-eight would ever graduate.** Screener is a Plus feature whose
+headline number only goes up, and whose only exit was a human clicking
+through thousands of receipts at one decision per click — the queue
+serves 50 rows at a time with no filter, no search and no bulk action,
+by design (bulk lives on the Senders screen).
+
+**Decision.** Two parts, neither of which touches mail. Quarantine has
+always been a DB flag and nothing else (D72), so both parts only change
+what the product ASKS about.
+
+1. **An entry bar.** A sender is queued only once it has repeated at
+   least once (>= 2 inbound messages). Two messages is the cheapest
+   evidence that a sender is a stream rather than a receipt, and the
+   graduation rule already needs three.
+
+   There is deliberately NO "or Primary" carve-out. It reads like the
+   obvious second clause and is unreachable: Primary is Phase A rule 3,
+   returning Keep at 0.95 before Phase B is consulted at all. A first
+   message from a person never reaches the Screener because it is never
+   unjudged.
+
+2. **An age-out.** A row queued longer than `SCREENER_AGE_OUT_DAYS` (30)
+   whose sender is STILL under three messages stops being asked about.
+   Age alone is not the test — a sender that kept arriving is heading
+   for graduation and stays.
+
+   Implemented as a read-time predicate, not a sweep: no cron exists to
+   run one, and the rule is a definition of "awaiting a decision" rather
+   than a state transition. The predicate lives ONCE and is read by both
+   the queue and the badge count — two copies would put a number in the
+   header that the list below it cannot produce, which is the defect
+   this entry is largely about.
+
+**A sender that is not queued is not hidden.** It keeps its engine
+verdict, stays in Senders, and remains eligible for Triage. Triage has
+never excluded quarantined senders, so nothing moves between surfaces
+here.
+
+**Measured.** Pending 3,304 -> 110: 3,194 age out, 80 are recent enough
+to still be worth asking about, 30 have since reached three messages and
+are heading for graduation. 2,490 of the current backlog would not have
+entered under the bar.
+
+**Not solved here.** The Screener still cannot show more than 100 rows
+and has no filter or bulk action. That is deliberate (D32-style
+per-sender decisions; bulk lives on Senders) and is only tolerable
+because the queue is now a length a person can finish.
+
+### D257 — An engine read states its age, and refreshes on attention
+
+**Status:** Founder-ratified 2026-08-19 (decision menu option 1A + 2A).
+Extends D25, which fixed the re-score cadence as trigger-based; this entry
+settles what the product does about a read that has aged past its TTL on the
+two surfaces D25's own refresh never reached.
+
+**The state this changes.** `triage_decisions` stores `verdict`,
+`confidence` and `reasoning` at score time. Every statistic rendered beside
+them — `last90dMessages`, `readRate`, `inboxCount` — is recomputed on each
+request. No production trigger revisits an existing sender: `sync_complete`
+scores every sender once at initial sync, `signal_change` fires only for a
+first-seen sender, and the `cron_sweep` trigger has no producer. So the two
+halves of a card drift apart from the day it is written.
+
+Founder report, 2026-08-19: a Triage card reading "60 messages monthly, 1%
+read rate" directly above "0% read in 90d · 209 messages". Both were correct
+— the sentence was three weeks old. On the founder's mailbox 8,056 of 8,094
+decisions were past their TTL, 97.7% of them produced on the single day of
+the initial sync.
+
+The frozen half is the RECOMMENDATION, not only its explanation: the queue
+orders by stored `confidence` and gates the Recommended badge on it, so an
+aged read also decides what the user is shown first.
+
+**Decision.** Two parts, both attention-scoped.
+
+1. **Every surface that renders a recommendation states its age.** The queue
+   wire carries `scoredAt` + a server-computed `stale`, mirroring the shape
+   Sender Detail already returns. An expired read is still SERVED — with no
+   cron producer, hiding expired rows empties the queue for any mailbox past
+   its first week. A visibly old read is honest; an absent one is a broken
+   screen.
+
+2. **Expanding a row refreshes an aged-out read** (D25 `stale_refresh`), on
+   Triage and on the Screener. Rejected: refreshing every visible row on
+   load. The queue orders by stored confidence and drops any row whose
+   verdict flips to Keep, so a sweep re-sorts the list under the reader and
+   can retire the card they were deciding on. Expanding is the user pointing
+   at one row, and a change they caused is a change they can follow.
+
+**Off during onboarding.** D112 fixes the practice set for the length of the
+step; a re-score is exactly what would shift it.
+
+**Why the Screener needs it most.** A quarantined sender leaves the Screener
+only when a re-score produces a confident verdict. That graduation is already
+implemented in the score worker — it simply never fires, because nothing
+re-scores an existing sender. Without part 2, "we'll judge this once we know
+more" is a promise nothing keeps.
+
+**Measured limit, recorded so it is not mistaken for a fix.** Of 3,304
+senders pending in the founder's Screener, 28 would graduate: the quarantine
+rule needs three messages, and 2,490 of those senders sent exactly one and
+always will. The backlog's exit is D256, not this entry.

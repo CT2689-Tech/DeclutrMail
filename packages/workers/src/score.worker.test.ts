@@ -2,8 +2,9 @@ import { and, eq } from 'drizzle-orm';
 import {
   activityLog,
   mailboxAccounts,
-  outboxEvents,
+  mailboxLabels,
   mailMessages,
+  outboxEvents,
   screenerQuarantine,
   senderPolicies,
   senders,
@@ -61,6 +62,50 @@ async function seedMailbox(db: ScoreWorkerDeps['db']): Promise<{ mailboxAccountI
 }
 
 /** Insert one sender row matching the cascade's expected shape. */
+/**
+ * Seed `count` inbound messages inside the engine's 90-day window,
+ * `readCount` of them marked read.
+ *
+ * The engine used to read volume + read rate from `sender_timeseries`,
+ * so these tests seeded three calendar buckets and only a handful of
+ * real messages. It now reads the message rows themselves (ADR-0037),
+ * which is what the display path has always read — so the fixture has
+ * to carry the volume it claims. A bucket saying "90 messages" beside
+ * five actual rows was exactly the split-source this change removes.
+ */
+async function seedWindowMessages(
+  db: ScoreWorkerDeps['db'],
+  mailboxAccountId: string,
+  senderKey: string,
+  opts: {
+    prefix: string;
+    count: number;
+    readCount?: number;
+    labelIds?: string[];
+    oneClickUnsub?: boolean;
+    internalDate?: Date;
+  },
+): Promise<void> {
+  const read = opts.readCount ?? 0;
+  const when = opts.internalDate ?? new Date('2026-05-22T00:00:00Z');
+  for (let i = 0; i < opts.count; i += 1) {
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: `${opts.prefix}${i}`,
+      providerThreadId: `${opts.prefix}t${i}`,
+      senderKey,
+      subject: '',
+      snippet: '',
+      internalDate: when,
+      labelIds: opts.labelIds ?? ['INBOX'],
+      isUnread: i >= read,
+      ...(opts.oneClickUnsub
+        ? { unsubscribeUrl: 'https://brand.test/unsub', unsubscribeOneClick: true }
+        : {}),
+    });
+  }
+}
+
 async function seedSender(
   db: ScoreWorkerDeps['db'],
   mailboxAccountId: string,
@@ -175,51 +220,17 @@ describe('ScoreWorker — happy path', () => {
       gmailCategory: 'promotions',
       firstSeenAt: new Date('2024-01-01T00:00:00Z'),
     });
-    // Seed `sender_timeseries` so monthly volume + read rate are
-    // computed from real rows. 30 messages, 0 reads → read_rate = 0.
-    await db.insert(senderTimeseries).values([
-      {
-        mailboxAccountId,
-        senderKey,
-        yearMonth: '2026-03-01',
-        volume: 30,
-        readCount: 0,
-      },
-      {
-        mailboxAccountId,
-        senderKey,
-        yearMonth: '2026-04-01',
-        volume: 30,
-        readCount: 0,
-      },
-      {
-        mailboxAccountId,
-        senderKey,
-        yearMonth: '2026-05-01',
-        volume: 30,
-        readCount: 0,
-      },
-    ]);
-    // Seed enough mail_messages so totalMessages ≥ 3 (otherwise Phase B
-    // captures it before scoring runs). The one-click List-Unsubscribe
-    // capability makes the sender a REAL unsubscribe candidate — D29:
-    // without a declared channel + stream volume, Phase C gates the
-    // unsubscribe score to 0. No bodies (privacy — none stored).
-    for (let i = 0; i < 5; i += 1) {
-      await db.insert(mailMessages).values({
-        mailboxAccountId,
-        providerMessageId: `m${i}`,
-        providerThreadId: `t${i}`,
-        senderKey,
-        subject: '',
-        snippet: '',
-        internalDate: new Date('2026-05-22T00:00:00Z'),
-        labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
-        isUnread: true,
-        unsubscribeUrl: 'https://brand.test/unsub',
-        unsubscribeOneClick: true,
-      });
-    }
+    // 90 inbound messages in the window, none read → read rate 0.
+    // The one-click List-Unsubscribe capability makes the sender a REAL
+    // unsubscribe candidate — D29: without a declared channel + stream
+    // volume, Phase C gates the unsubscribe score to 0. No bodies
+    // (privacy — none stored).
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: 'm',
+      count: 90,
+      labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
+      oneClickUnsub: true,
+    });
 
     const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
     await worker.processJob(
@@ -253,30 +264,13 @@ describe('ScoreWorker — happy path', () => {
         affectedCount: 5,
       });
     }
-    // Enough timeseries + messages to keep us OUT of Phase B and to
-    // satisfy archive +0.30 (volume ≥ 30).
-    for (let m = 0; m < 3; m += 1) {
-      await db.insert(senderTimeseries).values({
-        mailboxAccountId,
-        senderKey,
-        yearMonth: `2026-0${3 + m}-01`,
-        volume: 30,
-        readCount: 9,
-      });
-    }
-    for (let i = 0; i < 5; i += 1) {
-      await db.insert(mailMessages).values({
-        mailboxAccountId,
-        providerMessageId: `am${i}`,
-        providerThreadId: `at${i}`,
-        senderKey,
-        subject: '',
-        snippet: '',
-        internalDate: new Date('2026-05-22T00:00:00Z'),
-        labelIds: ['INBOX'],
-        isUnread: false,
-      });
-    }
+    // Enough inbound mail to keep us OUT of Phase B and to satisfy
+    // archive +0.30 (monthly volume >= 30). 27 of 90 read → 30%.
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: 'am',
+      count: 90,
+      readCount: 27,
+    });
 
     const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
     await worker.processJob(
@@ -410,30 +404,12 @@ describe('ScoreWorker — idempotency + upsert', () => {
     // Add enough messages + timeseries to push to Phase C. The one-click
     // channel + 30/mo volume satisfy the D29 unsubscribe gate; 0% read
     // corroborates → unsubscribe winner.
-    for (let m = 0; m < 3; m += 1) {
-      await db.insert(senderTimeseries).values({
-        mailboxAccountId,
-        senderKey,
-        yearMonth: `2026-0${3 + m}-01`,
-        volume: 30,
-        readCount: 0,
-      });
-    }
-    for (let i = 0; i < 5; i += 1) {
-      await db.insert(mailMessages).values({
-        mailboxAccountId,
-        providerMessageId: `cm${i}`,
-        providerThreadId: `ct${i}`,
-        senderKey,
-        subject: '',
-        snippet: '',
-        internalDate: new Date('2026-05-22T00:00:00Z'),
-        labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
-        isUnread: true,
-        unsubscribeUrl: 'https://me.test/unsub',
-        unsubscribeOneClick: true,
-      });
-    }
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: 'cm',
+      count: 90,
+      labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
+      oneClickUnsub: true,
+    });
 
     await worker.processJob(
       { mailboxAccountId, senderKey, trigger: 'signal_change', producedAtMs: 20_000 },
@@ -988,17 +964,23 @@ describe('ScoreWorker — Screener Phase-B flag (D72, D75)', () => {
       firstSeenAt: new Date('2026-05-20T00:00:00Z'),
       lastSeenAt: new Date('2026-05-22T00:00:00Z'),
     });
-    await db.insert(mailMessages).values({
-      mailboxAccountId,
-      providerMessageId: `m-${email}`,
-      providerThreadId: `t-${email}`,
-      senderKey,
-      subject: '',
-      snippet: '',
-      internalDate: new Date('2026-05-22T00:00:00Z'),
-      labelIds: ['INBOX'],
-      isUnread: true,
-    });
+    // TWO messages, not one. The sender must clear D256's entry bar
+    // (>= 2 messages, or Primary) to be queued at all — these cases are
+    // about the quarantine MECHANISM (flag / idempotency / graduation),
+    // not about the bar, which has its own tests below.
+    for (const n of [1, 2]) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `m${n}-${email}`,
+        providerThreadId: `t${n}-${email}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: new Date('2026-05-22T00:00:00Z'),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      });
+    }
     return senderKey;
   }
 
@@ -1134,5 +1116,270 @@ describe('ScoreWorker — Screener Phase-B flag (D72, D75)', () => {
     // Auto-resolved on graduation — no longer in the queue, and not a
     // user decision that would have to be re-made.
     expect(rows[0]?.decidedAt).not.toBeNull();
+  });
+});
+
+/**
+ * ADR-0037 — one definition of a sender's 90-day activity.
+ *
+ * The engine used to read volume + read rate from `sender_timeseries`,
+ * summing every bucket whose `year_month` was `>= (now - 90 days)`.
+ * `year_month` is a DATE pinned to the FIRST of the month, so that
+ * comparison dropped the oldest bucket whole and then still divided by
+ * three: 3,977 of 14,972 messages (26.6%) on the founder's mailbox, on
+ * every scoring run. Understating volume understates the case for
+ * cleanup, so the engine was quietly conservative in a way no surface
+ * could show.
+ *
+ * These assert on the TEMPLATE reasoning, which prints the exact facts
+ * the cascade scored on ("{name} sends {N}/mo. {P}% marked read over
+ * 90d.") — the closest observable to the numbers themselves.
+ */
+describe('ScoreWorker — the engine reads its 90-day window from the messages', () => {
+  const NOW = new Date('2026-05-23T00:00:00Z');
+  /** 85 days before NOW — inside the window, inside the OLDEST month. */
+  const DEEP_IN_WINDOW = new Date(NOW.getTime() - 85 * 24 * 60 * 60 * 1000);
+
+  it('counts mail in the oldest partial month of the window', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'deep@brand.test', {
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+    });
+    // Every message sits in the calendar month the bucket comparison
+    // used to discard entirely.
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: 'deep',
+      count: 90,
+      internalDate: DEEP_IN_WINDOW,
+      labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
+      oneClickUnsub: true,
+    });
+
+    const worker = new ScoreWorker({ db, now: () => NOW });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 90_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    // 90 messages / 3 months. Under the bucket window this read 0/mo.
+    expect(row?.reasoning).toContain('sends 30/mo.');
+  });
+
+  it('excludes mail older than the window', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'old@brand.test', {
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+    });
+    // 30 inside, 90 just outside (95 days back). A window that leaks
+    // would report 40/mo instead of 10/mo.
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: 'in',
+      count: 30,
+      internalDate: DEEP_IN_WINDOW,
+    });
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: 'out',
+      count: 90,
+      internalDate: new Date(NOW.getTime() - 95 * 24 * 60 * 60 * 1000),
+    });
+
+    const worker = new ScoreWorker({ db, now: () => NOW });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 91_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.reasoning).toContain('sends 10/mo.');
+  });
+
+  /**
+   * A sweeper only ever marks READ, so a contaminated numerator inflates
+   * the rate and SUPPRESSES the unsubscribe suggestions this engine
+   * exists to make. #583 decontaminated the senders list and the
+   * timeseries reconcile; the engine itself kept scoring on the raw
+   * flag, so the product's two halves disagreed about the same sender.
+   */
+  it('does not credit the user for reads a third-party sweeper produced', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'swept@brand.test', {
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+    });
+    await db.insert(mailboxLabels).values({
+      mailboxAccountId,
+      labelId: 'Label_117',
+      name: 'unroll.me/rolled up',
+      sweeperVendor: 'unroll.me',
+    });
+    // 90 messages, ALL marked read — but every read carries the
+    // sweeper's label, so none of them is the user reading anything.
+    for (let i = 0; i < 90; i += 1) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `sw${i}`,
+        providerThreadId: `swt${i}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: DEEP_IN_WINDOW,
+        labelIds: ['INBOX', 'Label_117'],
+        isUnread: false,
+      });
+    }
+
+    const worker = new ScoreWorker({ db, now: () => NOW });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 92_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    // ANCHORED on the preceding clause. A bare `'0% marked read'` is a
+    // substring of `'100% marked read'`, so the un-anchored form passed
+    // with the decontamination removed — the assertion, not the code,
+    // was the blind spot.
+    expect(row?.reasoning).toContain('sends 30/mo. 0% marked read over 90d');
+  });
+
+  /**
+   * Mail the USER sent is not the sender's volume, and it is never
+   * unread — so counting it inflated the denominator and the numerator
+   * together, worst on exactly the correspondents a wrong verdict costs
+   * most.
+   */
+  it('does not count the user’s own sent mail as the sender’s volume', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'two-way@brand.test', {
+      gmailCategory: 'promotions',
+      firstSeenAt: new Date('2024-01-01T00:00:00Z'),
+    });
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: 'inb',
+      count: 30,
+      internalDate: DEEP_IN_WINDOW,
+    });
+    for (let i = 0; i < 60; i += 1) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `outb${i}`,
+        providerThreadId: `outbt${i}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: DEEP_IN_WINDOW,
+        labelIds: ['SENT'],
+        isUnread: false,
+        isOutbound: true,
+      });
+    }
+
+    const worker = new ScoreWorker({ db, now: () => NOW });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 93_000 },
+      FAKE_CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    // 30 inbound / 3 = 10. Counting the 60 outbound would read 30/mo,
+    // and would also report a 66% read rate for a sender the user has
+    // read nothing from.
+    expect(row?.reasoning).toContain('sends 10/mo. 0% marked read over 90d');
+  });
+});
+
+/**
+ * D256 — who the Screener is allowed to ask about.
+ *
+ * The quarantine lifts at three messages, so a sender that sends exactly
+ * one, ever, can never leave it. On the founder's mailbox 2,490 of 3,304
+ * pending senders had sent exactly one message and 784 had sent two; 28
+ * would ever graduate. The queue's headline number only went up and its
+ * only exit was a human clicking through it one sender at a time.
+ */
+describe('ScoreWorker — the Screener entry bar (D256)', () => {
+  async function scoreOneOff(
+    gmailCategory: 'updates' | 'primary',
+    messageCount: number,
+  ): Promise<{ quarantined: boolean; verdict: string | undefined }> {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, `one-off-${gmailCategory}@x.test`, {
+      gmailCategory,
+      firstSeenAt: new Date('2026-05-20T00:00:00Z'),
+      lastSeenAt: new Date('2026-05-22T00:00:00Z'),
+    });
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: `oo-${gmailCategory}`,
+      count: messageCount,
+    });
+
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 60_000 },
+      FAKE_CTX,
+    );
+    const queued = await db
+      .select()
+      .from(screenerQuarantine)
+      .where(eq(screenerQuarantine.senderKey, senderKey));
+    const [decision] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    return { quarantined: queued.length > 0, verdict: decision?.verdict };
+  }
+
+  it('does not queue a sender that has written once and is not Primary', async () => {
+    const { quarantined } = await scoreOneOff('updates', 1);
+    expect(quarantined).toBe(false);
+  });
+
+  /**
+   * NOT hidden — the distinction the whole change rests on. The sender
+   * keeps its engine verdict, stays in Senders and stays eligible for
+   * Triage; it is simply not queued for a standing decision it will
+   * never need. Nothing is done to its mail either way (D72).
+   */
+  it('still writes a verdict for the sender it declines to queue', async () => {
+    const { verdict } = await scoreOneOff('updates', 1);
+    expect(verdict).toBe('later');
+  });
+
+  /**
+   * The carve-out that ISN'T there. "Or Primary" reads like an obvious
+   * second clause for the entry bar, and it is unreachable: Primary is
+   * Phase A rule 3, returning Keep at 0.95 before Phase B is consulted.
+   * A first message from a person never reaches the Screener because it
+   * is never unjudged. Pinned so nobody adds the dead clause back.
+   */
+  it('never reaches the Screener for a Primary sender — Phase A keeps it first', async () => {
+    const { quarantined, verdict } = await scoreOneOff('primary', 1);
+    expect(verdict).toBe('keep');
+    expect(quarantined).toBe(false);
+  });
+
+  it('queues a sender that has repeated at least once', async () => {
+    const { quarantined } = await scoreOneOff('updates', 2);
+    expect(quarantined).toBe(true);
   });
 });

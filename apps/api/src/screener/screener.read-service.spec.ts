@@ -143,7 +143,11 @@ describe('ScreenerReadService (D71–D74)', () => {
     expect(alpha.messageCount).toBe(2);
     // Latest message wins the sample-subject slot (D71).
     expect(alpha.sampleSubject).toBe('Welcome to Alpha');
-    expect(alpha.recommendation).toEqual({
+    // `toMatchObject`, not `toEqual`: the age fields (`scoredAt` /
+    // `stale`) are clock-derived, and asserting them here would make
+    // this identity-and-subject test fail for a reason it is not about.
+    // Their own behaviour is covered in the D25 describe block below.
+    expect(alpha.recommendation).toMatchObject({
       verdict: 'later',
       confidence: 0.7,
       reasoning: 'Too new to judge.',
@@ -301,5 +305,185 @@ describe('ScreenerReadService (D71–D74)', () => {
     expect(rows).toHaveLength(1);
     // SENDER_B was queued second → newest-first puts it on top.
     expect(rows[0]!.senderKey).toBe(SENDER_B);
+  });
+});
+
+describe('ScreenerReadService — the age of the engine read (D25)', () => {
+  let db: Db;
+  let mailboxId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'screener-age');
+  });
+
+  /**
+   * A quarantined sender leaves the Screener ONLY when a re-score gives
+   * it a confident verdict — that graduation already exists in the score
+   * worker, but no production trigger revisits an existing sender, so it
+   * never fires. Carrying the TTL verdict on the wire is what lets the
+   * screen ask for the re-score that graduates the row.
+   *
+   * Two rows, opposite states, so an implementation that hard-codes
+   * either answer fails.
+   */
+  it('reports scored-at and TTL state per recommendation', async () => {
+    const scoredAt = new Date(Date.now() - 40 * 86_400_000);
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'aged@ex.com');
+    await seedQueuedSender(db, mailboxId, SENDER_B, 'fresh@ex.com');
+    await db
+      .update(triageDecisions)
+      .set({ producedAt: scoredAt, expiresAt: new Date(Date.now() - 33 * 86_400_000) })
+      .where(eq(triageDecisions.senderKey, SENDER_A));
+
+    const rows = await new ScreenerReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    const byKey = new Map(rows.map((r) => [r.senderKey, r]));
+
+    expect(byKey.get(SENDER_A)?.recommendation?.stale).toBe(true);
+    expect(byKey.get(SENDER_A)?.recommendation?.scoredAt).toBe(scoredAt.toISOString());
+    expect(byKey.get(SENDER_B)?.recommendation?.stale).toBe(false);
+  });
+
+  /**
+   * The join to `triage_decisions` is a LEFT one: the engine may never
+   * have reached this sender. `recommendation` stays null rather than
+   * inventing a scored-at — the FE reads null as "never scored", which
+   * is a different fact from "scored and aged out" and drives the same
+   * refresh for a different reason.
+   */
+  it('leaves the recommendation null when the engine never scored the sender', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'unscored@ex.com', { withDecision: false });
+
+    const rows = await new ScreenerReadService(db as never).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    expect(rows.find((r) => r.senderKey === SENDER_A)?.recommendation).toBeNull();
+  });
+});
+
+describe('ScreenerReadService — ageing a sender out of the queue (D256)', () => {
+  let db: Db;
+  let mailboxId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'screener-age-out');
+  });
+
+  /** Backdate a queued row so it is older than the age-out window. */
+  async function backdate(senderKey: string, days: number): Promise<void> {
+    await db
+      .update(screenerQuarantine)
+      .set({ createdAt: new Date(Date.now() - days * 86_400_000) })
+      .where(
+        and(
+          eq(screenerQuarantine.mailboxAccountId, mailboxId),
+          eq(screenerQuarantine.senderKey, senderKey),
+        ),
+      );
+  }
+
+  /**
+   * The quarantine lifts at three messages, so a sender still under
+   * three after a month is not a stream that has yet to reveal itself.
+   * It stops being asked about — the row is FILTERED, not deleted, and
+   * nothing is done to its mail.
+   */
+  it('stops asking about a long-queued sender that never repeated', async () => {
+    // `seedQueuedSender` seeds two messages, i.e. still under three.
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'stalled@ex.com');
+    await backdate(SENDER_A, 45);
+
+    const svc = new ScreenerReadService(db as never);
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
+    expect(rows.map((r) => r.senderKey)).not.toContain(SENDER_A);
+  });
+
+  /**
+   * The count and the list MUST agree. A header that says "3360 waiting"
+   * over a list that cannot produce them is the defect class this
+   * workstream exists to remove, so both read one predicate.
+   */
+  it('reports the same senders in the badge count as in the queue', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'stalled@ex.com');
+    await seedQueuedSender(db, mailboxId, SENDER_B, 'recent@ex.com');
+    await backdate(SENDER_A, 45);
+
+    const svc = new ScreenerReadService(db as never);
+    const [rows, count] = await Promise.all([
+      svc.listQueue({ mailboxAccountId: mailboxId, limit: 50 }),
+      svc.pendingCount(mailboxId),
+    ]);
+    expect(count.pending).toBe(rows.length);
+    expect(count.pending).toBe(1);
+  });
+
+  /**
+   * Age alone is not the test — a sender that KEPT arriving is still
+   * heading for graduation and must stay in the queue. Without this
+   * case the rule would read as "old rows disappear", which would drop
+   * exactly the senders worth deciding on.
+   */
+  it('keeps a long-queued sender that has since reached three messages', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'grew@ex.com');
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'grew-3',
+      providerThreadId: 'grew-t3',
+      senderKey: SENDER_A,
+      subject: 'Third',
+      snippet: '',
+      internalDate: new Date('2026-06-11T10:00:00Z'),
+      labelIds: ['INBOX'],
+      isUnread: true,
+    });
+    await backdate(SENDER_A, 45);
+
+    const svc = new ScreenerReadService(db as never);
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
+    expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
+  });
+
+  /** A freshly-queued one-off is still worth asking about — it may repeat. */
+  it('keeps a recently queued sender regardless of message count', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'fresh@ex.com');
+
+    const svc = new ScreenerReadService(db as never);
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
+    expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
+  });
+});
+
+describe('ScreenerReadService — the badge counts only what the queue can render', () => {
+  /**
+   * `listQueue` INNER JOINs `senders`, so a quarantine row with no
+   * sender row can never appear. If the count does not require the same
+   * thing, the header promises rows the list cannot produce — the shape
+   * of "3360 new senders waiting" over a list of 50, and the reason the
+   * pending predicate is shared in the first place.
+   *
+   * Found by smoking, not by this file: the count read 136 on the
+   * founder's mailbox while the queue could only ever show 110.
+   */
+  it('excludes a quarantine row whose sender was never indexed', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'screener-orphan');
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'real@ex.com');
+    // An orphan: quarantined, never indexed into `senders`.
+    await db
+      .insert(screenerQuarantine)
+      .values({ mailboxAccountId: mailboxId, senderKey: SENDER_B });
+
+    const svc = new ScreenerReadService(db as never);
+    const [rows, count] = await Promise.all([
+      svc.listQueue({ mailboxAccountId: mailboxId, limit: 50 }),
+      svc.pendingCount(mailboxId),
+    ]);
+    expect(rows.map((r) => r.senderKey)).toEqual([SENDER_A]);
+    expect(count.pending).toBe(rows.length);
   });
 });

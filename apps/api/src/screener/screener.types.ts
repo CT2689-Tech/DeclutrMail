@@ -163,6 +163,19 @@ export interface ScreenerQueueRow {
     verdict: TriageVerdict;
     confidence: number;
     reasoning: string;
+    /** ISO-8601 — when the engine produced this read. */
+    scoredAt: string;
+    /**
+     * Past its TTL (`triage_decisions.expires_at`, D25). Same meaning
+     * as `TriageQueueRow.stale` and `Recommendation.stale`; drives the
+     * on-attention refresh, never whether the row is shown.
+     *
+     * Load-bearing here beyond the age label: a quarantined sender
+     * only leaves the Screener when a re-score gives it a confident
+     * verdict, so a read that never refreshes is a sender that never
+     * graduates.
+     */
+    stale: boolean;
   } | null;
 }
 

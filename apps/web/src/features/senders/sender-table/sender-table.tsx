@@ -154,13 +154,14 @@ const COLUMNS: ReadonlyArray<{
   // both views so the Grid↔Table toggle never drops a fact (2026-07-03
   // consistency pass). Not sortable: the wire `SenderListSort` union
   // has no volume axis yet.
-  { key: null, label: 'Monthly', alignRight: true },
+  { key: null, label: '90d mail', alignRight: true },
   { key: null, label: 'Trend' },
-  // 'Read 30d', not 'Read': the bucket is a rolling 30-day ratio and
-  // this column sits between 'Total' (lifetime) and 'You wrote'. Without
-  // the qualifier a sighted user reads 'None' as lifetime — the window
-  // was reaching screen readers via aria and nobody else.
-  { key: null, label: 'Read 30d' },
+  // 'Read 90d', not 'Read': the bucket is a rolling 90-day ratio — the
+  // ENGINE's window (ADR-0037) — and this column sits between 'Total'
+  // (lifetime) and 'You wrote'. Without the qualifier a sighted user
+  // reads 'None' as lifetime; the window was reaching screen readers via
+  // aria and nobody else.
+  { key: null, label: 'Read 90d' },
   // Reply count — ≥3 replies is the D245 auto-protect trigger, the
   // strongest "don't touch this" fact; the analytical view must show it
   // (grid↔table parity, 2026-07-16).
@@ -565,11 +566,13 @@ function SenderRow({
             color: color.fgSoft,
           }}
         >
-          {/* Monthly cadence — same fact the card leads with ("N in last
-              30d"). Nullable when the sender has no timeseries rows. */}
-          {sender.monthlyVolume != null
-            ? `${sender.monthlyVolume.toLocaleString('en-US')}/mo`
-            : '—'}
+          {/* Volume in the engine's window — the same fact the card
+              leads with ("N in last 90d"). The `/mo` suffix this used to
+              print was a 3x overstatement of a 90-day COUNT; the wire
+              field is named `monthlyVolume` for history, not because it
+              is a monthly rate. Nullable when the sender has no
+              messages indexed yet. */}
+          {sender.monthlyVolume != null ? sender.monthlyVolume.toLocaleString('en-US') : '—'}
         </td>
 
         <td style={{ ...cellStyle, width: 90 }}>

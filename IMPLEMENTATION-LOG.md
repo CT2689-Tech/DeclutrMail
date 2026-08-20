@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-244 decisions — ⬜ Not started 76 · 🔵 Shipped 110 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
+246 decisions — ⬜ Not started 76 · 🔵 Shipped 112 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -293,5 +293,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
 | D253 | A refunded customer can buy again | 🔵 | #518 |  |  |
 | D254 | Brand logos on sender avatars | 🔵 | #524 |  |  |
+| D256 | A sender leaves the Screener even if it never repeats | 🔵 | #587 |  |  |
+| D257 | An engine read states its age, and refreshes on attention | 🔵 | #587 |  |  |
 
 <!-- AUTO:DECISIONS:END -->

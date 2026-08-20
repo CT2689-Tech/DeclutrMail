@@ -163,14 +163,31 @@ export async function materializeAutopilotSignals(
   }
 
   // Total + INBOX-labeled messages per sender — count(*) only; no body
-  // access. The INBOX predicate mirrors the action worker's
-  // `resolveSenderInboxIds` exactly, so "actionable at match time" and
-  // "resolvable at act time" cannot drift.
+  // access.
+  //
+  // The INBOX predicate must match the action worker's
+  // `resolveSenderInboxIds`, so "actionable at match time" and
+  // "resolvable at act time" cannot drift. It did drift: that resolver
+  // goes through `senderInboxActionWhere`, which filters
+  // `is_outbound = false`, and this copy did not — so mail the USER sent
+  // counted toward a rule's actionable set and then could not be acted
+  // on. 446 messages across one sender on the mailbox this was found on.
+  // The comment claimed the invariant the code broke, which is why it is
+  // stated as a requirement here rather than as a fact.
   const totalRows = await db
     .select({
       senderKey: mailMessages.senderKey,
-      total: sql<number>`count(*)::int`,
-      inbox: sql<number>`count(*) FILTER (WHERE 'INBOX' = ANY(${mailMessages.labelIds}))::int`,
+      // INBOUND only, like the `inbox` sibling below and like the score
+      // worker's `totalMessages`. This counted the user's own sent mail
+      // toward the sender's message count, and two presets gate a
+      // DESTRUCTIVE unsubscribe on `totalMessages < DORMANCY_MIN_MESSAGES`
+      // — so a sender with 3 inbound and 2 replies from the user cleared
+      // a floor that exists precisely to stop unsubscribing on senders
+      // with too little signal to judge. The cascade counts the same
+      // fact inbound-only (ADR-0037); this made the two workers disagree
+      // about what "total messages" means.
+      total: sql<number>`count(*) FILTER (WHERE ${mailMessages.isOutbound} = false)::int`,
+      inbox: sql<number>`count(*) FILTER (WHERE ${mailMessages.isOutbound} = false AND 'INBOX' = ANY(${mailMessages.labelIds}))::int`,
     })
     .from(mailMessages)
     .where(

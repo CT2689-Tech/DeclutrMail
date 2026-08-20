@@ -101,8 +101,8 @@ export type RollupEntry =
       senders: Sender[];
       /** Aggregate: member count. */
       senderCount: number;
-      /** Aggregate: sum of members' last-30d volume. */
-      volume30d: number;
+      /** Aggregate: sum of members' last-90d volume (the engine's window). */
+      volume90d: number;
       /** Aggregate: sum of members' lifetime totals (known members only). */
       totalReceived: number;
     };
@@ -182,7 +182,7 @@ export function rollupByDomain(senders: readonly Sender[], minGroupSize = 3): Ro
       domain: key,
       senders: members,
       senderCount: members.length,
-      volume30d: members.reduce((sum, m) => sum + (m.monthlyVolume ?? 0), 0),
+      volume90d: members.reduce((sum, m) => sum + (m.monthlyVolume ?? 0), 0),
       totalReceived: members.reduce((sum, m) => sum + m.totalReceived, 0),
     });
   }

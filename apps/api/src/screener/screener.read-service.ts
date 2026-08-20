@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, count, desc, eq, getTableName, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, desc, eq, getTableName, inArray, isNull, sql, type SQL } from 'drizzle-orm';
 
 import {
   mailMessages,
@@ -26,6 +26,63 @@ import type { ScreenerCountResult, ScreenerQueueRow } from './screener.types.js'
  * identity, subject, dates, aggregate counts. No body fields exist on
  * the tables touched.
  */
+/**
+ * How long a sender may sit unjudged in the Screener before it stops
+ * being asked about (D256).
+ *
+ * The quarantine lifts at three messages. A sender still under three
+ * after this long is not a stream that has yet to reveal itself — it is
+ * a receipt. On the founder's mailbox the oldest pending row was 48 days
+ * old and 75% of the queue had sent exactly one message, ever.
+ */
+export const SCREENER_AGE_OUT_DAYS = 30;
+
+/**
+ * THE definition of "awaiting a decision in the Screener".
+ *
+ * Lives once, and is used by BOTH the queue read and the badge count.
+ * Two copies of this predicate would put a number in the header that the
+ * list below it could not produce — which is the exact defect class this
+ * workstream exists to remove (the header already says "3360 new senders
+ * waiting" above a list that can only ever reach 50).
+ *
+ * A row ages out when it has been queued longer than
+ * `SCREENER_AGE_OUT_DAYS` AND the sender still has fewer than three
+ * inbound messages — i.e. it has not moved toward the graduation the
+ * quarantine is waiting for. Aged-out rows are FILTERED, not deleted:
+ * the sender keeps its engine verdict, stays in Senders, stays eligible
+ * for Triage, and nothing is done to its mail. Quarantine has always
+ * been a DB flag and nothing else (D72), so ceasing to ask is the whole
+ * effect.
+ */
+function screenerPendingWhere(mailboxAccountId: string): SQL {
+  return and(
+    eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
+    isNull(screenerQuarantine.decidedAt),
+    // The queue INNER JOINs `senders`, so a quarantine row with no
+    // sender row can never be rendered. Requiring it here too is what
+    // makes the badge a promise the list can keep: without this clause
+    // the count said 136 on the founder's mailbox while the list could
+    // only ever produce 110 — 26 rows counted and unreachable, which is
+    // the same shape as the header this predicate was written to fix.
+    sql`EXISTS (
+      SELECT 1 FROM ${senders}
+      WHERE ${senders.mailboxAccountId} = ${screenerQuarantine.mailboxAccountId}
+        AND ${senders.senderKey} = ${screenerQuarantine.senderKey}
+    )`,
+    sql`NOT (
+      ${screenerQuarantine.createdAt} < now() - (${SCREENER_AGE_OUT_DAYS} || ' days')::interval
+      AND (
+        SELECT COUNT(*)
+        FROM ${mailMessages}
+        WHERE ${mailMessages.mailboxAccountId} = ${screenerQuarantine.mailboxAccountId}
+          AND ${mailMessages.senderKey} = ${screenerQuarantine.senderKey}
+          AND ${mailMessages.isOutbound} = false
+      ) < 3
+    )`,
+  )!;
+}
+
 @Injectable()
 export class ScreenerReadService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
@@ -75,6 +132,8 @@ export class ScreenerReadService {
         verdict: triageDecisions.verdict,
         confidence: triageDecisions.confidence,
         reasoning: triageDecisions.reasoning,
+        producedAt: triageDecisions.producedAt,
+        expiresAt: triageDecisions.expiresAt,
       })
       .from(screenerQuarantine)
       .innerJoin(
@@ -99,12 +158,7 @@ export class ScreenerReadService {
           eq(senderPolicies.senderKey, screenerQuarantine.senderKey),
         ),
       )
-      .where(
-        and(
-          eq(screenerQuarantine.mailboxAccountId, input.mailboxAccountId),
-          isNull(screenerQuarantine.decidedAt),
-        ),
-      )
+      .where(screenerPendingWhere(input.mailboxAccountId))
       .orderBy(desc(screenerQuarantine.createdAt), desc(screenerQuarantine.id))
       .limit(input.limit);
 
@@ -131,6 +185,10 @@ export class ScreenerReadService {
       .orderBy(mailMessages.senderKey, desc(mailMessages.internalDate));
     const subjectBySender = new Map(latest.map((m) => [m.senderKey, m.subject]));
 
+    // Frozen once so every row in one response agrees on what "now"
+    // was — two rows disagreeing about staleness within a single render
+    // is the kind of small incoherence the queue can't explain.
+    const now = Date.now();
     return rows.map((r) => ({
       id: r.id,
       senderId: r.senderId,
@@ -148,12 +206,23 @@ export class ScreenerReadService {
       // agreement so the FE never renders "Protected" with no reason.
       isProtected: r.isProtected ?? false,
       protectionReason: r.isProtected === true ? r.protectionReason : null,
+      // `producedAt` / `expiresAt` join the guard rather than being
+      // asserted: they are NOT NULL on the decision row, so a non-null
+      // verdict implies both — but this is a LEFT join, and narrowing
+      // on what the row actually carries beats trusting that implication
+      // through a `!`.
       recommendation:
-        r.verdict != null && r.confidence != null && r.reasoning != null
+        r.verdict != null &&
+        r.confidence != null &&
+        r.reasoning != null &&
+        r.producedAt != null &&
+        r.expiresAt != null
           ? {
               verdict: r.verdict,
               confidence: Number(r.confidence),
               reasoning: r.reasoning,
+              scoredAt: r.producedAt.toISOString(),
+              stale: r.expiresAt.getTime() <= now,
             }
           : null,
     }));
@@ -164,12 +233,7 @@ export class ScreenerReadService {
     const [row] = await this.db
       .select({ pending: count() })
       .from(screenerQuarantine)
-      .where(
-        and(
-          eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
-          isNull(screenerQuarantine.decidedAt),
-        ),
-      );
+      .where(screenerPendingWhere(mailboxAccountId));
     return { pending: Number(row?.pending ?? 0) };
   }
 }
