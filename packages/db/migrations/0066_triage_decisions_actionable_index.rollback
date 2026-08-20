@@ -1,0 +1,13 @@
+-- atlas:txmode none
+-- Rollback for 0066_triage_decisions_actionable_index.sql
+--
+-- `CONCURRENTLY` to match the forward migration: `triage_decisions` is
+-- live, so a plain `DROP INDEX` would take an ACCESS EXCLUSIVE lock.
+-- Also the recovery path if the forward build fails and leaves an
+-- INVALID index behind.
+--
+-- Dropping this restores the full hash of every decision row in
+-- `getSenderSummary` — slower, but correct; the join predicate in the
+-- read service stands on its own and does not depend on the index.
+
+DROP INDEX CONCURRENTLY IF EXISTS "triage_decisions_actionable_idx";
