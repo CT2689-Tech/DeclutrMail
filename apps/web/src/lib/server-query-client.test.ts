@@ -177,6 +177,47 @@ describe('settleServerQueries', () => {
     vi.useRealTimers();
   });
 
+  it('does not report cancelled siblings as unexpected failures', async () => {
+    // THE TEST THE OTHER THREE COULD NOT BE. Those mock `cancelQueries`
+    // and pass bare promises never registered in the cache, so they
+    // assert that the call HAPPENED, not what it DOES — the starved-input
+    // blind-guard shape. A real batch is required to see the consequence.
+    //
+    // Cancelling on the first timeout rejects every other in-flight query
+    // with `CancelledError`. Classified naively those are "unexpected
+    // failures", so one hung dependency in the 7-query app-shell batch
+    // emitted 6 Sentry events and tripped the unexpected-failure alert
+    // while `timed_out_count` reported 1 — both signals corrupted, in
+    // opposite directions, during exactly the saturation the deadline
+    // exists for.
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+
+    const queryClient = makeServerQueryClient();
+    // REAL queries on a REAL client, and `cancelQueries` is NOT mocked.
+    const hung = queryClient.fetchQuery({
+      queryKey: ['hung'],
+      queryFn: () => new Promise(() => {}),
+    });
+    const alsoHung = queryClient.fetchQuery({
+      queryKey: ['also-hung'],
+      queryFn: () => new Promise(() => {}),
+    });
+
+    const settled = settleServerQueries('app-shell', [hung, alsoHung], queryClient);
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(settled).resolves.toBeUndefined();
+
+    const logged = JSON.parse((info.mock.calls[0]?.[0] as string) ?? '{}');
+    // A cancelled sibling is the same event as the timeout that caused
+    // it, not a separate fault.
+    expect(logged.unexpected_failure_count).toBe(0);
+    expect(logged.timed_out_count).toBe(2);
+    expect(sentry.captureException).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it('does not time out a prefetch that settles inside the deadline', async () => {
     // The blind case for the guard above: if the deadline fired on
     // ordinary latency it would silently downgrade working server

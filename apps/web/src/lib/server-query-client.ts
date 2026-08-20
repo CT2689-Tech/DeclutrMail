@@ -1,7 +1,7 @@
 import 'server-only';
 
 import * as Sentry from '@sentry/nextjs';
-import { QueryClient } from '@tanstack/react-query';
+import { isCancelledError, QueryClient } from '@tanstack/react-query';
 
 import { ServerApiError } from '@/lib/api/server';
 
@@ -151,9 +151,25 @@ export async function settleServerQueries(
       designedFailureCount += 1;
       continue;
     }
-    if (result.reason instanceof PrefetchTimeoutError) {
+    if (result.reason instanceof PrefetchTimeoutError || isCancelledError(result.reason)) {
       // A hang is not an error to report to Sentry per-render — it is a
       // capacity signal, and the count below is what makes it visible.
+      //
+      // `isCancelledError` IS THE SAME EVENT, SEEN FROM A SIBLING.
+      // Cancelling on the first timeout rejects every other in-flight
+      // query in the batch with `CancelledError` (query-core rethrows it
+      // when `state.data === undefined`, which is always true on a fresh
+      // server client). Those are not failures — this code cancelled
+      // them on purpose, one tick before their own identical deadlines
+      // would have fired anyway.
+      //
+      // Counting them as unexpected failures corrupted BOTH signals at
+      // once, in opposite directions, during exactly the saturation this
+      // deadline exists for: on the 7-query app-shell batch one hung
+      // dependency reported `timed_out_count: 1` while emitting 6 Sentry
+      // events and tripping the unexpected-failure alert
+      // (docs/observability/event-taxonomy.md designates any non-zero
+      // unexpected count as the alert input).
       timedOutCount += 1;
       console.warn(
         `[server-hydration] ${surface} prefetch hit the ${PREFETCH_DEADLINE_MS}ms deadline; falling back to the client query.`,
