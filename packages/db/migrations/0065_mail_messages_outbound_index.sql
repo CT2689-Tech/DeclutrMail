@@ -1,3 +1,4 @@
+-- atlas:txmode none
 -- 0065_mail_messages_outbound_index.sql
 --
 -- Performance fix-up for `getSenderSummary` — the read that every
@@ -65,24 +66,42 @@
 -- reads AND writes on the table for the whole build — on a table that is
 -- now live.
 --
--- The txmode directive at the bottom of this file is required:
--- `CONCURRENTLY` cannot run inside a transaction block, and Atlas wraps
--- each migration in one by default.
+-- THE txmode DIRECTIVE IS ON LINE 1, AND BOTH OF ITS PLACEMENT RULES ARE
+-- LOAD-BEARING. This migration failed to apply against production TWICE
+-- before it was right; both failures are recorded here so the next author
+-- pays neither cost again.
 --
--- DO NOT SPELL THAT DIRECTIVE OUT IN PROSE ANYWHERE IN A MIGRATION, not
--- even quoted inside backticks. Atlas scans comment lines for the token
--- and takes THE REST OF THE LINE as the directive's value, so a sentence
--- mentioning it parses as a real directive. That is not hypothetical:
--- the first version of this file explained itself that way and produced
---   `unknown txmode "none` is required: `CONCURRENTLY` cannot run inside a"`
--- which failed `migrate apply` against production on 2026-08-20 and
--- blocked every migration behind it until the prose was reworded.
+--   1. IT MUST BE IN THE LEADING COMMENT BLOCK. Atlas reads file
+--      directives from the comment lines at the TOP of the file; a blank
+--      line ends that block. Sitting just above the statement (line 95,
+--      after a blank line) it was parsed as an ordinary comment, Atlas
+--      wrapped the migration in a transaction as usual, and Postgres
+--      rejected it with `CREATE INDEX CONCURRENTLY cannot run inside a
+--      transaction block`. 0035 is the working reference: line 1.
 --
--- THE TRADE `CONCURRENTLY` MAKES: it can leave an INVALID index behind if
--- the build fails (e.g. a conflicting lock). That is safe — an invalid
--- index is simply not used by the planner, so the only consequence is the
--- slow plan this migration exists to remove. Recovery is
--- `DROP INDEX CONCURRENTLY` + re-run; the rollback file does exactly that.
+--   2. THE TOKEN MUST NOT APPEAR IN PROSE, not even quoted in backticks.
+--      Atlas takes the REST OF THE LINE as the directive's value, so a
+--      sentence mentioning it parses as a malformed directive and aborts
+--      the run:
+--        unknown txmode "none` is required: `CONCURRENTLY` cannot run ...
+--      That is why the rules above are described without spelling it out.
+--      Note `nolint` is forgiving of this (eleven migrations mention it
+--      in prose and apply fine) because it is advisory; this directive is
+--      validated against a fixed enum, so a misparse is fatal.
+--
+-- CONCURRENTLY itself is required because `mail_messages` is live:
+-- 185,530 rows in production as of 2026-08-20. A plain `CREATE INDEX`
+-- takes an ACCESS EXCLUSIVE lock and blocks reads and writes for the
+-- whole build.
+--
+-- NO `IF NOT EXISTS`, DELIBERATELY. A failed concurrent build can leave
+-- an INVALID index behind. With `IF NOT EXISTS` a retry sees the relation
+-- name, skips the build, and Atlas records the migration as applied — so
+-- the index the planner cannot use looks like a success, and the read this
+-- migration exists to speed up stays slow behind a green deploy. Without
+-- it, a leftover fails loudly as `relation already exists`, and the
+-- recovery is explicit: `DROP INDEX CONCURRENTLY` (the rollback file),
+-- then re-run.
 --
 -- PGLITE: the migration round-trip test replays these files through
 -- PGlite, which cannot run `CONCURRENTLY` outside an implicit transaction.
@@ -92,5 +111,4 @@
 --
 -- NO DML — Atlas's `data_depend = error` rule. Index-only add.
 
--- atlas:txmode none
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "mail_messages_account_outbound_idx" ON "mail_messages" USING btree ("mailbox_account_id") WHERE "is_outbound" = true;
+CREATE INDEX CONCURRENTLY "mail_messages_account_outbound_idx" ON "mail_messages" USING btree ("mailbox_account_id") WHERE "is_outbound" = true;
