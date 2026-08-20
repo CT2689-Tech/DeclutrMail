@@ -39,6 +39,7 @@
 -- govern the directive on line 1 — both were learned the hard way, and
 -- both are load-bearing.
 --
+-- The `-- atlas:txmode none` directive is required here.
 -- NO DML — Atlas's `data_depend = error` rule. Index-only add.
 
 CREATE INDEX CONCURRENTLY "triage_decisions_actionable_idx" ON "triage_decisions" USING btree ("mailbox_account_id", "sender_key") WHERE "verdict" IN ('unsubscribe', 'archive');
