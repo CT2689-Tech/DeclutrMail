@@ -31,6 +31,13 @@ export interface ScreenerQueueRow {
   senderName: string;
   senderEmail: string;
   senderDomain: string;
+  /**
+   * Whether the server already holds a brand mark for `senderDomain`
+   * (ADR-0034). `false` means `Avatar` renders the monogram and makes
+   * NO request — the whole point of the field, since a queue page of
+   * unknown domains otherwise burns one 204 round trip per row.
+   */
+  brandMark: boolean;
   /** ISO timestamp the sender was first seen (D71 "8 min ago"). */
   firstSeenAt: string;
   /** ISO timestamp the row entered the queue. */
@@ -170,6 +177,7 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     senderName: 'Lumen Field Updates',
     senderEmail: 'updates@lumenfield.example',
     senderDomain: 'lumenfield.example',
+    brandMark: false,
     firstSeenAt: new Date(Date.now() - 8 * 60_000).toISOString(),
     queuedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
     messageCount: 1,
@@ -191,6 +199,7 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     senderName: 'Dr. Mehta Clinic',
     senderEmail: 'frontdesk@mehtaclinic.example',
     senderDomain: 'mehtaclinic.example',
+    brandMark: false,
     firstSeenAt: new Date(Date.now() - 26 * HOUR).toISOString(),
     queuedAt: new Date(Date.now() - 25 * HOUR).toISOString(),
     messageCount: 2,
@@ -213,6 +222,7 @@ export const SCREENER_QUEUE: ScreenerQueueRow[] = [
     senderName: 'Nimbus Deals',
     senderEmail: 'deals@nimbus.example',
     senderDomain: 'nimbus.example',
+    brandMark: false,
     firstSeenAt: new Date(Date.now() - 3 * 24 * HOUR).toISOString(),
     queuedAt: new Date(Date.now() - 3 * 24 * HOUR).toISOString(),
     messageCount: 2,

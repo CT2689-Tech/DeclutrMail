@@ -12,6 +12,7 @@ import { ok, type Envelope } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
+import { IconsService } from '../icons/icons.service.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { ScreenerReadService } from './screener.read-service.js';
@@ -52,6 +53,7 @@ export class ScreenerController {
   constructor(
     private readonly reads: ScreenerReadService,
     private readonly screener: ScreenerService,
+    private readonly icons: IconsService,
   ) {}
 
   @Get('queue')
@@ -67,7 +69,42 @@ export class ScreenerController {
         ? Math.min(requested, ScreenerController.QUEUE_HARD_MAX)
         : ScreenerController.QUEUE_DEFAULT;
     const rows = await this.reads.listQueue({ mailboxAccountId: mailbox.id, limit });
-    return ok(rows);
+    const marks = await this.brandMarksFor(rows.map((row) => row.senderDomain));
+    return ok(rows.map((row) => ({ ...row, brandMark: marks.has(row.senderDomain) })));
+  }
+
+  /**
+   * Batched brand-mark availability for one queue page (ADR-0034),
+   * mirroring `SendersController.brandMarksFor`.
+   *
+   * WHY THE QUEUE ASKS AT ALL. Without it every row's `Avatar` fires an
+   * `/api/icons/:domain` request on first paint and eats a round trip
+   * per domain we have no mark for. One batched read replaces all of
+   * them; measured 2026-08-20, a 50-row Screener page issued 50 icon
+   * requests of which 26 answered 204.
+   *
+   * A FAILURE HERE MUST NOT FAIL THE QUEUE. Availability is decoration
+   * — a cache read that throws degrades to the monogram, which
+   * ADR-0034 defines as the floor rather than a fallback, identical to
+   * a 204 or the flag being off. Logged, never swallowed silently.
+   */
+  private async brandMarksFor(domains: string[]): Promise<Set<string>> {
+    try {
+      // Authenticated, mailbox-scoped read — a session is guaranteed by
+      // `CurrentMailboxGuard`, so this is the path that may schedule
+      // resolution for domains we have never seen.
+      return await this.icons.marksFor(domains, { mayEnqueue: true });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'screener.brand_marks_failed',
+          count: domains.length,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return new Set();
+    }
   }
 
   /**

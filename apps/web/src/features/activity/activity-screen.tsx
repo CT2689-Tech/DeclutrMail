@@ -1926,6 +1926,14 @@ interface SenderGroup {
   displayName: string;
   email: string;
   domain: string;
+  /**
+   * Whether the server holds a brand mark for this group's sender
+   * (ADR-0034). Carried onto the group so the header `Avatar` can skip
+   * the icon request when there is nothing to fetch. Account-scoped
+   * groups have no sender, hence `false` — which is also the value that
+   * suppresses the request.
+   */
+  brandMark: boolean;
   rows: ActivityRowWire[];
 }
 
@@ -1941,6 +1949,7 @@ function groupBySender(rows: readonly ActivityRowWire[]): SenderGroup[] {
         displayName: row.sender?.displayName ?? 'Your whole account',
         email: row.sender?.email ?? '',
         domain: row.sender?.domain ?? '',
+        brandMark: row.sender?.brandMark ?? false,
         rows: [],
       };
       byKey.set(key, group);
@@ -2025,7 +2034,12 @@ function GroupedList({
                 textAlign: 'left',
               }}
             >
-              <Avatar size={32} name={group.displayName} domain={group.email} />
+              <Avatar
+                size={32}
+                name={group.displayName}
+                domain={group.email}
+                hasMark={group.brandMark}
+              />
               <div style={{ minWidth: 0 }}>
                 <div
                   style={{
@@ -2243,7 +2257,14 @@ function ActivityRow({
             aria-label={`Select activity row from ${senderName}`}
             style={{ cursor: 'pointer', accentColor: color.fg, flexShrink: 0 }}
           />
-          {variant === 'flat' && <Avatar size={30} name={senderName} domain={senderEmail} />}
+          {variant === 'flat' && (
+            <Avatar
+              size={30}
+              name={senderName}
+              domain={senderEmail}
+              hasMark={row.sender?.brandMark ?? false}
+            />
+          )}
           <div style={{ minWidth: 0, flex: 1 }}>
             {variant === 'flat' && (
               <div
@@ -2393,7 +2414,12 @@ function ActivityRow({
         aria-label={`Select activity row from ${senderName}`}
         style={{ cursor: 'pointer', marginLeft: 4, accentColor: color.fg }}
       />
-      <Avatar size={32} name={senderName} domain={senderEmail} />
+      <Avatar
+        size={32}
+        name={senderName}
+        domain={senderEmail}
+        hasMark={row.sender?.brandMark ?? false}
+      />
       {variant === 'flat' ? (
         <div style={{ minWidth: 0 }}>
           <div

@@ -110,6 +110,19 @@ export type ActivityExecutionState =
       resolution: 'review' | 'support';
     };
 
+/**
+ * A sender as the READ SERVICE produces it — identity joined from
+ * `senders`, minus the brand-mark decoration the controller adds. Keeps
+ * the read service selecting only activity-owned tables (D204), and makes
+ * it a type error to serve a sender that never answered the question.
+ */
+export type ActivitySenderFacts = Omit<ActivitySender, 'brandMark'>;
+
+/** An activity row before the controller decorates its sender. */
+export type ActivityRowFacts = Omit<ActivityRow, 'sender'> & {
+  sender: ActivitySenderFacts | null;
+};
+
 export interface ActivitySender {
   /** sha256(...) of the normalized email; matches `senders.sender_key`. */
   senderKey: string;
@@ -117,6 +130,21 @@ export interface ActivitySender {
   email: string;
   /** Domain extracted from email — convenience for the row meta line. */
   domain: string;
+  /**
+   * Whether a brand mark for `domain` is already cached server-side
+   * (ADR-0034).
+   *
+   * ASK-BEFORE-REQUESTING. `Avatar` paints the mark as a CSS
+   * `background-image` — no failure callback, no way to check first — so
+   * an activity page renders one `/api/icons/:domain` request per distinct
+   * sender and every unresolved domain costs a round trip to be answered
+   * 204.
+   *
+   * Not activity state — a property of the GLOBAL icon cache at the
+   * instant of the response, on a table this feature does not own (D204).
+   * The controller resolves it for the whole page in one batched read.
+   */
+  brandMark: boolean;
 }
 
 /**

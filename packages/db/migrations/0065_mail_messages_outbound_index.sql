@@ -1,0 +1,86 @@
+-- 0065_mail_messages_outbound_index.sql
+--
+-- Performance fix-up for `getSenderSummary` — the read that every
+-- authenticated route waits on, because `ServerAppBoundary` prefetches
+-- `/api/senders/summary` for the app-shell nav badge and KPI hero
+-- before any route segment renders.
+--
+-- Why this index:
+--
+--   The summary's `replied` CTE selects the user's distinct outbound
+--   recipients:
+--
+--     SELECT DISTINCT lower(recip)
+--     FROM mail_messages, unnest(recipient_emails) AS recip
+--     WHERE mailbox_account_id = ? AND is_outbound = true
+--
+--   No existing index covers `is_outbound`. All seven current indexes
+--   lead with `mailbox_account_id` and continue into `internal_date`,
+--   `sender_key`, `provider_thread_id`, `id` or `provider_message_id`
+--   — none of them can answer "outbound only", so the planner chose a
+--   Seq Scan and discarded the inbound rows after reading them.
+--
+--   Measured 2026-08-20 on the dev mailbox (8,016 senders / 125,175
+--   messages): Seq Scan reading 10,337 shared buffers and removing
+--   119,636 rows to keep 5,539. With this index the same CTE is an
+--   Index Scan at 2,111 buffers. Combined with the LATERAL-to-join
+--   rewrite in the same change, the whole summary query goes from
+--   47,761 to 6,718 shared buffers (-86%), and warm execution from
+--   ~66ms to ~29.5ms.
+--
+-- Why PARTIAL, not composite:
+--
+--   Outbound is 4.4% of the table (5,539 of 125,175 rows on the dev
+--   mailbox — most mail is received, not sent). Appending `is_outbound`
+--   to an existing composite index would widen every entry for the
+--   95.6% of rows that can never match. The partial predicate indexes
+--   only the rows the CTE can return; the built index is 56 kB.
+--
+-- Coverage scope:
+--
+--   - `getSenderSummary`'s `replied` CTE is the consumer today.
+--   - Any future outbound-scoped read on `mail_messages` (D245's
+--     "count who you wrote to" attribution work is the likely next one)
+--     is covered without a follow-up migration.
+--
+-- Privacy (D7, D228): index-only change. No new columns, no new Gmail
+-- fields, no row mutation, no data movement. `mailbox_account_id` and
+-- `is_outbound` are both already-stored, allowlisted metadata. The
+-- Gmail-data inventory is unchanged by this migration.
+--
+-- `CREATE INDEX CONCURRENTLY`, AND THIS IS THE MIGRATION THE RULE WAS
+-- WRITTEN FOR.
+--
+-- Migrations 0004 and 0011 both skipped `CONCURRENTLY`, and both justified
+-- it the same way: "`mail_messages` has ZERO rows in any production
+-- environment pre-launch (ADR-0002)". **That is no longer true.** Checked
+-- against `declutrmail-prod` on 2026-08-20: 185,530 rows in
+-- `mail_messages`, 11,422 senders, 4 mailbox accounts. The founder is
+-- dogfooding on production.
+--
+-- LEARNINGS 2026-05-21 pre-committed the rule: "The first production
+-- migration after launch that adds an index to `mail_messages` MUST use
+-- `--tx-mode none` + `CREATE INDEX CONCURRENTLY`". This is that migration.
+-- A plain `CREATE INDEX` takes an ACCESS EXCLUSIVE lock, which blocks
+-- reads AND writes on the table for the whole build — on a table that is
+-- now live.
+--
+-- `-- atlas:txmode none` is required: `CONCURRENTLY` cannot run inside a
+-- transaction block, and Atlas wraps each migration in one by default.
+--
+-- THE TRADE `CONCURRENTLY` MAKES: it can leave an INVALID index behind if
+-- the build fails (e.g. a conflicting lock). That is safe — an invalid
+-- index is simply not used by the planner, so the only consequence is the
+-- slow plan this migration exists to remove. Recovery is
+-- `DROP INDEX CONCURRENTLY` + re-run; the rollback file does exactly that.
+--
+-- PGLITE: the migration round-trip test replays these files through
+-- PGlite, which cannot run `CONCURRENTLY` outside an implicit transaction.
+-- `packages/db/src/testing/fresh-db.ts` strips the keyword for that replay
+-- and documents why — PGlite is an oracle for SCHEMA SHAPE, not for
+-- production locking behaviour, and the resulting index is identical.
+--
+-- NO DML — Atlas's `data_depend = error` rule. Index-only add.
+
+-- atlas:txmode none
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "mail_messages_account_outbound_idx" ON "mail_messages" USING btree ("mailbox_account_id") WHERE "is_outbound" = true;

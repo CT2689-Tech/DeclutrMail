@@ -191,6 +191,23 @@ export const mailMessages = pgTable(
       .on(table.mailboxAccountId, table.senderKey)
       .where(sql`${table.isUnread} = true`),
     /**
+     * Partial index — the `replied` CTE in `getSenderSummary` (the read
+     * every authed route waits on, via `ServerAppBoundary`) selects the
+     * user's outbound recipients for one mailbox. Outbound is a small
+     * slice of the table (5,539 of 125,175 rows on the dev mailbox,
+     * 4.4%), so a partial index is both tiny and highly selective:
+     * measured 2026-08-20, it turned a Seq Scan that discarded 119,636
+     * rows into an Index Scan, 10,337 buffers -> 2,111.
+     *
+     * PARTIAL, NOT COMPOSITE. `is_outbound` is not a trailing column of
+     * any existing index and adding it to one would widen every entry
+     * for the 95.6% of rows that are inbound; the predicate form indexes
+     * only the rows the CTE can return.
+     */
+    accountOutboundIdx: index('mail_messages_account_outbound_idx')
+      .on(table.mailboxAccountId)
+      .where(sql`${table.isOutbound} = true`),
+    /**
      * Thread-grouped lookup index — needed by `FollowupCheckWorker`
      * (D87) for its `DISTINCT ON (provider_thread_id) ... ORDER BY
      * provider_thread_id, internal_date DESC` CTE and its

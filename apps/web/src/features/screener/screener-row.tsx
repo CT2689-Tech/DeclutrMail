@@ -124,7 +124,7 @@ export function ScreenerRow({
           if (!expanded) e.currentTarget.style.background = 'transparent';
         }}
       >
-        <Avatar name={row.senderName} domain={row.senderDomain} size={32} />
+        <Avatar name={row.senderName} domain={row.senderDomain} size={32} hasMark={row.brandMark} />
 
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>

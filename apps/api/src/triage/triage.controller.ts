@@ -13,6 +13,7 @@ import { ok, type Envelope } from '@declutrmail/shared/contracts';
 
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
+import { IconsService } from '../icons/icons.service.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import {
@@ -48,6 +49,7 @@ export class TriageController {
   constructor(
     private readonly triage: TriageService,
     private readonly reads: TriageReadService,
+    private readonly icons: IconsService,
   ) {}
 
   /**
@@ -119,7 +121,40 @@ export class TriageController {
       mailboxAccountId: mailbox.id,
       limit,
     });
-    return ok(rows);
+    const marks = await this.brandMarksFor(rows.map((row) => row.senderDomain));
+    return ok(rows.map((row) => ({ ...row, brandMark: marks.has(row.senderDomain) })));
+  }
+
+  /**
+   * Batched brand-mark availability for one queue page (ADR-0034),
+   * mirroring `SendersController.brandMarksFor`.
+   *
+   * Triage is the coldest cache in the product: it is the daily ritual and
+   * often a new user's first real screen, so the domains on it are the
+   * ones least likely to have been resolved yet. Without this, every row's
+   * `Avatar` fires an `/api/icons/:domain` request and each unresolved
+   * domain costs a full round trip to be answered 204. One batched read
+   * replaces all of them.
+   *
+   * A FAILURE HERE MUST NOT FAIL THE QUEUE. Availability is decoration —
+   * a cache read that throws degrades to the monogram, which ADR-0034
+   * defines as the floor rather than a fallback, identical to a 204 or the
+   * flag being off. Logged, never swallowed silently.
+   */
+  private async brandMarksFor(domains: string[]): Promise<Set<string>> {
+    try {
+      return await this.icons.marksFor(domains, { mayEnqueue: true });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'triage.brand_marks_failed',
+          count: domains.length,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return new Set();
+    }
   }
 
   @Get('stats')

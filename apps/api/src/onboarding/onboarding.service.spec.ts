@@ -18,7 +18,7 @@ import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
-import { TriageReadService, type TriageQueueRow } from '../triage/triage.read-service.js';
+import { TriageReadService, type TriageQueueFacts } from '../triage/triage.read-service.js';
 import { OnboardingService, pickFirstTriageCandidates } from './onboarding.service.js';
 
 /**
@@ -1231,7 +1231,7 @@ describe('OnboardingService', () => {
 });
 
 describe('pickFirstTriageCandidates', () => {
-  const row = (over: Partial<TriageQueueRow>): TriageQueueRow => ({
+  const row = (over: Partial<TriageQueueFacts>): TriageQueueFacts => ({
     id: 'id',
     senderId: 'sid',
     senderKey: 'sk',

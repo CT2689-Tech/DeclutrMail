@@ -43,7 +43,18 @@ async function buildMigratedSnapshot(): Promise<Blob> {
       const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
       for (const stmt of sql.split('--> statement-breakpoint')) {
         const trimmed = stmt.trim();
-        if (trimmed) await pg.query(trimmed);
+        // PGlite runs every `query()` inside an implicit transaction, and
+        // `CREATE/DROP INDEX CONCURRENTLY` is illegal there. Production
+        // migrations on live tables REQUIRE `CONCURRENTLY` (LEARNINGS
+        // 2026-05-21; migration 0065 is the first one that needed it), so
+        // the keyword has to survive in the file and be dropped here.
+        //
+        // This is sound because the two builds differ only in LOCKING: the
+        // resulting index is identical in name, columns and predicate.
+        // PGlite is an oracle for SCHEMA SHAPE — what a fresh database
+        // looks like after every migration — not for how a migration
+        // behaves against a table someone is concurrently writing to.
+        if (trimmed) await pg.query(trimmed.replace(/\bCONCURRENTLY\b/gi, ''));
       }
     }
     // `none` on purpose: the snapshot never leaves the process, so paying

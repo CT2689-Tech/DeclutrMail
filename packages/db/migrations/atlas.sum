@@ -1,4 +1,4 @@
-h1:6G5aRbV+sEmbTCjvA+DKk77rhHOG0xurcd7P62HX3H4=
+h1:+Yn8SIdqhQ9oidw0j4oWDF6FI2SS8MI/LctPs2GL4b8=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -62,3 +62,4 @@ h1:6G5aRbV+sEmbTCjvA+DKk77rhHOG0xurcd7P62HX3H4=
 0062_domain_icon_resolver_v7.sql h1:SOFpBpzuDMRz9uacPU9pVNsxQWwegAdJ+a7v6kOSsyc=
 0063_wrote_to_attribution.sql h1:hPHA+67fHfcuT9k7huCt151/x6SHbT/gLww6wYGsmCY=
 0064_mailbox_labels.sql h1:/20SqXLctqojOQ7YbimOcHLuVDJ+Ix0FjE6omMlXUpk=
+0065_mail_messages_outbound_index.sql h1:u612EPjMCvIH3n2wPHBr6n2L1CW/8sKOGNvmwZlis3o=

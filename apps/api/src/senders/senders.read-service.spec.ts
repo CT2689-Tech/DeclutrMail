@@ -14,7 +14,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -2940,6 +2940,34 @@ describe('SendersReadService', () => {
       // so this catches any leak from those into the response body.
       const EMAIL_SHAPE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i;
       expect(serialised).not.toMatch(EMAIL_SHAPE);
+    });
+
+    it('keeps the UNIQUE constraint that makes the triage_decisions join safe', async () => {
+      // `getSenderSummary` joins `triage_decisions` with a PLAIN LEFT
+      // JOIN, not a `LATERAL ... ORDER BY produced_at DESC LIMIT 1`.
+      // That is only correct because at most one decision row can exist
+      // per (mailbox_account_id, sender_key). Drop the unique index and
+      // the join stops being a slower-but-equivalent rewrite and starts
+      // MULTIPLYING rows — every bucket count in the summary would
+      // silently inflate, with no error anywhere.
+      //
+      // Nothing else asserts this: the join reads correctly against any
+      // fixture that happens to hold one decision per sender, which is
+      // every fixture, because the constraint is what keeps it so.
+      const rows = await db.execute<{ indexdef: string }>(
+        sql`SELECT indexdef FROM pg_indexes WHERE tablename = 'triage_decisions'`,
+      );
+      const defs = rows.rows.map((r) => r.indexdef);
+      const guard = defs.find(
+        (d) => /UNIQUE/i.test(d) && /\bmailbox_account_id\b/.test(d) && /\bsender_key\b/.test(d),
+      );
+      expect(
+        guard,
+        'No UNIQUE index on triage_decisions (mailbox_account_id, sender_key). ' +
+          'getSenderSummary joins that table with a plain LEFT JOIN and will ' +
+          'now double-count buckets. Restore the constraint, or restore the ' +
+          'LATERAL + ORDER BY produced_at DESC LIMIT 1.',
+      ).toBeDefined();
     });
   });
 });
