@@ -545,7 +545,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // never re-queues it. Phase-C `score_inconclusive` rows stay in
     // Triage — D75 names Phase B only.
     let screenerFlagged = false;
-    if (result.ruleId === 'insufficient_signal') {
+    if (result.ruleId === 'insufficient_signal' && isWorthScreening(signals.signals)) {
       const inserted = await this.deps.db
         .insert(screenerQuarantine)
         .values({ mailboxAccountId, senderKey })
@@ -812,6 +812,41 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       },
     };
   }
+}
+
+/**
+ * Is a sender the engine cannot yet judge worth putting in front of the
+ * user at all? (D256.)
+ *
+ * Phase B routes every "too new to judge" sender to the Screener. The
+ * quarantine lifts at three messages — so a sender that sends exactly
+ * one, ever, can never leave. On the founder's mailbox 2,490 of 3,304
+ * pending senders had sent exactly one message and 784 had sent two:
+ * receipts, confirmations, password resets. 28 would ever graduate. The
+ * Screener's headline number only went up, and its only exit was a
+ * human clicking through thousands of one-off senders at one decision
+ * per click.
+ *
+ * So the queue asks a narrower question than "is this sender unjudged":
+ * has it repeated at least once? Two messages is the cheapest available
+ * evidence that a sender is a stream rather than a receipt, and the
+ * quarantine's own graduation rule already needs three.
+ *
+ * NO Primary carve-out. The obvious second clause — "or Gmail files it
+ * in Primary, where real correspondence lands" — is unreachable: Primary
+ * is Phase A rule 3, which returns Keep at 0.95 before Phase B is
+ * consulted at all. A first message from a person never reaches the
+ * Screener because it is never unjudged. Writing that clause and
+ * watching its test fail is how this comment exists.
+ *
+ * A sender that does not clear the bar is NOT hidden: it keeps its
+ * engine verdict, stays in Senders, and remains eligible for Triage. It
+ * simply is not queued for a standing decision it will never need.
+ * Nothing is done to its mail either way — quarantine has always been a
+ * DB flag and nothing else (D72).
+ */
+export function isWorthScreening(signals: SenderSignals): boolean {
+  return signals.totalMessages >= 2;
 }
 
 /** Queue name + job name for the score worker (matches initial-sync pattern). */

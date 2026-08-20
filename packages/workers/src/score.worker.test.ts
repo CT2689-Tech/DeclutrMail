@@ -8,6 +8,7 @@ import {
   senderPolicies,
   senders,
   mailboxLabels,
+  screenerQuarantine,
   senderTimeseries,
   triageDecisions,
   users,
@@ -964,17 +965,23 @@ describe('ScoreWorker — Screener Phase-B flag (D72, D75)', () => {
       firstSeenAt: new Date('2026-05-20T00:00:00Z'),
       lastSeenAt: new Date('2026-05-22T00:00:00Z'),
     });
-    await db.insert(mailMessages).values({
-      mailboxAccountId,
-      providerMessageId: `m-${email}`,
-      providerThreadId: `t-${email}`,
-      senderKey,
-      subject: '',
-      snippet: '',
-      internalDate: new Date('2026-05-22T00:00:00Z'),
-      labelIds: ['INBOX'],
-      isUnread: true,
-    });
+    // TWO messages, not one. The sender must clear D256's entry bar
+    // (>= 2 messages, or Primary) to be queued at all — these cases are
+    // about the quarantine MECHANISM (flag / idempotency / graduation),
+    // not about the bar, which has its own tests below.
+    for (const n of [1, 2]) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: `m${n}-${email}`,
+        providerThreadId: `t${n}-${email}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        internalDate: new Date('2026-05-22T00:00:00Z'),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      });
+    }
     return senderKey;
   }
 
@@ -1298,5 +1305,82 @@ describe('ScoreWorker — the engine reads its 90-day window from the messages',
     // and would also report a 66% read rate for a sender the user has
     // read nothing from.
     expect(row?.reasoning).toContain('sends 10/mo. 0% marked read over 90d');
+  });
+});
+
+/**
+ * D256 — who the Screener is allowed to ask about.
+ *
+ * The quarantine lifts at three messages, so a sender that sends exactly
+ * one, ever, can never leave it. On the founder's mailbox 2,490 of 3,304
+ * pending senders had sent exactly one message and 784 had sent two; 28
+ * would ever graduate. The queue's headline number only went up and its
+ * only exit was a human clicking through it one sender at a time.
+ */
+describe('ScoreWorker — the Screener entry bar (D256)', () => {
+  async function scoreOneOff(
+    gmailCategory: 'updates' | 'primary',
+    messageCount: number,
+  ): Promise<{ quarantined: boolean; verdict: string | undefined }> {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, `one-off-${gmailCategory}@x.test`, {
+      gmailCategory,
+      firstSeenAt: new Date('2026-05-20T00:00:00Z'),
+      lastSeenAt: new Date('2026-05-22T00:00:00Z'),
+    });
+    await seedWindowMessages(db, mailboxAccountId, senderKey, {
+      prefix: `oo-${gmailCategory}`,
+      count: messageCount,
+    });
+
+    const worker = new ScoreWorker({ db, now: () => new Date('2026-05-23T00:00:00Z') });
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: 60_000 },
+      FAKE_CTX,
+    );
+    const queued = await db
+      .select()
+      .from(screenerQuarantine)
+      .where(eq(screenerQuarantine.senderKey, senderKey));
+    const [decision] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    return { quarantined: queued.length > 0, verdict: decision?.verdict };
+  }
+
+  it('does not queue a sender that has written once and is not Primary', async () => {
+    const { quarantined } = await scoreOneOff('updates', 1);
+    expect(quarantined).toBe(false);
+  });
+
+  /**
+   * NOT hidden — the distinction the whole change rests on. The sender
+   * keeps its engine verdict, stays in Senders and stays eligible for
+   * Triage; it is simply not queued for a standing decision it will
+   * never need. Nothing is done to its mail either way (D72).
+   */
+  it('still writes a verdict for the sender it declines to queue', async () => {
+    const { verdict } = await scoreOneOff('updates', 1);
+    expect(verdict).toBe('later');
+  });
+
+  /**
+   * The carve-out that ISN'T there. "Or Primary" reads like an obvious
+   * second clause for the entry bar, and it is unreachable: Primary is
+   * Phase A rule 3, returning Keep at 0.95 before Phase B is consulted.
+   * A first message from a person never reaches the Screener because it
+   * is never unjudged. Pinned so nobody adds the dead clause back.
+   */
+  it('never reaches the Screener for a Primary sender — Phase A keeps it first', async () => {
+    const { quarantined, verdict } = await scoreOneOff('primary', 1);
+    expect(verdict).toBe('keep');
+    expect(quarantined).toBe(false);
+  });
+
+  it('queues a sender that has repeated at least once', async () => {
+    const { quarantined } = await scoreOneOff('updates', 2);
+    expect(quarantined).toBe(true);
   });
 });

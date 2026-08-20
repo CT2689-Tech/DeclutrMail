@@ -10197,3 +10197,61 @@ more" is a promise nothing keeps.
 senders pending in the founder's Screener, 28 would graduate: the quarantine
 rule needs three messages, and 2,490 of those senders sent exactly one and
 always will. The backlog's exit is D256, not this entry.
+
+### D256 — A sender leaves the Screener even if it never repeats
+
+**Status:** Founder-ratified 2026-08-19 (decision menu option 5D + 5A).
+
+**The state this changes.** Phase B routes every "too new to judge"
+sender into `screener_quarantine`. The quarantine lifts at three
+messages — so a sender that sends exactly one, ever, can never leave.
+
+Measured on the founder's mailbox: 3,304 senders pending, oldest queued
+2026-07-02. 2,490 had sent exactly one message and 784 had sent two.
+**Twenty-eight would ever graduate.** Screener is a Plus feature whose
+headline number only goes up, and whose only exit was a human clicking
+through thousands of receipts at one decision per click — the queue
+serves 50 rows at a time with no filter, no search and no bulk action,
+by design (bulk lives on the Senders screen).
+
+**Decision.** Two parts, neither of which touches mail. Quarantine has
+always been a DB flag and nothing else (D72), so both parts only change
+what the product ASKS about.
+
+1. **An entry bar.** A sender is queued only once it has repeated at
+   least once (>= 2 inbound messages). Two messages is the cheapest
+   evidence that a sender is a stream rather than a receipt, and the
+   graduation rule already needs three.
+
+   There is deliberately NO "or Primary" carve-out. It reads like the
+   obvious second clause and is unreachable: Primary is Phase A rule 3,
+   returning Keep at 0.95 before Phase B is consulted at all. A first
+   message from a person never reaches the Screener because it is never
+   unjudged.
+
+2. **An age-out.** A row queued longer than `SCREENER_AGE_OUT_DAYS` (30)
+   whose sender is STILL under three messages stops being asked about.
+   Age alone is not the test — a sender that kept arriving is heading
+   for graduation and stays.
+
+   Implemented as a read-time predicate, not a sweep: no cron exists to
+   run one, and the rule is a definition of "awaiting a decision" rather
+   than a state transition. The predicate lives ONCE and is read by both
+   the queue and the badge count — two copies would put a number in the
+   header that the list below it cannot produce, which is the defect
+   this entry is largely about.
+
+**A sender that is not queued is not hidden.** It keeps its engine
+verdict, stays in Senders, and remains eligible for Triage. Triage has
+never excluded quarantined senders, so nothing moves between surfaces
+here.
+
+**Measured.** Pending 3,304 -> 110: 3,194 age out, 80 are recent enough
+to still be worth asking about, 30 have since reached three messages and
+are heading for graduation. 2,490 of the current backlog would not have
+entered under the bar.
+
+**Not solved here.** The Screener still cannot show more than 100 rows
+and has no filter or bulk action. That is deliberate (D32-style
+per-sender decisions; bulk lives on Senders) and is only tolerable
+because the queue is now a length a person can finish.

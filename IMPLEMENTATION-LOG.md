@@ -294,5 +294,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D253 | A refunded customer can buy again | 🔵 | #518 |  |  |
 | D254 | Brand logos on sender avatars | 🔵 | #524 |  |  |
 | D255 | An engine read states its age, and refreshes on attention | 🟡 |  |  | Founder-ratified 2026-08-19 (option 1A + 2A). Extends D25. Queue wire carries `scoredAt` + server-computed `stale`; expanding a row re-scores an aged-out read on Triage + Screener. Expired rows are still served — no cron producer means hiding them empties the queue. Off during onboarding (D112) |
+| D256 | A sender leaves the Screener even if it never repeats | 🟡 |  |  | Founder-ratified 2026-08-19 (option 5D + 5A). Entry bar (>= 2 inbound msgs; no Primary carve-out — Phase A keeps those first) + read-time age-out at 30d for senders still under 3 messages. One predicate shared by the queue and the badge count. Touches no mail. Measured: pending 3,304 -> 110 |
 
 <!-- AUTO:DECISIONS:END -->

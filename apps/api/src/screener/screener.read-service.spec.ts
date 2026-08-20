@@ -364,3 +364,96 @@ describe('ScreenerReadService — the age of the engine read (D25)', () => {
     expect(rows.find((r) => r.senderKey === SENDER_A)?.recommendation).toBeNull();
   });
 });
+
+describe('ScreenerReadService — ageing a sender out of the queue (D256)', () => {
+  let db: Db;
+  let mailboxId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'screener-age-out');
+  });
+
+  /** Backdate a queued row so it is older than the age-out window. */
+  async function backdate(senderKey: string, days: number): Promise<void> {
+    await db
+      .update(screenerQuarantine)
+      .set({ createdAt: new Date(Date.now() - days * 86_400_000) })
+      .where(
+        and(
+          eq(screenerQuarantine.mailboxAccountId, mailboxId),
+          eq(screenerQuarantine.senderKey, senderKey),
+        ),
+      );
+  }
+
+  /**
+   * The quarantine lifts at three messages, so a sender still under
+   * three after a month is not a stream that has yet to reveal itself.
+   * It stops being asked about — the row is FILTERED, not deleted, and
+   * nothing is done to its mail.
+   */
+  it('stops asking about a long-queued sender that never repeated', async () => {
+    // `seedQueuedSender` seeds two messages, i.e. still under three.
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'stalled@ex.com');
+    await backdate(SENDER_A, 45);
+
+    const svc = new ScreenerReadService(db as never);
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
+    expect(rows.map((r) => r.senderKey)).not.toContain(SENDER_A);
+  });
+
+  /**
+   * The count and the list MUST agree. A header that says "3360 waiting"
+   * over a list that cannot produce them is the defect class this
+   * workstream exists to remove, so both read one predicate.
+   */
+  it('reports the same senders in the badge count as in the queue', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'stalled@ex.com');
+    await seedQueuedSender(db, mailboxId, SENDER_B, 'recent@ex.com');
+    await backdate(SENDER_A, 45);
+
+    const svc = new ScreenerReadService(db as never);
+    const [rows, count] = await Promise.all([
+      svc.listQueue({ mailboxAccountId: mailboxId, limit: 50 }),
+      svc.pendingCount(mailboxId),
+    ]);
+    expect(count.pending).toBe(rows.length);
+    expect(count.pending).toBe(1);
+  });
+
+  /**
+   * Age alone is not the test — a sender that KEPT arriving is still
+   * heading for graduation and must stay in the queue. Without this
+   * case the rule would read as "old rows disappear", which would drop
+   * exactly the senders worth deciding on.
+   */
+  it('keeps a long-queued sender that has since reached three messages', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'grew@ex.com');
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'grew-3',
+      providerThreadId: 'grew-t3',
+      senderKey: SENDER_A,
+      subject: 'Third',
+      snippet: '',
+      internalDate: new Date('2026-06-11T10:00:00Z'),
+      labelIds: ['INBOX'],
+      isUnread: true,
+    });
+    await backdate(SENDER_A, 45);
+
+    const svc = new ScreenerReadService(db as never);
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
+    expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
+  });
+
+  /** A freshly-queued one-off is still worth asking about — it may repeat. */
+  it('keeps a recently queued sender regardless of message count', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'fresh@ex.com');
+
+    const svc = new ScreenerReadService(db as never);
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
+    expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
+  });
+});
