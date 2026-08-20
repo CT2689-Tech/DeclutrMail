@@ -1,7 +1,12 @@
 'use client';
 
 import { Avatar, Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
-import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
+import {
+  normalizeProtectionReason,
+  protectionReasonLabel,
+  scoredAgeLabel,
+} from '@declutrmail/shared/copy';
+import { useNow } from '@/lib/use-now';
 import type { PillTone } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
 
@@ -183,6 +188,12 @@ export function TriageRow({
 }) {
   const recommendedVerb: ActionVerb | null =
     row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
+  // Hydration-safe clock — see the note in `triage-row-expanded.tsx`.
+  // `null` on the server and the first client render, so the label
+  // appears one tick after mount rather than mismatching.
+  const now = useNow();
+  const ageLabel =
+    row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
   const inlineConfirmBlocked =
     inlinePreview != null &&
     (inlinePreview.verb === 'Archive' ||
@@ -356,6 +367,27 @@ export function TriageRow({
               }}
             >
               {row.reasoning}
+            </span>
+          )}
+          {/* The hero is the one collapsed row that prints the engine's
+              sentence, so it is the one place the sentence sits directly
+              under a why-line built from LIVE stats. The sentence quotes
+              the numbers as they were at score time; a card reading
+              "60 messages monthly, 1% read rate" above "0% read in 90d ·
+              209 messages" is those two clocks colliding (founder,
+              2026-08-19). The age is what makes it one coherent card
+              instead of a contradiction. */}
+          {hero && !expanded && ageLabel !== null && (
+            <span
+              data-dm-hero-scored-age
+              style={{
+                fontFamily: font.mono,
+                fontSize: 9.5,
+                color: color.fgMuted,
+                marginTop: 3,
+              }}
+            >
+              {ageLabel}
             </span>
           )}
         </div>

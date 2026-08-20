@@ -1247,6 +1247,8 @@ describe('pickFirstTriageCandidates', () => {
     verdict: 'archive',
     confidence: 0.9,
     reasoning: 'r',
+    scoredAt: '2026-01-01T00:00:00.000Z',
+    stale: false,
     signals: [],
     protectionReason: null,
     protectionEvidenceCurrent: true,

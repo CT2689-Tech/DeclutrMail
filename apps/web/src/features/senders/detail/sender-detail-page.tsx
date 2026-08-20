@@ -154,7 +154,9 @@ export function SenderDetailRoute({ id }: { id: string }) {
   // (D25 `stale_refresh`, founder decision 2026-08-19). Nothing on
   // screen waits for it: the old read stays, with its age, until a
   // fresher row exists.
-  useRefreshStaleRead(id, detail.data?.data.recommendation ?? undefined);
+  useRefreshStaleRead(id, detail.data?.data.recommendation ?? undefined, {
+    invalidate: sendersKeys.detail(id),
+  });
   const messages = useSenderMessages(id);
   const timeseries = useSenderTimeseries(id);
   const history = useSenderHistory(id);

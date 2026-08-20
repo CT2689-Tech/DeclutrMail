@@ -58,6 +58,28 @@ export interface TriageQueueRow {
   verdict: TriageVerdict;
   confidence: number;
   reasoning: string;
+  /**
+   * ISO-8601 — when the engine produced this read.
+   *
+   * `verdict`, `confidence` and `reasoning` are STORED; every stat
+   * beside them on the row (`last90dMessages`, `readRate`, `inboxCount`,
+   * …) is recomputed on each request. The two drift apart the moment
+   * the sender's mail changes, which is how a card came to read
+   * "60 messages monthly, 1% read rate" next to "0% read in 90d ·
+   * 209 messages". Surfaced so the row can state its own age instead of
+   * presenting a three-week-old recommendation as current.
+   */
+  scoredAt: string;
+  /**
+   * Whether the engine's read is past its TTL (`triage_decisions.
+   * expires_at`, D25). Server-computed — the BE owns the TTL. Mirrors
+   * `Recommendation.stale` on Sender Detail so both surfaces mean the
+   * same thing by the word.
+   *
+   * Drives the on-attention refresh, never whether the row is shown: a
+   * visibly old read is honest, a missing one is a blank queue.
+   */
+  stale: boolean;
   signals: string[];
   protectionReason: 'manual' | 'replied' | 'starred' | 'gmail-important' | null;
   /**
@@ -390,6 +412,7 @@ export class TriageReadService {
         confidence: triageDecisions.confidence,
         reasoning: triageDecisions.reasoning,
         producedAt: triageDecisions.producedAt,
+        expiresAt: triageDecisions.expiresAt,
         senderName: senders.displayName,
         senderEmail: senders.email,
         senderDomain: senders.domain,
@@ -573,6 +596,13 @@ export class TriageReadService {
           isProtected && r.verdict !== 'keep'
             ? `This sender is protected (${protectionReason}), so Keep is recommended. Without protection the engine would suggest: ${r.verdict}. ${r.reasoning ?? ''}`.trimEnd()
             : r.reasoning,
+        scoredAt: r.producedAt.toISOString(),
+        // Same rule as `buildRecommendation` on Sender Detail: past the
+        // TTL is stale, and `expires_at` is NOT NULL so there is no
+        // unmeasurable case to guard here. Compared against the `now`
+        // this map already froze, so every row in one response agrees
+        // on what "now" was.
+        stale: r.expiresAt.getTime() <= now,
         signals: buildSignals({
           readRate,
           monthlyVolume,

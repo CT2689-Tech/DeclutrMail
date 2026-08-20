@@ -20,7 +20,7 @@ function Harness({
   senderId: string;
   read: { stale?: boolean } | null | undefined;
 }) {
-  useRefreshStaleRead(senderId, read, { settleMs: 5 });
+  useRefreshStaleRead(senderId, read, { settleMs: 5, invalidate: ['senders', 'detail', senderId] });
   return null;
 }
 

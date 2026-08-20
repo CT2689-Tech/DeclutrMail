@@ -143,7 +143,11 @@ describe('ScreenerReadService (D71–D74)', () => {
     expect(alpha.messageCount).toBe(2);
     // Latest message wins the sample-subject slot (D71).
     expect(alpha.sampleSubject).toBe('Welcome to Alpha');
-    expect(alpha.recommendation).toEqual({
+    // `toMatchObject`, not `toEqual`: the age fields (`scoredAt` /
+    // `stale`) are clock-derived, and asserting them here would make
+    // this identity-and-subject test fail for a reason it is not about.
+    // Their own behaviour is covered in the D25 describe block below.
+    expect(alpha.recommendation).toMatchObject({
       verdict: 'later',
       confidence: 0.7,
       reasoning: 'Too new to judge.',
@@ -301,5 +305,62 @@ describe('ScreenerReadService (D71–D74)', () => {
     expect(rows).toHaveLength(1);
     // SENDER_B was queued second → newest-first puts it on top.
     expect(rows[0]!.senderKey).toBe(SENDER_B);
+  });
+});
+
+describe('ScreenerReadService — the age of the engine read (D25)', () => {
+  let db: Db;
+  let mailboxId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'screener-age');
+  });
+
+  /**
+   * A quarantined sender leaves the Screener ONLY when a re-score gives
+   * it a confident verdict — that graduation already exists in the score
+   * worker, but no production trigger revisits an existing sender, so it
+   * never fires. Carrying the TTL verdict on the wire is what lets the
+   * screen ask for the re-score that graduates the row.
+   *
+   * Two rows, opposite states, so an implementation that hard-codes
+   * either answer fails.
+   */
+  it('reports scored-at and TTL state per recommendation', async () => {
+    const scoredAt = new Date(Date.now() - 40 * 86_400_000);
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'aged@ex.com');
+    await seedQueuedSender(db, mailboxId, SENDER_B, 'fresh@ex.com');
+    await db
+      .update(triageDecisions)
+      .set({ producedAt: scoredAt, expiresAt: new Date(Date.now() - 33 * 86_400_000) })
+      .where(eq(triageDecisions.senderKey, SENDER_A));
+
+    const rows = await new ScreenerReadService(db).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    const byKey = new Map(rows.map((r) => [r.senderKey, r]));
+
+    expect(byKey.get(SENDER_A)?.recommendation?.stale).toBe(true);
+    expect(byKey.get(SENDER_A)?.recommendation?.scoredAt).toBe(scoredAt.toISOString());
+    expect(byKey.get(SENDER_B)?.recommendation?.stale).toBe(false);
+  });
+
+  /**
+   * The join to `triage_decisions` is a LEFT one: the engine may never
+   * have reached this sender. `recommendation` stays null rather than
+   * inventing a scored-at — the FE reads null as "never scored", which
+   * is a different fact from "scored and aged out" and drives the same
+   * refresh for a different reason.
+   */
+  it('leaves the recommendation null when the engine never scored the sender', async () => {
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'unscored@ex.com', { withDecision: false });
+
+    const rows = await new ScreenerReadService(db).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    expect(rows.find((r) => r.senderKey === SENDER_A)?.recommendation).toBeNull();
   });
 });

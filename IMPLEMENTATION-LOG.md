@@ -293,5 +293,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D252 | Unsubscribe degrades honestly | 🔵 | #514 |  |  |
 | D253 | A refunded customer can buy again | 🔵 | #518 |  |  |
 | D254 | Brand logos on sender avatars | 🔵 | #524 |  |  |
+| D255 | An engine read states its age, and refreshes on attention | 🟡 |  |  | Founder-ratified 2026-08-19 (option 1A + 2A). Extends D25. Queue wire carries `scoredAt` + server-computed `stale`; expanding a row re-scores an aged-out read on Triage + Screener. Expired rows are still served — no cron producer means hiding them empties the queue. Off during onboarding (D112) |
 
 <!-- AUTO:DECISIONS:END -->

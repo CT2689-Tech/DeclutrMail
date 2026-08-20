@@ -93,6 +93,22 @@ export interface TriageDecisionRow {
   confidence: number;
   /** D24 reasoning copy — LLM (Haiku) or template fallback. */
   reasoning: string;
+  /**
+   * ISO-8601 — when the engine produced this read (D25).
+   *
+   * OPTIONAL because the demo fixtures and the public inbox simulator
+   * have no engine run behind them. Absent means "no age to state",
+   * which is why the label renders only when it is present — a
+   * fabricated "scored just now" on a hand-written fixture would be the
+   * same lie this field exists to remove.
+   */
+  scoredAt?: string;
+  /**
+   * Whether that read is past its TTL. Absent = unknown (fixtures),
+   * which is NOT the same as fresh: unknown neither labels the row nor
+   * triggers a refresh.
+   */
+  stale?: boolean;
   /** Evidence shown as a bullet list in the expanded row. */
   signals: string[];
 

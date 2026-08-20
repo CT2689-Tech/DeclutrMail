@@ -21,6 +21,7 @@ import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 
 import { SCREENER_COUNT_KEY, SCREENER_QUEUE_KEY, useScreenerDecide } from './api/use-screener';
+import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
 import {
   SCREENER_QUEUE,
   canScreenerUnsubscribe,
@@ -103,6 +104,32 @@ export function ScreenerScreen({
   const decide = useScreenerDecide();
 
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+
+  // D25 `stale_refresh` — same attention-scoped refresh Triage and
+  // Sender Detail use (founder decision 2026-08-19). It matters more
+  // here than anywhere else: a quarantined sender leaves the Screener
+  // only when a re-score produces a confident verdict, and no trigger in
+  // production revisits an existing sender. Without this, "we'll judge
+  // this once we know more" is a promise nothing keeps.
+  //
+  // Attention-scoped rather than a sweep for the same reason as Triage,
+  // plus one specific to this queue: a graduating sender is REMOVED
+  // from it, so refreshing every visible row would delete rows out from
+  // under the reader.
+  const expandedScreenerRow =
+    state.kind === 'ready' ? (state.rows.find((r) => r.id === expandedRowId) ?? null) : null;
+  useRefreshStaleRead(
+    expandedScreenerRow?.senderId ?? '',
+    // Unlike a Triage row, a Screener row CAN have no decision at all
+    // (LEFT join — the engine may not have reached it). `null` is the
+    // hook's "never scored, go look" case, which is exactly right here.
+    expandedScreenerRow === null ? { stale: false } : (expandedScreenerRow.recommendation ?? null),
+    {
+      enabled: expandedScreenerRow !== null,
+      invalidate: SCREENER_QUEUE_KEY,
+    },
+  );
+
   /** The verb awaiting preview-confirm (D226) — one row at a time. */
   const [pending, setPending] = useState<{
     rowId: string;

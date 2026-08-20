@@ -500,3 +500,69 @@ describe('TriageReadService.readProtectionReview — the counts share one taxono
     expect([...review.senderKeys].sort()).toEqual(['sk_imp', 'sk_star']);
   });
 });
+
+describe('TriageReadService.listQueue — the age of the engine read (D25)', () => {
+  let db: Db;
+  let mailboxId: string;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'age');
+  });
+
+  /**
+   * `verdict` / `confidence` / `reasoning` are STORED at score time;
+   * every statistic on the same row is recomputed per request. Nothing
+   * in production re-scores an existing sender, so a queue row's
+   * sentence can be weeks older than the numbers printed beside it —
+   * the founder's 2026-08-19 report was a card reading "60 messages
+   * monthly, 1% read rate" above a live "0% read in 90d · 209 messages".
+   *
+   * The row has to carry its own age for the FE to reconcile the two,
+   * and `stale` has to be the SERVER's verdict on the TTL so Triage,
+   * the Screener and Sender Detail cannot disagree about the word.
+   *
+   * Both rows are seeded so the assertion discriminates: an
+   * implementation that hard-codes either value fails one of them.
+   */
+  it('reports each row scored-at and whether it is past its TTL', async () => {
+    const scoredAt = daysAgo(20);
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'stale@ex.com');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'fresh@ex.com');
+    // A expired 13 days ago; B is still inside its window.
+    await db
+      .update(triageDecisions)
+      .set({ producedAt: scoredAt, expiresAt: daysAgo(13) })
+      .where(eq(triageDecisions.senderKey, SENDER_A));
+
+    const rows = await new TriageReadService(db).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    const byKey = new Map(rows.map((r) => [r.senderKey, r]));
+
+    expect(byKey.get(SENDER_A)?.stale).toBe(true);
+    expect(byKey.get(SENDER_A)?.scoredAt).toBe(scoredAt.toISOString());
+    expect(byKey.get(SENDER_B)?.stale).toBe(false);
+  });
+
+  /**
+   * An expired read must still be SERVED. Hiding it would empty the
+   * queue for any mailbox that hasn't been re-scored — which, with no
+   * cron producer, is every mailbox past its first week. A visibly old
+   * recommendation is honest; an absent one is a broken screen.
+   */
+  it('still serves a row whose read has expired', async () => {
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'stale@ex.com');
+    await db
+      .update(triageDecisions)
+      .set({ producedAt: daysAgo(60), expiresAt: daysAgo(53) })
+      .where(eq(triageDecisions.senderKey, SENDER_A));
+
+    const rows = await new TriageReadService(db).listQueue({
+      mailboxAccountId: mailboxId,
+      limit: 10,
+    });
+    expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
+  });
+});

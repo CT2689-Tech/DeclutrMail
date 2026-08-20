@@ -75,6 +75,8 @@ export class ScreenerReadService {
         verdict: triageDecisions.verdict,
         confidence: triageDecisions.confidence,
         reasoning: triageDecisions.reasoning,
+        producedAt: triageDecisions.producedAt,
+        expiresAt: triageDecisions.expiresAt,
       })
       .from(screenerQuarantine)
       .innerJoin(
@@ -131,6 +133,10 @@ export class ScreenerReadService {
       .orderBy(mailMessages.senderKey, desc(mailMessages.internalDate));
     const subjectBySender = new Map(latest.map((m) => [m.senderKey, m.subject]));
 
+    // Frozen once so every row in one response agrees on what "now"
+    // was — two rows disagreeing about staleness within a single render
+    // is the kind of small incoherence the queue can't explain.
+    const now = Date.now();
     return rows.map((r) => ({
       id: r.id,
       senderId: r.senderId,
@@ -148,12 +154,23 @@ export class ScreenerReadService {
       // agreement so the FE never renders "Protected" with no reason.
       isProtected: r.isProtected ?? false,
       protectionReason: r.isProtected === true ? r.protectionReason : null,
+      // `producedAt` / `expiresAt` join the guard rather than being
+      // asserted: they are NOT NULL on the decision row, so a non-null
+      // verdict implies both — but this is a LEFT join, and narrowing
+      // on what the row actually carries beats trusting that implication
+      // through a `!`.
       recommendation:
-        r.verdict != null && r.confidence != null && r.reasoning != null
+        r.verdict != null &&
+        r.confidence != null &&
+        r.reasoning != null &&
+        r.producedAt != null &&
+        r.expiresAt != null
           ? {
               verdict: r.verdict,
               confidence: Number(r.confidence),
               reasoning: r.reasoning,
+              scoredAt: r.producedAt.toISOString(),
+              stale: r.expiresAt.getTime() <= now,
             }
           : null,
     }));

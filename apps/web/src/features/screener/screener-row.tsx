@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
+import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { useNow } from '@/lib/use-now';
 
 import type { ActionReach } from '@/lib/api/actions';
 
@@ -69,6 +71,14 @@ export function ScreenerRow({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  // Hydration-safe clock — `null` on the server and the first client
+  // render, so a day-boundary crossing can't make the server and the
+  // browser disagree about "3 days ago" vs "4 days ago".
+  const now = useNow();
+  const scoredAt = row.recommendation?.scoredAt;
+  const ageLabel =
+    scoredAt !== undefined && now !== null ? scoredAgeLabel(scoredAt, new Date(now)) : null;
+
   return (
     <div
       aria-busy={busy}
@@ -315,6 +325,16 @@ export function ScreenerRow({
                   Why this is suggested:{' '}
                 </span>
                 {row.recommendation.reasoning}
+                {/* The sentence was written at score time; the counts
+                    above it ("N · M in inbox") are recomputed on every
+                    request. Stating the age keeps the two from reading
+                    as one self-contradicting measurement (D25). Silent
+                    when unknown — the fixtures have no engine run. */}
+                {ageLabel !== null && (
+                  <span
+                    style={{ fontFamily: font.mono, fontSize: 9.5, color: color.fgMuted }}
+                  >{` · ${ageLabel}`}</span>
+                )}
               </span>
             )}
             <Link

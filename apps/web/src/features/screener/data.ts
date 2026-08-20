@@ -66,6 +66,21 @@ export interface ScreenerQueueRow {
     verdict: ScreenerRecommendationVerdict;
     confidence: number;
     reasoning: string;
+    /**
+     * ISO-8601 — when the engine produced this read (D25). Optional
+     * because the demo fixtures below have no engine run behind them;
+     * absent means "no age to state", not "scored just now".
+     */
+    scoredAt?: string;
+    /**
+     * Past its TTL. Absent = unknown, which neither labels the row nor
+     * triggers a refresh.
+     *
+     * Load-bearing beyond the label here: a quarantined sender only
+     * leaves the Screener when a re-score gives it a confident verdict,
+     * so a read that never refreshes is a sender that never graduates.
+     */
+    stale?: boolean;
   } | null;
 }
 
