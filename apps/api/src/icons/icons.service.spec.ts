@@ -415,32 +415,46 @@ describe('IconsService', () => {
       });
     });
 
-    it('answers immediately when the queue never settles (wedged Redis)', async () => {
+    it('adds no latency of its own when the queue never settles (wedged Redis)', async () => {
       // THE FAILURE MODE THAT INVERTS THE OPTIMISATION. `marksFor` exists
       // to remove per-row network round trips from Triage, Activity,
       // Screener and Senders. While scheduling was awaited, a wedged
       // Redis made that same call ADD up to ENQUEUE_DEADLINE_MS to every
-      // one of those reads — the degraded path was slower than not
-      // having the feature at all.
+      // one of those reads — the degraded path was slower than its own
+      // absence.
       //
-      // A never-settling queue is the honest simulation: not an error
-      // (which resolves fast), but a hang.
+      // MEASURED AS A DELTA, NOT AN ABSOLUTE. Two earlier versions of
+      // this test were wrong in instructive ways:
+      //   - An absolute bound (`elapsed < ENQUEUE_DEADLINE_MS`) passed
+      //     locally and failed CI at 851ms. It timed the whole call —
+      //     PGlite setup and the cache read included — so it was really
+      //     testing how fast the runner is.
+      //   - A gate promise that is never resolved proved nothing either:
+      //     `schedule` wraps each enqueue in its own deadline, so a
+      //     regressed `await` still finishes, just late.
+      // The honest signal is the DIFFERENCE between the same read with
+      // and without scheduling. A slow machine makes both slow and the
+      // delta stays near zero; a regressed await puts a full deadline
+      // between them on any machine.
       const db = await freshTestDb();
-      const svc = new IconsService(
-        db as never,
-        {
-          add: () => new Promise(() => {}),
-        } as never,
-      );
+      const wedged = { add: () => new Promise(() => {}) } as never;
+      const svc = new IconsService(db as never, wedged);
 
-      const startedAt = Date.now();
+      // Warm-up: the FIRST call absorbs PGlite/statement setup, which
+      // would otherwise land in `baseline` and mask a regressed await
+      // behind it (the delta could even go negative).
+      await svc.marksFor(['warmup.example'], { mayEnqueue: false });
+
+      const baselineAt = Date.now();
+      await svc.marksFor(['baseline.example'], { mayEnqueue: false });
+      const baseline = Date.now() - baselineAt;
+
+      const scheduledAt = Date.now();
       const marks = await svc.marksFor(['wedged.example'], { mayEnqueue: true });
-      const elapsed = Date.now() - startedAt;
+      const scheduled = Date.now() - scheduledAt;
 
-      // The read answers on cache state alone. Asserted well under the
-      // enqueue deadline so this fails loudly if the await ever returns.
-      expect(elapsed).toBeLessThan(ENQUEUE_DEADLINE_MS);
       expect(marks.size).toBe(0);
+      expect(scheduled - baseline).toBeLessThan(ENQUEUE_DEADLINE_MS / 2);
     });
 
     it('bounds how much background work one read can schedule', async () => {
