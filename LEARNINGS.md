@@ -20,6 +20,58 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-19 — A required check you don't own is a veto you can't see
+
+**Context:** The merge queue was enabled on `main`. The first PR through
+it (#584, docs-only) sat for 63 minutes and was evicted without merging.
+Nothing failed; nothing was red.
+
+**Finding:** `Analyze (javascript-typescript)` was a required check
+produced by GitHub's managed `dynamic/github-code-scanning/codeql`
+workflow — no file in this repo, no trigger list to edit. It fires on
+`push` to the default branch and on `refs/pull/N/head`, and not on
+`merge_group`.
+
+A required check that never reports does not FAIL an entry, it HANGS it
+until the check-response timeout (60 min here) evicts it. With
+`enforce_admins: true` that froze `main` for every author including the
+founder, with no error message anywhere and no bypass. The queue's own
+UI never says "waiting on X" — the entry just sits in `AWAITING_CHECKS`.
+The way to see it was to diff the required contexts against the
+check-runs actually present on the merge-group SHA.
+
+The second finding was worse, and was missed for an hour because the
+check's NAME was taken as evidence of what it was. That managed workflow
+is GitHub's **Code Quality** feature, not code scanning — its runs are
+named `Code Quality: PR #N`, and repo-level code scanning default setup
+read `not-configured` the whole time (which was true, and was disbelieved
+because a CodeQL-shaped check kept appearing). `GET
+/code-scanning/analyses` returned exactly ONE analysis for this
+repository's entire history, produced by the replacement workflow on
+2026-08-20. Every prior `Analyze (javascript-typescript)` check had
+uploaded nothing. The required check gating every merge had never
+produced a security finding, and the repo had no CodeQL scanning at all.
+
+Two things the queue surfaced for free, because it disables CI path
+filtering and runs every shard: the full test matrix passed on the
+merge-group ref (coverage a docs-only PR never gets), and
+`hydration-smoke.spec.ts` failed — the same test has failed three times
+in recent `main` history, always at exactly the 120s per-test timeout,
+because one test walks 16 authenticated routes serially.
+
+**Rule (provisional):** Before enabling a merge queue, list the required
+contexts and name the file that produces each one. Any context without a
+file in this repo is produced by something whose triggers you cannot
+edit. And identify a check by what it PRODUCES — its analyses, its
+artifacts, its alerts — never by its name; a check can be named after a
+tool it does not run. Give a required context exactly one producer that
+lives in this repo.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second "required
+check reports on PRs but not on `merge_group`", or a second "gate named
+after a thing it wasn't", lands.
+
+
 ## 2026-08-19 — Two screens showing one fact from two tables is a bug detector
 
 **Context:** Triaging a founder screenshot where Sender Detail said

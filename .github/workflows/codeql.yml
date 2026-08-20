@@ -1,0 +1,103 @@
+name: CodeQL
+
+# Why this file exists at all.
+#
+# `Analyze (javascript-typescript)` was a REQUIRED status check on main,
+# produced by GitHub's managed `dynamic/github-code-scanning/codeql`
+# workflow. That check never fires on `merge_group`, and being managed
+# by GitHub it exposes no trigger list to edit. A required check that
+# never reports does not FAIL a queue entry — it HANGS it, silently,
+# until the check-response timeout evicts it. Canary #584 was queued at
+# 00:23:16Z and removed at 01:26:28Z having merged nothing, and with
+# `enforce_admins: true` there was no bypass: main was frozen outright
+# for every author, with nothing red anywhere.
+#
+# That managed workflow is GitHub's Code Quality feature, NOT code
+# scanning — its runs are named `Code Quality: PR #N`, and repo-level
+# code scanning default setup read `not-configured` throughout. The
+# distinction is not academic: `GET /code-scanning/analyses` returned
+# exactly one analysis for this repository's entire history, and it is
+# the one this workflow produced on 2026-08-20. Every prior
+# `Analyze (javascript-typescript)` check uploaded nothing. The required
+# check that froze main had never produced a security finding.
+#
+# So this file does two things: it gives the analysis a `merge_group`
+# trigger, and it is the repository's first actual CodeQL security scan.
+# The two coexist without conflict — both ran green on #585.
+
+on:
+  # No `branches:` filter — see the note in ci.yml. A stacked PR (base is
+  # another feature branch) would otherwise go unscanned entirely.
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+  # MERGE QUEUE — the reason this file exists. See the header.
+  merge_group:
+  # A weekly floor, so a quiet stretch cannot mean an unscanned one. New
+  # CodeQL queries ship against unchanged code all the time.
+  schedule:
+    - cron: '32 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a queue entry's analysis. A cancelled check reports
+  # nothing, and "reports nothing" is precisely the hang this workflow
+  # was written to fix — re-introducing it here would be circular. Same
+  # guard, same reasoning as ci.yml.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    # This NAME is load-bearing, and it is deliberately NOT
+    # `Analyze (javascript-typescript)`.
+    #
+    # Matching that string would have let this file slot into the
+    # existing branch-protection entry untouched — but GitHub's Code
+    # Quality workflow still emits a check by that exact name, so the
+    # required context would have had two producers: one that reports in
+    # a merge queue and one that does not. Branch protection matches on
+    # the string alone and cannot tell them apart. A distinct name means
+    # the required context has exactly one producer, in this repo, whose
+    # triggers are visible in this file.
+    #
+    # Renaming this later does not turn the gate red — it turns the gate
+    # OFF. Protection waits for a context that never appears, and an
+    # absent check is not a failure. Change it only alongside the
+    # branch-protection setting.
+    name: CodeQL security scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      # Uploading the SARIF results is the point of the job.
+      security-events: write
+      # Lets CodeQL read workflow run metadata. Unnecessary while the
+      # repo is public, required the moment it is not.
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          # `javascript-typescript` covers this workspace: every app and
+          # package is TS, and the one analysis it has produced so far
+          # found 0 alerts. Adding languages is a deliberate widening of
+          # what the gate means, not a free improvement — do it on its
+          # own, so a red gate is attributable.
+          languages: javascript-typescript
+          # JavaScript and TypeScript are analysed from source; there is
+          # nothing to compile, so no autobuild step is needed.
+          build-mode: none
+          # `queries:` is deliberately absent, which selects the `default`
+          # suite. Naming `security-extended` here would widen the
+          # findings as a side effect of a plumbing change; if the extra
+          # queries are wanted, that is its own decision.
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v3
