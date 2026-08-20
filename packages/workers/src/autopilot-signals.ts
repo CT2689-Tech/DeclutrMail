@@ -15,9 +15,6 @@ import type { PresetSignals } from './autopilot-presets.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
-/** 90 days in milliseconds — read-rate aggregate window. */
-const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
-
 /**
  * One sender's materialized preset-signal row: the minimal
  * `PresetSignals` plus the engine's current triage decision.
@@ -129,9 +126,20 @@ export async function materializeAutopilotSignals(
     decisionBy.set(r.senderKey, { verdict: r.verdict, confidence: c });
   }
 
-  // 90-day timeseries — sum volume + reads per sender.
-  const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
-  const yearMonth90 = ninetyDaysAgo.toISOString().slice(0, 10);
+  // LIFETIME timeseries — every month, summed per sender.
+  //
+  // Not a 90-day window, deliberately. The dormancy presets that read
+  // this require `lastSeenDaysAgo > 90`, so a 90-day window is empty for
+  // every sender they can reach — the rate was structurally unmeasurable
+  // for exactly the senders that needed it (F009). Summing the sender's
+  // own months is what makes the test able to fail again.
+  //
+  // `read_count` here is already decontaminated: `reconcileSenderTimeseries`
+  // excludes sweeper-marked mail from the numerator (mig 0064). A mailbox
+  // that has not re-synced since 0064 still carries the old counters for
+  // one sync cycle — the rate is then too HIGH, which under-matches, and
+  // under-matching a preset whose action is an unsubscribe is the safe
+  // direction for a transient.
   const tsRows = await db
     .select({
       senderKey: senderTimeseries.senderKey,
@@ -143,7 +151,6 @@ export async function materializeAutopilotSignals(
       and(
         eq(senderTimeseries.mailboxAccountId, mailboxAccountId),
         inArray(senderTimeseries.senderKey, keys),
-        sql`${senderTimeseries.yearMonth} >= ${yearMonth90}`,
       ),
     );
   const tsAgg = new Map<string, { volume: number; reads: number }>();
@@ -188,10 +195,10 @@ export async function materializeAutopilotSignals(
       firstSeenDaysAgo: Math.floor((now.getTime() - s.firstSeenAt.getTime()) / dayMs),
       lastSeenDaysAgo: Math.floor((now.getTime() - s.lastSeenAt.getTime()) / dayMs),
       totalMessages: counts.total,
-      // `null`, not 0 — see `PresetSignals.readRate90d`. Every sender a
-      // dormancy preset can reach has zero 90-day volume, so a `0` here
-      // made those presets' read-rate predicate a tautology.
-      readRate90d: ts.volume > 0 ? ts.reads / ts.volume : null,
+      // `null`, not 0 — see `PresetSignals.readRateLifetime`. A `0` here
+      // is what made the dormancy presets' read-rate predicate a
+      // tautology; "we hold no mail from them" is not "never read".
+      readRateLifetime: ts.volume > 0 ? ts.reads / ts.volume : null,
     };
     return {
       senderKey: s.senderKey,

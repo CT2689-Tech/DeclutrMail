@@ -11,6 +11,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
+import { syncMailboxLabels } from './mailbox-label-sync.js';
 import {
   reconcileSenderTimeseries,
   type SenderTimeseriesReconcileResult,
@@ -498,7 +499,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // self-heals on the next sync.
     let timeseriesReconcile: SenderTimeseriesReconcileResult | null = null;
     if (events.length > 0) {
-      timeseriesReconcile = await this.runWroteToAttributionPostPass(mailboxAccountId, {
+      timeseriesReconcile = await this.runWroteToAttributionPostPass(mailboxAccountId, client, {
         reconcileTimeseries: labelChanges > 0 || deleted > 0,
       });
     }
@@ -894,10 +895,27 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
    */
   private async runWroteToAttributionPostPass(
     mailboxAccountId: string,
+    client: GmailMetadataClient,
     opts: { reconcileTimeseries: boolean } = { reconcileTimeseries: true },
   ): Promise<SenderTimeseriesReconcileResult | null> {
     let reconciled: SenderTimeseriesReconcileResult | null = null;
     await this.deps.db.transaction(async (tx) => {
+      // Label names BEFORE the counter reconcile: the read-rate
+      // numerator excludes messages carrying a known sweeper's label
+      // (mig 0064, F012), so a stale label set would reconcile the
+      // counters against the wrong exclusion. `null` = the client could
+      // not list; existing rows stand rather than being emptied.
+      const labelSync = await syncMailboxLabels(tx, mailboxAccountId, client);
+      if (labelSync) {
+        console.log(
+          JSON.stringify({
+            level: 'info',
+            kind: 'sync.mailbox_labels',
+            mailboxAccountId,
+            ...labelSync,
+          }),
+        );
+      }
       // Wrote-to attribution post-pass (mig 0063, F010). Counts DISTINCT
       // outbound `mail_messages.id` ADDRESSED to each sender —
       // `recipient_emails` (To + Cc) matched against `senders.email` on

@@ -44,6 +44,8 @@ import {
 import {
   activityLog,
   mailMessages,
+  readStateNotSweeperMarked,
+  readStateSweeperMarked,
   senderPolicies,
   senderTimeseries,
   senders,
@@ -198,6 +200,7 @@ function buildActivityPredicate(filter: ActivityFilter): SQL {
 function buildRollingWindowSubqueries(): {
   last30dMsgs: SQL<number | string>;
   last30dReadCount: SQL<number | string>;
+  last30dSweeperReadCount: SQL<number | string>;
   baselineMsgs: SQL<number | string>;
   inboxCount: SQL<number | string>;
   unreadInboxCount: SQL<number | string>;
@@ -216,7 +219,12 @@ function buildRollingWindowSubqueries(): {
         AND ${mailMessages.isOutbound} = false
     )`,
     // Same window, only msgs the user has read (Gmail removed the
-    // UNREAD label). Drives the read rate.
+    // UNREAD label) — MINUS the ones a third-party sweeper marked read
+    // on their behalf (mig 0064, F012). Drives the read rate.
+    //
+    // Numerator only: a swept message still arrived, so it stays in
+    // `last30dMsgs`. Dropping it from the denominator would shrink the
+    // sender rather than correct the rate.
     last30dReadCount: sql<number | string>`(
       SELECT COUNT(*)::int
       FROM ${mailMessages}
@@ -225,6 +233,20 @@ function buildRollingWindowSubqueries(): {
         AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
         AND ${mailMessages.isOutbound} = false
         AND ${mailMessages.isUnread} = false
+        AND ${readStateNotSweeperMarked(getTableName(mailMessages))}
+    )`,
+    // The complement, so the product can SAY why a read rate looks low
+    // ("324 of 350 marked by Unroll.me") instead of silently
+    // compensating. Same window, same denominator.
+    last30dSweeperReadCount: sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.internalDate} >= now() - (${WINDOWS.VOLUME_DAYS} || ' days')::interval
+        AND ${mailMessages.isOutbound} = false
+        AND ${mailMessages.isUnread} = false
+        AND ${readStateSweeperMarked(getTableName(mailMessages))}
     )`,
     // Count in the prior 30-90 day window (60-day baseline span). Used
     // by the trend bucket: recent / (baseline / 2) ratio compared
@@ -464,6 +486,7 @@ export class SendersReadService {
     const {
       last30dMsgs: last30dMsgsSql,
       last30dReadCount: last30dReadCountSql,
+      last30dSweeperReadCount: last30dSweeperReadCountSql,
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
@@ -635,6 +658,7 @@ export class SendersReadService {
         unsubscribeMethod: senders.unsubscribeMethod,
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
+        last30dSweeperReadCount: last30dSweeperReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
         unreadInboxCount: unreadInboxCountSql,
@@ -722,6 +746,10 @@ export class SendersReadService {
         // protection is shielding from bulk and automatic cleanup.
         unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
         readRate: computeReadRate(last30dMsgs, last30dReadCount),
+        readRateSweeperMarked: ensureSafeIntegerNumber(
+          row.last30dSweeperReadCount,
+          'senders.last30dSweeperReadCount',
+        ),
         sparkline: row.sparkline ?? null,
         volumeTrend: computeRollingTrendBucket({
           last30dMsgs,
@@ -770,12 +798,15 @@ export class SendersReadService {
    *
    * PRIVACY (D7): every returned column is on the storage allowlist.
    */
-  async suggestSenders(args: {
-    mailboxAccountId: string;
-    q: string;
-    limit: number;
-  }): Promise<
-    Array<{ id: string; name: string; email: string; domain: string; totalReceived: number }>
+  async suggestSenders(args: { mailboxAccountId: string; q: string; limit: number }): Promise<
+    Array<{
+      id: string;
+      name: string;
+      email: string;
+      domain: string;
+      totalReceived: number;
+      activity: 'active' | 'quiet' | 'dormant';
+    }>
   > {
     const trimmed = args.q.trim();
     if (trimmed.length === 0) return [];
@@ -787,6 +818,20 @@ export class SendersReadService {
         email: senders.email,
         domain: senders.domain,
         totalReceived: senders.totalReceived,
+        // F011 — which activity bucket the row is in.
+        //
+        // Suggest deliberately ignores the compose filters: a typeahead
+        // that hid what you were typing would be useless. But the LIST
+        // honours them, so the two surfaces disagreed by construction —
+        // the dropdown offered a dormant sender and the list underneath
+        // said "No senders match". Saying which bucket each suggestion
+        // is in is what makes that difference legible instead of
+        // contradictory.
+        activity: sql<string>`CASE
+          WHEN ${senders.lastSeenAt} >= now() - (${WINDOWS.ACTIVE_DAYS} || ' days')::interval THEN 'active'
+          WHEN ${senders.lastSeenAt} >= now() - (${WINDOWS.DORMANT_DAYS} || ' days')::interval THEN 'quiet'
+          ELSE 'dormant'
+        END`,
       })
       .from(senders)
       .where(
@@ -807,6 +852,13 @@ export class SendersReadService {
       email: r.email,
       domain: r.domain,
       totalReceived: Number(r.totalReceived ?? 0),
+      // Narrowed at the boundary rather than cast: the CASE above is
+      // exhaustive, but a bucket the FE has never heard of should read
+      // as "we are not saying" instead of mislabelling the row.
+      activity:
+        r.activity === 'active' || r.activity === 'quiet' || r.activity === 'dormant'
+          ? r.activity
+          : 'dormant',
     }));
   }
 
@@ -1322,6 +1374,7 @@ export class SendersReadService {
     const {
       last30dMsgs: last30dMsgsSql,
       last30dReadCount: last30dReadCountSql,
+      last30dSweeperReadCount: last30dSweeperReadCountSql,
       baselineMsgs: baselineMsgsSql,
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
@@ -1413,6 +1466,7 @@ export class SendersReadService {
         >`CASE WHEN ${senders.unsubscribeMethod} = 'mailto' THEN ${senders.unsubscribeUrl} ELSE NULL END`,
         last30dMsgs: last30dMsgsSql,
         last30dReadCount: last30dReadCountSql,
+        last30dSweeperReadCount: last30dSweeperReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
         unreadInboxCount: unreadInboxCountSql,
@@ -1490,6 +1544,10 @@ export class SendersReadService {
       inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
       unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
       readRate: computeReadRate(last30dMsgs, last30dReadCount),
+      readRateSweeperMarked: ensureSafeIntegerNumber(
+        row.last30dSweeperReadCount,
+        'senders.last30dSweeperReadCount',
+      ),
       // Sparkline not yet wired on this path. Null so the contract holds.
       sparkline: null,
       volumeTrend: computeRollingTrendBucket({

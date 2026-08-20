@@ -186,6 +186,19 @@ export interface SenderListRow {
   monthlyVolume: number | null;
   readRate: number | null;
   /**
+   * How many of this sender's last-30-day messages were marked read by a
+   * known third-party sweeper rather than by the user (mig 0064, F012).
+   *
+   * Already EXCLUDED from `readRate`'s numerator. Surfaced so the product
+   * can explain an odd-looking number — "324 of 350 marked by Unroll.me"
+   * — instead of silently compensating for it, which is the difference
+   * between a corrected figure and an unexplained one.
+   *
+   * `0` on the overwhelming majority of senders and on every mailbox
+   * with no sweeper labels.
+   */
+  readRateSweeperMarked: number;
+  /**
    * 12-week volume series (rolling, oldest → newest). Always 12 numbers
    * when present; missing weeks fill with 0. Drives the per-row mini-
    * sparkline in the grid card. Null when the sender has no recent

@@ -485,6 +485,145 @@ describe('SendersScreen — edge states', () => {
     ).toBeInTheDocument();
   });
 
+  describe('F011 — a search the default filter starves', () => {
+    /**
+     * The founder's reproduction: the default compose is
+     * `activity: 'active'`, and searching a sender who last mailed 158
+     * days ago returned `No senders match "X"` — a claim about the
+     * QUERY — while the typeahead one row above listed that exact
+     * sender. The stub reproduces it: the query matches nothing with
+     * `activity=active`, and one sender without it.
+     */
+    const DORMANT_ROW = {
+      ...ROW,
+      id: 'dormant-1',
+      displayName: 'TechGig Latest News',
+      email: 'technews@techgig.example',
+      domain: 'techgig.example',
+    };
+    function installStarvedSearchStub() {
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: (_req, url) => {
+            const q = url.searchParams.get('q');
+            const narrowed = url.searchParams.get('activity') === 'active';
+            const hit = q !== null && q.length > 0 && !narrowed;
+            return jsonOk({
+              data: hit ? [DORMANT_ROW] : q ? [] : [ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                query: {
+                  totalMatching: hit ? 1 : q ? 0 : 1,
+                  globalMaxTotal: 120,
+                  asOf: '2026-05-29T12:00:00.000Z',
+                },
+              },
+            });
+          },
+        },
+      ]);
+    }
+
+    it('widens past the filter, says so, and shows the sender', async () => {
+      installStarvedSearchStub();
+      renderScreen();
+      await screen.findAllByText(/Sender A/);
+
+      fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+        target: { value: 'TechGig Latest News' },
+      });
+
+      // The sender the old empty state denied the existence of.
+      expect(await screen.findByTestId('senders-widened-notice')).toHaveTextContent(
+        /No active senders match/,
+      );
+      expect(screen.getAllByText(/TechGig Latest News/).length).toBeGreaterThan(0);
+      // And no contradiction: the empty state must be gone, not merely
+      // rendered underneath the rows.
+      expect(screen.queryByText(/No senders match/)).not.toBeInTheDocument();
+    });
+
+    it('goes back to the filter without discarding the search', async () => {
+      // The dead end the old copy created: the only exit was "Clear
+      // search & filters", which threw the query away too.
+      installStarvedSearchStub();
+      renderScreen();
+      await screen.findAllByText(/Sender A/);
+      fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+        target: { value: 'TechGig Latest News' },
+      });
+      await screen.findByTestId('senders-widened-notice');
+
+      fireEvent.click(screen.getByRole('button', { name: /Keep active only/i }));
+
+      expect(
+        await screen.findByText(/No senders match .* under these filters/),
+      ).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('Search senders…')).toHaveValue('TechGig Latest News');
+    });
+
+    it('never claims it looked outside the filters when matches are there', async () => {
+      // The defect the reversal path exposed in the FIX itself: after
+      // "Keep active only" the empty state asserted nothing existed
+      // outside the filter while the screen was holding the one sender
+      // that did. Unknown and zero are different facts, and so are zero
+      // and one.
+      installStarvedSearchStub();
+      renderScreen();
+      await screen.findAllByText(/Sender A/);
+      fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+        target: { value: 'TechGig Latest News' },
+      });
+      await screen.findByTestId('senders-widened-notice');
+      fireEvent.click(screen.getByRole('button', { name: /Keep active only/i }));
+      await screen.findByText(/under these filters/);
+
+      expect(screen.getByText(/1 sender matches outside these filters/)).toBeInTheDocument();
+      expect(screen.queryByText(/found nothing/)).not.toBeInTheDocument();
+      // And the way back is one click, with the query intact.
+      fireEvent.click(screen.getByRole('button', { name: /^Show them$/ }));
+      expect(await screen.findByTestId('senders-widened-notice')).toBeInTheDocument();
+    });
+
+    it('still says plainly when nothing matches anywhere', async () => {
+      // The widen must not turn a genuinely empty result into a
+      // permanent "we might have more" tease.
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: (_req, url) => {
+            const q = url.searchParams.get('q');
+            return jsonOk({
+              data: q ? [] : [ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                query: {
+                  totalMatching: q ? 0 : 1,
+                  globalMaxTotal: 120,
+                  asOf: '2026-05-29T12:00:00.000Z',
+                },
+              },
+            });
+          },
+        },
+      ]);
+      renderScreen();
+      await screen.findAllByText(/Sender A/);
+
+      fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+        target: { value: 'zzzznotasender' },
+      });
+
+      expect(
+        await screen.findByText(/found nothing, so this is the whole answer/),
+      ).toBeInTheDocument();
+      expect(screen.queryByTestId('senders-widened-notice')).not.toBeInTheDocument();
+    });
+  });
+
   it('narrows the list server-side when the "you wrote to them" chip is toggled (D38)', async () => {
     // Regression: the chip wrote URL state and the BE accepted ?wrote-to=,
     // but the FE never sent it — a silent no-op. The stub returns the

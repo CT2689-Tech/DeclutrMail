@@ -85,6 +85,8 @@ export { mailMessages } from './schema/mail-messages';
 export type { MailMessage, NewMailMessage } from './schema/mail-messages';
 export {
   ALL_MAIL_EXCLUDED_LABELS,
+  readStateNotSweeperMarked,
+  readStateSweeperMarked,
   senderActionWhere,
   senderHasActionableMail,
   senderInboxActionWhere,
@@ -92,6 +94,8 @@ export {
 export type { SenderActionReach, SenderActionScope, SenderInboxActionScope } from './predicates';
 export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbox-accounts';
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
+export { mailboxLabels } from './schema/mailbox-labels';
+export type { MailboxLabel, NewMailboxLabel } from './schema/mailbox-labels';
 export {
   mailboxDataDeletionRequests,
   mailboxDataDeletionStatus,

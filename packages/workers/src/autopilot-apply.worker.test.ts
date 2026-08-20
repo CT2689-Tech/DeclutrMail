@@ -531,7 +531,7 @@ describe('AutopilotApplyWorker', () => {
       .from(ruleMatchLog)
       .where(eq(ruleMatchLog.ruleId, ruleId));
     expect(match!.senderKey).toBe(dormant);
-    expect(match!.reason).toMatch(/Read rate \d+%, last seen \d+d ago/);
+    expect(match!.reason).toMatch(/Read rate \d+% across all \d+ messages, last seen \d+d ago/);
   });
 
   it('updates rule.last_run_at + last_run_actions + last_run_senders', async () => {

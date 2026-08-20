@@ -1,5 +1,12 @@
 import { getTableColumns } from 'drizzle-orm';
-import { mailMessages, mailboxAccounts, providerSyncState, senders, users } from '@declutrmail/db';
+import {
+  mailMessages,
+  mailboxAccounts,
+  mailboxLabels,
+  providerSyncState,
+  senders,
+  users,
+} from '@declutrmail/db';
 import {
   GMAIL_DATA_INVENTORY,
   GMAIL_DISCONNECT_DATA_INVENTORY,
@@ -81,6 +88,7 @@ describe('D245 Gmail data inventory contract', () => {
     const tableColumns = new Map<string, Set<string>>([
       ['mail_messages', columnNames(mailMessages)],
       ['mailbox_accounts', columnNames(mailboxAccounts)],
+      ['mailbox_labels', columnNames(mailboxLabels)],
       ['provider_sync_state', columnNames(providerSyncState)],
       ['senders', columnNames(senders)],
       ['users', columnNames(users)],

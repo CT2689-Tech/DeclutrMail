@@ -2,6 +2,8 @@
 export { brandRoot } from './brand-root';
 export { evaluateProtectionEvidence, PROTECTION_WROTE_TO_THRESHOLD } from './protection-evidence';
 export type { ProtectionEvidenceInput, ProtectionEvidenceReason } from './protection-evidence';
+export { SWEEPER_VENDORS, sweeperDisplayName, sweeperVendorForLabel } from './sweeper-labels';
+export type { SweeperVendor } from './sweeper-labels';
 export {
   WINDOWS,
   CONFIDENCE,

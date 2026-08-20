@@ -111,6 +111,7 @@ describe('migration round-trip', () => {
       'table:mail_messages',
       'table:mailbox_accounts',
       'table:mailbox_data_deletion_requests',
+      'table:mailbox_labels',
       'table:outbox_events',
       'table:pending_checkouts',
       'table:product_feedback',

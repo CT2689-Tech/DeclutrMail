@@ -144,7 +144,13 @@ export function SenderSearch({
         // total instead so the row still has a quantitative anchor.
         // "emails" not "lifetime": next to the list's "N senders" counts,
         // a bare "421 lifetime" reads as unit-ambiguous (2026-07-16 smoke).
-        secondary: s.totalReceived.toLocaleString('en-US') + ' emails',
+        // The bucket rides along with the count (F011). Omitted rather
+        // than guessed when the wire does not say — an unlabelled row is
+        // honest; a wrong label re-creates the contradiction.
+        secondary:
+          s.totalReceived.toLocaleString('en-US') +
+          ' emails' +
+          (s.activity ? ` · ${s.activity}` : ''),
       }));
     }
     return fallbackMatches.map((s) => ({

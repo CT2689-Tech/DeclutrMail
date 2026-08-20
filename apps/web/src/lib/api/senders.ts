@@ -145,6 +145,16 @@ export interface SenderListRow {
    * "opened", to avoid overclaiming.
    */
   readRate: number | null;
+  /**
+   * How many of the last 30 days' messages were marked read by a known
+   * third-party inbox tool rather than by the user (F012).
+   *
+   * Already EXCLUDED from `readRate`. Present so a surface can explain a
+   * number that looks lower than expected instead of silently
+   * compensating. Optional because an API pod predating the field omits
+   * it — and `undefined` means "no claim", never 0-with-confidence.
+   */
+  readRateSweeperMarked?: number;
   /** Bucketed MoM trend. `null` when there's no timeseries history. */
   volumeTrend: VolumeTrendBucket | null;
   /**
@@ -305,6 +315,19 @@ export interface SenderSuggestionDto {
   email: string;
   domain: string;
   totalReceived: number;
+  /**
+   * Which activity bucket the sender is in (F011).
+   *
+   * Suggest ignores the compose filters — a typeahead that hid what you
+   * were typing would be useless — but the LIST honours them, so the
+   * dropdown could offer a dormant sender while the list beneath it read
+   * "No senders match". Labelling the bucket makes that difference
+   * legible instead of contradictory.
+   *
+   * Optional: an API pod predating the field omits it, and an unlabelled
+   * row is better than a guessed label.
+   */
+  activity?: 'active' | 'quiet' | 'dormant';
 }
 
 /**
