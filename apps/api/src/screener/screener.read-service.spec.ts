@@ -457,3 +457,33 @@ describe('ScreenerReadService — ageing a sender out of the queue (D256)', () =
     expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
   });
 });
+
+describe('ScreenerReadService — the badge counts only what the queue can render', () => {
+  /**
+   * `listQueue` INNER JOINs `senders`, so a quarantine row with no
+   * sender row can never appear. If the count does not require the same
+   * thing, the header promises rows the list cannot produce — the shape
+   * of "3360 new senders waiting" over a list of 50, and the reason the
+   * pending predicate is shared in the first place.
+   *
+   * Found by smoking, not by this file: the count read 136 on the
+   * founder's mailbox while the queue could only ever show 110.
+   */
+  it('excludes a quarantine row whose sender was never indexed', async () => {
+    const db = await freshDb();
+    const mailboxId = await seedMailbox(db, 'screener-orphan');
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'real@ex.com');
+    // An orphan: quarantined, never indexed into `senders`.
+    await db
+      .insert(screenerQuarantine)
+      .values({ mailboxAccountId: mailboxId, senderKey: SENDER_B });
+
+    const svc = new ScreenerReadService(db as never);
+    const [rows, count] = await Promise.all([
+      svc.listQueue({ mailboxAccountId: mailboxId, limit: 50 }),
+      svc.pendingCount(mailboxId),
+    ]);
+    expect(rows.map((r) => r.senderKey)).toEqual([SENDER_A]);
+    expect(count.pending).toBe(rows.length);
+  });
+});

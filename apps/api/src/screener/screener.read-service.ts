@@ -59,6 +59,17 @@ function screenerPendingWhere(mailboxAccountId: string): SQL {
   return and(
     eq(screenerQuarantine.mailboxAccountId, mailboxAccountId),
     isNull(screenerQuarantine.decidedAt),
+    // The queue INNER JOINs `senders`, so a quarantine row with no
+    // sender row can never be rendered. Requiring it here too is what
+    // makes the badge a promise the list can keep: without this clause
+    // the count said 136 on the founder's mailbox while the list could
+    // only ever produce 110 — 26 rows counted and unreachable, which is
+    // the same shape as the header this predicate was written to fix.
+    sql`EXISTS (
+      SELECT 1 FROM ${senders}
+      WHERE ${senders.mailboxAccountId} = ${screenerQuarantine.mailboxAccountId}
+        AND ${senders.senderKey} = ${screenerQuarantine.senderKey}
+    )`,
     sql`NOT (
       ${screenerQuarantine.createdAt} < now() - (${SCREENER_AGE_OUT_DAYS} || ' days')::interval
       AND (
