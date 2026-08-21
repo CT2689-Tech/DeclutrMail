@@ -94,6 +94,46 @@ jobs:
             --dev-url 'postgres://atlas:atlas@localhost:5432/dev?sslmode=disable' \
             --latest 1
 
+      - name: Apply every migration to a throwaway database
+        # THE CHECK THAT WAS MISSING, AND IT COST TWO PRODUCTION FAILURES.
+        #
+        # `migrate lint` reads migrations for dangerous SQL. It does not
+        # execute the apply path, so it cannot see a malformed Atlas file
+        # directive. `migration-apply.yml` does execute it — but it runs on
+        # PUSH TO MAIN, i.e. after merge, where its failure surfaces nowhere
+        # a reviewer looks.
+        #
+        # On 2026-08-20 migration 0065 failed to apply twice for two
+        # different reasons, and both times the PR was fully green:
+        #   1. a prose line quoting the txmode directive parsed AS the
+        #      directive  -> `unknown txmode "none` is required: ...`
+        #   2. the directive sat after a blank line, outside the leading
+        #      comment block Atlas reads -> `CREATE INDEX CONCURRENTLY
+        #      cannot run inside a transaction block`
+        # Each left the migration queue blocked until someone checked
+        # production by hand.
+        #
+        # Nothing else can catch this class. PGlite (the round-trip test in
+        # packages/db) reads the SQL directly and never parses directives;
+        # `atlas migrate validate` checks the sum file, not execution; and
+        # `migrate lint` is content-only. Only a real apply runs the parser.
+        #
+        # FULL HISTORY, NOT `--latest 1`: directive and ordering faults can
+        # come from the interaction between migrations, and the whole set is
+        # only ~65 files against an empty database.
+        #
+        # Uses the same throwaway service container as lint. It never touches
+        # production — the DSN is localhost — so this is safe to run on any
+        # PR, including from a fork.
+        run: |
+          set -euo pipefail
+          psql 'postgres://atlas:atlas@localhost:5432/postgres?sslmode=disable' \
+            -v ON_ERROR_STOP=1 -c 'CREATE DATABASE apply_probe;'
+          atlas migrate apply \
+            --url 'postgres://atlas:atlas@localhost:5432/apply_probe?sslmode=disable' \
+            --dir 'file://packages/db/migrations'
+          echo "✓ Every migration applies cleanly from empty."
+
       - name: Verify rollback companion exists for every migration
         # Rollback files use the `.rollback` (no `.sql`) extension so Atlas
         # doesn't pick them up as additional migrations during `migrate lint`

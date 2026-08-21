@@ -10,7 +10,7 @@ import {
 } from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type { ScreenerCountResult, ScreenerQueueRow } from './screener.types.js';
+import type { ScreenerCountResult, ScreenerQueueFacts } from './screener.types.js';
 
 /**
  * ScreenerReadService (D71–D74, D204) — read-only over the Screener
@@ -92,7 +92,10 @@ export class ScreenerReadService {
    * sender lands at the top — the D74 pulse points at it). Both hot
    * predicates ride `screener_quarantine_pending_idx`.
    */
-  async listQueue(input: { mailboxAccountId: string; limit: number }): Promise<ScreenerQueueRow[]> {
+  async listQueue(input: {
+    mailboxAccountId: string;
+    limit: number;
+  }): Promise<ScreenerQueueFacts[]> {
     // CORRELATION QUOTE-TRAP (MISTAKES.md 2026-05-23). Outer-scope refs
     // use `sql.identifier(getTableName(senders))` so the Drizzle
     // template can't degenerate to a tautology that counts the whole

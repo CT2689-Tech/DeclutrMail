@@ -23,7 +23,7 @@ import {
   type ActivityIterationSnapshot,
   type IterateActivityParams,
 } from './activity.read-service.js';
-import type { ActivityRow } from './activity.types.js';
+import type { ActivityRowFacts } from './activity.types.js';
 
 export interface CreateActivitySupportBundleParams {
   workspaceId: string;
@@ -263,7 +263,7 @@ export class ActivitySupportBundleService {
   }
 }
 
-function activityCsvLine(row: ActivityRow, includeFullSenderAddresses: boolean): string {
+function activityCsvLine(row: ActivityRowFacts, includeFullSenderAddresses: boolean): string {
   const execution = row.executionState;
   const senderName = row.sender
     ? includeFullSenderAddresses
@@ -314,7 +314,7 @@ function technicalHeader(context: {
   return `{"bundleFormat":${JSON.stringify(ACTIVITY_SUPPORT_BUNDLE_FORMAT)},"generatedAt":${JSON.stringify(context.generatedAt.toISOString())},"mailboxId":${JSON.stringify(context.mailbox.id)},"filters":${JSON.stringify(filters)},"records":[`;
 }
 
-function technicalRecord(row: ActivityRow) {
+function technicalRecord(row: ActivityRowFacts) {
   const execution = row.executionState;
   return {
     activityId: execution ? null : row.id,

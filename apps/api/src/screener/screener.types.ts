@@ -119,6 +119,24 @@ export interface ScreenerQueueRow {
   senderName: string;
   senderEmail: string;
   senderDomain: string;
+  /**
+   * Whether a brand mark for `senderDomain` is already cached server-
+   * side (ADR-0034).
+   *
+   * ASK-BEFORE-REQUESTING. `Avatar` paints the mark as a CSS
+   * `background-image`, which has no failure callback and no way to
+   * check first — so a queue of N rows fires N `/api/icons/:domain`
+   * requests, and every domain without a mark burns a full round trip
+   * to be answered 204. Measured 2026-08-20 on the dev mailbox: 50
+   * requests from one Screener page, 26 of them answered 204. The
+   * Senders list, which already carries this field, wasted 2 of 44.
+   *
+   * Not screener state — a property of the GLOBAL icon cache at the
+   * instant of the response, on a table this feature does not own
+   * (D204). The controller resolves it for the whole page in one
+   * batched read and decorates rows on the way out.
+   */
+  brandMark: boolean;
   /** ISO timestamp the sender was first seen (D71 "8 min ago"). */
   firstSeenAt: string;
   /** ISO timestamp the row entered the Screener queue. */
@@ -180,6 +198,14 @@ export interface ScreenerQueueRow {
 }
 
 /** Badge payload — `GET /api/screener/count` (D74). */
+/**
+ * A queue row as the READ SERVICE produces it — every screener fact,
+ * minus the brand-mark decoration the controller adds. Keeps the read
+ * service selecting only screener-owned tables (D204), and makes it a
+ * type error to serve a row that never answered the question.
+ */
+export type ScreenerQueueFacts = Omit<ScreenerQueueRow, 'brandMark'>;
+
 export interface ScreenerCountResult {
   /** Senders awaiting a decision in the active mailbox. */
   pending: number;

@@ -37,7 +37,7 @@ import {
   EntitlementsService,
 } from '../common/entitlements/entitlements.service.js';
 import { OnboardingService } from './onboarding.service.js';
-import type { TriageQueueRow } from '../triage/triage.read-service.js';
+import type { TriageQueueFacts } from '../triage/triage.read-service.js';
 
 @Controller('onboarding')
 export class OnboardingController {
@@ -99,7 +99,7 @@ export class OnboardingController {
   async firstTriage(
     @CurrentUser() principal: SessionPrincipal,
     @CurrentMailbox() mailbox: { id: string },
-  ): Promise<Envelope<TriageQueueRow[], OnboardingFirstTriageMeta>> {
+  ): Promise<Envelope<TriageQueueFacts[], OnboardingFirstTriageMeta>> {
     const read = await this.onboarding.getFirstTriage(principal.userId, mailbox.id);
     return withMeta(read.rows, read.meta);
   }

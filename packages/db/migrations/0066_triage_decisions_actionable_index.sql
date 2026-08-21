@@ -1,0 +1,44 @@
+-- atlas:txmode none
+-- 0066_triage_decisions_actionable_index.sql
+--
+-- Performance fix-up for `getSenderSummary` — the read every authenticated
+-- route waits on, because `ServerAppBoundary` prefetches
+-- `/api/senders/summary` for the app-shell before any route renders.
+--
+-- WHY. The summary joins `triage_decisions` to classify senders into the
+-- `needs_review` bucket, which requires a verdict of `unsubscribe` or
+-- `archive`. Until now that predicate lived only in a CASE expression, so
+-- the planner had to hash EVERY decision row for the mailbox to evaluate
+-- it. Measured on production 2026-08-20: 8,084 shared buffers, 56% of the
+-- query's 14,443 — to reach 218 of 11,548 rows (1.9%).
+--
+-- The read service now carries the same predicate in the JOIN condition,
+-- which is what lets this index apply. The two must be edited together: a
+-- future change that drops the predicate from the join makes this index
+-- unusable, and one that widens the verdict list without widening the
+-- index makes it WRONG to use. A guard test asserts the pair agree.
+--
+-- WHY THE CONFIDENCE GATE IS NOT IN THE PREDICATE. `NEEDS_REVIEW_GATE`
+-- (0.75) is a tunable threshold in `@declutrmail/shared`. Baking it in
+-- would couple the index to a constant that is expected to move, and the
+-- moment it moved the planner would silently stop matching. The verdict
+-- set is a stable enum; the threshold is not. Confidence is filtered
+-- after the index lookup, on 229 rows rather than 11,548.
+--
+-- PARTIAL, NOT COMPOSITE-ON-VERDICT. Actionable verdicts are 2% of the
+-- table. A composite `(mailbox_account_id, sender_key, verdict)` index
+-- would carry an entry for all 11,548 rows to serve a query that wants
+-- 229 of them; the predicate form indexes only the rows that can match.
+--
+-- Privacy (D7, D228): index-only change. No new columns, no new Gmail
+-- fields, no row mutation. `mailbox_account_id`, `sender_key` and
+-- `verdict` are existing derived state, not fetched mail content.
+--
+-- CONCURRENTLY, because `triage_decisions` is live: 11,548 rows in
+-- production as of 2026-08-20. See 0065 for the two placement rules that
+-- govern the directive on line 1 — both were learned the hard way, and
+-- both are load-bearing.
+--
+-- NO DML — Atlas's `data_depend = error` rule. Index-only add.
+
+CREATE INDEX CONCURRENTLY "triage_decisions_actionable_idx" ON "triage_decisions" USING btree ("mailbox_account_id", "sender_key") WHERE "verdict" IN ('unsubscribe', 'archive');

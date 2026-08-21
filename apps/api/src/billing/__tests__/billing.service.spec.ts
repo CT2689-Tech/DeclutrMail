@@ -71,6 +71,21 @@ const CATALOG_ENTRIES: CatalogEntry[] = [
 ];
 
 describe('BillingService', () => {
+  /**
+   * A period end far enough out that `changePlan`'s 30-minute
+   * PLAN_CHANGE_TOO_LATE guard cannot trip.
+   *
+   * RELATIVE TO NOW, DELIBERATELY. This was hard-coded as
+   * `2026-08-20T12:00:00.000Z`, which is a date bomb: it sat in the
+   * future for months, then quietly became "today" on 2026-08-20 and
+   * failed six tests at once with `PLAN_CHANGE_TOO_LATE` — a real guard
+   * firing on a fixture that had aged into the past, not a regression in
+   * anything these tests are about. A fixed future date in a test that
+   * compares against `Date.now()` always has an expiry date; an offset
+   * does not.
+   */
+  const DEFERRED_PERIOD_END = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
   let db: DrizzleDb;
   let service: BillingService;
   let paddleCheckout: ReturnType<typeof vi.fn>;
@@ -791,7 +806,7 @@ describe('BillingService', () => {
       paddlePreviewPlanChange.mockClear();
       await db
         .update(subscriptions)
-        .set({ currentPeriodEnd: new Date('2026-08-20T12:00:00.000Z') })
+        .set({ currentPeriodEnd: DEFERRED_PERIOD_END })
         .where(eq(subscriptions.providerSubscriptionId, 'sub_change_me'));
       const down = await service.planChangePreview(principal, {
         tierId: 'plus',
@@ -809,13 +824,44 @@ describe('BillingService', () => {
       });
       expect(cycleDown).toEqual({
         kind: 'deferred',
-        effectiveAt: '2026-08-20T12:00:00.000Z',
+        effectiveAt: DEFERRED_PERIOD_END.toISOString(),
       });
       expect(paddlePreviewPlanChange).not.toHaveBeenCalled();
     });
 
+    it('refuses a downgrade scheduled too close to renewal (PLAN_CHANGE_TOO_LATE)', async () => {
+      // NOTHING ASSERTED THIS GUARD BEFORE. `changePlan` refuses a
+      // deferred change inside 30 minutes of the period end, because
+      // Paddle cannot be relied on to apply it before the renewal fires
+      // — but the only thing exercising that branch was the fixture
+      // date above ageing into "today" and tripping it by accident,
+      // which is a coincidence, not a test. Making the fixture relative
+      // removed that accident, so this replaces it with real coverage.
+      const almostDue = new Date(Date.now() + 10 * 60 * 1000);
+      await db.insert(subscriptions).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_too_late',
+        tier: 'pro',
+        status: 'active',
+        providerPriceId: 'pri_pro_a',
+        billingCycle: 'annual',
+        currentPeriodEnd: almostDue,
+      });
+      await db
+        .update(workspaces)
+        .set({ tier: 'pro' })
+        .where(eq(workspaces.id, principal.workspaceId));
+
+      await expect(
+        service.changePlan(principal, { tierId: 'plus', cycle: 'monthly' }),
+      ).rejects.toMatchObject({ code: 'PLAN_CHANGE_TOO_LATE' });
+      // The provider must not be touched on a refusal.
+      expect(paddleChangePlan).not.toHaveBeenCalled();
+    });
+
     it('stores a Pro→Plus downgrade for period end and charges nothing now', async () => {
-      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      const effectiveAt = DEFERRED_PERIOD_END;
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -847,7 +893,7 @@ describe('BillingService', () => {
     });
 
     it('clears a pending marker after a definitive provider rejection', async () => {
-      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      const effectiveAt = DEFERRED_PERIOD_END;
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -874,7 +920,7 @@ describe('BillingService', () => {
     });
 
     it('retains the mask after an ambiguous provider timeout', async () => {
-      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      const effectiveAt = DEFERRED_PERIOD_END;
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -899,7 +945,7 @@ describe('BillingService', () => {
     });
 
     it('lets only one concurrent downgrade claim the provider mutation', async () => {
-      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      const effectiveAt = DEFERRED_PERIOD_END;
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -924,7 +970,7 @@ describe('BillingService', () => {
     });
 
     it('clears the downgrade after Paddle synchronously confirms restoring the current plan', async () => {
-      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      const effectiveAt = DEFERRED_PERIOD_END;
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -967,7 +1013,7 @@ describe('BillingService', () => {
     });
 
     it('keeps restore retryable when a successful response cannot confirm the provider price', async () => {
-      const effectiveAt = new Date('2026-08-20T12:00:00.000Z');
+      const effectiveAt = DEFERRED_PERIOD_END;
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',

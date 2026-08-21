@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { PassThrough } from 'node:stream';
 import { describe, expect, it, vi } from 'vitest';
 
+import { IconsService } from '../icons/icons.service.js';
 import { ActivityController } from './activity.controller.js';
 import type { ActivityReadService } from './activity.read-service.js';
 import type { ActivitySupportBundleService } from './activity-support-bundle.service.js';
@@ -18,7 +19,13 @@ function makeController() {
       return Promise.resolve(stream);
     }),
   } as unknown as ActivitySupportBundleService;
-  return { controller: new ActivityController(reads, bundles), bundles, reads };
+  // These specs cover the weekly-review + export paths, which never touch
+  // the icon cache. A stub that returns no marks keeps the avatar
+  // decoration out of their way while still satisfying the constructor.
+  const icons = {
+    marksFor: vi.fn(() => Promise.resolve(new Set<string>())),
+  } as unknown as IconsService;
+  return { controller: new ActivityController(reads, bundles, icons), bundles, reads };
 }
 
 describe('ActivityController weekly review', () => {

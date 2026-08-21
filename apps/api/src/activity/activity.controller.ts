@@ -24,6 +24,7 @@ import {
   encodeCursor,
 } from '@declutrmail/shared/contracts';
 
+import { IconsService } from '../icons/icons.service.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
@@ -108,6 +109,7 @@ export class ActivityController {
   constructor(
     private readonly reads: ActivityReadService,
     private readonly bundles: ActivitySupportBundleService,
+    private readonly icons: IconsService,
   ) {}
 
   @Get('export')
@@ -228,6 +230,20 @@ export class ActivityController {
       encodeCursor({ key: row.occurredAt, id: row.id }),
     );
 
+    // ADR-0034 — resolve brand-mark availability for the page in ONE
+    // batched read, so `Avatar` can skip the request for senders we hold
+    // no mark for. Without it the screen fires one `/api/icons/:domain`
+    // per distinct sender and each unresolved domain costs a round trip
+    // to be answered 204. Decorated here, not in the read service, so
+    // that service keeps selecting only activity-owned tables (D204).
+    const marks = await this.brandMarksFor(
+      page.flatMap((row) => (row.sender ? [row.sender.domain] : [])),
+    );
+    const decorated: ActivityRow[] = page.map((row) => ({
+      ...row,
+      sender: row.sender ? { ...row.sender, brandMark: marks.has(row.sender.domain) } : null,
+    }));
+
     const pagination: PaginationMeta = {
       nextCursor,
       hasMore: nextCursor !== null,
@@ -239,7 +255,7 @@ export class ActivityController {
     // the duplicate as a contract drift surface (a client reading from
     // one and another reading from the other agreed by coincidence).
     return {
-      data: page,
+      data: decorated,
       meta: {
         pagination,
         stats,
@@ -264,6 +280,32 @@ export class ActivityController {
    * accepted: this card is a fixed 7-day factual review, and its own
    * count links navigate to that window.
    */
+
+  /**
+   * Batched brand-mark availability for one page of activity (ADR-0034),
+   * mirroring `SendersController.brandMarksFor`.
+   *
+   * A FAILURE HERE MUST NOT FAIL THE FEED. Availability is decoration — a
+   * cache read that throws degrades to the monogram, which ADR-0034
+   * defines as the floor rather than a fallback, identical to a 204 or
+   * the flag being off. Logged, never swallowed silently.
+   */
+  private async brandMarksFor(domains: string[]): Promise<Set<string>> {
+    try {
+      return await this.icons.marksFor(domains, { mayEnqueue: true });
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'activity.brand_marks_failed',
+          count: domains.length,
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+      return new Set();
+    }
+  }
+
   @Get('weekly-review')
   @RateLimit('triage-load')
   async weeklyReview(

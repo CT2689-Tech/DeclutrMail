@@ -109,7 +109,7 @@ export async function ServerAppBoundary({
       }
     }
 
-    await settleServerQueries('app-shell', queries);
+    await settleServerQueries('app-shell', queries, queryClient);
   }
 
   return <HydrationBoundary state={dehydrate(queryClient)}>{children}</HydrationBoundary>;

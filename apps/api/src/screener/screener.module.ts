@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ActionsModule } from '../actions/actions.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
+import { IconsModule } from '../icons/icons.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { ScreenerController } from './screener.controller.js';
 import { ScreenerReadService } from './screener.read-service.js';
@@ -20,7 +21,7 @@ import { ScreenerService } from './screener.service.js';
  * idempotency, and entitlement caps apply unchanged.
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule, ActionsModule, EntitlementsModule],
+  imports: [AuthModule, MailboxAccountsModule, ActionsModule, EntitlementsModule, IconsModule],
   controllers: [ScreenerController],
   providers: [ScreenerService, ScreenerReadService],
   exports: [ScreenerService, ScreenerReadService],

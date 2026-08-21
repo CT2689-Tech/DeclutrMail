@@ -1,0 +1,15 @@
+-- atlas:txmode none
+-- Rollback for 0065_mail_messages_outbound_index.sql
+--
+-- `CONCURRENTLY` to match the forward migration: `mail_messages` is live
+-- (185,530 rows in production as of 2026-08-20), so a plain `DROP INDEX`
+-- would take an ACCESS EXCLUSIVE lock on it.
+--
+-- Also the recovery path if the forward build fails and leaves an INVALID
+-- index: dropping it concurrently is safe and the migration can re-run.
+--
+-- `IF EXISTS` keeps the rollback idempotent. Dropping the index restores
+-- the Seq Scan in `getSenderSummary`'s `replied` CTE — slower, but
+-- correct; nothing depends on this index for meaning.
+
+DROP INDEX CONCURRENTLY IF EXISTS "mail_messages_account_outbound_idx";
