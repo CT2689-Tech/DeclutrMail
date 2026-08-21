@@ -44,7 +44,39 @@ const SENTRY_SERVER_TAG_ALLOWLIST = new Set([
   // reached Sentry as a bare class name and took a production database
   // query to identify.
   'error_reason',
+  // Request triage tags set by `AllExceptionsFilter` on every 5xx. All
+  // five were being dropped, so a 500 arrived with no route, no method,
+  // no status and no correlation id — an event you could not join back
+  // to its log line (audit 2026-08-21).
+  //
+  // `cid` is our own correlation uuid, `method` is a fixed verb enum,
+  // and the two statuses are 3-digit integers. `route` is the Express
+  // ROUTE TEMPLATE (`/api/senders/:id`) — never a request URL: the
+  // filter regex-validates it to path segments and `:param`
+  // placeholders and substitutes the literal `unmatched` otherwise, so
+  // it carries no ids, no query string and no user input.
+  'cid',
+  'method',
+  'route',
+  'response_status',
+  'upstream_status',
+  // Worker shutdown signal (`SIGTERM`/`SIGINT`) and queue name.
+  'signal',
+  'queue',
 ]);
+
+/**
+ * `route` needs its own pattern: `SAFE_SERVER_TAG` deliberately excludes
+ * `/`, so allowlisting the key without this would have kept dropping
+ * every value and looked like the fix worked.
+ */
+const SAFE_ROUTE_TAG =
+  /^(?:unmatched|\/(?:[a-z0-9._~-]+|:[a-z][a-z0-9_]*)(?:\/(?:[a-z0-9._~-]+|:[a-z][a-z0-9_]*))*)$/i;
+
+/** Per-key value rules that override the profile default. */
+const SENTRY_TAG_VALUE_RULES: Record<string, { pattern: RegExp; max: number }> = {
+  route: { pattern: SAFE_ROUTE_TAG, max: 180 },
+};
 const SENTRY_BREADCRUMB_CATEGORIES = new Set([
   'sync',
   'action',
@@ -117,7 +149,21 @@ const SENTRY_LOG_ATTRIBUTE_ALLOWLIST = new Set([
  * type identifies the class of failure. `value` (Error.message) stays
  * deliberately omitted in BOTH profiles.
  */
-const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
+/**
+ * Server-profile exception class names.
+ *
+ * CANONICAL — `AllExceptionsFilter` imports this set rather than keeping
+ * its own. It used to keep a parallel list of 24 names, of which only 6
+ * appeared here, so the filter would carefully set a type and the
+ * scrubber would silently delete it: an `InternalServerErrorException`
+ * (the ordinary shape of an unhandled 5xx) reached Sentry with no type
+ * AND no message, since `value` is dropped by design. Two allowlists
+ * describing one wire is how that happened; there is now one
+ * (audit 2026-08-21).
+ *
+ * Every entry is a compile-time class name, never user data.
+ */
+export const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'AppException',
   'ValidationError',
   'TransientError',
@@ -127,6 +173,31 @@ const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'EmailRaceLostError',
   'ReplyError',
   'ZodError',
+  // Worker error kinds — `safeWorkerErrorKind` falls back to
+  // 'WorkerError', which was itself being dropped, so the most common
+  // terminal worker failure produced the least legible event.
+  'WorkerError',
+  'AuthExpiredError',
+  'UnrecoverableError',
+  // NestJS HTTP exceptions the API filter can attribute a 5xx to.
+  'BadGatewayException',
+  'BadRequestException',
+  'ConflictException',
+  'ForbiddenException',
+  'GatewayTimeoutException',
+  'GoneException',
+  'HttpException',
+  'InternalServerErrorException',
+  'MethodNotAllowedException',
+  'NotAcceptableException',
+  'NotFoundException',
+  'NotImplementedException',
+  'PayloadTooLargeException',
+  'RequestTimeoutException',
+  'ServiceUnavailableException',
+  'UnauthorizedException',
+  'UnprocessableEntityException',
+  'UnsupportedMediaTypeException',
 ]);
 const SENTRY_EXCEPTION_TYPES = new Set([
   'Error',
@@ -143,6 +214,18 @@ const SENTRY_EXCEPTION_TYPES = new Set([
   'TimeoutError',
   'ChunkLoadError',
 ]);
+/**
+ * Does the server profile keep this exception class name on the wire?
+ *
+ * The union of the base (JS built-in) set and the server set, which is
+ * exactly what `scrubSentryExceptions` applies. Exported so producers —
+ * today `AllExceptionsFilter` — attribute errors from the same set the
+ * consumer accepts, instead of maintaining a parallel list that drifts.
+ */
+export function isSentryServerExceptionType(name: string): boolean {
+  return SENTRY_EXCEPTION_TYPES.has(name) || SENTRY_SERVER_EXCEPTION_TYPES.has(name);
+}
+
 const SENTRY_MECHANISM_TYPES = new Set([
   'generic',
   'auto.browser.global_handlers.onerror',
@@ -348,10 +431,44 @@ function scrubSentryTags(
   const pattern = profile === 'server' ? SAFE_SERVER_TAG : SAFE_TOKEN;
   const tags: Record<string, unknown> = {};
   for (const key of allowlist) {
-    const tag = copyString(value[key], pattern, 64);
+    const rule = profile === 'server' ? SENTRY_TAG_VALUE_RULES[key] : undefined;
+    const tag = copyString(value[key], rule?.pattern ?? pattern, rule?.max ?? 64);
     if (tag !== undefined) tags[key] = tag;
   }
   return Object.keys(tags).length > 0 ? tags : undefined;
+}
+
+/**
+ * Grouping key. Without it Sentry falls back to the STACK — and both
+ * server capture sites construct a fresh message-free `Error` for D7, so
+ * that stack is the capture site itself and is identical on every event.
+ * The result was every API 5xx collapsing into one untitled issue, and
+ * ~25 worker queues into another: capture volume fine, issue cardinality
+ * 2, and a genuinely new failure looking like "nothing new arrived"
+ * (audit 2026-08-21).
+ *
+ * Fingerprints here are app-authored closed-set values (a literal, a
+ * verb, a route template, a class name, a status). Validated element by
+ * element, and dropped WHOLE if any element fails — a partial
+ * fingerprint groups wrongly, which is worse than no fingerprint.
+ */
+function scrubSentryFingerprint(value: unknown, profile: SentryScrubProfile): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 8) return undefined;
+  const pattern = profile === 'server' ? SAFE_SERVER_TAG : SAFE_TOKEN;
+  const parts: string[] = [];
+  for (const element of value) {
+    // Sentry's own placeholder for "keep the default grouping too".
+    if (element === '{{ default }}') {
+      parts.push(element);
+      continue;
+    }
+    const part =
+      copyString(element, pattern, 64) ??
+      (profile === 'server' ? copyString(element, SAFE_ROUTE_TAG, 180) : undefined);
+    if (part === undefined) return undefined;
+    parts.push(part);
+  }
+  return parts;
 }
 
 function scrubSentryDigest(value: unknown): Record<string, unknown> | undefined {
@@ -516,6 +633,8 @@ export function scrubSentryEvent(
     if (exception !== undefined) out.exception = exception;
     const tags = scrubSentryTags(event.tags, profile);
     if (tags !== undefined) out.tags = tags;
+    const fingerprint = scrubSentryFingerprint(event.fingerprint, profile);
+    if (fingerprint !== undefined) out.fingerprint = fingerprint;
     const digest = scrubSentryDigest(event.extra);
     if (digest !== undefined) out.extra = digest;
     const debugMeta = scrubSentryDebugMeta(event.debug_meta, profile);
