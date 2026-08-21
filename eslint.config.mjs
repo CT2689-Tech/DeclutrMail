@@ -77,6 +77,29 @@ export default tseslint.config(
     // .timeZone` is the legitimate browser-zone READ.
     files: ['apps/web/src/**/*.{ts,tsx}'],
     rules: {
+      // `skipToken` looks like "this observer must never fetch", and it is
+      // — but it is also written onto the SHARED query: `useQuery` re-runs
+      // `observer.setOptions(query)` in an effect on every render, so the
+      // query's resting `queryFn` belongs to whichever observer rendered
+      // last. `Query.fetch()` only rescues a FALSY `queryFn`, and skipToken
+      // is a truthy symbol, so it slips past into `ensureQueryFn` and any
+      // later keyless refetch (`invalidateQueries`) rejects with
+      // `Missing queryFn`. That killed the production app on 2026-08-21.
+      // `enabled: false` expresses the same intent and is read per-observer,
+      // so it cannot disarm anybody else's query. See MISTAKES.md.
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@tanstack/react-query',
+              importNames: ['skipToken'],
+              message:
+                "skipToken is written onto the SHARED query and disarms every other observer of that key (Missing queryFn — prod outage 2026-08-21). Use `enabled: false`, which is read per-observer, and spread the owning hook's query options so queryFn/retry cannot diverge.",
+            },
+          ],
+        },
+      ],
       'no-restricted-syntax': [
         'error',
         {

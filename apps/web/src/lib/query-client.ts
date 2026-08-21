@@ -15,10 +15,65 @@ import {
   resetMailboxScopedCache,
 } from '@/features/mailboxes/api/reset-mailbox-cache';
 
+import { ApiError } from './api/client';
 import { retryTransientOnly } from './api/retry';
 import { reportUpgradeGateHit } from './entitlements/upgrade-gate';
+import { captureFeatureException } from './sentry';
 
 const DEFAULT_STALE_TIME_MS = 30_000;
+
+/**
+ * The query key's first segment — `['auth','me']` → `auth`. Only the first
+ * segment, because later ones carry ids and filter text that must never
+ * reach a third party (D7/D228); the first names the surface, which is all
+ * a triage tag needs.
+ */
+function queryScope(queryKey: readonly unknown[]): string {
+  const head = queryKey[0];
+  return typeof head === 'string' ? head : 'unknown';
+}
+
+/**
+ * At most one report per surface per window. A failing read is usually a
+ * RETRYING read — `useMe` alone re-attempts every 15s while the app has no
+ * session — and an un-throttled reporter would turn one broken surface into
+ * thousands of events. Throttling by scope (not by full key) keeps the
+ * bookkeeping bounded to the ~dozen surfaces that exist, so this can never
+ * grow into a leak the way a per-key map would.
+ */
+const QUERY_FAILURE_REPORT_WINDOW_MS = 60_000;
+
+/**
+ * Report a failed read to Sentry unless it is a state the app is designed
+ * to render.
+ *
+ * A 4xx here is a designed state, not a defect: 401 routes to the OAuth
+ * redirect, 402 to the upgrade gate, 409 to the mailbox picker / reconnect
+ * gate, 404 to an empty surface (CLAUDE.md §8, "a read guard's 4xx is a
+ * designed state"). Anything else — a 5xx, a network drop, or an error
+ * that isn't an `ApiError` at all — is a real failure the founder should
+ * not have to find by hand.
+ *
+ * The non-`ApiError` half is the one that earned this handler. On
+ * 2026-08-21 a `useUserTimeZone()` observer left `skipToken` on the shared
+ * `me` query, so the `invalidateQueries` that every action mutation fires
+ * rejected with `Missing queryFn: '["auth","me"]'`, AuthProvider fell to
+ * "Auth check failed.", and the whole app died. Sentry recorded ZERO
+ * events, because until now only mutations had a cache-level handler and
+ * a rejected QUERY promise reached nothing at all.
+ */
+function makeQueryFailureReporter(): (error: unknown, queryKey: readonly unknown[]) => void {
+  const lastReportedAt = new Map<string, number>();
+  return (error, queryKey) => {
+    if (error instanceof ApiError && error.status >= 400 && error.status < 500) return;
+    const scope = queryScope(queryKey);
+    const now = Date.now();
+    const previous = lastReportedAt.get(scope);
+    if (previous !== undefined && now - previous < QUERY_FAILURE_REPORT_WINDOW_MS) return;
+    lastReportedAt.set(scope, now);
+    captureFeatureException(error, { surface: 'query', reason: scope });
+  };
+}
 
 export function makeQueryClient(): QueryClient {
   let client: QueryClient | null = null;
@@ -73,8 +128,13 @@ export function makeQueryClient(): QueryClient {
   // of emergent.
   let scopeResetAt = 0;
   const SCOPE_RESET_COALESCE_MS = 1_000;
+  const reportQueryFailure = makeQueryFailureReporter();
   const queryCache = new QueryCache({
-    onError: (error) => {
+    onError: (error, query) => {
+      // Two jobs, one handler, and they cannot overlap: a scope conflict is
+      // a 409 and the reporter ignores every 4xx. Reporting runs first so a
+      // genuine defect is recorded even if the recovery below throws.
+      reportQueryFailure(error, query.queryKey);
       if (client === null || !isMailboxScopeConflict(error)) return;
       const now = Date.now();
       if (now - scopeResetAt < SCOPE_RESET_COALESCE_MS) return;
@@ -83,8 +143,8 @@ export function makeQueryClient(): QueryClient {
     },
   });
   client = new QueryClient({
-    mutationCache,
     queryCache,
+    mutationCache,
     defaultOptions: {
       queries: {
         staleTime: DEFAULT_STALE_TIME_MS,

@@ -123,10 +123,22 @@ function FreshFlow({ returnTo }: { returnTo: string | null }) {
     );
   }
 
-  if (me.error || !me.data) {
+  // Data first: TanStack keeps the last `me` when a refetch rejects, so a
+  // failed BACKGROUND re-read must not throw a resolved session away and
+  // restart someone's onboarding. Same defect that took the app down on
+  // 2026-08-21 (see auth-provider.tsx) — this was its sibling.
+  //
+  // The copy is fixed, never `error.message`: a raw message here is a
+  // transport/implementation detail on a user's screen (D7), and it is
+  // exactly how `Missing queryFn: '["auth","me"]'` became UI.
+  if (!me.data) {
+    // `isLoading` above misses the gap BETWEEN retries (pending, not
+    // fetching) — without this the skeleton would flip to the failure
+    // surface during each backoff wait.
+    if (me.isPending) return <FlowSkeleton label="Checking your session…" />;
     return (
       <FlowError
-        message={me.error instanceof Error ? me.error.message : 'Session check failed.'}
+        message="We couldn't load your account. This is usually a brief connection problem — we're retrying automatically."
         onRetry={() => void me.refetch()}
       />
     );

@@ -72,3 +72,36 @@ describe('composeTriageState', () => {
     expect(called).toBe(1);
   });
 });
+
+describe('composeTriageState — a failed background re-read', () => {
+  const ROWS = [{ id: 'r1' }] as unknown as Parameters<typeof composeTriageState>[0]['rows'];
+  const STATS = { decided: 1 } as unknown as Parameters<typeof composeTriageState>[0]['stats'];
+
+  it('keeps a drawable screen instead of blanking it', () => {
+    const state = composeTriageState({
+      rows: ROWS,
+      stats: STATS,
+      isLoading: false,
+      isError: true,
+      error: new Error('stats refetch failed'),
+      retry: () => {},
+    });
+    expect(state.kind).toBe('ready');
+  });
+
+  it('still surfaces the error when there is nothing to draw', () => {
+    for (const partial of [
+      { rows: undefined, stats: STATS },
+      { rows: ROWS, stats: undefined },
+    ]) {
+      const state = composeTriageState({
+        ...partial,
+        isLoading: false,
+        isError: true,
+        error: new Error('boom'),
+        retry: () => {},
+      });
+      expect(state.kind).toBe('error');
+    }
+  });
+});

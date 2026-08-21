@@ -3215,3 +3215,63 @@ with a unit test pinning Archive's real band; the Autopilot preset
 carries its measured reach in a comment so the next reader sees the
 number, not just the constant. No hook — reachability is not a pattern
 a linter can see.
+
+## 2026-08-21 — `skipToken` disarmed the shared `me` query and killed the app
+**PR:** (this change) — regression from #548 `fix(web): Pin locale+zone in hydrated date labels (D200)`
+**Caught by:** founder, by hand, in production — Sentry had ZERO events
+**What happened:** `useUserTimeZone()` was added as a second observer of
+`['auth','me']` with `queryFn: skipToken`, to read the cache without ever
+fetching. But a TanStack query is ONE object that every observer writes its
+whole options onto, and `useQuery` re-runs `observer.setOptions(query)` in an
+effect on EVERY render — so the query's resting options belong to whichever
+observer re-rendered last. `AuthProvider` re-renders only when `me` changes;
+the screens below it re-render constantly, and `/senders` mounts TWO
+`useUserTimeZone()` consumers. So `skipToken` became the resting `queryFn`
+within moments of load. `Query.fetch()` self-heals a missing `queryFn` — but
+only when it is FALSY, and `skipToken` is truthy, so the guard never fired.
+The next `invalidateQueries(ME_QUERY_KEY)` — which every action mutation
+fires to re-read `cleanupRemaining` — took the keyless
+`query.fetch(undefined, …)` path, hit `ensureQueryFn`, and rejected with
+`Missing queryFn: '["auth","me"]'`. `useMe().error` sent `AuthProvider` to its
+"Auth check failed." branch, and with `refetchOnWindowFocus: false` there was
+no self-heal: the app stayed dead until a hard reload. The founder hit it
+after deleting a single sender.
+**Why it became an OUTAGE and not a blip:** the trigger was a cache defect,
+but four separate things had to be missing for it to blank the app, and each
+one alone would have contained it.
+1. `AuthProvider` gated on `if (me.error || !me.data)`. TanStack KEEPS `data`
+   when a refetch rejects, so a fully resolved session was thrown away because
+   a background re-read failed. Any transient 5xx or dropped connection on
+   `/api/auth/me` did the same thing — the cache defect was one of many doors
+   into an outage that was already sitting there.
+2. The failure surface was a dead end: no retry, no auto-recovery, and the
+   client default `refetchOnWindowFocus: false` meant nothing ever re-checked.
+   A hard reload was the only exit.
+3. It rendered `error.message` raw, which is why a TanStack internal became
+   the founder's UI — `ErrorState`'s contract forbids exactly this.
+4. No `QueryCache.onError` existed, so it produced zero telemetry.
+The same `error-before-data` gate was found in two more places and fixed:
+`app/onboarding/page.tsx` (identical, raw message included) and
+`features/triage/compose-state.ts` (a loaded queue blanked when the stats
+re-read hiccuped).
+**Correct approach:** observers that share a query key must share their
+`queryFn` and `retry`. Express "this observer must not fetch" with
+`enabled: false`, which is read per-observer and cannot disarm anybody else —
+never with `skipToken`, which is written onto the shared query. And a surface
+must decide on what it HAS, not on whether the last read failed: blank only
+when there is nothing to draw, keep the failure recoverable, and never put a
+raw error message on screen.
+**Rule:** two observers on one query key must agree on `queryFn` (use
+`enabled: false`, never `skipToken`, for a read-only mirror); and no surface
+may discard data it already holds because a background re-read failed.
+**Enforcement update:** `skipToken` is now an eslint `no-restricted-imports`
+error across `apps/web/src` with the reason inline — a comment would not have
+survived the next refactor (the rule was verified by linting a file that uses
+it, not by assuming it fires). `meQueryOptions()` is the single source both
+observers spread, so they cannot diverge; a regression test
+(`use-me-observer-sharing.test.tsx`) re-renders the tz consumer and then
+invalidates, reproducing the exact production string. Separately, and more
+importantly, `makeQueryClient` now has a `QueryCache.onError` that reports
+non-4xx query failures to Sentry — until now ONLY mutations had a
+cache-level handler, so every failed READ in the product was invisible,
+which is why an app-killing bug produced no telemetry at all.
