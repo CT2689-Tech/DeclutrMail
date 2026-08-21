@@ -4,7 +4,7 @@
 //   header grid crushed the identity cell (`minmax(0, 1fr)`) to zero
 //   width — avatar + verdict pill rendered, sender name/domain
 //   vanished. The fix stacks the header (identity keeps row 1, pill
-//   moves to row 2, the Recommended hint drops). happy-dom computes no
+//   moves to row 2). happy-dom computes no
 //   layout, so the assertions are structural: the grid template
 //   switches and the identity block stays in the tree with a title
 //   attr for truncation.
@@ -23,6 +23,7 @@ import { render, screen, within } from '@testing-library/react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
+import { recommendedVerb } from './types';
 
 function rowById(id: string): TriageDecisionRow {
   const r = TRIAGE_QUEUE.find((row) => row.id === id);
@@ -63,7 +64,7 @@ afterEach(() => {
 });
 
 const NARROW_TEMPLATE = '32px minmax(0, 1fr) 18px';
-const WIDE_TEMPLATE = '32px minmax(0, 1fr) auto auto 18px';
+const WIDE_TEMPLATE = '32px minmax(0, 1fr) auto 18px';
 
 function renderRow(row: TriageDecisionRow, { expanded = false } = {}) {
   return render(
@@ -108,21 +109,56 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
     expect(screen.getByRole('toolbar')).toBeInTheDocument();
   });
 
-  it('drops the standalone Recommended hint at 375px — the pill still carries the %', () => {
+  it('shows the same badge at 375px as on desktop — the narrow layout reflows, it does not drop information', () => {
     setViewportWidth(375);
     const row = rowById('t-shipping'); // confidence 0.95 → recommended
     renderRow(row);
-    expect(screen.queryByText('Recommended')).not.toBeInTheDocument();
-    // The verdict pill keeps the recommendation visible: "Unsubscribe · 95%".
-    expect(header(row).textContent).toContain('95%');
+    // The verdict pill carries the recommendation at every width:
+    // "Unsubscribe · strong".
+    expect(header(row).textContent).toContain('strong');
   });
 
-  it('keeps the single-row grid + Recommended hint on desktop widths', () => {
+  // The pill used to print `Math.round(confidence * 100)`. The cascade
+  // sums fixed weights into a clamped band, so its reachable value set
+  // is small and its top saturates — and because the queue sorts by
+  // confidence DESC, the head of a real queue printed the same "91%"
+  // on four consecutive senders. Honest, and it read as fabricated.
+  it('never prints a rounded percentage on the verdict pill', () => {
+    setViewportWidth(1280);
+    const row = rowById('t-shipping');
+    renderRow(row);
+    expect(header(row).textContent).not.toMatch(/\d+%/);
+  });
+
+  // `strong` is DEFINED as "recommended", so the one badge the row
+  // renders always agrees with the engine's own gate.
+  it('shows the band `strong` exactly when the engine recommends the verdict', () => {
+    setViewportWidth(1280);
+    for (const row of TRIAGE_QUEUE.filter((r) => r.protectionReason === null)) {
+      const { unmount } = renderRow(row);
+      const isStrong = header(row).textContent?.includes('· strong') ?? false;
+      const isRecommended = recommendedVerb(row.verdict, row.confidence) !== null;
+      expect(isStrong).toBe(isRecommended);
+      unmount();
+    }
+  });
+
+  it('keeps the single-row grid on desktop widths', () => {
     setViewportWidth(1280);
     const row = rowById('t-shipping');
     renderRow(row);
     expect(header(row).style.gridTemplateColumns).toBe(WIDE_TEMPLATE);
-    expect(screen.getByText('Recommended')).toBeInTheDocument();
+  });
+
+  // The row must not reintroduce a second label for a fact the pill
+  // already carries — that duplication is what 1A removed.
+  it('renders no standalone Recommended hint at any width', () => {
+    for (const width of [375, 1280]) {
+      setViewportWidth(width);
+      const { unmount } = renderRow(rowById('t-shipping'));
+      expect(screen.queryByText('Recommended')).not.toBeInTheDocument();
+      unmount();
+    }
   });
 });
 

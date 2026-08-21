@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
-import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
 
 import type { ActionReach } from '@/lib/api/actions';
@@ -180,14 +180,28 @@ export function ScreenerRow({
         </span>
 
         {/* Engine recommendation pip — verdict + confidence (D71).
-            No category labels here, ever (D71 honours D22). */}
+            No category labels here, ever (D71 honours D22).
+
+            The confidence reads as a WORD, not a rounded percentage —
+            same source as Triage's pill, so the two surfaces cannot
+            describe the same read differently. See
+            `@declutrmail/shared/copy/engine-confidence` for why the
+            cascade's number does not support two digits. */}
         {row.recommendation != null ? (
           <Pill tone={VERDICT_TONE[row.recommendation.verdict]}>
             {verdictLabel(row.recommendation.verdict)}
-            <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
-              {' · '}
-              {Math.round(row.recommendation.confidence * 100)}%
-            </span>
+            {(() => {
+              const band = confidenceBand(
+                row.recommendation.verdict,
+                row.recommendation.confidence,
+              );
+              return band === null ? null : (
+                <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
+                  {' · '}
+                  {band}
+                </span>
+              );
+            })()}
           </Pill>
         ) : (
           <span style={{ fontFamily: font.mono, fontSize: 10, color: color.fgMuted }}>New</span>

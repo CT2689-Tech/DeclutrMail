@@ -2617,6 +2617,25 @@ Pause sender (snooze for N days).
 5. **Long-dormant unsubscribe** — Read rate < 5% AND last seen > 180 days →
    Unsubscribe (Observe mode for 7 days; superseded definition from D124)
 
+**[FOUNDER PATCH 2026-08-20 → D101 preset 1]** Preset 1's gate is
+**0.72**, not 0.85. The 2026-07-02 D29 triage re-weight changed what the
+cascade can emit: Archive now occupies [0.73, 0.88], and every value
+above 0.85 requires the `+0.30 user_manually_archived_count >= 3` term,
+so at 0.85 the preset could only fire for senders the user had already
+archived three times by hand — a Plus automation inert by construction.
+Observed: it swept the founder's mailbox once and took 0 actions while
+presets 3 and 5 took 172 and 51 on the same run. 0.72 sits just below
+the bottom of Archive's reachable band. Carried by migration 0067; a
+threshold change now also re-enters Observe, since lowering a gate
+widens what an active rule acts on unattended.
+
+Preset 2 **keeps 0.90** and was deliberately NOT re-anchored, though it
+has the same provenance: its reach fell from 51/160 (32%) of Unsubscribe
+verdicts to 4/97 (4%) across the same re-weight. Unsubscribe is the one
+verb that cannot be undone, so erring conservative stands until real
+usage data says otherwise. Do not "fix" preset 2 for symmetry with
+preset 1.
+
 Each preset has:
 - Single toggle (enable/disable)
 - Threshold slider for confidence-based rules (rules 1, 2)

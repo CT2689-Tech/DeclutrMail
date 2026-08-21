@@ -284,7 +284,8 @@ describe('AutopilotApplyWorker', () => {
       mode: 'observe',
     });
 
-    // Two senders both flagged Archive by the engine; one above threshold, one below.
+    // Two senders both flagged Archive by the engine; one above the
+    // preset's 0.72 default, one just below it.
     const above = await seedSender(db, mbId, {
       email: 'above@example.com',
       decision: { verdict: 'archive', confidence: 0.92 },
@@ -292,7 +293,7 @@ describe('AutopilotApplyWorker', () => {
     });
     const below = await seedSender(db, mbId, {
       email: 'below@example.com',
-      decision: { verdict: 'archive', confidence: 0.82 },
+      decision: { verdict: 'archive', confidence: 0.71 },
       totalMessages: 10,
     });
     // A third sender NOT in archive verdict — should be ignored.
@@ -330,7 +331,7 @@ describe('AutopilotApplyWorker', () => {
     expect(matches[0]!.resolution).toBe('pending');
     expect(matches[0]!.intentApplied).toBe(false);
     expect(matches[0]!.confidence).toBe('0.92');
-    expect(matches[0]!.reason).toContain('above threshold 0.85');
+    expect(matches[0]!.reason).toContain('above threshold 0.72');
 
     // Reference `below` so the test failure carries the suppressed sender id.
     expect(matches.find((m) => m.senderKey === below)).toBeUndefined();

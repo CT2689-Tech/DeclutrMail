@@ -487,6 +487,28 @@ export class AutopilotReadService {
     if (patch.confidenceThreshold !== undefined) {
       set.confidenceThreshold =
         patch.confidenceThreshold === null ? null : patch.confidenceThreshold.toFixed(2);
+      // Moving the gate re-enters Observe (founder decision 2026-08-20).
+      // A threshold change silently redefines what an `active` rule
+      // acts on — lower it and the rule starts archiving or
+      // unsubscribing senders it would not have touched a moment ago,
+      // unattended, with no preview and nothing in the UI marking the
+      // change as consequential. Observe turns the widened set into
+      // suggestions the user approves.
+      //
+      // ONLY from `active`. A `paused` rule is an explicit "stop" the
+      // user set, and editing a number must not quietly restart it; a
+      // rule already in `observe` has nothing to move to, and resetting
+      // its window would restart the 7-day countdown and re-arm the
+      // day-7 prompt for no reason. The CASE reads the row's CURRENT
+      // mode inside the UPDATE, so this stays one statement. An
+      // explicit `mode` in the SAME patch wins — the user said what
+      // they wanted.
+      if (patch.mode === undefined) {
+        const wasActive = sql`${automationRules.mode} = 'active'`;
+        set.mode = sql`CASE WHEN ${wasActive} THEN 'observe'::autopilot_rule_mode ELSE ${automationRules.mode} END`;
+        set.modeChangedAt = sql`CASE WHEN ${wasActive} THEN now() ELSE ${automationRules.modeChangedAt} END`;
+        set.observePromptDismissedAt = sql`CASE WHEN ${wasActive} THEN NULL ELSE ${automationRules.observePromptDismissedAt} END`;
+      }
     }
     if (patch.scope !== undefined) set.scope = patch.scope;
     if (patch.observePromptDismissed !== undefined) {

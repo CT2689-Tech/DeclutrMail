@@ -22,6 +22,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { VERB_LESSONS } from '@/features/tour/verb-lessons';
 import { ActionToolbar, resolveShortcut, verbDisabledReason } from './action-toolbar';
 import { canUnsubscribe, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
+import { RECOMMEND_FLOOR } from '@declutrmail/shared/copy';
 
 function rowById(id: string): TriageDecisionRow {
   const r = TRIAGE_QUEUE.find((row) => row.id === id);
@@ -224,41 +225,46 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     );
   });
 
-  // D31 says "highlight only when confidence > 0.85". The boundary
-  // tests below pin the strict-greater-than semantics: 0.84 must NOT
-  // emphasise, 0.86 must — and the exact value 0.85 stays flat.
-  describe('boundary — strict > 0.85 (D31)', () => {
-    function withConfidence(c: number): TriageDecisionRow {
-      // Use Groupon as a base — verdict=archive, no protection so the
-      // recommended verb is dispatchable.
-      return { ...rowById('t-groupon'), confidence: c };
+  // D31's "highlight only when confidence > 0.85" is applied per
+  // VERDICT now (`RECOMMEND_FLOOR`). The strict-greater-than semantics
+  // are unchanged — only the value the comparison reads moved, because
+  // a flat 0.85 was unreachable for Archive and left the engine's
+  // first-sorted verdict permanently flat.
+  describe('boundary — strict > the verdict floor (D31)', () => {
+    // Groupon: verdict=archive, unprotected, so the recommended verb is
+    // dispatchable. Read the floor rather than restating it — a future
+    // re-anchor moves the test with the product.
+    const FLOOR = RECOMMEND_FLOOR.archive as number;
+    const HIGHLIGHT =
+      'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none';
+
+    function highlighted(c: number): boolean {
+      const row: TriageDecisionRow = { ...rowById('t-groupon'), confidence: c };
+      return renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />).includes(
+        HIGHLIGHT,
+      );
     }
 
-    it('confidence = 0.84 → recommended verb is NOT emphasised', () => {
-      const html = renderToStaticMarkup(
-        <ActionToolbar row={withConfidence(0.84)} onAction={() => {}} />,
-      );
-      expect(html).not.toContain(
-        'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
-      );
+    it('below the floor → recommended verb is NOT emphasised', () => {
+      expect(highlighted(FLOOR - 0.01)).toBe(false);
     });
 
-    it('confidence = 0.85 → recommended verb is NOT emphasised (strict >)', () => {
-      const html = renderToStaticMarkup(
-        <ActionToolbar row={withConfidence(0.85)} onAction={() => {}} />,
-      );
-      expect(html).not.toContain(
-        'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
-      );
+    it('exactly ON the floor → NOT emphasised (strict >)', () => {
+      expect(highlighted(FLOOR)).toBe(false);
     });
 
-    it('confidence = 0.86 → recommended verb IS emphasised', () => {
-      const html = renderToStaticMarkup(
-        <ActionToolbar row={withConfidence(0.86)} onAction={() => {}} />,
-      );
-      expect(html).toContain(
-        'background:var(--dm-line-inverse);color:var(--dm-fg-inverse);border-top:none',
-      );
+    it('above the floor → recommended verb IS emphasised', () => {
+      expect(highlighted(FLOOR + 0.01)).toBe(true);
+    });
+
+    // The regression the founder reported (screenshot 2026-08-20). 0.74
+    // is the ceiling `score-cascade.ts` can reach for Archive when the
+    // user has never manually archived the sender — i.e. what almost
+    // every real Archive row scores. Under the old flat 0.85 gate this
+    // rendered flat, so the queue's first card was permanently the one
+    // with no highlight, no band and no Recommended hint.
+    it('0.74 — a real Archive score — IS emphasised', () => {
+      expect(highlighted(0.74)).toBe(true);
     });
   });
 });

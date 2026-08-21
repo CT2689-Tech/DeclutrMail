@@ -1531,3 +1531,40 @@ a list that was verified rather than remembered.
 
 **Distillation trigger:** promote to CLAUDE.md §8 if a second "the
 sweep PR missed a surface the ADR never listed" entry lands.
+
+## 2026-08-20 — A threshold is only as good as the distribution it was sized for
+
+**Context:** The founder reported that the first Triage card looked
+different from the rest — no confidence, no `Recommended`. The gate was
+`confidence > 0.85`, and the card's verdict was Archive.
+
+**Finding:** The gate was never wrong when it was written. The
+2026-07-02 triage-quality re-weight replaced a degenerate
+`winner/(winner+loser)` confidence (which pinned nearly every Phase-C
+verdict at 0.95) with an additive form spread across [0.55, 0.95]. Every
+consumer threshold stayed where it was, sized for the old shape. The
+damage was invisible per-consumer and only legible once the reachable
+range was enumerated against each gate:
+
+- Triage's `Recommended` hint — Archive tops out at 0.74 without
+  manual-archive history, so Archive could never be recommended at all,
+  and the queue sorts Archive FIRST, putting the one unrecommendable
+  verdict in the hero slot on every load.
+- The `auto_archive_low_engagement` preset — same 0.85, so a Plus
+  automation was inert by construction. It swept the founder's mailbox
+  once and took 0 actions while two sibling presets took 172 and 51.
+- `auto_unsubscribe_noisy` at 0.90 — reach fell from 51/160 (32%) of
+  Unsubscribe verdicts to 4/97 (4%).
+
+None of this is greppable. Every gate reads fine in isolation, every
+test passes, and no error is ever logged: a threshold nothing can reach
+looks exactly like a threshold nothing happens to hit.
+
+**Rule (provisional):** When a scoring formula's output range changes,
+the change is not complete until every consumer THRESHOLD is re-derived
+against the new reachable range — enumerate what the producer can emit
+and compare it to what each consumer requires. Grep finds the copies of
+a constant; only enumeration finds the ones that became unreachable.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second
+"re-tuned a producer, left a consumer gate stranded" entry lands.

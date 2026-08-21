@@ -12,8 +12,10 @@ import type { AutopilotActionKind, AutopilotPresetKey, TriageVerdict } from '@de
  * The 5 V2 presets per D101 + D124's patch:
  *
  *   1. `auto_archive_low_engagement`   — Engine verdict=Archive AND
- *      confidence > threshold (default 0.85). Threshold-bearing; the
- *      Autopilot UI exposes a slider per D101.
+ *      confidence > threshold (default 0.72 — D101 said 0.85, which the
+ *      cascade cannot reach for Archive; see the preset body and
+ *      migration 0067). Threshold-bearing; the Autopilot UI exposes a
+ *      slider per D101.
  *
  *   2. `auto_unsubscribe_noisy`        — Engine verdict=Unsubscribe
  *      AND confidence > threshold (default 0.90). Threshold-bearing.
@@ -194,14 +196,43 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
   auto_archive_low_engagement: {
     defaultName: 'Auto-archive low-engagement',
     actionKind: 'archive',
-    defaultThreshold: 0.85,
+    // 0.72, not D101's 0.85. The cascade can only reach Archive in
+    // [0.73, 0.88], and everything above 0.85 there requires the
+    // `+0.30 userManuallyArchivedCount >= 3` term — so at 0.85 this
+    // preset could only ever fire for senders the user had already
+    // archived three times by hand. It swept the founder's mailbox once
+    // and took 0 actions while the other two presets took 172 and 51.
+    // The gate was sized for the pre-2026-07-02 confidence
+    // distribution and never re-anchored when that distribution moved.
+    // Migration 0067 carries existing rows; this is the value new
+    // mailboxes seed with. Same floor Triage uses for its Recommended
+    // hint (`@declutrmail/shared/copy/engine-confidence`), so the
+    // automation and the screen agree on what "confident" means.
+    defaultThreshold: 0.72,
     defaultActionPayload: {},
     dailyActionCap: 100,
-    match: VERDICT_MATCHER('archive', 0.85, 'Archive'),
+    match: VERDICT_MATCHER('archive', 0.72, 'Archive'),
   },
   auto_unsubscribe_noisy: {
     defaultName: 'Auto-unsubscribe noisy senders',
     actionKind: 'unsubscribe',
+    // 0.90 STAYS, deliberately — do not "fix" this to match the
+    // re-anchored Archive preset above.
+    //
+    // It has the same provenance as the Archive gate: the 2026-07-02
+    // re-weight lowered every confidence and this threshold did not
+    // move, so its reach fell with it. Measured on the founder's
+    // mailbox, over 97 post-re-weight Unsubscribe verdicts: 4 clear
+    // 0.90, 28 clear 0.85, 31 clear 0.80. Pre-re-weight, 51 of 160
+    // (32%) cleared 0.90 — so the rule reaches roughly a seventh of
+    // what it was tuned for.
+    //
+    // Founder decision 2026-08-20 (option 2B): keep 0.90 anyway.
+    // Unsubscribe is the one verb the product cannot take back, and
+    // erring conservative on it is a deliberate product stance until
+    // real users have run the rule. The Archive gate was re-anchored
+    // because it was UNREACHABLE; this one is merely strict, and
+    // strict is a choice. Revisit with usage data, not with symmetry.
     defaultThreshold: 0.9,
     // D101 #2: "Unsubscribe + auto-archive future".
     defaultActionPayload: { and_archive_future: true },
