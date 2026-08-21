@@ -1,0 +1,7 @@
+-- Reverse 0069 — unpin the search_path.
+--
+-- Restores the advisor WARN this migration cleared, and nothing else.
+-- The function's results are identical in both directions; only its
+-- inlinability changes, and the expression index that depends on it
+-- matched before the pin and matches after it.
+ALTER FUNCTION dm_normalize_email(text) RESET search_path;

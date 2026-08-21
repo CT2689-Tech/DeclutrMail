@@ -1,0 +1,28 @@
+-- Reverse 0070 — hand the public-API grants back to `anon` and
+-- `authenticated`.
+--
+-- Restores Supabase's bootstrap posture: full DML on every table in
+-- `public`, plus the default privileges that extend it to tables created
+-- later. Row-level security still denies every one of those reads, which
+-- is precisely the point the forward migration makes — the grants were
+-- never what was holding the line.
+--
+-- Same role guard, same reason: on a vanilla Postgres these roles do not
+-- exist and an unguarded GRANT aborts the rollback.
+DO $$
+DECLARE
+  target text;
+BEGIN
+  FOREACH target IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = target) THEN
+      RAISE NOTICE 'role % absent — skipping (not a Supabase database)', target;
+      CONTINUE;
+    END IF;
+    EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA public TO %I', target);
+    EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO %I', target);
+    EXECUTE format('GRANT ALL ON ALL FUNCTIONS IN SCHEMA public TO %I', target);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO %I', target);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO %I', target);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO %I', target);
+  END LOOP;
+END $$;
