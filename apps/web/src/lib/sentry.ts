@@ -19,6 +19,11 @@ export interface AppBreadcrumb {
 
 export interface FeatureExceptionContext {
   surface:
+    // Not a screen: the `makeQueryClient` QueryCache net, which reports the
+    // read failures no screen remembered to capture. `reason` is the query
+    // key's first segment only — never the full hash, which can carry
+    // filter text (D7/D228).
+    | 'query'
     | 'sync'
     | 'senders'
     | 'activity'

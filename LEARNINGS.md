@@ -1616,3 +1616,78 @@ a constant; only enumeration finds the ones that became unreachable.
 
 **Distillation trigger:** promote to CLAUDE.md §8 if a second
 "re-tuned a producer, left a consumer gate stranded" entry lands.
+
+## 2026-08-21 — A TanStack query is shared state; the last render wins
+**Context:** Chasing `Missing queryFn: '["auth","me"]'`, which killed the
+production app after a single sender deletion.
+**Finding:** A `QueryClient` holds ONE `Query` object per key, and every
+`useQuery` observer of that key writes its ENTIRE options object onto it —
+`useBaseQuery` runs `observer.setOptions(defaultedOptions)` inside a
+`useEffect` whose dep is a fresh object each render, so it re-stamps on every
+single render. The query's resting `queryFn`, `retry`, and `staleTime`
+therefore belong to whichever observer re-rendered most recently, and any
+KEYLESS refetch (`invalidateQueries` → `refetchQueries` →
+`query.fetch(undefined, …)`) uses those, not the caller's.
+
+Three details make this hard to see:
+- Effects run child→parent, so on MOUNT the ancestor's options land last and
+  everything looks fine. It takes one later, isolated re-render of a
+  descendant to flip the resting options — which is why it reads as
+  intermittent, and why the mount-only test passed on the broken code.
+- `Query.fetch()` does try to self-heal: `if (!this.options.queryFn) { find an
+  observer that has one }`. But the check is FALSINESS, and `skipToken` is a
+  truthy symbol, so `skipToken` walks straight past the rescue into
+  `ensureQueryFn`, which rejects.
+- `refetchQueries` filters on `query.isDisabled()`/`isStatic()`, and BOTH read
+  observer options, not query options — so a query whose resting `queryFn` is
+  `skipToken` is still considered refetchable. Nothing stops it.
+
+Reproduced in the live app: `/senders` carries 3 observers of `['auth','me']`,
+two of them the timezone reader. Reading `query.options.queryFn` off the page
+told the whole story — `"symbol"` on the shipped build, `"function"` after the
+fix.
+
+**Rule (provisional):** Treat query options as per-KEY, not per-hook. Two
+observers of one key must share `queryFn` and `retry` (spread one factory);
+express "never fetch" with `enabled: false`, which is read per-observer, never
+with `skipToken`, which is written onto the shared query. When a hook mirrors a
+query someone else owns, the mirror must be indistinguishable from the owner in
+everything except `enabled`.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second shared-query
+options-divergence bug lands (this is the UI-truth class's cache-layer form:
+a surface asserting a policy it does not own).
+
+## 2026-08-21 — A trigger is not an outage; count the amplifiers
+**Context:** Same incident as the shared-query entry above. The first fix
+(stop `skipToken` poisoning `me`) was correct and complete for the trigger —
+and would still have left the app one bad minute away from the same dead
+screen.
+**Finding:** The cache defect only reached the user because four independent
+safeguards were absent at once, and any ONE of them would have contained it:
+the provider gated on `error` before `data` (so a failed background re-read
+discarded a working session); the failure surface had no retry and no
+auto-recovery (`refetchOnWindowFocus: false` client-wide); it rendered the raw
+`error.message`; and query failures had no telemetry at all. Fixing only the
+trigger would have closed one door into a room that had four.
+
+The tell is that the same outage was reachable WITHOUT the bug: a transient
+5xx or a dropped connection on `/api/auth/me` produced the identical dead
+screen. When a defect's blast radius does not depend on the defect, the blast
+radius is the real finding.
+
+Sweeping the codebase for the amplifier (`error` checked before `data`) found
+two more live instances — the onboarding gate, and Triage's state composer,
+where a hiccup on `/triage/stats` blanked a loaded queue and lost the user's
+place mid-ritual. Neither had anything to do with `skipToken`.
+
+**Rule (provisional):** After root-causing a production break, ask "could this
+same screen have happened without this bug?" If yes, the trigger is the
+smaller half of the work. Enumerate what turned it into an outage — decide on
+data you HAVE not on whether the last read failed, keep every failure state
+recoverable, never render raw error text — and sweep for those patterns
+separately from the trigger.
+
+**Distillation trigger:** promote to CLAUDE.md §8 alongside the two invariants
+already there — this is the same shape ("shipped green, broke live") and the
+enumeration table §8 already asks for is exactly what would have caught it.

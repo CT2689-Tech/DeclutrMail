@@ -8,7 +8,7 @@
  */
 
 import { useEffect } from 'react';
-import { skipToken, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SyncReadiness } from '@declutrmail/shared/contracts';
 import { apiGet, apiPatch, ApiError } from '@/lib/api/client';
 import { ME_QUERY_KEY, type Me } from './me-contract';
@@ -38,6 +38,42 @@ export function meHasDataDeletionInFlight(data: Me | undefined): boolean {
 }
 
 /**
+ * The `me` fetch + retry policy, shared by every observer of
+ * {@link ME_QUERY_KEY}.
+ *
+ * It is shared rather than inlined because a TanStack query is ONE object
+ * that all of its observers write their full options onto — `useQuery`
+ * re-runs `observer.setOptions(query)` in an effect on every render, so the
+ * query's resting options are whichever observer re-rendered last. If two
+ * observers of the same key disagree about `queryFn` or `retry`, a keyless
+ * refetch (`invalidateQueries` → `query.fetch(undefined, …)`) silently picks
+ * the loser. Identical options make that race unobservable.
+ */
+function meQueryOptions() {
+  return {
+    queryKey: ME_QUERY_KEY,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+      const envelope = await apiGet<Me>('/api/auth/me', { signal });
+      return envelope.data;
+    },
+    retry: (failureCount: number, error: Error) => {
+      if (error instanceof ApiError && error.status === 401) return false;
+      return failureCount < 2;
+    },
+    staleTime: 60_000,
+    // The client-wide default is `false` — a focus refetch across EVERY
+    // query is a request storm. `me` is the one read worth the round trip:
+    // it is how a session revoked in another tab becomes a 401 (and the
+    // login redirect), and it is the app's cheapest route out of a failed
+    // refresh. One request per focus at most, behind the 60s staleTime.
+    refetchOnWindowFocus: true,
+  };
+}
+
+/** Retry cadence while `me` has failed and the app has no session to render. */
+export const ME_ERROR_RETRY_MS = 15_000;
+
+/**
  * Returns the authenticated identity + connected mailboxes, or `null`
  * data + `error` set to an ApiError(401) when the session is missing.
  * `retry: false` so the unauthenticated state surfaces immediately
@@ -51,20 +87,19 @@ export function meHasDataDeletionInFlight(data: Me | undefined): boolean {
 export function useMe() {
   const queryClient = useQueryClient();
   const query = useQuery({
-    queryKey: ME_QUERY_KEY,
-    queryFn: async ({ signal }) => {
-      const envelope = await apiGet<Me>('/api/auth/me', { signal });
-      return envelope.data;
-    },
-    retry: (failureCount, error) => {
-      if (error instanceof ApiError && error.status === 401) return false;
-      return failureCount < 2;
-    },
-    staleTime: 60_000,
-    refetchInterval: (query) =>
-      meHasSyncingMailbox(query.state.data) || meHasDataDeletionInFlight(query.state.data)
+    ...meQueryOptions(),
+    // Scheduling, not identity — `refetchInterval` is read off the OWN
+    // observer, never off the shared query, so it is the one option that
+    // may legitimately live here instead of in `meQueryOptions`.
+    refetchInterval: (query) => {
+      // No session and the last attempt failed: keep trying so a transient
+      // API blip heals itself instead of stranding the user on a dead-end
+      // screen until they think to reload (prod, 2026-08-21).
+      if (query.state.status === 'error') return ME_ERROR_RETRY_MS;
+      return meHasSyncingMailbox(query.state.data) || meHasDataDeletionInFlight(query.state.data)
         ? ME_SYNC_POLL_MS
-        : false,
+        : false;
+    },
   });
 
   useEffect(() => {
@@ -94,12 +129,20 @@ export function useMe() {
  * browser-zone healing in `useMe` keeps the value current after mount.
  */
 export function useUserTimeZone(): string {
-  const { data } = useQuery<Me>({
-    queryKey: ME_QUERY_KEY,
-    // skipToken makes the never-fetch intent explicit: this observer
-    // must only mirror what `useMe` (mounted by app chrome) maintains.
-    queryFn: skipToken,
-    staleTime: Infinity,
+  const { data } = useQuery({
+    ...meQueryOptions(),
+    // `enabled: false` — not `skipToken` — carries the never-fetch intent.
+    // Both stop THIS observer fetching, but `skipToken` also becomes the
+    // shared query's `queryFn` the moment any consumer of this hook
+    // re-renders after `AuthProvider` did. `Query.fetch()` only self-heals a
+    // FALSY `queryFn`, and `skipToken` is truthy, so the next
+    // `invalidateQueries(ME_QUERY_KEY)` — which every action mutation fires
+    // to re-read `cleanupRemaining` — rejected with
+    // `Missing queryFn: '["auth","me"]'`, took `useMe` to AuthProvider's
+    // "Auth check failed." branch, and killed the app until a hard reload
+    // (prod, 2026-08-21). `enabled` is read per-observer, never off the
+    // shared query, so it cannot disarm anyone else.
+    enabled: false,
   });
   return data?.user.timezone ?? 'UTC';
 }
