@@ -46,7 +46,6 @@ describe('applyAutomaticProtection', () => {
         userId: user!.id,
         provider: 'gmail',
         providerAccountId: 'acct-1',
-        emailAddress: 'o@ex.com',
       })
       .returning({ id: schema.mailboxAccounts.id });
     mailboxId = mb!.id;
