@@ -1,16 +1,20 @@
 import {
-  Inject,
+  BadRequestException,
   Controller,
   Headers,
   HttpCode,
   HttpException,
   HttpStatus,
+  Inject,
   Logger,
   Post,
   Req,
+  ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import { webhookDedup } from '@declutrmail/db';
+import { eq } from 'drizzle-orm';
 import { DRIZZLE, type DrizzleDb } from '../../db/db.module.js';
 import type { Request } from 'express';
 import { z } from 'zod';
@@ -98,18 +102,15 @@ export class ResendWebhookController {
         'resend.webhook.secret_unset — refusing delivery (fail-closed). ' +
           'Set RESEND_WEBHOOK_SECRET; see .env.example.',
       );
-      throw new HttpException(
-        { error: { code: 'SERVICE_UNAVAILABLE', message: 'Webhook secret not configured.' } },
-        HttpStatus.SERVICE_UNAVAILABLE,
-      );
+      throw new ServiceUnavailableException({
+        code: 'SERVICE_UNAVAILABLE',
+        message: 'Webhook secret not configured.',
+      });
     }
 
     const rawBody = req.rawBody;
     if (!rawBody || rawBody.length === 0) {
-      throw new HttpException(
-        { error: { code: 'BAD_REQUEST', message: 'Empty webhook body.' } },
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Empty webhook body.' });
     }
 
     const verdict = verifyResendSignature({
@@ -133,10 +134,10 @@ export class ResendWebhookController {
           step: verdict.reason,
         },
       });
-      throw new HttpException(
-        { error: { code: 'UNAUTHORIZED', message: 'Webhook signature verification failed.' } },
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new UnauthorizedException({
+        code: 'UNAUTHORIZED',
+        message: 'Webhook signature verification failed.',
+      });
     }
 
     // svix-id delivery dedup (webhook hygiene, 2026-07-28). The
@@ -163,14 +164,60 @@ export class ResendWebhookController {
       }
     }
 
+    // The dedup row above is COMMITTED, and everything that actually
+    // does the work happens below it. Without the compensation in the
+    // catch, a failure here consumed the slot permanently: the request
+    // 500s, Resend retries the same svix-id, the insert conflicts,
+    // `dedup.length === 0` answers `duplicate`, and the bounce or
+    // complaint is dropped for good — so DeclutrMail keeps mailing a
+    // hard-bounced or complaining address, which is the exact outcome
+    // the suppression list exists to prevent (audit 2026-08-21).
+    //
+    // Releasing the slot is safe because the work is idempotent:
+    // `suppress()` returns `already_suppressed` when the preference is
+    // already set, so a re-delivered event costs a no-op, while a
+    // dropped one costs deliverability. The sibling webhooks each solve
+    // this differently — Gmail puts the insert INSIDE the state
+    // transaction, billing keeps a `processed_at` and resumes an
+    // unprocessed duplicate. `webhook_dedup` has no such column, and
+    // adding one is a migration, so this compensates instead.
+    //
+    // Residual: a process death between the failure and the delete
+    // still strands the slot until `expiresAt`. That is strictly better
+    // than stranding it on every ordinary error.
+    try {
+      return await this.processVerifiedEvent(rawBody);
+    } catch (err) {
+      // Only release the slot for failures a RETRY could resolve. A
+      // malformed payload (400) is deterministic — it fails identically
+      // every time — so holding the slot there stops a pointless retry
+      // loop, which is what dedup is for. The failure this exists to
+      // catch is the transient one: the suppression write throwing on a
+      // pool blip or a mid-deploy SIGTERM.
+      const deterministic = err instanceof HttpException && err.getStatus() < 500;
+      if (svixId && !deterministic) {
+        await this.db
+          .delete(webhookDedup)
+          .where(eq(webhookDedup.messageId, `resend:${svixId}`))
+          .catch(() => {
+            // Best-effort: the throw below is what matters, and the row
+            // expires on its own. Swallowing here must not mask the
+            // original failure.
+          });
+      }
+      throw err;
+    }
+  }
+
+  /** The acting half — everything past the signature + dedup gates. */
+  private async processVerifiedEvent(
+    rawBody: Buffer,
+  ): Promise<{ status: 'ignored' | 'suppressed' }> {
     let event: z.infer<typeof ResendEventSchema>;
     try {
       event = ResendEventSchema.parse(JSON.parse(rawBody.toString('utf8')));
     } catch {
-      throw new HttpException(
-        { error: { code: 'BAD_REQUEST', message: 'Malformed webhook payload.' } },
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Malformed webhook payload.' });
     }
 
     const reason = SUPPRESSING_EVENTS[event.type];
