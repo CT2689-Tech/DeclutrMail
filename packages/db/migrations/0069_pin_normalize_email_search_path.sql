@@ -1,0 +1,26 @@
+-- Pin `dm_normalize_email`'s search_path (Supabase advisor 0011).
+--
+-- 0063 created the function without a `SET search_path`, so unqualified
+-- names resolve against whatever path the caller happens to carry. It is
+-- not SECURITY DEFINER — it runs with the caller's own privileges — so
+-- the practical risk is low. This is the last of three functions to be
+-- pinned: `set_updated_at` and `outbox_notify_inserted` already carry
+-- `search_path = pg_catalog, public`.
+--
+-- WHY `pg_catalog` ALONE, matching `rls_auto_enable` rather than the
+-- other two. The body calls only builtins — lower, btrim, strpos,
+-- reverse, length, left, substr, and the text `||` operator. It
+-- references nothing in `public`, so the narrower path is both the
+-- stricter setting and the accurate description of what the function
+-- needs. Widening it later is one ALTER.
+--
+-- INDEX SAFETY, because this one is not theoretical.
+-- `senders_account_normalized_email_idx` is an expression index over
+-- this exact function and had 550,483 scans in production at the time of
+-- writing — it is the wrote-to attribution hot path, not a spare. A
+-- `SET` clause makes a SQL function non-inlinable. That can only help
+-- expression-index matching: an inlined body no longer matches the
+-- stored index expression, while an opaque call always does. The
+-- function's RESULTS do not depend on search_path (every name it uses is
+-- a builtin), so no REINDEX is required and no row changes meaning.
+ALTER FUNCTION dm_normalize_email(text) SET search_path = pg_catalog;

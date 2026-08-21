@@ -1,4 +1,4 @@
-h1:MOtXpQhXO3Q4saiz5glfFmG1mNFNIMXg+MVEke9cHbI=
+h1:Dl0dt7R+Wheul7HUM8vgsR4YAJ1OHJe0uM7JEZUnl7U=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -65,3 +65,6 @@ h1:MOtXpQhXO3Q4saiz5glfFmG1mNFNIMXg+MVEke9cHbI=
 0065_mail_messages_outbound_index.sql h1:PNYG5wFXPIAHRljctDu7Yrwo4WvAKibeLHrOytu5ni4=
 0066_triage_decisions_actionable_index.sql h1:b5J8W7nQlcUiF2LxPn15OiZBhpv4agtIwOxhk5vFw5g=
 0067_autopilot_archive_threshold.sql h1:N/pgQQShArT1dCRdlQixcMULNRPooCwtxybIx3u4bUA=
+0068_drop_reply_counters.sql h1:ziBboTGO0oSYOs8CLgKoz9S/UElCss9QaQXc3QPWrbo=
+0069_pin_normalize_email_search_path.sql h1:OcypFoGBPH21Pp9JhwYqIh0XPU65v4BZyEXvQX9/0XA=
+0070_revoke_public_api_grants.sql h1:thSoxcIzqvRf5rgxDyrKnmcpcEVExWKFrKt5d6RLdcA=

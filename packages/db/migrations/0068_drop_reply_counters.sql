@@ -1,0 +1,28 @@
+-- Contract half of 0063 — drop the reply counters it superseded (D245).
+--
+-- 0063 added `senders.wrote_to_count` beside `senders.replied_count` and
+-- deliberately left the old column standing. Its comment explains why:
+-- `migration-apply.yml` fires on push to main with no CI gate while
+-- `deploy-cloud-run.yml` waits for green, so the schema moves 10-20
+-- minutes ahead of the code that understands it. Dropping in the same
+-- migration would have 500'd every senders request inside that window.
+-- That comment names this file as the follow-up.
+--
+-- THE WINDOW IS CLOSED. #572 (cd690ab0, 2026-08-19 16:07 -0700) shipped
+-- the reader swap. Verified at HEAD: neither column appears anywhere in
+-- `packages/db/src/schema/`, and no `.ts` outside comments reads
+-- `repliedCount`. Verified against prod: no index, constraint, view or
+-- materialised view depends on either column — both are plain
+-- `integer NOT NULL DEFAULT 0` with nothing hanging off them.
+--
+-- WHY BOTHER WITH INERT COLUMNS. Because their retired UPDATE statements
+-- are not inert. `pg_stat_statements` keys on normalised query text, so
+-- a deleted statement's totals freeze and become indistinguishable from
+-- a live one — same shape, same table, no marker. The two frozen rows
+-- here (9.3h and 1.5h cumulative, last called 2026-08-19 23:29 UTC) were
+-- read as current cost by two separate audits before anyone checked
+-- whether the code still existed. Dropping the columns is what stops the
+-- third; the statistics reset that follows is the other half.
+ALTER TABLE "senders" DROP COLUMN "replied_count";
+--> statement-breakpoint
+ALTER TABLE "sender_timeseries" DROP COLUMN "reply_count";
