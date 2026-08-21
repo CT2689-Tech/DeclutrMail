@@ -24,19 +24,29 @@ describe('AUTOPILOT_PRESETS', () => {
   describe('preset #1 — auto_archive_low_engagement', () => {
     const p = AUTOPILOT_PRESETS.auto_archive_low_engagement;
 
-    it('matches verdict=archive above default threshold 0.85', () => {
+    it('matches verdict=archive above default threshold 0.72', () => {
       const r = p.match(input({}, { verdict: 'archive', confidence: 0.92 }), null);
       expect(r.matched).toBe(true);
-      expect(r.reason).toBe('Engine verdict=Archive @0.92 above threshold 0.85');
+      expect(r.reason).toBe('Engine verdict=Archive @0.92 above threshold 0.72');
+    });
+
+    // The reason the default moved off D101's 0.85. `score-cascade.ts`
+    // caps Archive at 0.74 unless the user has already archived that
+    // sender 3+ times by hand, so at 0.85 this preset was inert by
+    // construction — it swept the founder's mailbox once and took 0
+    // actions. 0.73/0.74 is what a real Archive verdict scores.
+    it('matches a real Archive score (0.74) — the reach 0.85 could never have', () => {
+      expect(p.match(input({}, { verdict: 'archive', confidence: 0.74 }), null).matched).toBe(true);
+      expect(p.match(input({}, { verdict: 'archive', confidence: 0.73 }), null).matched).toBe(true);
     });
 
     it('does NOT match exactly at the threshold (strict > per D101)', () => {
-      const r = p.match(input({}, { verdict: 'archive', confidence: 0.85 }), null);
+      const r = p.match(input({}, { verdict: 'archive', confidence: 0.72 }), null);
       expect(r.matched).toBe(false);
     });
 
     it('does NOT match below the threshold', () => {
-      const r = p.match(input({}, { verdict: 'archive', confidence: 0.84 }), null);
+      const r = p.match(input({}, { verdict: 'archive', confidence: 0.71 }), null);
       expect(r.matched).toBe(false);
     });
 
@@ -308,7 +318,7 @@ describe('AUTOPILOT_PRESETS', () => {
     });
 
     it('only verdict-gated presets have a default threshold', () => {
-      expect(AUTOPILOT_PRESETS.auto_archive_low_engagement.defaultThreshold).toBe(0.85);
+      expect(AUTOPILOT_PRESETS.auto_archive_low_engagement.defaultThreshold).toBe(0.72);
       expect(AUTOPILOT_PRESETS.auto_unsubscribe_noisy.defaultThreshold).toBe(0.9);
       expect(AUTOPILOT_PRESETS.auto_screen_new_senders.defaultThreshold).toBeNull();
       expect(AUTOPILOT_PRESETS.newsletter_graveyard.defaultThreshold).toBeNull();

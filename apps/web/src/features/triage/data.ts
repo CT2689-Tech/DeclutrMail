@@ -97,7 +97,8 @@ export interface TriageDecisionRow {
 
   /** Engine verdict — D21 cascade output. */
   verdict: TriageVerdict;
-  /** Engine confidence in `[0.00, 1.00]`. ≥0.85 highlights per D31. */
+  /** Engine confidence in `[0.00, 1.00]`. Whether it counts as a
+   *  recommendation is verdict-aware — see `RECOMMEND_FLOOR` (D31). */
   confidence: number;
   /** D24 reasoning copy — LLM (Haiku) or template fallback. */
   reasoning: string;

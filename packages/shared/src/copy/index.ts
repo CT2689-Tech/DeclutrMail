@@ -41,3 +41,11 @@ export {
 } from './action-safety';
 
 export { scoredAge, scoredAgeLabel } from './engine-read-age';
+
+export {
+  RECOMMEND_FLOOR,
+  isRecommended,
+  confidenceBand,
+  type EngineVerdict,
+  type ConfidenceBand,
+} from './engine-confidence';

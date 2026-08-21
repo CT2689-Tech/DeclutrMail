@@ -3188,3 +3188,30 @@ bans the shapes you already found — derive the ban from the failure
 mode, not from the sweep pattern.
 **Enforcement update:** lint rule extended to `Intl.*Format(undefined, …)`
 and its fence widened to `apps/web/src/**` (8bc2966a).
+
+## 2026-08-20 — Re-weighted the scoring cascade, left every consumer gate at the old numbers
+**PR:** (in flight — `claude/bofa-first-tile-diff-a61acd`)
+**Caught by:** founder screenshot of `/triage`
+**What happened:** The 2026-07-02 D29 triage-quality fix re-weighted
+`score-cascade.ts` and spread confidence across a new, lower range. The
+thresholds reading that confidence were not re-derived. Three consumers
+were stranded: Triage's `Recommended` gate and the
+`auto_archive_low_engagement` preset both sat at `> 0.85`, which Archive
+can only reach with 3+ manual archives of the same sender (real ceiling
+0.74), and `auto_unsubscribe_noisy` at `> 0.90` lost ~87% of its reach.
+The Triage gate was ALSO duplicated verbatim into `action-toolbar.tsx`,
+so one stale constant produced two dead surfaces. Everything typechecked,
+every test passed, and no gate agent had an opinion — an unreachable
+threshold is indistinguishable from an unlucky one.
+**Correct approach:** treat a producer's output range as part of its
+contract. When the range moves, enumerate it and re-derive every
+consumer threshold against it in the same change; keep the threshold in
+ONE place so a consumer cannot drift alone.
+**Rule:** never re-tune a scoring formula without enumerating what it
+can now emit and re-checking every gate that reads it.
+**Enforcement update:** the Triage/Screener gate is now a single
+verdict-aware source (`packages/shared/src/copy/engine-confidence.ts`)
+with a unit test pinning Archive's real band; the Autopilot preset
+carries its measured reach in a comment so the next reader sees the
+number, not just the constant. No hook — reachability is not a pattern
+a linter can see.
