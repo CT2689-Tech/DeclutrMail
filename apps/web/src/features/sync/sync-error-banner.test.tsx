@@ -9,13 +9,16 @@
  *   3. hidden when a success is newer than the error (recovered);
  *   4. hidden when the error is older than 60 minutes (aged out);
  *   5. "Try again" fires the shared sync-now mutation;
- *   6. an invalid grant persists and starts target-bound OAuth instead.
+ *   6. an invalid grant persists and starts target-bound OAuth instead;
+ *   7. a persistently failing status READ says so and carries the
+ *      refetch — a 4xx stays quiet (the layout ladder owns it).
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { ApiError } from '@/lib/api/client';
 import { SyncErrorBanner } from './sync-error-banner';
 
 const MAILBOX_ID = '11111111-1111-4111-8111-111111111111';
@@ -34,10 +37,22 @@ function statusOf(overrides: Partial<SyncStatus>): SyncStatus {
 }
 
 // Mutable cell the mocked hook reads — set per test before render.
-const statusCell: { data: SyncStatus | undefined } = { data: undefined };
+const refetchSpy = vi.fn();
+const statusCell: {
+  data: SyncStatus | undefined;
+  isError: boolean;
+  error: unknown;
+  isFetching: boolean;
+} = { data: undefined, isError: false, error: null, isFetching: false };
 
 vi.mock('@/features/onboarding/api/use-sync-status', () => ({
-  useSyncStatus: () => ({ data: statusCell.data }),
+  useSyncStatus: () => ({
+    data: statusCell.data,
+    isError: statusCell.isError,
+    error: statusCell.error,
+    isFetching: statusCell.isFetching,
+    refetch: refetchSpy,
+  }),
 }));
 
 const mutateSpy = vi.fn();
@@ -59,8 +74,12 @@ function minutesAgo(n: number): string {
 describe('SyncErrorBanner', () => {
   beforeEach(() => {
     statusCell.data = undefined;
+    statusCell.isError = false;
+    statusCell.error = null;
+    statusCell.isFetching = false;
     mutateSpy.mockClear();
     startMailboxConnectSpy.mockClear();
+    refetchSpy.mockClear();
   });
 
   it('renders nothing while the status query has no data (fail quiet)', () => {
@@ -163,5 +182,48 @@ describe('SyncErrorBanner', () => {
 
     expect(startMailboxConnectSpy).toHaveBeenCalledWith(MAILBOX_ID);
     expect(mutateSpy).not.toHaveBeenCalled();
+  });
+
+  it('says the status is unknown when the READ itself keeps failing, and refetches', () => {
+    // `retryTransientOnly` already backed off 3× and `syncRefetchInterval`
+    // then stopped the poll, so this state has nothing left that would
+    // leave it. Rendering `null` here showed a user with unknown sync
+    // health exactly what a healthy user sees.
+    statusCell.isError = true;
+    statusCell.error = new ApiError(503, null, 'GET /api/v1/sync/status failed: 503');
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+
+    const banner = screen.getByTestId('sync-status-unavailable-banner');
+    expect(banner).toHaveTextContent(/can.t check whether new mail is syncing/i);
+    fireEvent.click(screen.getByRole('button', { name: /check again/i }));
+    expect(refetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays quiet for a 4xx — the layout branch ladder owns those states', () => {
+    statusCell.isError = true;
+    statusCell.error = new ApiError(
+      409,
+      { error: { code: 'NO_ACTIVE_MAILBOX' } },
+      'GET /api/v1/sync/status failed: 409',
+    );
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+
+    expect(screen.queryByTestId('sync-status-unavailable-banner')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
+  });
+
+  it('prefers the real sync failure over the unknown-read state', () => {
+    // A cached reading plus a failing refetch: the specific, actionable
+    // banner wins — "unknown" would be a downgrade.
+    statusCell.isError = true;
+    statusCell.error = new ApiError(500, null, 'boom');
+    statusCell.data = statusOf({
+      last_synced_at: null,
+      last_sync_error_at: minutesAgo(5),
+      last_sync_error_code: 'InvalidGrantError',
+    });
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
   });
 });
