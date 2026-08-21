@@ -47,11 +47,29 @@ describe('activeStageIndex (D109 stage mapping)', () => {
   it('maps progress_pct into one of six buckets while syncing', () => {
     expect(activeStageIndex({ ...SYNCING, progress_pct: 0 })).toBe(0);
     expect(activeStageIndex({ ...SYNCING, progress_pct: 45 })).toBe(2);
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 99 })).toBe(5);
+    // 99% lands on "Preparing recommendations", not "Done".
+    expect(activeStageIndex({ ...SYNCING, progress_pct: 99 })).toBe(4);
   });
 
-  it('never highlights "Done" while still syncing (clamps below last index)', () => {
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 100 })).toBeLessThan(UI_STAGES.length);
+  // This assertion used to be `toBeLessThan(UI_STAGES.length)` — i.e.
+  // `< 6`. Index 5 IS "Done — your inbox is ready", and 5 < 6, so the
+  // test passed for the entire time the bug was live: the worker writes
+  // 90 then 97 while still `syncing`, and the gate showed "Done" under a
+  // heading still reading "Reading your inbox…". A guard has to assert
+  // the thing its NAME claims, so this now names the label.
+  it('never highlights "Done" while still syncing', () => {
+    for (const pct of [90, 97, 99, 100]) {
+      const index = activeStageIndex({ ...SYNCING, progress_pct: pct });
+      expect(UI_STAGES[index]).not.toBe('Done — your inbox is ready');
+      expect(index).toBeLessThan(UI_STAGES.length - 1);
+    }
+  });
+
+  // Every clamp comparison against NaN is false, so a non-finite
+  // percentage would propagate through `Math.min`/`Math.max` unchanged
+  // and light up no row at all — a gate that looks frozen.
+  it('falls back to the first stage on a non-finite percentage', () => {
+    expect(activeStageIndex({ ...SYNCING, progress_pct: Number.NaN })).toBe(0);
   });
 
   it('marks every stage complete when readiness is ready', () => {

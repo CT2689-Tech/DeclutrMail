@@ -1617,6 +1617,52 @@ a constant; only enumeration finds the ones that became unreachable.
 **Distillation trigger:** promote to CLAUDE.md §8 if a second
 "re-tuned a producer, left a consumer gate stranded" entry lands.
 
+## 2026-08-21 — Benchmark query changes on PGlite before claiming a perf win
+
+**Context:** Founder reported the Senders first page feeling slow on
+mobile. PR #611 removed a mailbox-wide `MAX(total_received)` scan (folded
+it into the filter-counts aggregate) and made `meta.query` first-page-only.
+The commit claimed "first paint drops one full mailbox scan" — work
+removed, but no number.
+
+**Finding:** `freshTestDb()` boots a fully-migrated PGlite in-process,
+so a query change can be measured instead of argued about. Seeding N
+senders and timing before/after (12 reps, median):
+
+| senders | first page before → after | scroll page before → after |
+|---|---|---|
+| 1,000 | 4.3 → 3.7 ms | 6.2 → 2.1 ms |
+| 5,000 | 11.2 → 7.7 ms | 11.8 → 4.0 ms |
+| 20,000 | 23.7 → 25.6 ms | 36.3 → 11.4 ms |
+
+Two things the numbers say that reading the code did not:
+
+1. **The folded-in MAX saved nothing measurable.** It costs ~0.7ms on
+   its own at every size — trivial next to the 9-aggregate join it was
+   folded into — and at 20k the "saving" measured NEGATIVE, i.e. noise.
+   The half of the PR that read as the headline win wasn't one.
+2. **First-page-only `meta.query` is the real win** — ~2/3 of a scroll
+   page's DB time, 25ms per fetch at 20k senders.
+3. **The whole endpoint is ~25ms of SQL at 20k senders.** A page that
+   takes seconds is not explained by its database. Confirmed separately
+   by a request timeline: the route is two serialized API waves, so the
+   cost is round trips, not queries.
+
+**Caveat that matters:** PGlite is single-threaded, so it serialises
+what production runs concurrently in `Promise.all`. The "before" columns
+therefore OVERSTATE production wall-clock — the real first-page saving
+is smaller still. PGlite replays the real migrations, so indexes are
+production's; absolute latency is not.
+
+**Rule (provisional):** Before claiming a query change improves
+performance, measure it on `freshTestDb()` at a realistic row count.
+"Removes a scan" is a statement about work, not about time — a scan
+whose cost is 3% of the query it shared a request with buys nothing.
+Say which one you measured.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second
+"shipped a perf claim no one timed" entry lands.
+
 ## 2026-08-21 — A TanStack query is shared state; the last render wins
 **Context:** Chasing `Missing queryFn: '["auth","me"]'`, which killed the
 production app after a single sender deletion.
@@ -1691,3 +1737,4 @@ separately from the trigger.
 **Distillation trigger:** promote to CLAUDE.md §8 alongside the two invariants
 already there — this is the same shape ("shipped green, broke live") and the
 enumeration table §8 already asks for is exactly what would have caught it.
+

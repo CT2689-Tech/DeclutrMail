@@ -16,15 +16,28 @@
 import { useMutation } from '@tanstack/react-query';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
-import { ApiError } from '@/lib/api/client';
+import { ApiError, recoverFromUnauthorized } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
-async function downloadExport(format: DataExportFormat): Promise<void> {
+async function fetchExport(format: DataExportFormat, isRetry: boolean): Promise<Response> {
   const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
   const res = await fetch(`${apiBase}/api/account/export?format=${format}`, {
     credentials: 'include',
     headers: { Accept: format === 'json' ? 'application/json' : 'text/csv' },
   });
+  // Raw `fetch` skips `apiRequest`, so the 401 handling has to be
+  // repeated here or an expired session surfaces as the generic export
+  // failure — whose copy blames the rate limit and tells the user to
+  // wait, which never recovers. Refresh once, replay once; a terminal
+  // 401 hard-redirects to re-auth from inside the helper.
+  if (res.status === 401 && !isRetry && (await recoverFromUnauthorized())) {
+    return fetchExport(format, true);
+  }
+  return res;
+}
+
+async function downloadExport(format: DataExportFormat): Promise<void> {
+  const res = await fetchExport(format, false);
   if (!res.ok) {
     throw new ApiError(res.status, null, `GET /api/account/export failed: ${res.status}`);
   }

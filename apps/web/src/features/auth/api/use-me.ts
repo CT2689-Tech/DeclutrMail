@@ -1,10 +1,24 @@
 /**
  * `useMe` — TanStack Query hook for `GET /api/auth/me`.
  *
- * Drives the AuthProvider + the account menu. The query is loaded once
- * at app mount and re-fetched on window focus so a session revoked in
- * another tab surfaces as a 401 (which the apiClient routes to the
- * login redirect).
+ * Drives the AuthProvider + the account menu.
+ *
+ * REFETCH REALITY (corrected 2026-08-21). For most of this file's life
+ * the doc claimed a window-focus refetch that was never configured — the
+ * global default in `makeQueryClient` is `false` and nothing overrode it.
+ * That lie had consequences twice over: the mutation-side scope-conflict
+ * handler cited it as its reason for leaving reads uncovered (the app
+ * shell renders the reconnect gate off `me`, so a stale `me` meant the
+ * gate never appeared), and it hid the fact that a failed `me` had no
+ * route back at all.
+ *
+ * What is true now: `meQueryOptions` sets `refetchOnWindowFocus: true`
+ * for THIS query only — the client-wide default stays `false`, because a
+ * focus refetch across every query is a request storm. `me` also polls
+ * while a mailbox is syncing or deleting, retries every
+ * {@link ME_ERROR_RETRY_MS} while it has no session at all, and a
+ * `QueryCache.onError` in `makeQueryClient` resets the scoped cache on a
+ * read scope-conflict. Four routes back, where there used to be none.
  */
 
 import { useEffect } from 'react';

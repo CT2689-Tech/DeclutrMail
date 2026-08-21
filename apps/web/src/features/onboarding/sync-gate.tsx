@@ -23,10 +23,15 @@ const { color, font } = tokens;
  * (`app/onboarding/page.tsx`) so Storybook can drive every state
  * (queued / syncing / ready / failed) without a network.
  *
- * Privacy (D7 / D228): the shared `PrivacyBadge` ("Full bodies
- * fetched: 0" + the explicit storage list) is the load-bearing trust
- * artifact. The gate shows only stage labels + a percentage; it never
- * renders message-derived data.
+ * Privacy (D7 / D228): the shared `PrivacyBadge` ("We never fetch or
+ * store full email contents" + the generated storage list) is the
+ * load-bearing trust artifact. The gate shows only stage labels + a
+ * percentage; it never renders message-derived data.
+ *
+ * The counter phrasing this comment used to quote ("Full bodies
+ * fetched: 0") is BANNED by CLAUDE.md §2.1 and is asserted absent by
+ * this file's own tests — it was stale text one copy-paste away from
+ * becoming real copy.
  */
 
 /** The six user-facing stages (D109), in order. */
@@ -52,9 +57,23 @@ const UI_STAGES = [
  */
 function activeStageIndex(status: SyncStatus): number {
   if (status.readiness_status === 'ready') return UI_STAGES.length;
-  const bucket = Math.floor((status.progress_pct / 100) * UI_STAGES.length);
-  // Clamp into [0, len-1] while syncing so we never highlight "Done".
-  return Math.min(UI_STAGES.length - 1, Math.max(0, bucket));
+  // A non-finite percentage must not defeat the clamps below: every
+  // comparison against NaN is false, so `Math.min/max` propagate it
+  // unchanged and NO row would light up — the frozen-gate shape.
+  const pct = Number.isFinite(status.progress_pct) ? status.progress_pct : 0;
+  const bucket = Math.floor((pct / 100) * UI_STAGES.length);
+  // Clamp to len-2, NOT len-1. len-1 IS "Done — your inbox is ready", so
+  // the old bound did precisely what its comment said it prevented: the
+  // worker writes `computing_recommendations, 90` and then
+  // `finalizing, 97` while still `syncing`, and for that whole span —
+  // the score cascade over every sender, minutes on a large mailbox —
+  // the gate rendered "Done — your inbox is ready" in bold with
+  // aria-current="step", under a heading still reading "Reading your
+  // inbox…", while the app stayed gated (audit 2026-08-21).
+  //
+  // "Done" is now reachable ONLY from `readiness_status === 'ready'`
+  // above, which is the one signal that means it.
+  return Math.min(UI_STAGES.length - 2, Math.max(0, bucket));
 }
 
 /**

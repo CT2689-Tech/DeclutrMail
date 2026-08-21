@@ -457,6 +457,23 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         );
         // Continue to next rule — partial failure is preferable to
         // total failure for a cron sweep across many rules.
+        //
+        // But counted-and-continued still returns SUCCESS, so BullMQ
+        // records a clean run and the D203/D225 retry and dead-letter
+        // policy never engages, and `console.error` reaches nobody:
+        // Sentry runs with `integrations: []` (audit 2026-08-21).
+        //
+        // The shape this hid: one rule with a bad predicate throws on
+        // every sweep, forever, while `lastRunAt` above keeps advancing
+        // for the rules that DID run — so the user sees an enabled rule
+        // with a fresh "Last run" that has quietly done nothing.
+        this.observer.captureBackgroundFailure(
+          err instanceof Error ? err : new Error(String(err)),
+          {
+            kind: 'autopilot.rule_failed',
+            tags: { worker: this.workerName, mailbox_account_id: mailboxAccountId },
+          },
+        );
       }
     }
 

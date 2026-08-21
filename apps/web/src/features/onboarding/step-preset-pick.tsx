@@ -21,6 +21,13 @@ const { color, font } = tokens;
 
 /** Brief seed-wait poll (D110 sequencing): every 2.5s while empty. */
 const RULES_SEED_POLL_MS = 2_500;
+/**
+ * Give-up bound for the seed poll — ~1 minute at the cadence above.
+ * A poll with no terminal condition is a storm waiting for a slow
+ * seeder; the user can still continue, and the Autopilot screen shows
+ * the rules whenever they land.
+ */
+const RULES_SEED_MAX_POLLS = 24;
 
 const GOALS: ReadonlyArray<{
   id: OnboardingGoal;
@@ -88,8 +95,21 @@ export function StepPresetPick({
   // already exist).
   const rules = useQuery({
     ...autopilotRulesQueryOptions((signal) => fetchAutopilotRules(signal).then((env) => env.data)),
-    refetchInterval: (query) =>
-      query.state.data && query.state.data.length > 0 ? false : RULES_SEED_POLL_MS,
+    refetchInterval: (query) => {
+      // Stop on error, and cap the wait (audit 2026-08-21). This read
+      // sits behind `CurrentMailboxGuard`, so a scope 409 mid-connect
+      // used to loop at 24 req/min indefinitely with no error state and
+      // no give-up — under copy promising "your suggestions are still
+      // being prepared", a cause this component never read. An empty
+      // 200 looped the same way, since "seeder produced nothing" and
+      // "not seeded yet" were the same branch.
+      if (query.state.status === 'error') return false;
+      if ((query.state.data?.length ?? 0) > 0) return false;
+      if (query.state.dataUpdateCount + query.state.errorUpdateCount >= RULES_SEED_MAX_POLLS) {
+        return false;
+      }
+      return RULES_SEED_POLL_MS;
+    },
   });
   const rulesSeeded = (rules.data?.length ?? 0) > 0;
 

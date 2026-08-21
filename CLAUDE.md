@@ -452,6 +452,36 @@ A PR is not complete until ALL of these pass:
 - **No new TODOs** unless linked to a D-decision or GitHub issue
 - **Local smoke test passes** — see "Smoke before merge" below
 
+### A green test is not evidence (2026-08-21)
+
+Tests prove the code does what the test says. They do not prove the user
+is better off, and in this repo they have repeatedly asserted the bug:
+three tests found in one session each passed for the entire life of the
+defect they were named for — a `"never highlights Done"` guard that
+allowed the Done index, a windowed-count test that seeded every row with
+the same timestamp, and a webhook test asserting the pre-wrapped body
+that made the wire read `"Http Exception"`. Of 131 logged mistakes, ~11%
+were caught by tests, typecheck or lint.
+
+So for every fix, three things, in this order:
+
+1. **Negative control.** Revert the fix, watch the new assertion go red,
+   restore. A test that never failed against the old code proves
+   nothing. This is the floor, not the proof.
+2. **State what the user sees, before and after.** In one line each. A
+   fix that changes neither the visible state nor the route out of it is
+   NOT done — it is a quieter bug. Stopping a request storm while the
+   screen still renders `null` is the shape to watch for.
+3. **Verify the experience, not the mechanism.** Smoke it (§ "Smoke
+   before merge"). Where no runtime exists, trace the render path to
+   what the user actually sees and say that is what you did — never
+   write "smoke not run" and merge on green tests alone.
+
+Corollary for reviewers: when a test and the code agree, ask what the
+test would have to look like to catch the bug the code has. Tests that
+assert on the producer and tests that mock the consumer can both be
+green while the join between them is broken.
+
 ### Flow & state completeness (the gap structural gates miss)
 
 Gate agents (§7) review STRUCTURE — module boundaries, types, design

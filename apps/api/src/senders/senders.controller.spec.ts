@@ -203,6 +203,55 @@ describe('SendersController', () => {
       expect(res.data).toHaveLength(1);
     });
 
+    // `meta.query` is mailbox/filter-wide, not page-wide: two aggregate
+    // scans over EVERY sender in the mailbox, whose values are identical
+    // for every page of one filter set. Every consumer reads it off
+    // `pages[0]` — `sender-table.tsx` says so outright ("Pass page-1's
+    // meta.query.globalMaxTotal and PRESERVE it"). Recomputing it per
+    // cursor page was cost paid on every infinite-scroll fetch and read
+    // by nobody (audit 2026-08-21).
+    it('computes the mailbox-wide query meta on page 1 and NOT on cursor pages', async () => {
+      const rows: SenderFacts[] = [
+        makeSenderRow({ id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', totalReceived: 300 }),
+        makeSenderRow({ id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', totalReceived: 200 }),
+      ];
+      reads.listSenders.mockResolvedValue(rows);
+
+      const args = (cursor: string | undefined) =>
+        [
+          MAILBOX,
+          undefined,
+          '1',
+          cursor,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+        ] as const;
+
+      // Page 1 — meta present, scans paid once.
+      const first = await ctrl.list(...args(undefined));
+      expect(first.meta.query).toBeDefined();
+      expect(reads.getSenderListQueryMeta).toHaveBeenCalledTimes(1);
+      const nextCursor = first.meta.pagination.nextCursor;
+      expect(nextCursor).not.toBeNull();
+
+      // Page 2, driven by page 1's own cursor exactly as the client
+      // does — the scans must NOT run again.
+      const second = await ctrl.list(...args(nextCursor as string));
+      expect(second.meta.query).toBeUndefined();
+      expect(reads.getSenderListQueryMeta).toHaveBeenCalledTimes(1);
+      // The page itself still comes back — this drops the meta, not data.
+      expect(second.data).toHaveLength(1);
+    });
+
     it('emits a nextCursor that encodes the active sort column (default Total ↓)', async () => {
       // Default sort is `total` (ADR-0014). Service returns limit+1
       // rows — the controller pops the sentinel and derives the

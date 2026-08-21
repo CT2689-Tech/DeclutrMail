@@ -72,6 +72,7 @@ import { DensityToggle, ViewToggle } from './view-toggle';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
+import { SendersLoadingState } from './senders-loading-state';
 import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
@@ -286,7 +287,7 @@ export function SendersScreen() {
     }),
     enabled: searchNarrowedToNothing,
   });
-  const widenedCount = widenProbe.data?.pages[0]?.meta.query.totalMatching ?? 0;
+  const widenedCount = widenProbe.data?.pages[0]?.meta.query?.totalMatching ?? 0;
   const showingWidened = searchNarrowedToNothing && !keepNarrow && widenedCount > 0;
 
   const allSenders = useMemo<Sender[]>(() => {
@@ -2807,36 +2808,6 @@ function LoadMoreSentinel({ onVisible, busy }: { onVisible: () => void; busy: bo
 }
 
 /** D211 loading branch — skeleton rows for the in-flight initial fetch. */
-export function SendersLoadingState() {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
-      }}
-    >
-      {[72, 56, 120, 160, 160].map((h, i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          style={{
-            height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 12,
-          }}
-        />
-      ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading senders</span>
-    </div>
-  );
-}
-
 /** D211 error branch — a distinct, retryable read failure (never an empty mailbox). */
 function SendersErrorState({ onRetry }: { onRetry: () => void }) {
   return (

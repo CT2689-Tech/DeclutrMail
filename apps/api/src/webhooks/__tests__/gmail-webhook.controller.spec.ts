@@ -88,7 +88,14 @@ describe('GmailWebhookController.push — D181 webhook.signature_failure emit', 
     consoleWarn.mockRestore();
   });
 
-  it('still returns the D229-mandated 401 + UNAUTHORIZED envelope unchanged', async () => {
+  // This asserted the PRE-WRAPPED `{ error: { code, message } }` body and
+  // passed for the whole time the wire was broken — the classic
+  // both-ends-tested/middle-untested shape. `AllExceptionsFilter` owns
+  // the envelope: it reads `code` and `message` off the TOP LEVEL of the
+  // exception body, so the extra `error` wrapper made both extractions
+  // miss and Nest's `initMessage()` fallback shipped the literal string
+  // "Http Exception" as the user-facing message (audit 2026-08-21).
+  it('throws the top-level { code, message } the envelope filter reads', async () => {
     const { controller } = makeController({
       verify: { ok: false, step: 1, reason: 'missing_authorization_header' },
     });
@@ -100,9 +107,14 @@ describe('GmailWebhookController.push — D181 webhook.signature_failure emit', 
       expect(err).toBeInstanceOf(HttpException);
       const http = err as HttpException;
       expect(http.getStatus()).toBe(HttpStatus.UNAUTHORIZED);
+      // Top level, not nested under `error`.
       expect(http.getResponse()).toEqual({
-        error: { code: 'UNAUTHORIZED', message: 'OIDC verification failed.' },
+        code: 'UNAUTHORIZED',
+        message: 'OIDC verification failed.',
       });
+      // The thing that actually broke: Nest's fallback message.
+      expect(http.message).not.toBe('Http Exception');
+      expect(http.message).toBe('OIDC verification failed.');
     }
     consoleWarn.mockRestore();
   });

@@ -202,7 +202,7 @@ export const ObserveQuietWeek: Story<typeof RuleCard> = {
     ...baseArgs,
     rule: {
       ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
-      observeDigest: { pendingTotal: 0, senders7d: 0, messages7d: 0 },
+      observeDigest: { pendingTotal: 0, senders7d: 0, inboxMessagesNow: 0 },
     },
     pendingCount: 0,
   },

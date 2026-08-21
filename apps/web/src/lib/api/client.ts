@@ -278,6 +278,27 @@ async function attemptRefresh(): Promise<boolean> {
   return pendingRefresh;
 }
 
+/**
+ * The 401 recovery the envelope path runs, for the one caller that
+ * cannot use it: `GET /api/account/export` streams a FILE, so it goes
+ * through raw `fetch` and never reaches the branch above.
+ *
+ * Without this the export was the only surface in the app where an
+ * expired session read as a product failure — the Privacy & Data screen
+ * blamed the export rate limit and told the user to wait, which is a
+ * wrong diagnosis they can never act their way out of.
+ *
+ * Returns true when the session was refreshed and the caller should
+ * replay its request once; false after starting the hard redirect to
+ * re-auth (the caller's own throw then races a navigation, which is
+ * fine — the page is leaving).
+ */
+export async function recoverFromUnauthorized(): Promise<boolean> {
+  if (await attemptRefresh()) return true;
+  redirectToLogin();
+  return false;
+}
+
 /** Guards against stacking navigations when several requests 401 at once. */
 let redirecting = false;
 

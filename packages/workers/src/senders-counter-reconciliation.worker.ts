@@ -146,6 +146,63 @@ export class SendersCounterReconciliationWorker extends BaseDeclutrWorker<
       RETURNING drift.old_val AS old_val, drift.new_val AS new_val
     `);
 
+    // SECOND COUNTER: `wrote_to_count`.
+    //
+    // Until 2026-08-21 this worker recounted `total_received` only, and
+    // that was survivable because every incremental push re-derived
+    // `wrote_to_count` for the WHOLE mailbox -- the sync path was
+    // accidentally also its reconciler. Scoping that recompute to the
+    // senders a batch touches (the change this ships alongside) removes
+    // that safety net, so the counter needs a real one here.
+    //
+    // It matters more than a number being slightly wrong. `wrote_to_count
+    // >= 3` is the `'replied'` branch of automatic protection (D245,
+    // CLAUDE.md 2.6), so a stale-high value silently Protects a sender --
+    // excluding it from bulk actions and showing the user a reason that
+    // is not true -- and a stale-low value silently fails to protect one.
+    //
+    // Same shape as the recount above and the same source of truth as
+    // migration 0063: outbound messages joined to senders on normalized
+    // recipient address. `<>` on the join means zero-drift mailboxes pay
+    // one scan and no writes.
+    type WroteDriftRow = { old_val: string | number; new_val: string | number };
+    const wroteDriftRes = await this.deps.db.execute<WroteDriftRow>(sql`
+      WITH computed AS (
+        SELECT s2.id AS sender_id, COUNT(DISTINCT m.id)::bigint AS cnt
+        FROM mail_messages AS m
+        CROSS JOIN LATERAL unnest(m.recipient_emails) AS r(addr)
+        JOIN senders AS s2
+          ON s2.mailbox_account_id = m.mailbox_account_id
+         AND dm_normalize_email(s2.email::text) = dm_normalize_email(r.addr)
+        WHERE m.is_outbound = true
+        GROUP BY s2.id
+      ),
+      drift AS (
+        SELECT s.id,
+               s.wrote_to_count AS old_val,
+               COALESCE(c.cnt, 0)::bigint AS new_val
+        FROM senders s
+        LEFT JOIN computed c ON c.sender_id = s.id
+        WHERE s.wrote_to_count <> COALESCE(c.cnt, 0)
+      )
+      UPDATE senders
+      SET wrote_to_count = drift.new_val, updated_at = now()
+      FROM drift
+      WHERE senders.id = drift.id
+      RETURNING drift.old_val AS old_val, drift.new_val AS new_val
+    `);
+    const wroteDrifted = extractRows<WroteDriftRow>(wroteDriftRes);
+    if (wroteDrifted.length > 0) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'senders.wrote_to_counter_drift',
+          corrected: wroteDrifted.length,
+          totalSenders,
+        }),
+      );
+    }
+
     const drifted = extractRows<DriftRow>(driftRes);
     let maxAbsDelta = 0;
     for (const row of drifted) {

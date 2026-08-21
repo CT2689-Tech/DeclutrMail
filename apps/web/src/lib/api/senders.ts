@@ -568,7 +568,15 @@ export interface SenderListEnvelope {
   data: SenderListRow[];
   meta: {
     pagination: PaginatedEnvelope<SenderListRow>['meta']['pagination'];
-    query: SenderListQueryMeta;
+    /**
+     * Present on the FIRST page only. It is mailbox/filter-wide, not
+     * page-wide — identical for every page of one filter set — and the
+     * server stopped paying two full aggregate scans per cursor page to
+     * recompute what no consumer reads (every consumer indexes
+     * `pages[0].meta.query`). Optional rather than zeroed: a zero here
+     * would be a number the UI could render.
+     */
+    query?: SenderListQueryMeta;
   };
 }
 

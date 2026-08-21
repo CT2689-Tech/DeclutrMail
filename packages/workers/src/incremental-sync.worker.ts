@@ -418,6 +418,20 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     let added = 0;
     let deleted = 0;
     let labelChanges = 0;
+    // Wrote-to attribution is scoped to senders this batch can actually
+    // move: recipients of outbound add/delete, plus first-seen inbound
+    // senders. The post-pass recomputes only those keys instead of
+    // zeroing the whole mailbox.
+    //
+    // KEYS, NOT EMAILS. `sender_key` is sha256('v1|' || normalized_email)
+    // and `dm_normalize_email` mirrors `normalizeEmail` statement for
+    // statement (migration 0063), so `deriveSenderKey(recipient)` IS the
+    // key -- resolving addresses to keys through the database answered a
+    // question we can answer in process. The query that did it cost a
+    // full sequential scan of `senders` (measured: 1,052 shared buffers,
+    // 8,454 rows discarded, to return 1) because its two predicates sat
+    // under an OR, which no index can serve.
+    const attributionSenderKeys = new Set<string>();
     // `getMessageMetadata` resolves `null` for BOTH "deleted between the
     // history record and the get" and "Gmail refused to render it". Only
     // the first is benign here: this path advances `lastHistoryId` on
@@ -431,14 +445,29 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       switch (ev.kind) {
         case 'added': {
           addAttempts += 1;
-          if (await this.handleMessageAdded(mailboxAccountId, ev.messageId, client)) {
+          const add = await this.handleMessageAdded(mailboxAccountId, ev.messageId, client);
+          if (add.inserted) {
             added += 1;
+          }
+          if (add.firstSeenSenderKey) {
+            attributionSenderKeys.add(add.firstSeenSenderKey);
+          }
+          if (add.outboundRecipients) {
+            for (const email of add.outboundRecipients) {
+              attributionSenderKeys.add(deriveSenderKey(email));
+            }
           }
           break;
         }
         case 'deleted': {
-          if (await this.handleMessageDeleted(mailboxAccountId, ev.messageId)) {
+          const removed = await this.handleMessageDeleted(mailboxAccountId, ev.messageId);
+          if (removed.deleted) {
             deleted += 1;
+          }
+          if (removed.outboundRecipients) {
+            for (const email of removed.outboundRecipients) {
+              attributionSenderKeys.add(deriveSenderKey(email));
+            }
           }
           break;
         }
@@ -452,6 +481,28 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           if (await this.handleLabelChange(mailboxAccountId, ev.messageId, ev.labelIds, false)) {
             labelChanges += 1;
           }
+          break;
+        }
+        default: {
+          // WARN AND CONTINUE, never throw. `_exhaustive` keeps the
+          // compile-time guarantee; a runtime throw here would abort the
+          // batch BEFORE the cursor advance, and since every retry
+          // replays the same record the mailbox would stop syncing
+          // permanently -- a hard outage in place of one skipped record.
+          // `GmailHistoryRecord` is explicitly a normalisation of Gmail's
+          // wire shape, so a fifth kind is a live possibility, and this
+          // file's posture for unexpected input everywhere else is
+          // measure-and-continue.
+          const _exhaustive: never = ev;
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'incremental_sync.unknown_history_kind',
+              worker: this.workerName,
+              mailboxAccountId,
+              record: JSON.stringify(_exhaustive),
+            }),
+          );
           break;
         }
       }
@@ -513,6 +564,12 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // created by `handleMessageAdded`. A LABEL CHANGE CANNOT MOVE IT: it
     // rewrites `label_ids` / `is_unread` and touches neither
     // `recipient_emails`, `is_outbound`, nor the `senders` table.
+    // An inbound add to a sender we already know cannot move it either.
+    //
+    // When it DOES run, it is scoped to the collected keys/emails — still
+    // the same COUNT DISTINCT as 0063's backfill, just not against every
+    // sender in the mailbox. The initial-sync post-pass stays a full
+    // rebuild; this path is the per-push one.
     //
     // That distinction is worth a gate because label churn dominates.
     // On the founder's mailbox a third-party sweeper relabels mail
@@ -528,7 +585,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     if (events.length > 0) {
       timeseriesReconcile = await this.runWroteToAttributionPostPass(mailboxAccountId, client, {
         reconcileTimeseries: labelChanges > 0 || deleted > 0,
-        recomputeAttribution: added > 0 || deleted > 0,
+        attributionSenderKeys: [...attributionSenderKeys],
       });
     }
 
@@ -633,21 +690,28 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
 
   /**
    * Fetch one newly-arrived message's metadata and upsert it into
-   * `mail_messages` + the sender's identity/aggregates. Returns `true`
-   * only on a TRUE insert so the caller increments its `added` counter
-   * once per net-new row.
+   * `mail_messages` + the sender's identity/aggregates. `inserted` is
+   * true only on a TRUE insert so the caller increments its `added`
+   * counter once per net-new row. Attribution fields tell the post-pass
+   * which senders this insert can move — outbound recipients, or a
+   * first-seen inbound sender that may already have mail addressed to
+   * them.
    */
   private async handleMessageAdded(
     mailboxAccountId: string,
     messageId: string,
     client: GmailMetadataClient,
-  ): Promise<boolean> {
+  ): Promise<{
+    inserted: boolean;
+    firstSeenSenderKey: string | null;
+    outboundRecipients: readonly string[] | null;
+  }> {
     const meta = await client.getMessageMetadata(messageId);
     if (!meta) {
       // 404 — the message was deleted between the history record and
       // the get. The `messagesDeleted` event will arrive (or already
       // did) on a later history record; nothing to write here.
-      return false;
+      return { inserted: false, firstSeenSenderKey: null, outboundRecipients: null };
     }
 
     const isOutbound = meta.labelIds.includes('SENT');
@@ -821,18 +885,27 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       }
     }
 
-    return result.newlyInserted;
+    return {
+      inserted: result.newlyInserted,
+      firstSeenSenderKey: result.firstSeenSender ? senderKey : null,
+      outboundRecipients:
+        result.newlyInserted && isOutbound && recipientEmails && recipientEmails.length > 0
+          ? recipientEmails
+          : null,
+    };
   }
 
   /**
-   * Hard-delete an existing message row. Returns `true` when a row was
-   * actually removed (the typical case); `false` when the id is absent
-   * (already-tombstoned redelivery — idempotent).
+   * Hard-delete an existing message row. `deleted` is true when a row was
+   * actually removed (the typical case); false when the id is absent
+   * (already-tombstoned redelivery — idempotent). Outbound recipients
+   * are returned so the attribution post-pass can recompute those
+   * senders without scanning the mailbox.
    */
   private async handleMessageDeleted(
     mailboxAccountId: string,
     messageId: string,
-  ): Promise<boolean> {
+  ): Promise<{ deleted: boolean; outboundRecipients: readonly string[] | null }> {
     const deleted = await this.deps.db
       .delete(mailMessages)
       .where(
@@ -841,8 +914,21 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           eq(mailMessages.providerMessageId, messageId),
         ),
       )
-      .returning({ id: mailMessages.id });
-    return deleted.length > 0;
+      .returning({
+        isOutbound: mailMessages.isOutbound,
+        recipientEmails: mailMessages.recipientEmails,
+      });
+    const row = deleted[0];
+    if (!row) {
+      return { deleted: false, outboundRecipients: null };
+    }
+    return {
+      deleted: true,
+      outboundRecipients:
+        row.isOutbound && row.recipientEmails && row.recipientEmails.length > 0
+          ? row.recipientEmails
+          : null,
+    };
   }
 
   /**
@@ -924,9 +1010,18 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   private async runWroteToAttributionPostPass(
     mailboxAccountId: string,
     client: GmailMetadataClient,
-    opts: { reconcileTimeseries: boolean; recomputeAttribution: boolean } = {
-      reconcileTimeseries: true,
-      recomputeAttribution: true,
+    // REQUIRED, no default. The previous default said
+    // `recomputeAttribution: true` beside empty arrays, which after
+    // scoping meant "recompute NOTHING" -- a default that reads as a full
+    // rebuild and silently performs a no-op. Making opts required means a
+    // future caller cannot get that by accident.
+    opts: {
+      reconcileTimeseries: boolean;
+      /**
+       * Senders this batch can move. Empty means nothing to recompute --
+       * the flag that used to say so was derivable from this and is gone.
+       */
+      attributionSenderKeys: readonly string[];
     },
   ): Promise<SenderTimeseriesReconcileResult | null> {
     let reconciled: SenderTimeseriesReconcileResult | null = null;
@@ -963,33 +1058,44 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // label-only push cannot move this number. Both statements are
       // inside the gate: running the zero-first pass WITHOUT the
       // recompute would blank every count in the mailbox.
-      if (opts.recomputeAttribution) {
-        await tx.execute(sql`
-          UPDATE ${senders} AS s
-          SET ${sql.identifier('wrote_to_count')} = 0
-          WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-            AND s.${sql.identifier('wrote_to_count')} <> 0
-        `);
-        await tx.execute(sql`
-          UPDATE ${senders} AS s
-          SET ${sql.identifier('wrote_to_count')} = sub.cnt
-          FROM (
-            SELECT
-              m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
-              s2.${sql.identifier('sender_key')} AS sender_key,
-              COUNT(DISTINCT m.${sql.identifier('id')})::integer AS cnt
-            FROM ${mailMessages} AS m
-            CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
-            JOIN ${senders} AS s2
-              ON s2.${sql.identifier('mailbox_account_id')} = m.${sql.identifier('mailbox_account_id')}
-             AND dm_normalize_email(s2.${sql.identifier('email')}::text) = dm_normalize_email(r.addr)
-            WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-              AND m.${sql.identifier('is_outbound')} = true
-            GROUP BY m.${sql.identifier('mailbox_account_id')}, s2.${sql.identifier('sender_key')}
-          ) AS sub
-          WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
-            AND s.${sql.identifier('sender_key')} = sub.sender_key
-        `);
+      //
+      // Scoped to the senders this batch can move. A full-mailbox zero
+      // was the 4.5s / 1 GB production cost: every incremental push
+      // rewrote every sender row, then seq-scanned mail_messages to
+      // rebuild. Initial sync still does that once; this path must not.
+      if (opts.attributionSenderKeys.length > 0) {
+        const scopedKeys = opts.attributionSenderKeys;
+        if (scopedKeys.length > 0) {
+          const keyArray = sqlTextArray(scopedKeys);
+          await tx.execute(sql`
+            UPDATE ${senders} AS s
+            SET ${sql.identifier('wrote_to_count')} = 0
+            WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+              AND s.${sql.identifier('sender_key')} = ANY(${keyArray})
+              AND s.${sql.identifier('wrote_to_count')} <> 0
+          `);
+          await tx.execute(sql`
+            UPDATE ${senders} AS s
+            SET ${sql.identifier('wrote_to_count')} = sub.cnt
+            FROM (
+              SELECT
+                m.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
+                s2.${sql.identifier('sender_key')} AS sender_key,
+                COUNT(DISTINCT m.${sql.identifier('id')})::integer AS cnt
+              FROM ${mailMessages} AS m
+              CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
+              JOIN ${senders} AS s2
+                ON s2.${sql.identifier('mailbox_account_id')} = m.${sql.identifier('mailbox_account_id')}
+               AND dm_normalize_email(s2.${sql.identifier('email')}::text) = dm_normalize_email(r.addr)
+               AND s2.${sql.identifier('sender_key')} = ANY(${keyArray})
+              WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+                AND m.${sql.identifier('is_outbound')} = true
+              GROUP BY m.${sql.identifier('mailbox_account_id')}, s2.${sql.identifier('sender_key')}
+            ) AS sub
+            WHERE s.${sql.identifier('mailbox_account_id')} = sub.mailbox_account_id
+              AND s.${sql.identifier('sender_key')} = sub.sender_key
+          `);
+        }
       }
 
       // `volume` / `read_count` are derived, not accumulated — a message
@@ -1002,6 +1108,13 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     });
     return reconciled;
   }
+
+  /**
+   * Map outbound recipient addresses + first-seen sender keys onto the
+   * `senders.sender_key` rows this mailbox actually holds. Empty means
+   * the batch named people we have no sender row for yet (outbound-only
+   * correspondents), so there is nothing to recompute.
+   */
 }
 
 /**
@@ -1030,4 +1143,20 @@ function startOfMonthISO(d: Date): string {
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, '0');
   return `${y}-${m}-01`;
+}
+
+/**
+ * Bound text[] literal. Drizzle interpolating a JS string[] as
+ * `ANY(${keys})` expands to a ROW `($1,$2)`, which Postgres rejects
+ * (triage.read-service.ts, Codex smoke 2026-05-27). `sql.join` emits
+ * `ARRAY[$1, $2, …]::text[]`.
+ */
+function sqlTextArray(values: readonly string[]) {
+  if (values.length === 0) {
+    return sql`ARRAY[]::text[]`;
+  }
+  return sql`ARRAY[${sql.join(
+    values.map((value) => sql`${value}`),
+    sql`, `,
+  )}]::text[]`;
 }

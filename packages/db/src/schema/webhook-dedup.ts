@@ -32,7 +32,9 @@ import { mailboxAccounts } from './mailbox-accounts';
  *
  * Index `webhook_dedup_expires_at_idx` powers the cleanup worker's
  * `WHERE expires_at < now()` scan without a sequential scan over
- * the entire table.
+ * the entire table. `webhook_dedup_mailbox_account_id_idx` covers the
+ * nullable FK so `ON DELETE CASCADE` from `mailbox_accounts` is an
+ * index lookup, not a seq scan (mig 0068).
  *
  * Privacy (D7, D228): no message body, no headers, no Gmail content
  * — only the Pub/Sub envelope's opaque messageId and bookkeeping
@@ -63,6 +65,7 @@ export const webhookDedup = pgTable(
   },
   (table) => ({
     expiresAtIdx: index('webhook_dedup_expires_at_idx').on(table.expiresAt),
+    mailboxAccountIdIdx: index('webhook_dedup_mailbox_account_id_idx').on(table.mailboxAccountId),
   }),
 );
 

@@ -773,6 +773,33 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
             error: err instanceof Error ? err.message : String(err),
           }),
         );
+        // The sweep counts this failure and then returns SUCCESS, so
+        // BullMQ records a clean run and the D203/D225 retry and
+        // dead-letter policy never engages. That is right for isolation
+        // and wrong for visibility: the console line is the only trace,
+        // and `console.error` is not observability here — Sentry runs
+        // with `integrations: []`, so nothing forwards it (audit
+        // 2026-08-21).
+        //
+        // The user-visible shape this hid: you approve an Autopilot
+        // suggestion, the Gmail mutation fails in a way that will not
+        // self-correct, and the match is retried every sweep forever,
+        // never marked failed, with no Activity row and no alert — so
+        // an Archive you approved simply never happens and nothing says
+        // so. Making it terminal after N attempts needs an attempts
+        // column on `rule_match_log`, which is a migration and is NOT
+        // in this change; the silence is fixed here, the infinite retry
+        // is not.
+        this.observer.captureBackgroundFailure(
+          err instanceof Error ? err : new Error(String(err)),
+          {
+            kind: 'autopilot.action.match_failed',
+            tags: {
+              worker: this.workerName,
+              mailbox_account_id: mailboxAccountId,
+            },
+          },
+        );
       }
     }
 

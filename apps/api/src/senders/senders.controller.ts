@@ -91,10 +91,18 @@ interface SenderListEnvelope extends Envelope<
   SenderListRow[],
   {
     pagination: PaginationMeta;
-    query: SenderListQueryMeta;
+    query?: SenderListQueryMeta;
   }
 > {
-  meta: { pagination: PaginationMeta; query: SenderListQueryMeta };
+  /**
+   * `query` is FIRST PAGE ONLY. It is mailbox/filter-wide rather than
+   * page-wide — two aggregate scans over every sender in the mailbox,
+   * identical for every page of one filter set — and every consumer
+   * reads it off `pages[0]`. Recomputing it per cursor page was cost
+   * nobody read (audit 2026-08-21). Optional, not zeroed: a zero would
+   * be a number the UI could render.
+   */
+  meta: { pagination: PaginationMeta; query?: SenderListQueryMeta };
 }
 
 /** Page-size bounds — see each route's clamp call for the route-specific defaults. */
@@ -183,6 +191,19 @@ export class SendersController {
     // per-sort parser.
     const cursor = cursorRaw ? { key: cursorRaw.key, id: cursorRaw.id } : null;
 
+    // `query` meta is MAILBOX/FILTER-WIDE, not page-wide: two aggregate
+    // scans over every sender in the mailbox, whose values are identical
+    // for every page of one filter set. The client only ever reads it
+    // off page 1 — every consumer indexes `pages[0].meta.query`, and
+    // `sender-table.tsx` says so outright ("Pass page-1's
+    // meta.query.globalMaxTotal and PRESERVE it"). So on a cursor page
+    // those scans were pure cost: paid on every infinite-scroll fetch,
+    // read by nobody (audit 2026-08-21).
+    //
+    // Omitted rather than zeroed — a zero would be a lie the client
+    // could render. `meta.query` is optional in the wire type for
+    // exactly this reason.
+    const isFirstPage = cursor === null;
     const [rows, query] = await Promise.all([
       this.reads.listSenders({
         mailboxAccountId: accountId,
@@ -200,18 +221,20 @@ export class SendersController {
         domain,
         unsubIgnored,
       }),
-      this.reads.getSenderListQueryMeta({
-        mailboxAccountId: accountId,
-        category,
-        isProtected,
-        q,
-        activity,
-        unsubReady,
-        wroteTo,
-        quietForDays,
-        domain,
-        unsubIgnored,
-      }),
+      isFirstPage
+        ? this.reads.getSenderListQueryMeta({
+            mailboxAccountId: accountId,
+            category,
+            isProtected,
+            q,
+            activity,
+            unsubReady,
+            wroteTo,
+            quietForDays,
+            domain,
+            unsubIgnored,
+          })
+        : Promise.resolve(null),
     ]);
 
     const { page, nextCursor } = takePage(rows, limit, (row) =>
@@ -224,7 +247,7 @@ export class SendersController {
     };
     const marks = await this.brandMarksFor(page.map((row) => row.domain));
     const data = page.map((row) => ({ ...row, brandMark: marks.has(row.domain) }));
-    return { data, meta: { pagination, query } };
+    return { data, meta: { pagination, ...(query !== null ? { query } : {}) } };
   }
 
   /**

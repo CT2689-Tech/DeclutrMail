@@ -28,10 +28,13 @@ function makeController() {
   // ZERO rows on conflict. Default: first sight (each test's delivery
   // is new). `dedupSeen()` flips it to the replay case.
   const returning = vi.fn().mockResolvedValue([{ messageId: 'resend:seen' }]);
+  // Compensating release of the dedup slot when processing fails.
+  const dedupDeleteWhere = vi.fn().mockResolvedValue(undefined);
   const db = {
     insert: vi.fn(() => ({
       values: () => ({ onConflictDoNothing: () => ({ returning }) }),
     })),
+    delete: vi.fn(() => ({ where: dedupDeleteWhere })),
   };
   const controller = new ResendWebhookController(
     suppression as unknown as EmailSuppressionService,
@@ -39,7 +42,7 @@ function makeController() {
     db as unknown as never,
   );
   const dedupSeen = () => returning.mockResolvedValue([]);
-  return { controller, suppression, securityEvents, db, dedupSeen };
+  return { controller, suppression, securityEvents, db, dedupSeen, dedupDeleteWhere };
 }
 
 function signedHeaders(
@@ -192,6 +195,46 @@ describe('ResendWebhookController', () => {
       ),
       400,
     );
+  });
+
+  // The dedup row is committed BEFORE the suppression runs. Without the
+  // compensating release, a transient failure consumed the slot for
+  // good: the request 500s, Resend retries the same svix-id, the insert
+  // conflicts, the handler answers `duplicate`, and the bounce is
+  // dropped permanently — so we keep mailing a hard-bounced address,
+  // the exact outcome the suppression list exists to prevent.
+  it('releases the dedup slot when the suppression write fails, so the retry is not a no-op', async () => {
+    const { controller, suppression, dedupDeleteWhere } = makeController();
+    suppression.suppress.mockRejectedValueOnce(new Error('pool exhausted'));
+    const body = JSON.stringify({
+      type: 'email.bounced',
+      data: { to: 'person@example.com' },
+    });
+    const h = signedHeaders(body);
+
+    await expect(
+      controller.handle(req(body), h.svixId, h.svixTimestamp, h.svixSignature),
+    ).rejects.toThrow('pool exhausted');
+
+    // Slot released — the redelivery will actually process. Safe because
+    // `suppress()` is idempotent (`already_suppressed`), so a duplicate
+    // costs a no-op while a drop costs deliverability.
+    expect(dedupDeleteWhere).toHaveBeenCalledTimes(1);
+  });
+
+  // A deterministic failure fails identically on every retry, so holding
+  // the slot is what stops a pointless retry loop.
+  it('keeps the dedup slot for a malformed payload, which no retry can fix', async () => {
+    const { controller, dedupDeleteWhere } = makeController();
+    const body = 'not json at all';
+    const h = signedHeaders(body);
+
+    await expectHttpStatus(
+      controller.handle(req(body), h.svixId, h.svixTimestamp, h.svixSignature),
+      400,
+    );
+
+    expect(dedupDeleteWhere).not.toHaveBeenCalled();
   });
 
   it('a verified REPLAY inside the window acks as duplicate and suppresses nothing', async () => {
