@@ -29,7 +29,7 @@ export interface AutopilotObserveDigest {
   /** Distinct senders matched in the last 7 days (all resolutions). */
   senders7d: number;
   /** INBOX messages from those senders — what a sweep right now would act on. */
-  messages7d: number;
+  inboxMessagesNow: number;
 }
 
 /** One Autopilot rule, as the read service returns it. */
