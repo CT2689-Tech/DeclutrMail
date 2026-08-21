@@ -754,6 +754,15 @@ describe('BriefSnapshotWorker', () => {
     }) as never;
 
     const worker = new BriefSnapshotWorker({ db: dbWithFault, now: () => NOW });
+    // The job returns SUCCESS, so BullMQ's retry/dead-letter policy never
+    // engages and the counter is the only trace. Capture is therefore the
+    // ONLY thing that makes a permanently-failing mailbox visible.
+    const captured: string[] = [];
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (_error, ctx) => captured.push(ctx.kind),
+      recordBackgroundNotice: () => {},
+    });
     const result = await worker.processJob(
       { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
       FAKE_CTX,
@@ -761,6 +770,7 @@ describe('BriefSnapshotWorker', () => {
 
     expect(result.mailboxesProcessed).toBe(2);
     expect(result.mailboxesFailed).toBe(1);
+    expect(captured).toEqual(['brief.mailbox_failed']);
     // One mailbox still got its Brief.
     expect(result.briefsGenerated).toBe(1);
 
