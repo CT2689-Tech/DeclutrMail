@@ -1738,3 +1738,55 @@ separately from the trigger.
 already there — this is the same shape ("shipped green, broke live") and the
 enumeration table §8 already asks for is exactly what would have caught it.
 
+
+## 2026-08-21 — Cloud Run request-only CPU kills the DB pool; measure with a HAR, not a benchmark
+
+**Context:** Founder reported the Senders screen taking too long. I chased
+two wrong causes first — query cost, then region geography — before a
+production HAR settled it.
+
+**Finding:** Split the HAR by whether a request reached Postgres. Same
+instance, same region, same code path; the only variable is the database:
+
+| request | server `wait` |
+|---|---|
+| 401s (JwtGuard rejects before any query) | 88–119 ms |
+| `/api/auth/refresh` | 676 ms |
+| `/api/senders/summary` | 790 ms |
+| `/api/undo` · `/api/auth/me` | 938 · 954 ms |
+| `/api/v1/sync/status` · `/api/snoozed/recovery` | 1135 · 1145 ms |
+| `/api/senders` (most connections of any endpoint) | **11,180 ms** |
+
+`/api/auth/me` is one user lookup. 954 ms is not query time — it is a
+connection being rebuilt. Under request-only CPU the API is frozen
+between requests, the postgres.js pool to Supabase (a different region)
+dies idle, and every request pays TCP + TLS + auth. TLS is CPU work, so
+on one throttled core concurrent handshakes queue instead of overlapping,
+and the endpoint opening the most connections pays the most.
+
+Downstream: 11.2 s blows the 2000 ms `server-query-client` deadline, the
+SSR prefetch is cancelled, the browser refetches from scratch — ~19 s to
+a usable screen, `onLoad` 6.2 s.
+
+**This is the second instance of the same class.** The worker hit it on
+2026-06-08 ("request-only CPU … killing gRPC connection pools … cold
+reconnect spirals") and was fixed with the same two flags. The API was
+never given them.
+
+**Two things I had to unlearn, both from the same HAR:**
+- The senders aggregate work measured ~25 ms of SQL on PGlite. That
+  benchmark could not see connection setup, which is where ~99% of the
+  time went. A benchmark measures the layer you point it at.
+- I read 25 icon 304s at ~1.7 s each as a cache bug. They were
+  `stale-while-revalidate` working correctly — every icon the user saw
+  came from disk in 1 ms, and the revalidation ran at VeryLow priority
+  11.7 s AFTER onLoad. The headers were right; only the server was slow.
+
+**Rule (provisional):** When "the app is slow", split the waterfall by
+whether each request touches a dependency BEFORE profiling any query. A
+flat penalty on every dependency-touching request is a connection or
+runtime problem, not a query problem — and no amount of query tuning
+will move it.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a third
+"request-only CPU starved a connection pool" entry lands.
