@@ -47,13 +47,16 @@ async function freshDb(): Promise<IncrementalSyncDeps['db']> {
   return (await freshTestDb()) as unknown as IncrementalSyncDeps['db'];
 }
 
-async function seedMailbox(db: IncrementalSyncDeps['db']): Promise<string> {
+async function seedMailbox(
+  db: IncrementalSyncDeps['db'],
+  providerAccountId = 'owner@declutrmail.ai',
+): Promise<string> {
   const [ws] = await db.insert(workspaces).values({ name: 'Test WS' }).returning({
     id: workspaces.id,
   });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: 'owner@declutrmail.ai' })
+    .values({ workspaceId: ws!.id, email: providerAccountId })
     .returning({ id: users.id });
   const [mailbox] = await db
     .insert(mailboxAccounts)
@@ -61,7 +64,7 @@ async function seedMailbox(db: IncrementalSyncDeps['db']): Promise<string> {
       workspaceId: ws!.id,
       userId: user!.id,
       provider: 'gmail',
-      providerAccountId: 'owner@declutrmail.ai',
+      providerAccountId,
     })
     .returning({ id: mailboxAccounts.id });
   // Provider_sync_state row — the worker advances this applied cursor in
@@ -647,6 +650,283 @@ describe('IncrementalSyncWorker', () => {
         ),
       );
     expect(msg!.isUnread).toBe(false);
+  });
+
+  it('does NOT recompute wrote_to_count on inbound-only add to an existing sender', async () => {
+    // Same gate as the label-only case: an inbound insert updates
+    // total_received / last_seen_at and does not touch recipient_emails
+    // or create a new sender row, so it cannot move wrote_to_count. The
+    // seeded 99 is deliberately wrong; if the full-mailbox recompute
+    // still ran it would correct to 0 (no outbound) and this fails.
+    const base = Date.parse('2026-03-01T09:00:00.000Z');
+    const senderEmail = 'persona@example.com';
+    const senderKey = deriveSenderKey(senderEmail);
+
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'inbound-existing',
+      providerThreadId: 'thread-existing',
+      senderKey,
+      internalDate: new Date(base),
+      isUnread: true,
+    });
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey,
+      displayName: 'Persona',
+      email: senderEmail,
+      domain: 'example.com',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(base),
+      lastSeenAt: new Date(base),
+      totalReceived: 1,
+      wroteToCount: 99,
+    });
+
+    const meta = makeMetadata(
+      'inbound-new',
+      'thread-existing',
+      senderEmail,
+      ['INBOX', 'UNREAD'],
+      base + 60_000,
+    );
+    const records: GmailHistoryRecord[] = [
+      {
+        kind: 'added',
+        messageId: 'inbound-new',
+        threadId: 'thread-existing',
+        labelIds: ['INBOX', 'UNREAD'],
+      },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([['inbound-new', meta]]),
+    );
+
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)));
+    expect(row!.wroteToCount).toBe(99);
+    expect(row!.totalReceived).toBe(2);
+  });
+
+  it('recomputes wrote_to_count only for senders this batch can move', async () => {
+    const base = Date.parse('2026-03-01T09:00:00.000Z');
+    const targetEmail = 'persona@example.com';
+    const targetKey = deriveSenderKey(targetEmail);
+    const bystanderEmail = 'bystander@example.com';
+    const bystanderKey = deriveSenderKey(bystanderEmail);
+    const otherMailbox = await seedMailbox(db, 'other@declutrmail.ai');
+
+    await db.insert(mailMessages).values([
+      {
+        mailboxAccountId,
+        providerMessageId: 'inbound-target',
+        providerThreadId: 'thread-target',
+        senderKey: targetKey,
+        internalDate: new Date(base),
+        isUnread: false,
+      },
+      {
+        mailboxAccountId,
+        providerMessageId: 'inbound-bystander',
+        providerThreadId: 'thread-bystander',
+        senderKey: bystanderKey,
+        internalDate: new Date(base),
+        isUnread: false,
+      },
+    ]);
+    await db.insert(senders).values([
+      {
+        mailboxAccountId,
+        senderKey: targetKey,
+        displayName: 'Persona',
+        email: targetEmail,
+        domain: 'example.com',
+        gmailCategory: 'primary',
+        firstSeenAt: new Date(base),
+        lastSeenAt: new Date(base),
+        totalReceived: 1,
+        wroteToCount: 0,
+      },
+      {
+        mailboxAccountId,
+        senderKey: bystanderKey,
+        displayName: 'Bystander',
+        email: bystanderEmail,
+        domain: 'example.com',
+        gmailCategory: 'primary',
+        firstSeenAt: new Date(base),
+        lastSeenAt: new Date(base),
+        totalReceived: 1,
+        wroteToCount: 99,
+      },
+      {
+        mailboxAccountId: otherMailbox,
+        senderKey: targetKey,
+        displayName: 'Other mailbox persona',
+        email: targetEmail,
+        domain: 'example.com',
+        gmailCategory: 'primary',
+        firstSeenAt: new Date(base),
+        lastSeenAt: new Date(base),
+        totalReceived: 1,
+        wroteToCount: 77,
+      },
+    ]);
+
+    const newReply = makeMetadata(
+      'reply-target',
+      'thread-target',
+      'Owner <owner@declutrmail.ai>',
+      ['SENT'],
+      base + 60_000,
+      { to: targetEmail },
+    );
+    const records: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'reply-target', threadId: 'thread-target', labelIds: ['SENT'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([['reply-target', newReply]]),
+    );
+
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const [target] = await db
+      .select()
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, targetKey)));
+    expect(target!.wroteToCount).toBe(1);
+
+    const [bystander] = await db
+      .select()
+      .from(senders)
+      .where(
+        and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, bystanderKey)),
+      );
+    expect(bystander!.wroteToCount).toBe(99);
+
+    const [other] = await db
+      .select()
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, otherMailbox), eq(senders.senderKey, targetKey)));
+    expect(other!.wroteToCount).toBe(77);
+  });
+
+  it('decrements wrote_to_count when the last outbound to a sender is deleted', async () => {
+    const base = Date.parse('2026-03-01T09:00:00.000Z');
+    const senderEmail = 'persona@example.com';
+    const senderKey = deriveSenderKey(senderEmail);
+
+    await db.insert(mailMessages).values([
+      {
+        mailboxAccountId,
+        providerMessageId: 'inbound-del',
+        providerThreadId: 'thread-del-attr',
+        senderKey,
+        internalDate: new Date(base),
+        isUnread: false,
+      },
+      {
+        mailboxAccountId,
+        providerMessageId: 'reply-del',
+        providerThreadId: 'thread-del-attr',
+        senderKey: '',
+        internalDate: new Date(base + 60_000),
+        isUnread: false,
+        isOutbound: true,
+        recipientEmails: [senderEmail],
+      },
+    ]);
+    await db.insert(senders).values({
+      mailboxAccountId,
+      senderKey,
+      displayName: 'Persona',
+      email: senderEmail,
+      domain: 'example.com',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date(base),
+      lastSeenAt: new Date(base),
+      totalReceived: 1,
+      wroteToCount: 1,
+    });
+
+    const records: GmailHistoryRecord[] = [
+      { kind: 'deleted', messageId: 'reply-del', threadId: 'thread-del-attr' },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map(),
+    );
+
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)));
+    expect(row!.wroteToCount).toBe(0);
+  });
+
+  it('credits existing outbound when a sender row is first seen', async () => {
+    const base = Date.parse('2026-03-01T09:00:00.000Z');
+    const senderEmail = 'persona@example.com';
+    const senderKey = deriveSenderKey(senderEmail);
+
+    await db.insert(mailMessages).values({
+      mailboxAccountId,
+      providerMessageId: 'reply-before-inbound',
+      providerThreadId: 'thread-first-seen',
+      senderKey: '',
+      internalDate: new Date(base),
+      isUnread: false,
+      isOutbound: true,
+      recipientEmails: [senderEmail],
+    });
+
+    const meta = makeMetadata(
+      'inbound-first',
+      'thread-first-seen',
+      senderEmail,
+      ['INBOX'],
+      base + 60_000,
+    );
+    const records: GmailHistoryRecord[] = [
+      {
+        kind: 'added',
+        messageId: 'inbound-first',
+        threadId: 'thread-first-seen',
+        labelIds: ['INBOX'],
+      },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([['inbound-first', meta]]),
+    );
+
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const [row] = await db
+      .select()
+      .from(senders)
+      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)));
+    expect(row!.wroteToCount).toBe(1);
   });
 
   it('runs the wrote-to attribution + auto-protect post-pass after a batch', async () => {
