@@ -1,0 +1,60 @@
+-- atlas:txmode none
+-- Rollback for 0068_security_and_webhook_fk_index.sql
+--
+-- CONCURRENTLY to match the forward index build: webhook_dedup is live,
+-- and this is also the recovery path if the forward build leaves an
+-- INVALID index behind.
+--
+-- Restoring GRANT ALL to anon/authenticated re-opens the defense-in-depth
+-- hole this migration closed. That is the correct rollback: the forward
+-- change is privilege metadata, not data, and a revert should put the
+-- database back to the Supabase default the advisory flagged.
+
+DROP INDEX CONCURRENTLY IF EXISTS "webhook_dedup_mailbox_account_id_idx";
+--> statement-breakpoint
+ALTER FUNCTION public.dm_normalize_email(raw text) RESET search_path;
+--> statement-breakpoint
+DO $$
+DECLARE
+  r text;
+  grantor text;
+BEGIN
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA public TO %I', r);
+      EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO %I', r);
+    END IF;
+  END LOOP;
+
+  -- Membership, not existence -- same reason as the forward migration:
+  -- ALTER DEFAULT PRIVILEGES FOR ROLE requires membership in the target
+  -- role, and prod's `postgres` is not a member of `supabase_admin`.
+  -- Without this the documented recovery path fails exactly like the
+  -- thing it is supposed to recover from.
+  FOREACH grantor IN ARRAY ARRAY['postgres', 'supabase_admin'] LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = grantor) THEN
+      CONTINUE;
+    END IF;
+    IF NOT pg_has_role(current_user, grantor, 'USAGE') THEN
+      RAISE NOTICE '0068 rollback: skipping grantor % (not a member)', grantor;
+      CONTINUE;
+    END IF;
+    IF TRUE THEN
+      FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+          EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT ALL ON TABLES TO %I',
+            grantor,
+            r
+          );
+          EXECUTE format(
+            'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public GRANT ALL ON SEQUENCES TO %I',
+            grantor,
+            r
+          );
+        END IF;
+      END LOOP;
+    END IF;
+  END LOOP;
+END
+$$;
