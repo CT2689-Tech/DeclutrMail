@@ -10,18 +10,32 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { useSenders } from './use-senders';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import type { SenderListRow } from '@/lib/api/senders';
 
-const ROW_A = {
+// Typed against the wire contract — see the note on `ROW` in
+// senders-screen.test.tsx. Un-annotated, this fixture was missing six
+// fields the API always sends.
+const ROW_A: SenderListRow = {
   id: 'a',
   displayName: 'Sender A',
   email: 'a@example.com',
   domain: 'example.com',
+  brandMark: false,
   gmailCategory: 'promotions' as const,
   lastSeenAt: '2026-05-23T00:00:00.000Z',
   firstSeenAt: '2025-01-01T00:00:00.000Z',
+  totalReceived: 120,
+  wroteToCount: 0,
   monthlyVolume: 30,
   readRate: 0,
+  volumeTrend: 'steady' as const,
   unsubscribeMethod: 'one_click' as const,
+  lastReview: null,
+  protectionFlags: {
+    isProtected: false,
+    protectionReason: null,
+    protectionSetAt: null,
+  },
 };
 
 const ROW_B = { ...ROW_A, id: 'b', displayName: 'Sender B', email: 'b@example.com' };

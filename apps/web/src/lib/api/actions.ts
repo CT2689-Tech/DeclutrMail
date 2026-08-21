@@ -267,7 +267,6 @@ export interface CompositeActionPreviewResult {
     /** `senders.replied_count` from mig 0022 — drives the
      *  sender-context-strip "you replied N×" copy. */
     wroteToCount: number | null;
-    monthly: number | null;
   };
   counts: {
     all: number;

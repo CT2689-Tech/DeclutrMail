@@ -79,18 +79,34 @@ vi.mock('@/lib/sentry', () => ({
   addBreadcrumb: (...args: unknown[]) => addBreadcrumbMock(...args),
   captureFeatureException: (...args: unknown[]) => captureFeatureExceptionMock(...args),
 }));
+import type { SenderDetailDto } from '@/lib/api/senders';
 
-const DETAIL = {
+// Typed against the wire contract — see the note on `ROW` in
+// senders-screen.test.tsx.
+
+const DETAIL: SenderDetailDto = {
   id: 'linkedin',
   displayName: 'LinkedIn',
   email: 'noreply@linkedin.com',
   domain: 'linkedin.com',
+  brandMark: false,
   gmailCategory: 'social' as const,
   lastSeenAt: '2026-05-23T00:00:00.000Z',
   firstSeenAt: '2023-05-23T00:00:00.000Z',
   monthlyVolume: 64,
+  // Required on the wire (`SenderDetailDto`) and always sent by
+  // `SendersReadService.getById`. This fixture reaches the app as
+  // `unknown` through `jsonOk`, so nothing type-checks it against the
+  // contract and it can silently omit a field the real API guarantees —
+  // as it did for `totalReceived` until the confirm modal's context
+  // strip started reading it (2026-08-21). Fields the UI renders belong
+  // here even when today's assertions don't name them.
+  totalReceived: 2_048,
+  wroteToCount: 0,
   readRate: 0,
+  volumeTrend: 'steady' as const,
   unsubscribeMethod: 'mailto' as const,
+  lastReview: null,
   protectionFlags: {
     isProtected: false,
     protectionReason: null,

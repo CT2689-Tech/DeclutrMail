@@ -21,6 +21,76 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-21 — A retired unit, a lying type predicate, and a debounce shorter than a keystroke
+
+**PR:** #613 (https://github.com/CT2689-Tech/DeclutrMail/pull/613)
+**Caught by:** founder smoke — one confirm modal, three defects visible in a
+single screenshot
+
+**What happened.** Opening Unsubscribe on `contact@baapstore.com` showed
+`134 /mo arriving` above a chip row reading `All inbox 11`. The founder read
+it as a wrong number. It was not: 134 messages genuinely arrive per month,
+and Unroll.me files 617 of that sender's 628 into a label so only 11 ever
+reach the inbox. Three separate failures produced that screen.
+
+1. **A retired unit survived on one surface.** ADR-0037 replaced `/mo` with
+   an explicit `N in last 90d` everywhere *except* the confirm modal, and the
+   modal then had a THIRD window wired into the retired label —
+   `previewComposite` computed its own 30-day count purely for that strip,
+   while the fallback under the same label rendered the list row's 90-day
+   figure until the preview resolved. The card said 396, the modal said 134,
+   one click apart, both correct. The code comment above the strip had already
+   *predicted* this exact misread and "fixed" it by appending the word
+   `arriving`.
+
+2. **A hand-written type predicate that asserted instead of narrowing.**
+
+   ```ts
+   [actionEffectCopy(presentation.primary), presentation.secondary]
+     .filter((copy): copy is string => copy !== null)   // ← a cast, not a check
+     .join(' Also: ')
+   ```
+
+   `presentation.secondary` is a `PresentedAction` object. `copy is string`
+   off a bare `!== null` test told TypeScript to stop looking, so the object
+   reached `join` and every composite confirm shipped
+   `Also: [object Object]` — in the lead paragraph of a destructive action.
+   `buildActionPresentation` already assembled this string correctly as
+   `previewCopy`, and packages/shared tested it; the modal hand-rolled a
+   duplicate and nothing asserted on the result.
+
+3. **A debounce shorter than the interval it debounces.** Both search
+   debounces were 150ms while the component's own docstring put typing at
+   ~3 keystrokes/sec (333ms). Every timer expired before the next character
+   arrived: typing "baapstore" fired 9 typeahead calls and 9 list fetches,
+   each list fetch an RSC navigation measured at 2.7–4.4s.
+
+**Correct approach.** (1) A window-scoped number names its window at every
+surface, or the ADR that retired the old framing is only half-applied — and a
+second service must never compute its own copy of a figure another read
+already publishes. (2) Never hand-write `x is T` unless the body actually
+proves `T`; `.filter((c) => c !== null)` alone would have inferred
+`(string | PresentedAction)[]` and errored on `.join`. (3) A debounce is a
+relation to the event rate, not a constant.
+
+**Rule:** When an ADR retires a framing, grep for the retired token and fix
+every live surface in that change — a survivor is worse than the original,
+because the migrated surfaces now contradict it.
+
+**Enforcement update:** Tests, each verified to FAIL against the unfixed code
+before being kept. `sender-search.test.tsx` asserts the relation (types at
+180ms/char, requires one request per word) rather than the constants, so a
+future tuning pass under the keystroke interval fails. The four senders test
+fixtures that reach the app as `unknown` through `jsonOk` are now annotated
+with their wire types, so a missing field is a compile error — the detail
+fixture had been silently missing `totalReceived`, which is how it surfaced.
+
+**Also learned, unrelated to the bug:** neither the preview pane nor a
+background Chrome tab can measure sub-second timing — both report
+`document.hidden: true` and Chrome throttles hidden tabs to one timer per
+second, which makes a 150ms and a 400ms debounce indistinguishable. The
+before/after was measured by driving a real visible Chromium with Playwright.
+
 ## 2026-08-19 — A suggestion rendered as history, and the cross-link proved it
 
 **PR:** #571 (https://github.com/CT2689-Tech/DeclutrMail/pull/571)

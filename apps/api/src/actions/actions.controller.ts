@@ -294,10 +294,11 @@ export class ActionsController {
    * Returns the sender context strip (used by ConfirmActionModal's
    * "Acting on {sender}" header) + counts per time-window bucket
    * (30d / 90d / 180d / 365d) for the chip row. One aggregate query in
-   * the service computes all four buckets + the un-windowed `all` + the
-   * monthly figure for the context strip, so the modal opens in a single
-   * round-trip. Read-only → no CsrfGuard. Mailbox-scoped → 404 if the
-   * sender isn't owned.
+   * the service computes all four buckets + the un-windowed `all`, so
+   * the modal opens in a single round-trip. The strip's arrival volume
+   * is not returned — it is the list row's `monthlyVolume` (90d,
+   * ADR-0037) the FE already holds. Read-only → no CsrfGuard.
+   * Mailbox-scoped → 404 if the sender isn't owned.
    */
   @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
   @Get('preview')

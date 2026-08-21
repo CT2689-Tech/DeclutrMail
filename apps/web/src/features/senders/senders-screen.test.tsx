@@ -48,12 +48,22 @@ import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useSendersStore } from './store';
+import type { SenderListRow } from '@/lib/api/senders';
 
-const ROW = {
+// Typed against the wire contract so a field the API always sends cannot
+// go missing here unnoticed. These fixtures reach the app as `unknown`
+// through `jsonOk`, so without the annotation TypeScript never compares
+// them to `SenderListRow` — which is how `totalReceived` was absent from
+// the detail fixture until the confirm modal started reading it
+// (2026-08-21). Values are the behaviour-neutral ones the code used to
+// get from `undefined`: no brand mark, no replies, steady trend.
+const ROW: SenderListRow = {
   id: 'a',
   displayName: 'Sender A',
   email: 'a@example.com',
   domain: 'example.com',
+  brandMark: false,
+  wroteToCount: 0,
   gmailCategory: 'promotions' as const,
   lastSeenAt: '2026-05-23T00:00:00.000Z',
   firstSeenAt: '2025-01-01T00:00:00.000Z',
@@ -487,6 +497,16 @@ describe('SendersScreen — edge states', () => {
 
   describe('F011 — a search the default filter starves', () => {
     /**
+     * A keystroke reaches the list query through TWO debounces —
+     * `SenderSearch`'s notify (400ms, sender-search.tsx) and the
+     * screen's own `useDebouncedValue` (150ms) — before the fetch even
+     * starts. `findBy*` defaults to 1000ms, which quietly fitted the
+     * old 150+150 chain and stopped fitting when the notify debounce
+     * was raised to outlast a keystroke interval (2026-08-21). These
+     * tests assert BEHAVIOUR, not latency, so they wait past the chain
+     * rather than encoding a race that only holds on an unloaded
+     * machine.
+     *
      * The founder's reproduction: the default compose is
      * `activity: 'active'`, and searching a sender who last mailed 158
      * days ago returned `No senders match "X"` — a claim about the
@@ -501,6 +521,9 @@ describe('SendersScreen — edge states', () => {
       email: 'technews@techgig.example',
       domain: 'techgig.example',
     };
+    /** Comfortably past 400 + 150 + the fetch + a render, under load. */
+    const AFTER_SEARCH_DEBOUNCE = { timeout: 3_000 } as const;
+
     function installStarvedSearchStub() {
       installFetchStub([
         {
@@ -536,9 +559,9 @@ describe('SendersScreen — edge states', () => {
       });
 
       // The sender the old empty state denied the existence of.
-      expect(await screen.findByTestId('senders-widened-notice')).toHaveTextContent(
-        /No active senders match/,
-      );
+      expect(
+        await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE),
+      ).toHaveTextContent(/No active senders match/);
       expect(screen.getAllByText(/TechGig Latest News/).length).toBeGreaterThan(0);
       // And no contradiction: the empty state must be gone, not merely
       // rendered underneath the rows.
@@ -554,7 +577,7 @@ describe('SendersScreen — edge states', () => {
       fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
         target: { value: 'TechGig Latest News' },
       });
-      await screen.findByTestId('senders-widened-notice');
+      await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE);
 
       fireEvent.click(screen.getByRole('button', { name: /Keep active only/i }));
 
@@ -576,7 +599,7 @@ describe('SendersScreen — edge states', () => {
       fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
         target: { value: 'TechGig Latest News' },
       });
-      await screen.findByTestId('senders-widened-notice');
+      await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE);
       fireEvent.click(screen.getByRole('button', { name: /Keep active only/i }));
       await screen.findByText(/under these filters/);
 
@@ -618,7 +641,11 @@ describe('SendersScreen — edge states', () => {
       });
 
       expect(
-        await screen.findByText(/found nothing, so this is the whole answer/),
+        await screen.findByText(
+          /found nothing, so this is the whole answer/,
+          undefined,
+          AFTER_SEARCH_DEBOUNCE,
+        ),
       ).toBeInTheDocument();
       expect(screen.queryByTestId('senders-widened-notice')).not.toBeInTheDocument();
     });

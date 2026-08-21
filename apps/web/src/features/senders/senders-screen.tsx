@@ -237,9 +237,11 @@ export function SendersScreen() {
   // fire a request per keystroke.
   // `keepPreviousData` (in useSenders) holds the list while the new term
   // resolves, so the screen never blanks to a skeleton mid-search.
-  // 150ms (was 300): SenderSearch now debounces its own notify by
-  // 150ms before this state even updates (keystroke-eating fix), so
-  // the stacked total keystroke→fetch stays ~300ms.
+  // SenderSearch already holds a keystroke back by NOTIFY_DEBOUNCE_MS
+  // before this state updates, so this stage exists for the callers it
+  // does NOT cover — `applySavedScope`, `clearSearchAndFilters`, and the
+  // typeahead pick — which set the query directly. Kept short for that
+  // reason: those are single discrete events, not a keystroke stream.
   const debouncedQuery = useDebouncedValue(query.trim(), 150);
   // Same query the app-shell nav chip reads (`DEFAULT_SENDERS_QUERY`) so
   // the two share ONE infinite-query cache entry — page sizes stay

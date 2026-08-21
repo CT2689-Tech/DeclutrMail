@@ -7,15 +7,27 @@ import type { Sender } from './data';
 
 const { color, font } = tokens;
 
-const SUGGEST_DEBOUNCE_MS = 150;
+/**
+ * How long after the last keystroke the BE typeahead is asked.
+ *
+ * Must exceed the interval between keystrokes or it debounces nothing.
+ * At 150ms it fired on every character of an ordinary word: typing
+ * "baapstore" produced eight `GET /api/senders/suggest` calls, seven of
+ * them cancelled (founder network capture, 2026-08-21).
+ */
+const SUGGEST_DEBOUNCE_MS = 250;
 
 /**
- * How long after the last keystroke the HOST learns about the new
- * query (the host render is the expensive whole-screen narrow — see
- * the semi-controlled block in the component). The host adds its own
- * fetch debounce on top, so total keystroke→fetch stays ~300ms.
+ * How long after the last keystroke the HOST learns about the new query.
+ *
+ * Longer than the suggest debounce because it costs far more: the host
+ * writes the term to the URL compose state, so each notify is a Next
+ * router navigation (an `_rsc` round-trip) PLUS the senders list fetch —
+ * measured at 2.7–4.4s each in the same capture, eight times for one
+ * word. The dropdown is what has to feel live; the list behind it only
+ * has to be right once the typing stops.
  */
-const NOTIFY_DEBOUNCE_MS = 150;
+const NOTIFY_DEBOUNCE_MS = 400;
 
 /**
  * Sender search w/ live typeahead.
@@ -25,10 +37,9 @@ const NOTIFY_DEBOUNCE_MS = 150;
  * loaded list page. Typing also propagates to the host via `onChange`
  * so the underlying list narrows in lockstep.
  *
- * Debounced 150ms — typing fires ~3 keystrokes/sec; 150ms catches
- * pauses without piling up cancelled queries. The query is keyed by
- * the debounced term so an in-flight fetch for an obsolete term
- * resolves into a stale cache, not the active dropdown.
+ * Debounced — see the two constants above. The query is keyed by the
+ * debounced term so an in-flight fetch for an obsolete term resolves
+ * into a stale cache, not the active dropdown.
  *
  * Privacy (D7): the suggestion row renders allowlisted fields only —
  * name, domain, `totalReceived`. No body, snippet, or headers.

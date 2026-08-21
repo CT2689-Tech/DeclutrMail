@@ -683,11 +683,11 @@ describe('ActionsService', () => {
       //   >90d     = 100 + 200 + 400              = 3
       //   >180d    = 200 + 400                    = 2
       //   >365d    = 400                          = 1
-      //   monthly  = ALL inbound messages WITHIN last 30 days regardless
-      //              of labels = m-2d + m-archived → 2. The strip's
-      //              "N /mo" mirrors the senders-list card (last30dMsgs),
-      //              NOT the inbox-scoped buckets — an archived-recent
-      //              sender must not read "0 /mo" (live bug 2026-07-03).
+      //
+      // No arrival figure is asserted because none is returned: the
+      // strip reads the list row's 90-day `monthlyVolume` (ADR-0037).
+      // A second window computed here is what let the card say "396 in
+      // last 90d" and the modal "134 /mo" for one sender (2026-08-21).
       expect(res.counts).toEqual({
         all: 5,
         olderThan30d: 4,
@@ -695,7 +695,6 @@ describe('ActionsService', () => {
         olderThan180d: 2,
         olderThan365d: 1,
       });
-      expect(res.sender.monthly).toBe(2);
       expect(res.sender.domain).toBe('shop.example');
       expect(res.unsubAvailable).toBe(false);
       expect(res.protected).toBe(false);
