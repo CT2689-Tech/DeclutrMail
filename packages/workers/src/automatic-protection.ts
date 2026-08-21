@@ -60,39 +60,59 @@ export async function applyAutomaticProtection(
       AND s.${sql.identifier('gmail_category')} <> 'primary'
   `);
   await tx.execute(sql`
-    WITH eligible AS (
+    WITH sender_signals AS (
+      -- ONE GROUPED PASS PER MAILBOX, replacing three correlated
+      -- subqueries per sender.
+      --
+      -- Each rule below used to be asked once per sender. Measured on
+      -- production 2026-08-20 (7,955 senders, 185,583 messages):
+      -- 81,789 shared buffers and 7,051ms, of which the starred EXISTS
+      -- alone was 69,832 buffers across 7,955 executions that returned
+      -- rows=0 EVERY TIME -- the whole mailbox holds 160 starred
+      -- messages. Grouped: 13,246 buffers, 1,058ms. -84% / -85%.
+      --
+      -- The planner cannot do this transformation itself. A scalar
+      -- aggregate subquery is opaque to it, unlike the EXISTS forms
+      -- elsewhere in this repo that it rewrites into semi-joins.
+      SELECT
+        ${sql.identifier('sender_key')} AS sender_key,
+        bool_or(
+          'STARRED' = ANY(${sql.identifier('label_ids')})
+          AND ${sql.identifier('internal_date')} >= now() - interval '1 year'
+        ) AS has_recent_star,
+        COUNT(*) FILTER (
+          WHERE 'IMPORTANT' = ANY(${sql.identifier('label_ids')})
+            AND ${sql.identifier('internal_date')} >= now() - interval '1 year'
+        ) AS recent_important_count
+      FROM ${mailMessages}
+      WHERE ${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+        AND ${sql.identifier('is_outbound')} = false
+      GROUP BY ${sql.identifier('sender_key')}
+    ),
+    eligible AS (
       SELECT
         s.${sql.identifier('mailbox_account_id')} AS mailbox_account_id,
         s.${sql.identifier('sender_key')} AS sender_key,
         CASE
-          WHEN s.${sql.identifier('wrote_to_count')} >= 3 AND EXISTS (
-            SELECT 1
-            FROM ${mailMessages} AS inbound_message
-            WHERE inbound_message.${sql.identifier('mailbox_account_id')} = s.${sql.identifier('mailbox_account_id')}
-              AND inbound_message.${sql.identifier('sender_key')} = s.${sql.identifier('sender_key')}
-              AND inbound_message.${sql.identifier('is_outbound')} = false
-          ) THEN 'replied'::protection_reason
-          WHEN EXISTS (
-            SELECT 1
-            FROM ${mailMessages} AS starred_message
-            WHERE starred_message.${sql.identifier('mailbox_account_id')} = s.${sql.identifier('mailbox_account_id')}
-              AND starred_message.${sql.identifier('sender_key')} = s.${sql.identifier('sender_key')}
-              AND starred_message.${sql.identifier('is_outbound')} = false
-              AND 'STARRED' = ANY(starred_message.${sql.identifier('label_ids')})
-              AND starred_message.${sql.identifier('internal_date')} >= now() - interval '1 year'
-          ) THEN 'starred'::protection_reason
-          WHEN s.${sql.identifier('gmail_category')} = 'primary' AND (
-            SELECT COUNT(*)
-            FROM ${mailMessages} AS important_message
-            WHERE important_message.${sql.identifier('mailbox_account_id')} = s.${sql.identifier('mailbox_account_id')}
-              AND important_message.${sql.identifier('sender_key')} = s.${sql.identifier('sender_key')}
-              AND important_message.${sql.identifier('is_outbound')} = false
-              AND 'IMPORTANT' = ANY(important_message.${sql.identifier('label_ids')})
-              AND important_message.${sql.identifier('internal_date')} >= now() - interval '1 year'
-          ) >= 3 THEN 'gmail_important'::protection_reason
+          -- ORDER IS THE RULE, not an implementation detail: the first
+          -- match wins, so a replied-to sender is reported as 'replied'
+          -- even if it also has a star. The reason is shown to the user
+          -- (D245 requires the exact reason), so reordering these
+          -- changes what the product says, not just what it computes.
+          --
+          -- "has any inbound mail" is now membership in sender_signals,
+          -- which is filtered to is_outbound = false -- so a sender with
+          -- no inbound row is simply absent from the group.
+          WHEN s.${sql.identifier('wrote_to_count')} >= 3
+            AND sig.sender_key IS NOT NULL THEN 'replied'::protection_reason
+          WHEN COALESCE(sig.has_recent_star, false) THEN 'starred'::protection_reason
+          WHEN s.${sql.identifier('gmail_category')} = 'primary'
+            AND COALESCE(sig.recent_important_count, 0) >= 3
+            THEN 'gmail_important'::protection_reason
           ELSE NULL
         END AS protection_reason
       FROM ${senders} AS s
+      LEFT JOIN sender_signals AS sig ON sig.sender_key = s.${sql.identifier('sender_key')}
       WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
     )
     INSERT INTO ${senderPolicies} (
