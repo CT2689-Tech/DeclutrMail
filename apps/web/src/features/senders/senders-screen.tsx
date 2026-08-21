@@ -286,7 +286,7 @@ export function SendersScreen() {
     }),
     enabled: searchNarrowedToNothing,
   });
-  const widenedCount = widenProbe.data?.pages[0]?.meta.query.totalMatching ?? 0;
+  const widenedCount = widenProbe.data?.pages[0]?.meta.query?.totalMatching ?? 0;
   const showingWidened = searchNarrowedToNothing && !keepNarrow && widenedCount > 0;
 
   const allSenders = useMemo<Sender[]>(() => {

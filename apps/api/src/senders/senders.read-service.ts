@@ -1000,14 +1000,9 @@ export class SendersReadService {
       .where(and(...totalMatchingConditions));
 
     // `globalMaxTotal` is mailbox-wide unfiltered — the magnitude-bar
-    // denominator must stay constant across filter changes (a
-    // filtered view does NOT rescale to its own max).
-    const globalMaxQuery = this.db
-      .select({
-        max: sql<string | number>`COALESCE(MAX(${senders.totalReceived}), 0)::bigint`,
-      })
-      .from(senders)
-      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    // denominator must stay constant across filter changes (a filtered
+    // view does NOT rescale to its own max). It rides on
+    // `filterCountsQuery` below rather than costing its own scan.
 
     // D38 — per-axis ABSOLUTE counts (mailbox-wide, ignoring compose).
     // One aggregate with `COUNT(*) FILTER (WHERE ...)` per axis. The
@@ -1017,6 +1012,13 @@ export class SendersReadService {
     const dormantCutoff = sql`now() - (${WINDOWS.DORMANT_DAYS} || ' days')::interval`;
     const filterCountsQuery = this.db
       .select({
+        // Folded in from what used to be a SEPARATE mailbox-wide scan
+        // (audit 2026-08-21). Identical FROM and WHERE, and the
+        // `sender_policies` join is 1:1 on its unique
+        // (mailbox_account_id, sender_key), so no row multiplication can
+        // inflate the MAX. One scan of the mailbox's senders instead of
+        // two, on the request that paints the first screen.
+        max: sql<string | number>`COALESCE(MAX(${senders.totalReceived}), 0)::bigint`,
         total: sql<string | number>`COUNT(*)::bigint`,
         active: sql<
           string | number
@@ -1057,14 +1059,10 @@ export class SendersReadService {
       )
       .where(eq(senders.mailboxAccountId, mailboxAccountId));
 
-    const [totalRow, maxRow, countsRow] = await Promise.all([
-      totalMatchingQuery,
-      globalMaxQuery,
-      filterCountsQuery,
-    ]);
+    const [totalRow, countsRow] = await Promise.all([totalMatchingQuery, filterCountsQuery]);
     const totalMatching = ensureSafeIntegerNumber(totalRow[0]?.count ?? 0, 'totalMatching');
-    const globalMaxTotal = ensureSafeIntegerNumber(maxRow[0]?.max ?? 0, 'globalMaxTotal');
     const counts = countsRow[0];
+    const globalMaxTotal = ensureSafeIntegerNumber(counts?.max ?? 0, 'globalMaxTotal');
     const filterCounts = counts
       ? {
           total: ensureSafeIntegerNumber(counts.total ?? 0, 'filterCounts.total'),
