@@ -13,18 +13,26 @@ import { useSenderDetail } from './use-sender-detail';
 import { ApiError } from '@/lib/api/client';
 import { installFetchStub, jsonNotFound, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import type { SenderDetailDto } from '@/lib/api/senders';
 
-const DETAIL = {
+// Typed against the wire contract — see the note on `ROW` in
+// senders-screen.test.tsx.
+const DETAIL: SenderDetailDto = {
   id: 'linkedin',
   displayName: 'LinkedIn',
   email: 'noreply@linkedin.com',
   domain: 'linkedin.com',
+  brandMark: false,
   gmailCategory: 'social' as const,
   lastSeenAt: '2026-05-23T00:00:00.000Z',
   firstSeenAt: '2023-05-23T00:00:00.000Z',
+  totalReceived: 2_048,
+  wroteToCount: 0,
   monthlyVolume: 64,
   readRate: 0,
+  volumeTrend: 'steady' as const,
   unsubscribeMethod: 'mailto' as const,
+  lastReview: null,
   protectionFlags: {
     isProtected: false,
     protectionReason: null,

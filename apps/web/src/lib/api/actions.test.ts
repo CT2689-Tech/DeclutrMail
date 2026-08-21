@@ -343,7 +343,6 @@ describe('getCompositePreview — ADR-0028 allMail block', () => {
       domain: 'shop.example',
       lastSeenDays: 2,
       wroteToCount: 0,
-      monthly: 8,
     },
     counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
     recentMessages: {

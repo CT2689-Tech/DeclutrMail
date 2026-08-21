@@ -27,7 +27,6 @@ const livePreview: CompositeActionPreviewResult = {
     domain: sender.domain,
     lastSeenDays: sender.lastDays,
     wroteToCount: sender.wroteToCount,
-    monthly: sender.monthlyVolume ?? 0,
   },
   counts: buckets,
   recentMessages: subjects,
@@ -558,6 +557,34 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
     expect(Object.keys(opts)).not.toContain('secondary');
     expect(opts.archiveHistoric).toBe(false);
   });
+
+  // Shipped live (2026-08-21): picking a backlog verb rendered
+  // "Also: [object Object]" in the lead paragraph of a DESTRUCTIVE
+  // confirm. The lead built its two halves from `presentation.primary`
+  // (through `actionEffectCopy`) and `presentation.secondary` (raw — a
+  // `PresentedAction` object), then guarded the pair with a hand-written
+  // `copy is string` predicate that only tested `!== null`. That
+  // predicate is an assertion, not a narrowing, so the object reached
+  // `join` with nothing in the type system to stop it. Nothing asserted
+  // on the assembled string, which is why it survived to production.
+  it.each(['Archive them', 'Delete them'] as const)(
+    'renders real copy after "Also:" when the %s backlog verb is picked',
+    (label) => {
+      const { container } = render(
+        <ConfirmActionModal
+          request={request('Unsubscribe')}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          compositePreview={livePreview}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('radio', { name: label }));
+
+      expect(container.textContent).not.toContain('[object Object]');
+      expect(container.textContent).toMatch(/Also: \S/);
+    },
+  );
 });
 
 // The founder's 2026-07-27 report: a Delete preview reading "71 /mo"
@@ -575,26 +602,26 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     olderThan365d: 0,
   };
 
-  function renderDelete(counts: typeof emptyInbox, monthly: number | null) {
+  // The arrival figure rides the LIST ROW, not the preview — one field,
+  // one window (ADR-0037). `monthlyVolume` is what the senders card
+  // renders as "N in last 90d", so the modal and the card that opened it
+  // cannot show different numbers.
+  function renderDelete(counts: typeof emptyInbox, monthlyVolume: number | null) {
     return render(
       <ConfirmActionModal
-        request={request('Delete')}
+        request={{ verb: 'Delete', senders: [makeSender({ monthlyVolume })] }}
         onCancel={() => {}}
         onConfirm={() => {}}
-        compositePreview={{
-          ...livePreview,
-          sender: { ...livePreview.sender, monthly },
-          counts,
-        }}
+        compositePreview={{ ...livePreview, counts }}
       />,
     );
   }
 
-  it('explains a zero count instead of leaving it to contradict the /mo figure', () => {
+  it('explains a zero count instead of leaving it to contradict the volume figure', () => {
     renderDelete(emptyInbox, 71);
     expect(
       screen.getByText(
-        /Nothing from this sender is in your inbox right now — though 71 arrived in the last 30 days\. Delete only acts on mail still in the inbox\./,
+        /Nothing from this sender is in your inbox right now — though 71 arrived in the last 90 days\. Delete only acts on mail still in the inbox\./,
       ),
     ).toBeTruthy();
     // No claim about the mail's history or fate — we store only current labels.
@@ -608,35 +635,32 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     expect(screen.queryByText(/older than 180 days/)).toBeNull();
   });
 
-  it('labels the monthly figure as arrivals, not inbox contents', () => {
-    renderDelete(emptyInbox, 71);
-    expect(screen.getByText(/\/mo arriving/)).toBeTruthy();
+  it('names the window on the arrival figure and never renders a bare /mo', () => {
+    const { container } = renderDelete(emptyInbox, 71);
+    expect(container.textContent).toMatch(/71\s*in last 90d/);
+    // "/mo" is the retired unit (ADR-0037). A number with no window is
+    // how the card's 396 and the modal's 134 coexisted for one sender.
+    expect(container.textContent).not.toMatch(/\/mo/);
   });
 
-  it('falls back to the list row figure when the preview omits monthly', () => {
-    // Both are the same 30-day inbound count by construction
-    // (actions.service.ts `monthly` is documented to equal the senders
-    // list `last30dMsgs`), so the fallback is coherent, not a drift.
+  it('carries the received total so the arrival figure has a denominator', () => {
+    const { container } = renderDelete(emptyInbox, 71);
+    // Same two facts, same words, as the senders card that opened this
+    // modal: "N in last 90d · N received" (sender-card.tsx).
+    expect(container.textContent).toMatch(/144\s*received/);
+  });
+
+  it('leaves INBOX-now to the chip row rather than printing a second copy', () => {
+    // The strip is arrival-scoped only. A duplicated inbox count could
+    // disagree with the live chips directly beneath it.
+    const { container } = renderDelete({ ...emptyInbox, all: 9 }, 71);
+    expect(container.textContent).not.toMatch(/9\s*in inbox/);
+  });
+
+  it('renders an unknown arrival volume as "—", never a factual 0', () => {
     const { container } = renderDelete(emptyInbox, null);
-    expect(container.textContent).toMatch(/12 \/mo arriving/);
-  });
-
-  it('renders an unknown monthly volume as "—", never a factual 0', () => {
-    const unknown = makeSender({ monthlyVolume: null });
-    const { container } = render(
-      <ConfirmActionModal
-        request={{ verb: 'Delete', senders: [unknown] }}
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        compositePreview={{
-          ...livePreview,
-          sender: { ...livePreview.sender, monthly: null },
-          counts: emptyInbox,
-        }}
-      />,
-    );
-    expect(container.textContent).toMatch(/—\s*\/mo arriving/);
-    expect(container.textContent).not.toMatch(/0 \/mo arriving/);
+    expect(container.textContent).toMatch(/—\s*in last 90d/);
+    expect(container.textContent).not.toMatch(/0\s*in last 90d/);
   });
 
   it('keeps the chips and points at a wider window when only THIS window is empty', () => {
@@ -809,7 +833,7 @@ it('pluralizes the scope notice on a bulk sheet', () => {
   );
   expect(screen.getByText(/Nothing from these senders is in your inbox right now\./)).toBeTruthy();
   // Bulk has no single arrival figure — it must not invent one.
-  expect(screen.queryByText(/arrived in the last 30 days/)).toBeNull();
+  expect(screen.queryByText(/arrived in the last 90 days/)).toBeNull();
 });
 
 // B/C/D — the trust affordances added 2026-07-27 after the founder's

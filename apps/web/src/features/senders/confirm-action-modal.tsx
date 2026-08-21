@@ -417,9 +417,9 @@ export function ConfirmActionModal({
           olderThanDays: showWindowRow ? olderThanDays : null,
           // Bulk has no single arrival figure to name — omit rather than
           // invent one; the copy drops the clause when it is null.
-          recentArrivals: isBulk
-            ? null
-            : (compositePreview?.sender?.monthly ?? request?.senders[0]?.monthlyVolume ?? null),
+          // Same 90-day field the strip above renders, so the notice
+          // cannot name a window the strip does not show.
+          recentArrivals: isBulk ? null : (request?.senders[0]?.monthlyVolume ?? null),
         })
       : ({ kind: 'none' } as const);
   // Name the verb the COUNT belongs to, not the primary. On Unsubscribe
@@ -634,8 +634,14 @@ export function ConfirmActionModal({
       : isLaterVerb
         ? `Move ${n} sender${plural} to Later`
         : `Unsubscribe from ${n} sender${plural}`;
-  const lead = [actionEffectCopy(presentation.primary), presentation.secondary]
-    .filter((copy): copy is string => copy !== null)
+  // Both halves go through `actionEffectCopy`. `presentation.secondary`
+  // is a `PresentedAction` OBJECT, and the predicate that used to guard
+  // this list asserted `copy is string` off a bare `!== null` test — a
+  // cast, not a narrowing, so TypeScript never saw the object reach
+  // `join` and the modal shipped "Also: [object Object]" on every
+  // composite (live, 2026-08-21).
+  const lead = [actionEffectCopy(presentation.primary), actionEffectCopy(presentation.secondary)]
+    .filter((copy) => copy !== null)
     .join(' Also: ');
 
   const numberStyle: CSSProperties = {
@@ -798,19 +804,30 @@ export function ConfirmActionModal({
                 {compositePreview?.sender?.domain ?? senders[0]!.domain}
               </span>
               <span>·</span>
-              {/* Arrival-scoped, and now labelled as such. Unqualified
-                  "N /mo" beside INBOX-now counts reads as their
-                  denominator; it is a different population entirely.
-                  Unknown renders "—", never a factual 0 (finding 5.15). */}
+              {/* The senders card's own two arrival facts, from the same
+                  row and in the same words — "N in last 90d · N received"
+                  (sender-card.tsx). This slot used to render "N /mo
+                  arriving" off a 30-day count the preview endpoint
+                  computed just for it, so the card said "396 in last 90d"
+                  and the modal one click later said "134 /mo" for the same
+                  sender — both correct, neither naming its window (founder
+                  report 2026-08-21). ADR-0037 retired "/mo" everywhere
+                  else for exactly this reason. INBOX-now is deliberately
+                  NOT repeated here: the chip row below is that number,
+                  live, and a second copy could disagree with it. Unknown
+                  volume renders "—", never a factual 0 (finding 5.15). */}
               <span>
                 <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
-                  {(() => {
-                    const monthly =
-                      compositePreview?.sender?.monthly ?? senders[0]!.monthlyVolume ?? null;
-                    return monthly === null ? '—' : monthly.toLocaleString('en-US');
-                  })()}
+                  {senders[0]!.monthlyVolume?.toLocaleString('en-US') ?? '—'}
                 </strong>{' '}
-                /mo arriving
+                in last 90d
+              </span>
+              <span>·</span>
+              <span>
+                <strong style={{ color: color.fg, fontFamily: font.sans, fontWeight: 600 }}>
+                  {senders[0]!.totalReceived.toLocaleString('en-US')}
+                </strong>{' '}
+                received
               </span>
               <span>·</span>
               <span>

@@ -633,7 +633,6 @@ export interface CompositeActionPreviewResult {
      *  row pre-dates the backfill. The sender-context strip renders
      *  `you replied N×` from this value. */
     wroteToCount: number | null;
-    monthly: number | null;
   };
   counts: {
     all: number;
