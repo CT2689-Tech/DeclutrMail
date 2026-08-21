@@ -55,6 +55,18 @@ describe('actionRefetchInterval', () => {
     expect(actionRefetchInterval(status('done'))).toBe(false);
     expect(actionRefetchInterval(status('failed'))).toBe(false);
   });
+
+  // `!data` covers BOTH "not loaded yet" and "errored", so an errored
+  // poll kept re-issuing at 1s — and with `refetchIntervalInBackground`
+  // on, in background tabs too. It did not storm only because all five
+  // consuming surfaces independently clear their latch on `isError`;
+  // that is convention holding a guarantee that belongs in the policy,
+  // and one new consumer omitting the clear would reopen it
+  // (audit 2026-08-21).
+  it('stops polling when the query is in error, not just when it is terminal', () => {
+    expect(actionRefetchInterval(undefined, true)).toBe(false);
+    expect(actionRefetchInterval(status('executing'), true)).toBe(false);
+  });
 });
 
 describe('terminal action invalidation', () => {

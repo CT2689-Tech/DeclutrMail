@@ -63,7 +63,18 @@ export const ACTION_POLL_MS = 1_000;
  * so it can be unit-tested without racing real timers (mirrors
  * `syncRefetchInterval`).
  */
-export function actionRefetchInterval(data: ActionStatusResult | undefined): number | false {
+export function actionRefetchInterval(
+  data: ActionStatusResult | undefined,
+  isError = false,
+): number | false {
+  // STOP on error (audit 2026-08-21). `!data` covers "not loaded yet"
+  // AND "errored", so an errored poll kept re-issuing at 1s — with
+  // `refetchIntervalInBackground` on, in background tabs too. It does
+  // not storm today only because all five consuming surfaces clear their
+  // latch on `isError` independently; that is convention holding a
+  // guarantee that belongs in the policy, and one new consumer omitting
+  // the clear would reopen it.
+  if (isError) return false;
   if (!data) return ACTION_POLL_MS;
   return isTerminalStatus(data.status) ? false : ACTION_POLL_MS;
 }
@@ -79,7 +90,8 @@ export function useActionStatus(actionId: string | null, mailboxId?: string) {
     queryKey: ['action-status', actionId, { mailboxId: mailboxId ?? null }] as const,
     queryFn: () => getActionStatus(actionId as string, mailboxId ? { mailboxId } : undefined),
     enabled: actionId !== null,
-    refetchInterval: (query) => actionRefetchInterval(query.state.data),
+    refetchInterval: (query) =>
+      actionRefetchInterval(query.state.data, query.state.status === 'error'),
     // Keep polling while the tab is unfocused (FOUNDER-FOLLOWUPS
     // 2026-07-10): the interval already self-terminates on a terminal
     // status, so this costs only the in-flight window — without it a
@@ -226,7 +238,13 @@ export function useBulkActionPreview(senderIds: string[] | null) {
  * but over the aggregate batch status (terminal = every sibling row
  * terminal, surfaced as `done` / `failed`). Exported pure for tests.
  */
-export function batchRefetchInterval(data: BatchStatusResult | undefined): number | false {
+export function batchRefetchInterval(
+  data: BatchStatusResult | undefined,
+  isError = false,
+): number | false {
+  // Same policy as `actionRefetchInterval` — stop on error rather than
+  // reading it as "not loaded yet" (audit 2026-08-21).
+  if (isError) return false;
   if (!data) return ACTION_POLL_MS;
   return isTerminalStatus(data.status) ? false : ACTION_POLL_MS;
 }
@@ -242,7 +260,8 @@ export function useBatchStatus(batchId: string | null) {
     queryKey: ['batch-status', batchId] as const,
     queryFn: () => getBatchStatus(batchId as string),
     enabled: batchId !== null,
-    refetchInterval: (query) => batchRefetchInterval(query.state.data),
+    refetchInterval: (query) =>
+      batchRefetchInterval(query.state.data, query.state.status === 'error'),
     // Keep polling while the tab is unfocused (FOUNDER-FOLLOWUPS
     // 2026-07-10): the interval already self-terminates on a terminal
     // status, so this costs only the in-flight window — without it a

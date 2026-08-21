@@ -264,6 +264,64 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       await expect(client.getMessageMetadata('bad')).rejects.toBeInstanceOf(PermanentError);
     });
 
+    // A 200 whose payload is missing a load-bearing field. `internalDate`
+    // used to default to the string '0' — `1970-01-01` in `internal_date`
+    // — and every age bucket the action preview builds is
+    // `internal_date <= now() - interval 'N days'`, so an undatable
+    // message silently joined the "older than a year" set of a bulk
+    // Archive or DELETE the user believed was scoped to ancient mail.
+    // A plausible-looking sentinel survives every downstream check, which
+    // is exactly what makes it worse than no value.
+    it('skips a message with no internalDate rather than dating it 1970', async () => {
+      fetchMock.mockResolvedValueOnce(
+        makeResponse(200, JSON.stringify({ id: 'm1', threadId: 't1', labelIds: ['INBOX'] })),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.getMessageMetadata('undatable')).resolves.toBeNull();
+      // Surfaced, not swallowed: the sync result reports it.
+      expect(client.unreadableMessageCount).toBe(1);
+    });
+
+    // `id`/`threadId` land in notNull, uniquely-indexed columns. Absent
+    // and typed as `string`, they threw mid-batch and failed the whole
+    // chunk on a message that would fail identically on every retry.
+    it('skips a message with no id instead of failing the insert batch', async () => {
+      fetchMock.mockResolvedValueOnce(
+        makeResponse(
+          200,
+          JSON.stringify({ threadId: 't1', internalDate: '1700000000000', labelIds: [] }),
+        ),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.getMessageMetadata('no-id')).resolves.toBeNull();
+      expect(client.unreadableMessageCount).toBe(1);
+    });
+
+    // The guard must not over-reject: a well-formed message still indexes.
+    it('returns metadata for a well-formed message', async () => {
+      fetchMock.mockResolvedValueOnce(
+        makeResponse(
+          200,
+          JSON.stringify({
+            id: 'm1',
+            threadId: 't1',
+            internalDate: '1700000000000',
+            labelIds: ['INBOX'],
+          }),
+        ),
+      );
+      const client = new GmailClientService(oauth, limiter);
+
+      await expect(client.getMessageMetadata('fine')).resolves.toMatchObject({
+        id: 'm1',
+        threadId: 't1',
+        internalDate: '1700000000000',
+      });
+      expect(client.unreadableMessageCount).toBe(0);
+    });
+
     it('does NOT skip on the recovery-verification read — unreadable must never read as "no labels"', async () => {
       fetchMock.mockResolvedValueOnce(makeResponse(400, FAILED_PRECONDITION));
       const client = new GmailClientService(oauth, limiter);
