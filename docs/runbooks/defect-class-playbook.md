@@ -5,7 +5,7 @@
 135 `MISTAKES.md` entries. Every finding cited below was re-verified by hand against the
 source before it was written down.
 
-**This document is a review aid, not a status report.** It names the defect *classes* this
+**This document is a review aid, not a status report.** It names the defect _classes_ this
 codebase actually produces, so a reviewer can look for the class instead of re-deriving each
 bug. Live instances are cited as evidence that the class is real and still open — the
 authoritative list of open work stays in `FINDINGS.md`.
@@ -16,13 +16,13 @@ authoritative list of open work stays in `FINDINGS.md`.
 
 Of the 131 `MISTAKES.md` entries carrying a `Caught by:` field:
 
-| Caught by | Share |
-|---|---|
-| Adversarial review (Codex stop-time, second reading) | ~53% |
-| Manual smoke / two-account QA | ~27% |
-| Production, or the founder | ~26% |
-| Structural gate agents (§7) | ~18% |
-| **Tests, typecheck, lint** | **~11%** |
+| Caught by                                            | Share    |
+| ---------------------------------------------------- | -------- |
+| Adversarial review (Codex stop-time, second reading) | ~53%     |
+| Manual smoke / two-account QA                        | ~27%     |
+| Production, or the founder                           | ~26%     |
+| Structural gate agents (§7)                          | ~18%     |
+| **Tests, typecheck, lint**                           | **~11%** |
 
 (Categories overlap; an entry can name more than one source.)
 
@@ -60,11 +60,12 @@ at the boundary of the case it was scoped to").
 
 **Why it survives:** the fix is real, tested, and reviewed. Nobody enumerates the family.
 
-**Question:** *Where else does this exact shape live?* Derive the family from a structural
+**Question:** _Where else does this exact shape live?_ Derive the family from a structural
 property (all enqueue helpers, all webhook dedup gates, all `refetchInterval` callbacks) —
 never from the grep that happened to find the first instance.
 
 **Live instances**
+
 - `scripts/check-vendor-limits.mjs:380` counts only Sentry's `accepted` outcome; the PostHog
   check 20 lines below at `:403` correctly reports `quota-limited (data being dropped)`.
   Same file, same function family, one sibling got drop-detection.
@@ -91,26 +92,27 @@ since-connect?), **freshness** (live / frozen column / capped list), and **unit*
 (count vs rate vs per-month).
 
 **Live instances**
+
 - `autopilot.read-service.ts:401` — `messages7d` joins `mail_messages` with **no
   `internal_date` predicate**; `recent` (`:394`) bounds only `rule_match_log.matched_at`.
-  `observe-digest.ts:25` renders it as *"Would have archived N emails … in the last 7 days"*.
+  `observe-digest.ts:25` renders it as _"Would have archived N emails … in the last 7 days"_.
   It is the matched senders' entire current inbox backlog — and it is the number the user
   weighs before promoting a rule to unattended destructive automation.
 - `sync-gate.tsx:39,55-57` derives stage labels from `progress_pct` buckets and ignores
   `current_stage` entirely, though it is on the wire. `floor(pct/100*6)` clamps to index 5 =
-  *"Done — your inbox is ready"*, rendered while the worker is still at
+  _"Done — your inbox is ready"_, rendered while the worker is still at
   `computing_recommendations, 90` and the app is still gated. Violates D109 and CLAUDE.md §10.
 - `activity.read-service.ts:1047-1064` — `noisePreventedPerMonth` sums `mail_messages`
   across a one-to-many join, so a sender acted on 4× contributes 4× its volume; also missing
   `is_outbound = false`. The `COUNT(DISTINCT sender_key)` beside it is correct, which masks
   it in review.
 - `brief-narrative.ts:152-158` renders sender counts (post-cap, `.slice(0, 6)`) as
-  *"N emails need replies"* beside a real message count in the same sentence.
-- `quiet-screen.tsx:169` promises *"Autopilot will run them afterward"* from a count
+  _"N emails need replies"_ beside a real message count in the same sentence.
+- `quiet-screen.tsx:169` promises _"Autopilot will run them afterward"_ from a count
   (`mailbox-accounts.service.ts:344`) that omits three predicates the executor applies —
   rule enabled, sender not newly Protected, daily cap.
-- `reasoning.ts:103` interpolates an unrounded float: *"sends 38.666666666666664/mo"*.
-- `compose-strip.tsx:159` (*"unsub'd, still emailing"*) compares against
+- `reasoning.ts:103` interpolates an unrounded float: _"sends 38.666666666666664/mo"_.
+- `compose-strip.tsx:159` (_"unsub'd, still emailing"_) compares against
   `sender_policies.updated_at`, which Protect/Unprotect and snooze-wake also bump — so
   Protecting a sender silently drops it out of the chip.
 
@@ -118,26 +120,28 @@ since-connect?), **freshness** (live / frozen column / capped list), and **unit*
 
 **Why it survives:** green is green. Nobody asks what red would have required.
 
-**Question:** *has this check ever failed?* Prove it by moving the threshold past the
+**Question:** _has this check ever failed?_ Prove it by moving the threshold past the
 measured value, or starving the guard of its input, and watching it go red.
 
 **Live instances**
+
 - `check-vendor-limits.mjs:371-387` queries Sentry `groupBy=outcome` — so `rate_limited` and
   `dropped` **are in the response** — then filters to `accepted` and feeds `gauge()`, which
   is `OK` below the threshold. When the quota trips and real errors start being discarded,
-  `accepted` *falls* and the watchdog goes **greener**. It reports healthiest at the moment
+  `accepted` _falls_ and the watchdog goes **greener**. It reports healthiest at the moment
   you are blindest.
-- API specs assert `response.code` on the *thrown exception*; web tests mock the *response
-  body*. Both pass while `AllExceptionsFilter` deletes the code in between (see C4).
+- API specs assert `response.code` on the _thrown exception_; web tests mock the _response
+  body_. Both pass while `AllExceptionsFilter` deletes the code in between (see C4).
 
 ### C4 — Contract stripped in transit: both ends tested, the middle untested
 
 **Why it survives:** producer tests pass. Consumer tests pass. Nothing exercises the join.
 
-**Question:** *what does a client actually receive?* Run the value through the real
+**Question:** _what does a client actually receive?_ Run the value through the real
 transformation, not past it.
 
 **Live instances**
+
 - `all-exceptions.filter.ts:243-259` preserves a thrown `code` only if it is a key of
   `ERROR_CODES` (42 entries). The API throws **76 distinct codes; 40 never reach the wire** —
   they are rewritten to `BAD_REQUEST` / `NOT_FOUND` / `CONFLICT` / `INTERNAL_ERROR`.
@@ -161,9 +165,10 @@ transformation, not past it.
 
 **Why it survives:** observability is the one subsystem with no observer.
 
-**Question:** *if this broke, what would tell us?*
+**Question:** _if this broke, what would tell us?_
 
 **Live instances (the "errors aren't reaching Sentry" chain)**
+
 1. ~60 of 72 `captureFeatureException` sites have no status gate, so designed 409s are
    captured as errors — CLAUDE.md §8's "a guard's 4xx is a designed state" invariant never
    got its telemetry counterpart.
@@ -184,7 +189,7 @@ transformation, not past it.
    `BillingPayloadError` is in it.
 6. Whole surfaces cannot report at all: `FeatureExceptionContext.surface` (`sentry.ts:21-31`)
    is a closed 9-value union omitting `billing`, `settings`, `followups`, `snoozed`,
-   `admin-security`, `mailboxes`, `feedback`. Those screens would get a *type error* trying.
+   `admin-security`, `mailboxes`, `feedback`. Those screens would get a _type error_ trying.
    `followups-screen.tsx` has 1 `ErrorState` and 0 captures; `billing-screen.tsx` 5 and 0.
 7. There is no funnel to catch what individuals missed — **no `QueryCache.onError`** anywhere
    in `apps/web` (only `MutationCache`), so a query that 500s and renders `ErrorState` is
@@ -194,6 +199,7 @@ transformation, not past it.
    rest of that tab's session.
 
 **Adjacent**
+
 - 11 declared `EventName` literals have **zero** `track()` call sites — including
   `unsubscribe_attempted` and `rule_fired`, both documented in
   `docs/observability/event-taxonomy.md`, both querying empty in PostHog forever.
@@ -213,10 +219,10 @@ in either entrypoint, and **no `Sentry.flush`** anywhere — so the two paths de
 wired to Sentry (`worker.ts:2551`, `:2501`) lose their event to `process.exit(1)`.
 
 Sharpest instance: `db/mailbox-action-lock.ts:96-118` is the advisory-lock leak detector,
-added *because* the 2026-08-12 pooler incident hid inside an untested `catch {}`. Its own
-comment reads *"This is the leak detector; it must be loud."* It reports via `console.error`.
+added _because_ the 2026-08-12 pooler incident hid inside an untested `catch {}`. Its own
+comment reads _"This is the leak detector; it must be loud."_ It reports via `console.error`.
 
-**Question:** *which channel does this failure land in, and who is subscribed to it?*
+**Question:** _which channel does this failure land in, and who is subscribed to it?_
 
 ### C7 — Count the failure, return success
 
@@ -224,7 +230,7 @@ The dominant worker shape: a per-item `catch` increments a `*Failed` counter and
 returns normally, so BullMQ records success and the D203/D225 retry and dead-letter policy
 never engages.
 
-**Question:** *what makes this loud at 100% failure instead of 1%?* If the exit code is the
+**Question:** _what makes this loud at 100% failure instead of 1%?_ If the exit code is the
 same either way, there is no answer.
 
 **Live instances** — `autopilot-apply.worker.ts:445-461`, `brief-snapshot.worker.ts:288-300`,
@@ -237,14 +243,15 @@ event; the approved Archive simply never happens. The sibling at `:1240-1265` do
 
 A guard, safety net, or state cleanup ordered on the wrong side of the step that can fail.
 
-**Question:** *if the next line throws, what is left behind — and does it commit?*
+**Question:** _if the next line throws, what is left behind — and does it commit?_
 
 **Live instances**
+
 - `auth/sessions.service.ts:131-151` — **security.** Refresh-token-reuse detection writes
   `is_revoked = true` and then `throw`s **inside the same `db.transaction` callback**. The
   throw triggers `ROLLBACK`, so the revoke is discarded and the replayed session stays live;
-  the D155 defense is a no-op. The comment says *"Do it inside the SAME tx so the revoke is
-  atomic with the detection"* — exactly inverted. `rotate()` has **zero** test coverage.
+  the D155 defense is a no-op. The comment says _"Do it inside the SAME tx so the revoke is
+  atomic with the detection"_ — exactly inverted. `rotate()` has **zero** test coverage.
 - Prior recurrences: undo's safety net armed after the failing step (2026-08-10); triage
   cleared pending state before the re-entry guard (2026-08-12); `queue.add` inside a
   `db.transaction` publishing before commit.
@@ -253,18 +260,19 @@ A guard, safety net, or state cleanup ordered on the wrong side of the step that
 
 `MISTAKES.md` records this three times (2026-07-26 ×3). Still open on the **read** side.
 
-**Question:** for every 4xx the user can resolve — *what refetches after they resolve it?*
+**Question:** for every 4xx the user can resolve — _what refetches after they resolve it?_
 
 **Live instances**
+
 - No `QueryCache.onError`, so `resetMailboxScopedCache` never runs for a failing read.
-  `query-client.ts:36-38` justifies the omission by asserting *"the app shell renders the
-  reconnect gate off `me`"* — but `refetchOnWindowFocus: false` is the global default 20 lines
+  `query-client.ts:36-38` justifies the omission by asserting _"the app shell renders the
+  reconnect gate off `me`"_ — but `refetchOnWindowFocus: false` is the global default 20 lines
   below, and `use-me.ts:4-5` documents a focus refetch **it does not configure**. Nothing
   refreshes `me` after an out-of-band scope change.
 - Consequence: disconnect the active mailbox in a second tab → `me` stays stale →
   `hasActiveMailbox` stays true → the always-mounted sync banner polls a dead mailbox every
   3s, rendering `null` on error so the storm is **invisible in the UI**.
-- `brief-screen.tsx:968` shows *"We couldn't load your Brief. Try again in a moment."* with a
+- `brief-screen.tsx:968` shows _"We couldn't load your Brief. Try again in a moment."_ with a
   Retry that re-issues the identical 409 with the identical header.
 - `apiRequest` (`client.ts:204`) has **no timeout**. If the API accepts the connection and
   never responds, every screen sits on its skeleton forever.
@@ -273,14 +281,14 @@ A guard, safety net, or state cleanup ordered on the wrong side of the step that
 
 A dedicated entry because it is mechanical, repeated, and trivially greppable.
 
-`if (!data) return POLL_MS` treats *errored* as *not loaded yet*. `retry` is correctly
+`if (!data) return POLL_MS` treats _errored_ as _not loaded yet_. `retry` is correctly
 suppressed; the interval re-issues anyway.
 
 **Live instances** — `use-sync-status.ts:62-67` (3s, chrome-level, both consumers render
 `null` on error), `use-action.ts:66-69` and `:229-232` (1s + `refetchIntervalInBackground`;
 safe today only because all 17 consuming surfaces independently clear on `isError`),
 `step-preset-pick.tsx:91` (2.5s, also loops on a legitimately-empty result, under copy
-promising *"Your suggestions are still being prepared"*).
+promising _"Your suggestions are still being prepared"_).
 
 The correct pattern already exists at `use-activity.ts:129`.
 
@@ -301,6 +309,7 @@ BullMQ payloads outlive deploys; `outbox-dispatcher.worker.ts:441` casts a `json
 a discriminated union.
 
 Two sub-rules worth stating separately:
+
 - **`Record<FiniteUnion, V>` is an unchecked lookup and `noUncheckedIndexedAccess` does not
   cover it** (it only covers index signatures). `activity-screen.tsx:2139` indexes
   `VERB_DOT` with an unvalidated wire value — and `ActivityActionSchema`
@@ -324,7 +333,7 @@ Worse, the scope can change **without the client doing anything**: disconnect cl
 409ing, and stale rows from mailbox A merge into unpartitioned keys under mailbox B. No guard
 trips, because nothing failed.
 
-**Question:** *what refreshes the client's copy when the server changes scope out of band?*
+**Question:** _what refreshes the client's copy when the server changes scope out of band?_
 If the answer is "a 60s `staleTime` and nothing else", that is the finding.
 
 ---
@@ -381,19 +390,19 @@ Ranked by defects-prevented per hour of work.
 
 1. **Contract test: every thrown `code` is registered.** Assert each `code:` literal in
    `apps/api/src` satisfies `isErrorCode`. Closes C4's 40 dead codes and stops regrowth —
-   ADR-0014's original fix lacked exactly this. *(~1h)*
+   ADR-0014's original fix lacked exactly this. _(~1h)_
 2. **Contract test: capture-site fields survive the scrubber.** Assert `fingerprint`, every
    tag key the filter sets, and every error-class name the app throws round-trip through
    `scrubSentryEvent`. Producer and consumer allowlists are declared in three files with no
-   shared contract. *(~2h)*
+   shared contract. _(~2h)_
 3. **Fix the vendor watchdog to alert on `rate_limited`/`dropped`, not `accepted`.** One
-   filter change; removes the blindfold in front of everything else. *(~15m)*
+   filter change; removes the blindfold in front of everything else. _(~15m)_
 4. **Add `QueryCache.onError`** mirroring the existing `MutationCache` recovery, and make
    `refetchInterval` callbacks take query state. Closes C9 + C10 at the policy layer so a new
-   consumer cannot reopen them. *(~2h)*
+   consumer cannot reopen them. _(~2h)_
 5. **Enable `recommendedTypeChecked`** for `apps/api` and `packages/workers` at minimum.
-   *(~half a day incl. fallout)*
-6. **Test: every `EventName` has ≥1 `track()` call site.** *(~30m)*
+   _(~half a day incl. fallout)_
+6. **Test: every `EventName` has ≥1 `track()` call site.** _(~30m)_
 7. **Ship the three mailbox-lifecycle e2e specs** already scoped in `FOUNDER-FOLLOWUPS.md`
    and closed as "Done" without being written. The acceptance criterion is stated there:
    disabling the cache reset must make spec (b) fail. Findings under C9/C12 are all invisible
@@ -405,25 +414,25 @@ Ranked by defects-prevented per hour of work.
 
 Needs a founder decision before any code moves (CLAUDE.md §9 stop conditions):
 
-| # | Finding | Where |
-|---|---|---|
-| 1 | Refresh-token-reuse revoke rolled back by its own `throw`; D155 defense is a no-op; untested | `auth/sessions.service.ts:131-151` |
-| 2 | 40 of 76 error codes stripped in transit; 5 `PROTECTED_SENDER` branches dead; 409 replays forever | `all-exceptions.filter.ts:243-259` |
-| 3 | Every API 5xx collapses into one untitled Sentry issue (no fingerprint, no tags, no type) | `sentry-scrubber.ts:491-535` |
-| 4 | Sentry quota watchdog greens when events start dropping | `check-vendor-limits.mjs:380` |
+| #   | Finding                                                                                           | Where                              |
+| --- | ------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 1   | Refresh-token-reuse revoke rolled back by its own `throw`; D155 defense is a no-op; untested      | `auth/sessions.service.ts:131-151` |
+| 2   | 40 of 76 error codes stripped in transit; 5 `PROTECTED_SENDER` branches dead; 409 replays forever | `all-exceptions.filter.ts:243-259` |
+| 3   | Every API 5xx collapses into one untitled Sentry issue (no fingerprint, no tags, no type)         | `sentry-scrubber.ts:491-535`       |
+| 4   | Sentry quota watchdog greens when events start dropping                                           | `check-vendor-limits.mjs:380`      |
 
 High — user-visible or destructive:
 
-| # | Finding | Where |
-|---|---|---|
-| 5 | Observe digest promises a 7-day figure computed over an all-time backlog | `autopilot.read-service.ts:401` |
-| 6 | Approved Autopilot action retried forever, never marked failed, never reported | `autopilot-action.worker.ts:760-776` |
-| 7 | Sync gate renders "Done — your inbox is ready" while still syncing (D109, §10) | `sync-gate.tsx:39,55-57` |
-| 8 | Read-side 409 has no recovery; stale `me` + 3s invisible poll storm | `query-client.ts:25-63`, `use-sync-status.ts:62` |
-| 9 | Missing Gmail `internalDate` → epoch-0 → message joins every "older than" bulk-action bucket | `gmail-client.service.ts:290` |
-| 10 | Resend webhook drops a bounce permanently if suppression fails after the dedup commit | `resend-webhook.controller.ts:152-163` |
-| 11 | `/onboarding?mailbox=<unowned>` → permanent "Setting up — 0%", no error state, no exit | `onboarding/page.tsx:82,346-351` |
-| 12 | Queue-down / not-implemented / billing-dark thrown as 5xx: honest copy erased + Sentry paged | `all-exceptions.filter.ts:109-159` |
+| #   | Finding                                                                                      | Where                                            |
+| --- | -------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| 5   | Observe digest promises a 7-day figure computed over an all-time backlog                     | `autopilot.read-service.ts:401`                  |
+| 6   | Approved Autopilot action retried forever, never marked failed, never reported               | `autopilot-action.worker.ts:760-776`             |
+| 7   | Sync gate renders "Done — your inbox is ready" while still syncing (D109, §10)               | `sync-gate.tsx:39,55-57`                         |
+| 8   | Read-side 409 has no recovery; stale `me` + 3s invisible poll storm                          | `query-client.ts:25-63`, `use-sync-status.ts:62` |
+| 9   | Missing Gmail `internalDate` → epoch-0 → message joins every "older than" bulk-action bucket | `gmail-client.service.ts:290`                    |
+| 10  | Resend webhook drops a bounce permanently if suppression fails after the dedup commit        | `resend-webhook.controller.ts:152-163`           |
+| 11  | `/onboarding?mailbox=<unowned>` → permanent "Setting up — 0%", no error state, no exit       | `onboarding/page.tsx:82,346-351`                 |
+| 12  | Queue-down / not-implemented / billing-dark thrown as 5xx: honest copy erased + Sentry paged | `all-exceptions.filter.ts:109-159`               |
 
 Medium and below — the remaining ~25 findings (cross-tab wrong-mailbox reads, `noisePreventedPerMonth`
 join fan-out, brief narrative units, quiet-hours over-promise, timeseries gap compression,
@@ -439,21 +448,21 @@ Findings are the point of a review, so it is worth recording what the sweeps fou
 
 - **Null-vs-zero discipline post-F009 is exemplary** — `computeReadRate` returning `null` at
   `volume === 0`, `readRateLifetime`, `laterCount`. The bar to hold: a new `?? 0` on a
-  *count* is fine; on a *rate, ratio, or capability* it is the F009 shape.
+  _count_ is fine; on a _rate, ratio, or capability_ it is the F009 shape.
 - **77 empty-or-comment-only catch blocks, and the sweep judged none of them material** —
   every one is a documented best-effort path.
 - **Error narrowing is essentially perfect** — ~25 `catch` sites all use
   `err instanceof Error ? … : String(err)`; zero `.message` on an unnarrowed `unknown`.
-- **`outbox-consumer-router.ts:241-244`** pairs a `never` binding with a *throwing runtime*
+- **`outbox-consumer-router.ts:241-244`** pairs a `never` binding with a _throwing runtime_
   `default` — the correct shape when the discriminant comes from storage.
 - **`retryTransientOnly`** is correct and no hook re-arms 4xx retries; all 20 local overrides
   are `retry: false` or stricter.
 - **`isUserScopedRoute`** is exact-match, not a prefix — the 2026-07-09 regression is
   genuinely closed.
-- **`unreadInboxCount`'s comment** (`senders.read-service.ts:318-325`) — *"MUST stay
-  row-for-row equal to `senderInboxActionWhere` … Change one, change both"* — is the pattern
+- **`unreadInboxCount`'s comment** (`senders.read-service.ts:318-325`) — _"MUST stay
+  row-for-row equal to `senderInboxActionWhere` … Change one, change both"_ — is the pattern
   C2 wants generalised to every forward-looking count.
 - **The privacy posture holds.** No sweep found a body, attachment, or non-allowlisted header
   crossing a boundary; the D7/D228 scrubbers are thorough. The Sentry findings above are
-  cases where privacy scrubbing was applied *correctly* and grouping was lost as a side
+  cases where privacy scrubbing was applied _correctly_ and grouping was lost as a side
   effect — the fix is to preserve a grouping key, never to loosen the scrub.
