@@ -8,6 +8,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { correlationMiddleware } from './common/correlation.middleware.js';
+import { requestTimingMiddleware } from './common/request-timing.middleware.js';
 import { securityHeadersMiddleware } from './common/security-headers.middleware.js';
 import { initSentry } from './observability/sentry.js';
 
@@ -85,7 +86,7 @@ function auditRequiredApiEnv(): void {
   const missing = required.filter((k) => !process.env[k]);
   const kmsLocal = process.env.KMS_KEY_RESOURCE || process.env.ENCRYPTION_LOCAL_KEY;
   if (!kmsLocal) missing.push('KMS_KEY_RESOURCE_or_ENCRYPTION_LOCAL_KEY' as never);
-  // eslint-disable-next-line no-console
+
   console.log(
     JSON.stringify({
       level: missing.length ? 'error' : 'info',
@@ -173,6 +174,10 @@ async function bootstrap(): Promise<void> {
   // exception filter runs, so every request — success or error — carries
   // a correlationId / displayId the response, logs, and Sentry join on.
   app.use(correlationMiddleware);
+  // AFTER correlation so the timing line can carry `cid`, and before
+  // everything else so the duration covers guards -- which is where the
+  // 401/409 rejections this log exists to surface actually happen.
+  app.use(requestTimingMiddleware);
   /**
    * Response compression.
    *

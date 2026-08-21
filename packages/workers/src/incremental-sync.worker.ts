@@ -11,7 +11,6 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
-import type { OutboxTx } from './outbox-publisher.js';
 import { syncMailboxLabels } from './mailbox-label-sync.js';
 import {
   reconcileSenderTimeseries,
@@ -420,10 +419,18 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     let deleted = 0;
     let labelChanges = 0;
     // Wrote-to attribution is scoped to senders this batch can actually
-    // move. Collect recipient emails from outbound add/delete and sender
-    // keys from first-seen inbound rows; the post-pass recomputes only
-    // those keys instead of zeroing the whole mailbox.
-    const attributionEmails = new Set<string>();
+    // move: recipients of outbound add/delete, plus first-seen inbound
+    // senders. The post-pass recomputes only those keys instead of
+    // zeroing the whole mailbox.
+    //
+    // KEYS, NOT EMAILS. `sender_key` is sha256('v1|' || normalized_email)
+    // and `dm_normalize_email` mirrors `normalizeEmail` statement for
+    // statement (migration 0063), so `deriveSenderKey(recipient)` IS the
+    // key -- resolving addresses to keys through the database answered a
+    // question we can answer in process. The query that did it cost a
+    // full sequential scan of `senders` (measured: 1,052 shared buffers,
+    // 8,454 rows discarded, to return 1) because its two predicates sat
+    // under an OR, which no index can serve.
     const attributionSenderKeys = new Set<string>();
     // `getMessageMetadata` resolves `null` for BOTH "deleted between the
     // history record and the get" and "Gmail refused to render it". Only
@@ -447,7 +454,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           }
           if (add.outboundRecipients) {
             for (const email of add.outboundRecipients) {
-              attributionEmails.add(email);
+              attributionSenderKeys.add(deriveSenderKey(email));
             }
           }
           break;
@@ -459,7 +466,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           }
           if (removed.outboundRecipients) {
             for (const email of removed.outboundRecipients) {
-              attributionEmails.add(email);
+              attributionSenderKeys.add(deriveSenderKey(email));
             }
           }
           break;
@@ -477,8 +484,26 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           break;
         }
         default: {
+          // WARN AND CONTINUE, never throw. `_exhaustive` keeps the
+          // compile-time guarantee; a runtime throw here would abort the
+          // batch BEFORE the cursor advance, and since every retry
+          // replays the same record the mailbox would stop syncing
+          // permanently -- a hard outage in place of one skipped record.
+          // `GmailHistoryRecord` is explicitly a normalisation of Gmail's
+          // wire shape, so a fifth kind is a live possibility, and this
+          // file's posture for unexpected input everywhere else is
+          // measure-and-continue.
           const _exhaustive: never = ev;
-          throw new Error(`unexpected history kind: ${JSON.stringify(_exhaustive)}`);
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'incremental_sync.unknown_history_kind',
+              worker: this.workerName,
+              mailboxAccountId,
+              record: JSON.stringify(_exhaustive),
+            }),
+          );
+          break;
         }
       }
     }
@@ -560,8 +585,6 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     if (events.length > 0) {
       timeseriesReconcile = await this.runWroteToAttributionPostPass(mailboxAccountId, client, {
         reconcileTimeseries: labelChanges > 0 || deleted > 0,
-        recomputeAttribution: attributionEmails.size > 0 || attributionSenderKeys.size > 0,
-        attributionEmails: [...attributionEmails],
         attributionSenderKeys: [...attributionSenderKeys],
       });
     }
@@ -987,16 +1010,18 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   private async runWroteToAttributionPostPass(
     mailboxAccountId: string,
     client: GmailMetadataClient,
+    // REQUIRED, no default. The previous default said
+    // `recomputeAttribution: true` beside empty arrays, which after
+    // scoping meant "recompute NOTHING" -- a default that reads as a full
+    // rebuild and silently performs a no-op. Making opts required means a
+    // future caller cannot get that by accident.
     opts: {
       reconcileTimeseries: boolean;
-      recomputeAttribution: boolean;
-      attributionEmails: readonly string[];
+      /**
+       * Senders this batch can move. Empty means nothing to recompute --
+       * the flag that used to say so was derivable from this and is gone.
+       */
       attributionSenderKeys: readonly string[];
-    } = {
-      reconcileTimeseries: true,
-      recomputeAttribution: true,
-      attributionEmails: [],
-      attributionSenderKeys: [],
     },
   ): Promise<SenderTimeseriesReconcileResult | null> {
     let reconciled: SenderTimeseriesReconcileResult | null = null;
@@ -1038,13 +1063,8 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // was the 4.5s / 1 GB production cost: every incremental push
       // rewrote every sender row, then seq-scanned mail_messages to
       // rebuild. Initial sync still does that once; this path must not.
-      if (opts.recomputeAttribution) {
-        const scopedKeys = await this.resolveAttributionSenderKeys(
-          tx,
-          mailboxAccountId,
-          opts.attributionSenderKeys,
-          opts.attributionEmails,
-        );
+      if (opts.attributionSenderKeys.length > 0) {
+        const scopedKeys = opts.attributionSenderKeys;
         if (scopedKeys.length > 0) {
           const keyArray = sqlTextArray(scopedKeys);
           await tx.execute(sql`
@@ -1095,41 +1115,6 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
    * the batch named people we have no sender row for yet (outbound-only
    * correspondents), so there is nothing to recompute.
    */
-  private async resolveAttributionSenderKeys(
-    tx: OutboxTx,
-    mailboxAccountId: string,
-    senderKeys: readonly string[],
-    emails: readonly string[],
-  ): Promise<string[]> {
-    if (senderKeys.length === 0 && emails.length === 0) {
-      return [];
-    }
-    const rows = await tx
-      .select({ senderKey: senders.senderKey })
-      .from(senders)
-      .where(
-        and(
-          eq(senders.mailboxAccountId, mailboxAccountId),
-          sql`(
-            ${
-              senderKeys.length > 0
-                ? sql`${senders.senderKey} = ANY(${sqlTextArray(senderKeys)})`
-                : sql`false`
-            }
-            OR
-            ${
-              emails.length > 0
-                ? sql`dm_normalize_email(${senders.email}::text) IN (
-                    SELECT dm_normalize_email(addr)
-                    FROM unnest(${sqlTextArray(emails)}) AS addr
-                  )`
-                : sql`false`
-            }
-          )`,
-        ),
-      );
-    return rows.map((row) => row.senderKey);
-  }
 }
 
 /**

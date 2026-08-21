@@ -60,8 +60,36 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- MEMBERSHIP, NOT EXISTENCE. `ALTER DEFAULT PRIVILEGES FOR ROLE x`
+  -- requires the executing role to be a MEMBER of x, not merely for x to
+  -- exist. Guarding on existence is why the first version of this file
+  -- could not apply to production: checked 2026-08-21 against
+  -- declutrmail-prod, `current_user` is `postgres` and
+  -- `pg_has_role('postgres','supabase_admin','USAGE')` is FALSE while
+  -- `supabase_admin` EXISTS -- so the guard passed and the statement
+  -- raised `permission denied to change default privileges` (42501).
+  --
+  -- THAT FAILURE IS NOT RECOVERABLE IN PLACE. This file is
+  -- `-- atlas:txmode none`, so there is no transaction to roll back:
+  -- the ALTER FUNCTION and both REVOKEs would already have committed,
+  -- the CREATE INDEX below would never run, and Atlas would record 0068
+  -- as failed -- blocking every later migration behind it.
+  --
+  -- A SKIP IS ANNOUNCED, NEVER SILENT. If we cannot set a grantor's
+  -- default privileges, that grantor's future grants are NOT hardened;
+  -- saying so in the migration output is the difference between a known
+  -- gap and an invisible one.
   FOREACH grantor IN ARRAY ARRAY['postgres', 'supabase_admin'] LOOP
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = grantor) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = grantor) THEN
+      CONTINUE;
+    END IF;
+    IF NOT pg_has_role(current_user, grantor, 'USAGE') THEN
+      RAISE NOTICE
+        '0068: skipping ALTER DEFAULT PRIVILEGES FOR ROLE % -- % is not a member of it. Future tables created by % are NOT hardened against anon/authenticated.',
+        grantor, current_user, grantor;
+      CONTINUE;
+    END IF;
+    IF TRUE THEN
       FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
           EXECUTE format(
@@ -76,6 +104,30 @@ BEGIN
           );
         END IF;
       END LOOP;
+    END IF;
+  END LOOP;
+
+  -- DID THE REVOKE ACTUALLY REVOKE? `REVOKE` only removes privileges the
+  -- EXECUTING role granted. If the grants originated elsewhere (on
+  -- Supabase they come from `supabase_admin`'s default privileges), the
+  -- statement emits `WARNING: no privileges could be revoked` and
+  -- changes nothing -- and a WARNING is not an error, so `atlas migrate
+  -- apply` and its status check both report success on a no-op. A
+  -- security hardening that cannot fail is not a hardening.
+  --
+  -- This turns that silent no-op into a loud one. It checks the state we
+  -- claim to have produced, not the statement we ran.
+  FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
+      IF EXISTS (
+        SELECT 1
+        FROM information_schema.role_table_grants
+        WHERE grantee = r AND table_schema = 'public'
+      ) THEN
+        RAISE EXCEPTION
+          '0068: % still holds table privileges in schema public after REVOKE -- the grants were made by another role, so this REVOKE was a no-op. Re-run as the granting role.',
+          r;
+      END IF;
     END IF;
   END LOOP;
 END

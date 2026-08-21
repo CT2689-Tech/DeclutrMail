@@ -62,22 +62,67 @@ describe('migration 0068 — security + webhook FK index', () => {
       const files = readdirSync(MIGRATIONS_DIR)
         .filter((f) => f.endsWith('.sql'))
         .sort();
+      let granted = false;
       for (const file of files) {
         if (file === '0068_security_and_webhook_fk_index.sql') {
           await pg.query(`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated`);
+
+          // POSITIVE CONTROL. `has_table_privilege` is false for a role
+          // that was never granted anything, so asserting false AFTER the
+          // revoke proves nothing on its own -- deleting the GRANT above
+          // left this whole spec green. Asserting the grant landed first
+          // is what makes the assertion below mean "revoked" rather than
+          // "never granted".
+          const before = await pg.query<{ ok: boolean }>(
+            `SELECT has_table_privilege('anon', 'public.senders', 'SELECT') AS ok`,
+          );
+          expect(before.rows[0]?.ok).toBe(true);
+
+          // Default privileges must actually GRANT before 0068 can be
+          // shown to revoke them. Without this the "future table" check
+          // below is vacuous: a fresh table never had anon privileges in
+          // the first place, so it reads false whether or not the
+          // migration's ALTER DEFAULT PRIVILEGES ran. Verified by
+          // neutering that statement -- the check passed until this line
+          // existed, and fails without it.
+          await pg.query(
+            `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated`,
+          );
+          granted = true;
         }
         await applySql(pg, readSql(file));
       }
+      expect(granted, 'migration 0068 was never reached -- was it renamed?').toBe(true);
 
-      const beforeWouldHaveBeenTrue = await pg.query<{ ok: boolean }>(
+      const tableRevoked = await pg.query<{ ok: boolean }>(
         `SELECT has_table_privilege('anon', 'public.senders', 'SELECT') AS ok`,
       );
-      expect(beforeWouldHaveBeenTrue.rows[0]?.ok).toBe(false);
+      expect(tableRevoked.rows[0]?.ok).toBe(false);
 
-      const seq = await pg.query<{ ok: boolean }>(
+      const otherRoleRevoked = await pg.query<{ ok: boolean }>(
         `SELECT has_table_privilege('authenticated', 'public.webhook_dedup', 'DELETE') AS ok`,
       );
-      expect(seq.rows[0]?.ok).toBe(false);
+      expect(otherRoleRevoked.rows[0]?.ok).toBe(false);
+
+      // SEQUENCES had no coverage at all -- the assertion that looked like
+      // it covered them called `has_table_privilege` on a table.
+      const seqRevoked = await pg.query<{ ok: boolean }>(
+        `SELECT COALESCE(bool_or(has_sequence_privilege('anon', c.oid, 'USAGE')), false) AS ok
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE c.relkind = 'S' AND n.nspname = 'public'`,
+      );
+      expect(seqRevoked.rows[0]?.ok).toBe(false);
+
+      // DEFAULT PRIVILEGES are the migration's actual long-term purpose --
+      // stopping a FUTURE table from being re-granted. Nothing exercised
+      // them: replacing both statements with `SELECT 1` kept every test
+      // green. A table created after the replay is the only real check.
+      await pg.query(`CREATE TABLE public.post_migration_probe (id int)`);
+      const futureTable = await pg.query<{ ok: boolean }>(
+        `SELECT has_table_privilege('anon', 'public.post_migration_probe', 'SELECT') AS ok`,
+      );
+      expect(futureTable.rows[0]?.ok).toBe(false);
     } finally {
       await pg.close();
     }

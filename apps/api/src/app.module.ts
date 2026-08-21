@@ -1,6 +1,5 @@
 import { ConfigModule } from '@nestjs/config';
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
 
 import { AccountModule } from './account/account.module.js';
 import { ActionsModule } from './actions/actions.module.js';
@@ -18,7 +17,6 @@ import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { ProductFeedbackModule } from './product-feedback/product-feedback.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
-import { RequestTimingInterceptor } from './common/request-timing.interceptor.js';
 import { ResendWebhookModule } from './webhooks/resend/resend-webhook.module.js';
 import { ScreenerModule } from './screener/screener.module.js';
 import { SecurityEventsModule } from './security-events/security-events.module.js';
@@ -99,6 +97,5 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     ResendWebhookModule,
     ...(pubsubWebhookEnabled ? [WebhooksModule] : []),
   ],
-  providers: [{ provide: APP_INTERCEPTOR, useClass: RequestTimingInterceptor }],
 })
 export class AppModule {}

@@ -716,6 +716,79 @@ describe('IncrementalSyncWorker', () => {
     expect(row!.totalReceived).toBe(2);
   });
 
+  it('scopes to EVERY recipient of a multi-recipient send, not just the first', async () => {
+    // MUTATION-PROVEN GAP. `sqlTextArray` exists to fix a real defect
+    // (Drizzle interpolating a JS string[] as `ANY(${keys})` expands to a
+    // ROW tuple, which Postgres rejects) -- a >=2-element failure mode.
+    // Every existing test drove exactly ONE recipient, so truncating the
+    // helper to `values.slice(0, 1)` kept all 36 worker tests green.
+    // A send addressed to two people is routine.
+    const base = Date.parse('2026-03-01T09:00:00.000Z');
+    const aEmail = 'ann@example.com';
+    const bEmail = 'bob@example.com';
+    const aKey = deriveSenderKey(aEmail);
+    const bKey = deriveSenderKey(bEmail);
+
+    await db.insert(mailMessages).values(
+      [aKey, bKey].map((k, i) => ({
+        mailboxAccountId,
+        providerMessageId: `inbound-${i}`,
+        providerThreadId: `thread-${i}`,
+        senderKey: k,
+        internalDate: new Date(base),
+        isUnread: false,
+      })),
+    );
+    await db.insert(senders).values(
+      [
+        { k: aKey, e: aEmail },
+        { k: bKey, e: bEmail },
+      ].map(({ k, e }) => ({
+        mailboxAccountId,
+        senderKey: k,
+        displayName: e,
+        email: e,
+        domain: 'example.com',
+        gmailCategory: 'primary' as const,
+        firstSeenAt: new Date(base),
+        lastSeenAt: new Date(base),
+        totalReceived: 1,
+        // Both start WRONG. If only the first recipient is scoped, the
+        // second keeps its stale value and this test fails.
+        wroteToCount: 42,
+      })),
+    );
+
+    const send = makeMetadata(
+      'multi-send',
+      'thread-multi',
+      'Owner <owner@declutrmail.ai>',
+      ['SENT'],
+      base + 60_000,
+      { to: `${aEmail}, ${bEmail}` },
+    );
+    const records: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'multi-send', threadId: 'thread-multi', labelIds: ['SENT'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([['multi-send', send]]),
+    );
+
+    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const rows = await db
+      .select({ senderKey: senders.senderKey, wroteToCount: senders.wroteToCount })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    const by = new Map(rows.map((r) => [r.senderKey, r.wroteToCount]));
+    expect(by.get(aKey)).toBe(1);
+    expect(by.get(bKey)).toBe(1);
+  });
+
   it('recomputes wrote_to_count only for senders this batch can move', async () => {
     const base = Date.parse('2026-03-01T09:00:00.000Z');
     const targetEmail = 'persona@example.com';

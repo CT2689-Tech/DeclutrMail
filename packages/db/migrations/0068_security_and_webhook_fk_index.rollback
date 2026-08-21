@@ -26,8 +26,20 @@ BEGIN
     END IF;
   END LOOP;
 
+  -- Membership, not existence -- same reason as the forward migration:
+  -- ALTER DEFAULT PRIVILEGES FOR ROLE requires membership in the target
+  -- role, and prod's `postgres` is not a member of `supabase_admin`.
+  -- Without this the documented recovery path fails exactly like the
+  -- thing it is supposed to recover from.
   FOREACH grantor IN ARRAY ARRAY['postgres', 'supabase_admin'] LOOP
-    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = grantor) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = grantor) THEN
+      CONTINUE;
+    END IF;
+    IF NOT pg_has_role(current_user, grantor, 'USAGE') THEN
+      RAISE NOTICE '0068 rollback: skipping grantor % (not a member)', grantor;
+      CONTINUE;
+    END IF;
+    IF TRUE THEN
       FOREACH r IN ARRAY ARRAY['anon', 'authenticated'] LOOP
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = r) THEN
           EXECUTE format(
