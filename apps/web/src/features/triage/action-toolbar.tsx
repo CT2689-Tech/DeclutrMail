@@ -5,7 +5,7 @@ import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
-import { VERB_ORDER, VERB_SHORTCUT, verdictToVerb, type ActionVerb } from './types';
+import { VERB_ORDER, VERB_SHORTCUT, recommendedVerb, type ActionVerb } from './types';
 
 const { color, font, radius } = tokens;
 
@@ -41,9 +41,9 @@ export function resolveShortcut(event: {
  * their recommendation and automatic/bulk eligibility.
  *
  * D31 — the engine's verdict is highlighted ONLY when `confidence`
- * is strictly greater than 0.85. Below that threshold the toolbar
- * renders flat — the founder explicitly does not want a "soft"
- * recommendation to pull the eye.
+ * clears that VERDICT's floor (`RECOMMEND_FLOOR` in `types.ts`).
+ * Below it the toolbar renders flat — the founder explicitly does not
+ * want a "soft" recommendation to pull the eye.
  *
  * Keyboard: K/A/U/L/D bind globally while a row is focused. The
  * effect cleans up on unmount so navigating away from the screen
@@ -70,12 +70,11 @@ export function ActionToolbar({
    */
   disabled?: boolean;
 }) {
-  // Only emphasise when confidence is strictly > 0.85 (D31). The
-  // ≥ vs > distinction matters: 0.85 exactly should NOT highlight
-  // per the founder's read of D31 ("highlight only when confidence
-  // > 0.85").
-  const recommendedVerb: ActionVerb | null =
-    row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
+  // Same verdict-aware gate the row's verdict pill reads
+  // (`types.ts`). It was a flat `> 0.85` duplicated in both files,
+  // which made Archive — whose reachable band tops out at 0.74 without
+  // manual-archive history — permanently unhighlightable here too.
+  const recommended = recommendedVerb(row.verdict, row.confidence);
 
   // No-channel reason, surfaced as visible text below the verbs (W2).
   // Protection affects recommendations and automatic/bulk cleanup, not
@@ -125,7 +124,7 @@ export function ActionToolbar({
         // the transient busy state already announces via the row's
         // SR status line.
         const reason = verbDisabledReason(verb, row);
-        const isHighlighted = recommendedVerb === verb && !verbIsDisabled;
+        const isHighlighted = recommended === verb && !verbIsDisabled;
         const tone = isHighlighted
           ? verb === 'Unsubscribe'
             ? 'warn'

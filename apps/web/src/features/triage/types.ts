@@ -18,6 +18,7 @@
  */
 
 import { VERB_REGISTRY } from '@declutrmail/shared/actions';
+import { isRecommended } from '@declutrmail/shared/copy';
 
 /** The four verdicts the engine can emit (Delete is user-chosen only). */
 export type TriageVerdict = 'keep' | 'archive' | 'unsubscribe' | 'later';
@@ -61,4 +62,18 @@ export function verdictToVerb(v: TriageVerdict): ActionVerb {
     case 'later':
       return 'Later';
   }
+}
+
+/**
+ * The verb the engine recommends for this row, or `null` when it is not
+ * confident enough to recommend anything.
+ *
+ * The threshold itself is verdict-aware and lives in
+ * `@declutrmail/shared/copy` — Triage and the Screener both render a
+ * confidence, and a flat `> 0.85` here is what made Archive
+ * unrecommendable on every surface at once. Only the verb mapping is
+ * local; `ActionVerb` is a Triage type.
+ */
+export function recommendedVerb(verdict: TriageVerdict, confidence: number): ActionVerb | null {
+  return isRecommended(verdict, confidence) ? verdictToVerb(verdict) : null;
 }

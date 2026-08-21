@@ -95,7 +95,7 @@ describe('seedAutopilotPresets', () => {
       .where(eq(automationRules.mailboxAccountId, mbId));
 
     const byKey = new Map(rows.map((r) => [r.presetKey, r.confidenceThreshold]));
-    expect(byKey.get('auto_archive_low_engagement')).toBe('0.85');
+    expect(byKey.get('auto_archive_low_engagement')).toBe('0.72');
     expect(byKey.get('auto_unsubscribe_noisy')).toBe('0.90');
     expect(byKey.get('auto_screen_new_senders')).toBeNull();
     expect(byKey.get('newsletter_graveyard')).toBeNull();

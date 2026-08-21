@@ -14,6 +14,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { AUTOPILOT_PRESETS } from '@declutrmail/workers';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
@@ -299,13 +300,22 @@ describe('AutopilotReadService', () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       await service.patchRule(mailboxA, ruleId, { confidenceThreshold: null });
 
+      // Derived from the preset, not written down. These were hardcoded
+      // 0.85/0.86 and silently stopped testing the boundary the moment
+      // the default moved to 0.72 — the same drift this change exists
+      // to fix.
+      const preset = AUTOPILOT_PRESETS.auto_archive_low_engagement.defaultThreshold;
+      expect(preset).not.toBeNull();
+      const atDefault = preset!.toFixed(2);
+      const aboveDefault = (preset! + 0.01).toFixed(2);
+
       for (const key of ['at-default-1', 'at-default-2', 'at-default-3']) {
-        await seedArchiveDecision(mailboxA, key, { confidence: '0.85' });
+        await seedArchiveDecision(mailboxA, key, { confidence: atDefault });
       }
       expect(await service.getPatternSuggestion(mailboxA)).toBeNull();
 
       for (const key of ['above-default-1', 'above-default-2', 'above-default-3']) {
-        await seedArchiveDecision(mailboxA, key, { confidence: '0.86' });
+        await seedArchiveDecision(mailboxA, key, { confidence: aboveDefault });
       }
       expect(await service.getPatternSuggestion(mailboxA)).toMatchObject({
         ruleId,
@@ -405,6 +415,49 @@ describe('AutopilotReadService', () => {
         confidenceThreshold: null,
       });
       expect(updated!.confidenceThreshold).toBeNull();
+    });
+
+    // Founder decision 2026-08-20. Lowering a gate widens what an
+    // `active` rule acts on, unattended — Observe turns the widened set
+    // back into suggestions someone approves.
+    it('a threshold change drops an active rule back to Observe', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' });
+      const updated = await service.patchRule(mailboxA, ruleId, { confidenceThreshold: 0.6 });
+      expect(updated!.mode).toBe('observe');
+      expect(updated!.confidenceThreshold).toBe(0.6);
+      // A fresh window re-arms the day-7 prompt (D10).
+      expect(updated!.observeWindowElapsed).toBe(false);
+    });
+
+    it('a threshold change does NOT restart a paused rule', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'paused' });
+      const updated = await service.patchRule(mailboxA, ruleId, { confidenceThreshold: 0.6 });
+      // Paused is an explicit stop; editing a number must not undo it.
+      expect(updated!.mode).toBe('paused');
+      expect(updated!.confidenceThreshold).toBe(0.6);
+    });
+
+    it('a threshold change leaves an observe rule’s window alone', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const before = await service.getRule(mailboxA, ruleId);
+      expect(before!.mode).toBe('observe');
+      await new Promise((r) => setTimeout(r, 5));
+      const updated = await service.patchRule(mailboxA, ruleId, { confidenceThreshold: 0.65 });
+      expect(updated!.mode).toBe('observe');
+      // Already observing — restarting the 7-day countdown would be a
+      // pointless re-arm of the day-7 prompt.
+      expect(updated!.modeChangedAt).toBe(before!.modeChangedAt);
+    });
+
+    it('an explicit mode in the same patch wins over the Observe reset', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const updated = await service.patchRule(mailboxA, ruleId, {
+        confidenceThreshold: 0.8,
+        mode: 'active',
+      });
+      expect(updated!.mode).toBe('active');
     });
 
     it('rejects confidenceThreshold outside [0, 1]', async () => {

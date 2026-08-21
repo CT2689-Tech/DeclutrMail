@@ -1,0 +1,15 @@
+-- Reverse 0067 — restore the old 0.85 gate on rows this migration moved.
+--
+-- LOSSY, deliberately, in exactly one respect: the forward migration
+-- reset `mode` to 'observe' and cannot know what it was before. A rule
+-- that was 'active' at 0.85 comes back as 'observe' and its owner has to
+-- re-activate it. That is the safe direction to be wrong in — the
+-- alternative is restoring an unattended archiving rule automatically —
+-- and at the time of writing no mailbox has this preset active.
+--
+-- `confidence_threshold` and the observe-window fields restore cleanly.
+UPDATE "automation_rules"
+SET "confidence_threshold" = 0.85,
+    "updated_at" = now()
+WHERE "preset_key" = 'auto_archive_low_engagement'
+  AND "confidence_threshold" = 0.72;

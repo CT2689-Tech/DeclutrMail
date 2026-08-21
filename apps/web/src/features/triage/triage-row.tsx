@@ -2,6 +2,7 @@
 
 import { Avatar, Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import {
+  confidenceBand,
   normalizeProtectionReason,
   protectionReasonLabel,
   scoredAgeLabel,
@@ -118,7 +119,7 @@ function whyLine(row: TriageDecisionRow): string {
  * One row in the triage queue (D36 — collapse/expand pattern).
  *
  * Collapsed: avatar, name, domain, verdict pill, one-line why,
- * recommended-verb hint. Click the row (or hit space/enter when
+ * confidence band. Click the row (or hit space/enter when
  * focused) to expand.
  *
  * Expanded: the toolbar (K/A/U/L/D per amended D227) becomes visible,
@@ -191,8 +192,13 @@ export function TriageRow({
   /** Authenticated queues inject the active Gmail account note; public demos omit it. */
   inlinePreviewAccountContext?: ReactNode;
 }) {
-  const recommendedVerb: ActionVerb | null =
-    row.confidence > 0.85 ? verdictToVerb(row.verdict) : null;
+  // The engine's confidence, as one word on the verdict pill. The row
+  // used to print this twice — the pill's band AND a standalone
+  // `Recommended` hint, which said the same thing because `strong` IS
+  // `isRecommended`. The hint also cost an `auto` grid column, which is
+  // what crushed the identity cell below 480px (W1) and forced the two
+  // layouts to disagree about what a row shows. One badge, both widths.
+  const band = confidenceBand(row.verdict, row.confidence);
   // Hydration-safe clock — see the note in `triage-row-expanded.tsx`.
   // `null` on the server and the first client render, so the label
   // appears one tick after mount rather than mismatching.
@@ -209,12 +215,13 @@ export function TriageRow({
   const actionsDisabled = busy || inlineConfirmBlocked;
 
   // W1 (2026-07-02 audit) — below the xs ceiling the single-row grid's
-  // auto columns (verdict pill + Recommended hint) consume the full
-  // viewport and the identity cell (`minmax(0, 1fr)`) collapses to
-  // zero width: avatar + chip render, sender name/domain vanish. At
-  // ≤480px the header stacks instead — identity keeps the full track
-  // on row 1, the pill moves to row 2, and the Recommended hint drops
-  // (the pill's "· NN%" already carries the recommendation).
+  // auto columns consumed the full viewport and the identity cell
+  // (`minmax(0, 1fr)`) collapsed to zero width: avatar + chip rendered,
+  // sender name/domain vanished. At ≤480px the header stacks instead —
+  // identity keeps the full track on row 1 and the pill moves to row 2.
+  // The second auto column (a standalone `Recommended` hint) is gone
+  // entirely now, so both widths show the same badge and the same
+  // information — the narrow layout is a reflow, not a downgrade.
   const isNarrow = useIsAtMost('xs');
 
   // D37 — swipe gestures on the mobile card. A swipe resolves to the
@@ -271,7 +278,7 @@ export function TriageRow({
           display: 'grid',
           gridTemplateColumns: isNarrow
             ? '32px minmax(0, 1fr) 18px'
-            : '32px minmax(0, 1fr) auto auto 18px',
+            : '32px minmax(0, 1fr) auto 18px',
           gap: 12,
           alignItems: 'center',
           padding: '12px 14px',
@@ -421,35 +428,14 @@ export function TriageRow({
           {row.protectionReason !== null ? (
             <span style={{ fontFamily: font.mono, fontSize: 9.5 }}>{' · '}protected</span>
           ) : (
-            recommendedVerb !== null && (
+            band !== null && (
               <span style={{ fontFamily: font.mono, fontSize: 9.5 }}>
                 {' · '}
-                {Math.round(row.confidence * 100)}%
+                {band}
               </span>
             )
           )}
         </Pill>
-
-        {/* Recommended verb hint — only when D31 highlight applies.
-            Dropped from the stacked narrow layout: the pill's "· NN%"
-            carries the recommendation and the hint's auto column is
-            exactly what crushed the identity cell (W1). */}
-        {!isNarrow && (
-          <span
-            style={{
-              fontFamily: font.mono,
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: recommendedVerb !== null ? color.primary : color.fgMuted,
-              visibility: recommendedVerb !== null ? 'visible' : 'hidden',
-            }}
-            aria-hidden={recommendedVerb === null}
-          >
-            Recommended
-          </span>
-        )}
 
         {/* Chevron — rotates to indicate expand state. Pinned to the
             first row's trailing column on the stacked layout. */}
