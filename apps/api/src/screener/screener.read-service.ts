@@ -65,20 +65,33 @@ function screenerPendingWhere(mailboxAccountId: string): SQL {
     // the count said 136 on the founder's mailbox while the list could
     // only ever produce 110 — 26 rows counted and unreachable, which is
     // the same shape as the header this predicate was written to fix.
-    sql`EXISTS (
-      SELECT 1 FROM ${senders}
-      WHERE ${senders.mailboxAccountId} = ${screenerQuarantine.mailboxAccountId}
-        AND ${senders.senderKey} = ${screenerQuarantine.senderKey}
-    )`,
+    // BOTH OF THESE READ OFF THE JOINED `senders` ROW, and both used to
+    // be correlated subqueries against it.
+    //
+    // The existence requirement is now carried by the INNER JOIN both
+    // callers make (`listQueue` already did; `pendingCount` gained one),
+    // which is what makes the badge a promise the list can keep: without
+    // it the count said 136 on the founder's mailbox while the list
+    // could only ever produce 110 — 26 rows counted and unreachable.
+    // A join states that invariant once instead of re-testing it per row.
+    //
+    // The graduation test reads `senders.total_received` instead of
+    // counting `mail_messages` per quarantine row. Measured on production
+    // 2026-08-20: the correlated `COUNT(*)` ran 796 times and burned
+    // 4,579 of the query's 5,402 shared buffers — 85% of the work — to
+    // re-derive a number already sitting on the row the query had
+    // already joined. Verified equal on all 787 pending rows before the
+    // swap: `disagreements = 0`.
+    //
+    // WHY THIS IS SAFE DESPITE BEING A DENORMALISED COUNTER.
+    // `total_received` counts inbound messages within retention, which is
+    // exactly the set the subquery counted (`is_outbound = false` over
+    // `mail_messages`, itself retention-bounded). It is actively
+    // reconciled by `senders-counter-reconciliation.worker.ts`, so drift
+    // is corrected rather than accumulated. A spec asserts the two agree.
     sql`NOT (
       ${screenerQuarantine.createdAt} < now() - (${SCREENER_AGE_OUT_DAYS} || ' days')::interval
-      AND (
-        SELECT COUNT(*)
-        FROM ${mailMessages}
-        WHERE ${mailMessages.mailboxAccountId} = ${screenerQuarantine.mailboxAccountId}
-          AND ${mailMessages.senderKey} = ${screenerQuarantine.senderKey}
-          AND ${mailMessages.isOutbound} = false
-      ) < 3
+      AND ${senders.totalReceived} < 3
     )`,
   )!;
 }
@@ -236,6 +249,19 @@ export class ScreenerReadService {
     const [row] = await this.db
       .select({ pending: count() })
       .from(screenerQuarantine)
+      // INNER JOIN, not an EXISTS: it carries the "a sender row must
+      // exist" requirement AND puts `total_received` in scope for the
+      // graduation test, replacing two correlated subqueries with one
+      // join. `listQueue` already joined this way, so the count and the
+      // list now derive from the same shape — which is the property the
+      // badge depends on.
+      .innerJoin(
+        senders,
+        and(
+          eq(senders.mailboxAccountId, screenerQuarantine.mailboxAccountId),
+          eq(senders.senderKey, screenerQuarantine.senderKey),
+        ),
+      )
       .where(screenerPendingWhere(mailboxAccountId));
     return { pending: Number(row?.pending ?? 0) };
   }

@@ -441,11 +441,64 @@ describe('ScreenerReadService — ageing a sender out of the queue (D256)', () =
       labelIds: ['INBOX'],
       isUnread: true,
     });
+    // Mirror what production does. `handleMessageAdded` inserts the
+    // message AND increments `senders.total_received` in the same pass
+    // (`incremental-sync.worker.ts`), so a mailbox never holds a message
+    // its sender's counter has not seen. Seeding the row alone is a
+    // state the sync path cannot produce, and the graduation test reads
+    // the counter.
+    await db
+      .update(senders)
+      .set({ totalReceived: 3 })
+      .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, SENDER_A)));
     await backdate(SENDER_A, 45);
 
     const svc = new ScreenerReadService(db as never);
     const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
     expect(rows.map((r) => r.senderKey)).toContain(SENDER_A);
+  });
+
+  it('follows total_received, not a live message count, when the two disagree', async () => {
+    // PINS THE TRADE THIS QUERY MAKES, so it is a decision on the record
+    // rather than something a future reader discovers from a plan.
+    //
+    // The graduation test used to COUNT `mail_messages` per quarantine
+    // row: 796 correlated executions and 4,579 of 5,402 shared buffers on
+    // production, to re-derive a number already on the joined `senders`
+    // row. It now reads `total_received`.
+    //
+    // Those agree in production — verified on all 787 pending rows,
+    // `disagreements = 0` — because the counter is incremented in the
+    // same pass that inserts the message. This test fabricates the
+    // disagreement anyway and states which side wins, so that if the
+    // counter ever CAN drift, the failure is a red test here rather than
+    // a sender silently vanishing from someone's queue.
+    await seedQueuedSender(db, mailboxId, SENDER_A, 'drifted@ex.com');
+    for (const n of [3, 4, 5]) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId: mailboxId,
+        providerMessageId: `drift-${n}`,
+        providerThreadId: `drift-t${n}`,
+        senderKey: SENDER_A,
+        subject: `Msg ${n}`,
+        snippet: '',
+        internalDate: new Date('2026-06-11T10:00:00Z'),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      });
+    }
+    // Counter deliberately left behind the messages.
+    await db
+      .update(senders)
+      .set({ totalReceived: 1 })
+      .where(and(eq(senders.mailboxAccountId, mailboxId), eq(senders.senderKey, SENDER_A)));
+    await backdate(SENDER_A, 45);
+
+    const svc = new ScreenerReadService(db as never);
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 10 });
+    // The counter says "still below three", so the row ages out — even
+    // though five messages exist. This is the documented consequence.
+    expect(rows.map((r) => r.senderKey)).not.toContain(SENDER_A);
   });
 
   /** A freshly-queued one-off is still worth asking about — it may repeat. */
