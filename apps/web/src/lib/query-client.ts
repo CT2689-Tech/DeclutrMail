@@ -8,7 +8,7 @@
 // staleTime saves redundant fetches without making the UI feel stale,
 // and we never want a tab-focus to silently trigger a refetch storm.
 
-import { MutationCache, QueryClient } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 
 import {
   isMailboxScopeConflict,
@@ -33,12 +33,10 @@ export function makeQueryClient(): QueryClient {
       reportUpgradeGateHit(error);
       // A mutation that fails the mailbox guard proves the client's idea
       // of the active mailbox is wrong — disconnected in another tab,
-      // switched, revoked. Reads already treat that 4xx as a designed
-      // state and the app shell renders the reconnect gate off `me`, but
-      // a MUTATION had no such recovery: its caller toasted a generic
-      // failure and the user stayed on a screen full of a mailbox that
-      // no longer resolves, with no way to the gate (CLAUDE.md §8
-      // "scope change ⇒ reset scoped cache").
+      // switched, revoked. A MUTATION had no recovery: its caller toasted
+      // a generic failure and the user stayed on a screen full of a
+      // mailbox that no longer resolves, with no way to the gate
+      // (CLAUDE.md §8 "scope change ⇒ reset scoped cache").
       //
       // Global, like the 402 above, so every mutation surface recovers —
       // not only the handlers someone remembered to wire.
@@ -47,8 +45,46 @@ export function makeQueryClient(): QueryClient {
       }
     },
   });
+  // The READ half of the same invariant (audit 2026-08-21).
+  //
+  // The mutation handler above used to justify its own existence by
+  // saying reads were already covered — "the app shell renders the
+  // reconnect gate off `me`". The gate does read `me`; nothing refetched
+  // `me`. `refetchOnWindowFocus` is false below, `useMe` polls only
+  // while a mailbox is syncing or deleting, and its doc comment claimed
+  // a focus refetch it never configured. So after an out-of-band scope
+  // change — disconnected in another tab, grant revoked by a worker —
+  // `me` stayed cached, `hasActiveMailbox` stayed true, the gate never
+  // rendered, and the always-mounted sync banner polled a dead mailbox
+  // every 3s while rendering `null` on error. The storm was invisible in
+  // the UI and the user sat on a broken screen until a manual reload.
+  //
+  // Mirror image of the mutation handler, for the same reason: a
+  // recovery wired for one side and not the other is not wired.
+  //
+  // COALESCED, unlike the mutation side, because a read handler can feed
+  // itself: the reset invalidates every query, they refetch, the ones
+  // behind the guard 409 again, and each one re-enters this handler. The
+  // cycle does terminate — `me` is behind JwtGuard only, so it resolves,
+  // reports no active mailbox, and the shell swaps in the reconnect gate,
+  // unmounting the scoped queries — but "it terminates eventually" is how
+  // the original 409 storm was justified too. One reset per burst is all
+  // the recovery needs, so the latch makes the bound structural instead
+  // of emergent.
+  let scopeResetAt = 0;
+  const SCOPE_RESET_COALESCE_MS = 1_000;
+  const queryCache = new QueryCache({
+    onError: (error) => {
+      if (client === null || !isMailboxScopeConflict(error)) return;
+      const now = Date.now();
+      if (now - scopeResetAt < SCOPE_RESET_COALESCE_MS) return;
+      scopeResetAt = now;
+      void resetMailboxScopedCache(client);
+    },
+  });
   client = new QueryClient({
     mutationCache,
+    queryCache,
     defaultOptions: {
       queries: {
         staleTime: DEFAULT_STALE_TIME_MS,

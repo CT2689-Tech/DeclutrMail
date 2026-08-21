@@ -115,6 +115,60 @@ describe('makeQueryClient — global mailbox-scope-conflict recovery', () => {
     },
   );
 
+  // The READ half of the same invariant (audit 2026-08-21). The
+  // mutation handler above justified leaving reads uncovered by saying
+  // "the shell renders the gate off `me`" — true, except nothing
+  // refetched `me`: focus refetch is off globally and `useMe` polls only
+  // while syncing/deleting. So after a cross-tab disconnect the gate
+  // never appeared and the always-mounted sync banner polled a dead
+  // mailbox every 3s, rendering `null` on error the whole time.
+  describe('read side', () => {
+    async function failReadOn(
+      error: unknown,
+      times = 1,
+    ): Promise<{ resetCalls: number; client: ReturnType<typeof makeQueryClient> }> {
+      const client = makeQueryClient();
+      let resetCalls = 0;
+      const realInvalidate = client.invalidateQueries.bind(client);
+      client.invalidateQueries = ((filters?: unknown, ...rest: unknown[]) => {
+        if (filters === undefined) resetCalls += 1;
+        return (realInvalidate as (...a: unknown[]) => Promise<void>)(filters, ...rest);
+      }) as typeof client.invalidateQueries;
+
+      for (let i = 0; i < times; i += 1) {
+        const query = client.getQueryCache().build(client, {
+          queryKey: ['scoped-read', i] as const,
+          queryFn: () => Promise.reject(error),
+          retry: false,
+        });
+        await query.fetch().catch(() => undefined);
+      }
+      return { resetCalls, client };
+    }
+
+    it.each(['NO_ACTIVE_MAILBOX', 'SELECT_MAILBOX', 'MAILBOX_NOT_OWNED'])(
+      'resets the mailbox-scoped cache when a READ fails with %s',
+      async (code) => {
+        expect((await failReadOn(conflict(code))).resetCalls).toBeGreaterThan(0);
+      },
+    );
+
+    it('leaves the cache alone for a read failure that is not a scope conflict', async () => {
+      expect((await failReadOn(conflict('PROTECTED_SENDER'))).resetCalls).toBe(0);
+      expect((await failReadOn(new Error('network'))).resetCalls).toBe(0);
+    });
+
+    // The handler can feed itself: the reset invalidates everything,
+    // those queries refetch, the guarded ones 409 again, and each
+    // re-enters here. It does terminate once `me` resolves and the shell
+    // swaps in the gate — but "terminates eventually" is exactly how the
+    // original storm was justified, so the bound is structural.
+    it('coalesces a burst of scope-conflict reads into one reset', async () => {
+      const { resetCalls } = await failReadOn(conflict('NO_ACTIVE_MAILBOX'), 5);
+      expect(resetCalls).toBe(1);
+    });
+  });
+
   it('leaves the cache alone for a 409 that is NOT a scope conflict', async () => {
     // Two-sided: PROTECTED_SENDER shares the status but is resolved in
     // place by the action surface, not by blowing away the cache.

@@ -98,6 +98,14 @@ describe('useSyncStatus', () => {
         error_code: 'RateLimitError',
       }),
     ).toBe(SYNC_FAILED_POLL_MS);
+    // ERRORED → STOP. `!data` is true for "not loaded yet" AND for
+    // "errored", so this used to fall through to the 3s cadence and
+    // re-issue forever: `retry` correctly refuses a 4xx, and the
+    // interval re-issued a fresh query anyway. Two of the three
+    // consumers are always-mounted chrome that render `null` on error,
+    // so the storm was invisible in the UI (audit 2026-08-21).
+    expect(syncRefetchInterval(undefined, true)).toBe(false);
+    expect(syncRefetchInterval(SYNCING, true)).toBe(false);
   });
 
   it('refetches ready status on focus only after the cached reading goes stale', async () => {

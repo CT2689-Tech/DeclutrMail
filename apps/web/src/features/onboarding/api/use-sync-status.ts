@@ -59,7 +59,17 @@ export const SYNC_STATUS_STALE_TIME_MS = 30_000;
  *
  * Exported so it can be unit-tested without racing real timers.
  */
-export function syncRefetchInterval(data: SyncStatus | undefined): number {
+export function syncRefetchInterval(data: SyncStatus | undefined, isError = false): number | false {
+  // STOP on error, do not treat it as "not loaded yet" (audit
+  // 2026-08-21). `!data` is true in BOTH states, so an errored read used
+  // to fall through to the 3s cadence and re-issue forever — `retry`
+  // correctly refuses to retry a 4xx, and the interval re-issued a fresh
+  // query regardless, which is the same storm one layer up. Two of the
+  // three consumers are always-mounted chrome that render `null` on
+  // error, so it was invisible in the UI. Recovery is covered: the
+  // scope-conflict handler in `makeQueryClient` resets the cache, and
+  // this query opts into focus refetch below.
+  if (isError) return false;
   if (!data) return SYNC_POLL_MS;
   if (data.is_ready_for_triage) return SYNC_READY_POLL_MS;
   if (data.readiness_status === 'failed') return SYNC_FAILED_POLL_MS;
@@ -77,7 +87,8 @@ export function syncStatusQueryOptions(mailboxId: string | undefined, reader: Sy
     queryKey: syncStatusQueryKey(mailboxId),
     queryFn: ({ signal }) => reader(signal),
     staleTime: SYNC_STATUS_STALE_TIME_MS,
-    refetchInterval: (query) => syncRefetchInterval(query.state.data),
+    refetchInterval: (query) =>
+      syncRefetchInterval(query.state.data, query.state.status === 'error'),
     // Global query defaults disable focus refetches to prevent storms.
     // Sync health is the narrow exception: a backgrounded tab may have
     // paused its timer, so a STALE reading should restore truth on

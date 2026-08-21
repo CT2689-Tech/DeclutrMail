@@ -1,10 +1,22 @@
 /**
  * `useMe` — TanStack Query hook for `GET /api/auth/me`.
  *
- * Drives the AuthProvider + the account menu. The query is loaded once
- * at app mount and re-fetched on window focus so a session revoked in
- * another tab surfaces as a 401 (which the apiClient routes to the
- * login redirect).
+ * Drives the AuthProvider + the account menu.
+ *
+ * REFETCH REALITY (corrected 2026-08-21). This used to claim the query
+ * is "re-fetched on window focus so a session revoked in another tab
+ * surfaces as a 401". It is not: no `refetchOnWindowFocus` is set here
+ * and the global default in `makeQueryClient` is `false`. The query
+ * loads at mount and otherwise refetches only while a mailbox is
+ * syncing or a data deletion is in flight (the `refetchInterval` below),
+ * or when something invalidates it.
+ *
+ * That mattered, because the mutation-side scope-conflict handler cited
+ * this doc as its reason for leaving reads uncovered — the app shell
+ * renders the reconnect gate off `me`, so a stale `me` meant the gate
+ * never appeared. A `QueryCache.onError` in `makeQueryClient` now
+ * invalidates on a read scope-conflict, which is what actually refreshes
+ * this query after an out-of-band change.
  */
 
 import { useEffect } from 'react';
