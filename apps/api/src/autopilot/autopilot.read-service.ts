@@ -377,9 +377,18 @@ export class AutopilotReadService {
    *   - `pendingTotal` — all pending Observe rows (uncapped; the
    *     honest gate for the day-7 prompt, unlike the 50-row page).
    *   - `senders7d`    — distinct senders matched in the last 7 days.
-   *   - `messages7d`   — INBOX messages from those senders (LEFT JOIN
-   *     mail_messages, same resolution the action sweep uses) — the
-   *     "would have archived N emails" number.
+   *   - `inboxMessagesNow` — INBOX messages those senders hold RIGHT NOW
+   *     (LEFT JOIN mail_messages, same resolution the action sweep
+   *     uses). NOT windowed, deliberately: `recent` bounds
+   *     `rule_match_log.matched_at`, and the join carries no
+   *     `internal_date` predicate, so a sender who matched once
+   *     yesterday contributes its entire current inbox backlog however
+   *     old. That is the right number — it is what a sweep now would act
+   *     on — but it is not a 7-day figure, and the field was called
+   *     `messages7d` until 2026-08-21, which is how the rule card came
+   *     to render it as "would have archived N emails in the last 7
+   *     days" on the very screen where a user decides whether to hand a
+   *     rule unattended archive/delete power.
    *
    * Resolved rows remain evidence for the 7-day totals. The message id
    * count is distinct so repeated matches for one resolved sender do
@@ -398,7 +407,7 @@ export class AutopilotReadService {
         ruleId: ruleMatchLog.ruleId,
         pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id}) filter (where ${pending} and ${SENDER_INDEXED_AT_MATCH_TIME})::int`,
         senders7d: sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`,
-        messages7d: sql<number>`count(distinct ${mailMessages.id}) filter (where ${recent})::int`,
+        inboxMessagesNow: sql<number>`count(distinct ${mailMessages.id}) filter (where ${recent})::int`,
       })
       .from(ruleMatchLog)
       .leftJoin(
@@ -426,7 +435,11 @@ export class AutopilotReadService {
     return new Map(
       rows.map((r) => [
         r.ruleId,
-        { pendingTotal: r.pendingTotal, senders7d: r.senders7d, messages7d: r.messages7d },
+        {
+          pendingTotal: r.pendingTotal,
+          senders7d: r.senders7d,
+          inboxMessagesNow: r.inboxMessagesNow,
+        },
       ]),
     );
   }
@@ -1218,7 +1231,7 @@ function projectRule(
     // Zero-fill when in Observe with no pending rows so the FE can
     // gate on numbers, not presence.
     observeDigest: inObserve
-      ? (observeDigest ?? { pendingTotal: 0, senders7d: 0, messages7d: 0 })
+      ? (observeDigest ?? { pendingTotal: 0, senders7d: 0, inboxMessagesNow: 0 })
       : null,
     confidenceThreshold:
       row.confidenceThreshold !== null ? Number.parseFloat(row.confidenceThreshold) : null,

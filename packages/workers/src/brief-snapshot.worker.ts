@@ -297,6 +297,21 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
                 error: err instanceof Error ? err.message : String(err),
               }),
             );
+            // Counted, then the job returns SUCCESS — so BullMQ records a
+            // clean run and the D203/D225 retry and dead-letter policy never
+            // engages. Correct for isolation, blind for visibility: at one
+            // failing mailbox in a hundred this is invisible, and at a
+            // hundred in a hundred it is ALSO invisible, because the exit
+            // code is identical. `console.error` does not close that gap —
+            // Sentry runs with `integrations: []`, so nothing forwards it
+            // (audit 2026-08-21).
+            this.observer.captureBackgroundFailure(
+              err instanceof Error ? err : new Error(String(err)),
+              {
+                kind: 'brief.mailbox_failed',
+                tags: { worker: this.workerName, mailbox_account_id: mb.id },
+              },
+            );
           }
         }),
       ),
