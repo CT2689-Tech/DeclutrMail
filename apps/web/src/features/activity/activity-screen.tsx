@@ -29,7 +29,7 @@ import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/s
 
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { getActionFailureCopy, technicalErrorDetails } from '@/lib/action-error-copy';
 import type {
   ActivityActionWire,
@@ -3181,13 +3181,6 @@ function recoveryConfirmErrorMessage(error: Error): string {
 function recoveryConfirmNeedsRecheck(error: Error): boolean {
   const code = apiErrorCode(error);
   return code === 'RECOVERY_PREVIEW_EXPIRED' || code === 'LATER_WAKE_TIME_REQUIRED';
-}
-
-function apiErrorCode(error: Error): string | null {
-  const body = error instanceof ApiError ? error.body : null;
-  return body && typeof body === 'object' && 'code' in body && typeof body.code === 'string'
-    ? body.code
-    : null;
 }
 
 /**
