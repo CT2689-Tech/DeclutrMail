@@ -393,7 +393,10 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // Archive preset — message + sender counts.
     expect(
       within(rulesList).getByText(
-        /would have archived 212 emails from 34 senders in the last 7 days/i,
+        // The 7-day window belongs to the SENDER count only; the message
+        // count is the senders' whole current inbox backlog. The old copy
+        // attached "in the last 7 days" to both (audit 2026-08-21).
+        /would archive 212 emails now, from 34 senders matched in the last 7 days/i,
       ),
     ).toBeInTheDocument();
     // Unsubscribe preset — sender count only (request acts per sender).
@@ -403,7 +406,12 @@ describe('AutopilotScreen — rules management (D101)', () => {
       ),
     ).toBeInTheDocument();
     // Disabled rule (long-dormant) shows NO digest line even in observe mode.
-    expect(within(rulesList).queryAllByText(/would have/i)).toHaveLength(4);
+    // Matched on the leading "Would " every digest sentence opens with,
+    // not on "would have": only the unsubscribe branch still says that,
+    // because it is the one branch whose number really was windowed.
+    expect(within(rulesList).queryAllByText(/^Would (archive|move|have requested)/i)).toHaveLength(
+      4,
+    );
   });
 
   it('PATCHes { enabled: false } when an enabled rule is toggled off', async () => {
@@ -668,7 +676,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
   it('hides the day-7 prompt when the window elapsed with ZERO pending matches (D10)', () => {
     const quietWeek = PRESET_RULES_OBSERVE.map((r) =>
       r.id === AUTO_ARCHIVE_LOW_ENGAGEMENT.id
-        ? { ...r, observeDigest: { pendingTotal: 0, senders7d: 0, messages7d: 0 } }
+        ? { ...r, observeDigest: { pendingTotal: 0, senders7d: 0, inboxMessagesNow: 0 } }
         : r,
     );
     renderScreen({ kind: 'ready', rules: quietWeek, suggestions: [] });
@@ -679,7 +687,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     renderScreen(ready());
     const banner = screen.getByRole('status');
     expect(
-      within(banner).getByText(/would have archived 212 emails from 34 senders/i),
+      within(banner).getByText(/would archive 212 emails now, from 34 senders matched/i),
     ).toBeInTheDocument();
   });
 
@@ -892,7 +900,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     // a page count presented as the total is the bug this guards.
     const rule = {
       ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
-      observeDigest: { pendingTotal: 214, senders7d: 200, messages7d: 900 },
+      observeDigest: { pendingTotal: 214, senders7d: 200, inboxMessagesNow: 900 },
     };
     const base = PENDING_SUGGESTIONS.find((m) => m.ruleId === AUTO_ARCHIVE_LOW_ENGAGEMENT.id)!;
     const suggestions: SuggestionWithRule[] = Array.from({ length: 50 }, (_, i) => ({

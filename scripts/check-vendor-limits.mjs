@@ -377,13 +377,51 @@ async function checkSentry() {
   const res = await httpJson(url.toString(), {
     headers: { Authorization: `Bearer ${process.env.SENTRY_AUTH_TOKEN}` },
   });
-  // Only `accepted` outcomes consume paid quota.
-  const accepted = (res.groups ?? [])
-    .filter((g) => g.by?.outcome === 'accepted')
-    .reduce((sum, g) => sum + (Number(g.totals?.['sum(quantity)']) || 0), 0);
+  const groups = res.groups ?? [];
+  // An empty payload is NOT a healthy day. Reading zero groups as "0
+  // accepted, all clear" would make an auth failure, a renamed field or
+  // a changed statsPeriod indistinguishable from a quiet mailbox — the
+  // check would pass hardest exactly when it could see least. Prove the
+  // input was readable before asserting anything about its contents.
+  if (groups.length === 0) {
+    return {
+      status: 'ERROR',
+      detail: 'stats_v2 returned no outcome groups — cannot assess Sentry quota',
+    };
+  }
+
+  const sumOutcome = (...names) =>
+    groups
+      .filter((g) => names.includes(g.by?.outcome))
+      .reduce((sum, g) => sum + (Number(g.totals?.['sum(quantity)']) || 0), 0);
+
+  // Outcomes where an event we WANTED was thrown away by enforcement.
+  // Reading `accepted` alone (the only outcome that consumes paid quota)
+  // made this check green at precisely the wrong moment: once the org
+  // trips its quota Sentry stops accepting, so `accepted` FALLS and a
+  // volume gauge reports healthier the blinder we actually are. Audit
+  // 2026-08-21 — the PostHog check below has always alerted on its own
+  // drop signal ("data being dropped"); this one now does the same.
+  // `filtered` is excluded on purpose: that is inbound filters doing
+  // what we asked, not a loss.
+  const dropped = sumOutcome('rate_limited', 'abuse', 'cardinality_limited');
+  if (dropped > 0) {
+    return {
+      status: 'BREACH',
+      detail: `quota/rate limited (errors being dropped): ${fmtInt(dropped)} in last 24h`,
+    };
+  }
+
+  // Client-side and malformed losses are real but are not enforcement,
+  // so they warn rather than page.
+  const lost = sumOutcome('invalid', 'client_discard');
+  const accepted = sumOutcome('accepted');
+  const volume = gauge(accepted, warnDaily);
+  const lostNote = lost > 0 ? `, ${fmtInt(lost)} invalid/client-discarded` : '';
   return {
-    ...gauge(accepted, warnDaily),
-    detail: `${fmtInt(accepted)} accepted errors last 24h (warn ${fmtInt(warnDaily)})`,
+    status: lost > 0 && volume.status === 'OK' ? 'WARN' : volume.status,
+    usagePct: volume.usagePct,
+    detail: `${fmtInt(accepted)} accepted errors last 24h (warn ${fmtInt(warnDaily)})${lostNote}`,
   };
 }
 

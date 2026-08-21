@@ -19,6 +19,7 @@ import {
   deriveDisplayId,
   isErrorCode,
 } from '@declutrmail/shared/contracts';
+import { isSentryServerExceptionType } from '@declutrmail/shared/observability';
 
 import { AppException } from './app-exception.js';
 
@@ -31,32 +32,12 @@ const SAFE_RUNTIME_ERROR_CODES: ReadonlySet<string> = new Set([
   'ETIMEDOUT',
 ]);
 
-const SAFE_EXCEPTION_ERROR_KINDS: ReadonlySet<string> = new Set([
-  'AggregateError',
-  'AppException',
-  'BadGatewayException',
-  'BadRequestException',
-  'ConflictException',
-  'Error',
-  'ForbiddenException',
-  'GatewayTimeoutException',
-  'GoneException',
-  'HttpException',
-  'InternalServerErrorException',
-  'MethodNotAllowedException',
-  'NotAcceptableException',
-  'NotFoundException',
-  'NotImplementedException',
-  'PayloadTooLargeException',
-  'RangeError',
-  'RequestTimeoutException',
-  'ServiceUnavailableException',
-  'SyntaxError',
-  'TypeError',
-  'UnauthorizedException',
-  'UnprocessableEntityException',
-  'UnsupportedMediaTypeException',
-]);
+// Attribution set for `errorName`. Deliberately NOT a local list: it is
+// the scrubber's own server-profile predicate, so a name this filter
+// attributes is a name that survives to Sentry. The parallel list that
+// used to live here held 24 names of which only 6 were accepted on the
+// wire, so the ordinary unhandled 5xx arrived with no type and — since
+// `value` is dropped for D7 — no message either (audit 2026-08-21).
 
 /**
  * AllExceptionsFilter — maps every thrown exception to the D168 error
@@ -342,7 +323,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         typeof constructor === 'function' && typeof constructor.name === 'string'
           ? constructor.name
           : '';
-      return SAFE_EXCEPTION_ERROR_KINDS.has(name) ? name : 'Error';
+      return isSentryServerExceptionType(name) ? name : 'Error';
     } catch {
       return 'Error';
     }

@@ -123,12 +123,27 @@ export class SessionsService implements OnModuleDestroy {
    *
    * Verifies the presented refresh hash matches the row, refusing
    * rotation on a stale/leaked refresh.
+   *
+   * REUSE PATH RETURNS, IT DOES NOT THROW (audit 2026-08-21). The
+   * revoke belongs inside the tx — that part was always right — but
+   * throwing from the transaction callback is what made it worthless:
+   * Drizzle issues a ROLLBACK on a thrown callback, so the
+   * `is_revoked = true` write above the throw was discarded on every
+   * single detection. The session stayed live and the replayed token
+   * kept working, so the D155 defense was decorative. The reuse branch
+   * therefore RETURNS an outcome (committing the revoke) and the
+   * caller-facing throw happens after the transaction has landed.
+   * Anything that must survive a rejected rotation has to live outside
+   * the aborting unit.
    */
   async rotate(input: { sessionId: string; presentedRefreshToken: string }): Promise<IssuedTokens> {
     const presented = hashRefreshToken(input.presentedRefreshToken);
-    let oldJti: string | null = null;
 
-    const tokens = await this.db.transaction(async (tx) => {
+    type RotateOutcome =
+      | { kind: 'rotated'; issued: IssuedTokens; oldJti: string }
+      | { kind: 'reuse'; revokedJti: string };
+
+    const outcome = await this.db.transaction(async (tx): Promise<RotateOutcome> => {
       const [row] = await tx
         .select()
         .from(activeSessions)
@@ -136,19 +151,19 @@ export class SessionsService implements OnModuleDestroy {
         .for('update')
         .limit(1);
       if (!row) {
+        // Nothing to persist on this branch, so a throw is correct here.
         throw new Error('Session not found or revoked.');
       }
       if (row.refreshTokenHash !== presented) {
         // Refresh token reuse: someone tried to use an older refresh.
         // Revoke the session entirely — defensive posture (D155).
-        // Do it inside the SAME tx so the revoke is atomic with the
-        // detection.
+        // Inside the SAME tx so the revoke is atomic with the
+        // detection; returned rather than thrown so it COMMITS.
         await tx
           .update(activeSessions)
           .set({ isRevoked: true, revokedAt: new Date() })
           .where(eq(activeSessions.id, row.id));
-        oldJti = row.jti;
-        throw new Error('Refresh token reuse detected — session revoked.');
+        return { kind: 'reuse', revokedJti: row.jti };
       }
 
       const issued = await this.jwt.issue({
@@ -164,18 +179,24 @@ export class SessionsService implements OnModuleDestroy {
           lastUsedAt: new Date(),
         })
         .where(eq(activeSessions.id, row.id));
-      oldJti = row.jti;
-      return issued;
+      return { kind: 'rotated', issued, oldJti: row.jti };
     });
+
+    if (outcome.kind === 'reuse') {
+      // The row is revoked and committed. Prime the negative cache the
+      // same way `revoke()` does so other API instances stop honouring
+      // the jti within the TTL, THEN reject the request. The controller
+      // catches this, clears cookies and answers 401 — unchanged.
+      await this.markRevokedInCache(outcome.revokedJti);
+      throw new Error('Refresh token reuse detected — session revoked.');
+    }
 
     // Old jti is gone — clear its cache key if any. Done outside the
     // tx because cache invalidation does not need to be transactional
     // with the DB write (worst case: a stale negative-cache hit blocks
     // a request for up to 60s, never a correctness problem).
-    if (oldJti) {
-      await this.invalidateCache(oldJti);
-    }
-    return tokens;
+    await this.invalidateCache(outcome.oldJti);
+    return outcome.issued;
   }
 
   /**
