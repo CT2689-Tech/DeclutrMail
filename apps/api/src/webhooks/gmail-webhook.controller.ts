@@ -1,13 +1,15 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Headers,
   HttpCode,
-  HttpException,
   HttpStatus,
   Inject,
   Logger,
+  NotFoundException,
   Post,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 import { RateLimit } from '../common/rate-limit/index.js';
@@ -115,19 +117,19 @@ export class GmailWebhookController {
         },
       });
       // D229 contract: every OIDC failure is 401 (NOT 403, 200, or 204).
-      throw new HttpException(
-        { error: { code: 'UNAUTHORIZED', message: 'OIDC verification failed.' } },
-        HttpStatus.UNAUTHORIZED,
-      );
+      throw new UnauthorizedException({
+        code: 'UNAUTHORIZED',
+        message: 'OIDC verification failed.',
+      });
     }
 
     const messageId = body?.message?.messageId;
     const data = body?.message?.data;
     if (!messageId || typeof messageId !== 'string' || !data || typeof data !== 'string') {
-      throw new HttpException(
-        { error: { code: 'BAD_REQUEST', message: 'Malformed Pub/Sub envelope.' } },
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new BadRequestException({
+        code: 'BAD_REQUEST',
+        message: 'Malformed Pub/Sub envelope.',
+      });
     }
 
     let payload: GmailPubSubPayload;
@@ -159,10 +161,7 @@ export class GmailWebhookController {
       }
       payload = { emailAddress: parsed.emailAddress, historyId };
     } catch {
-      throw new HttpException(
-        { error: { code: 'BAD_REQUEST', message: 'Malformed Pub/Sub data.' } },
-        HttpStatus.BAD_REQUEST,
-      );
+      throw new BadRequestException({ code: 'BAD_REQUEST', message: 'Malformed Pub/Sub data.' });
     }
 
     const outcome = await this.service.processVerifiedPush({ messageId, payload });
@@ -170,10 +169,7 @@ export class GmailWebhookController {
 
     if (outcome.kind === 'unknown_mailbox') {
       // 4xx so Pub/Sub stops retrying.
-      throw new HttpException(
-        { error: { code: 'NOT_FOUND', message: 'Mailbox not found.' } },
-        HttpStatus.NOT_FOUND,
-      );
+      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Mailbox not found.' });
     }
 
     return { status: outcome.kind };
