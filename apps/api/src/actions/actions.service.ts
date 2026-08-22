@@ -163,10 +163,14 @@ export class ActionsService {
    * confirm's "this sender is Protected" warning. `unsubAvailable` is
    * true when the sender has any unsubscribe method recorded; used by the
    * FE to know whether to render the Unsubscribe primary chip enabled.
-   * `monthly` is the inbound-message count for the past 30 days across
-   * ALL labels (not just INBOX), used in the sender context strip
-   * ("12/mo") — it must match the senders-list card figure
-   * (read-service `last30dMsgs`), not the inbox-scoped bucket counts.
+   * The strip's arrival volume is NOT returned here. It is the senders
+   * list row's `monthlyVolume` (`last90dMsgs`, ADR-0037), which the FE
+   * already holds for the sender that opened the modal. This service
+   * used to answer with its own 30-day count so the strip could render
+   * "134 /mo"; the card one click earlier said "396 in last 90d" for the
+   * same sender, and nothing on either screen named its window (founder
+   * report 2026-08-21, baapstore.com). One window, one source, or the
+   * two disagree by construction.
    */
   async previewComposite(input: {
     mailboxAccountId: string;
@@ -208,28 +212,10 @@ export class ActionsService {
     // Buckets + samples resolved at BOTH reaches (ADR-0028): the inbox
     // set every verb acts on, and the all-mail set the Delete modal's
     // "Inbox + archived" chip offers. One shared builder so the two can
-    // never drift; the queries run concurrently. `monthly` is neither —
-    // it counts ALL inbound mail in the last 30 days (trash and spam
-    // included) so the context strip matches the senders-list figure
-    // (read-service `last30dMsgs`; live bug 2026-07-03 when it was
-    // inbox-scoped). Scalar query; postgres-js returns a string,
-    // `toCount` coerces.
-    const [inbox, allMail, [monthlyRow]] = await Promise.all([
+    // never drift; the queries run concurrently.
+    const [inbox, allMail] = await Promise.all([
       this.previewBuckets(mailboxAccountId, sender.senderKey, 'inbox_only'),
       this.previewBuckets(mailboxAccountId, sender.senderKey, 'all_mail'),
-      this.db
-        .select({
-          monthly: sql<number | string>`count(*)::int`,
-        })
-        .from(mailMessages)
-        .where(
-          and(
-            eq(mailMessages.mailboxAccountId, mailboxAccountId),
-            eq(mailMessages.senderKey, sender.senderKey),
-            eq(mailMessages.isOutbound, false),
-            sql`${mailMessages.internalDate} >= now() - interval '30 days'`,
-          ),
-        ),
     ]);
     const recentMessages = inbox.recentMessages;
 
@@ -250,7 +236,6 @@ export class ActionsService {
         // incrementally by `IncrementalSyncWorker`. The number IS the
         // sender-context-strip "you replied N×" copy.
         wroteToCount: sender.wroteToCount,
-        monthly: toCount(monthlyRow?.monthly),
       },
       counts: inbox.counts,
       // Spec v1.3 — top 5 most-recent subjects per window for the

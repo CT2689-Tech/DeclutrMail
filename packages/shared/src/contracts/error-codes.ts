@@ -419,6 +419,272 @@ export const ERROR_CODES = {
     retryable: true,
     message: "This mailbox's saved data is still being deleted. Reconnect after it finishes.",
   },
+
+  // --- domain codes recovered by the 2026-08-21 audit (ADR-0014) ---
+  //
+  // These 40 were thrown by the API with a `code` but were absent from
+  // this registry, so `AllExceptionsFilter.resolve` fell through to
+  // `codeForStatus` and flattened every one of them to BAD_REQUEST /
+  // NOT_FOUND / CONFLICT / INTERNAL_ERROR on the wire. The FE branches
+  // that tested for them — five of them for PROTECTED_SENDER alone —
+  // could never match, so a Protected sender produced a generic
+  // "couldn't archive" toast, no refetch, and a 409 that replayed
+  // forever on every retry.
+  //
+  // ADR-0014 names exactly this bug as the reason the registry exists.
+  // It regrew because nothing tested the JOIN: API specs assert `code`
+  // on the THROWN exception, web tests mock the RESPONSE BODY, and the
+  // filter deletes the code in between with both suites green. The
+  // contract test alongside this registry is what stops it regrowing.
+  // actions + recovery (D226, D232) — conflicts the user can resolve
+  PROTECTED_SENDER: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This sender is Protected. Confirm to apply the action anyway.',
+  },
+  NO_ACTIONABLE_SENDERS: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Every selected sender is Protected or no longer exists.',
+  },
+  ACTION_NOT_RECOVERABLE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Only failed Archive, Later, or Delete actions can be reviewed here.',
+  },
+  ACTION_NO_LONGER_FAILED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This action no longer needs recovery.',
+  },
+  ACTION_ALREADY_RECOVERED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This action was already recovered successfully.',
+  },
+  RECOVERY_ALREADY_REQUESTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This recovery review was already confirmed.',
+  },
+  RECOVERY_ATTEMPT_STALE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'A newer recovery attempt exists. Review the latest Activity state.',
+  },
+  RECOVERY_NOTHING_TO_APPLY: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'No Gmail messages require reconciliation.',
+  },
+  RECOVERY_PREVIEW_CONFLICT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'A recovery review changed. Open the latest Activity row and try again.',
+  },
+  RECOVERY_PREVIEW_EXPIRED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'This recovery review expired. Refresh it before trying again.',
+  },
+  IDEMPOTENCY_KEY_CONFLICT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This recovery key was already used for a different confirmation.',
+  },
+  // Later (D82, D232)
+  LATER_TIMER_NOT_FOUND: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This sender no longer has an active Later timer.',
+  },
+  LATER_TIMER_SUPERSEDED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This sender already has a newer Later schedule. The failed action was not replayed.',
+  },
+  LATER_RETURN_NOT_STUCK: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This Later return does not need recovery.',
+  },
+  LATER_SENDER_REQUIRED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Later recovery requires the original sender scope.',
+  },
+  // unsubscribe lifecycle (D230)
+  UNSUBSCRIBE_CHANNEL_UNKNOWN: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: "This sender hasn't been checked for an unsubscribe option yet.",
+  },
+  UNSUBSCRIBE_INTENT_REQUIRED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Record an unsubscribe intent before updating manual progress.',
+  },
+  UNSUBSCRIBE_INVALID_TRANSITION: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: "That unsubscribe step doesn't follow from the current progress.",
+  },
+  UNSUBSCRIBE_MANUAL_NOT_AVAILABLE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Manual unsubscribe progress is available only for a mailto unsubscribe.',
+  },
+  UNSUBSCRIBE_CONCURRENT_TRANSITION: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Unsubscribe progress changed concurrently. Refresh and try again.',
+  },
+  // sync readiness (D6, D224)
+  SYNC_NOT_READY: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Initial sync has not completed for this mailbox yet.',
+  },
+  // not found — scoped to the current mailbox
+  SENDER_NOT_FOUND: {
+    status: 404,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Sender not found in the current mailbox.',
+  },
+  ACTION_NOT_FOUND: {
+    status: 404,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Action not found.',
+  },
+  RECOVERY_PREVIEW_NOT_FOUND: {
+    status: 404,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Recovery preview not found.',
+  },
+  // request shape — caller must change something before retrying
+  INVALID_REQUEST: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: "Something about that request didn't look right. Check the details and try again.",
+  },
+  INVALID_ID: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'That identifier is not valid.',
+  },
+  INVALID_REACH: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Only Delete may reach past the inbox.',
+  },
+  INVALID_TIMEZONE: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'That time zone is not one we recognise.',
+  },
+  IDEMPOTENCY_KEY_REQUIRED: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'An Idempotency-Key header (at least 8 characters) is required for actions.',
+  },
+  LATER_WAKE_TIME_REQUIRED: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Choose a new future return time before recovering this Later action.',
+  },
+  LATER_WAKE_TIME_INVALID: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Wake time must be in the future.',
+  },
+  WAKE_TIME_NOT_APPLICABLE: {
+    status: 400,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'A return time only applies to Later.',
+  },
+  // queue/transport degraded — the request is fine, the runway is not
+  QUEUE_UNAVAILABLE: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message:
+      'Actions are queued elsewhere right now. Your mail is untouched — try again in a moment.',
+  },
+  ACTION_QUEUE_UNAVAILABLE: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Action recovery is temporarily unavailable. Your mail is untouched.',
+  },
+  RECOVERY_QUEUE_UNAVAILABLE: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Recovery verification is temporarily unavailable. Your mail is untouched.',
+  },
+  ENQUEUE_FAILED: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: "That couldn't be queued just now. Your mail is untouched — try again in a moment.",
+  },
+  RECOVERY_ENQUEUE_FAILED: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: "Recovery couldn't be queued just now. Your mail is untouched — try again.",
+  },
+  SERVICE_UNAVAILABLE: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'That service is temporarily unavailable. Try again in a moment.',
+  },
+  // lifecycle limits
+  GONE: {
+    status: 410,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'The undo window for that action has expired.',
+  },
+  UNSUPPORTED_UNDO: {
+    status: 501,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: "Undo isn't available for that action yet.",
+  },
 } as const satisfies Record<string, ErrorCodeSpec>;
 
 /** The union of every registered error code. */

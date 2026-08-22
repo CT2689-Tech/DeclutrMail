@@ -282,12 +282,45 @@ export class GmailClientService
     if (json === null) {
       return null;
     }
+    // Identity and date are load-bearing and were the only fields in this
+    // projection copied WITHOUT a guard, while every sibling below has
+    // one (audit 2026-08-21).
+    //
+    // `id` / `threadId` land in `provider_message_id` / `provider_thread_id`,
+    // both `notNull` and one of them uniquely indexed — so an absent id
+    // typed as `string` throws mid-batch on insert and fails the whole
+    // chunk on a message that will fail identically on every retry.
+    //
+    // `internalDate` was worse, because it did not throw. It defaulted to
+    // the string '0', which is `1970-01-01` in `internal_date` — and every
+    // age bucket the action preview builds is
+    // `internal_date <= now() - interval 'N days'`, so an undatable
+    // message silently joined the "older than a year" set of a bulk
+    // Archive or DELETE that the user believed was scoped to ancient
+    // mail. A sentinel that reads as plausible data is worse than no
+    // data: it survives every downstream check.
+    //
+    // Since `internal_date` is `notNull`, persisting NULL would need a
+    // migration; skipping is available now and is the safe direction.
+    // Undercounting a message is recoverable, mis-dating one into a
+    // destructive bucket is not. Routed through the same
+    // `unreadableMessageIds` seam the metadata-projection skip uses, so
+    // it surfaces in the sync result's unreadable count rather than
+    // vanishing.
+    if (
+      typeof json.id !== 'string' ||
+      typeof json.threadId !== 'string' ||
+      typeof json.internalDate !== 'string'
+    ) {
+      this.unreadableMessageIds.add(messageId);
+      return null;
+    }
     return {
       id: json.id,
       threadId: json.threadId,
       labelIds: Array.isArray(json.labelIds) ? json.labelIds : [],
       snippet: typeof json.snippet === 'string' ? json.snippet : '',
-      internalDate: typeof json.internalDate === 'string' ? json.internalDate : '0',
+      internalDate: json.internalDate,
       from: findHeader(json, 'From'),
       subject: findHeader(json, 'Subject'),
       to: findHeader(json, 'To'),

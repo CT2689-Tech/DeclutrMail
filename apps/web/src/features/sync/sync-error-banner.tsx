@@ -1,8 +1,11 @@
 'use client';
 
+import type { ReactNode } from 'react';
+
 import { Button, tokens } from '@declutrmail/shared';
 
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+import { ApiError } from '@/lib/api/client';
 import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useNow } from '@/lib/use-now';
@@ -30,9 +33,18 @@ const { color, font } = tokens;
  *   - a retryable error is within the last 60 minutes; an invalid Gmail
  *     grant remains visible until a later success proves reconnection.
  *
- * Renders nothing while the status query is loading or erroring (fail
- * quiet — a chrome banner must never noise the shell; the 409 guard
- * states are handled by the layout's branch ladder).
+ * Renders nothing while the status query is loading, and nothing for a
+ * 4xx — the 409 guard states are the layout branch ladder's job, and
+ * quiet is right for a designed state.
+ *
+ * A 5xx or network failure is NOT quiet any more (audit 2026-08-21).
+ * `retryTransientOnly` backs off three times before the query settles
+ * into `error`, and `syncRefetchInterval` then stops the poll, so that
+ * state is already persistent AND has nothing left that would leave it.
+ * Rendering `null` there told a user whose sync health is unknown the
+ * same thing it tells a user whose sync is fine — and the only way out
+ * was a manual reload. The unknown state now says so and carries the
+ * refetch.
  *
  * "Try again" reuses the same `useSyncNow` mutation as `SyncNowButton`
  * (source `app_shell` — the banner is app-shell chrome) — no completion
@@ -48,6 +60,26 @@ const { color, font } = tokens;
 /** How long a terminal incremental failure stays surfaced. */
 export const SYNC_ERROR_WINDOW_MS = 60 * 60_000;
 
+/**
+ * True when the status READ itself failed for a reason the shell has no
+ * other surface for. A 4xx is a designed state (`SELECT_MAILBOX`,
+ * `NO_ACTIVE_MAILBOX`, `MAILBOX_NOT_OWNED` → the layout ladder) and
+ * `retryTransientOnly` never retries it; everything else is a server or
+ * network failure that has already exhausted its backoff.
+ */
+export function syncStatusReadUnavailable(
+  isError: boolean,
+  error: unknown,
+  hasReading: boolean,
+): boolean {
+  if (!isError) return false;
+  // A cached reading beats "we can't tell": a failed BACKGROUND refetch
+  // still leaves a real answer on screen, and swapping the reconnect
+  // banner for a vague one would be a downgrade.
+  if (hasReading) return false;
+  return !(error instanceof ApiError && error.status >= 400 && error.status < 500);
+}
+
 export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
   const status = useSyncStatus(mailboxId);
   const sync = useSyncNow('app_shell');
@@ -55,6 +87,27 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
 
   const errorAt = status.data?.last_sync_error_at ?? null;
   const needsReconnect = syncStatusNeedsReconnect(status.data);
+
+  // The read is down: we cannot claim sync is healthy OR broken, only
+  // that we cannot tell. Say exactly that, and carry the way out — the
+  // poll has stopped, so this button is it.
+  if (syncStatusReadUnavailable(status.isError, status.error, status.data !== undefined)) {
+    return (
+      <SyncBannerFrame testId="sync-status-unavailable-banner">
+        <SyncBannerMessage>
+          We can&rsquo;t check whether new mail is syncing right now.
+        </SyncBannerMessage>
+        <Button
+          tone="default"
+          size="sm"
+          disabled={status.isFetching}
+          onClick={() => void status.refetch()}
+        >
+          {status.isFetching ? 'Checking\u2026' : 'Check again'}
+        </Button>
+      </SyncBannerFrame>
+    );
+  }
 
   if (errorAt === null) return null;
 
@@ -69,9 +122,30 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
   if (!needsReconnect && (now === null || now - errorMs > SYNC_ERROR_WINDOW_MS)) return null;
 
   return (
+    <SyncBannerFrame testId="sync-error-banner">
+      <SyncBannerMessage>
+        {needsReconnect
+          ? 'Gmail access expired. Reconnect this account to resume syncing and Gmail actions. Your existing DeclutrMail history is safe.'
+          : "New mail isn't syncing — the last attempt failed. We retry automatically every few minutes."}
+      </SyncBannerMessage>
+      <Button
+        tone="default"
+        size="sm"
+        disabled={!needsReconnect && sync.isPending}
+        onClick={() => (needsReconnect ? startMailboxConnect(mailboxId) : sync.mutate(undefined))}
+      >
+        {needsReconnect ? 'Reconnect Gmail' : sync.isPending ? 'Retrying…' : 'Try again'}
+      </Button>
+    </SyncBannerFrame>
+  );
+}
+
+/** Slim danger strip above the shell, shared by both banner states. */
+function SyncBannerFrame({ testId, children }: { testId: string; children: ReactNode }) {
+  return (
     <div
       role="alert"
-      data-testid="sync-error-banner"
+      data-testid={testId}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -84,27 +158,23 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
         fontFamily: font.sans,
       }}
     >
-      <span
-        style={{
-          flex: '1 1 260px',
-          fontSize: 13,
-          fontWeight: 600,
-          color: color.danger,
-          minWidth: 0,
-        }}
-      >
-        {needsReconnect
-          ? 'Gmail access expired. Reconnect this account to resume syncing and Gmail actions. Your existing DeclutrMail history is safe.'
-          : "New mail isn't syncing — the last attempt failed. We retry automatically every few minutes."}
-      </span>
-      <Button
-        tone="default"
-        size="sm"
-        disabled={!needsReconnect && sync.isPending}
-        onClick={() => (needsReconnect ? startMailboxConnect(mailboxId) : sync.mutate(undefined))}
-      >
-        {needsReconnect ? 'Reconnect Gmail' : sync.isPending ? 'Retrying…' : 'Try again'}
-      </Button>
+      {children}
     </div>
+  );
+}
+
+function SyncBannerMessage({ children }: { children: ReactNode }) {
+  return (
+    <span
+      style={{
+        flex: '1 1 260px',
+        fontSize: 13,
+        fontWeight: 600,
+        color: color.danger,
+        minWidth: 0,
+      }}
+    >
+      {children}
+    </span>
   );
 }

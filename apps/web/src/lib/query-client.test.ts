@@ -5,7 +5,12 @@
  * without per-hook wiring; every other failure must leave it alone.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const captureFeatureException = vi.fn();
+vi.mock('./sentry', () => ({
+  captureFeatureException: (...a: unknown[]) => captureFeatureException(...a),
+}));
 
 import { ApiError } from '@/lib/api/client';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
@@ -23,7 +28,16 @@ async function runFailingMutation(error: unknown): Promise<void> {
 
 beforeEach(() => {
   useUpgradeGateStore.getState().dismiss();
+  captureFeatureException.mockClear();
 });
+
+/** Drive one failing READ through the client's QueryCache. */
+async function runFailingQuery(error: unknown, queryKey: readonly unknown[]): Promise<void> {
+  const client = makeQueryClient();
+  await client
+    .fetchQuery({ queryKey, queryFn: () => Promise.reject(error), retry: false })
+    .catch(() => undefined);
+}
 
 describe('makeQueryClient — global entitlement-402 handler', () => {
   it('routes a FREE_CAP_REACHED 402 into the upgrade-gate store', async () => {
@@ -115,6 +129,60 @@ describe('makeQueryClient — global mailbox-scope-conflict recovery', () => {
     },
   );
 
+  // The READ half of the same invariant (audit 2026-08-21). The
+  // mutation handler above justified leaving reads uncovered by saying
+  // "the shell renders the gate off `me`" — true, except nothing
+  // refetched `me`: focus refetch is off globally and `useMe` polls only
+  // while syncing/deleting. So after a cross-tab disconnect the gate
+  // never appeared and the always-mounted sync banner polled a dead
+  // mailbox every 3s, rendering `null` on error the whole time.
+  describe('read side', () => {
+    async function failReadOn(
+      error: unknown,
+      times = 1,
+    ): Promise<{ resetCalls: number; client: ReturnType<typeof makeQueryClient> }> {
+      const client = makeQueryClient();
+      let resetCalls = 0;
+      const realInvalidate = client.invalidateQueries.bind(client);
+      client.invalidateQueries = ((filters?: unknown, ...rest: unknown[]) => {
+        if (filters === undefined) resetCalls += 1;
+        return (realInvalidate as (...a: unknown[]) => Promise<void>)(filters, ...rest);
+      }) as typeof client.invalidateQueries;
+
+      for (let i = 0; i < times; i += 1) {
+        const query = client.getQueryCache().build(client, {
+          queryKey: ['scoped-read', i] as const,
+          queryFn: () => Promise.reject(error),
+          retry: false,
+        });
+        await query.fetch().catch(() => undefined);
+      }
+      return { resetCalls, client };
+    }
+
+    it.each(['NO_ACTIVE_MAILBOX', 'SELECT_MAILBOX', 'MAILBOX_NOT_OWNED'])(
+      'resets the mailbox-scoped cache when a READ fails with %s',
+      async (code) => {
+        expect((await failReadOn(conflict(code))).resetCalls).toBeGreaterThan(0);
+      },
+    );
+
+    it('leaves the cache alone for a read failure that is not a scope conflict', async () => {
+      expect((await failReadOn(conflict('PROTECTED_SENDER'))).resetCalls).toBe(0);
+      expect((await failReadOn(new Error('network'))).resetCalls).toBe(0);
+    });
+
+    // The handler can feed itself: the reset invalidates everything,
+    // those queries refetch, the guarded ones 409 again, and each
+    // re-enters here. It does terminate once `me` resolves and the shell
+    // swaps in the gate — but "terminates eventually" is exactly how the
+    // original storm was justified, so the bound is structural.
+    it('coalesces a burst of scope-conflict reads into one reset', async () => {
+      const { resetCalls } = await failReadOn(conflict('NO_ACTIVE_MAILBOX'), 5);
+      expect(resetCalls).toBe(1);
+    });
+  });
+
   it('leaves the cache alone for a 409 that is NOT a scope conflict', async () => {
     // Two-sided: PROTECTED_SENDER shares the status but is resolved in
     // place by the action surface, not by blowing away the cache.
@@ -142,5 +210,69 @@ describe('makeQueryClient — global mailbox-scope-conflict recovery', () => {
 
   it('leaves the cache alone for a translated error with an unrelated code', async () => {
     expect((await failOn(new SyncNowError('SYNC_NOT_READY', 'Not ready.'))).resetCalls).toBe(0);
+  });
+});
+
+describe('makeQueryClient — global query-failure reporting', () => {
+  it('reports a client-side query defect that no screen would have captured', async () => {
+    // The 2026-08-21 app-killer: a rejected query promise, not an ApiError.
+    await runFailingQuery(new Error(`Missing queryFn: '["auth","me"]'`), ['auth', 'me']);
+    expect(captureFeatureException).toHaveBeenCalledOnce();
+    expect(captureFeatureException.mock.calls[0]?.[1]).toEqual({
+      surface: 'query',
+      reason: 'auth',
+    });
+  });
+
+  it('reports a 5xx read failure', async () => {
+    await runFailingQuery(new ApiError(503, {}, 'GET /api/senders failed: 503'), ['senders', {}]);
+    expect(captureFeatureException).toHaveBeenCalledOnce();
+  });
+
+  it('stays silent for the 4xx reads the app renders as designed states', async () => {
+    for (const status of [401, 402, 404, 409]) {
+      await runFailingQuery(new ApiError(status, {}, `failed: ${status}`), ['senders', status]);
+    }
+    expect(captureFeatureException).not.toHaveBeenCalled();
+  });
+
+  it('reports a retrying surface once per window, not once per attempt', async () => {
+    // `useMe` re-attempts every 15s while the app has no session; an
+    // un-throttled reporter would turn one broken surface into thousands of
+    // Sentry events.
+    const client = makeQueryClient();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await client
+        .fetchQuery({
+          queryKey: ['auth', 'me'],
+          queryFn: () => Promise.reject(new Error('boom')),
+          retry: false,
+        })
+        .catch(() => undefined);
+      client.removeQueries({ queryKey: ['auth', 'me'] });
+    }
+    expect(captureFeatureException).toHaveBeenCalledOnce();
+  });
+
+  it('throttles per surface, so one noisy surface cannot mask another', async () => {
+    const client = makeQueryClient();
+    for (const [index, scope] of ['auth', 'auth', 'senders', 'senders', 'brief'].entries()) {
+      await client
+        .fetchQuery({
+          queryKey: [scope, index],
+          queryFn: () => Promise.reject(new Error('boom')),
+          retry: false,
+        })
+        .catch(() => undefined);
+    }
+    expect(captureFeatureException).toHaveBeenCalledTimes(3);
+  });
+
+  it('never puts anything past the query key\u2019s first segment in the tag', async () => {
+    await runFailingQuery(new Error('boom'), ['senders', { domain: 'someone@example.com' }]);
+    expect(captureFeatureException.mock.calls[0]?.[1]).toEqual({
+      surface: 'query',
+      reason: 'senders',
+    });
   });
 });

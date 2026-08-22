@@ -1241,11 +1241,21 @@ describe('ActivityScreen — outcome-aware recovery', () => {
       {
         method: 'POST',
         path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222/retry',
+        // The real wire shape: `ConflictException({ code, message })`
+        // leaves the filter as a 409 `{ error: { code, … } }` envelope.
+        // This stub used to send a FLAT `{ code }` at 400 — a shape the
+        // API never produces — which is the only reason the assertions
+        // below passed while the screen's envelope reader was broken.
         respond: () =>
-          new Response(JSON.stringify({ code: 'LATER_WAKE_TIME_REQUIRED' }), {
-            status: 400,
-            headers: { 'content-type': 'application/json' },
-          }),
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'LATER_WAKE_TIME_REQUIRED',
+                message: 'Choose a new future return time before recovering this Later action.',
+              },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
       },
     ]);
     renderScreen();
@@ -1261,6 +1271,76 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: /check Gmail again/i }));
     await waitFor(() => expect(previewStarts).toBe(2));
     expect(await within(dialog).findByLabelText(/new return time/i)).toBeInTheDocument();
+  });
+
+  it('names an expired review and routes back to Gmail instead of a dead retry', async () => {
+    let previewStarts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                action: 'archive',
+                executionState: {
+                  kind: 'failed',
+                  actionId: '11111111-1111-1111-1111-111111111111',
+                  rootActionId: '11111111-1111-1111-1111-111111111111',
+                  requestedCount: 1,
+                  errorCode: 'GMAIL_PROVIDER_ERROR',
+                  resolution: 'review',
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/11111111-1111-1111-1111-111111111111/recovery-preview',
+        respond: () => {
+          previewStarts += 1;
+          return jsonOk({ data: recoveryPreview({ status: 'ready', outcome: 'not_applied' }) });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222',
+        respond: () =>
+          jsonOk({ data: recoveryPreview({ status: 'ready', outcome: 'not_applied' }) }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/recovery-previews/22222222-2222-2222-2222-222222222222/retry',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'RECOVERY_PREVIEW_EXPIRED',
+                message: 'This recovery review expired. Refresh it before trying again.',
+              },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen();
+
+    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review failed archived/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+
+    // The generic copy invites a retry that would 409 identically. An
+    // expired review has to say so, close the retry, and offer the only
+    // move that works.
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      /this review expired\. check gmail again/i,
+    );
+    expect(within(dialog).getByRole('button', { name: /try this action again/i })).toBeDisabled();
+    await userEvent.click(within(dialog).getByRole('button', { name: /check gmail again/i }));
+    await waitFor(() => expect(previewStarts).toBe(2));
   });
 
   it('shows a no-change outcome without a blind retry', async () => {

@@ -3,8 +3,9 @@
 //
 // A sender surface shows numbers from two ORTHOGONAL scopes:
 //
-//   - volume-scoped   — `monthly` (arrivals in the last 30 days, ANY
-//                       label) and `totalReceived` (messages RECEIVED
+//   - volume-scoped   — `monthlyVolume` (arrivals in the last 90 days,
+//                       ANY label — the engine's window, ADR-0037) and
+//                       `totalReceived` (messages RECEIVED
 //                       from this sender, ANY label, within retention —
 //                       NOT a lifetime total: it is recounted from
 //                       `mail_messages` nightly, so deleted mail leaves
@@ -48,9 +49,13 @@ export interface InboxScopeInput {
   /** Selected time window; `null` = no window (acts on the whole inbox). */
   olderThanDays: number | null;
   /**
-   * Arrival-scoped 30-day volume, for naming what the reader can see
-   * elsewhere on the surface. `null` when the caller does not know it —
-   * the copy then omits the clause rather than claiming zero.
+   * Arrival-scoped 90-day volume — the senders list row's
+   * `monthlyVolume` (ADR-0037), so this clause names the SAME window the
+   * surface shows beside it. It was 30 days while every card said "N in
+   * last 90d", which is how one sender read "396 in last 90d" and
+   * "134 /mo" a click apart (founder report 2026-08-21). `null` when the
+   * caller does not know it — the copy then omits the clause rather than
+   * claiming zero.
    */
   recentArrivals: number | null;
 }
@@ -167,7 +172,7 @@ export function inboxScopeNoticeCopy(
     //
     // "though" carries the tension the reader needs without asserting a
     // cause, a destination, or a history.
-    const arrivals = `${notice.recentArrivals.toLocaleString('en-US')} arrived in the last 30 days`;
+    const arrivals = `${notice.recentArrivals.toLocaleString('en-US')} arrived in the last 90 days`;
     return `${opener.replace(/\.$/, '')} — though ${arrivals}. ${tail}`;
   }
 

@@ -1196,3 +1196,104 @@ describe('scrubSentryTransaction', () => {
     expect((out?.spans as unknown[]).length).toBe(500);
   });
 });
+
+describe('scrubSentryEvent — server request triage survives the wire (audit 2026-08-21)', () => {
+  const EVENT_ID = 'fedcba9876543210fedcba9876543210';
+
+  /** The exact shape `AllExceptionsFilter` hands Sentry on a 5xx. */
+  const filterEvent = (over: Record<string, unknown> = {}) => ({
+    event_id: EVENT_ID,
+    timestamp: 1_752_000_000,
+    level: 'error',
+    fingerprint: [
+      'server-exception',
+      'POST',
+      '/api/senders/:id/actions',
+      'ConflictException',
+      '500',
+    ],
+    tags: {
+      cid: '9f1c2f5e-2a6d-4f0b-9d1a-6f2d3c4b5a60',
+      method: 'POST',
+      route: '/api/senders/:id/actions',
+      response_status: '500',
+      upstream_status: '502',
+    },
+    exception: {
+      values: [{ type: 'InternalServerErrorException', stacktrace: { frames: [] } }],
+    },
+    ...over,
+  });
+
+  // Without a fingerprint Sentry groups on the stack, and both server
+  // capture sites build a fresh message-free Error for D7 — so the stack
+  // is the capture site and is identical on every event. That collapsed
+  // every API 5xx into ONE untitled issue.
+  it('keeps the app-authored fingerprint, including the route template', () => {
+    const out = scrubSentryEvent(filterEvent(), 'server');
+    expect(out?.fingerprint).toEqual([
+      'server-exception',
+      'POST',
+      '/api/senders/:id/actions',
+      'ConflictException',
+      '500',
+    ]);
+  });
+
+  it('keeps every triage tag the filter sets', () => {
+    const out = scrubSentryEvent(filterEvent(), 'server');
+    expect(out?.tags).toEqual({
+      cid: '9f1c2f5e-2a6d-4f0b-9d1a-6f2d3c4b5a60',
+      method: 'POST',
+      route: '/api/senders/:id/actions',
+      response_status: '500',
+      upstream_status: '502',
+    });
+  });
+
+  // `route` is the one tag SAFE_SERVER_TAG cannot express — it excludes
+  // `/`. Allowlisting the key without a route-shaped pattern would have
+  // kept dropping every value while looking like the fix worked.
+  it('keeps a route template rather than silently dropping it for the slash', () => {
+    const out = scrubSentryEvent(filterEvent(), 'server');
+    expect((out?.tags as Record<string, unknown>).route).toBe('/api/senders/:id/actions');
+  });
+
+  it('keeps the ordinary unhandled-5xx exception type', () => {
+    const out = scrubSentryEvent(filterEvent(), 'server');
+    const exc = (out?.exception as { values: Record<string, unknown>[] }).values[0]!;
+    expect(exc.type).toBe('InternalServerErrorException');
+    // Still no message — D7 is unchanged by any of this.
+    expect(exc.value).toBeUndefined();
+  });
+
+  it('drops the WHOLE fingerprint when any element is not a closed-set token', () => {
+    const out = scrubSentryEvent(
+      filterEvent({ fingerprint: ['server-exception', 'private.user@example.com'] }),
+      'server',
+    );
+    // A partial fingerprint would group wrongly, which is worse than none.
+    expect(out?.fingerprint).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain('private.user@example.com');
+  });
+
+  it('does not let a route-shaped value smuggle a query string or an address', () => {
+    const out = scrubSentryEvent(
+      filterEvent({
+        tags: { route: '/api/senders?q=private.user@example.com', method: 'GET' },
+      }),
+      'server',
+    );
+    expect((out?.tags as Record<string, unknown>).route).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain('private.user@example.com');
+  });
+
+  it('still refuses fingerprints on the browser profile it cannot validate', () => {
+    const out = scrubSentryEvent(
+      { ...filterEvent(), fingerprint: ['/api/senders/:id/actions'] },
+      'browser',
+    );
+    // Browser tags are token-only; a path is not a browser-safe value.
+    expect(out?.fingerprint).toBeUndefined();
+  });
+});

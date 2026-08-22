@@ -72,6 +72,7 @@ import { DensityToggle, ViewToggle } from './view-toggle';
 import { SenderTable, type SenderTableVerb } from './sender-table';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
+import { SendersLoadingState } from './senders-loading-state';
 import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
@@ -236,9 +237,11 @@ export function SendersScreen() {
   // fire a request per keystroke.
   // `keepPreviousData` (in useSenders) holds the list while the new term
   // resolves, so the screen never blanks to a skeleton mid-search.
-  // 150ms (was 300): SenderSearch now debounces its own notify by
-  // 150ms before this state even updates (keystroke-eating fix), so
-  // the stacked total keystroke→fetch stays ~300ms.
+  // SenderSearch already holds a keystroke back by NOTIFY_DEBOUNCE_MS
+  // before this state updates, so this stage exists for the callers it
+  // does NOT cover — `applySavedScope`, `clearSearchAndFilters`, and the
+  // typeahead pick — which set the query directly. Kept short for that
+  // reason: those are single discrete events, not a keystroke stream.
   const debouncedQuery = useDebouncedValue(query.trim(), 150);
   // Same query the app-shell nav chip reads (`DEFAULT_SENDERS_QUERY`) so
   // the two share ONE infinite-query cache entry — page sizes stay
@@ -286,7 +289,7 @@ export function SendersScreen() {
     }),
     enabled: searchNarrowedToNothing,
   });
-  const widenedCount = widenProbe.data?.pages[0]?.meta.query.totalMatching ?? 0;
+  const widenedCount = widenProbe.data?.pages[0]?.meta.query?.totalMatching ?? 0;
   const showingWidened = searchNarrowedToNothing && !keepNarrow && widenedCount > 0;
 
   const allSenders = useMemo<Sender[]>(() => {
@@ -2807,36 +2810,6 @@ function LoadMoreSentinel({ onVisible, busy }: { onVisible: () => void; busy: bo
 }
 
 /** D211 loading branch — skeleton rows for the in-flight initial fetch. */
-export function SendersLoadingState() {
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
-      }}
-    >
-      {[72, 56, 120, 160, 160].map((h, i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          style={{
-            height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 12,
-          }}
-        />
-      ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading senders</span>
-    </div>
-  );
-}
-
 /** D211 error branch — a distinct, retryable read failure (never an empty mailbox). */
 function SendersErrorState({ onRetry }: { onRetry: () => void }) {
   return (

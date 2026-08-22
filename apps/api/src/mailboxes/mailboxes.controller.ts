@@ -127,6 +127,12 @@ export class MailboxesController {
     @CurrentUser() user: SessionPrincipal,
     @Param('id') id: string,
   ): Promise<Envelope<{ activeMailboxId: string }>> {
+    // The only `:id` route in this controller that was missing this —
+    // `disconnect`, `deleteIndexedData`, `getQuietHours` and
+    // `putQuietHours` all had it. Without it a non-uuid id reaches the
+    // DB and the uuid cast 500s where the design says 400
+    // (audit 2026-08-21).
+    assertUuid(id);
     // Ownership check: only set active to a mailbox in the user's workspace.
     const owned = await this.mailboxes.findOwned(user.workspaceId, id);
     if (!owned) {

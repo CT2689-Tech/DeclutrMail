@@ -706,6 +706,16 @@ describe('AutopilotApplyWorker', () => {
     }) as never;
 
     const worker = new AutopilotApplyWorker({ db: dbWithFault, now: () => NOW });
+    // The job returns SUCCESS, so BullMQ's retry/dead-letter policy never
+    // engages and the counter is the only trace. Capture is therefore the
+    // ONLY thing that makes a permanently-failing rule visible.
+    const captured: { kind: string; message: string }[] = [];
+    worker.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (error, ctx) =>
+        captured.push({ kind: ctx.kind, message: error.message }),
+      recordBackgroundNotice: () => {},
+    });
     const result = await worker.processJob(
       { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
       FAKE_CTX,
@@ -714,6 +724,9 @@ describe('AutopilotApplyWorker', () => {
     expect(result.rulesFailed).toBe(1);
     // The surviving rule wrote its match (1 match), not the failing one.
     expect(result.matchesWritten).toBe(1);
+    expect(captured).toEqual([
+      { kind: 'autopilot.rule_failed', message: 'synthetic insert failure' },
+    ]);
   });
 });
 

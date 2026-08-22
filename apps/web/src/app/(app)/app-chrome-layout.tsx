@@ -124,7 +124,14 @@ function isUserScopedRoute(pathname: string): boolean {
     pathname === '/settings' ||
     pathname === '/settings/privacy' ||
     pathname === '/settings/help' ||
-    pathname === '/billing'
+    pathname === '/billing' ||
+    // D181 audit log. `/api/security-events` is JwtGuard +
+    // AdminAllowlistGuard with NO CurrentMailboxGuard, so its data does
+    // not depend on a mailbox — gating it trapped an operator with zero
+    // connected mailboxes behind the reconnect takeover on a route that
+    // never needed one. Same shape as the 2026-07-09 billing/deletion
+    // trap, smaller blast radius (audit 2026-08-21).
+    pathname === '/admin/security'
   );
 }
 

@@ -1460,7 +1460,7 @@ describe('AutopilotReadService', () => {
     async function seedMessages(
       mailboxId: string,
       senderKey: string,
-      counts: { inbox: number; archived: number },
+      counts: { inbox: number; archived: number; inboxAgeDays?: number },
     ): Promise<void> {
       const rows = [
         ...Array.from({ length: counts.inbox }, (_, i) => ({ labels: ['INBOX'], i, tag: 'in' })),
@@ -1477,7 +1477,10 @@ describe('AutopilotReadService', () => {
           providerMessageId: `${senderKey.slice(0, 8)}-${r.tag}-${r.i}`,
           providerThreadId: `t-${senderKey.slice(0, 8)}-${r.tag}-${r.i}`,
           senderKey,
-          internalDate: new Date(),
+          internalDate:
+            r.tag === 'in' && counts.inboxAgeDays !== undefined
+              ? new Date(Date.now() - counts.inboxAgeDays * 86_400_000)
+              : new Date(),
           labelIds: r.labels,
           isUnread: false,
         })),
@@ -1535,19 +1538,45 @@ describe('AutopilotReadService', () => {
       expect(rule!.observeDigest).toEqual({
         pendingTotal: 3,
         senders7d: 3,
-        messages7d: 8, // includes dismissed sender 4; archived + out-of-window excluded
+        inboxMessagesNow: 8, // includes dismissed sender 4; archived + out-of-window excluded
       });
 
       // Tenant isolation — B sees only its own row.
       const bRules = await service.listRules(mailboxB);
       const bRule = bRules.find((r) => r.id === ruleB);
-      expect(bRule!.observeDigest).toEqual({ pendingTotal: 1, senders7d: 1, messages7d: 9 });
+      expect(bRule!.observeDigest).toEqual({ pendingTotal: 1, senders7d: 1, inboxMessagesNow: 9 });
+    });
+
+    // Pins what `inboxMessagesNow` actually measures. Until 2026-08-21 it
+    // was called `messages7d`, and every message this suite seeded was
+    // stamped `new Date()` — so no test could tell a 7-day count from an
+    // all-time one, and the rule card rendered it as "in the last 7
+    // days" on the screen where a user decides whether to give a rule
+    // unattended archive/delete power.
+    it('counts a matched sender\u2019s ENTIRE inbox backlog, not a 7-day slice', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      // Matched yesterday — inside the sender window.
+      await seedPending(mailboxA, ruleId, SENDER_1, new Date(Date.now() - 86_400_000));
+      // ...but its inbox mail is two years old.
+      await seedMessages(mailboxA, SENDER_1, { inbox: 4, archived: 0, inboxAgeDays: 730 });
+
+      const rules = await service.listRules(mailboxA);
+      const rule = rules.find((r) => r.id === ruleId);
+      expect(rule!.observeDigest).toEqual({
+        pendingTotal: 1,
+        senders7d: 1,
+        // All four, despite none of them arriving in the last 7 days.
+        // This is the RIGHT number for the decision (it is what a sweep
+        // now would act on) — it is simply not a 7-day figure, and the
+        // copy no longer claims it is.
+        inboxMessagesNow: 4,
+      });
     });
 
     it('zero-fills the digest for an observe rule with no pending matches', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const rule = await service.getRule(mailboxA, ruleId);
-      expect(rule!.observeDigest).toEqual({ pendingTotal: 0, senders7d: 0, messages7d: 0 });
+      expect(rule!.observeDigest).toEqual({ pendingTotal: 0, senders7d: 0, inboxMessagesNow: 0 });
     });
 
     it('is null outside observe mode even when stale pending rows exist', async () => {

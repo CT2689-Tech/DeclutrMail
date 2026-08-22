@@ -21,6 +21,76 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-21 — A retired unit, a lying type predicate, and a debounce shorter than a keystroke
+
+**PR:** #613 (https://github.com/CT2689-Tech/DeclutrMail/pull/613)
+**Caught by:** founder smoke — one confirm modal, three defects visible in a
+single screenshot
+
+**What happened.** Opening Unsubscribe on `contact@baapstore.com` showed
+`134 /mo arriving` above a chip row reading `All inbox 11`. The founder read
+it as a wrong number. It was not: 134 messages genuinely arrive per month,
+and Unroll.me files 617 of that sender's 628 into a label so only 11 ever
+reach the inbox. Three separate failures produced that screen.
+
+1. **A retired unit survived on one surface.** ADR-0037 replaced `/mo` with
+   an explicit `N in last 90d` everywhere *except* the confirm modal, and the
+   modal then had a THIRD window wired into the retired label —
+   `previewComposite` computed its own 30-day count purely for that strip,
+   while the fallback under the same label rendered the list row's 90-day
+   figure until the preview resolved. The card said 396, the modal said 134,
+   one click apart, both correct. The code comment above the strip had already
+   *predicted* this exact misread and "fixed" it by appending the word
+   `arriving`.
+
+2. **A hand-written type predicate that asserted instead of narrowing.**
+
+   ```ts
+   [actionEffectCopy(presentation.primary), presentation.secondary]
+     .filter((copy): copy is string => copy !== null)   // ← a cast, not a check
+     .join(' Also: ')
+   ```
+
+   `presentation.secondary` is a `PresentedAction` object. `copy is string`
+   off a bare `!== null` test told TypeScript to stop looking, so the object
+   reached `join` and every composite confirm shipped
+   `Also: [object Object]` — in the lead paragraph of a destructive action.
+   `buildActionPresentation` already assembled this string correctly as
+   `previewCopy`, and packages/shared tested it; the modal hand-rolled a
+   duplicate and nothing asserted on the result.
+
+3. **A debounce shorter than the interval it debounces.** Both search
+   debounces were 150ms while the component's own docstring put typing at
+   ~3 keystrokes/sec (333ms). Every timer expired before the next character
+   arrived: typing "baapstore" fired 9 typeahead calls and 9 list fetches,
+   each list fetch an RSC navigation measured at 2.7–4.4s.
+
+**Correct approach.** (1) A window-scoped number names its window at every
+surface, or the ADR that retired the old framing is only half-applied — and a
+second service must never compute its own copy of a figure another read
+already publishes. (2) Never hand-write `x is T` unless the body actually
+proves `T`; `.filter((c) => c !== null)` alone would have inferred
+`(string | PresentedAction)[]` and errored on `.join`. (3) A debounce is a
+relation to the event rate, not a constant.
+
+**Rule:** When an ADR retires a framing, grep for the retired token and fix
+every live surface in that change — a survivor is worse than the original,
+because the migrated surfaces now contradict it.
+
+**Enforcement update:** Tests, each verified to FAIL against the unfixed code
+before being kept. `sender-search.test.tsx` asserts the relation (types at
+180ms/char, requires one request per word) rather than the constants, so a
+future tuning pass under the keystroke interval fails. The four senders test
+fixtures that reach the app as `unknown` through `jsonOk` are now annotated
+with their wire types, so a missing field is a compile error — the detail
+fixture had been silently missing `totalReceived`, which is how it surfaced.
+
+**Also learned, unrelated to the bug:** neither the preview pane nor a
+background Chrome tab can measure sub-second timing — both report
+`document.hidden: true` and Chrome throttles hidden tabs to one timer per
+second, which makes a 150ms and a 400ms debounce indistinguishable. The
+before/after was measured by driving a real visible Chromium with Playwright.
+
 ## 2026-08-19 — A suggestion rendered as history, and the cross-link proved it
 
 **PR:** #571 (https://github.com/CT2689-Tech/DeclutrMail/pull/571)
@@ -3215,3 +3285,63 @@ with a unit test pinning Archive's real band; the Autopilot preset
 carries its measured reach in a comment so the next reader sees the
 number, not just the constant. No hook — reachability is not a pattern
 a linter can see.
+
+## 2026-08-21 — `skipToken` disarmed the shared `me` query and killed the app
+**PR:** (this change) — regression from #548 `fix(web): Pin locale+zone in hydrated date labels (D200)`
+**Caught by:** founder, by hand, in production — Sentry had ZERO events
+**What happened:** `useUserTimeZone()` was added as a second observer of
+`['auth','me']` with `queryFn: skipToken`, to read the cache without ever
+fetching. But a TanStack query is ONE object that every observer writes its
+whole options onto, and `useQuery` re-runs `observer.setOptions(query)` in an
+effect on EVERY render — so the query's resting options belong to whichever
+observer re-rendered last. `AuthProvider` re-renders only when `me` changes;
+the screens below it re-render constantly, and `/senders` mounts TWO
+`useUserTimeZone()` consumers. So `skipToken` became the resting `queryFn`
+within moments of load. `Query.fetch()` self-heals a missing `queryFn` — but
+only when it is FALSY, and `skipToken` is truthy, so the guard never fired.
+The next `invalidateQueries(ME_QUERY_KEY)` — which every action mutation
+fires to re-read `cleanupRemaining` — took the keyless
+`query.fetch(undefined, …)` path, hit `ensureQueryFn`, and rejected with
+`Missing queryFn: '["auth","me"]'`. `useMe().error` sent `AuthProvider` to its
+"Auth check failed." branch, and with `refetchOnWindowFocus: false` there was
+no self-heal: the app stayed dead until a hard reload. The founder hit it
+after deleting a single sender.
+**Why it became an OUTAGE and not a blip:** the trigger was a cache defect,
+but four separate things had to be missing for it to blank the app, and each
+one alone would have contained it.
+1. `AuthProvider` gated on `if (me.error || !me.data)`. TanStack KEEPS `data`
+   when a refetch rejects, so a fully resolved session was thrown away because
+   a background re-read failed. Any transient 5xx or dropped connection on
+   `/api/auth/me` did the same thing — the cache defect was one of many doors
+   into an outage that was already sitting there.
+2. The failure surface was a dead end: no retry, no auto-recovery, and the
+   client default `refetchOnWindowFocus: false` meant nothing ever re-checked.
+   A hard reload was the only exit.
+3. It rendered `error.message` raw, which is why a TanStack internal became
+   the founder's UI — `ErrorState`'s contract forbids exactly this.
+4. No `QueryCache.onError` existed, so it produced zero telemetry.
+The same `error-before-data` gate was found in two more places and fixed:
+`app/onboarding/page.tsx` (identical, raw message included) and
+`features/triage/compose-state.ts` (a loaded queue blanked when the stats
+re-read hiccuped).
+**Correct approach:** observers that share a query key must share their
+`queryFn` and `retry`. Express "this observer must not fetch" with
+`enabled: false`, which is read per-observer and cannot disarm anybody else —
+never with `skipToken`, which is written onto the shared query. And a surface
+must decide on what it HAS, not on whether the last read failed: blank only
+when there is nothing to draw, keep the failure recoverable, and never put a
+raw error message on screen.
+**Rule:** two observers on one query key must agree on `queryFn` (use
+`enabled: false`, never `skipToken`, for a read-only mirror); and no surface
+may discard data it already holds because a background re-read failed.
+**Enforcement update:** `skipToken` is now an eslint `no-restricted-imports`
+error across `apps/web/src` with the reason inline — a comment would not have
+survived the next refactor (the rule was verified by linting a file that uses
+it, not by assuming it fires). `meQueryOptions()` is the single source both
+observers spread, so they cannot diverge; a regression test
+(`use-me-observer-sharing.test.tsx`) re-renders the tz consumer and then
+invalidates, reproducing the exact production string. Separately, and more
+importantly, `makeQueryClient` now has a `QueryCache.onError` that reports
+non-4xx query failures to Sentry — until now ONLY mutations had a
+cache-level handler, so every failed READ in the product was invisible,
+which is why an app-killing bug produced no telemetry at all.

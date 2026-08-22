@@ -313,6 +313,40 @@ jobs:
           # was to disarm the fail-closed boot guard, which refuses to start
           # an unlimited API when REDIS_URL is missing. Setting it traded a
           # loud boot failure for a silent fail-open.
+          # `--no-cpu-throttling` + `--cpu-boost`. The SAME failure the
+          # worker hit on 2026-06-08, on the service where it is far more
+          # visible — and it was fixed there and never here.
+          #
+          # Under request-only CPU the API is frozen between requests, so
+          # the postgres.js pool to Supabase (us-west-2, a DIFFERENT region
+          # from this service) dies while idle and every request pays a
+          # fresh TCP + TLS + auth handshake. TLS is CPU work, so on one
+          # throttled core the concurrent handshakes queue rather than
+          # overlap, and the endpoint opening the most connections pays the
+          # most.
+          #
+          # Measured from a production HAR (US user, own account,
+          # 2026-08-21). Same instance, same region, same code path — the
+          # only variable is whether the request reached the database:
+          #   401s, rejected by JwtGuard before any query ...  88-119ms
+          #   /api/auth/refresh ..............................    676ms
+          #   /api/senders/summary ...........................    790ms
+          #   /api/undo, /api/auth/me ........................ 938, 954ms
+          #   /api/v1/sync/status, /api/snoozed/recovery ..... 1135, 1145ms
+          #   /api/senders (most connections of any endpoint) . 11,180ms
+          # `/api/auth/me` is one user lookup. 954ms is not query time.
+          #
+          # That 11.2s also blows the 2000ms server-hydration deadline in
+          # `apps/web/src/lib/server-query-client.ts`, so the SSR prefetch
+          # is CANCELLED and the browser refetches from scratch: ~19s to a
+          # usable Senders screen, onLoad at 6.2s.
+          #
+          # COST, from the project's own bill rather than a price list:
+          # `declutrmail-worker` runs this exact config at 1 vCPU / 1Gi and
+          # serves ZERO requests, so its $50.51/mo is almost entirely the
+          # always-on charge. This service at half the memory lands a little
+          # under that, replacing today's $10.93 — about +$37/mo. Founder
+          # ratified 2026-08-21 after seeing both figures.
           gcloud run deploy declutrmail-api \
             --image="$IMAGE" \
             --region="$REGION" \
@@ -322,6 +356,8 @@ jobs:
             --max-instances=3 \
             --memory=512Mi \
             --cpu=1 \
+            --cpu-boost \
+            --no-cpu-throttling \
             --port=8080 \
             --allow-unauthenticated \
             --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=/^https:[/][/](app[.])?declutrmail[.]com$/,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=true,PADDLE_ENV=production" \

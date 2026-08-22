@@ -14,6 +14,12 @@ export {
   scrubSentryEvent,
   scrubSentryLog,
   scrubSentryTransaction,
+  // Canonical server-profile exception class names. Exported so the API's
+  // exception filter attributes errors from the SAME set the scrubber
+  // accepts — a producer list that drifts from the consumer list is how
+  // every 5xx ended up on the wire with no type at all.
+  SENTRY_SERVER_EXCEPTION_TYPES,
+  isSentryServerExceptionType,
   type SentryScrubProfile,
 } from './sentry-scrubber.js';
 export type { EventName, EventPayloads, EventProps, OnboardingFunnelStep, Verb } from './events.js';

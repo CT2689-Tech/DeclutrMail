@@ -28,7 +28,12 @@ export function composeTriageState(input: {
   error: unknown;
   retry: () => void;
 }): TriageScreenState {
-  if (input.isError) {
+  // Only surface the error state when there is nothing to draw. TanStack
+  // keeps the last data when a refetch rejects, so gating on `isError`
+  // alone threw away a loaded queue — and the user's place in it — because
+  // a background re-read of /triage/stats hiccuped. Same defect class that
+  // took the app down on 2026-08-21 (auth-provider.tsx).
+  if (input.isError && (!input.rows || !input.stats)) {
     return { kind: 'error', error: input.error, retry: input.retry };
   }
   if (input.isLoading || !input.stats) {

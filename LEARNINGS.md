@@ -1616,3 +1616,177 @@ a constant; only enumeration finds the ones that became unreachable.
 
 **Distillation trigger:** promote to CLAUDE.md §8 if a second
 "re-tuned a producer, left a consumer gate stranded" entry lands.
+
+## 2026-08-21 — Benchmark query changes on PGlite before claiming a perf win
+
+**Context:** Founder reported the Senders first page feeling slow on
+mobile. PR #611 removed a mailbox-wide `MAX(total_received)` scan (folded
+it into the filter-counts aggregate) and made `meta.query` first-page-only.
+The commit claimed "first paint drops one full mailbox scan" — work
+removed, but no number.
+
+**Finding:** `freshTestDb()` boots a fully-migrated PGlite in-process,
+so a query change can be measured instead of argued about. Seeding N
+senders and timing before/after (12 reps, median):
+
+| senders | first page before → after | scroll page before → after |
+|---|---|---|
+| 1,000 | 4.3 → 3.7 ms | 6.2 → 2.1 ms |
+| 5,000 | 11.2 → 7.7 ms | 11.8 → 4.0 ms |
+| 20,000 | 23.7 → 25.6 ms | 36.3 → 11.4 ms |
+
+Two things the numbers say that reading the code did not:
+
+1. **The folded-in MAX saved nothing measurable.** It costs ~0.7ms on
+   its own at every size — trivial next to the 9-aggregate join it was
+   folded into — and at 20k the "saving" measured NEGATIVE, i.e. noise.
+   The half of the PR that read as the headline win wasn't one.
+2. **First-page-only `meta.query` is the real win** — ~2/3 of a scroll
+   page's DB time, 25ms per fetch at 20k senders.
+3. **The whole endpoint is ~25ms of SQL at 20k senders.** A page that
+   takes seconds is not explained by its database. Confirmed separately
+   by a request timeline: the route is two serialized API waves, so the
+   cost is round trips, not queries.
+
+**Caveat that matters:** PGlite is single-threaded, so it serialises
+what production runs concurrently in `Promise.all`. The "before" columns
+therefore OVERSTATE production wall-clock — the real first-page saving
+is smaller still. PGlite replays the real migrations, so indexes are
+production's; absolute latency is not.
+
+**Rule (provisional):** Before claiming a query change improves
+performance, measure it on `freshTestDb()` at a realistic row count.
+"Removes a scan" is a statement about work, not about time — a scan
+whose cost is 3% of the query it shared a request with buys nothing.
+Say which one you measured.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second
+"shipped a perf claim no one timed" entry lands.
+
+## 2026-08-21 — A TanStack query is shared state; the last render wins
+**Context:** Chasing `Missing queryFn: '["auth","me"]'`, which killed the
+production app after a single sender deletion.
+**Finding:** A `QueryClient` holds ONE `Query` object per key, and every
+`useQuery` observer of that key writes its ENTIRE options object onto it —
+`useBaseQuery` runs `observer.setOptions(defaultedOptions)` inside a
+`useEffect` whose dep is a fresh object each render, so it re-stamps on every
+single render. The query's resting `queryFn`, `retry`, and `staleTime`
+therefore belong to whichever observer re-rendered most recently, and any
+KEYLESS refetch (`invalidateQueries` → `refetchQueries` →
+`query.fetch(undefined, …)`) uses those, not the caller's.
+
+Three details make this hard to see:
+- Effects run child→parent, so on MOUNT the ancestor's options land last and
+  everything looks fine. It takes one later, isolated re-render of a
+  descendant to flip the resting options — which is why it reads as
+  intermittent, and why the mount-only test passed on the broken code.
+- `Query.fetch()` does try to self-heal: `if (!this.options.queryFn) { find an
+  observer that has one }`. But the check is FALSINESS, and `skipToken` is a
+  truthy symbol, so `skipToken` walks straight past the rescue into
+  `ensureQueryFn`, which rejects.
+- `refetchQueries` filters on `query.isDisabled()`/`isStatic()`, and BOTH read
+  observer options, not query options — so a query whose resting `queryFn` is
+  `skipToken` is still considered refetchable. Nothing stops it.
+
+Reproduced in the live app: `/senders` carries 3 observers of `['auth','me']`,
+two of them the timezone reader. Reading `query.options.queryFn` off the page
+told the whole story — `"symbol"` on the shipped build, `"function"` after the
+fix.
+
+**Rule (provisional):** Treat query options as per-KEY, not per-hook. Two
+observers of one key must share `queryFn` and `retry` (spread one factory);
+express "never fetch" with `enabled: false`, which is read per-observer, never
+with `skipToken`, which is written onto the shared query. When a hook mirrors a
+query someone else owns, the mirror must be indistinguishable from the owner in
+everything except `enabled`.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a second shared-query
+options-divergence bug lands (this is the UI-truth class's cache-layer form:
+a surface asserting a policy it does not own).
+
+## 2026-08-21 — A trigger is not an outage; count the amplifiers
+**Context:** Same incident as the shared-query entry above. The first fix
+(stop `skipToken` poisoning `me`) was correct and complete for the trigger —
+and would still have left the app one bad minute away from the same dead
+screen.
+**Finding:** The cache defect only reached the user because four independent
+safeguards were absent at once, and any ONE of them would have contained it:
+the provider gated on `error` before `data` (so a failed background re-read
+discarded a working session); the failure surface had no retry and no
+auto-recovery (`refetchOnWindowFocus: false` client-wide); it rendered the raw
+`error.message`; and query failures had no telemetry at all. Fixing only the
+trigger would have closed one door into a room that had four.
+
+The tell is that the same outage was reachable WITHOUT the bug: a transient
+5xx or a dropped connection on `/api/auth/me` produced the identical dead
+screen. When a defect's blast radius does not depend on the defect, the blast
+radius is the real finding.
+
+Sweeping the codebase for the amplifier (`error` checked before `data`) found
+two more live instances — the onboarding gate, and Triage's state composer,
+where a hiccup on `/triage/stats` blanked a loaded queue and lost the user's
+place mid-ritual. Neither had anything to do with `skipToken`.
+
+**Rule (provisional):** After root-causing a production break, ask "could this
+same screen have happened without this bug?" If yes, the trigger is the
+smaller half of the work. Enumerate what turned it into an outage — decide on
+data you HAVE not on whether the last read failed, keep every failure state
+recoverable, never render raw error text — and sweep for those patterns
+separately from the trigger.
+
+**Distillation trigger:** promote to CLAUDE.md §8 alongside the two invariants
+already there — this is the same shape ("shipped green, broke live") and the
+enumeration table §8 already asks for is exactly what would have caught it.
+
+
+## 2026-08-21 — Cloud Run request-only CPU kills the DB pool; measure with a HAR, not a benchmark
+
+**Context:** Founder reported the Senders screen taking too long. I chased
+two wrong causes first — query cost, then region geography — before a
+production HAR settled it.
+
+**Finding:** Split the HAR by whether a request reached Postgres. Same
+instance, same region, same code path; the only variable is the database:
+
+| request | server `wait` |
+|---|---|
+| 401s (JwtGuard rejects before any query) | 88–119 ms |
+| `/api/auth/refresh` | 676 ms |
+| `/api/senders/summary` | 790 ms |
+| `/api/undo` · `/api/auth/me` | 938 · 954 ms |
+| `/api/v1/sync/status` · `/api/snoozed/recovery` | 1135 · 1145 ms |
+| `/api/senders` (most connections of any endpoint) | **11,180 ms** |
+
+`/api/auth/me` is one user lookup. 954 ms is not query time — it is a
+connection being rebuilt. Under request-only CPU the API is frozen
+between requests, the postgres.js pool to Supabase (a different region)
+dies idle, and every request pays TCP + TLS + auth. TLS is CPU work, so
+on one throttled core concurrent handshakes queue instead of overlapping,
+and the endpoint opening the most connections pays the most.
+
+Downstream: 11.2 s blows the 2000 ms `server-query-client` deadline, the
+SSR prefetch is cancelled, the browser refetches from scratch — ~19 s to
+a usable screen, `onLoad` 6.2 s.
+
+**This is the second instance of the same class.** The worker hit it on
+2026-06-08 ("request-only CPU … killing gRPC connection pools … cold
+reconnect spirals") and was fixed with the same two flags. The API was
+never given them.
+
+**Two things I had to unlearn, both from the same HAR:**
+- The senders aggregate work measured ~25 ms of SQL on PGlite. That
+  benchmark could not see connection setup, which is where ~99% of the
+  time went. A benchmark measures the layer you point it at.
+- I read 25 icon 304s at ~1.7 s each as a cache bug. They were
+  `stale-while-revalidate` working correctly — every icon the user saw
+  came from disk in 1 ms, and the revalidation ran at VeryLow priority
+  11.7 s AFTER onLoad. The headers were right; only the server was slow.
+
+**Rule (provisional):** When "the app is slow", split the waterfall by
+whether each request touches a dependency BEFORE profiling any query. A
+flat penalty on every dependency-touching request is a connection or
+runtime problem, not a query problem — and no amount of query tuning
+will move it.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a third
+"request-only CPU starved a connection pool" entry lands.

@@ -68,8 +68,14 @@ export interface AutopilotObserveDigestDto {
   pendingTotal: number;
   /** Distinct senders matched in the last 7 days (all resolutions). */
   senders7d: number;
-  /** INBOX messages from those senders — what a sweep right now would act on. */
-  messages7d: number;
+  /**
+   * INBOX messages those senders hold RIGHT NOW — what a sweep would act
+   * on. Deliberately NOT windowed: there is no `internal_date` predicate
+   * on the join, so this includes backlog of any age. Named for what it
+   * is; it was `messages7d`, and that name is what put "in the last 7
+   * days" into the rule-card copy for a number that never had a window.
+   */
+  inboxMessagesNow: number;
 }
 
 /** One Autopilot rule, as the read service returns it. */

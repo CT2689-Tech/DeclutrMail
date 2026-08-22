@@ -704,6 +704,48 @@ describe('AutopilotActionWorker', () => {
     expect((emitted[0]!.payload as { matchId: string }).matchId).toBe(matchId);
   });
 
+  // A user approves a suggestion, the Gmail mutation fails in a way that
+  // will not self-correct, and the sweep counts it and returns SUCCESS —
+  // so BullMQ records a clean run, the D203/D225 retry and dead-letter
+  // policy never engages, and the match stays `intent_applied=false` to
+  // be retried every sweep forever. Before this, the ONLY trace was a
+  // console line, and console is not observability here: Sentry runs
+  // with `integrations: []`. So the approved Archive silently never
+  // happened and nothing anywhere said so (audit 2026-08-21).
+  it('reports a per-match failure instead of failing the sweep silently', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
+    const { senderKey } = await seedSender(db, mailboxId, 'noisy@shop.com', {
+      inboxMessages: 3,
+    });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+    const boom = new Error('gmail batchModify 500');
+    const failing = new FakeMutationClient();
+    failing.batchModify = async () => {
+      throw boom;
+    };
+    const w = buildWorker({ gmailMutation: fakeAccess(failing) });
+    const captured: { kind: string; message: string }[] = [];
+    w.setObserver({
+      captureFailure: () => {},
+      captureBackgroundFailure: (error, ctx) =>
+        captured.push({ kind: ctx.kind, message: error.message }),
+      recordBackgroundNotice: () => {},
+    });
+
+    // The sweep still completes — isolation is correct and stays.
+    const result = await w.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+    expect(result.labelActionsExecuted).toBe(0);
+
+    // ...but it is no longer silent.
+    expect(captured).toEqual([
+      { kind: 'autopilot.action.match_failed', message: 'gmail batchModify 500' },
+    ]);
+  });
+
   it('captures the one-week wake time for an approved Later match (D245)', async () => {
     const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders');
     const { senderKey } = await seedSender(db, mailboxId, 'new@shop.com', { inboxMessages: 1 });

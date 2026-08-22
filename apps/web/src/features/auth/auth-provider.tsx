@@ -2,6 +2,8 @@
 
 import { createContext, useContext, type ReactNode } from 'react';
 
+import { ErrorState } from '@declutrmail/shared';
+
 import { ApiError } from '@/lib/api/client';
 import { useMe, type Me } from './api/use-me';
 
@@ -56,10 +58,8 @@ export function useOptionalAuth(): AuthContextValue | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useMe();
 
-  if (me.isLoading) {
-    return <AuthSkeleton />;
-  }
-
+  // A revoked session is the one failure that must NOT keep rendering off a
+  // cached identity — send it to consent whatever is in the cache.
   if (me.error instanceof ApiError && me.error.status === 401) {
     if (typeof window !== 'undefined') {
       const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
@@ -68,16 +68,67 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return <AuthSkeleton />;
   }
 
-  if (me.error || !me.data) {
-    return (
-      <div style={{ padding: 32, fontFamily: 'system-ui, sans-serif' }}>
-        <h1 style={{ fontSize: 18, marginBottom: 8 }}>Auth check failed.</h1>
-        <p style={{ color: '#666' }}>{me.error?.message ?? 'Unknown error.'}</p>
-      </div>
-    );
+  // A failed REFRESH is not a failed session. TanStack keeps `data` when a
+  // refetch rejects, so reaching here with `me.data` means we already
+  // resolved this session and only the latest re-read failed — the app is
+  // entirely usable, and `useMe` is already retrying in the background.
+  //
+  // This branch used to read `if (me.error || !me.data)`, which threw a
+  // valid session away the moment any background re-read failed. That is
+  // what turned a client-side cache defect into a dead app on 2026-08-21:
+  // deleting a sender invalidates `me` to re-read the cleanup quota, that
+  // refetch rejected, and a screen full of working data was replaced by
+  // "Auth check failed." A transient 5xx or a dropped connection did the
+  // same thing. Blank the app only when there is genuinely no session.
+  if (me.data) {
+    return <AuthContext.Provider value={{ me: me.data }}>{children}</AuthContext.Provider>;
   }
 
-  return <AuthContext.Provider value={{ me: me.data }}>{children}</AuthContext.Provider>;
+  if (me.isPending) {
+    return <AuthSkeleton />;
+  }
+
+  return <AuthUnavailable onRetry={() => void me.refetch()} />;
+}
+
+/**
+ * The no-session failure surface — reached only when `me` has never
+ * resolved and the last attempt failed.
+ *
+ * It is a real, recoverable state, not a dead end: `useMe` keeps retrying
+ * every {@link ME_ERROR_RETRY_MS} and on the next window focus, so a
+ * transient API failure clears itself; the button is for the user who does
+ * not want to wait. The previous version offered neither, so anything that
+ * reached it stayed there until someone thought to reload.
+ *
+ * The copy is fixed rather than derived from the error, per `ErrorState`'s
+ * contract. Rendering `error.message` is how a TanStack internal —
+ * `Missing queryFn: '["auth","me"]'` — ended up as the founder's UI on
+ * 2026-08-21. The detail belongs in Sentry (the `makeQueryClient`
+ * QueryCache reporter), never on screen.
+ */
+function AuthUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+        background: 'var(--color-bg, #fff)',
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: 420 }}>
+        <ErrorState
+          title="We couldn't load your account"
+          description="This is usually a brief connection problem. We're retrying automatically — you can also try again now."
+          onRetry={onRetry}
+        />
+      </div>
+    </div>
+  );
 }
 
 /**
