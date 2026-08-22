@@ -13,10 +13,9 @@
  * WHICH rows get routed to it, not BullMQ.
  */
 
-import { mailboxAccounts, providerSyncState, schema, users, workspaces } from '@declutrmail/db';
+import { mailboxAccounts, providerSyncState, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -25,7 +24,12 @@ import {
   type ReconcileOutcome,
 } from './initial-sync-reconciler.js';
 
-type Db = ReturnType<typeof drizzle<typeof schema>>;
+/**
+ * Derived from the helper rather than rebuilt from `drizzle` + `schema`
+ * (github-code-quality on #618). Same type, two fewer imports, and it
+ * cannot drift from what `freshTestDb` actually hands back.
+ */
+type Db = Awaited<ReturnType<typeof freshTestDb>>;
 
 const NOW = new Date('2026-08-22T12:00:00.000Z');
 /** Comfortably past the age gate. */
