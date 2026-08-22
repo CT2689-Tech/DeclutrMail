@@ -62,7 +62,23 @@
 -- LOCKING: `ALTER TABLE ... SET (...)` on storage parameters takes
 -- SHARE UPDATE EXCLUSIVE. It does not block SELECT, INSERT, UPDATE or
 -- DELETE, so this is safe to apply to a live database and needs no
--- `-- atlas:txmode none`.
+-- non-transactional file directive.
+--
+-- THAT SENTENCE NAMES NO DIRECTIVE ON PURPOSE. Atlas scans this leading
+-- comment block for its own directives and does not care that a line is
+-- prose. An earlier draft of this file explained the point by quoting
+-- the directive inside backticks; Atlas matched it anyway and took the
+-- REST OF THE LINE as the value, closing backtick and full stop
+-- included:
+--
+--   Error: unknown txmode "none`." found in file directive
+--   "0069_autovacuum_hot_table_tuning.sql"
+--
+-- Migration 0065 hit the same class twice on 2026-08-20. Note where it
+-- is caught: `migrate lint` reads content only and passed clean, so the
+-- apply-to-throwaway-database step in `.github/workflows/migration-lint.yml`
+-- is the only thing standing between this typo and a blocked migration
+-- queue. If you reword the paragraph above, do not spell the directive.
 
 ALTER TABLE "mail_messages" SET (
   autovacuum_vacuum_scale_factor = 0.05,
