@@ -1790,3 +1790,76 @@ will move it.
 
 **Distillation trigger:** promote to CLAUDE.md §8 if a third
 "request-only CPU starved a connection pool" entry lands.
+
+## 2026-08-22 — On a small Supabase instance, a single EXPLAIN is not a measurement
+
+**Context:** Chasing "everything takes 1-3s" on `/api/senders` in
+production, with `pg_stat_statements` and `EXPLAIN` access to the live
+database.
+
+**Finding:** Three separate things, and the first invalidates how I
+found the other two.
+
+**1. The latency distribution is bimodal, and single runs sample noise.**
+I compared query shapes with one `EXPLAIN (ANALYZE)` each and built a
+"107x" story out of it. Re-measured properly — 5 runs, same session,
+medians:
+
+| shape | median | max |
+|---|---|---|
+| two laterals | 37.5 ms | 38.3 ms |
+| correlated (shipped) | 43.7 ms | **8,229 ms** |
+| one merged lateral | 57.8 ms | 60.0 ms |
+
+Warm, every shape is ~40 ms. The defect is the TAIL, not the median, and
+the single-run numbers (7,526 / 953 / 70 / 8,545 ms) were draws from
+that distribution, not a ladder. The shape I had "measured" as 13.6x
+faster is in fact the SLOWEST of the three by median.
+
+**2. A benchmark whose result is not consumed measures nothing.** My
+first repeated-run harness used `PERFORM count(*) FROM (<query>) q` and
+reported 0.2 ms. `count(*)` needs no column values, so Postgres elided
+every scalar subquery in the SELECT list — the exact thing under test.
+Forcing consumption (`sum(c1)+...+count(t1)`) produced the real numbers.
+
+**3. A stale visibility map silently downgrades every Index Only Scan.**
+`mail_messages` had not been autovacuumed for 15 days because the
+default trigger (`50 + 0.2 * n_live_tup`) is 37,212 dead tuples on a
+185k-row table and it never gets there. `select count(*)` was doing
+36,776 heap fetches on an "Index Only Scan": 5,300 ms and 37,684
+buffers. After one `VACUUM (ANALYZE)`: 0 heap fetches, 1,011 buffers,
+459 ms.
+
+**Rule (provisional):** Never compare query shapes on a shared or small
+instance from one run each. Loop it, force the result to be consumed,
+and compare medians AND maxima — on a slow box the max is the number the
+user feels. Check `relallvisible / relpages` before blaming a query:
+under 90% means index-only scans are not index-only.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a third "measured
+it once and drew the wrong conclusion" entry lands. This is the second
+— the 2026-08-21 PGlite entry above is the first.
+
+## 2026-08-22 — Atlas parses its file directives out of prose
+
+**Context:** Migration 0069 added autovacuum settings. CI failed with
+`unknown txmode "none`." found in file directive`.
+
+**Finding:** The leading comment block explained that the file needs no
+non-transactional directive, and named the directive in backticks to say
+so. Atlas scans that block for its own directives and does not care that
+the line is prose — it matched and swallowed the rest of the line,
+closing backtick and full stop, as the value.
+
+The catch location matters: `atlas migrate lint` passed clean on the
+failing commit, because lint reads content only. The
+apply-to-throwaway-database step in `migration-lint.yml` is the only
+thing that runs the directive parser, and it exists because migration
+0065 hit this class twice on 2026-08-20 with a fully green PR each time.
+
+**Rule (provisional):** Never write `atlas:<word>` in a migration's
+leading comment block except as a real directive on line 1 — not in
+prose, not in backticks, not in a quoted error message.
+
+**Distillation trigger:** this is the third instance (0065 twice, 0069
+once). Promote to CLAUDE.md §6 or add a lint rule if it recurs.
