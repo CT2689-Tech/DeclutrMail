@@ -3345,3 +3345,39 @@ importantly, `makeQueryClient` now has a `QueryCache.onError` that reports
 non-4xx query failures to Sentry — until now ONLY mutations had a
 cache-level handler, so every failed READ in the product was invisible,
 which is why an app-killing bug produced no telemetry at all.
+
+## 2026-08-21 — Brief pipeline sent Gmail metadata to Anthropic for tiers that cannot read the Brief
+**PR:** #TBD (`fix/d019-brief-llm-tier-filter`)
+**Caught by:** founder tiering review
+**What happened:** `brief.controller.ts` carries
+`@RequiresCapability('brief')`, so every under-tier read 402s
+`PRO_FEATURE_REQUIRED`. But `CapabilityGuard` is a NestJS *request* guard,
+and `BriefSnapshotWorker` is a cron with no request and no principal — it
+cannot inherit it. The worker selected every row in `mailbox_accounts` with
+no tier predicate, so it built a Brief for every workspace and, because
+`ANTHROPIC_API_KEY` is mounted on the live `declutrmail-worker` revision,
+shipped `senderName + senderEmail + subject + snippet` to Anthropic to
+narrate output those users can never open. Confirmed firing in prod:
+`jsonPayload.generatedBy = "llm_haiku"` on `brief.generated`, daily.
+`FollowupCheckWorker` had the identical shape against
+`@RequiresCapability('followups')` — same defect, no external data flow.
+Not a D7/D228 breach: the envelope matches `BRIEF_AI_DISCLOSURE` exactly and
+carries no body. The defect is WHO, not WHAT.
+**Correct approach:** a capability enforced only as a controller decorator is
+enforced on READING, not on PRODUCING. Every capability-gated surface must
+gate its producer too, and the producer's tier list must be DERIVED from the
+same `TIER_MANIFEST` the guard reads — `hasCapability` — not hardcoded. A
+literal `['pro']` would have silently cut off `team` and `enterprise` (both
+map to `PRO_CAPABILITIES`); the tempting `['plus','pro']` copied from
+`weekly-value-receipt.worker.ts` would have leaked Plus AND cut those two off.
+**Rule:** for every `@RequiresCapability(x)`, the worker that produces `x`'s
+data must filter on `TIER_IDS.filter((t) => hasCapability(t, x))` — derived,
+never a tier literal.
+**Enforcement update:** regression tests on both workers assert a `free` and a
+`plus` workspace produce zero rows and zero LLM calls, plus a mixed-tier case
+proving the paying mailbox still runs (all three verified RED against the
+unfixed workers before the fix landed). Both test harnesses now seed `pro` by
+default, so a future worker that drops the filter fails loudly instead of
+passing on a free-tier fixture — which is exactly how this shipped green:
+every existing test in `brief-snapshot.worker.test.ts` seeded a `free`
+workspace and asserted the Brief was built for it.

@@ -10,8 +10,10 @@ import {
   senders,
   triageDecisions,
   users,
+  workspaces,
 } from '@declutrmail/db';
 import { parseBriefPrefs } from '@declutrmail/shared/contracts';
+import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import {
@@ -34,6 +36,24 @@ import { resolveBriefLocalWindow, type BriefLocalWindow } from './brief-timezone
 import type { WorkerContext } from './worker-context.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Tiers whose workspaces may have a Brief built for them (D19).
+ *
+ * `brief.controller.ts` carries `@RequiresCapability('brief')`, so an
+ * under-tier workspace 402s `PRO_FEATURE_REQUIRED` on every read. That
+ * is a NestJS request guard, and this worker is a cron with no request
+ * and no principal — it cannot inherit it. Without this list the worker
+ * built (and, with `ANTHROPIC_API_KEY` set, sent the sender/subject/
+ * snippet envelope to Anthropic to narrate) a Brief for every tier,
+ * including ones that can never open it.
+ *
+ * DERIVED, not hardcoded: `hasCapability` reads the same
+ * `TIER_MANIFEST` the controller guard reads, so moving `brief` to
+ * another tier updates the producer and the reader together. A literal
+ * `['pro']` here would silently drift the day pricing changes.
+ */
+const BRIEF_TIERS = TIER_IDS.filter((tier) => hasCapability(tier, 'brief'));
 
 /**
  * Default bounded-concurrency cap for the per-mailbox snapshot. The
@@ -238,7 +258,10 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         timezone: users.timezone,
       })
       .from(mailboxAccounts)
-      .innerJoin(users, eq(users.id, mailboxAccounts.userId));
+      .innerJoin(users, eq(users.id, mailboxAccounts.userId))
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      // D19 — produce the Brief only for tiers that can READ it.
+      .where(inArray(workspaces.tier, BRIEF_TIERS));
 
     let briefsGenerated = 0;
     let emptyBriefs = 0;
