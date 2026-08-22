@@ -33,13 +33,19 @@ async function freshDb(): Promise<Db> {
   return freshTestDb();
 }
 
+/**
+ * Seeds a mailbox on a `pro` workspace by default — followups are a Pro
+ * capability (D19), and the sweep now selects only tiers that hold it.
+ * The tier-gate case passes an explicit lower tier.
+ */
 async function seedMailbox(
   db: Db,
   email = 'owner@example.com',
+  tier: 'free' | 'plus' | 'pro' = 'pro',
 ): Promise<{ workspaceId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
-    .values({ name: `WS-${email}` })
+    .values({ name: `WS-${email}`, tier })
     .returning({
       id: workspaces.id,
     });
@@ -98,6 +104,42 @@ const FAKE_CTX: WorkerContext = {
 };
 
 describe('FollowupCheckWorker', () => {
+  // D19 — the tier gate on the PRODUCING side. `followup.controller.ts`
+  // carries `@RequiresCapability('followups')`, which this cron cannot
+  // inherit (no request, no principal). Without the filter the sweep
+  // stored rows for tiers that 402 on every read.
+  it.each([
+    ['free', 'free' as const],
+    ['plus', 'plus' as const],
+  ])('D19 — a %s workspace is not swept (followups is Pro-only)', async (_label, tier) => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db, 'owner@example.com', tier);
+    // A thread that WOULD produce an awaiting row on Pro — so a miss
+    // here is the tier filter, not an empty sweep.
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-1',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['boss@example.com'],
+      subject: 'Q4 plans',
+    });
+
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    expect(result.mailboxesProcessed).toBe(0);
+    expect(result.awaitingUpserted).toBe(0);
+    const rows = await db
+      .select({ id: followupTracker.id })
+      .from(followupTracker)
+      .where(eq(followupTracker.mailboxAccountId, mailboxAccountId));
+    expect(rows).toHaveLength(0);
+  });
+
   it('outbound thread with no reply → creates an awaiting row', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

@@ -1,7 +1,14 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { followupTracker, mailboxAccounts, senderPolicies, type schema } from '@declutrmail/db';
+import {
+  followupTracker,
+  mailboxAccounts,
+  senderPolicies,
+  type schema,
+  workspaces,
+} from '@declutrmail/db';
+import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { createLimiter } from './reasoning.js';
@@ -9,6 +16,18 @@ import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Tiers whose workspaces may have followup rows computed (D19).
+ *
+ * Same producer/reader split as the Brief: `followup.controller.ts`
+ * carries `@RequiresCapability('followups')`, which this cron cannot
+ * inherit. No external data flow here — nothing leaves the system — but
+ * without the filter the sweep computed and stored `followup_tracker`
+ * rows for every tier, for a surface only Pro can open. Derived from
+ * `TIER_MANIFEST` so producer and reader move together.
+ */
+const FOLLOWUP_TIERS = TIER_IDS.filter((tier) => hasCapability(tier, 'followups'));
 
 /**
  * Default bounded-concurrency cap for the per-mailbox sweep. The cron
@@ -158,7 +177,10 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
 
     const mailboxes = await this.deps.db
       .select({ id: mailboxAccounts.id, workspaceId: mailboxAccounts.workspaceId })
-      .from(mailboxAccounts);
+      .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      // D19 — compute followups only for tiers that can READ them.
+      .where(inArray(workspaces.tier, FOLLOWUP_TIERS));
 
     let awaitingUpserted = 0;
     let repliedFlipped = 0;

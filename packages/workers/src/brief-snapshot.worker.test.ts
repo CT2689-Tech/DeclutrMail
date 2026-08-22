@@ -37,14 +37,20 @@ async function freshDb(): Promise<Db> {
   return freshTestDb();
 }
 
+/**
+ * Seeds a mailbox on a `pro` workspace by default — the Brief is a Pro
+ * capability (D19), and the worker now selects only tiers that hold it.
+ * Cases that assert the tier gate itself pass an explicit lower tier.
+ */
 async function seedMailbox(
   db: Db,
   email = 'owner@example.com',
   timezone: string | null = null,
+  tier: 'free' | 'plus' | 'pro' = 'pro',
 ): Promise<{ workspaceId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
-    .values({ name: `WS-${email}` })
+    .values({ name: `WS-${email}`, tier })
     .returning({
       id: workspaces.id,
     });
@@ -988,6 +994,106 @@ describe('BriefSnapshotWorker', () => {
     // zero-message Brief. Wasted Haiku request + unstable phrasing for
     // a calm message that's better delivered verbatim per D70.
     expect(generateNarrative).not.toHaveBeenCalled();
+  });
+
+  // D19 + D62 — the tier gate on the PRODUCING side.
+  //
+  // `brief.controller.ts` carries `@RequiresCapability('brief')`, so an
+  // under-tier workspace 402s on every read. That guard is a NestJS
+  // request guard, so this cron worker — which has no request and no
+  // principal — cannot inherit it. Without an explicit filter here the
+  // worker still built the Brief for every tier and, worse, shipped the
+  // sender/subject/snippet envelope to Anthropic to narrate output the
+  // user can never open. These two cases pin the producing side to the
+  // same capability the reading side enforces.
+  it.each([
+    ['free', 'free' as const],
+    ['plus', 'plus' as const],
+  ])(
+    'D19 — a %s workspace produces NO brief and makes NO LLM call (brief is Pro-only)',
+    async (_label, tier) => {
+      const db = await freshDb();
+      const { mailboxAccountId } = await seedMailbox(db, 'owner@example.com', null, tier);
+      await seedSender(db, mailboxAccountId, {
+        email: 'boss@example.com',
+        senderKey: KEY_BOSS,
+        displayName: 'Boss',
+        verdict: 'keep',
+      });
+      // Real mail on the day — so a miss here is the tier filter doing
+      // its job, not an empty-day short-circuit masquerading as one.
+      await seedMessage(db, {
+        mailboxAccountId,
+        senderKey: KEY_BOSS,
+        subject: 'Q4 plans',
+        snippet: 'Can we move the Q4 sync to Thursday?',
+        internalDate: YESTERDAY_AT(10),
+      });
+
+      const generateNarrative = vi.fn().mockResolvedValue('should never be produced');
+      const llm: BriefLlmPort = { generateNarrative };
+      const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+      const result = await worker.processJob(
+        { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+        FAKE_CTX,
+      );
+
+      // No Gmail-derived data left the process.
+      expect(generateNarrative).not.toHaveBeenCalled();
+      // The mailbox was never selected at all — not selected-then-skipped.
+      expect(result.briefsGenerated).toBe(0);
+      expect(result.emptyBriefs).toBe(0);
+      expect(result.mailboxesFailed).toBe(0);
+      // And nothing was persisted for a tier that cannot read it.
+      const rows = await db
+        .select({ id: briefRuns.id })
+        .from(briefRuns)
+        .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+      expect(rows).toHaveLength(0);
+    },
+  );
+
+  it('D19 — a Pro mailbox is still processed when an under-tier mailbox exists alongside it', async () => {
+    const db = await freshDb();
+    const free = await seedMailbox(db, 'free@example.com', null, 'free');
+    const pro = await seedMailbox(db, 'pro@example.com', null, 'pro');
+    for (const { mailboxAccountId } of [free, pro]) {
+      await seedSender(db, mailboxAccountId, {
+        email: 'boss@example.com',
+        senderKey: KEY_BOSS,
+        displayName: 'Boss',
+        verdict: 'keep',
+      });
+      await seedMessage(db, {
+        mailboxAccountId,
+        senderKey: KEY_BOSS,
+        subject: 'Q4 plans',
+        snippet: 'Can we move the Q4 sync to Thursday?',
+        internalDate: YESTERDAY_AT(10),
+      });
+    }
+
+    const generateNarrative = vi.fn().mockResolvedValue('Boss needs a reply about Q4 plans.');
+    const llm: BriefLlmPort = { generateNarrative };
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW, llm });
+    const result = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    // The filter narrows the set; it does not break the paying mailbox.
+    expect(result.briefsGenerated).toBe(1);
+    expect(generateNarrative).toHaveBeenCalledTimes(1);
+    const proRows = await db
+      .select({ id: briefRuns.id })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, pro.mailboxAccountId));
+    expect(proRows).toHaveLength(1);
+    const freeRows = await db
+      .select({ id: briefRuns.id })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, free.mailboxAccountId));
+    expect(freeRows).toHaveLength(0);
   });
 
   it('D62 — LLM trims surrounding whitespace before storing the narrative', async () => {
