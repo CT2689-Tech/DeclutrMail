@@ -1,0 +1,75 @@
+-- atlas:txmode none
+-- 0070_mail_messages_inbox_partial_index.sql
+--
+-- Partial index serving the two unbounded INBOX counts on the Senders
+-- list. Additive: no columns, no data, no Gmail fields, no query change
+-- (D7, D228 unaffected).
+--
+-- The directive on line 1 is load-bearing and must stay line 1: CREATE
+-- INDEX CONCURRENTLY cannot run inside a transaction block, and Atlas
+-- only reads directives from the leading comment block. Migration 0065
+-- documents both ways this fails, and 0069 found a third -- naming the
+-- directive in PROSE anywhere in this block is also parsed. Do not
+-- write it again below this line.
+--
+-- WHY, MEASURED ON PRODUCTION 2026-08-22.
+--
+-- `senders.read-service.ts` builds `inboxCount` and `unreadInboxCount`
+-- as correlated subqueries with NO date bound -- by definition, since
+-- the set every inbox verb can act on is the sender's whole history.
+-- With only `mail_messages_account_sender_date_idx` available, each one
+-- scans every message for the sender and discards most of them:
+--
+--   SubPlan 5 (inboxCount)
+--     Index Scan using mail_messages_account_sender_date_idx
+--     Index Cond: (mailbox_account_id = ...) AND (sender_key = ...)
+--     Filter: ((NOT is_outbound) AND ('INBOX' = ANY (label_ids)))
+--     actual rows=170 loops=50, Rows Removed by Filter: 401
+--     Buffers: shared hit=21334
+--
+-- 21,334 of the query's 42,666 buffers -- HALF the total -- for one of
+-- twelve subqueries, and 70% of the rows it reads are thrown away.
+--
+-- This index carries that exact predicate, so the planner proves the
+-- implication and drops the filter entirely; `is_unread` rides in the
+-- KEY so `unreadInboxCount` is answered from the same scan rather than
+-- a second one. Verified on PostgreSQL 16.13 against this schema:
+--
+--   Aggregate
+--     ->  Index Only Scan using mail_messages_account_sender_inbox_idx
+--           Index Cond: (mailbox_account_id = ...) AND (sender_key = ...)
+--
+-- No Filter, no recheck, no heap access.
+--
+-- WHY NOT GIN ON label_ids. `'INBOX' = ANY(label_ids)` is a
+-- ScalarArrayOpExpr, which GIN cannot serve at all; even rewritten to
+-- the GIN-indexable containment form it cannot answer the `sender_key`
+-- equality and can never be index-only, because `is_outbound` and
+-- `is_unread` live only in the heap.
+--
+-- WHY THIS IS WORTH THE WRITE COST. `label_ids` changes on every action
+-- and sync, and it now sits in an index predicate, so those UPDATEs lose
+-- the HOT path. That sounds worse than it measures: `mail_messages`
+-- carries no fillfactor setting, so it is already at 100 and HOT is
+-- nearly unavailable regardless. The index is also small -- it covers
+-- only inbound INBOX mail, a minority of the table.
+--
+-- INDEX-ONLY DEPENDS ON THE VISIBILITY MAP, which is exactly what 0069
+-- tightened autovacuum for. The two changes are a pair: without 0069
+-- this index still works but pays a heap fetch per row on churned
+-- pages, which is most of the benefit gone.
+--
+-- NOT DONE HERE: `mail_messages_account_sender_unread_idx` is probably
+-- made redundant by this one (its only known consumer is
+-- `unreadInboxCount`). Dropping it would offset the write cost, but it
+-- needs verifying against the triage, export and worker read paths
+-- first, so it stays.
+--
+-- CONCURRENTLY because `mail_messages` is live. No IF NOT EXISTS on
+-- purpose: a leftover INVALID index from a failed concurrent build must
+-- fail loudly on retry rather than be silently skipped. Recovery is the
+-- rollback (DROP INDEX CONCURRENTLY) then re-apply.
+
+CREATE INDEX CONCURRENTLY "mail_messages_account_sender_inbox_idx"
+  ON "mail_messages" USING btree ("mailbox_account_id", "sender_key", "is_unread")
+  WHERE "is_outbound" = false AND 'INBOX' = ANY("label_ids");

@@ -72,6 +72,7 @@ import type {
 } from '@declutrmail/workers';
 
 import { createKmsProvider } from '../src/adapters/gcp-kms/kms-provider.factory.js';
+import { toSessionPoolUrl } from '../src/db/session-pool-url.js';
 import { TokenCryptoService } from '../src/auth/token-crypto.service.js';
 import { GmailClientService } from '../src/gmail/gmail-client.service.js';
 import { buildOutboxConsumer } from '../src/outbox/outbox-consumer-router.js';
@@ -123,8 +124,34 @@ async function main(): Promise<void> {
 
   const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false });
   const db = drizzle(pg, { schema });
-  const lockPg = postgres(requireEnv('DATABASE_URL'), { max: 4, prepare: false });
-  const outboxListenPg = postgres(requireEnv('DATABASE_URL'), { max: 1, prepare: false });
+  // SESSION MODE for both of these, exactly as `worker.ts` does at :418
+  // and :2349 — and for the same two reasons:
+  //
+  //   `lockPg` takes a SESSION-scoped `pg_advisory_lock` below. On the
+  //   transaction pooler (`*.pooler.supabase.com:6543`) the lock binds to
+  //   whatever backend served that statement, not to this client, so the
+  //   unlock can land on a different backend and the lock leaks. That is
+  //   the 2026-08-12 incident (MISTAKES.md). The leak detector below
+  //   already anticipated it in a comment — "this harness shares the prod
+  //   namespace, so a pooled DSN here leaks against production-shaped
+  //   keys" — but the DSN was never converted, so the harness could leak
+  //   a lock in `MAILBOX_ACTION_LOCK_NS` and block the PRODUCTION worker.
+  //   Detecting the leak is not preventing it.
+  //
+  //   `outboxListenPg` calls `.listen()`. LISTEN/NOTIFY is session state;
+  //   through a transaction pooler the subscription is silently dropped
+  //   and notifications simply never arrive.
+  //
+  // `pg` above stays on the pooled DSN on purpose: ordinary queries want
+  // the pooler, and it takes no session-scoped state.
+  const lockPg = postgres(toSessionPoolUrl(requireEnv('DATABASE_URL')), {
+    max: 4,
+    prepare: false,
+  });
+  const outboxListenPg = postgres(toSessionPoolUrl(requireEnv('DATABASE_URL')), {
+    max: 1,
+    prepare: false,
+  });
 
   // Token decrypt path — same seam as worker.ts (TokenCryptoService +
   // KMS provider). Access errors log; the harness has no audit table

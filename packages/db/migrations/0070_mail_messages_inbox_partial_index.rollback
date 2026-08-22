@@ -1,0 +1,15 @@
+-- atlas:txmode none
+-- Rollback for 0070_mail_messages_inbox_partial_index.sql
+--
+-- CONCURRENTLY to match the forward build: `mail_messages` is live, and
+-- this is also the recovery path if the forward build leaves an INVALID
+-- index behind, so IF EXISTS is correct here even though the forward
+-- migration deliberately omits it.
+--
+-- Reverting returns `inboxCount` / `unreadInboxCount` to scanning every
+-- message per sender and discarding ~70% of them (measured: 21,334 of
+-- the query's 42,666 buffers). Correctness is unaffected -- the index
+-- only serves predicates the query already expresses -- so this is a
+-- pure performance revert, which is the right shape for a rollback.
+
+DROP INDEX CONCURRENTLY IF EXISTS "mail_messages_account_sender_inbox_idx";

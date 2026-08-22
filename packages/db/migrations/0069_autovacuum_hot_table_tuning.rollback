@@ -1,0 +1,39 @@
+-- Rollback for 0069_autovacuum_hot_table_tuning.sql
+--
+-- RESET returns each parameter to the cluster default
+-- (autovacuum_vacuum_scale_factor 0.2, insert 0.2, analyze 0.1),
+-- which is the state these tables were in before 0069.
+--
+-- Reverting re-opens the defect the forward migration closed: the
+-- visibility map goes stale again and index-only scans resume paying a
+-- heap fetch per row (measured 7.9x on the /api/senders query). That is
+-- still the correct rollback -- the forward change is a storage
+-- parameter, not data, and a revert should restore the prior planner
+-- and autovacuum behaviour exactly.
+--
+-- RESET does not undo vacuums that already ran, and cannot: a vacuumed
+-- page stays vacuumed. Only the future cadence changes.
+
+ALTER TABLE "sender_timeseries" RESET (
+  autovacuum_vacuum_scale_factor,
+  autovacuum_vacuum_insert_scale_factor,
+  autovacuum_analyze_scale_factor
+);
+--> statement-breakpoint
+ALTER TABLE "triage_decisions" RESET (
+  autovacuum_vacuum_scale_factor,
+  autovacuum_vacuum_insert_scale_factor,
+  autovacuum_analyze_scale_factor
+);
+--> statement-breakpoint
+ALTER TABLE "senders" RESET (
+  autovacuum_vacuum_scale_factor,
+  autovacuum_vacuum_insert_scale_factor,
+  autovacuum_analyze_scale_factor
+);
+--> statement-breakpoint
+ALTER TABLE "mail_messages" RESET (
+  autovacuum_vacuum_scale_factor,
+  autovacuum_vacuum_insert_scale_factor,
+  autovacuum_analyze_scale_factor
+);
