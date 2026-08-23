@@ -420,7 +420,7 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
 }
 
 /** Audited union of fields returned by every BaseDeclutrWorker subclass. */
-const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
+export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'activeMatches',
   'activeSkippedAlreadyQueued',
   'activeSkippedNotActionable',
@@ -452,6 +452,8 @@ const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'emailsQueued',
   'emptyBriefs',
   'emptyQueueSkips',
+  'abortedIndexRebuilt',
+  'advancedToHistoryId',
   'enforced',
   'failed',
   'flippedToFailed',
@@ -467,6 +469,7 @@ const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'mappingsRefreshed',
   'matchesConsidered',
   'matchesWritten',
+  'mailboxInactive',
   'maxAbsDelta',
   'messagesSynced',
   'observeMatches',
@@ -503,6 +506,15 @@ const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'totalSenders',
   'unenforced',
   'unreadable',
+  'unreadableSkipped',
+  'abandonedStaleClaim',
+  'previewId',
+  'remainingCount',
+  'skippedIndexRebuilt',
+  'targetCount',
+  'unavailableCount',
+  'verifiedCount',
+  'unreplayedTotal',
   'unsubscribeExecutionsEnqueued',
   'unsubscribeIntentsRecorded',
   'usersFailed',
