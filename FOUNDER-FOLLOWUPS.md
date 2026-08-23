@@ -195,7 +195,6 @@ would have mixed unrelated changes into an observability PR.
 CI Typecheck job covers `scripts/`.
 **Status:** Open
 
-
 ### 2026-08-16 — Self-serve refund: post-launch, and it needs a policy before it needs code
 
 **Source:** billing premium program scoping, 2026-08-16 — raised under CLAUDE.md
@@ -320,7 +319,6 @@ with `content-type: image/svg+xml`, and a visible brand mark on a
 BIMI-publishing sender (PayPal, eBay and CNN all resolved live during
 the #524 smoke).
 **Status:** Open
-
 
 <!-- Newest at top. -->
 
@@ -769,7 +767,6 @@ workflow.
 rule untouched, and `Analyze (javascript-typescript)` reports green on #505.
 **Status:** Skipped 2026-08-11 — retracted, no action
 
-
 ### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
 
 **Source:** session (gate-network workflow)
@@ -1041,7 +1038,6 @@ Paddle replied ~2026-08-06 asking the founder to confirm whether DeclutrMail is 
 
 **Status:** Open — reply to Paddle drafted 2026-08-12, awaiting founder send
 
-
 ### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
 **Source:** session 2026-07-30 (D249 CI triage; corrected same day after observing #436's merge)
 **Why:** the generator has TWO inputs and they drift differently. The **row set** comes from the plan mirror (which D-numbers exist); the **status** (⬜/🔵) comes from `gh pr list --state merged` trailers. That yields two failure classes:
@@ -1051,27 +1047,6 @@ Separately: the rolled-up `Test` check reports red purely because it aggregates 
 **How:** Class B has a working rule already, no code needed: **the PR that ships a new D appends it to the plan mirror and regenerates the log in the same PR** (done for D249 on `feat/d117-plan-change-truth`; the row materialized as 🔵 #436 from the already-merged trailer). Class A needs one of — and **not** a post-merge push to `main`: `ci.yml:131-134` records that `pr-merged.yml` did exactly that and branch protection rejected it on EVERY run (D158, 2026-07-28). Options: (a) **teach the generator to count the checked PR's own `Closes D###` trailers** when running in PR context, so the branch commits the post-merge-correct log and `main` is never stale — the only fix that makes the gate satisfiable by the PR causing the drift; (b) pair (a) with CI committing the regenerated file to the PR's **own** branch (unprotected, no bypass credential); (c) GitHub App/PAT bypass to push `main` — reintroduces what protection deliberately blocked; (d) advisory gate + scheduled repair PR; (e) stop calling the log derived. Recommend (a), optionally with (b). (c) is the one to avoid.
 **Verifies by:** Class B — `grep "^| D249" IMPLEMENTATION-LOG.md` shows the 🔵 #436 row after the plan-append PR merges. Class A — after (a) lands: merge a PR closing an existing ⬜ row, then open a throwaway PR; its "Implementation log is derived and current" check passes with no impl-log commit on the throwaway branch.
 **Status:** Open — Class B rule in effect now; Class A fix (a) awaiting your call (it changes a guardrail's semantics).
-
-### 2026-07-28 — Resolve the two paused subscriptions on the founder workspace
-**Source:** launch audit B7 / PR #417 investigation
-**Why:** workspace `fab42715…` holds two paused subscriptions (paddle `sub_pz`, razorpay `sub_THdjxRKddrqsNK`). Whichever is not real should be cancelled at the provider; this also unblocks the strict index above. Which one is genuine is a billing fact only you have.
-**How:** check both in the Paddle and Razorpay dashboards, cancel the stale one there, let the webhook reconcile the row.
-**Verifies by:** `SELECT workspace_id, count(*) FROM subscriptions WHERE status IN ('active','past_due','paused') GROUP BY 1 HAVING count(*) > 1;` returns nothing.
-**Status:** Open
-
-### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
-**Source:** #406 email compliance audit (founder asked whether we meet the legal/industry bar for sending)
-**Why:** CAN-SPAM §7704(a)(5)(A)(iii) requires a **valid physical postal address of the sender** in commercial email; Canada's CASL requires it too. We ship none — not in the templates, not on the legal pages (checked: `terms`, `privacy`, `contact` have jurisdiction and email addresses, no postal address anywhere). These statutes bind on **recipient** location, so US and Canadian users pull them in regardless of the Terms' India/Mumbai jurisdiction.
-
-Scope is narrower than it sounds: the two deletion emails are genuine transactional/relationship messages and are **exempt**. The exposure is `sync-reminder-24h` (a re-engagement nudge — regulators treat these as commercial), `weekly-value-receipt` (the opt-in Plus/Pro value cue locked by D189/D251), and the deferred D126 Part 3 sequence, which is unambiguously commercial. `sync-complete` is arguably transactional but ships opt-out-able, so treat it as in scope.
-
-Deliberately deferred by founder decision 2026-07-28 (of the three options — virtual address / home address / defer). Rationale: pre-launch, zero real users, so practical risk today is ~nil; and the alternative was burning a home address into every recipient's permanent archive. **This does not stay deferred past first real send.**
-**How:**
-1. Obtain a usable address — a rented virtual/registered business address in India (~₹500–2000/mo) was the recommended route; a registered company address works equally well if the entity gets set up first.
-2. Add it to `packages/shared/src/copy/` as a locked constant beside the privacy copy (single source of truth, same as `PRIVACY_BADGE_HEADLINE`), and render it in the `Shell` footer of opt-out-able kinds. Ping me and this is a ~20-minute change; the footer block already exists, it just needs the line.
-3. Publish the same address on the marketing site's contact/legal page — CASL expects it discoverable, not email-only.
-**Verifies by:** rendered `sync-reminder-24h` and `weekly-value-receipt` messages show the postal address in every body format they send; the address appears on `/contact`.
-**Status:** Open — **must close before the first non-founder send.** Reaffirmed deferred by the founder 2026-07-31, with the scope narrowed: `sync-complete` is NOT in scope after all. `COMMERCIAL_KINDS` in `packages/workers/src/email-send.worker.ts` correctly holds `sync-reminder-24h` and `weekly-value-receipt`, because `sync-complete` delivers the result of a service the recipient asked for (§7702(17)(A)(v)) and is transactional. So a stranger can sign up and be onboarded today without a non-compliant send; what stays blocked is the 24h re-engagement nudge, the weekly value receipt, and the deferred D126 Part 3 sequence. Marketing is therefore NOT gated on this — only commercial email is.
 
 ### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
 **Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)
@@ -1105,13 +1080,6 @@ Deliberately deferred by founder decision 2026-07-28 (of the three options — v
 **Why:** PR #377 adds `/api/readyz`, but merging does not create monitoring resources. Until this runs, a dependency outage still pages nobody.
 **How:** After #377 deploys: `./scripts/setup-uptime-monitoring.sh` (idempotent — it skips what already exists and adds the readyz check + the "DeclutrMail API not ready" policy).
 **Verifies by:** `./scripts/launch-preflight.sh` monitoring group shows 4 PASS, including "API readyz uptime check exists" and "API not-ready alert policy exists".
-**Status:** Open
-
-### 2026-07-16 — Plan patch: D49 rationale is stale + dead Weekly-Hero stack
-**Source:** session (senders smoke triage)
-**Why:** Two doc/code truths drifted. (1) D49's rationale ("grid surfaces decisions — card format with verdict badge visible") describes the pre-D245 card; D245 removed engine-verdict presentation from cards. The DECISION (grid default, table toggle) still stands — only the reasoning is stale, and a future agent could "restore" verdict badges to match the text. (2) The Weekly-Hero stack is dead code: `useWeeklyHero` (apps/web/src/features/senders/api/use-weekly-hero.ts) has zero consumers; the BE endpoint (senders.controller.ts weekly-hero), `fetchWeeklyHero`, and the `WeeklyHero*Dto` wire types survive as orphans of the retired editorial-hero era. D245 prelaunch says remove directly — flagged rather than deleted because it predates the current change (CLAUDE.md §1.3).
-**How:** (1) Add `[AUDIT PATCH on D49]` note to the plan: decision unchanged; rationale now "brand rollup + fact stat strip", not verdict badges. (2) Approve a `chore/` PR deleting the Weekly-Hero endpoint + hook + DTOs + `sendersKeys.weeklyHero()`.
-**Verifies by:** Plan shows the patch marker; `rg -i weeklyhero` returns nothing after the chore PR.
 **Status:** Open
 
 ### 2026-07-10 — D-candidate: bulk unsubscribe for one-click senders
@@ -1317,16 +1285,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** Pause the worker + watch a sync get stuck + receive the alert within 5-10 min.
 **Status:** Open
 
-### 2026-06-08 — Atlas state-sync on Supabase for migration 0026
-**Source:** session 2026-06-08 (RLS deny-anon applied via MCP)
-**Why:** Migration `0026_rls_deny_anon.sql` was applied via the Supabase MCP `apply_migration` tool (which writes to `supabase_migrations.schema_migrations`), not via the Atlas CLI (which tracks state in `atlas_schema_revisions`). Atlas does not know 0026 is applied. The next `atlas migrate apply` against Supabase will try to re-execute 0026; `ENABLE ROW LEVEL SECURITY` is idempotent so it would no-op cleanly, but Atlas will fail on hash mismatch unless told.
-**How:**
-1. From repo root: `atlas migrate apply --url "$SESSION_POOLER_DSN?sslmode=require" --dir 'file://packages/db/migrations' --allow-dirty`
-2. Confirm output mentions `0026_rls_deny_anon` applied (idempotent)
-3. After success Atlas writes the revision; future migrations chain cleanly
-**Verifies by:** `atlas migrate status --url $DSN --dir file://packages/db/migrations` shows `Migration Status: OK` with the latest version 0026.
-**Status:** Open
-
 ### 2026-06-08 — Supabase WARN advisories: function search_path + citext extension
 **Source:** session 2026-06-08 (`get_advisors` after RLS apply)
 **Why:** Two non-blocking WARN-level security advisories remain on the new Supabase project:
@@ -1393,16 +1351,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 4. Action: send to Slack channel (or email) — Sentry → Integrations → Slack (workspace install)
 5. Second rule for `level:fatal`: alert on FIRST event (no threshold)
 **Verifies by:** intentionally throw an error 11 times in prod → Slack message lands within 1 min.
-**Status:** Open
-
-### 2026-06-06 — One-off `size_bytes` backfill for pre-amendment rows (optional)
-**Source:** session 2026-06-06 (ADR-0021)
-**Why:** Existing `mail_messages` rows (synced before ADR-0021) persist `size_bytes = NULL` — Recent Messages renders an em-dash for these. New messages going forward carry real Gmail `sizeEstimate`. If we want history to look full too, we need a one-off worker.
-**How:**
-1. Add a one-shot BullMQ job — `BackfillSizeBytesWorker` — that pages `mail_messages WHERE size_bytes IS NULL` per mailbox, calls `messages.get?format=metadata` for each id, persists the returned `sizeEstimate`.
-2. Resumable via per-mailbox cursor (last processed `id` ASC).
-3. Quota plan: ~5 units per `messages.get` × ~100k existing rows per founder mailbox = ~500k units; at 15k/min user ceiling that's ~33 min per mailbox sequential. Schedule off-hours OR rate-limit to 8k/min to share quota.
-**Verifies by:** `SELECT COUNT(*) FROM mail_messages WHERE size_bytes IS NULL;` trends to ~0 (modulo rows Gmail occasionally omits the field on).
 **Status:** Open
 
 ### 2026-06-05 — D204 cross-feature write: ActionsService → sender_policies (extract via outbox)
@@ -1551,18 +1499,6 @@ chips + D58 undo *state rendering* + D59 stats). What it does NOT ship:
 **Verifies by:** Each PR's smoke + a chip-by-chip walk of the Activity screen.
 **Status:** Open
 
-### 2026-05-27 — Rename `auto_screen_new_senders` preset default-name (D227)
-
-**Source:** PR for D104/D105 Autopilot UI — `packages/workers/src/autopilot-presets.ts:168` ships the preset with `defaultName: 'Auto-screen new senders'`, which embeds the banned product-UI verb "Screen" (D227 — only K/A/U/L are user-facing). The preset's `actionKind` is already `'later'`, so the canonical verb is Later.
-**Why:** The Autopilot UI (PR for D104/D105) currently overrides the BE name client-side via `apps/web/src/features/autopilot/preset-labels.ts` (`'Later for new senders'`) to keep D227 compliant. The override is a forward-compatible shim — once the BE is renamed, the override map can be deleted and the UI will surface whatever name the BE chose.
-**How:**
-1. In `packages/workers/src/autopilot-presets.ts`, change `auto_screen_new_senders.defaultName` from `'Auto-screen new senders'` to a K/A/U/L-compliant name (suggested: `'Later for new senders'`).
-2. Add a one-off migration to rewrite existing rows where `preset_key = 'auto_screen_new_senders' AND name = 'Auto-screen new senders'` (or whatever the seed installed) to the new name.
-3. Delete the `auto_screen_new_senders` entry from `apps/web/src/features/autopilot/preset-labels.ts:PRESET_LABEL_OVERRIDES`. If the map becomes empty, delete the file + its two call-sites' imports.
-4. Drop the comment in `apps/web/src/features/autopilot/fixtures.ts` that documents the workaround; update the fixture name to the new BE name so tests stay aligned with prod.
-**Verifies by:** `pnpm --filter @declutrmail/web test` is still green; running `./scripts/dev-up.sh` + listing rules via `GET /api/autopilot/rules` returns the renamed default; `check-microcopy.sh --rule=canonical-verbs` (the D227 hook, when it lands) passes.
-**Status:** Open
-
 ### 2026-05-27 — IMPL-LOG-DRIFT: process-break — 13 findings this week — pr-merged.yml or author trailer discipline is broken
 **Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
 **Why:** 13 PR-level drift findings in a single 7-day window (10 missing-trailer + 9 un-flipped commits, deduped to ~12 unique PRs) signals a systemic break, not author oversight. Either (a) `pr-merged.yml` should be extended to flip Ds it finds in the PR title in addition to `Closes` lines, OR (b) commitlint / a PR-open gate should reject PRs whose title cites D-numbers not present in the body's `Closes` list. Today's policy puts the burden on each author to keep title + body in lockstep, and the burden is being dropped consistently.
@@ -1570,13 +1506,6 @@ chips + D58 undo *state rendering* + D59 stats). What it does NOT ship:
   - **Option A (loosen the flipper):** edit `.github/workflows/pr-merged.yml` to harvest D-numbers from `pull_request.title` parens AS WELL AS `Closes` lines, then flip the union. Lower friction for authors; risk = flipping a D the author casually mentioned but didn't actually ship.
   - **Option B (tighten the gate):** add a GH Action that runs on `pull_request.opened/edited` and fails if `set(D-refs in title) ⊄ set(D-refs in Closes lines)`. Forces authors to keep the two in sync; risk = friction on every multi-D PR.
 **Verifies by:** Next week's oracle sweep returns 0 missing-trailer + 0 un-flipped findings, OR a documented exception path exists for cases like PR #42 (chore/learnings citing a not-yet-shipped D).
-**Status:** Open
-
-### 2026-05-26 — ARCH-DRIFT: triage + undo controllers build envelope inline rather than via `ok()` helper (D202)
-**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check F
-**Why:** Both `POST /v1/triage/score-sender` ([apps/api/src/triage/triage.controller.ts:30](apps/api/src/triage/triage.controller.ts:30)) and the two `/v1/undo` routes ([apps/api/src/undo/undo.controller.ts:51](apps/api/src/undo/undo.controller.ts:51), [:93](apps/api/src/undo/undo.controller.ts:93)) hand-construct the `{ data, meta }` envelope inline. The shape is D202-compliant in spirit but diverges from the shared `ok()` / `Envelope<T>`-typed helper used by autopilot/briefs/followups/senders. Future helper changes (extra `meta` fields, version stamps, request-id propagation) will skip these three handlers silently.
-**How:** Replace each inline construction with `return ok(...)` from the shared envelope helper. Triage's `score-sender` is a single-field response (`{ idempotencyKey }`); undo's tray + revert each return small typed objects. Pure mechanical refactor, no contract change at the wire.
-**Verifies by:** `rg -n "return \{ data:" apps/api/src/{triage,undo}` returns no hits; existing route specs continue to pass.
 **Status:** Open
 
 ### 2026-05-26 — ARCH-DRIFT: no end-to-end `Idempotency-Key` header support; repeat-dismiss returns 404 vs stored result (D202, D207)
@@ -1929,6 +1858,110 @@ the shipped design; a fresh session reading them finds no contradiction with
 `apps/web`.
 **Status:** Open
 
+## Done
+
+### 2026-07-28 — Resolve the two paused subscriptions on the founder workspace
+**Source:** launch audit B7 / PR #417 investigation
+**Why:** workspace `fab42715…` holds two paused subscriptions (paddle `sub_pz`, razorpay `sub_THdjxRKddrqsNK`). Whichever is not real should be cancelled at the provider; this also unblocks the strict index above. Which one is genuine is a billing fact only you have.
+**How:** check both in the Paddle and Razorpay dashboards, cancel the stale one there, let the webhook reconcile the row.
+**Verifies by:** `SELECT workspace_id, count(*) FROM subscriptions WHERE status IN ('active','past_due','paused') GROUP BY 1 HAVING count(*) > 1;` returns nothing.
+**Status:** Done 2026-08-23 — this entry's own acceptance query, run against
+`declutrmail-prod`: `SELECT workspace_id ... HAVING count(*) > 1` returns
+**0 rows**. No workspace holds more than one active/past_due/paused
+subscription.
+
+---
+
+### 2026-07-28 — LAUNCH BLOCKER: transactional email carries no physical postal address (CAN-SPAM / CASL)
+**Source:** #406 email compliance audit (founder asked whether we meet the legal/industry bar for sending)
+**Why:** CAN-SPAM §7704(a)(5)(A)(iii) requires a **valid physical postal address of the sender** in commercial email; Canada's CASL requires it too. We ship none — not in the templates, not on the legal pages (checked: `terms`, `privacy`, `contact` have jurisdiction and email addresses, no postal address anywhere). These statutes bind on **recipient** location, so US and Canadian users pull them in regardless of the Terms' India/Mumbai jurisdiction.
+
+Scope is narrower than it sounds: the two deletion emails are genuine transactional/relationship messages and are **exempt**. The exposure is `sync-reminder-24h` (a re-engagement nudge — regulators treat these as commercial), `weekly-value-receipt` (the opt-in Plus/Pro value cue locked by D189/D251), and the deferred D126 Part 3 sequence, which is unambiguously commercial. `sync-complete` is arguably transactional but ships opt-out-able, so treat it as in scope.
+
+Deliberately deferred by founder decision 2026-07-28 (of the three options — virtual address / home address / defer). Rationale: pre-launch, zero real users, so practical risk today is ~nil; and the alternative was burning a home address into every recipient's permanent archive. **This does not stay deferred past first real send.**
+**How:**
+1. Obtain a usable address — a rented virtual/registered business address in India (~₹500–2000/mo) was the recommended route; a registered company address works equally well if the entity gets set up first.
+2. Add it to `packages/shared/src/copy/` as a locked constant beside the privacy copy (single source of truth, same as `PRIVACY_BADGE_HEADLINE`), and render it in the `Shell` footer of opt-out-able kinds. Ping me and this is a ~20-minute change; the footer block already exists, it just needs the line.
+3. Publish the same address on the marketing site's contact/legal page — CASL expects it discoverable, not email-only.
+**Verifies by:** rendered `sync-reminder-24h` and `weekly-value-receipt` messages show the postal address in every body format they send; the address appears on `/contact`.
+**Status:** Done 2026-08-23 — verified in code, not assumed. `BUSINESS_POSTAL_ADDRESS` +
+`hasPostalAddress` are exported from `@declutrmail/shared/copy`; `/contact`
+renders the block (`contact/page.tsx:13,56`); and BOTH templates this entry
+named import `postalAddressLine` — `weekly-value-receipt.tsx:2` and
+`lapse-reengagement.tsx`, each with a spec asserting it. **This was the only
+entry in this file self-labelled LAUNCH BLOCKER, and it has been closed for
+some time without anyone flipping it.**
+
+---
+
+### 2026-07-16 — Plan patch: D49 rationale is stale + dead Weekly-Hero stack
+**Source:** session (senders smoke triage)
+**Why:** Two doc/code truths drifted. (1) D49's rationale ("grid surfaces decisions — card format with verdict badge visible") describes the pre-D245 card; D245 removed engine-verdict presentation from cards. The DECISION (grid default, table toggle) still stands — only the reasoning is stale, and a future agent could "restore" verdict badges to match the text. (2) The Weekly-Hero stack is dead code: `useWeeklyHero` (apps/web/src/features/senders/api/use-weekly-hero.ts) has zero consumers; the BE endpoint (senders.controller.ts weekly-hero), `fetchWeeklyHero`, and the `WeeklyHero*Dto` wire types survive as orphans of the retired editorial-hero era. D245 prelaunch says remove directly — flagged rather than deleted because it predates the current change (CLAUDE.md §1.3).
+**How:** (1) Add `[AUDIT PATCH on D49]` note to the plan: decision unchanged; rationale now "brand rollup + fact stat strip", not verdict badges. (2) Approve a `chore/` PR deleting the Weekly-Hero endpoint + hook + DTOs + `sendersKeys.weeklyHero()`.
+**Verifies by:** Plan shows the patch marker; `rg -i weeklyhero` returns nothing after the chore PR.
+**Status:** Done 2026-08-23 (Weekly-Hero half) — `rg -i weeklyhero` over `apps` +
+`packages` returns **0 hits**; the dead stack is gone, which is this entry's
+stated bar. The D49 rationale half is folded into the plan-drift item dated
+2026-08-23.
+
+---
+
+### 2026-06-08 — Atlas state-sync on Supabase for migration 0026
+**Source:** session 2026-06-08 (RLS deny-anon applied via MCP)
+**Why:** Migration `0026_rls_deny_anon.sql` was applied via the Supabase MCP `apply_migration` tool (which writes to `supabase_migrations.schema_migrations`), not via the Atlas CLI (which tracks state in `atlas_schema_revisions`). Atlas does not know 0026 is applied. The next `atlas migrate apply` against Supabase will try to re-execute 0026; `ENABLE ROW LEVEL SECURITY` is idempotent so it would no-op cleanly, but Atlas will fail on hash mismatch unless told.
+**How:**
+1. From repo root: `atlas migrate apply --url "$SESSION_POOLER_DSN?sslmode=require" --dir 'file://packages/db/migrations' --allow-dirty`
+2. Confirm output mentions `0026_rls_deny_anon` applied (idempotent)
+3. After success Atlas writes the revision; future migrations chain cleanly
+**Verifies by:** `atlas migrate status --url $DSN --dir file://packages/db/migrations` shows `Migration Status: OK` with the latest version 0026.
+**Status:** Done 2026-08-23 — production `atlas_schema_revisions` reports version
+**0070**, forty-four migrations past the 0026 this entry was blocked on. The
+ledger has been healthy and applying cleanly through #617.
+
+---
+
+### 2026-06-06 — One-off `size_bytes` backfill for pre-amendment rows (optional)
+**Source:** session 2026-06-06 (ADR-0021)
+**Why:** Existing `mail_messages` rows (synced before ADR-0021) persist `size_bytes = NULL` — Recent Messages renders an em-dash for these. New messages going forward carry real Gmail `sizeEstimate`. If we want history to look full too, we need a one-off worker.
+**How:**
+1. Add a one-shot BullMQ job — `BackfillSizeBytesWorker` — that pages `mail_messages WHERE size_bytes IS NULL` per mailbox, calls `messages.get?format=metadata` for each id, persists the returned `sizeEstimate`.
+2. Resumable via per-mailbox cursor (last processed `id` ASC).
+3. Quota plan: ~5 units per `messages.get` × ~100k existing rows per founder mailbox = ~500k units; at 15k/min user ceiling that's ~33 min per mailbox sequential. Schedule off-hours OR rate-limit to 8k/min to share quota.
+**Verifies by:** `SELECT COUNT(*) FROM mail_messages WHERE size_bytes IS NULL;` trends to ~0 (modulo rows Gmail occasionally omits the field on).
+**Status:** Done 2026-08-23 — `SELECT COUNT(*) FROM mail_messages WHERE size_bytes IS
+NULL` returns **0** across all **186,088** production rows. The backfill's
+stated bar ("trends to ~0") is met exactly.
+
+---
+
+### 2026-05-27 — Rename `auto_screen_new_senders` preset default-name (D227)
+
+**Source:** PR for D104/D105 Autopilot UI — `packages/workers/src/autopilot-presets.ts:168` ships the preset with `defaultName: 'Auto-screen new senders'`, which embeds the banned product-UI verb "Screen" (D227 — only K/A/U/L are user-facing). The preset's `actionKind` is already `'later'`, so the canonical verb is Later.
+**Why:** The Autopilot UI (PR for D104/D105) currently overrides the BE name client-side via `apps/web/src/features/autopilot/preset-labels.ts` (`'Later for new senders'`) to keep D227 compliant. The override is a forward-compatible shim — once the BE is renamed, the override map can be deleted and the UI will surface whatever name the BE chose.
+**How:**
+1. In `packages/workers/src/autopilot-presets.ts`, change `auto_screen_new_senders.defaultName` from `'Auto-screen new senders'` to a K/A/U/L-compliant name (suggested: `'Later for new senders'`).
+2. Add a one-off migration to rewrite existing rows where `preset_key = 'auto_screen_new_senders' AND name = 'Auto-screen new senders'` (or whatever the seed installed) to the new name.
+3. Delete the `auto_screen_new_senders` entry from `apps/web/src/features/autopilot/preset-labels.ts:PRESET_LABEL_OVERRIDES`. If the map becomes empty, delete the file + its two call-sites' imports.
+4. Drop the comment in `apps/web/src/features/autopilot/fixtures.ts` that documents the workaround; update the fixture name to the new BE name so tests stay aligned with prod.
+**Verifies by:** `pnpm --filter @declutrmail/web test` is still green; running `./scripts/dev-up.sh` + listing rules via `GET /api/autopilot/rules` returns the renamed default; `check-microcopy.sh --rule=canonical-verbs` (the D227 hook, when it lands) passes.
+**Status:** Done 2026-08-23 — `preset-labels.ts:24` maps `auto_screen_new_senders` to
+**"Later for new senders"**. The internal enum key is unchanged (correct — it
+is an identifier, like the `screen` verdict), and no user-facing string says
+"Screen", satisfying D227.
+
+---
+
+### 2026-05-26 — ARCH-DRIFT: triage + undo controllers build envelope inline rather than via `ok()` helper (D202)
+**Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check F
+**Why:** Both `POST /v1/triage/score-sender` ([apps/api/src/triage/triage.controller.ts:30](apps/api/src/triage/triage.controller.ts:30)) and the two `/v1/undo` routes ([apps/api/src/undo/undo.controller.ts:51](apps/api/src/undo/undo.controller.ts:51), [:93](apps/api/src/undo/undo.controller.ts:93)) hand-construct the `{ data, meta }` envelope inline. The shape is D202-compliant in spirit but diverges from the shared `ok()` / `Envelope<T>`-typed helper used by autopilot/briefs/followups/senders. Future helper changes (extra `meta` fields, version stamps, request-id propagation) will skip these three handlers silently.
+**How:** Replace each inline construction with `return ok(...)` from the shared envelope helper. Triage's `score-sender` is a single-field response (`{ idempotencyKey }`); undo's tray + revert each return small typed objects. Pure mechanical refactor, no contract change at the wire.
+**Verifies by:** `rg -n "return \{ data:" apps/api/src/{triage,undo}` returns no hits; existing route specs continue to pass.
+**Status:** Done 2026-08-23 — this entry's own acceptance grep,
+`rg -n "return \{ data:" apps/api/src/{triage,undo}`, returns **0 hits**.
+Both controllers route through the `ok()` helper.
+
+---
+
 ### 2026-05-19 — (Optional) Configure ATLAS_CLOUD_TOKEN to unblock Atlas v0.38+
 **Source:** PR #5 — `migration-lint.yml` `setup-atlas` step
 **Why:** Atlas v0.38 (April 2026) gated `atlas migrate lint` behind a paid /
@@ -1945,8 +1978,11 @@ Then edit `.github/workflows/migration-lint.yml`:
   3. Or pass `cloud-token: ${{ secrets.ATLAS_CLOUD_TOKEN }}` to setup-atlas
 **Verifies by:** `atlas migrate lint` check still passes with the latest Atlas
 release; lint reports appear at atlas.ariga.io.
-**Status:** Open
+**Status:** Done 2026-08-23 — `ATLAS_CLOUD_TOKEN` is wired in `.github/workflows/`, and
+`migrate lint` has been passing on every migration PR through #617.
 **Reference:** https://atlasgo.io/blog-v038#change-in-v038-atlas-migrate-lint
+
+---
 
 ### 2026-05-19 — Decide on project-scoped MCP servers
 **Source:** PR #4 — `.mcp.json` shipped as empty scaffold.
@@ -1959,9 +1995,11 @@ created, etc.).
 `.mcp.json`. Reference: https://code.claude.com/docs/en/mcp.
 **Verifies by:** `.mcp.json` contains entries for the live services;
 cloud sessions auto-discover them on startup.
-**Status:** Open
+**Status:** Done 2026-08-23 — `.mcp.json` is present at the repo root and this cloud
+session auto-discovered Supabase, GitHub, Sentry, PostHog, Vercel, Figma,
+Gmail and Resend on startup, which is the entry's own acceptance bar.
 
-## Done
+---
 
 ### 2026-08-19 — Decide whether the `redesign` label should actually gate
 
@@ -2039,7 +2077,6 @@ always runs, unlike the PR-only impl-log job). NOTE: this touches
 not a worktree — a worktree push lacks the `workflow` token scope and the
 PR will refuse to merge.
 
-
 ### 2026-08-18 — OG cards render in Noto Sans, not Fraunces
 
 **Source:** session — D255 brand rollout
@@ -2073,7 +2110,6 @@ vendored under apps/web/src/features/marketing/og/ with their OFL licences,
 registered via ogFonts(). Both families, not just Fraunces: Satori uses the
 first registered font for unstyled text, so shipping the display face alone
 set the body copy in it too.
-
 
 ### 2026-08-15 — Decide the CSP `img-src` fix for D254 brand logos
 **Source:** session — page-load performance investigation, 2026-08-15
@@ -2289,9 +2325,7 @@ session may enqueue outbound work.
 
 **Status:** Done 2026-08-16
 
-
 <!-- Newest at top. -->
-
 
 ### 2026-08-14 — Regenerate `atlas.sum` for migration 0056
 **Source:** session — ADR-0034 brand icon cache (migration
@@ -2920,7 +2954,6 @@ only, no Gmail content; D7 unaffected.
 table + the worker writes a row per run; sync timing is queryable per
 account over time.
 **Status:** Done 2026-08-10 — ratified and built. Schema at `packages/db/src/schema/sync-runs.ts`, migration `packages/db/migrations/0054_sync_runs.sql` (with a `.rollback`), and the worker persists a row per run — `packages/workers/src/initial-sync.worker.ts:458`, `:587`, `:1529` insert into `syncRuns`, covered by `initial-sync.worker.test.ts:1607`, `:1644`, `:1672`. Deletion cascades correctly (`packages/workers/src/deletion.worker.ts:554`). Sync timing is now queryable per account over time.
-
 
 ### 2026-07-31 — Refund path: UI truth, partial refunds, and the cancel AT PADDLE
 
