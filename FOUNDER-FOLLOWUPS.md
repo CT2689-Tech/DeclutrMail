@@ -24,6 +24,71 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-22 — Supabase compute tier looks undersized for the read path
+
+**Source:** session — production profiling of the `/api/senders` latency report
+**Why:** After vacuuming (PR #617), a plain `select count(*) from
+mail_messages` — 137 MB, reported by Postgres as 100% cache hits, zero
+heap fetches — still takes ~10 s via sequential scan, about 14 MB/s.
+Normal in-memory scan throughput is 1–5 GB/s. Pure computation on the
+same box is fine (`select count(*) from generate_series(1,5000000)` runs
+in 1.0–1.2 s, ~4.8M rows/sec), so this is not general CPU starvation:
+pages Postgres believes are in `shared_buffers` are being served at
+disk-like latency. The instance reports `shared_buffers` 224 MB,
+`work_mem` 2.1 MB, `max_parallel_workers` 2, `max_connections` 60 —
+Micro-class, ~1 GB RAM, against a working set of ~300 MB.
+
+This is the ceiling under every other fix. The query work in #617 cuts
+buffer reads roughly in half; halving a 570 µs-per-page cost still
+leaves a slow page.
+
+**How:** Supabase dashboard → project `declutrmail-prod`
+(`hewwqjkvrngxbihciewr`) → Settings → Compute and Disk → raise the
+compute size one or two steps, then restart. It is a slider and it is
+reversible; the dashboard shows the exact monthly price before you
+confirm. Consider also co-locating: the API is Cloud Run `us-central1`
+while this project is AWS `us-west-2`.
+**Verifies by:** re-run `explain (analyze, buffers) select count(*) from
+mail_messages` with `enable_indexonlyscan=off`. Today it is ~10 s for
+17,515 buffers. If the tier is the constraint, that should drop to well
+under a second at the same buffer count.
+**Status:** Open
+
+### 2026-08-22 — Narrowing the mailbox lock around incremental sync needs sign-off
+
+**Source:** session — subagent audit of `pg_advisory_lock` (26.5 h of accumulated wait, 7.8 s mean, 120 s max)
+**Why:** `IncrementalSyncWorker` holds the per-mailbox advisory lock
+across the ENTIRE `incrementalSync.run(job)` — Gmail `history.list`
+paging, per-message `messages.get`, and the post-pass — at BullMQ
+concurrency 20 (`apps/api/src/worker.ts:721`). The post-pass mutates
+only derived DeclutrMail tables and is already idempotent and
+mailbox-scoped, so it does not need the mutex that exists to serialize
+GMAIL mutations (D226). Wait time is ~2x hold time, the signature of a
+serialized queue rather than a leak.
+
+Two related items found in the same audit, both smaller:
+- `lockPg` is sized `max: 10` while real peak demand across the five
+  lock-taking consumers is 37. postgres.js `reserve()` queues unbounded
+  with no timeout, and that wait happens BEFORE the 45 s `lock_timeout`
+  is set — so it is an unbounded stall that logs nothing and never
+  appears in `pg_stat_statements`.
+- `perMailboxPolicy.timeoutMs` is still `null`
+  (`packages/workers/src/worker-policies.ts:67`), so nothing bounds how
+  long the lock is HELD — consistent with the recorded 120 s max.
+
+**Why this needs you rather than a PR:** narrowing the lock changes
+which concurrent Gmail history deltas are serialized for one mailbox.
+BullMQ's `jobId` dedup keys on `(mailbox, endHistoryId)` and does NOT
+serialize different historyIds, so the history-apply must stay inside
+the lock. That is CLAUDE.md §9 territory (destructive-action
+serialization) and wants a real multi-push smoke, not green tests.
+**How:** decide whether to scope this as its own PR with a founder-run
+smoke across two rapid Gmail pushes on the same mailbox.
+**Verifies by:** `pg_stat_statements` mean for
+`SELECT pg_advisory_lock($1, hashtext($2))` falls from 7.8 s to
+sub-second at comparable call volume.
+**Status:** Open
+
 ### 2026-08-18 — Production browser errors are tagged `release: local-dev`
 
 **Source:** session — Sentry cross-check of the `/senders` console report
