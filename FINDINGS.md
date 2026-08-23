@@ -11,8 +11,6 @@ finding is **an open question about the product or the code** — it has no
 verdict yet. Once it has one, it either becomes work (PR / D-candidate),
 a followup (founder's hands), or a documented no.
 
----
-
 ## How to use this
 
 **Founder:** say `/ct-finding <what you saw>` in any session. Nothing to format,
@@ -42,8 +40,6 @@ the point.
 ### Status
 
 `Open` → `In progress (#PR)` → `Done YYYY-MM-DD` or `Won't do YYYY-MM-DD + reason`
-
----
 
 ## Inbox (untriaged)
 
@@ -152,9 +148,123 @@ the point.
   but any Archive/Delete/Unsubscribe there still changes the real mailbox.
   _(via Codex)_
 
+## P0 — launch blockers
+
+_None open._ The five that stood here — F008, F009, F010, F011, F012 — were
+all resolved on 2026-08-19 by #566, #572 and #583, but their status lines were
+never flipped; the entries moved to **Done** on 2026-08-23 after the code was
+re-verified against each one. F010 left a residue in production data, tracked
+as **F013** below.
+
 ---
 
-## P0 — launch blockers
+## P1 — launch week
+
+### F013 — 135 senders are still Protected on a rule the product retired
+
+**Found:** 2026-08-23 · session sweep, while verifying F010 was closed
+**Observed:** F010's counter was fixed and its migration backfilled, but
+nothing revokes a protection the old rule already granted. Measured in
+production 2026-08-23: **703** senders carry `protection_reason = 'replied'`,
+of which **135 no longer qualify** under the shipped `wrote_to_count >= 3`
+rule. `user_defined` protections: **0** — so every one of these is
+sweep-authored, not a user's own choice.
+
+**Verdict — a real residue, and it fails safe.** `applyAutomaticProtection`
+demotes exactly one reason, `gmail_important`, and only when the sender has
+left Gmail's Primary category
+([automatic-protection.ts:46-61](packages/workers/src/automatic-protection.ts:46)).
+A `replied` row has no such path, and the INSERT's `ON CONFLICT DO UPDATE` is
+guarded `WHERE is_protected = false AND protection_reason IS NULL`, so it
+never revisits a row that is already protected. Migration 0063 backfilled
+`senders.wrote_to_count` and deliberately touched no policy row.
+
+The direction matters. A wrongly-Protected sender is EXCLUDED from bulk and
+automatic cleanup (D245), so the failure is the product being too
+conservative on 135 senders — not mail moving that should not have moved.
+Nothing is at risk; a cleanup the user expects simply is not offered.
+
+**Scope is historical, not ongoing.** New protections are granted under the
+corrected rule, so a mailbox synced today cannot acquire a phantom one. All
+135 predate 0063.
+
+**Options.** (a) A one-shot demotion sweep for `replied` rows failing the
+current rule, with reason and `set_at` set NULL so they re-qualify under any
+live signal — the same shape the `gmail_important` reconcile already uses.
+(b) Generalise that reconcile to re-evaluate every sweep-authored reason on
+each pass, fixing the class rather than the instance. (c) Leave them —
+re-protecting is one click and nothing is unsafe.
+
+**Recommendation:** (b), with (a) as its backfill. The demotion sweep already
+exists and covers one reason out of three, which is the same shape of gap
+that produced this finding.
+
+**Priority:** P1 — it touches automatic protection on production data
+(CLAUDE.md §9), and it fails conservative rather than destructive.
+**Status:** Open
+
+---
+
+## P2 — backlog
+
+### F003 — `apps/api` sourcemaps are not uploaded; worker stack frames read `<unknown>`
+
+**Found:** 2026-08-06 · during the sync-incident diagnosis
+**Observed:** Sentry shows worker failures with `<unknown>` frames, so a
+terminal error arrives as a bare class name with no location.
+
+**Verdict.** Half of this was closed by adding `errorReason` to
+`WorkerFailureContext`
+([worker-observer.ts:48](packages/workers/src/worker-observer.ts:48)) — the
+provider's machine-readable reason now rides along without widening what can
+leak under D7. The other half — actual sourcemap upload in the API deploy —
+is untouched. It cannot be verified without a deploy, so it was deliberately
+excluded from PR #471/#472 rather than stubbed.
+
+**Priority:** P2
+**Status:** Open
+
+## P3 — ideas (need evidence)
+
+### F001 — Onboarding step 4 goal picker is single-select; should it be multi?
+
+**Found:** 2026-08-06 · `/onboarding` step 4 of 5 (`choose_preset`)
+**Observed:** "What would help most right now?" offers three cards — Reduce
+newsletters / Protect important senders / Clear old promotions — and only one
+can be chosen. Multi-select might fit the question better.
+
+**Verdict — the selection model is load-bearing, so multi-select is not a
+free widening.** The goal is not a filter. It selects one of three **sort
+orderings** for the five pinned first-triage rows
+([onboarding.service.ts:286](apps/api/src/onboarding/onboarding.service.ts:286)),
+each a different tie-breaker chain:
+
+- `reduce_newsletters` → unsubscribe-verdict, then promotions, then _low_ read rate
+- `clear_old_promotions` → promotions ∧ cleanup-verdict, then confidence
+- `protect_important` → keep/protected first, then _high_ read rate
+
+Two of these sort read-rate in **opposite directions**, and
+`protect_important` does not even draw from the same pool — the other two
+filter to `eligible` (non-keep, unprotected), while it ranks the full queue.
+Selecting two goals has no defined meaning; you would have to invent a merge
+rule, and any merge dilutes the one thing this screen is for: making the
+first five rows feel obviously right.
+
+The observation still points at something real, though — the **copy invites
+multi-select** it cannot honor. "What would help most right now?" reads like
+a checklist prompt. A single-choice framing ("Where should we start?") plus
+card affordances that read as radio-style would remove the doubt without
+touching the model.
+
+Real answer needs data: does `activation_goal_selected` distribution show
+users bouncing between cards before committing? Nothing to measure yet — no
+users.
+
+**Priority:** P3 — revisit with onboarding funnel data. The copy tweak is a
+separable P2 if it keeps nagging.
+**Status:** Open
+
+## Done
 
 ### F011 — Search says "no senders match" when the sender exists and the app's own dropdown just showed it
 
@@ -199,7 +309,11 @@ fixes the lie and the dead end without changing what a filter means.
 
 **Priority:** P0 — the primary way a user looks anything up, on the surface
 the founder was using to verify the product's own numbers.
-**Status:** Open
+**Status:** Done 2026-08-23 — shipped in #583 (`21ee2df`), as recommendation (b). The
+empty state now names which thing found nothing — `No senders match "X" under
+these filters` — and offers a widen that PRESERVES the query
+([senders-screen.tsx:2406,2462](apps/web/src/features/senders/senders-screen.tsx:2406)).
+Regression tests at `senders-screen.test.tsx:512-585`.
 
 ---
 
@@ -264,7 +378,13 @@ Gmail data inventory, so both need ratification.
 
 **Priority:** P0 — the engagement signal underneath the cleanup ranking is
 27.5% manufactured on a real mailbox.
-**Status:** Open
+**Status:** Done 2026-08-23 — shipped in #583 (`21ee2df`). Migration 0064 records each
+mailbox's labels with a `sweeper_vendor` mapping; `readRate` now excludes
+sweeper-marked mail and discloses the split
+([senders.types.ts:197-205](apps/api/src/senders/senders.types.ts:197),
+[senders.read-service.ts:252](apps/api/src/senders/senders.read-service.ts:252)).
+Tests at `senders.read-service.spec.ts:1710` (exclusion) and `:1782` (exact
+no-op on a mailbox with no sweeper labels).
 
 ---
 
@@ -352,7 +472,76 @@ change.
 
 **Priority:** P0 — a safety mechanism firing on fabricated evidence, on the
 same surface as F008.
-**Status:** Open
+**Status:** Done 2026-08-23 for the COUNTER, shipped in #572 (`cd690ab`). Migration 0063
+adds `senders.wrote_to_count`, credited only when the sender's address is in
+an outbound message's To/Cc, and automatic protection now reads
+`wrote_to_count >= 3 AND has inbound`
+([automatic-protection.ts:106](packages/workers/src/automatic-protection.ts:106)).
+
+**The protections already granted were never revoked — that half is open as
+F013.** Measured in production 2026-08-23: 135 senders still carry a
+`replied` protection they no longer qualify for.
+
+---
+
+### F009 — `sender_timeseries.read_count` is frozen at index time and feeds Unsubscribe recommendations through a `null → 0` coercion
+
+**Found:** 2026-08-18 · while triaging F008 (not observed by the founder)
+**Observed:** The recommendation scorer does not use F008's live
+`mail_messages` path. It sums `sender_timeseries.read_count` over 90 days
+([score.worker.ts:567-585](packages/workers/src/score.worker.ts:567),
+[autopilot-signals.ts:137-191](packages/workers/src/autopilot-signals.ts:137)).
+
+**Verdict — two defects compounding, and this one moves mail.**
+
+1. **The counter is write-once.** `read_count` is incremented only at
+   message-insert time
+   ([initial-sync.worker.ts:1370-1379](packages/workers/src/initial-sync.worker.ts:1370),
+   [incremental-sync.worker.ts:709-725](packages/workers/src/incremental-sync.worker.ts:709)).
+   `handleLabelChange` never touches it, and the incremental post-pass
+   reconciles `reply_count` only ([incremental-sync.worker.ts:877-900](packages/workers/src/incremental-sync.worker.ts:877)).
+   A message read _after_ it was indexed is never counted as read here.
+   **Measured:** over a 90-day window, 2,005 sender-months compared against a
+   live recount of `mail_messages` — **242 (12%) disagree**, undercounting reads
+   by 76. Unlike F008's tile, this cannot self-heal from a live query.
+
+   **Reproduced live, 2026-08-18 22:49.** A single etherscan message was read in
+   Gmail; the incremental worker applied the label change and flipped
+   `mail_messages.is_unread` within seconds. In the same instant the live 30-day
+   aggregate moved `0/9 → 1/9`, while `sender_timeseries` for `2026-08` stayed at
+   `volume 9, read_count 0`. One state change, two readers, one of them wrong —
+   and the wrong one is the reader that feeds the Unsubscribe cascade.
+
+2. **Unknown is coerced to a measured zero.** Both call sites do
+   `volume > 0 ? reads / volume : 0`
+   ([score.worker.ts:585](packages/workers/src/score.worker.ts:585),
+   [autopilot-signals.ts:191](packages/workers/src/autopilot-signals.ts:191)),
+   which feeds `readRate90d < 0.2 → +0.15` and `< 0.05 → +0.10` toward
+   Unsubscribe ([score-cascade.ts:357-358](packages/workers/src/score-cascade.ts:357)).
+   A sender with no timeseries row scores as "never read" and gets pushed
+   toward Unsubscribe on evidence that was never gathered.
+
+This is the textbook `null → 0` form of the UI-truth class — the exact one
+F008's display path correctly avoids — except here it does not merely display a
+wrong number, it **recommends a destructive verb from one**.
+
+**Recommendation.** Make the 90-day read rate `number | null` end to end and
+let a null abstain from the cascade rather than score as zero. Separately,
+either reconcile `read_count` in `handleLabelChange` or drop the counter and
+read the same live `mail_messages` aggregate the tile already uses — a stored
+counter that no code path can correct is not worth its drift.
+
+**Priority:** P0 — a destructive recommendation derived from a fabricated
+signal. Higher real severity than F008, which only misreports.
+**Status:** Done 2026-08-23 — shipped in #566 (`d8b0468`).
+[`reconcileSenderTimeseries`](packages/workers/src/sender-timeseries-reconcile.ts:109)
+recomputes `volume` / `read_count` from `mail_messages` instead of
+accumulating them at insert time, and runs in the incremental-sync post-pass
+whenever a label change or delete lands
+([incremental-sync.worker.ts:587,1104](packages/workers/src/incremental-sync.worker.ts:587)).
+[autopilot-signals.ts:137](packages/workers/src/autopilot-signals.ts:137)
+confirms the recommendation path now reads decontaminated counts. Dedicated
+test file: `sender-timeseries-reconcile.test.ts`.
 
 ---
 
@@ -455,64 +644,90 @@ disagrees. Fix the pre-multiply rounding in the same PR.
 mail, on the primary surface, found by the founder inside five minutes of real
 use. Same defect class as the documented UI-truth bug, in its _label_ form
 rather than its `null → 0` form.
-**Status:** Open
+**Status:** Done 2026-08-23 — shipped in #566 (`d8b0468`). The word "Never" is gone and
+[fact-language.tsx:96-101](apps/web/src/features/senders/fact-language.tsx:96)
+records why; the column header reads `Read 90d` (`sender-table.tsx:164`) and
+the tile discloses its window as `of last 90d` (`sender-row-detail.tsx:170`).
+The window is now stated wherever the ratio is, so the label matches the
+arithmetic. Regression test at `sender-table.test.tsx:283`.
 
 ---
 
-### F009 — `sender_timeseries.read_count` is frozen at index time and feeds Unsubscribe recommendations through a `null → 0` coercion
+### F007 — The hamburger's inline `display` outranks its media query, so every desktop session can open a duplicate sidebar over the real one
 
-**Found:** 2026-08-18 · while triaging F008 (not observed by the founder)
-**Observed:** The recommendation scorer does not use F008's live
-`mail_messages` path. It sums `sender_timeseries.read_count` over 90 days
-([score.worker.ts:567-585](packages/workers/src/score.worker.ts:567),
-[autopilot-signals.ts:137-191](packages/workers/src/autopilot-signals.ts:137)).
+**Found:** 2026-08-18 · app shell top bar, every authed route
+**Observed (founder, verbatim):** _"hamburger menu seems like buggy"_
 
-**Verdict — two defects compounding, and this one moves mail.**
+**Verdict — real, one line, and shipped since 2026-07-14.**
 
-1. **The counter is write-once.** `read_count` is incremented only at
-   message-insert time
-   ([initial-sync.worker.ts:1370-1379](packages/workers/src/initial-sync.worker.ts:1370),
-   [incremental-sync.worker.ts:709-725](packages/workers/src/incremental-sync.worker.ts:709)).
-   `handleLabelChange` never touches it, and the incremental post-pass
-   reconciles `reply_count` only ([incremental-sync.worker.ts:877-900](packages/workers/src/incremental-sync.worker.ts:877)).
-   A message read _after_ it was indexed is never counted as read here.
-   **Measured:** over a 90-day window, 2,005 sender-months compared against a
-   live recount of `mail_messages` — **242 (12%) disagree**, undercounting reads
-   by 76. Unlike F008's tile, this cannot self-heal from a live query.
+`tokens.css` hides the hamburger above the 900px breakpoint and shows it below
+— correctly:
 
-   **Reproduced live, 2026-08-18 22:49.** A single etherscan message was read in
-   Gmail; the incremental worker applied the label change and flipped
-   `mail_messages.is_unread` within seconds. In the same instant the live 30-day
-   aggregate moved `0/9 → 1/9`, while `sender_timeseries` for `2026-08` stayed at
-   `volume 9, read_count 0`. One state change, two readers, one of them wrong —
-   and the wrong one is the reader that feeds the Unsubscribe cascade.
+```
+.dm-topbar-hamburger { display: none; }                       /* tokens.css:367 */
+@media (max-width: 900px) { .dm-topbar-hamburger { display: inline-flex; } }  /* :380 */
+```
 
-2. **Unknown is coerced to a measured zero.** Both call sites do
-   `volume > 0 ? reads / volume : 0`
-   ([score.worker.ts:585](packages/workers/src/score.worker.ts:585),
-   [autopilot-signals.ts:191](packages/workers/src/autopilot-signals.ts:191)),
-   which feeds `readRate90d < 0.2 → +0.15` and `< 0.05 → +0.10` toward
-   Unsubscribe ([score-cascade.ts:357-358](packages/workers/src/score-cascade.ts:357)).
-   A sender with no timeseries row scores as "never read" and gets pushed
-   toward Unsubscribe on evidence that was never gathered.
+But the button carries `display: 'inline-flex'` as an **inline style**
+([app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185)). A style
+attribute outranks any non-`!important` author rule, so the `display: none`
+never applies and **the hamburger renders at every width**, including the
+~2000px viewport in the screenshot.
 
-This is the textbook `null → 0` form of the UI-truth class — the exact one
-F008's display path correctly avoids — except here it does not merely display a
-wrong number, it **recommends a destructive verb from one**.
+**What clicking it does — and why it looks like nothing happened.** There are
+two separate sidebar instances. The desktop one
+([app-shell.tsx:99-101](packages/shared/src/shell/app-shell.tsx:99)) does not
+read `drawerOpen` at all. The mobile one
+([app-shell.tsx:105-147](packages/shared/src/shell/app-shell.tsx:105)) mounts a
+**second `<Sidebar>`** in a `role="dialog" aria-modal="true"` fixed at
+`left: 0`, same 220px width. On desktop it lands pixel-aligned on top of the
+sidebar that was already there — identical nav, identical position. The only
+visible deltas are the ✕ and a 34% scrim. That is exactly screenshot 3; the ✕
+is not leaking into the sidebar, it belongs to the duplicate sitting on it.
 
-**Recommendation.** Make the 90-day read rate `number | null` end to end and
-let a null abstain from the cascade rather than score as zero. Separately,
-either reconcile `read_count` in `handleLabelChange` or drop the counter and
-read the same live `mail_messages` aggregate the tile already uses — a stored
-counter that no code path can correct is not worth its drift.
+**It is also a live a11y defect.** `useFocusTrap`
+([app-shell.tsx:59](packages/shared/src/shell/app-shell.tsx:59)) is active, over
+a background that is never `inert`/`aria-hidden`, and while open the page
+carries two `<nav aria-label="Product navigation">` landmarks plus duplicated
+element ids referenced by `aria-labelledby`
+([sidebar.tsx:130-133](packages/shared/src/shell/sidebar.tsx:130)).
 
-**Priority:** P0 — a destructive recommendation derived from a fabricated
-signal. Higher real severity than F008, which only misreports.
-**Status:** Open
+**Regression, precisely located.** `git log -L 170,195` on the shell shows two
+touches. The original had no `display`. Commit `e0295e38` ("feat: launch public
+product experience", #325, 2026-07-14) replaced `padding` with a 44px
+touch-target block and brought `display: 'inline-flex'` along to centre the SVG.
+Live for 35 days. The file documents this exact trap 25 lines lower, for the
+trust strip: _"`display` lives in tokens.css, not here: an inline style would
+outrank the phone-width media query"_
+([app-shell.tsx:210-212](packages/shared/src/shell/app-shell.tsx:210)) — the
+hamburger was simply missed.
+
+**Why nothing caught it.** No Storybook story exists for `AppShell` or
+`Sidebar`. [app-shell.test.tsx:14-27](apps/web/src/features/shell/app-shell.test.tsx:14)
+opens the drawer and asserts the trap in **jsdom, where `tokens.css` never
+loads**, so it passes identically either way — and it asserts the 44px size that
+motivated the bad line. Playwright runs desktop and mobile projects and asserts
+the trust strip in both directions, but never asserts anything about the
+hamburger.
+
+**Recommendation.** Delete `display: 'inline-flex'` from
+[app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185) and let
+`tokens.css` own it; `alignItems` / `justifyContent` can stay inline (inert when
+the box is not flex). Then add the both-directions assertion to
+`packages/e2e/specs/a11y-smoke.spec.ts` beside the existing trust-strip check —
+the jsdom test structurally cannot catch this class, so without the e2e pin it
+will regress again.
+
+**Priority:** P1 — a visibly broken control in the chrome of every authed
+desktop page, plus an active focus trap, against a one-line fix.
+**Status:** Done 2026-08-23 — shipped in #566 (`d8b0468`). The inline `display` is gone
+from the hamburger button; visibility lives solely in `tokens.css`, so the
+desktop breakpoint's `display: none` is no longer outranked and a desktop
+click can no longer mount a second sidebar over the real one. The regression
+window (live 2026-07-14 → 2026-08-18, introduced by #325) is recorded at
+[app-shell.tsx:210-224](packages/shared/src/shell/app-shell.tsx:210).
 
 ---
-
-## P1 — launch week
 
 ### F006 — Sender surfaces show only relative time; the absolute instant is already on the wire and thrown away
 
@@ -587,145 +802,14 @@ formatters have been duplicated instead; promoting one is optional here and
 should not be smuggled into this change.
 
 **Priority:** P1
-**Status:** Open
+**Status:** Done 2026-08-23 — shipped in #566 (`d8b0468`). Sender surfaces now render a
+real `<time dateTime=…>` carrying the absolute ISO-8601 instant beside the
+relative label —
+[sender-row-detail.tsx:605](apps/web/src/features/senders/table/sender-row-detail.tsx:605),
+`recent-messages.tsx:235`, `confirm-action-modal.tsx:1583`, and the snapshot
+lines at `senders-screen.tsx:2673,2679`.
 
 ---
-
-### F007 — The hamburger's inline `display` outranks its media query, so every desktop session can open a duplicate sidebar over the real one
-
-**Found:** 2026-08-18 · app shell top bar, every authed route
-**Observed (founder, verbatim):** _"hamburger menu seems like buggy"_
-
-**Verdict — real, one line, and shipped since 2026-07-14.**
-
-`tokens.css` hides the hamburger above the 900px breakpoint and shows it below
-— correctly:
-
-```
-.dm-topbar-hamburger { display: none; }                       /* tokens.css:367 */
-@media (max-width: 900px) { .dm-topbar-hamburger { display: inline-flex; } }  /* :380 */
-```
-
-But the button carries `display: 'inline-flex'` as an **inline style**
-([app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185)). A style
-attribute outranks any non-`!important` author rule, so the `display: none`
-never applies and **the hamburger renders at every width**, including the
-~2000px viewport in the screenshot.
-
-**What clicking it does — and why it looks like nothing happened.** There are
-two separate sidebar instances. The desktop one
-([app-shell.tsx:99-101](packages/shared/src/shell/app-shell.tsx:99)) does not
-read `drawerOpen` at all. The mobile one
-([app-shell.tsx:105-147](packages/shared/src/shell/app-shell.tsx:105)) mounts a
-**second `<Sidebar>`** in a `role="dialog" aria-modal="true"` fixed at
-`left: 0`, same 220px width. On desktop it lands pixel-aligned on top of the
-sidebar that was already there — identical nav, identical position. The only
-visible deltas are the ✕ and a 34% scrim. That is exactly screenshot 3; the ✕
-is not leaking into the sidebar, it belongs to the duplicate sitting on it.
-
-**It is also a live a11y defect.** `useFocusTrap`
-([app-shell.tsx:59](packages/shared/src/shell/app-shell.tsx:59)) is active, over
-a background that is never `inert`/`aria-hidden`, and while open the page
-carries two `<nav aria-label="Product navigation">` landmarks plus duplicated
-element ids referenced by `aria-labelledby`
-([sidebar.tsx:130-133](packages/shared/src/shell/sidebar.tsx:130)).
-
-**Regression, precisely located.** `git log -L 170,195` on the shell shows two
-touches. The original had no `display`. Commit `e0295e38` ("feat: launch public
-product experience", #325, 2026-07-14) replaced `padding` with a 44px
-touch-target block and brought `display: 'inline-flex'` along to centre the SVG.
-Live for 35 days. The file documents this exact trap 25 lines lower, for the
-trust strip: _"`display` lives in tokens.css, not here: an inline style would
-outrank the phone-width media query"_
-([app-shell.tsx:210-212](packages/shared/src/shell/app-shell.tsx:210)) — the
-hamburger was simply missed.
-
-**Why nothing caught it.** No Storybook story exists for `AppShell` or
-`Sidebar`. [app-shell.test.tsx:14-27](apps/web/src/features/shell/app-shell.test.tsx:14)
-opens the drawer and asserts the trap in **jsdom, where `tokens.css` never
-loads**, so it passes identically either way — and it asserts the 44px size that
-motivated the bad line. Playwright runs desktop and mobile projects and asserts
-the trust strip in both directions, but never asserts anything about the
-hamburger.
-
-**Recommendation.** Delete `display: 'inline-flex'` from
-[app-shell.tsx:185](packages/shared/src/shell/app-shell.tsx:185) and let
-`tokens.css` own it; `alignItems` / `justifyContent` can stay inline (inert when
-the box is not flex). Then add the both-directions assertion to
-`packages/e2e/specs/a11y-smoke.spec.ts` beside the existing trust-strip check —
-the jsdom test structurally cannot catch this class, so without the e2e pin it
-will regress again.
-
-**Priority:** P1 — a visibly broken control in the chrome of every authed
-desktop page, plus an active focus trap, against a one-line fix.
-**Status:** Open
-
----
-
-## P2 — backlog
-
-### F003 — `apps/api` sourcemaps are not uploaded; worker stack frames read `<unknown>`
-
-**Found:** 2026-08-06 · during the sync-incident diagnosis
-**Observed:** Sentry shows worker failures with `<unknown>` frames, so a
-terminal error arrives as a bare class name with no location.
-
-**Verdict.** Half of this was closed by adding `errorReason` to
-`WorkerFailureContext`
-([worker-observer.ts:48](packages/workers/src/worker-observer.ts:48)) — the
-provider's machine-readable reason now rides along without widening what can
-leak under D7. The other half — actual sourcemap upload in the API deploy —
-is untouched. It cannot be verified without a deploy, so it was deliberately
-excluded from PR #471/#472 rather than stubbed.
-
-**Priority:** P2
-**Status:** Open
-
----
-
-## P3 — ideas (need evidence)
-
-### F001 — Onboarding step 4 goal picker is single-select; should it be multi?
-
-**Found:** 2026-08-06 · `/onboarding` step 4 of 5 (`choose_preset`)
-**Observed:** "What would help most right now?" offers three cards — Reduce
-newsletters / Protect important senders / Clear old promotions — and only one
-can be chosen. Multi-select might fit the question better.
-
-**Verdict — the selection model is load-bearing, so multi-select is not a
-free widening.** The goal is not a filter. It selects one of three **sort
-orderings** for the five pinned first-triage rows
-([onboarding.service.ts:286](apps/api/src/onboarding/onboarding.service.ts:286)),
-each a different tie-breaker chain:
-
-- `reduce_newsletters` → unsubscribe-verdict, then promotions, then _low_ read rate
-- `clear_old_promotions` → promotions ∧ cleanup-verdict, then confidence
-- `protect_important` → keep/protected first, then _high_ read rate
-
-Two of these sort read-rate in **opposite directions**, and
-`protect_important` does not even draw from the same pool — the other two
-filter to `eligible` (non-keep, unprotected), while it ranks the full queue.
-Selecting two goals has no defined meaning; you would have to invent a merge
-rule, and any merge dilutes the one thing this screen is for: making the
-first five rows feel obviously right.
-
-The observation still points at something real, though — the **copy invites
-multi-select** it cannot honor. "What would help most right now?" reads like
-a checklist prompt. A single-choice framing ("Where should we start?") plus
-card affordances that read as radio-style would remove the doubt without
-touching the model.
-
-Real answer needs data: does `activation_goal_selected` distribution show
-users bouncing between cards before committing? Nothing to measure yet — no
-users.
-
-**Priority:** P3 — revisit with onboarding funnel data. The copy tweak is a
-separable P2 if it keeps nagging.
-**Status:** Open
-
----
-
-## Done
 
 ### F002 — Sync telemetry is frontend-only; PostHog cannot answer "how did that sync go?"
 
@@ -1041,8 +1125,6 @@ completion no longer traps step 5),
 [#485](https://github.com/CT2689-Tech/DeclutrMail/pull/485) (manual
 protections counted, "nothing is protected" requires all three counts zero).
 Merged, deployed, production-verified.
-
----
 
 ## Won't do
 

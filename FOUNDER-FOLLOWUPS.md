@@ -24,6 +24,49 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-23 — There is no AI-processing consent anywhere, and non-Pro subject lines already went to Anthropic
+
+**Source:** session sweep of PR #619 (`fix/d019-brief-llm-tier-filter`), plus
+production counts taken 2026-08-23
+**Why:** `BriefSnapshotWorker` selected every row in `mailbox_accounts` with no
+tier predicate, so it narrated a Brief for workspaces that cannot open one —
+`/brief` returns 402 for them. `CapabilityGuard` is a NestJS *request* guard;
+a cron has no request and no principal, so a capability enforced only as a
+controller decorator gates READING, never PRODUCING.
+
+The blast radius is small but it is not zero, and it is not all yours.
+Production today: **4 workspaces, all `free`; 4 users, of which 3 are not
+your address**; 81 rows in `brief_runs` across all 4 mailboxes, 2026-06-09 to
+2026-08-21. PR #619 confirms the LLM path (`generatedBy = "llm_haiku"`) firing
+daily back through at least 2026-08-13. So three real people's `senderName +
+senderEmail + subject + snippet` went to Anthropic for a feature none of them
+could open.
+
+**This is not a D7/D228 breach.** The envelope matches `BRIEF_AI_DISCLOSURE`
+verbatim — no bodies, no attachments, no non-allowlisted headers. The defect
+is *who*, not *what*. But it surfaces the larger gap: `aiConsent`,
+`ai_consent`, `AI_CONSENT` and `aiProcessing` return nothing across
+`apps/api/src`, `packages/shared/src` and `packages/db/src`, and
+`apps/web/src/features/consent/` is cookie-consent only. **The disclosure copy
+exists; the opt-in does not.** Shipping a privacy-positioned product with a
+third-party AI path and no consent surface is a launch-blocking posture
+question, not an engineering one.
+
+**How:** three separate calls, in this order.
+1. **Merge #619** (mergeable, clean, negative-controlled) — stops the ongoing
+   send. This one is not really a decision.
+2. **Decide whether the three affected users are told.** They are beta users
+   on a pre-launch product; there is no regulator-facing obligation you have
+   taken on yet, and the data was covered by the published disclosure. A short
+   note is the trust-positive move and costs nothing.
+3. **Decide whether AI processing needs an explicit opt-in before launch**, or
+   whether the disclosure plus tier-gating is the launch posture and consent
+   lands post-launch. If opt-in: it needs a D-number, a settings surface, and a
+   worker-side check — not a controller decorator.
+**Verifies by:** #619 merged and deployed; a decision recorded here for (2) and
+(3); if (3) is yes, a D-row in `IMPLEMENTATION-LOG.md`.
+**Status:** Open
+
 ### 2026-08-22 — Supabase compute tier looks undersized for the read path
 
 **Source:** session — production profiling of the `/api/senders` latency report
