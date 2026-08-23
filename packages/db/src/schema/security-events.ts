@@ -59,6 +59,15 @@ export const securityEvents = pgTable(
   },
   (table) => ({
     /** Time-ordered firehose. */
+    /**
+     * FK cascade index (mig 0071). Postgres does not index a foreign
+     * key for you, so without this every parent DELETE sequentially
+     * scans this table once per deleted row — the account-deletion
+     * path (D205, D216, D232).
+     */
+    workspaceIdx: index('security_events_workspace_id_idx').on(table.workspaceId),
+    userIdx: index('security_events_user_id_idx').on(table.userId),
+    reviewedByUserIdx: index('security_events_reviewed_by_user_id_idx').on(table.reviewedByUserId),
     occurredAtIdx: index('security_events_occurred_at_idx').on(table.occurredAt.desc()),
     /** "Criticals, newest first" operator view. */
     severityOccurredIdx: index('security_events_severity_occurred_idx').on(

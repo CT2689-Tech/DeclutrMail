@@ -110,6 +110,22 @@ export async function reconcileSenderTimeseries(
   tx: OutboxTx,
   mailboxAccountId: string,
 ): Promise<SenderTimeseriesReconcileResult> {
+  // Both statements below hash-aggregate every inbound row in the
+  // mailbox, and prod runs on `work_mem = 2184kB`. Measured over the 76
+  // days to 2026-08-23, statement 2 alone wrote 1,399,564 temp blocks
+  // across 1,138 calls — ~9.8 MB spilled to disk EVERY run, purely
+  // because the hash could not fit. 32 MB clears the observed high-water
+  // mark with headroom on the 1 GB instance.
+  //
+  // `set_config(..., true)`, not `SET LOCAL work_mem = ${...}`:
+  // postgres.js sends `${}` as a bind parameter and `SET` cannot take
+  // one — the server answers `syntax error at or near "$1"`, which is
+  // the defect that failed every label action from #509 (2026-08-12)
+  // until 2026-08-16. The third argument `true` is what makes it LOCAL,
+  // so the setting dies with this transaction and cannot leak onto a
+  // pooled backend.
+  await tx.execute(sql`SELECT set_config('work_mem', '32MB', true)`);
+
   // 1. Months we still hold messages for — both columns from one scan, so
   //    `read_count <= volume` cannot be violated.
   const corrected = await tx.execute(sql`

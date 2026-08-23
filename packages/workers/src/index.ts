@@ -351,6 +351,19 @@ export {
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   sendersCounterReconciliationJobOptions,
 } from './senders-counter-reconciliation.queue.js';
+export { SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
+export type {
+  SenderIndexSweepJobData,
+  SenderIndexSweepResult,
+} from './sender-index-sweep.worker.js';
+export {
+  enqueueSenderIndexSweepTick,
+  scheduledAtMinute as senderIndexSweepScheduledAtMinute,
+  SENDER_INDEX_SWEEP_INTERVAL_MS,
+  SENDER_INDEX_SWEEP_JOB,
+  SENDER_INDEX_SWEEP_QUEUE,
+  senderIndexSweepJobOptions,
+} from './sender-index-sweep.queue.js';
 export {
   deletionPendingSql,
   hasInFlightDeletion,

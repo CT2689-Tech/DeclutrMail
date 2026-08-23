@@ -2,6 +2,23 @@ import { mailMessages, senderPolicies, senders } from '@declutrmail/db';
 import { sql } from 'drizzle-orm';
 
 import type { OutboxTx } from './outbox-publisher.js';
+import { sqlTextArray } from './sql-text-array.js';
+
+/**
+ * Which senders a sweep is allowed to move.
+ *
+ * `undefined` (or an absent `senderKeys`) means the whole mailbox — the
+ * form the initial sync and the nightly sweep use, and the only form
+ * that can re-evaluate the TIME-DEPENDENT rules below.
+ *
+ * A key list narrows every pass to those senders. Nothing else in the
+ * mailbox is read or written, which turns the `sender_signals` aggregate
+ * from a full inbound scan into an index range read on
+ * `mail_messages(mailbox_account_id, sender_key, internal_date)`.
+ */
+export interface AutomaticProtectionScope {
+  senderKeys?: readonly string[];
+}
 
 /**
  * Strong, explainable signals that may automatically protect a sender.
@@ -29,11 +46,57 @@ import type { OutboxTx } from './outbox-publisher.js';
  * Read/open rate is deliberately excluded. A manual Unprotect leaves a
  * non-null reason as a memory pin, so a later sync never silently reverses
  * the user's override.
+ *
+ * ## Scope, and why the unscoped form must keep running
+ *
+ * `scope.senderKeys` narrows the sweep to the senders a Pub/Sub push
+ * actually touched. Every EVENT-DRIVEN input above is reachable that way:
+ * `wrote_to_count` moves only on a message add/delete, "has inbound"
+ * only on an add, and star / IMPORTANT / category are label state on a
+ * message whose sender the push already named.
+ *
+ * Two inputs are NOT event-driven, and a scoped sweep can never see
+ * them:
+ *
+ *   - `internal_date >= now() - interval '1 year'` on both the star and
+ *     the importance rule. A star that ages past 365 days stops
+ *     qualifying with no Gmail event to announce it.
+ *   - the same clock edge withdrawing an importance protection whose
+ *     count decays below three.
+ *
+ * So the scoped form is an OPTIMISATION LAYERED ON a full sweep, never a
+ * replacement: `SenderIndexSweepWorker` runs this unscoped nightly per
+ * mailbox and is what actually retires a stale protection. Dropping that
+ * cron would leave protections pinned to signals that expired — a
+ * sender the product claims is protected "because you starred it" when
+ * the star is two years old (D245 requires the reason be true, not just
+ * present).
  */
 export async function applyAutomaticProtection(
   tx: OutboxTx,
   mailboxAccountId: string,
+  scope?: AutomaticProtectionScope,
 ): Promise<void> {
+  const senderKeys = scope?.senderKeys;
+  if (senderKeys !== undefined && senderKeys.length === 0) {
+    // An explicit empty scope is "this push moved nobody", which is a
+    // no-op — NOT "sweep everything". Returning here keeps that
+    // distinction from depending on how Postgres reads `= ANY('{}')`.
+    return;
+  }
+  // Built once; interpolated into all three passes so they cannot drift
+  // apart on which senders they consider.
+  const scoped = senderKeys !== undefined;
+  const keyArray = scoped ? sqlTextArray(senderKeys) : null;
+  const policyScope = keyArray
+    ? sql`AND sp.${sql.identifier('sender_key')} = ANY(${keyArray})`
+    : sql``;
+  const signalScope = keyArray
+    ? sql`AND ${sql.identifier('sender_key')} = ANY(${keyArray})`
+    : sql``;
+  const senderScope = keyArray
+    ? sql`AND s.${sql.identifier('sender_key')} = ANY(${keyArray})`
+    : sql``;
   // Reconcile before escalating: an importance-only protection whose
   // sender is not (or no longer) Primary has lost its signal, so the
   // sweep withdraws it. This targets only sweep-authored rows
@@ -58,6 +121,7 @@ export async function applyAutomaticProtection(
       AND s.${sql.identifier('mailbox_account_id')} = sp.${sql.identifier('mailbox_account_id')}
       AND s.${sql.identifier('sender_key')} = sp.${sql.identifier('sender_key')}
       AND s.${sql.identifier('gmail_category')} <> 'primary'
+      ${policyScope}
   `);
   await tx.execute(sql`
     WITH sender_signals AS (
@@ -87,6 +151,7 @@ export async function applyAutomaticProtection(
       FROM ${mailMessages}
       WHERE ${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
         AND ${sql.identifier('is_outbound')} = false
+        ${signalScope}
       GROUP BY ${sql.identifier('sender_key')}
     ),
     eligible AS (
@@ -114,6 +179,7 @@ export async function applyAutomaticProtection(
       FROM ${senders} AS s
       LEFT JOIN sender_signals AS sig ON sig.sender_key = s.${sql.identifier('sender_key')}
       WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+        ${senderScope}
     )
     INSERT INTO ${senderPolicies} (
       ${sql.identifier('mailbox_account_id')},

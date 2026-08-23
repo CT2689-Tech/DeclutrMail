@@ -11,11 +11,8 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
+import type { MailboxActionLock } from './label-action.worker.js';
 import { syncMailboxLabels } from './mailbox-label-sync.js';
-import {
-  reconcileSenderTimeseries,
-  type SenderTimeseriesReconcileResult,
-} from './sender-timeseries-reconcile.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { notNeedingReconnect } from './mailbox-reconnect.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
@@ -135,6 +132,17 @@ const UNSUB_URL_REFRESH = sql.raw('EXCLUDED.last_seen_at >= senders.last_seen_at
 export interface IncrementalSyncDeps {
   db: WorkerDb;
   gmailAccess: GmailAccess;
+  /**
+   * Per-mailbox advisory lock, taken around the MUTATING half of a run
+   * only (see the LOCK BOUNDARY comment in `processJob`).
+   *
+   * REQUIRED, not optional. The composition root used to wrap the whole
+   * job in it from the outside; moving it in here is what lets the Gmail
+   * reads happen unguarded. An optional dep would let a future wiring
+   * drop the lock entirely and race a label action against a sync's
+   * mirror writes — silently, and only under load.
+   */
+  lock: MailboxActionLock;
   /**
    * Fired once per FIRST-SEEN sender (a TRUE insert into `senders`,
    * never a conflict-update). The composition root enqueues a
@@ -412,280 +420,343 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       pageToken = page.nextPageToken;
     }
 
-    // Process events in source order. Idempotent per-event so a partial
-    // failure mid-batch can be retried without double-applying earlier
-    // records.
-    let added = 0;
-    let deleted = 0;
-    let labelChanges = 0;
-    // Wrote-to attribution is scoped to senders this batch can actually
-    // move: recipients of outbound add/delete, plus first-seen inbound
-    // senders. The post-pass recomputes only those keys instead of
-    // zeroing the whole mailbox.
+    // ── LOCK BOUNDARY ────────────────────────────────────────────
+    // Everything ABOVE is a READ: the eligibility lookup, the token
+    // fetch, and Gmail's history pages. Everything BELOW mutates the
+    // local mirror. The per-mailbox advisory lock used to wrap the whole
+    // job (worker composition root, `mailboxLock.run(... incrementalSync
+    // .run(job))`), so a user's Delete queued behind this worker's Gmail
+    // network time as well as its writes — measured 5,462 ms mean
+    // `pg_advisory_lock` wait on prod 2026-08-23.
     //
-    // KEYS, NOT EMAILS. `sender_key` is sha256('v1|' || normalized_email)
-    // and `dm_normalize_email` mirrors `normalizeEmail` statement for
-    // statement (migration 0063), so `deriveSenderKey(recipient)` IS the
-    // key -- resolving addresses to keys through the database answered a
-    // question we can answer in process. The query that did it cost a
-    // full sequential scan of `senders` (measured: 1,052 shared buffers,
-    // 8,454 rows discarded, to return 1) because its two predicates sat
-    // under an OR, which no index can serve.
-    const attributionSenderKeys = new Set<string>();
-    // `getMessageMetadata` resolves `null` for BOTH "deleted between the
-    // history record and the get" and "Gmail refused to render it". Only
-    // the first is benign here: this path advances `lastHistoryId` on
-    // success, so a message skipped as unreadable is never revisited. A
-    // systemic refusal would therefore silently and permanently drop live
-    // mail while reporting a clean run — measured below, before the cursor
-    // moves.
-    const unreadableBefore = client.unreadableMessageCount ?? 0;
-    let addAttempts = 0;
-    for (const ev of events) {
-      switch (ev.kind) {
-        case 'added': {
-          addAttempts += 1;
-          const add = await this.handleMessageAdded(mailboxAccountId, ev.messageId, client);
-          if (add.inserted) {
-            added += 1;
-          }
-          if (add.firstSeenSenderKey) {
-            attributionSenderKeys.add(add.firstSeenSenderKey);
-          }
-          if (add.outboundRecipients) {
-            for (const email of add.outboundRecipients) {
-              attributionSenderKeys.add(deriveSenderKey(email));
+    // Reading history outside the lock is safe because Gmail's history is
+    // an append-only log and THE CURSOR ONLY ADVANCES AT THE END of the
+    // guarded section below. A label action committing to Gmail while we
+    // page either lands in this page or is still ahead of
+    // `startHistoryId`, so the next push replays it. The failure mode of
+    // reading early is a redelivery, and every handler here is already
+    // idempotent for exactly that reason.
+    return await this.deps.lock.run(mailboxAccountId, async () => {
+      // Process events in source order. Idempotent per-event so a partial
+      // failure mid-batch can be retried without double-applying earlier
+      // records.
+      let added = 0;
+      let deleted = 0;
+      let labelChanges = 0;
+      // Wrote-to attribution is scoped to senders this batch can actually
+      // move: recipients of outbound add/delete, plus first-seen inbound
+      // senders. The post-pass recomputes only those keys instead of
+      // zeroing the whole mailbox.
+      //
+      // KEYS, NOT EMAILS. `sender_key` is sha256('v1|' || normalized_email)
+      // and `dm_normalize_email` mirrors `normalizeEmail` statement for
+      // statement (migration 0063), so `deriveSenderKey(recipient)` IS the
+      // key -- resolving addresses to keys through the database answered a
+      // question we can answer in process. The query that did it cost a
+      // full sequential scan of `senders` (measured: 1,052 shared buffers,
+      // 8,454 rows discarded, to return 1) because its two predicates sat
+      // under an OR, which no index can serve.
+      const attributionSenderKeys = new Set<string>();
+      // EVERY sender this batch touched, by any event kind — a superset of
+      // `attributionSenderKeys`, which is narrower on purpose (only the
+      // senders whose `wrote_to_count` can move).
+      //
+      // This is the scope for auto-protection. Measured on prod
+      // 2026-08-23, the unscoped sweep read 95,090 rows / 17,918 buffers
+      // in 5,984 ms on the founder's 100k-message mailbox — per Pub/Sub
+      // push, 362 pushes a day, all of it inside the per-mailbox advisory
+      // lock that user Deletes queue behind. A push typically names one
+      // sender.
+      //
+      // Every EVENT-DRIVEN protection input is reachable from this set;
+      // the two CLOCK-driven ones are not, and are why the nightly
+      // unscoped sweep exists — see `applyAutomaticProtection`.
+      const touchedSenderKeys = new Set<string>();
+      // `getMessageMetadata` resolves `null` for BOTH "deleted between the
+      // history record and the get" and "Gmail refused to render it". Only
+      // the first is benign here: this path advances `lastHistoryId` on
+      // success, so a message skipped as unreadable is never revisited. A
+      // systemic refusal would therefore silently and permanently drop live
+      // mail while reporting a clean run — measured below, before the cursor
+      // moves.
+      const unreadableBefore = client.unreadableMessageCount ?? 0;
+      let addAttempts = 0;
+      for (const ev of events) {
+        switch (ev.kind) {
+          case 'added': {
+            addAttempts += 1;
+            const add = await this.handleMessageAdded(mailboxAccountId, ev.messageId, client);
+            if (add.inserted) {
+              added += 1;
             }
-          }
-          break;
-        }
-        case 'deleted': {
-          const removed = await this.handleMessageDeleted(mailboxAccountId, ev.messageId);
-          if (removed.deleted) {
-            deleted += 1;
-          }
-          if (removed.outboundRecipients) {
-            for (const email of removed.outboundRecipients) {
-              attributionSenderKeys.add(deriveSenderKey(email));
+            if (add.firstSeenSenderKey) {
+              attributionSenderKeys.add(add.firstSeenSenderKey);
             }
+            if (add.touchedSenderKey) {
+              touchedSenderKeys.add(add.touchedSenderKey);
+            }
+            if (add.outboundRecipients) {
+              for (const email of add.outboundRecipients) {
+                const key = deriveSenderKey(email);
+                attributionSenderKeys.add(key);
+                // An outbound recipient's `wrote_to_count` moves, which is
+                // the first input to the `replied` rule — so they are
+                // touched for protection purposes too, not just attribution.
+                touchedSenderKeys.add(key);
+              }
+            }
+            break;
           }
-          break;
-        }
-        case 'labels_added': {
-          if (await this.handleLabelChange(mailboxAccountId, ev.messageId, ev.labelIds, true)) {
-            labelChanges += 1;
+          case 'deleted': {
+            const removed = await this.handleMessageDeleted(mailboxAccountId, ev.messageId);
+            if (removed.deleted) {
+              deleted += 1;
+            }
+            if (removed.touchedSenderKey) {
+              touchedSenderKeys.add(removed.touchedSenderKey);
+            }
+            if (removed.outboundRecipients) {
+              for (const email of removed.outboundRecipients) {
+                const key = deriveSenderKey(email);
+                attributionSenderKeys.add(key);
+                touchedSenderKeys.add(key);
+              }
+            }
+            break;
           }
-          break;
-        }
-        case 'labels_removed': {
-          if (await this.handleLabelChange(mailboxAccountId, ev.messageId, ev.labelIds, false)) {
-            labelChanges += 1;
-          }
-          break;
-        }
-        default: {
-          // WARN AND CONTINUE, never throw. `_exhaustive` keeps the
-          // compile-time guarantee; a runtime throw here would abort the
-          // batch BEFORE the cursor advance, and since every retry
-          // replays the same record the mailbox would stop syncing
-          // permanently -- a hard outage in place of one skipped record.
-          // `GmailHistoryRecord` is explicitly a normalisation of Gmail's
-          // wire shape, so a fifth kind is a live possibility, and this
-          // file's posture for unexpected input everywhere else is
-          // measure-and-continue.
-          const _exhaustive: never = ev;
-          console.warn(
-            JSON.stringify({
-              level: 'warn',
-              kind: 'incremental_sync.unknown_history_kind',
-              worker: this.workerName,
+          case 'labels_added': {
+            const change = await this.handleLabelChange(
               mailboxAccountId,
-              record: JSON.stringify(_exhaustive),
-            }),
-          );
-          break;
+              ev.messageId,
+              ev.labelIds,
+              true,
+            );
+            if (change.matched) {
+              labelChanges += 1;
+            }
+            if (change.senderKey) {
+              touchedSenderKeys.add(change.senderKey);
+            }
+            break;
+          }
+          case 'labels_removed': {
+            const change = await this.handleLabelChange(
+              mailboxAccountId,
+              ev.messageId,
+              ev.labelIds,
+              false,
+            );
+            if (change.matched) {
+              labelChanges += 1;
+            }
+            if (change.senderKey) {
+              touchedSenderKeys.add(change.senderKey);
+            }
+            break;
+          }
+          default: {
+            // WARN AND CONTINUE, never throw. `_exhaustive` keeps the
+            // compile-time guarantee; a runtime throw here would abort the
+            // batch BEFORE the cursor advance, and since every retry
+            // replays the same record the mailbox would stop syncing
+            // permanently -- a hard outage in place of one skipped record.
+            // `GmailHistoryRecord` is explicitly a normalisation of Gmail's
+            // wire shape, so a fifth kind is a live possibility, and this
+            // file's posture for unexpected input everywhere else is
+            // measure-and-continue.
+            const _exhaustive: never = ev;
+            console.warn(
+              JSON.stringify({
+                level: 'warn',
+                kind: 'incremental_sync.unknown_history_kind',
+                worker: this.workerName,
+                mailboxAccountId,
+                record: JSON.stringify(_exhaustive),
+              }),
+            );
+            break;
+          }
         }
       }
-    }
 
-    // Throw BEFORE the cursor advance below: leaving `lastHistoryId` where
-    // it is means the next run replays these same records, which is exactly
-    // what should happen when we could not read most of them. Transient so
-    // the job backs off and retries rather than dead-lettering on attempt 1
-    // — a provider-side refusal is usually not permanent.
-    const unreadable = (client.unreadableMessageCount ?? 0) - unreadableBefore;
-    if (
-      unreadable >= MIN_UNREADABLE_FOR_SYSTEMIC &&
-      unreadable > addAttempts * MAX_UNREADABLE_SHARE
-    ) {
-      throw new TransientError(
-        `Gmail refused metadata for ${unreadable} of ${addAttempts} new messages — not advancing the history cursor`,
-      );
-    }
-    if (unreadable > 0) {
-      console.warn(
-        JSON.stringify({
-          level: 'warn',
-          kind: 'incremental_sync.unreadable_skipped',
-          worker: this.workerName,
-          mailboxAccountId,
-          unreadable,
-          addAttempts,
-        }),
-      );
-    }
-
-    // After the message-level deltas land, re-run the reply-attribution
-    // + auto-protect post-pass — same SQL as `buildSenderIndex`.
-    // Mailbox-scoped + idempotent.
-    //
-    // The timeseries reconcile inside it is gated SEPARATELY. It is two
-    // full-mailbox passes (aggregate every inbound row, then anti-join
-    // that set against every timeseries row), which is real work per
-    // Pub/Sub push on a 100k-message mailbox. The counters can only go
-    // stale two ways — a label flip or a tombstone — because an ADD is
-    // already counted correctly at insert time, which is this whole
-    // module's premise. So an add-only push skips it entirely and pays
-    // nothing, while every path that can actually cause drift still
-    // self-heals on the next sync.
-    //
-    // The wrote-to recompute is gated SEPARATELY TOO, on the same
-    // principle. It is the most expensive thing in this worker: measured
-    // on production 2026-08-20, the zero-first pass plus the recompute
-    // average 4.5s and 130,413 shared buffers per run — 1.0 GB of buffer
-    // traffic against a 224 MB pool, so a single run evicts the cache
-    // several times over.
-    //
-    // `wrote_to_count` counts DISTINCT OUTBOUND messages whose
-    // `recipient_emails` match a sender. Exactly two things can move that
-    // number: a message appearing or disappearing (which may be outbound,
-    // or may create a sender row that matches outbound mail we already
-    // hold), or a sender row arriving — and sender rows are only ever
-    // created by `handleMessageAdded`. A LABEL CHANGE CANNOT MOVE IT: it
-    // rewrites `label_ids` / `is_unread` and touches neither
-    // `recipient_emails`, `is_outbound`, nor the `senders` table.
-    // An inbound add to a sender we already know cannot move it either.
-    //
-    // When it DOES run, it is scoped to the collected keys/emails — still
-    // the same COUNT DISTINCT as 0063's backfill, just not against every
-    // sender in the mailbox. The initial-sync post-pass stays a full
-    // rebuild; this path is the per-push one.
-    //
-    // That distinction is worth a gate because label churn dominates.
-    // On the founder's mailbox a third-party sweeper relabels mail
-    // continuously (mig 0064 measured one vendor's label on 20,819 of
-    // 75,689 read messages), so most event-bearing pushes carry label
-    // changes and nothing else — and every one of them was paying for a
-    // full-mailbox recompute that could not change a single row.
-    //
-    // Auto-protection is deliberately NOT behind this gate: it reads
-    // starred and Gmail-important state, which ARE labels, so a
-    // label-only push can legitimately change who qualifies (D245, §2.6).
-    let timeseriesReconcile: SenderTimeseriesReconcileResult | null = null;
-    if (events.length > 0) {
-      timeseriesReconcile = await this.runWroteToAttributionPostPass(mailboxAccountId, client, {
-        reconcileTimeseries: labelChanges > 0 || deleted > 0,
-        attributionSenderKeys: [...attributionSenderKeys],
-      });
-    }
-
-    // Advance the durable cursor to Gmail's reported historyId. Only
-    // after every page processed successfully — partial advance would
-    // silently drop records the next webhook can no longer see.
-    //
-    // Monotonic guard (architecture-guardian 2026-06-05 [WARNING]):
-    // `WHERE last_history_id IS NULL OR last_history_id < $new` so a
-    // concurrent IncrementalSyncWorker job carrying an older
-    // `lastPageHistoryId` (or a concurrent InitialSyncWorker.markReady
-    // carrying its snapshot-time `historyId`) cannot regress the
-    // cursor. The webhook reads this applied cursor but never advances it;
-    // only this post-apply path may move it forward.
-    if (lastPageHistoryId !== null) {
-      const candidate = BigInt(lastPageHistoryId);
-      // Set `historyIdUpdatedAt` alongside `lastHistoryId`; otherwise the
-      // cron drift-sweep selects on
-      // `history_id_updated_at < cutoff` and keeps re-enqueuing this
-      // mailbox even though we just advanced the cursor (D38).
-      //
-      // A successful run also clears any prior incremental terminal-
-      // failure marker so the FE sticky-banner surface (FOUNDER-
-      // FOLLOWUPS) drops back to a clean state without a separate
-      // recovery write.
-      const now = new Date();
-      await this.deps.db
-        .update(providerSyncState)
-        .set({
-          lastHistoryId: candidate,
-          historyIdUpdatedAt: now,
-          lastIncrementalErrorAt: null,
-          lastIncrementalErrorCode: null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(providerSyncState.mailboxAccountId, mailboxAccountId),
-            sql`(${providerSyncState.lastHistoryId} IS NULL OR ${providerSyncState.lastHistoryId} < ${candidate})`,
-          ),
+      // Throw BEFORE the cursor advance below: leaving `lastHistoryId` where
+      // it is means the next run replays these same records, which is exactly
+      // what should happen when we could not read most of them. Transient so
+      // the job backs off and retries rather than dead-lettering on attempt 1
+      // — a provider-side refusal is usually not permanent.
+      const unreadable = (client.unreadableMessageCount ?? 0) - unreadableBefore;
+      if (
+        unreadable >= MIN_UNREADABLE_FOR_SYSTEMIC &&
+        unreadable > addAttempts * MAX_UNREADABLE_SHARE
+      ) {
+        throw new TransientError(
+          `Gmail refused metadata for ${unreadable} of ${addAttempts} new messages — not advancing the history cursor`,
         );
-    }
-
-    // Delta processed → Autopilot apply trigger (D100 "on new message
-    // arrival"). Fires on recordsProcessed > 0 — NOT on the counters —
-    // so a label-only delta (read/unread flips feed the engagement
-    // signals) still sweeps. Best-effort per the `onDeltaProcessed`
-    // contract.
-    if (events.length > 0 && this.deps.onDeltaProcessed) {
-      try {
-        await this.deps.onDeltaProcessed(mailboxAccountId);
-      } catch (err) {
+      }
+      if (unreadable > 0) {
         console.warn(
           JSON.stringify({
             level: 'warn',
-            kind: 'sync.delta_callback_failed',
+            kind: 'incremental_sync.unreadable_skipped',
+            worker: this.workerName,
             mailboxAccountId,
-            error: err instanceof Error ? err.message : String(err),
+            unreadable,
+            addAttempts,
           }),
         );
       }
-    }
 
-    // Stamp `last_synced_at` on EVERY successful run — including the
-    // "nothing new" case where the cursor guard above matches no row.
-    // The Sync-now completion watch (D38/D224) compares this value
-    // against its pre-click baseline, so a no-op sync must still move
-    // it or the FE could never confirm the run finished. A success also
-    // clears any prior incremental terminal-failure marker (the guarded
-    // cursor update above only does so when the cursor ADVANCES).
-    // Kept LAST before the return so the stamp means "run finished",
-    // delta callback included.
-    await this.deps.db
-      .update(providerSyncState)
-      .set({
-        lastSyncedAt: new Date(),
-        updatedAt: new Date(),
-        lastIncrementalErrorAt: null,
-        lastIncrementalErrorCode: null,
-      })
-      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      // After the message-level deltas land, re-run the reply-attribution
+      // + auto-protect post-pass — same SQL as `buildSenderIndex`.
+      // Mailbox-scoped + idempotent.
+      //
+      // The timeseries reconcile USED TO LIVE HERE, gated on
+      // `labelChanges > 0 || deleted > 0`. It has moved to
+      // `SenderIndexSweepWorker` (nightly, per mailbox). The gate was not
+      // wrong, it was ineffective: on the founder's mailbox a third-party
+      // sweeper relabels mail continuously, so the gate was open on most
+      // pushes and each one paid two full-mailbox passes (79,552 buffers
+      // + ~9.8 MB spilled to temp, measured over 763 calls to
+      // 2026-08-23). The module is explicitly a self-healing recompute —
+      // "a mailbox whose read state went stale during worker downtime is
+      // corrected by the next sync" — so the only thing a nightly cadence
+      // changes is how long a stale counter survives, and the counters
+      // feed scoring and Autopilot, not a live user-facing number (the UI
+      // reads `mail_messages` directly).
+      //
+      // The wrote-to recompute is gated SEPARATELY TOO, on the same
+      // principle. It is the most expensive thing in this worker: measured
+      // on production 2026-08-20, the zero-first pass plus the recompute
+      // average 4.5s and 130,413 shared buffers per run — 1.0 GB of buffer
+      // traffic against a 224 MB pool, so a single run evicts the cache
+      // several times over.
+      //
+      // `wrote_to_count` counts DISTINCT OUTBOUND messages whose
+      // `recipient_emails` match a sender. Exactly two things can move that
+      // number: a message appearing or disappearing (which may be outbound,
+      // or may create a sender row that matches outbound mail we already
+      // hold), or a sender row arriving — and sender rows are only ever
+      // created by `handleMessageAdded`. A LABEL CHANGE CANNOT MOVE IT: it
+      // rewrites `label_ids` / `is_unread` and touches neither
+      // `recipient_emails`, `is_outbound`, nor the `senders` table.
+      // An inbound add to a sender we already know cannot move it either.
+      //
+      // When it DOES run, it is scoped to the collected keys/emails — still
+      // the same COUNT DISTINCT as 0063's backfill, just not against every
+      // sender in the mailbox. The initial-sync post-pass stays a full
+      // rebuild; this path is the per-push one.
+      //
+      // That distinction is worth a gate because label churn dominates.
+      // On the founder's mailbox a third-party sweeper relabels mail
+      // continuously (mig 0064 measured one vendor's label on 20,819 of
+      // 75,689 read messages), so most event-bearing pushes carry label
+      // changes and nothing else — and every one of them was paying for a
+      // full-mailbox recompute that could not change a single row.
+      //
+      // Auto-protection is deliberately NOT behind this gate: it reads
+      // starred and Gmail-important state, which ARE labels, so a
+      // label-only push can legitimately change who qualifies (D245, §2.6).
+      // It is SCOPED instead — same answer for every sender the push could
+      // have moved, at the cost of reading only those senders' mail.
+      if (events.length > 0) {
+        await this.runWroteToAttributionPostPass(mailboxAccountId, client, {
+          attributionSenderKeys: [...attributionSenderKeys],
+          protectionSenderKeys: [...touchedSenderKeys],
+        });
+      }
 
-    return {
-      recordsProcessed: events.length,
-      added,
-      deleted,
-      labelChanges,
-      cursorTooOld: false,
-      advancedToHistoryId: lastPageHistoryId,
-      ...(timeseriesReconcile !== null
-        ? {
-            timeseriesCorrected: timeseriesReconcile.corrected,
-            timeseriesZeroed: timeseriesReconcile.zeroed,
-          }
-        : {}),
-      // Only when non-zero: a skip below the systemic floor still advances
-      // the cursor, so the message is gone from the index for good. The run
-      // says so rather than reporting a clean delta it did not achieve.
-      ...(unreadable > 0 ? { unreadableSkipped: unreadable } : {}),
-    };
+      // Advance the durable cursor to Gmail's reported historyId. Only
+      // after every page processed successfully — partial advance would
+      // silently drop records the next webhook can no longer see.
+      //
+      // Monotonic guard (architecture-guardian 2026-06-05 [WARNING]):
+      // `WHERE last_history_id IS NULL OR last_history_id < $new` so a
+      // concurrent IncrementalSyncWorker job carrying an older
+      // `lastPageHistoryId` (or a concurrent InitialSyncWorker.markReady
+      // carrying its snapshot-time `historyId`) cannot regress the
+      // cursor. The webhook reads this applied cursor but never advances it;
+      // only this post-apply path may move it forward.
+      if (lastPageHistoryId !== null) {
+        const candidate = BigInt(lastPageHistoryId);
+        // Set `historyIdUpdatedAt` alongside `lastHistoryId`; otherwise the
+        // cron drift-sweep selects on
+        // `history_id_updated_at < cutoff` and keeps re-enqueuing this
+        // mailbox even though we just advanced the cursor (D38).
+        //
+        // A successful run also clears any prior incremental terminal-
+        // failure marker so the FE sticky-banner surface (FOUNDER-
+        // FOLLOWUPS) drops back to a clean state without a separate
+        // recovery write.
+        const now = new Date();
+        await this.deps.db
+          .update(providerSyncState)
+          .set({
+            lastHistoryId: candidate,
+            historyIdUpdatedAt: now,
+            lastIncrementalErrorAt: null,
+            lastIncrementalErrorCode: null,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+              sql`(${providerSyncState.lastHistoryId} IS NULL OR ${providerSyncState.lastHistoryId} < ${candidate})`,
+            ),
+          );
+      }
+
+      // Delta processed → Autopilot apply trigger (D100 "on new message
+      // arrival"). Fires on recordsProcessed > 0 — NOT on the counters —
+      // so a label-only delta (read/unread flips feed the engagement
+      // signals) still sweeps. Best-effort per the `onDeltaProcessed`
+      // contract.
+      if (events.length > 0 && this.deps.onDeltaProcessed) {
+        try {
+          await this.deps.onDeltaProcessed(mailboxAccountId);
+        } catch (err) {
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'sync.delta_callback_failed',
+              mailboxAccountId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        }
+      }
+
+      // Stamp `last_synced_at` on EVERY successful run — including the
+      // "nothing new" case where the cursor guard above matches no row.
+      // The Sync-now completion watch (D38/D224) compares this value
+      // against its pre-click baseline, so a no-op sync must still move
+      // it or the FE could never confirm the run finished. A success also
+      // clears any prior incremental terminal-failure marker (the guarded
+      // cursor update above only does so when the cursor ADVANCES).
+      // Kept LAST before the return so the stamp means "run finished",
+      // delta callback included.
+      await this.deps.db
+        .update(providerSyncState)
+        .set({
+          lastSyncedAt: new Date(),
+          updatedAt: new Date(),
+          lastIncrementalErrorAt: null,
+          lastIncrementalErrorCode: null,
+        })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+
+      return {
+        recordsProcessed: events.length,
+        added,
+        deleted,
+        labelChanges,
+        cursorTooOld: false,
+        advancedToHistoryId: lastPageHistoryId,
+        // Only when non-zero: a skip below the systemic floor still advances
+        // the cursor, so the message is gone from the index for good. The run
+        // says so rather than reporting a clean delta it did not achieve.
+        ...(unreadable > 0 ? { unreadableSkipped: unreadable } : {}),
+      };
+    });
   }
 
   /**
@@ -704,6 +775,14 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   ): Promise<{
     inserted: boolean;
     firstSeenSenderKey: string | null;
+    /**
+     * The sender this event moved, whether or not the row was new.
+     * Feeds the SCOPED auto-protect sweep — an add changes both halves
+     * of the `replied` rule and the label state the star / importance
+     * rules read, so the sender must be re-evaluated even on a
+     * redelivery that inserted nothing.
+     */
+    touchedSenderKey: string | null;
     outboundRecipients: readonly string[] | null;
   }> {
     const meta = await client.getMessageMetadata(messageId);
@@ -711,7 +790,12 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // 404 — the message was deleted between the history record and
       // the get. The `messagesDeleted` event will arrive (or already
       // did) on a later history record; nothing to write here.
-      return { inserted: false, firstSeenSenderKey: null, outboundRecipients: null };
+      return {
+        inserted: false,
+        firstSeenSenderKey: null,
+        touchedSenderKey: null,
+        outboundRecipients: null,
+      };
     }
 
     const isOutbound = meta.labelIds.includes('SENT');
@@ -888,6 +972,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     return {
       inserted: result.newlyInserted,
       firstSeenSenderKey: result.firstSeenSender ? senderKey : null,
+      touchedSenderKey: senderKey,
       outboundRecipients:
         result.newlyInserted && isOutbound && recipientEmails && recipientEmails.length > 0
           ? recipientEmails
@@ -905,7 +990,11 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   private async handleMessageDeleted(
     mailboxAccountId: string,
     messageId: string,
-  ): Promise<{ deleted: boolean; outboundRecipients: readonly string[] | null }> {
+  ): Promise<{
+    deleted: boolean;
+    touchedSenderKey: string | null;
+    outboundRecipients: readonly string[] | null;
+  }> {
     const deleted = await this.deps.db
       .delete(mailMessages)
       .where(
@@ -917,13 +1006,18 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       .returning({
         isOutbound: mailMessages.isOutbound,
         recipientEmails: mailMessages.recipientEmails,
+        // Free — the row is already being returned. Feeds the scoped
+        // auto-protect sweep: a tombstone can drop a sender below the
+        // star / importance thresholds.
+        senderKey: mailMessages.senderKey,
       });
     const row = deleted[0];
     if (!row) {
-      return { deleted: false, outboundRecipients: null };
+      return { deleted: false, touchedSenderKey: null, outboundRecipients: null };
     }
     return {
       deleted: true,
+      touchedSenderKey: row.senderKey,
       outboundRecipients:
         row.isOutbound && row.recipientEmails && row.recipientEmails.length > 0
           ? row.recipientEmails
@@ -934,19 +1028,25 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
   /**
    * Apply a `labels_added` / `labels_removed` event to an existing
    * row's `label_ids` array. Idempotent — adding a label already
-   * present (or removing one already absent) is a no-op. Returns
+   * present (or removing one already absent) is a no-op. `matched` is
    * `true` when a row matched (regardless of whether the label set
    * actually changed); `false` when the message id is absent (e.g.
    * the message was deleted between the label event and now).
+   *
+   * `senderKey` comes back on the same RETURNING clause that already
+   * proved the match — no extra query. STARRED / IMPORTANT / CATEGORY_*
+   * are exactly the labels the auto-protect rules read, so a label-only
+   * push must still re-evaluate this sender; without the key the sweep
+   * would have to fall back to the whole mailbox.
    */
   private async handleLabelChange(
     mailboxAccountId: string,
     messageId: string,
     labelIds: string[],
     add: boolean,
-  ): Promise<boolean> {
+  ): Promise<{ matched: boolean; senderKey: string | null }> {
     if (labelIds.length === 0) {
-      return false;
+      return { matched: false, senderKey: null };
     }
     // Build the inbound label set as a PG ARRAY literal — Drizzle's
     // template binds a JS string array as N positional params (the
@@ -992,8 +1092,9 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
           eq(mailMessages.providerMessageId, messageId),
         ),
       )
-      .returning({ id: mailMessages.id });
-    return result.length > 0;
+      .returning({ id: mailMessages.id, senderKey: mailMessages.senderKey });
+    const row = result[0];
+    return { matched: row !== undefined, senderKey: row?.senderKey ?? null };
   }
 
   /**
@@ -1016,15 +1117,21 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // rebuild and silently performs a no-op. Making opts required means a
     // future caller cannot get that by accident.
     opts: {
-      reconcileTimeseries: boolean;
       /**
-       * Senders this batch can move. Empty means nothing to recompute --
-       * the flag that used to say so was derivable from this and is gone.
+       * Senders whose `wrote_to_count` this batch can move. Empty means
+       * nothing to recompute -- the flag that used to say so was
+       * derivable from this and is gone.
        */
       attributionSenderKeys: readonly string[];
+      /**
+       * Senders whose PROTECTION eligibility this batch can move — a
+       * superset of `attributionSenderKeys`, because a label flip moves
+       * protection without moving any count. Empty means the batch
+       * matched no local row, so there is nobody to re-evaluate.
+       */
+      protectionSenderKeys: readonly string[];
     },
-  ): Promise<SenderTimeseriesReconcileResult | null> {
-    let reconciled: SenderTimeseriesReconcileResult | null = null;
+  ): Promise<void> {
     await this.deps.db.transaction(async (tx) => {
       // Label names BEFORE the counter reconcile: the read-rate
       // numerator excludes messages carrying a known sweeper's label
@@ -1101,12 +1208,13 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
       // `volume` / `read_count` are derived, not accumulated — a message
       // read after it was indexed arrives here as a label change, never
       // as an insert, so the insert-time counters go permanently stale.
-      if (opts.reconcileTimeseries) {
-        reconciled = await reconcileSenderTimeseries(tx, mailboxAccountId);
-      }
-      await applyAutomaticProtection(tx, mailboxAccountId);
+      // Reconciled nightly by `SenderIndexSweepWorker`, not here: the
+      // recompute is two full-mailbox passes and this method runs on
+      // every Pub/Sub push.
+      await applyAutomaticProtection(tx, mailboxAccountId, {
+        senderKeys: opts.protectionSenderKeys,
+      });
     });
-    return reconciled;
   }
 
   /**

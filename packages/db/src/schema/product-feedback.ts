@@ -82,6 +82,18 @@ export const productFeedback = pgTable(
     userFollowupUniq: uniqueIndex('product_feedback_user_followup_uniq')
       .on(table.userId, table.followupTrackerId)
       .where(sql`${table.surface} = 'followups'`),
+    /**
+     * FK cascade index (mig 0071). Postgres does not index a foreign
+     * key for you, so without this every parent DELETE sequentially
+     * scans this table once per deleted row — the account-deletion
+     * path (D205, D216, D232).
+     */
+    workspaceIdx: index('product_feedback_workspace_id_idx').on(table.workspaceId),
+    activityLogIdx: index('product_feedback_activity_log_id_idx').on(table.activityLogId),
+    briefRunIdx: index('product_feedback_brief_run_id_idx').on(table.briefRunId),
+    followupTrackerIdx: index('product_feedback_followup_tracker_id_idx').on(
+      table.followupTrackerId,
+    ),
     mailboxSurfaceCreatedIdx: index('product_feedback_mailbox_surface_created_idx').on(
       table.mailboxAccountId,
       table.surface,

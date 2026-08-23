@@ -40,6 +40,7 @@ import {
   enqueueDeadLetterTick,
   enqueueDeletionSweepTick,
   enqueueFollowupCheckTick,
+  enqueueSenderIndexSweepTick,
   enqueueSendersCounterReconciliationTick,
   enqueueSnoozeWakeTick,
   enqueueUndoExpiryTick,
@@ -64,8 +65,11 @@ import {
   SCORE_JOB,
   SCORE_QUEUE,
   ScoreWorker,
+  SENDER_INDEX_SWEEP_INTERVAL_MS,
   SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS,
+  SENDER_INDEX_SWEEP_QUEUE,
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
+  SenderIndexSweepWorker,
   SendersCounterReconciliationWorker,
   SNOOZE_WAKE_INTERVAL_MS,
   SNOOZE_WAKE_QUEUE,
@@ -127,6 +131,8 @@ import type {
   LapseReengagementResult,
   ScoreJobData,
   ScoreJobResult,
+  SenderIndexSweepJobData,
+  SenderIndexSweepResult,
   SendersCounterReconciliationJobData,
   SendersCounterReconciliationResult,
   SnoozeWakeJobData,
@@ -694,6 +700,12 @@ async function bootstrap(): Promise<void> {
   const incrementalSync = new IncrementalSyncWorker({
     db,
     gmailAccess,
+    // The lock moved INSIDE the worker (2026-08-23). It used to wrap the
+    // whole job here, which meant a user's Delete queued behind this
+    // worker's Gmail history read and token refresh as well as its
+    // writes. The worker now takes it around the mutating half only —
+    // see its LOCK BOUNDARY comment. Same lock, same key, narrower hold.
+    lock: mailboxLock,
     // First-seen sender → single-sender score job (D25 signal_change
     // trigger; D75 incremental path). The ScoreWorker's Phase-B branch
     // is what flags the sender into `screener_quarantine` — this only
@@ -718,7 +730,7 @@ async function bootstrap(): Promise<void> {
   incrementalSync.setDeadLetterRecorder(deadLetterRecorder);
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
     INCREMENTAL_SYNC_QUEUE,
-    (job) => mailboxLock.run(job.data.mailboxAccountId, () => incrementalSync.run(job)),
+    (job) => incrementalSync.run(job),
     { connection, concurrency: 20, ...userFacingTuning },
   );
   incrementalBullWorker.on('error', (err) => {
@@ -1341,6 +1353,71 @@ async function bootstrap(): Promise<void> {
     void enqueueSendersCounterReconciliation();
   }, SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS);
   sendersCounterReconciliationSchedulerHandle.unref();
+
+  /**
+   * SenderIndexSweepWorker consumer + nightly scheduler (D245, D159 —
+   * cronPolicy). The UNSCOPED half of the derived sender index: full
+   * auto-protection + full `sender_timeseries` reconcile, per mailbox.
+   *
+   * Both used to run on every Pub/Sub push inside the per-mailbox lock.
+   * The push path now runs auto-protection scoped to the senders it
+   * touched, which cannot see the two CLOCK-driven rules (a star or an
+   * IMPORTANT count ageing past a year). This sweep is what retires
+   * those, so it is load-bearing for D245's "the reason must be true",
+   * not an optimisation.
+   *
+   * Takes the same per-mailbox advisory lock as the label actions so a
+   * sweep and a sync never write each other's snapshot. concurrency 1 —
+   * it is nightly and holds a lock per mailbox.
+   */
+  const senderIndexSweepWorker = new SenderIndexSweepWorker({ db, lock: mailboxLock });
+  senderIndexSweepWorker.setObserver(observer);
+  senderIndexSweepWorker.setDeadLetterRecorder(deadLetterRecorder);
+
+  const senderIndexSweepBullWorker = new Worker<SenderIndexSweepJobData, SenderIndexSweepResult>(
+    SENDER_INDEX_SWEEP_QUEUE,
+    (job) => senderIndexSweepWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+
+  senderIndexSweepBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: SENDER_INDEX_SWEEP_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
+    SENDER_INDEX_SWEEP_QUEUE,
+    { connection },
+  );
+
+  async function enqueueSenderIndexSweep(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueSenderIndexSweepTick(senderIndexSweepSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'sender_index_sweep.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'sender_index_sweep.scheduler_failed' });
+    }
+  }
+
+  await enqueueSenderIndexSweep();
+  const senderIndexSweepSchedulerHandle = setInterval(() => {
+    void enqueueSenderIndexSweep();
+  }, SENDER_INDEX_SWEEP_INTERVAL_MS);
+  senderIndexSweepSchedulerHandle.unref();
 
   /**
    * WatchRenewalWorker consumer + scheduler (D8, D225, D229 —
@@ -2415,6 +2492,7 @@ async function bootstrap(): Promise<void> {
     clearInterval(briefSchedulerHandle);
     clearInterval(undoExpirySchedulerHandle);
     clearInterval(sendersCounterReconciliationSchedulerHandle);
+    clearInterval(senderIndexSweepSchedulerHandle);
     clearInterval(watchRenewalSchedulerHandle);
     clearInterval(incrementalDriftHandle);
     clearInterval(snoozeWakeSchedulerHandle);
@@ -2454,7 +2532,9 @@ async function bootstrap(): Promise<void> {
       await undoExpiryBullWorker.close();
       await undoExpirySchedulerQueue.close();
       await sendersCounterReconciliationBullWorker.close();
+      await senderIndexSweepBullWorker.close();
       await sendersCounterReconciliationSchedulerQueue.close();
+      await senderIndexSweepSchedulerQueue.close();
       await watchRenewalBullWorker.close();
       await watchRenewalSchedulerQueue.close();
       await emailSendBullWorker.close();
