@@ -8,7 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 const MIGRATIONS_DIR = fileURLToPath(new URL('../migrations', import.meta.url));
 
 /**
- * Every foreign key in `public` must have a covering index (mig 0071).
+ * Every foreign key in `public` must have a covering index (mig 0073).
  *
  * A CLASS guard, not an instance one. Ten FKs were unindexed on prod
  * 2026-08-23, and the reason is structural: Postgres indexes the PARENT

@@ -1,5 +1,5 @@
 -- atlas:txmode none
--- 0071_fk_cascade_indexes.sql
+-- 0073_fk_cascade_indexes.sql
 --
 -- Index every foreign key that a DELETE has to walk. Purely additive:
 -- no columns, no data, no drops, no Gmail fields, no query change

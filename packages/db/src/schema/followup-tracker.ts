@@ -124,7 +124,7 @@ export const followupTracker = pgTable(
      * predicate + sort without touching the full table.
      */
     /**
-     * FK cascade index (mig 0071). Postgres does not index a foreign
+     * FK cascade index (mig 0073). Postgres does not index a foreign
      * key for you, so without this every parent DELETE sequentially
      * scans this table once per deleted row — the account-deletion
      * path (D205, D216, D232).

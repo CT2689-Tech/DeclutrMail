@@ -1,5 +1,5 @@
 -- atlas:txmode none
--- Rollback for 0071_fk_cascade_indexes.sql
+-- Rollback for 0073_fk_cascade_indexes.sql
 --
 -- CONCURRENTLY to match the forward build, and IF EXISTS because this is
 -- also the recovery path when a forward CREATE INDEX CONCURRENTLY leaves

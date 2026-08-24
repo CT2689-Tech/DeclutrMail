@@ -165,7 +165,7 @@ export const ruleMatchLog = pgTable(
     /** "Recently affected senders" for a rule (D101 last-N mini-list). */
     ruleMatchedIdx: index('rule_match_log_rule_matched_idx').on(table.ruleId, table.matchedAt),
     /**
-     * FK cascade index (mig 0071). `intent_token -> undo_journal.token`
+     * FK cascade index (mig 0073). `intent_token -> undo_journal.token`
      * is ON DELETE SET NULL, and the undo-expiry cron deletes from
      * `undo_journal` every tick — without this, each expired token
      * sequentially scans this table.
