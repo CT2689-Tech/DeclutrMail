@@ -24,6 +24,63 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-24 — Turn on point-in-time recovery before the first paying customer
+
+**Source:** session 2026-08-24 (Supabase production review), founder decision
+**Why:** The project has 7 daily backups and PITR is OFF, so a disaster costs up
+to 24 hours of data. Acceptable while the founder is the only user — a day of
+his own dogfooding. Not acceptable once someone has paid for the mail in there.
+Founder decided to defer rather than accept permanently, so this exists to stop
+"defer" quietly becoming "never".
+**How:** Supabase Dashboard → Database → Backups → **Point in time** →
+**Enable add-on**. It is a paid add-on; the price is shown on that page (not
+verified in this session — do not quote a figure without checking).
+**Verifies by:** the Point in time tab shows a recovery window instead of the
+"available as an add-on" prompt.
+**Trigger:** first paying customer. Not a date.
+**Status:** Open
+
+### 2026-08-24 — Require an adversarial review for context-moving changes
+
+**Source:** session 2026-08-24, founder decision. Agents do not edit CLAUDE.md.
+**Why:** Two independent reviews found five real defects in one branch that
+2,630 passing tests, typecheck, lint, every structural gate, and a live worker
+smoke all missed. Three were introduced in that same branch. This is the fourth
+logged instance of the "green test is not evidence" class (CLAUDE.md §8), and
+the guidance was already there and already correct — the gap is that nothing in
+the pipeline is ADVERSARIAL. One of the five could auto-unsubscribe a user from
+mail they had just been reading.
+**How:** add to CLAUDE.md §8 "Definition of done", after the existing bullets:
+
+```markdown
+- **Adversarial review for context-moving changes.** A change that moves work
+  between execution contexts — off a request/push path into a background job,
+  from in-process state into shared state, from inside a lock to outside it —
+  needs a review pass before merge (`/code-review ultra`, or an equivalent
+  second opinion). Structural gates do not run the app and tests assert what
+  their author already believed; neither catches a reader that was fine until
+  the write moved. Before the review, write down every reader of the data the
+  change relocates and what each does with a stale value. If any reader takes a
+  DESTRUCTIVE action on it, the write cannot be deferred past that reader —
+  scope it instead.
+```
+
+**Verifies by:** the section exists in CLAUDE.md and the next context-moving PR
+cites a review pass in its Verification block.
+**Status:** Open
+
+### 2026-08-24 — Drop the dead-letter snapshot table once you are happy
+
+**Source:** session 2026-08-24, founder approved "snapshot, then delete"
+**Why:** The 781-row dead-letter backlog was cleared. The rows were copied to
+`dead_letter_jobs_snapshot_20260824` first so the delete is reversible; that
+table is now clutter in the production schema and should not outlive its
+usefulness.
+**How:** `DROP TABLE dead_letter_jobs_snapshot_20260824;` in the SQL Editor.
+**Verifies by:** the table no longer appears in Database → Tables.
+**Status:** Open
+
+
 ### 2026-08-23 — Apply the CLAUDE.md edits for the packaging patch
 
 **Source:** session — tier/feature packaging decision (see
