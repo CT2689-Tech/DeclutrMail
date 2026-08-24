@@ -27,6 +27,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from '@declutrmail/shared';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
@@ -37,7 +38,6 @@ import { SettingsScreen } from './settings-screen';
 const MAILBOX_A = '11111111-1111-4111-8111-111111111111';
 const MAILBOX_B = '22222222-2222-4222-8222-222222222222';
 const MAILBOX_C = '33333333-3333-4333-8333-333333333333';
-const MAILBOX_D = '44444444-4444-4444-8444-444444444444';
 
 const startMailboxConnectSpy = vi.fn();
 const startMailboxReactivationSpy = vi.fn();
@@ -71,6 +71,24 @@ const mailbox = (id: string, email: string): Me['mailboxes'][number] => ({
   connectedAt: '2026-06-01T00:00:00.000Z',
   readiness: 'ready',
 });
+
+/**
+ * Exactly enough ACTIVE mailboxes to sit at Pro's manifest limit.
+ *
+ * Sized off `TIER_MANIFEST`, not a literal: the limit is this test's
+ * INPUT (the claim is that the UI gates at whatever the limit is), so
+ * re-tiering inboxes must not require editing these fixtures. The two
+ * tests below previously hardcoded three and silently stopped testing
+ * the gate the moment Pro moved to five.
+ */
+function mailboxesAtProLimit(): Me['mailboxes'] {
+  return Array.from({ length: TIER_MANIFEST.pro.inboxLimit }, (_unused, i) => {
+    // `f0…` namespace so a generated id can never collide with the
+    // hand-written MAILBOX_A–C constants (all single-digit repeats).
+    const id = `f0000000-0000-4000-8000-${(i + 1).toString(16).padStart(12, '0')}`;
+    return mailbox(id, `slot-${i + 1}@example.com`);
+  });
+}
 
 function makeMe(mailboxes: Me['mailboxes']): Me {
   return {
@@ -400,11 +418,9 @@ describe('SettingsScreen', () => {
   });
 
   it('keeps a disconnected reconnect limit-gated when all active slots are occupied', async () => {
-    // Pro's inbox limit is 3 (A3) — occupy every active slot first.
+    // Occupy every active slot first, whatever the manifest says it is.
     me = makeMe([
-      mailbox(MAILBOX_A, 'chintan.a.thakkar@gmail.com'),
-      mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
-      mailbox(MAILBOX_D, 'chintan.a.thakkar.third@gmail.com'),
+      ...mailboxesAtProLimit(),
       {
         ...mailbox(MAILBOX_C, 'chintan.a.thakkar.archive@gmail.com'),
         status: 'disconnected',
@@ -419,7 +435,7 @@ describe('SettingsScreen', () => {
     const describedBy = reconnect.getAttribute('aria-describedby');
     expect(describedBy).toBe('mailboxes-inbox-limit-explanation');
     expect(document.getElementById(describedBy!)).toHaveTextContent(
-      /your plan includes 3 connected inboxes/i,
+      new RegExp(`your plan includes ${TIER_MANIFEST.pro.inboxLimit} connected inboxes`, 'i'),
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
@@ -978,12 +994,8 @@ describe('SettingsScreen', () => {
   });
 
   it('disables connect-another at the tier inboxLimit with an upgrade pointer', async () => {
-    // Pro allows 3 inboxes (A3); occupy all three → at limit.
-    me = makeMe([
-      mailbox(MAILBOX_A, 'chintan.a.thakkar@gmail.com'),
-      mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'),
-      mailbox(MAILBOX_D, 'chintan.a.thakkar.third@gmail.com'),
-    ]);
+    // Occupy every slot the manifest allows → at limit.
+    me = makeMe(mailboxesAtProLimit());
     renderScreen();
 
     const connect = await screen.findByRole('button', { name: /connect another gmail account/i });

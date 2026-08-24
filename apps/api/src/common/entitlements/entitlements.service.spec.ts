@@ -549,22 +549,27 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
   });
 
-  it('pro (limit 3, A3): allows the 3rd, blocks the 4th', async () => {
+  it('pro: allows connections up to the manifest limit, blocks the next', async () => {
+    // Derived from the manifest ON PURPOSE, unlike the capability
+    // ladders in capability.guard.spec.ts. Those assert WHICH tier owns
+    // a surface, so they must restate it by hand. This asserts that the
+    // ENFORCEMENT honours whatever number is configured — the limit is
+    // this test's input, not its claim, so re-tiering inboxes must not
+    // require editing it.
+    const limit = TIER_MANIFEST.pro.inboxLimit;
     const { workspaceId, userId } = await seedWorkspace(db, 'pro');
-    await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
-    await db.insert(mailboxAccounts).values({
-      workspaceId,
-      userId,
-      provider: 'gmail',
-      providerAccountId: 'second@x',
-    });
-    await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
-    await db.insert(mailboxAccounts).values({
-      workspaceId,
-      userId,
-      provider: 'gmail',
-      providerAccountId: 'third@x',
-    });
+
+    // seedWorkspace already connected one mailbox.
+    for (let n = 2; n <= limit; n += 1) {
+      await expect(svc.assertCanConnectMailbox(workspaceId), `slot ${n}`).resolves.toBeUndefined();
+      await db.insert(mailboxAccounts).values({
+        workspaceId,
+        userId,
+        provider: 'gmail',
+        providerAccountId: `mailbox-${n}@x`,
+      });
+    }
+
     const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppException);
     expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');

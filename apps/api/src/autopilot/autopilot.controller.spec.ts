@@ -25,14 +25,20 @@ function makeController(tier: 'free' | 'plus' | 'pro') {
   };
 }
 
-describe('AutopilotController PATCH mode gate (D251)', () => {
-  // The class guard grants the surface at `autopilot` (Plus). Promoting
-  // a rule to `active` is the delegated-approval VALUE and requires
-  // `autopilot-active` (Pro) — enforced in the handler so a Plus caller
-  // 402s BEFORE any write, instead of getting unattended automation
-  // they are not paying for.
-  it('rejects mode=active for a plus workspace with 402 before any write', async () => {
-    const { controller, patchRule } = makeController('plus');
+describe('AutopilotController PATCH mode gate', () => {
+  // The class guard grants the surface at `autopilot`. Promoting a rule
+  // to `active` additionally requires `autopilot-active`, enforced in
+  // the handler because the class level cannot express a per-FIELD
+  // requirement — an under-entitled caller 402s BEFORE any write.
+  //
+  // 2026-08-23: both capabilities sit on Plus, so no tier reaching this
+  // handler can be rejected. `free` is used below purely to exercise
+  // the branch; a free workspace is stopped by the class guard long
+  // before it gets here. The check and this test both survive so that
+  // moving `autopilot-active` back up the ladder stays a one-line
+  // manifest edit rather than re-adding enforcement.
+  it('rejects mode=active for an under-entitled workspace, before any write', async () => {
+    const { controller, patchRule } = makeController('free');
 
     await expect(
       controller.patchRule(mailbox, principal, RULE_ID, { mode: 'active' }),
@@ -40,7 +46,7 @@ describe('AutopilotController PATCH mode gate (D251)', () => {
     expect(patchRule).not.toHaveBeenCalled();
   });
 
-  it('allows mode=active for a pro workspace', async () => {
+  it('allows mode=active for an entitled workspace', async () => {
     const { controller, patchRule } = makeController('pro');
 
     await expect(
@@ -49,7 +55,7 @@ describe('AutopilotController PATCH mode gate (D251)', () => {
     expect(patchRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { mode: 'active' });
   });
 
-  it('allows mode=observe on plus without an entitlement lookup', async () => {
+  it('allows mode=observe without an entitlement lookup', async () => {
     const { controller, patchRule, tierForWorkspace } = makeController('plus');
 
     await controller.patchRule(mailbox, principal, RULE_ID, { mode: 'observe' });

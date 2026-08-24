@@ -65,12 +65,14 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
       'snoozed',
       'triage',
     ];
-    // D251 — Plus gains the Screener and rule-matching-with-manual-approval;
-    // only unattended action (`autopilot-active`), Brief, Quiet and Follow-ups
-    // remain Pro. Two capabilities, because one cannot express the split:
-    // see packages/shared/src/entitlements/types.ts.
-    const plusSet = [...freeSet, 'autopilot', 'screener'].sort();
-    const proSet = [...plusSet, 'autopilot-active', 'brief', 'followups', 'quiet'].sort();
+    // 2026-08-23 (amends D251) — Plus gains the Screener and the WHOLE
+    // Autopilot, unattended action included, plus the Quiet window that
+    // governs it. Pro keeps the two attention surfaces. The two
+    // Autopilot capabilities still exist — the apply worker filters per
+    // match on `modeAtMatch` — but they no longer straddle a price
+    // boundary; `observe`/`active` is a user choice now.
+    const plusSet = [...freeSet, 'autopilot', 'autopilot-active', 'quiet', 'screener'].sort();
+    const proSet = [...plusSet, 'brief', 'followups'].sort();
 
     expect({
       tiers,
@@ -86,7 +88,7 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
           monthlyInrPaise: 0,
           annualInrPaise: null,
           inboxLimit: 1,
-          undoWindowDays: 7,
+          undoWindowDays: 30,
           cleanupActionsPerMonth: 50,
           capabilities: freeSet,
           purchasable: true,
@@ -100,7 +102,7 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
           monthlyInrPaise: 74_900,
           annualInrPaise: 749_900,
           inboxLimit: 1,
-          undoWindowDays: 7,
+          undoWindowDays: 30,
           cleanupActionsPerMonth: null,
           capabilities: plusSet,
           purchasable: true,
@@ -113,7 +115,7 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
           annualUsdCents: 19000,
           monthlyInrPaise: 159_900,
           annualInrPaise: 1_599_900,
-          inboxLimit: 3,
+          inboxLimit: 5,
           undoWindowDays: 30,
           cleanupActionsPerMonth: null,
           capabilities: proSet,
@@ -132,7 +134,7 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
           annualUsdCents: null,
           monthlyInrPaise: null,
           annualInrPaise: null,
-          inboxLimit: 3,
+          inboxLimit: 5,
           undoWindowDays: 30,
           cleanupActionsPerMonth: null,
           capabilities: proSet,
@@ -146,7 +148,7 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
           annualUsdCents: null,
           monthlyInrPaise: null,
           annualInrPaise: null,
-          inboxLimit: 3,
+          inboxLimit: 5,
           undoWindowDays: 30,
           cleanupActionsPerMonth: null,
           capabilities: proSet,
@@ -273,6 +275,26 @@ describe('Pricing config — invariants (hold under any tuning)', () => {
       if (point.usdCents === 0) {
         expect(point.paddlePriceId).toBeNull();
         expect(point.razorpayPlanId).toBeNull();
+      }
+    }
+  });
+
+  // 9. Quiet governs Autopilot, so no tier may grant `autopilot`
+  //    without `quiet`.
+  //
+  //    This is not style — it is the guarantee that removes a whole
+  //    bug. `AutopilotActionWorker` applies the quiet window with no
+  //    tier condition (correctly: the window is mailbox state, not a
+  //    request). If a tier could run rules without owning quiet, a
+  //    downgrade into that tier would strand a stored window and
+  //    silently defer batches the user already approved, on a screen
+  //    the app hides behind a PUT that 402s. Keeping the containment
+  //    true makes that state unreachable instead of merely unhandled.
+  it('never grants autopilot to a tier that lacks quiet', () => {
+    for (const id of TIER_IDS) {
+      const caps = new Set(TIER_MANIFEST[id].capabilities);
+      if (caps.has('autopilot') || caps.has('autopilot-active')) {
+        expect(caps.has('quiet'), `${id} runs rules, so it must own quiet`).toBe(true);
       }
     }
   });
@@ -427,13 +449,14 @@ describe('type-level exhaustiveness', () => {
       case 'triage':
       case 'snoozed':
         return 'free';
-      // D251 — Screener and rule-matching-with-manual-approval are Plus.
+      // 2026-08-23 (amends D251) — the Screener and the whole Autopilot,
+      // plus the Quiet window that governs it, are Plus.
       case 'screener':
       case 'autopilot':
-        return 'plus';
       case 'autopilot-active':
-      case 'brief':
       case 'quiet':
+        return 'plus';
+      case 'brief':
       case 'followups':
         return 'pro';
       default:

@@ -1,8 +1,9 @@
 // /autopilot — preset rule review surface (D99–D105, D192, D197).
 //
-// Active execution stays Pro-only per the D19 manifest. Under-tier users
-// mount only the capability-exempt preset-catalog read; suggestions and
-// every mutation remain unmounted and server-gated.
+// Which tier grants what is the manifest's business, not this file's —
+// the surface gates on `hasCapability`, so it needs no tier name. An
+// under-tier user mounts only the capability-exempt preset-catalog
+// read; suggestions and every mutation stay unmounted and server-gated.
 
 import { headers } from 'next/headers';
 import { hasCapability } from '@declutrmail/shared/entitlements';

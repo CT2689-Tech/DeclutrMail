@@ -255,6 +255,27 @@ export type FollowupDismissedPayload = z.infer<typeof FollowupDismissedPayloadSc
  * Consumers: AutopilotPresetSeeder (seeds the 5 D101 presets) +
  * future onboarding-state machine.
  */
+/**
+ * A rule PATCH left the rule runnable, so its backlog needs an
+ * `autopilot-apply` sweep. Published in the SAME transaction as the
+ * rule update (transactional outbox) — see the topic comment for why
+ * a post-commit `Queue.add()` cannot be made correct.
+ *
+ * `mode` is the rule's mode AFTER the patch: the consumer enqueues the
+ * same sweep either way, but it is what distinguishes "run the backlog"
+ * from "collect suggestions" in logs and in the match rows that follow.
+ */
+export const AutopilotRuleActivatedPayloadSchema = z
+  .object({
+    mailboxAccountId: UuidSchema,
+    ruleId: UuidSchema,
+    mode: z.enum(['active', 'observe']),
+    /** ISO-8601 — when the patch committed. Becomes the job's triggeredAtMs. */
+    activatedAt: z.string().datetime(),
+  })
+  .strict();
+export type AutopilotRuleActivatedPayload = z.infer<typeof AutopilotRuleActivatedPayloadSchema>;
+
 export const MailboxSyncReadyPayloadSchema = z
   .object({
     mailboxAccountId: UuidSchema,
@@ -424,6 +445,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.ACTION_LABEL_APPLIED]: ActionLabelAppliedPayloadSchema,
   [TOPICS.AUTOPILOT_MATCH_RECORDED]: AutopilotMatchRecordedPayloadSchema,
   [TOPICS.AUTOPILOT_ACTION_INTENT_EMITTED]: AutopilotActionIntentEmittedPayloadSchema,
+  [TOPICS.AUTOPILOT_RULE_ACTIVATED]: AutopilotRuleActivatedPayloadSchema,
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayloadSchema,
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
   [TOPICS.MAILBOX_SYNC_FAILED]: MailboxSyncFailedPayloadSchema,
@@ -443,6 +465,7 @@ export type EventPayloadByTopic = {
   [TOPICS.ACTION_LABEL_APPLIED]: ActionLabelAppliedPayload;
   [TOPICS.AUTOPILOT_MATCH_RECORDED]: AutopilotMatchRecordedPayload;
   [TOPICS.AUTOPILOT_ACTION_INTENT_EMITTED]: AutopilotActionIntentEmittedPayload;
+  [TOPICS.AUTOPILOT_RULE_ACTIVATED]: AutopilotRuleActivatedPayload;
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayload;
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayload;
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayload;

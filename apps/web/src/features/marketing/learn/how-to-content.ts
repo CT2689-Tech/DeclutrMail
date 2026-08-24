@@ -551,7 +551,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-autopilot',
         title: 'Use DeclutrMail Autopilot without blind activation',
         paragraphs: [
-          'Autopilot ships five launch presets on Plus and Pro; letting a rule act without per-batch approval is the Pro step. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
+          'Autopilot ships five launch presets on Plus and Pro; turning one on previews what it would do, then lets it act on future matches without per-batch approval. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
           'The low-engagement preset evaluates the signals defined by the product and records matches. Observe mode is the evidence-gathering step; Active is a separate decision after reviewing the sample and affected count.',
         ],
         steps: [

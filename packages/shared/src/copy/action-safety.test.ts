@@ -12,15 +12,23 @@ describe('canonical public product-truth copy', () => {
   it('does not promise that unsubscribe can be undone', () => {
     expect(ACTION_SAFETY_SUMMARY).toContain('cannot be taken back');
     expect(ACTION_SAFETY_SUMMARY).toContain('Before a manual action moves mail');
-    expect(ACTION_SAFETY_SUMMARY).toContain('On Plus, Autopilot finds matches');
-    expect(ACTION_SAFETY_SUMMARY).toContain('On Pro, rules you turn on');
+    // Plan names deliberately absent from this sentence. It used to
+    // read "On Plus, Autopilot finds matches … On Pro, rules you turn on
+    // can handle future matches automatically", which pinned a Plus/Pro
+    // contrast into canonical copy — and went false the day both
+    // behaviours moved to Plus (2026-08-23). Product-truth copy states
+    // what the product does; which plan has it is the manifest's job.
+    expect(ACTION_SAFETY_SUMMARY).toContain('Before an Autopilot rule starts');
+    expect(ACTION_SAFETY_SUMMARY).not.toMatch(/\b(Free|Plus|Pro)\b/);
     expect(ACTION_SAFETY_SUMMARY).toContain('unless you empty Trash sooner');
     expect(ACTION_SAFETY_SUMMARY).not.toMatch(/every action (?:is )?(?:reversible|undoable)/i);
   });
 
   it('separates manual message actions from future automation', () => {
     expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('New mail from that sender is unchanged');
-    expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('Pro can run rules you turn on automatically');
+    expect(MANUAL_ACTION_SCOPE_CLAIM).toContain('you preview a rule before turning it on');
+    // Same rule as above: no plan name belongs in canonical copy.
+    expect(MANUAL_ACTION_SCOPE_CLAIM).not.toMatch(/\b(Free|Plus|Pro)\b/);
   });
 
   it('describes the count-and-sample preview without promising a frozen full set', () => {

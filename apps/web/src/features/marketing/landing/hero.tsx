@@ -10,6 +10,7 @@ import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 import { LedgerDemo } from './ledger-demo';
 import { oauthStartUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
+import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 /**
  * Hero (D250 locked headline — reverses D223; decision record in
@@ -43,8 +44,8 @@ export function Hero() {
           </h1>
           <p className="dm-mkt-hero-sub dm-mkt-reveal-2 dm-mkt-reveal">
             One decision per sender clears thousands of emails at once — you see the count and the
-            exact Gmail changes first. On Plus, rules find the matches for you; you still approve
-            every batch.
+            exact Gmail changes first. Turn on a rule and it keeps doing it, only after showing you
+            what it would do.
           </p>
           <div className="dm-mkt-hero-ctas dm-mkt-reveal-3 dm-mkt-reveal">
             <TrackedCta
@@ -68,7 +69,7 @@ export function Hero() {
             </TrackedCta>
           </div>
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free · no card · 7-day undo on Archive, Later and Delete
+            Free · no card · {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
           </p>
           {/* Connect CTAs link straight to Google's consent screen, so the
               permission explanation stays beside the click. */}

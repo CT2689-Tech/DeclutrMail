@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 import { TrackedCta } from './tracked-cta';
+import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 interface LedgerVerb {
   id: string;
@@ -108,7 +109,7 @@ export function LedgerDemo({ verbs }: { verbs: readonly LedgerVerb[] }) {
         </TrackedCta>
       </div>
       <p className="dm-mkt-ledger-caption">
-        one Archive decision · 412 emails · undoable for 7 days
+        one Archive decision · 412 emails · undoable for {MIN_UNDO_WINDOW_DAYS} days
       </p>
     </div>
   );

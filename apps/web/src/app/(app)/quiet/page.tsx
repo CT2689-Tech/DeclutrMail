@@ -4,10 +4,11 @@
 // mutations defer (AutopilotActionWorker Guard 1) and run after the
 // window ends. Manual user actions are never deferred.
 //
-// Pro-only per the D19 manifest (quiet hours modulate Autopilot, which
-// is itself Pro). Without the TierGate this page rendered a fully
-// editable form on free tier whose Save PUT would 402 — a silent trap
-// (2026-07-10 dogfood). The gate shows the upgrade placeholder instead.
+// Gated on the `quiet` capability, resolved from the manifest — Quiet
+// governs Autopilot, so it is granted wherever Autopilot is. Without
+// the TierGate this page rendered a fully editable form to an
+// unentitled user whose Save PUT would 402 — a silent trap (2026-07-10
+// dogfood). The gate shows the upgrade placeholder instead.
 
 import { headers } from 'next/headers';
 import { hasCapability } from '@declutrmail/shared/entitlements';

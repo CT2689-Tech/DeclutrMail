@@ -86,13 +86,22 @@ export const undoJournal = pgTable(
       .notNull()
       .default(sql`now()`),
     /**
-     * Default 7 days per D232. Pro-tier (D81 30-day undo) callers pass
-     * an explicit `expires_at` on insert; the default keeps Free-tier
-     * correct without app-side coordination.
+     * 30 days on every tier (packaging patch 2026-08-23 on D19); see
+     * migration 0072.
+     *
+     * The comment here used to read "Default 7 days per D232; Pro-tier
+     * callers pass an explicit expires_at" — true when only Pro carried
+     * 30, and silently false the moment the ladder went uniform. Both
+     * production writers resolve the window from `TIER_MANIFEST` and
+     * pass `expires_at` explicitly, and `UndoService.issue()` now
+     * derives its own, so NOTHING in the application depends on this
+     * default. It is kept aligned anyway: a column default that
+     * disagrees with the app is a trap for whoever writes the next
+     * insert, which is exactly how the 7 outlived the decision.
      */
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' })
       .notNull()
-      .default(sql`now() + interval '7 days'`),
+      .default(sql`now() + interval '30 days'`),
     /** Set on POST /undo/:token entry (request received). */
     executedAt: timestamp('executed_at', { withTimezone: true, mode: 'date' }),
     /**

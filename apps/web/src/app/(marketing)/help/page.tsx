@@ -72,7 +72,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'undo-windows',
     q: 'What can I undo, and for how long?',
-    a: `${ACTION_SAFETY_SUMMARY} The Archive, Later, and Delete Activity Undo window is 7 days on Free and Plus and 30 days on Pro.`,
+    a: `${ACTION_SAFETY_SUMMARY} The Archive, Later, and Delete Activity Undo window is ${TIER_MANIFEST.free.undoWindowDays} days on every plan.`,
   },
   {
     id: 'disconnect-mailbox',
@@ -88,14 +88,14 @@ const FAQS: ReadonlyArray<{
   {
     id: 'autopilot-modes',
     q: 'What is the difference between Autopilot’s Observe and Active modes?',
-    a: 'Autopilot rules are presets you enable, and every rule starts in Observe mode: it collects what it would have done without acting on anything. After the 7-day observe window you review the matches and decide. Switching a rule to Active — so it applies to new matching mail without per-batch approval — is part of Pro; on Plus, matches keep waiting for your batch approval. You can pause a rule at any time.',
+    a: 'Autopilot rules are presets you turn on. Turning one on shows exactly what it would do to matching mail already in your inbox; confirm and it acts, then keeps acting on matching mail that arrives. If you would rather look first, choose Watch first and the rule collects matches for your approval without changing anything. You can switch a watching rule over later, or pause any rule at any time.',
   },
   {
     id: 'pricing-tiers',
     q: 'What do the plans include?',
     // Derived from the pricing config (A3) — no plan number is written
     // here, so retuning the ladder cannot strand this answer.
-    a: `Free includes Senders, Triage, Later, and every cleanup action, with ${TIER_MANIFEST.free.cleanupActionsPerMonth} actions each month. Plus removes the monthly limit and adds the Screener and Autopilot rules you approve batch by batch. Pro can run rules you turn on automatically and adds ${TIER_MANIFEST.pro.inboxLimit} inboxes and a ${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. The pricing page has the current comparison.`,
+    a: `Free includes Senders, Triage, Later, and every cleanup action, with ${TIER_MANIFEST.free.cleanupActionsPerMonth} actions each month. Plus removes the monthly limit and adds the Screener, Autopilot rules and Quiet hours. Pro adds the Daily Brief, Follow-ups and ${TIER_MANIFEST.pro.inboxLimit} connected inboxes. Every plan gets a ${TIER_MANIFEST.free.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. The pricing page has the current comparison.`,
     link: { href: '/pricing', label: 'Pricing →' },
   },
   {

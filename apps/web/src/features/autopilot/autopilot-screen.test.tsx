@@ -29,9 +29,11 @@ import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
 import { ActivateRuleModal } from './activate-rule-modal';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   AUTO_ARCHIVE_LOW_ENGAGEMENT,
   AUTO_UNSUBSCRIBE_NOISY,
+  LONG_DORMANT_UNSUBSCRIBE,
   PENDING_SUGGESTIONS,
   PRESET_RULES_ALL_FIVE,
   PRESET_RULES_ALL_PAUSED,
@@ -176,10 +178,8 @@ describe('AutopilotScreen — edge states', () => {
 
   it('groups pending suggestions under their rule (D104)', () => {
     renderScreen(ready());
-    expect(screen.getByText('What changes between Observe and Active?')).toBeInTheDocument();
-    expect(
-      screen.getByText(/Active applies future matches automatically after you review/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText('What does "Watch first" do?')).toBeInTheDocument();
+    expect(screen.getByText(/Watch first turns the rule on in Observe/i)).toBeInTheDocument();
     // Two groups — auto-archive (2 rows) + newsletter graveyard (1 row).
     const archiveGroup = screen.getByRole('list', {
       name: /pending suggestions from auto-archive low-engagement — rows/i,
@@ -437,6 +437,318 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(observed[0]!.body).toEqual({ enabled: false });
   });
 
+  // ── Turning a rule ON is a D226 mutation, so it previews first ──
+  //
+  // Enabling a rule starts changing mail: the first sweep acts on
+  // matching mail already in the inbox. Before 2026-08-23 the toggle
+  // committed straight away and the rule sat inert in Observe until a
+  // day-7 banner offered to promote it, so "on" did not mean on. Now
+  // the toggle opens the preview and the user picks how it runs.
+
+  it('does NOT patch when a rule is toggled on — it opens the preview first (D226)', async () => {
+    const observed: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({ data: LONG_DORMANT_UNSUBSCRIBE });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/Turn on "Long-dormant unsubscribe"/i)).toBeInTheDocument();
+    // The whole point: mail state is untouched until the user confirms.
+    expect(observed).toHaveLength(0);
+  });
+
+  it('“Turn on and run it” patches enabled + mode=active in ONE request', async () => {
+    const observed: Array<{ path: string; body: unknown }> = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req, url) => {
+          observed.push({ path: url.pathname, body: await req.json() });
+          return jsonOk({ data: { ...LONG_DORMANT_UNSUBSCRIBE, enabled: true, mode: 'active' } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+    const confirm = await screen.findByRole('button', { name: /turn on and run it/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]!.path).toBe(`/api/autopilot/rules/${LONG_DORMANT_UNSUBSCRIBE.id}`);
+    // ONE patch, both fields. Two sequential calls would leave a window
+    // where the rule is on in whichever mode the row happened to hold.
+    expect(observed[0]!.body).toEqual({ enabled: true, mode: 'active' });
+  });
+
+  it('“Watch first” patches enabled + mode=observe — a choice, not a tier', async () => {
+    const observed: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({ data: { ...LONG_DORMANT_UNSUBSCRIBE, enabled: true } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+    const watch = await screen.findByRole('button', { name: /watch first/i });
+    await waitFor(() => expect(watch).toBeEnabled());
+    await userEvent.click(watch);
+
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+  });
+
+  it('gates BOTH commit paths on the preview resolving (D226)', async () => {
+    let releasePreview!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: async () => {
+          await gate;
+          return jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+
+    // "Watch first" moves no mail, but it still commits a mode, so it
+    // waits for the same dry-run. A second button that skipped the gate
+    // would be a hole straight through the mandatory preview.
+    const confirm = await screen.findByRole('button', { name: /turn on and run it/i });
+    const watch = screen.getByRole('button', { name: /watch first/i });
+    expect(confirm).toBeDisabled();
+    expect(watch).toBeDisabled();
+
+    releasePreview();
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(watch).toBeEnabled();
+  });
+
+  it('an under-tier workspace is never offered the acting commit on enable', async () => {
+    // Unreachable under today's manifest — every tier that reaches this
+    // screen holds `autopilot-active`. Rendered directly with an
+    // under-tier principal, because the alternative is that a one-line
+    // re-tier puts an always-402 button in the modal's PRIMARY slot,
+    // which is the D251 defect this codebase already shipped once.
+    authState.tier = 'free';
+    const observed: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({ data: { ...LONG_DORMANT_UNSUBSCRIBE, enabled: true } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByRole('button', { name: /turn on and run it/i })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /watch first/i })).toBeNull();
+
+    const confirm = within(dialog).getByRole('button', { name: /turn on and watch/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+  });
+
+  it('shows the busy label on the button that was clicked, not the other one', async () => {
+    let releasePatch!: () => void;
+    const patchGate = new Promise<void>((resolve) => {
+      releasePatch = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async () => {
+          await patchGate;
+          return jsonOk({ data: { ...LONG_DORMANT_UNSUBSCRIBE, enabled: true } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+    const watch = await screen.findByRole('button', { name: /watch first/i });
+    await waitFor(() => expect(watch).toBeEnabled());
+    await userEvent.click(watch);
+
+    // The acting button must NOT claim to be running. One shared
+    // `isPending` made it read "Turning on…" while the user had
+    // deliberately chosen the cautious path.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /starting to watch/i })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('button', { name: /^turning on…$/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /turn on and run it/i })).toBeInTheDocument();
+    releasePatch();
+  });
+
+  it('⌘⏎ does not fire the acting commit while focus is on Watch first', async () => {
+    // Smoke found this, not a test: the first version marked the
+    // buttons with a `data-` prop on the shared `Button`, which takes
+    // an explicit prop allowlist and dropped it silently. The guard
+    // read an attribute that never existed, so the chord committed
+    // `mode='active'` from the cautious button's own focus.
+    const observed: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({ data: { ...LONG_DORMANT_UNSUBSCRIBE, enabled: true } });
+        },
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+    const watch = await screen.findByRole('button', { name: /watch first/i });
+    await waitFor(() => expect(watch).toBeEnabled());
+
+    watch.focus();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(observed).toHaveLength(0));
+
+    // With focus on the primary the chord still works — the guard must
+    // suppress the shortcut, not break it.
+    screen.getByRole('button', { name: /turn on and run it/i }).focus();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    await waitFor(() => expect(observed).toHaveLength(1));
+    expect(observed[0]).toEqual({ enabled: true, mode: 'active' });
+  });
+
+  it('keeps the modal open and the toggle Off when the commit fails', async () => {
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () =>
+          jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: LONG_DORMANT_UNSUBSCRIBE.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: () => jsonServerError(),
+      },
+    ]);
+
+    renderScreen({ kind: 'ready', rules: [LONG_DORMANT_UNSUBSCRIBE], suggestions: [] });
+    await userEvent.click(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    );
+    const confirm = await screen.findByRole('button', { name: /turn on and run it/i });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    await userEvent.click(confirm);
+
+    // The failure has to be visible AND recoverable: the dialog stays,
+    // the error is announced, and the toggle still reads Off because it
+    // renders server state and was never optimistically flipped.
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/could not turn the rule on/i);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(
+      screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
+    ).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('never shows a running pill on a rule that is switched off', async () => {
+    // `{enabled:false}` leaves `mode` alone, so a rule turned on to
+    // Active and then off keeps `mode='active'`. The pill read "Active"
+    // directly above "Off — this rule records no new matches".
+    installFetchStub([]);
+    renderScreen({
+      kind: 'ready',
+      rules: [{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: false, mode: 'active' as const }],
+      suggestions: [],
+    });
+
+    expect(screen.queryAllByText(/^Active$/)).toHaveLength(0);
+    expect(screen.getByText(/records no new matches and takes no actions/i)).toBeInTheDocument();
+  });
+
   it('commits the threshold once on slider release (D101)', async () => {
     const observed: unknown[] = [];
     installFetchStub([
@@ -534,60 +846,78 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     ).toBeInTheDocument();
   });
 
-  // ── D251: Plus reaches this screen but must never be offered Activate ──
+  // ── The under-tier branch: reaches this screen, must not be offered
+  //    Activate ──
   //
-  // Plus has `autopilot` (review and approve) but not `autopilot-active`
-  // (act unattended). Before this gate the screen offered Activate to Plus,
-  // the PATCH 402'd, and the confirm modal quoted Pro's 30-day undo window
-  // to a user with 7. An action that always fails is worse than no action.
+  // WHAT THESE COVER, PRECISELY. A workspace holding `autopilot` but
+  // not `autopilot-active` sees review-and-approve with no Activate
+  // button. Historically that was Plus (D251). Since 2026-08-23 both
+  // capabilities sit on Plus, so NO tier reaches this state through the
+  // app: the route wrapper sends `free` to the observe preview, and
+  // every tier that reaches the screen can activate.
+  //
+  // These render `AutopilotScreen` directly with an under-tier
+  // principal, bypassing that wrapper. They are CAPABILITY-BRANCH
+  // coverage, not a user journey — kept because the branch is kept, so
+  // that moving `autopilot-active` back up the ladder stays a one-line
+  // manifest edit instead of a UI rebuild. Delete these with the branch.
+  //
+  // The original defect: the screen offered Activate to a tier that
+  // could not use it, the PATCH 402'd, and the confirm modal quoted the
+  // wrong undo window.
 
-  it('plus: offers an upgrade link instead of Switch to Active', () => {
-    authState.tier = 'plus';
+  it('under-tier: offers an upgrade link instead of Switch to Active', () => {
+    authState.tier = 'free';
     renderScreen(ready());
 
     expect(screen.queryByRole('button', { name: /Switch rule .* to Active/i })).toBeNull();
-    expect(screen.getByRole('link', { name: /requires Pro/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /requires Plus/i })).toHaveAttribute(
       'href',
-      expect.stringContaining('plan=pro'),
+      expect.stringContaining('plan=plus'),
     );
   });
 
-  it('plus: the banner does not promise an Active switch it cannot deliver', () => {
-    authState.tier = 'plus';
+  it('under-tier: the banner does not promise an Active switch it cannot deliver', () => {
+    authState.tier = 'free';
     renderScreen(ready());
 
     expect(screen.queryByText(/until you explicitly switch it to Active/i)).toBeNull();
-    // Banner AND intro both say "part of Pro" on plus (B2 fix), so this is
+    // Banner AND intro both name the granting plan (B2 fix), so this is
     // deliberately getAllByText — getByText would throw on the second match.
-    expect(screen.getAllByText(/part of Pro/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/part of Plus/i).length).toBeGreaterThan(0);
   });
 
-  it('plus: intro and help never promise per-rule Active (design-gate B2)', () => {
-    authState.tier = 'plus';
+  it('under-tier: intro and help never promise per-rule Active (design-gate B2)', () => {
+    authState.tier = 'free';
     renderScreen(ready());
 
-    // The Pro explainer sentence must be absent everywhere on plus.
-    expect(screen.queryByText(/Active applies future matches automatically/i)).toBeNull();
+    // The entitled explainer must be absent for an under-tier reader:
+    // it describes a rule acting on its own, which they cannot reach.
+    expect(screen.queryByText(/Watch first turns the rule on in Observe/i)).toBeNull();
     expect(screen.getByText(/Rules collect matching email in Observe/i)).toBeInTheDocument();
     expect(screen.getByText('What does Observe do?')).toBeInTheDocument();
-    expect(screen.queryByText('What changes between Observe and Active?')).toBeNull();
+    expect(screen.queryByText('What does "Watch first" do?')).toBeNull();
   });
 
-  it('pro: intro and help keep the Observe/Active explainer', () => {
+  it('pro: the intro teaches preview-then-run, not observe-then-promote', () => {
     authState.tier = 'pro';
     renderScreen(ready());
 
+    // Turning a rule on now previews and acts. Copy that said a rule
+    // "starts in Observe, switch to Active later" described a flow the
+    // screen no longer has.
     expect(
-      screen.getByText(/Switch a rule to Active.*future matches automatically/i),
+      screen.getByText(/Turning a rule on shows exactly what it would do/i),
     ).toBeInTheDocument();
-    expect(screen.getByText('What changes between Observe and Active?')).toBeInTheDocument();
+    expect(screen.queryByText(/Rules start in Observe/i)).toBeNull();
+    expect(screen.getByText('What does "Watch first" do?')).toBeInTheDocument();
   });
 
-  it('plus: a leftover active rule renders "Not running", never a green Active pill (design-gate B3)', () => {
-    authState.tier = 'plus';
-    // The Pro→Plus downgrade path: rule was promoted to active while the
-    // workspace was Pro; the apply worker now skips it (D251), so the card
-    // must not assert automation that is not happening.
+  it('under-tier: a leftover active rule renders "Not running", never a green Active pill (design-gate B3)', () => {
+    authState.tier = 'free';
+    // A rule promoted to active while entitled, read by a workspace
+    // that no longer holds `autopilot-active`; the apply worker skips
+    // it, so the card must not assert automation that is not happening.
     const withActive = [
       { ...PRESET_RULES_OBSERVE[0]!, mode: 'active' as const },
       ...PRESET_RULES_OBSERVE.slice(1),
@@ -615,8 +945,8 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     );
   });
 
-  it('plus: a leftover active UNSUBSCRIBE rule never promises undo for its in-flight work', () => {
-    authState.tier = 'plus';
+  it('under-tier: a leftover active UNSUBSCRIBE rule never promises undo for its in-flight work', () => {
+    authState.tier = 'free';
     // D58 — a delivered unsubscribe request is one-way. The in-flight
     // clause is per-actionKind: promising "its normal undo" here was
     // the third false absolute this sentence shipped (Codex ×3).
@@ -819,6 +1149,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
         rule={AUTO_UNSUBSCRIBE_NOISY}
         pendingCount={3}
         pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.plus.undoWindowDays}
         preview={{
           status: 'ready',
           result: {
@@ -854,6 +1185,99 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     ).toBeInTheDocument();
     expect(within(dialog).getByText(/unsubscribe requests cannot be undone/i)).toBeInTheDocument();
     expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
+  });
+
+  // The backlog clause had NO test until 2026-08-24, which is how it
+  // came to state the opposite of what the server does. It promised
+  // "suggestions already collected stay pending — turning the rule on
+  // does not approve them"; going Active, `patchRule` supersedes them in
+  // the same transaction, because the sweep it triggers re-matches those
+  // senders and acts on them. Rewriting that sentence turned nothing
+  // red. Both branches are pinned here now.
+  it('going Active, says the rule takes over the collected backlog', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        intent="enable"
+        canRunUnattended
+        pendingCount={3}
+        pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.plus.undoWindowDays}
+        preview={{ status: 'ready', result: RULE_PREVIEW_RESULT }}
+        onRetryPreview={() => undefined}
+        onWatchFirst={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByText(/3 suggestions already collected are covered by this/i),
+    ).toBeInTheDocument();
+    // The secondary path leads somewhere different, and the user is
+    // choosing between them right here.
+    expect(within(dialog).getByText(/stay pending for your approval/i)).toBeInTheDocument();
+    // The old promise must be gone, not merely joined by the new one.
+    expect(
+      within(dialog).queryByText(/does not approve them\. Approve or skip them separately/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('turning on into Observe, says the backlog stays pending', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        intent="enable"
+        canRunUnattended={false}
+        pendingCount={3}
+        pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.plus.undoWindowDays}
+        preview={{ status: 'ready', result: RULE_PREVIEW_RESULT }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByText(/3 suggestions already collected stay pending below/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/covered by this/i)).not.toBeInTheDocument();
+  });
+
+  // The recovery line used to read `TIER_MANIFEST.pro.undoWindowDays`
+  // outright, on the reasoning that only Pro could open this modal.
+  // That stopped being true when `autopilot-active` moved to Plus.
+  // An arbitrary number no tier carries is the only assertion that can
+  // tell "threaded from the caller" apart from "happens to match the
+  // manifest" — every tier is currently 30 days, so a 30 here would
+  // pass against the old hardcoded constant too.
+  it('quotes the CALLER’S undo window, not a tier constant', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        pendingCount={1}
+        pendingApproximate={false}
+        undoWindowDays={12}
+        preview={{ status: 'ready', result: RULE_PREVIEW_RESULT }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByText(/archive results can be undone from Activity for 12 days/i),
+    ).toBeInTheDocument();
   });
 });
 

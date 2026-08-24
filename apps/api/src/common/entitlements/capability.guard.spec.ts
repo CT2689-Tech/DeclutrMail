@@ -31,13 +31,23 @@ const PRINCIPAL = { userId: 'u1', workspaceId: 'ws-1', sessionId: 's1', jti: 'j1
 const GUARDS_METADATA = '__guards__';
 
 const PRO_TIERS: readonly TierId[] = ['pro', 'team', 'enterprise'];
-// D251 narrowed the Pro-only set: `screener` and the new
-// `autopilot` moved to Plus, so only these four still 402 a Plus
-// workspace. `autopilot-active` here means UNATTENDED action, which stays Pro.
+// The ladder, restated BY HAND. This must never derive from
+// `TIER_MANIFEST` — a test that reads its expectations out of the thing
+// under test proves nothing. Moving a capability between tiers is
+// supposed to break this file; that break is the alarm.
+//
+// 2026-08-23 (amends D251): the whole Autopilot and its Quiet governor
+// moved to Plus, so only the two attention surfaces still 402 a Plus
+// workspace.
 const UNDER_TIERS: readonly TierId[] = ['free', 'plus'];
-const PRO_CAPABILITIES: readonly Capability[] = ['autopilot-active', 'brief', 'quiet', 'followups'];
-/** D251 — granted at Plus, so they 402 only the free tier. */
-const PLUS_CAPABILITIES: readonly Capability[] = ['screener', 'autopilot'];
+const PRO_CAPABILITIES: readonly Capability[] = ['brief', 'followups'];
+/** Granted at Plus, so they 402 only the free tier. */
+const PLUS_CAPABILITIES: readonly Capability[] = [
+  'screener',
+  'autopilot',
+  'autopilot-active',
+  'quiet',
+];
 
 type ControllerClass = abstract new (...args: never[]) => unknown;
 
@@ -272,8 +282,8 @@ describe('CapabilityGuard (D19) — per-surface wiring', () => {
       ).toContain(CapabilityGuard);
     });
 
-    it('402s free and plus on the quiet-hours PUT', async () => {
-      for (const tier of UNDER_TIERS) {
+    it('402s only free on the quiet-hours PUT', async () => {
+      for (const tier of ['free'] as const) {
         const { guard } = makeGuard(tier);
         const err = await caught(
           guard.canActivate(

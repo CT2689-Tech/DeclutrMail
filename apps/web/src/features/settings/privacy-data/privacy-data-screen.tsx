@@ -18,7 +18,7 @@ import {
   ScreenIntro,
   tokens,
 } from '@declutrmail/shared';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -202,9 +202,8 @@ export function PrivacyDataView({
               </>
             ) : (
               <>
-                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for{' '}
-                {TIER_MANIFEST.free.undoWindowDays} days ({TIER_MANIFEST.pro.undoWindowDays} days on
-                Pro).
+                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for at
+                least {MIN_UNDO_WINDOW_DAYS} days on any plan.
               </>
             )}{' '}
             Delete also uses your plan&apos;s Activity Undo window. Gmail Trash recovery is separate

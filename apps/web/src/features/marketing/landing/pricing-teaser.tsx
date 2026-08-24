@@ -74,7 +74,7 @@ export function PricingTeaser() {
           <ul className="dm-mkt-tier-feats">
             <li>Unlimited cleanup actions — everything in Free, without the monthly cap</li>
             <li>Screener collects first-time senders for your review</li>
-            <li>Autopilot finds matching mail; you approve each batch</li>
+            <li>Autopilot rules that keep working on their own · Quiet hours</li>
             <li>
               {plus.inboxLimit} inbox · {plus.undoWindowDays}-day Activity Undo for Archive, Later,
               and Delete
@@ -94,7 +94,7 @@ export function PricingTeaser() {
           </div>
           <ul className="dm-mkt-tier-feats">
             <li>Everything in {plus.name}</li>
-            <li>Rules run unattended · Brief · Quiet hours · Follow-ups</li>
+            <li>Daily Brief · Follow-ups</li>
             <li>
               {pro.inboxLimit} inboxes · {pro.undoWindowDays}-day Activity Undo for Archive, Later,
               and Delete

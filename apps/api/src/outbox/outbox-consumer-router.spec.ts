@@ -404,6 +404,40 @@ describe('OutboxConsumerRouter — U14 autopilot trigger cases', () => {
     expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-777`);
   });
 
+  it('autopilot.rule_activated enqueues the apply sweep the rule PATCH made durable', async () => {
+    // The other half of the fix in `AutopilotReadService.patchRule`.
+    // The service no longer touches Redis in the request path: it
+    // publishes this event in the same transaction as the rule update,
+    // and the enqueue happens HERE, where a failure is a dispatcher
+    // retry rather than a 500 for a save that already landed.
+    const add = vi.fn().mockResolvedValue(undefined);
+    const consume = buildOutboxConsumer(db, { autopilotApplyQueue: { add } as never });
+    const activatedAt = '2026-08-24T05:00:00.000Z';
+
+    await consume({
+      id: 'evt-rule-activated-1',
+      topic: TOPICS.AUTOPILOT_RULE_ACTIVATED,
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      payload: {
+        mailboxAccountId: mailboxId,
+        ruleId: '11111111-1111-4111-8111-111111111111',
+        mode: 'active',
+        activatedAt,
+      },
+      attempts: 1,
+      createdAt: new Date(),
+    });
+
+    expect(add).toHaveBeenCalledTimes(1);
+    const [, jobData, opts] = add.mock.calls[0]!;
+    expect(jobData).toEqual({
+      mailboxAccountId: mailboxId,
+      triggeredAtMs: Date.parse(activatedAt),
+    });
+    // `-` not `:` — BullMQ reserves `:` and rejects custom ids using it.
+    expect((opts as { jobId: string }).jobId).toBe(`${mailboxId}-${Date.parse(activatedAt)}`);
+  });
+
   it('without a wired queue the event ACKs and warns instead of throwing', async () => {
     const consume = buildOutboxConsumer(db);
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});

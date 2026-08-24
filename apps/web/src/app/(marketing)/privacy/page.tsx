@@ -22,6 +22,8 @@ import {
   PRIVACY_STORAGE_LABEL,
   PRIVACY_NEVER_LABEL,
 } from '@declutrmail/shared';
+import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -239,13 +241,15 @@ export default function PrivacyPolicyPage() {
           </li>
         </ul>
         <p>
-          Account deletion has a <strong>7-day grace period</strong> during which you can change
-          your mind. If you have recent actions still inside an undo window longer than 7 days
-          (Pro&rsquo;s 30-day undo), deletion is scheduled after the latest undo window expires — so
-          &ldquo;undo always works for its full window&rdquo; stays true. If you want deletion
-          sooner, you can explicitly waive the grace period and any remaining undo windows with a
-          typed confirmation during the deletion flow — deletion then takes effect immediately. Once
-          deletion is scheduled, syncing stops immediately.
+          Account deletion waits at least <strong>7 days</strong>, during which you can change your
+          mind. It also waits for any open undo window, so that &ldquo;undo always works for its
+          full window&rdquo; stays true. Undo windows run{' '}
+          <strong>{MIN_UNDO_WINDOW_DAYS} days on every plan</strong>, so if you have acted recently
+          your deletion is scheduled up to {MAX_UNDO_WINDOW_DAYS} days out rather than 7 — this is
+          the normal case, not an exception. If you want deletion sooner, you can explicitly waive
+          the grace period and any remaining undo windows with a typed confirmation during the
+          deletion flow — deletion then takes effect immediately. Once deletion is scheduled,
+          syncing stops immediately.
         </p>
         <p>
           From Settings → Privacy &amp; Data, you can export mailbox email/status/connection

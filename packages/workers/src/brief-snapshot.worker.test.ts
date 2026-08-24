@@ -11,6 +11,12 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_IDS,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { BriefLlmPort } from './brief-narrative.js';
@@ -37,14 +43,23 @@ async function freshDb(): Promise<Db> {
   return freshTestDb();
 }
 
+/**
+ * Seeds at an ENTITLED tier by default. `workspaces.tier` defaults to
+ * `free` in the schema, and the worker now filters unentitled tiers out
+ * of its mailbox select — so a harness that took the column default
+ * would silently seed a workspace the Brief cron must skip, and every
+ * assertion below would pass by testing nothing. Derived from the
+ * manifest, so re-tiering `brief` moves the harness with it.
+ */
 async function seedMailbox(
   db: Db,
   email = 'owner@example.com',
   timezone: string | null = null,
+  tier: TierId = minimumTierForCapability('brief'),
 ): Promise<{ workspaceId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
-    .values({ name: `WS-${email}` })
+    .values({ name: `WS-${email}`, tier })
     .returning({
       id: workspaces.id,
     });
@@ -141,6 +156,78 @@ const KEY_PROMO = 'c'.repeat(64);
 const KEY_NEWS = 'd'.repeat(64);
 
 describe('BriefSnapshotWorker', () => {
+  it('D7/D19 — an unentitled tier is never processed and never reaches the LLM', async () => {
+    const db = await freshDb();
+    // Derived, not `'free'`: if `brief` is ever re-tiered so that every
+    // tier grants it, this test must fail loudly rather than quietly
+    // seed an entitled workspace and assert nothing.
+    const unentitled = TIER_IDS.find((tier) => !hasCapability(tier, 'brief'));
+    expect(unentitled).toBeDefined();
+
+    const { mailboxAccountId } = await seedMailbox(db, 'free@example.com', null, unentitled!);
+    await seedSender(db, mailboxAccountId, {
+      email: 'boss@example.com',
+      senderKey: KEY_BOSS,
+      displayName: 'Boss',
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_BOSS,
+      subject: 'Q4 plans',
+      snippet: 'Can we move the Q4 sync to Thursday?',
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const generateNarrative = vi.fn().mockResolvedValue('must never be produced');
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => NOW,
+      llm: { generateNarrative },
+    });
+    const result = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    expect(result.mailboxesProcessed).toBe(0);
+    expect(result.briefsGenerated).toBe(0);
+    // THE claim: no subject line and no Gmail snippet left the process
+    // for a workspace that cannot open the Brief.
+    expect(generateNarrative).not.toHaveBeenCalled();
+
+    const rows = await db
+      .select({ id: briefRuns.id })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+    expect(rows).toHaveLength(0);
+  });
+
+  it('D19 — an entitled mailbox still runs when an unentitled one shares the pass', async () => {
+    const db = await freshDb();
+    const unentitled = TIER_IDS.find((tier) => !hasCapability(tier, 'brief'))!;
+    const { mailboxAccountId: skipped } = await seedMailbox(
+      db,
+      'free@example.com',
+      null,
+      unentitled,
+    );
+    const { mailboxAccountId: entitled } = await seedMailbox(db, 'pro@example.com');
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    expect(result.mailboxesProcessed).toBe(1);
+    expect(result.briefsGenerated).toBe(1);
+
+    const written = await db.select({ id: briefRuns.mailboxAccountId }).from(briefRuns);
+    expect(written.map((r) => r.id)).toEqual([entitled]);
+    expect(written.map((r) => r.id)).not.toContain(skipped);
+  });
+
   it('D64 — waits for local 08:00 before materializing the Brief', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db, 'la@example.com', 'America/Los_Angeles');

@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { UndoService } from './undo.service.js';
 import type { UndoPayload } from './undo.types.js';
+import { MIN_UNDO_WINDOW_DAYS, TIER_IDS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 /**
  * UndoService integration tests (D35, D58, D232).
@@ -95,15 +96,20 @@ describe('UndoService', () => {
       expect(entry.revertedAt).toBeNull();
       expect(entry.executedAt).toBeNull();
 
-      // Default expiry: 7 days from createdAt. Allow generous slop for
-      // SQL `now()` vs test wall-clock.
+      // Default expiry: `MIN_UNDO_WINDOW_DAYS` from createdAt, DERIVED —
+      // the literal 7 here outlived the decision that set it. Every tier
+      // moved to 30 on 2026-08-23 and this assertion stayed green,
+      // because the value it checked was the column default rather than
+      // anything the ladder owned. `issue()` now computes the fallback
+      // from the manifest, so this fails if the two ever disagree again.
+      // Generous slop for SQL `now()` vs test wall-clock.
       const expiryMs = entry.expiresAt.getTime();
-      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-      expect(expiryMs - before).toBeGreaterThan(sevenDaysMs - 5_000);
-      expect(expiryMs - after).toBeLessThan(sevenDaysMs + 5_000);
+      const defaultWindowMs = MIN_UNDO_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      expect(expiryMs - before).toBeGreaterThan(defaultWindowMs - 5_000);
+      expect(expiryMs - after).toBeLessThan(defaultWindowMs + 5_000);
     });
 
-    it('honors an explicit expires_at (Pro tier 30-day window)', async () => {
+    it('honors an explicit expires_at from the caller', async () => {
       const customExpiry = new Date('2099-01-01T00:00:00Z');
       const entry = await svc.issue({
         mailboxAccountId: mailboxId,
@@ -328,10 +334,19 @@ describe('UndoService', () => {
   });
 
   describe('defaultExpiresAt', () => {
-    it('returns 7 days from the provided anchor', () => {
+    it('returns the ladder FLOOR from the provided anchor, not a fixed 7 days', () => {
+      // Derived: the fallback is the smallest window any tier carries,
+      // so it can only under-promise. Pinned to a literal 7 until
+      // 2026-08-23, when every tier moved to 30 and the "keeps Free
+      // correct" rationale silently inverted.
       const anchor = new Date('2026-05-23T00:00:00Z');
-      const expected = new Date('2026-05-30T00:00:00Z');
-      expect(UndoService.defaultExpiresAt(anchor).getTime()).toBe(expected.getTime());
+      const expected = anchor.getTime() + MIN_UNDO_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+      expect(UndoService.defaultExpiresAt(anchor).getTime()).toBe(expected);
+      // The floor must never exceed any tier's real window, or the
+      // fallback would over-promise for somebody.
+      for (const id of TIER_IDS) {
+        expect(MIN_UNDO_WINDOW_DAYS).toBeLessThanOrEqual(TIER_MANIFEST[id].undoWindowDays);
+      }
     });
   });
 });

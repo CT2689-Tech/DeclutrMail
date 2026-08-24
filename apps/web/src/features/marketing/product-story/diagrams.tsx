@@ -6,7 +6,7 @@ import {
   PRIVACY_STORAGE_LABEL,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, VERB_REGISTRY, type VerbId } from '@declutrmail/shared/actions';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 // All five render in Triage as of the 2026-08-06 founder amendment to
 // ADR-0019. Delete is never an engine recommendation — it is user-chosen,
@@ -59,9 +59,7 @@ export function ProductWalkthroughFigure() {
           <span className="dm-story-step-label">3 · Confirmed</span>
           <strong>Archived · 47 messages</strong>
           <span>Recorded in Activity after Gmail confirms the change.</span>
-          <small>
-            Undo available for {TIER_MANIFEST.free.undoWindowDays} days on Free and Plus.
-          </small>
+          <small>Undo available for {MIN_UNDO_WINDOW_DAYS} days on every plan.</small>
         </li>
       </ol>
     </figure>
@@ -103,8 +101,13 @@ export function ActionSemanticsGrid() {
 }
 
 export function GmailBridgeTable() {
-  const freeDays = TIER_MANIFEST.free.undoWindowDays;
-  const proDays = TIER_MANIFEST.pro.undoWindowDays;
+  // One number for the whole ladder since 2026-08-23 (undo is uniform).
+  // Still reduced across tiers rather than pinned to one, so if the
+  // windows ever diverge again this renders the FLOOR instead of a
+  // stale split — the previous copy hardcoded the shape "N on
+  // Free/Plus, M on Pro" AROUND derived numbers, which is how true
+  // values end up inside a false sentence.
+  const undoDays = MIN_UNDO_WINDOW_DAYS;
   return (
     <div
       className="dm-story-table-wrap"
@@ -136,10 +139,8 @@ export function GmailBridgeTable() {
           <tr>
             <th scope="row">Archive</th>
             <td>Moves the previewed emails out of Inbox; they remain in All Mail.</td>
-            <td>New mail is unchanged unless you separately turn on a Pro rule.</td>
-            <td>
-              Undo: {freeDays} days on Free/Plus, {proDays} on Pro.
-            </td>
+            <td>New mail is unchanged unless you separately turn on an Autopilot rule.</td>
+            <td>Undo: {undoDays} days on every plan.</td>
           </tr>
           <tr>
             <th scope="row">Unsubscribe</th>
@@ -154,18 +155,16 @@ export function GmailBridgeTable() {
           <tr>
             <th scope="row">Later</th>
             <td>Moves the previewed email out of Inbox and adds DeclutrMail/Later.</td>
-            <td>New mail is unchanged unless you separately turn on a Pro rule.</td>
-            <td>
-              Undo: {freeDays} days on Free/Plus, {proDays} on Pro.
-            </td>
+            <td>New mail is unchanged unless you separately turn on an Autopilot rule.</td>
+            <td>Undo: {undoDays} days on every plan.</td>
           </tr>
           <tr>
             <th scope="row">Delete</th>
             <td>Moves previewed current mail to Gmail Trash.</td>
-            <td>New mail is unchanged unless you separately turn on a Pro rule.</td>
+            <td>New mail is unchanged unless you separately turn on an Autopilot rule.</td>
             <td>
-              Activity Undo: {freeDays} days on Free/Plus, {proDays} on Pro. Gmail Trash is a
-              separate fallback, normally up to 30 days unless emptied sooner.
+              Activity Undo: {undoDays} days on every plan. Gmail Trash is a separate fallback,
+              normally up to 30 days unless emptied sooner.
             </td>
           </tr>
         </tbody>
@@ -237,8 +236,8 @@ export function ActionLifecycleFigure() {
       <p className="dm-story-figure-note">
         Gmail confirms each label change. For one-click lists, the sender&rsquo;s system reports
         whether it accepted the request. The delivered unsubscribe request cannot be undone; any
-        paired Archive has its own Undo record. Pro Autopilot follows the separate rule path below
-        and does not ask for approval on each matching batch once you turn a rule on.
+        paired Archive has its own Undo record. Autopilot follows the separate rule path below and
+        does not ask for approval on each matching batch once you turn a rule on.
       </p>
     </figure>
   );
@@ -260,14 +259,15 @@ export function AutomationBoundaryFigure() {
           </p>
         </div>
         <div>
-          {/* D251 — preset rules (Observe, batch approval) start at
-              Plus; only the switch to Active is Pro. The body below
-              already states that step without a plan claim. */}
+          {/* Preset rules start at Plus. Both run modes are a user
+              choice on any plan that has Autopilot, so the body states
+              the behaviour without a plan claim. */}
           <span className="dm-story-step-label">Plus · Pro</span>
           <h3>Autopilot preset rule</h3>
           <p>
-            A preset starts in Observe, records what it would match, and acts on future matches only
-            after you deliberately switch it to Active. It can be paused again.
+            Turning a preset on shows what it would do first, then it acts on future matches. Choose
+            Watch first instead and it records what it would match without moving mail, for your
+            approval. It can be paused again.
           </p>
         </div>
       </div>

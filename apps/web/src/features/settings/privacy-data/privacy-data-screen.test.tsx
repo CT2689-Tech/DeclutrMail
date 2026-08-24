@@ -104,8 +104,9 @@ describe('PrivacyDataView', () => {
     unmount();
 
     renderView({ undoDays: null });
-    // Generic free/pro copy straight off the entitlements manifest.
-    expect(screen.getByText(/7 days \(\s*30 days on Pro\)/i)).toBeInTheDocument();
+    // Tier unknown → the FLOOR across the ladder, derived. Never a
+    // tier-specific promise, and never a split that no longer exists.
+    expect(screen.getByText(/at least 30 days on any plan/i)).toBeInTheDocument();
     expect(
       screen.getByText(/Delete also uses your plan's Activity Undo window/i),
     ).toBeInTheDocument();

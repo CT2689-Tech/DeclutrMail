@@ -27,6 +27,8 @@ export function ConfirmModalFrame({
   confirmLabel,
   confirmBusyLabel,
   canConfirm,
+  secondaryAction,
+  pendingAction,
   isBusy,
   error,
   onCancel,
@@ -44,6 +46,23 @@ export function ConfirmModalFrame({
   confirmBusyLabel: string;
   /** Mirrors the visible confirm button's enablement on the keyboard path. */
   canConfirm: boolean;
+  /**
+   * Optional second commit path, shown left of the primary button.
+   *
+   * Gated by the same `canConfirm` — both buttons commit, so both wait
+   * for the preview (D226: never act before the preview resolves).
+   */
+  secondaryAction?: { label: string; busyLabel: string; onClick: () => void } | undefined;
+  /**
+   * WHICH commit is in flight, when one is.
+   *
+   * `isBusy` alone drove both labels, so clicking the secondary made the
+   * PRIMARY button relabel to its own busy text — a user who chose
+   * "Watch first" watched "Turning on…" appear on the button that makes
+   * the rule act. Two adjacent buttons, identical text, and the wrong
+   * one claiming to run.
+   */
+  pendingAction?: 'primary' | 'secondary' | undefined;
   isBusy: boolean;
   error: string | null;
   onCancel: () => void;
@@ -56,7 +75,22 @@ export function ConfirmModalFrame({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !isBusy) onCancel();
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && confirmEnabled) onConfirm();
+      // Commits the PRIMARY action — but not while focus sits on a
+      // different commit button. Without the focus check a user who had
+      // tabbed to "Watch first" and pressed the chord fired
+      // `mode='active'` instead: the shortcut ran a mutation the user
+      // was not looking at.
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && confirmEnabled) {
+        const focused = document.activeElement;
+        // `closest`, not `dataset` on the button itself: the shared
+        // `Button` takes an explicit prop allowlist and forwards no
+        // arbitrary attributes, so a `data-` prop passed to it is
+        // silently dropped. The marker lives on a wrapper span.
+        const marked = focused instanceof HTMLElement ? focused.closest('[data-dm-commit]') : null;
+        const onAnotherCommit =
+          marked != null && marked.getAttribute('data-dm-commit') !== 'primary';
+        if (!onAnotherCommit) onConfirm();
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -149,6 +183,15 @@ export function ConfirmModalFrame({
             <Button tone="default" onClick={onCancel} disabled={isBusy}>
               Cancel
             </Button>
+            {secondaryAction != null && (
+              <span data-dm-commit="secondary" style={{ display: 'contents' }}>
+                <Button tone="default" onClick={secondaryAction.onClick} disabled={!confirmEnabled}>
+                  {isBusy && pendingAction === 'secondary'
+                    ? secondaryAction.busyLabel
+                    : secondaryAction.label}
+                </Button>
+              </span>
+            )}
             <Button
               tone="primary"
               onClick={onConfirm}
@@ -165,7 +208,7 @@ export function ConfirmModalFrame({
                 </Kbd>
               }
             >
-              {isBusy ? confirmBusyLabel : confirmLabel}
+              {isBusy && pendingAction !== 'secondary' ? confirmBusyLabel : confirmLabel}
             </Button>
           </div>
         </div>

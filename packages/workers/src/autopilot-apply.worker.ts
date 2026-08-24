@@ -566,13 +566,19 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       return [];
     }
 
-    // ...but ACTING unattended is not. A tier without `autopilot-active` must not
-    // evaluate `active` rules, because an active match is auto-approved and
-    // would reach the action sweep with no human in the loop. Plus cannot
-    // legitimately create one (the controller blocks the mode change), so
-    // this is the Pro→Plus DOWNGRADE path: previously-active rules go inert
-    // rather than silently continuing to act on a tier that stopped paying
-    // for it. Observe rules keep running, which is exactly what Plus buys.
+    // ...but ACTING unattended is not. A tier without `autopilot-active`
+    // must not evaluate `active` rules: an active match is auto-approved
+    // and would reach the action sweep with no human in the loop. This
+    // is the DOWNGRADE path — previously-active rules go inert rather
+    // than silently continuing to act on a tier that stopped paying for
+    // it, while Observe rules keep running.
+    //
+    // 2026-08-23: both capabilities sit on Plus, so the only tier with
+    // `mayActUnattended === false` is `free` — which already returned
+    // above. The `ne(mode,'active')` term below is therefore unreachable
+    // under this manifest. It stays so that re-tiering `autopilot-active`
+    // remains a one-line manifest edit; see the matching note in
+    // `apps/api/src/autopilot/autopilot.controller.ts`.
     const mayActUnattended = hasCapability(workspace.tier, 'autopilot-active');
 
     return this.deps.db
