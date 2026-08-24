@@ -16,7 +16,7 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { inboxLimitFor, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { AuthSignupOrchestrator } from '../auth/auth-signup.orchestrator.js';
@@ -51,6 +51,7 @@ const pgUrl = process.env.CLEANUP_TEST_PG_URL;
 
 /** The Free monthly quota, from the pricing config (A3). */
 const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
+const PRO_INBOX_LIMIT = inboxLimitFor('pro');
 
 type Client = ReturnType<typeof postgres>;
 type Db = PostgresJsDatabase<typeof schema>;
@@ -218,26 +219,25 @@ async function seedInboxActivationFixture(db: Db): Promise<{
     ])
     .returning({ id: users.id });
   await db.insert(mailboxAccounts).values([
-    {
+    // Occupy every Pro slot but one, so the race below always contends for
+    // exactly ONE remaining slot. This used to seed two rows against a
+    // hardcoded limit of 3, with a comment asserting that limit. When the
+    // 2026-08-23 packaging patch moved Pro to 5 the fixture silently left
+    // three slots free, both contenders won, and the test failed having
+    // stopped running a race at all — the count has to derive or the
+    // scenario quietly stops being the scenario.
+    ...Array.from({ length: PRO_INBOX_LIMIT - 1 }, (_, index) => ({
       workspaceId: workspace!.id,
       userId: owner!.id,
-      provider: 'gmail',
-      providerAccountId: 'inbox-race-primary@gmail.test',
-    },
-    {
-      // A3: Pro carries 3 inboxes — occupy the second active slot so
-      // the race below still contends for exactly ONE remaining slot.
-      workspaceId: workspace!.id,
-      userId: owner!.id,
-      provider: 'gmail',
-      providerAccountId: 'inbox-race-secondary@gmail.test',
-    },
+      provider: 'gmail' as const,
+      providerAccountId: `inbox-race-active-${index}@gmail.test`,
+    })),
     {
       workspaceId: workspace!.id,
       userId: reconnectingUser!.id,
-      provider: 'gmail',
+      provider: 'gmail' as const,
       providerAccountId: disconnectedEmail,
-      status: 'disconnected',
+      status: 'disconnected' as const,
     },
   ]);
   return {
@@ -602,7 +602,7 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
           eq(mailboxAccounts.status, 'active'),
         ),
       );
-    expect(activeRows).toHaveLength(3);
+    expect(activeRows).toHaveLength(PRO_INBOX_LIMIT);
     expect(
       activeRows.filter((row) =>
         [fixture.disconnectedEmail, fixture.newEmail].includes(row.providerAccountId),
@@ -638,6 +638,6 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
           eq(mailboxAccounts.status, 'active'),
         ),
       );
-    expect(activeAfterReplay).toHaveLength(3);
+    expect(activeAfterReplay).toHaveLength(PRO_INBOX_LIMIT);
   });
 });
