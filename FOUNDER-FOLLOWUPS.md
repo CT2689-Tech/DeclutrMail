@@ -24,6 +24,35 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-24 — Scheduled account deletion waits up to 30 days in silence — ACCEPTED AS IS
+
+**Source:** session — packaging patch review (PR #621), founder decision same day
+**Why recorded rather than fixed:** deletion is scheduled at
+`max(now + 7d, latest open undo expiry)`
+(`AccountDeletionOrchestrator.computeProjection`). With the undo window
+uniform at 30 days, any action in the last 23 days pushes the date out,
+so the long wait is now the NORMAL case rather than the exception.
+
+There are exactly two emails in the flow — `deletion-scheduled` at
+request time and `deletion-receipt` after the fact
+(`packages/workers/src/email-send.worker.ts`). Nothing in between. A
+user can be told "the 14th of next month" and then hear nothing for a
+month, with no reminder that it is coming and no nudge that cancelling
+is still possible. The in-app banner does show the date.
+
+**Founder decision 2026-08-24: leave it.** Prelaunch, no users are
+waiting on a deletion. Recorded so the silence is a known state rather
+than a surprise, and so this is not re-raised as a finding.
+
+**Revisit when:** the first real user schedules a deletion, or support
+asks why someone did not know it was coming. The fix if it comes up is a
+reminder email a few days out carrying the date and the cancel link —
+the immediate path (`DELETE AND WAIVE UNDO`) already exists and is
+unaffected.
+**Verifies by:** n/a — a decision to take no action.
+**Status:** Skipped 2026-08-24 — accepted behaviour, revisit trigger above.
+
+
 ### 2026-08-23 — Apply the CLAUDE.md edits for the packaging patch
 
 **Source:** session — tier/feature packaging decision (see
