@@ -10,6 +10,8 @@ export {
   cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
+  MAX_UNDO_WINDOW_DAYS,
+  MIN_UNDO_WINDOW_DAYS,
   minimumTierForCapability,
   satisfiesActionTier,
   tierById,

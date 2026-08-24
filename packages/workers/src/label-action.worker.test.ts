@@ -12,6 +12,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { undoWindowDaysFor } from '@declutrmail/shared/entitlements';
 import { eq } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -256,10 +257,21 @@ describe('LabelActionWorker', () => {
       expect(byId['m3']).toContain('CATEGORY_PROMOTIONS');
     });
 
-    it('undo window resolves from the workspace tier AT ACTION TIME (D19/D81: free 7d, pro 30d)', async () => {
+    // COVERAGE NOTE. The windows are DERIVED now, not the literals
+    // 7 and 30 this test used to carry. Since 2026-08-23 every tier
+    // shares a 30-day window, so the "resolves from the TIER" half of
+    // this test no longer discriminates — a snapshot that ignored the
+    // tier entirely would pass it. What still holds, and is what the
+    // assertions below actually pin: the window is stamped at action
+    // time from the manifest, and an already-issued token is never
+    // rewritten by a later tier change. If the ladder ever splits the
+    // window again, this test regains its teeth with no edit.
+    it('undo window is stamped from the tier AT ACTION TIME and never rewritten', async () => {
       const DAY = 24 * 60 * 60 * 1000;
-      // Seeded workspace defaults to tier='free' → 7-day window,
-      // snapshotted explicitly onto undo_journal.expires_at.
+      const freeDays = undoWindowDaysFor('free');
+      const proDays = undoWindowDaysFor('pro');
+      // Seeded workspace defaults to tier='free', snapshotted
+      // explicitly onto undo_journal.expires_at.
       const [freeJob] = await db
         .insert(actionJobs)
         .values({
@@ -278,8 +290,8 @@ describe('LabelActionWorker', () => {
         .select()
         .from(undoJournal)
         .where(eq(undoJournal.token, freeResult.undoToken!));
-      expect(freeUndo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * DAY);
-      expect(freeUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + 8 * DAY);
+      expect(freeUndo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + (freeDays - 1) * DAY);
+      expect(freeUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + (freeDays + 1) * DAY);
 
       // Flip the workspace to pro — the NEXT action snapshots 30d (the
       // already-issued 7d token above is untouched: downgrade/upgrade
@@ -304,10 +316,10 @@ describe('LabelActionWorker', () => {
         .select()
         .from(undoJournal)
         .where(eq(undoJournal.token, proResult.undoToken!));
-      expect(proUndo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 29 * DAY);
-      expect(proUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + 31 * DAY);
-      // The earlier free-tier token is unchanged.
-      expect(freeUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + 8 * DAY);
+      expect(proUndo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + (proDays - 1) * DAY);
+      expect(proUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + (proDays + 1) * DAY);
+      // The earlier token still carries the window it was issued with.
+      expect(freeUndo!.expiresAt.getTime()).toBeLessThan(Date.now() + (freeDays + 1) * DAY);
     });
 
     it('is idempotent on a done row (no second mutation)', async () => {
@@ -690,10 +702,14 @@ describe('LabelActionWorker', () => {
     });
     expect(payload.inboxMessageIds).toHaveLength(2);
     expect('reach' in payload).toBe(false);
-    // Activity Undo follows the Free plan's 7-day window. Gmail Trash's
-    // separate recovery period remains available in Gmail after that.
-    expect(undo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000);
-    expect(undo!.expiresAt.getTime()).toBeLessThan(Date.now() + 8 * 24 * 60 * 60 * 1000);
+    // Activity Undo follows the seeded workspace's plan window, derived
+    // — this asserted a literal 7 days and went stale when the window
+    // went uniform at 30. Gmail Trash's separate recovery period
+    // remains available in Gmail after that.
+    const undoDays = undoWindowDaysFor('free');
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    expect(undo!.expiresAt.getTime()).toBeGreaterThan(Date.now() + (undoDays - 1) * DAY_MS);
+    expect(undo!.expiresAt.getTime()).toBeLessThan(Date.now() + (undoDays + 1) * DAY_MS);
 
     // Local label mirror: INBOX gone from d1/d2; TRASH added; d3 untouched.
     const msgs = await db

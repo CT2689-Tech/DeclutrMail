@@ -126,7 +126,7 @@ ${comparisonTable()}
 
 Capability names above are the user-facing ones. "${CAPABILITY_LABELS.autopilot}"
 and "${CAPABILITY_LABELS['autopilot-active']}" are the same feature at two
-behaviours, which is the Plus-to-Pro difference rather than a second product.
+behaviours a user chooses between, not two products and not two plans.
 
 ## What every plan does, including Free
 

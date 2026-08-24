@@ -440,7 +440,7 @@ export function SettingsScreen({
         <SectionLabel id="quiet-hours">Quiet hours</SectionLabel>
         <LinkCard
           title="Quiet hours"
-          description="Scheduled windows where non-urgent mail waits outside your inbox until the window ends."
+          description="A daily window when Autopilot holds its actions instead of running them — your own actions always go through."
           href="/quiet"
           cta="Open Quiet hours"
         />

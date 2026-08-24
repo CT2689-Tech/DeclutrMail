@@ -173,8 +173,8 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
  */
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'Review and act on senders yourself.',
-  plus: 'Remove the monthly limit and approve suggested batches.',
-  pro: 'Let rules you turn on handle recurring mail automatically.',
+  plus: 'Remove the monthly limit and let rules keep it clean.',
+  pro: 'See what matters, across every account.',
   team: 'Review and manage mail together.',
   enterprise: 'Manage more inboxes with organizational controls.',
 };
@@ -191,10 +191,14 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   activity: 'Activity history',
   'cleanup-actions': 'Cleanup actions — Keep · Archive · Unsubscribe · Later · Delete',
   triage: 'Triage sessions',
-  // D251 — one feature name, two behaviours. The ladder reads as an
-  // upgrade in kind ("stop approving"), not as a second product.
-  autopilot: 'Autopilot — finds matching mail, you approve each batch',
-  'autopilot-active': 'Autopilot — runs on its own',
+  // One feature name, two behaviours. Since 2026-08-23 both sit on the
+  // same tier, so these rows tick identically — that is correct, not
+  // filler: they are still two capabilities, and the day either moves
+  // the table differentiates again with no code change. The labels
+  // describe the two MODES a user picks, which is what the pair means
+  // now that it no longer straddles a price boundary.
+  autopilot: 'Autopilot — rules that act on future mail',
+  'autopilot-active': 'Autopilot — runs without approving each batch',
   brief: 'Daily Brief',
   screener: 'Screener — new senders collected for review',
   quiet: 'Quiet hours',

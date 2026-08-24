@@ -10,8 +10,10 @@ import {
   senders,
   triageDecisions,
   users,
+  workspaces,
 } from '@declutrmail/db';
 import { parseBriefPrefs } from '@declutrmail/shared/contracts';
+import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import {
@@ -54,6 +56,23 @@ function resolveConcurrency(raw: string | undefined): number {
   return Math.min(n, MAX_BRIEF_SNAPSHOT_CONCURRENCY);
 }
 
+/**
+ * Tiers whose workspaces may receive a Brief — DERIVED from the pricing
+ * manifest, never a literal list, so re-tiering `brief` moves this with
+ * it (a hardcoded `['pro']` is how the gate silently rots).
+ *
+ * WHY THE PRODUCER GATES AT ALL. `@RequiresCapability('brief')` guards
+ * the READ endpoint, but this cron has no principal and ran for every
+ * connected mailbox regardless of tier. Composing a Brief sends the
+ * sender, subject line and Gmail preview snippet to Anthropic
+ * (`composeNarrative` below), so an ungated producer widened the
+ * third-party data boundary for Free and Plus workspaces that cannot
+ * open the feature at all — contradicting `BRIEF_AI_DISCLOSURE`, which
+ * says "a Pro Brief". Filtering here is the only place that stops it:
+ * a request guard never runs for a cron.
+ */
+const BRIEF_TIERS = TIER_IDS.filter((tier) => hasCapability(tier, 'brief'));
+
 /** Cron job payload — same shape as `UndoExpiry` + `FollowupCheck`. */
 export interface BriefSnapshotJobData {
   /** ISO-8601 minute boundary, e.g. `2026-05-25T08:00`. D225 cron key. */
@@ -62,7 +81,7 @@ export interface BriefSnapshotJobData {
 
 /** Per-pass metrics — logged on `worker.succeeded`. */
 export interface BriefSnapshotResult {
-  /** Mailboxes inspected this pass. */
+  /** Mailboxes inspected this pass — entitled tiers only (`BRIEF_TIERS`). */
   mailboxesProcessed: number;
   /**
    * Subset of `mailboxesProcessed` whose per-mailbox snapshot threw
@@ -238,7 +257,9 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         timezone: users.timezone,
       })
       .from(mailboxAccounts)
-      .innerJoin(users, eq(users.id, mailboxAccounts.userId));
+      .innerJoin(users, eq(users.id, mailboxAccounts.userId))
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .where(inArray(workspaces.tier, BRIEF_TIERS));
 
     let briefsGenerated = 0;
     let emptyBriefs = 0;

@@ -20,6 +20,7 @@
 import type { ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   AUTO_ARCHIVE_LOW_ENGAGEMENT,
   PENDING_SUGGESTIONS,
@@ -245,6 +246,7 @@ export const ActivateConfirmOpen: Story<typeof ActivateRuleModal> = {
         rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
         pendingCount={2}
         pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.plus.undoWindowDays}
         preview={{ status: 'ready', result: RULE_PREVIEW_RESULT }}
         onRetryPreview={() => undefined}
         isActivating={false}

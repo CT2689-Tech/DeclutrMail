@@ -195,7 +195,12 @@ describe('/privacy content — D7 + D228 posture', () => {
   it('§7 deletion wording matches the shipped flow: 7-day grace + immediate delete via typed waiver (D232)', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
-    expect(text).toContain('7-day grace period');
+    // "7-day grace period" became "waits at least 7 days": the flat
+    // grace is still the floor, but with undo at 30 days on every plan
+    // the undo basis usually wins, so calling 7 days THE period was
+    // false in the common case.
+    expect(text).toContain('waits at least 7 days');
+    expect(text).toContain('this is the normal case, not an exception');
     expect(text).toContain('waive the grace period and any remaining undo windows');
     expect(text).toContain('typed confirmation');
     expect(text).toContain('deletion then takes effect immediately');

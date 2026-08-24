@@ -15,11 +15,40 @@
 // what makes an India visitor see (and be charged) INR.
 //
 // Ladder per the A3 free-tier activation decision (founder, 2026-07-26 —
-// docs/execution/a3-pricing-rework-plan.md): prices, Founding Pro and
-// every provider SKU unchanged; Free gains Triage + Later + bulk with a
-// 50 cleanup-actions/month quota anchored on the workspace's signup
-// anniversary; Plus = Free + unlimited volume; Pro adds the automation
-// set, 3 inboxes and the 30-day undo window.
+// docs/execution/a3-pricing-rework-plan.md), as amended by the packaging
+// decision of 2026-08-23 (founder). Prices, Founding Pro and every
+// provider SKU are unchanged.
+//
+//   Free  — the whole manual product, metered at 50 cleanup actions
+//           per month on the workspace's signup anniversary.
+//   Plus  — Free + unlimited volume + the Screener + the WHOLE Autopilot,
+//           unattended action included, plus the Quiet window that
+//           governs it.
+//   Pro   — Plus + the two attention surfaces (Brief, Follow-ups) and
+//           5 connected inboxes.
+//
+// WHAT MOVED AND WHY (amends D19, D77, D98, D251):
+//
+//   - `autopilot-active` Pro → Plus. No vendor in the category sells a
+//     find-but-don't-act tier; the precedented free/paid split is
+//     act-once vs. make-it-stick, which is already the Free/Plus line.
+//     Splitting again inside it left Plus as Pro-with-a-chore: a rule
+//     that finds matches and then requires a human click, forever.
+//   - `quiet` Pro → Plus. Quiet is not a feature, it is the GOVERNOR on
+//     Autopilot — it decides when rules may act. Selling the governor a
+//     tier above the thing it governs is how the upsell ended up
+//     describing a feature the reader already owned. It also removes,
+//     by construction, the stranded-window break a Pro→Plus downgrade
+//     used to cause (see the `quiet ⊇ autopilot` invariant in
+//     entitlements.test.ts — the guarantee this move rests on).
+//   - Undo 7d → 30d on EVERY tier. No competitor paywalls undo, and
+//     ADR-0030 names the window as a core differentiator while requiring
+//     the lead claim to hold at Free. The lever was also inverted:
+//     Delete already carries ~30 days of Gmail Trash at every tier, so
+//     the extra days bought least on the most destructive verb.
+//   - Pro inboxes 3 → 5 (team/enterprise follow). Account count is the
+//     category's proven ladder axis, and it is what Pro leans on now
+//     that automation sits on Plus.
 
 import type { ActionTier, ActionVerb, SelectorType } from '../contracts/verb-constants';
 import type { Capability, TierManifest } from './types';
@@ -39,23 +68,29 @@ const FREE_CAPABILITIES: readonly Capability[] = [
 ];
 
 /**
- * Plus = Free + unlimited volume + the Screener + rule-driven matching
- * the user approves by hand (D251, reverses D77's Pro-only Screener).
+ * Plus = Free + unlimited volume + the Screener + the whole Autopilot.
  *
- * `autopilot` WITHOUT `autopilot-active` is the whole point: rules may
- * find matching mail, but nothing moves until the user approves the
- * batch. Delegated approval — `mode='active'` — stays on Pro.
+ * Both Autopilot capabilities live here (2026-08-23, amending D251).
+ * The pair still exists — the apply worker filters per match on
+ * `modeAtMatch`, and `observe`/`active` remain a USER choice ("watch
+ * first" vs. "just run it") — but the choice is no longer a price
+ * point. Charging for the confident mode made caution the cheap
+ * product, which contradicts a wedge built on previewing before
+ * anything moves.
+ *
+ * `quiet` rides with them: it governs WHEN those rules may act, and a
+ * governor must never sit above the thing it governs.
  */
-const PLUS_CAPABILITIES: readonly Capability[] = [...FREE_CAPABILITIES, 'screener', 'autopilot'];
-
-/** Pro = Plus + unattended automation (D19, D77, D251). */
-const PRO_CAPABILITIES: readonly Capability[] = [
-  ...PLUS_CAPABILITIES,
+const PLUS_CAPABILITIES: readonly Capability[] = [
+  ...FREE_CAPABILITIES,
+  'screener',
+  'autopilot',
   'autopilot-active',
-  'brief',
   'quiet',
-  'followups',
 ];
+
+/** Pro = Plus + the two attention surfaces (D19, amended 2026-08-23). */
+const PRO_CAPABILITIES: readonly Capability[] = [...PLUS_CAPABILITIES, 'brief', 'followups'];
 
 /**
  * Which tier unlocks each action SELECTOR. Total record — adding a
@@ -109,7 +144,9 @@ export const TIER_MANIFEST: TierManifest = {
       annual: null,
     },
     inboxLimit: 1,
-    undoWindowDays: 7,
+    // 2026-08-23 — the undo window is uniform across the ladder. It is
+    // the trust claim, not an upsell.
+    undoWindowDays: 30,
     // A3 — 50 cleanup actions per month, resetting on the workspace's
     // signup anniversary. One unit = one sender acted upon; the counting
     // rule lives on `EntitlementsService.cleanupUnitsUsed`, driven by
@@ -137,7 +174,7 @@ export const TIER_MANIFEST: TierManifest = {
       },
     },
     inboxLimit: 1,
-    undoWindowDays: 7,
+    undoWindowDays: 30,
     cleanupActionsPerMonth: null,
     capabilities: PLUS_CAPABILITIES,
     purchasable: true,
@@ -160,9 +197,9 @@ export const TIER_MANIFEST: TierManifest = {
         razorpayPlanId: 'plan_THtwbs4FAeqWlv',
       },
     },
-    // A3 — Pro carries 3 inboxes.
-    inboxLimit: 3,
-    // D19 — Pro extends the undo window to 30 days.
+    // 2026-08-23 — Pro carries 5 inboxes. Account count is the axis Pro
+    // leans on now that automation sits on Plus.
+    inboxLimit: 5,
     undoWindowDays: 30,
     cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
@@ -186,7 +223,7 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'team',
     name: 'Team',
     prices: { monthly: null, annual: null },
-    inboxLimit: 3,
+    inboxLimit: 5,
     undoWindowDays: 30,
     cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
@@ -197,7 +234,7 @@ export const TIER_MANIFEST: TierManifest = {
     id: 'enterprise',
     name: 'Enterprise',
     prices: { monthly: null, annual: null },
-    inboxLimit: 3,
+    inboxLimit: 5,
     undoWindowDays: 30,
     cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,

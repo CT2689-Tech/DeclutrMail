@@ -117,8 +117,8 @@ export default function HowItWorksPage() {
           <p>
             A manual Archive, Later, or Delete applies to the current messages named in its preview.
             It does not quietly decide what happens to future mail. Future automation lives in
-            separate Autopilot rules with their own controls: on Plus and Pro, rules find matches
-            for your approval, and only a rule you switch to Active on Pro acts without asking.
+            separate Autopilot rules with their own controls: you see what a rule would do before
+            you turn it on, and only a rule you deliberately turn on acts without asking.
           </p>
         }
       >

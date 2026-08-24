@@ -14,6 +14,12 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_IDS,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import { TOPICS } from '@declutrmail/events';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -82,7 +88,19 @@ async function seedMailbox(db: Db): Promise<string> {
   return mb!.id;
 }
 
-async function setMailboxTier(db: Db, mailboxAccountId: string, tier: 'free' | 'plus') {
+/**
+ * Tiers on each side of the unattended-action line, DERIVED.
+ *
+ * These were hardcoded `'plus'` / `['free','plus']`. When
+ * `autopilot-active` moved to Plus (2026-08-23) the deny cases asserted
+ * a refusal that correctly stopped happening, and the grant case named
+ * the wrong reason. The manifest decides who is on which side.
+ */
+const UNATTENDED_DENIED_TIERS = TIER_IDS.filter((t) => !hasCapability(t, 'autopilot-active'));
+/** Lowest tier that may run an approved batch at all. */
+const REVIEW_TIER = minimumTierForCapability('autopilot');
+
+async function setMailboxTier(db: Db, mailboxAccountId: string, tier: TierId) {
   const [mailbox] = await db
     .select({ workspaceId: mailboxAccounts.workspaceId })
     .from(mailboxAccounts)
@@ -789,13 +807,13 @@ describe('AutopilotActionWorker', () => {
       'observe',
     );
 
-    await setMailboxTier(db, mailboxId, 'plus');
+    await setMailboxTier(db, mailboxId, REVIEW_TIER);
     const result = await worker.processJob(
       { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
       CTX,
     );
 
-    // A human approved this batch, so Plus is entitled to have it run.
+    // A human approved this batch, so a review-entitled tier runs it.
     expect(result.matchesConsidered).toBe(1);
     expect(result.labelActionsExecuted).toBe(1);
     expect(gmail.calls).toHaveLength(1);
@@ -805,21 +823,30 @@ describe('AutopilotActionWorker', () => {
     expect(match!.intentApplied).toBe(true);
   });
 
-  it('plus does NOT execute an active-mode match even when approved', async () => {
+  // COVERAGE NOTE. This is named for the per-match `modeAtMatch`
+  // filter, but since 2026-08-23 it no longer exercises it: the only
+  // tier without `autopilot-active` is `free`, which the sweep-level
+  // entitlement gate stops first, so the assertion below is satisfied
+  // by that gate and would still pass with the per-match filter
+  // deleted. The leg it used to cover — a review-entitled tier holding
+  // back only its unattended matches — has no reachable tier left and
+  // is GONE, not relocated. Restore it with the stronger seeding if
+  // `autopilot-active` ever moves back up the ladder.
+  it('an unattended-denied tier does NOT execute an active-mode match, even approved', async () => {
     const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');
     const { senderKey } = await seedSender(db, mailboxId, 'unattended@shop.com', {
       inboxMessages: 2,
     });
     const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'active');
 
-    await setMailboxTier(db, mailboxId, 'plus');
+    await setMailboxTier(db, mailboxId, UNATTENDED_DENIED_TIERS[0]!);
     const result = await worker.processJob(
       { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
       CTX,
     );
 
-    // No human in the loop for this one, so Plus must not get it — this is
-    // the Pro→Plus downgrade path and the thing Pro is actually sold on.
+    // No human in the loop for this one, so a tier without
+    // `autopilot-active` must not get it — the downgrade path.
     expect(result.matchesConsidered).toBe(0);
     expect(result.labelActionsExecuted).toBe(0);
     expect(gmail.calls).toHaveLength(0);
@@ -828,7 +855,7 @@ describe('AutopilotActionWorker', () => {
     expect(match!.intentApplied).toBe(false);
   });
 
-  it.each(['free', 'plus'] as const)(
+  it.each(UNATTENDED_DENIED_TIERS)(
     'does not execute an approved ACTIVE-mode match after downgrade to %s',
     async (tier) => {
       const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement');

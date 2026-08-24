@@ -158,16 +158,23 @@ describe('cardBullets — manifest-derived card copy', () => {
     expect(bullets).toContain('Unlimited cleanup actions');
   });
 
-  it('Pro adds the automation set and the manifest quota deltas', () => {
+  it('Pro adds the attention surfaces and the manifest quota deltas', () => {
     const bullets = cardBullets(TIER_MANIFEST.pro);
     expect(bullets).toContain('Everything in Plus');
-    expect(bullets).toContain(CAPABILITY_LABELS['autopilot-active']);
-    expect(bullets).toContain(
-      `${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo for Archive, Later, and Delete`,
-    );
+    expect(bullets).toContain(CAPABILITY_LABELS.brief);
+    expect(bullets).toContain(CAPABILITY_LABELS.followups);
     expect(bullets).toContain(
       `${TIER_MANIFEST.pro.inboxLimit} connected ${TIER_MANIFEST.pro.inboxLimit === 1 ? 'inbox' : 'inboxes'}`,
     );
+    // Autopilot in both modes is Plus now, so Pro's card must not
+    // re-advertise it as something the upgrade buys.
+    expect(bullets).not.toContain(CAPABILITY_LABELS.autopilot);
+    expect(bullets).not.toContain(CAPABILITY_LABELS['autopilot-active']);
+    expect(bullets).not.toContain(CAPABILITY_LABELS.quiet);
+    // The undo window is uniform across the ladder, so it is not a Pro
+    // delta and must not appear as one. `cardBullets` only emits a
+    // limit line when the value CHANGES — this asserts the silence.
+    expect(bullets.some((b) => b.includes('Activity Undo'))).toBe(false);
   });
 });
 

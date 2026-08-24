@@ -9,6 +9,12 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_IDS,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import { eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 
@@ -20,7 +26,7 @@ async function freshDb(): Promise<DrizzleDb> {
   return (await freshTestDb()) as unknown as DrizzleDb;
 }
 
-async function seedWorkspace(db: DrizzleDb, tier: 'free' | 'plus' | 'pro'): Promise<string> {
+async function seedWorkspace(db: DrizzleDb, tier: TierId): Promise<string> {
   const [ws] = await db
     .insert(workspaces)
     .values({ name: 'sweep-test', tier })
@@ -166,8 +172,15 @@ describe('runBillingReconciliationSweep', () => {
     );
   });
 
-  it('D251 — demotes active rules + neutralizes unattended matches on under-entitled tiers ONLY', async () => {
-    async function seedAutomation(tier: 'plus' | 'pro'): Promise<{
+  it('demotes active rules + neutralizes unattended matches on under-entitled tiers ONLY', async () => {
+    // Both sides DERIVED from the manifest. This test used to hardcode
+    // plus-vs-pro; when `autopilot-active` moved to Plus (2026-08-23)
+    // the "under-entitled" side became entitled and the test asserted
+    // a demotion that correctly no longer happens.
+    const under = TIER_IDS.find((t) => !hasCapability(t, 'autopilot-active'))!;
+    const entitled = minimumTierForCapability('autopilot-active');
+
+    async function seedAutomation(tier: TierId): Promise<{
       ruleId: string;
       matchId: string;
       claimedMatchId: string;
@@ -230,12 +243,12 @@ describe('runBillingReconciliationSweep', () => {
       return { ruleId: rule!.id, matchId, claimedMatchId, mailboxId: mb!.id };
     }
 
-    // Identical state on both sides of the entitlement line: the plus
-    // workspace must converge, the pro one must NOT be touched — that
-    // grant-side row is what keeps the tier predicate from passing
-    // vacuously.
-    const plus = await seedAutomation('plus');
-    const pro = await seedAutomation('pro');
+    // Identical state on both sides of the entitlement line: the
+    // under-entitled workspace must converge, the entitled one must NOT
+    // be touched — that grant-side row is what keeps the tier predicate
+    // from passing vacuously.
+    const plus = await seedAutomation(under);
+    const pro = await seedAutomation(entitled);
 
     const result = await runBillingReconciliationSweep(db, autopilot);
 

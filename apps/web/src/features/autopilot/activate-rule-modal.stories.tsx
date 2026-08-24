@@ -10,6 +10,7 @@
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { ActivateRuleModal } from './activate-rule-modal';
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT, RULE_PREVIEW_RESULT } from './fixtures';
 
@@ -54,6 +55,7 @@ const baseArgs: ModalArgs = {
   pendingCount: 2,
   pendingApproximate: false,
   preview: { status: 'ready', result: RULE_PREVIEW_RESULT },
+  undoWindowDays: TIER_MANIFEST.plus.undoWindowDays,
   onRetryPreview: noop,
   isActivating: false,
   error: null,
@@ -64,6 +66,15 @@ const baseArgs: ModalArgs = {
 function frame(children: React.ReactNode) {
   return <div style={{ minHeight: 480, background: color.bg }}>{children}</div>;
 }
+
+/**
+ * The ENABLE entry point — the rule is off and the toggle opened this.
+ * Two commit paths: run it, or watch first. Both gate on the dry-run.
+ */
+export const EnableWithWatchFirst: Story<typeof ActivateRuleModal> = {
+  args: { ...baseArgs, intent: 'enable', onWatchFirst: noop },
+  render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
+};
 
 /** Preview resolved — sample senders listed, Confirm enabled. */
 export const PreviewReady: Story<typeof ActivateRuleModal> = {

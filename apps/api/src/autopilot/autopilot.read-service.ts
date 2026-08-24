@@ -54,11 +54,13 @@ import {
 } from '@declutrmail/db';
 import {
   AUTOPILOT_ACTION_JOB,
+  AUTOPILOT_APPLY_JOB,
   AUTOPILOT_CLAIM_KEY_PREFIXES,
   AUTOPILOT_PRESETS,
   autopilotActionJobOptions,
   materializeAutopilotSignals,
   type AutopilotActionJobData,
+  type AutopilotApplyJobData,
   type PresetInput,
 } from '@declutrmail/workers';
 import { TIER_IDS, hasCapability } from '@declutrmail/shared/entitlements';
@@ -88,6 +90,16 @@ import type {
  * matches.
  */
 export const AUTOPILOT_ACTION_QUEUE_TOKEN = 'AUTOPILOT_ACTION_QUEUE';
+
+/**
+ * The MATCHER queue — same fail-open `Queue | null` contract.
+ *
+ * Distinct from the action queue: `autopilot-apply` decides WHICH
+ * senders a rule matches and writes `rule_match_log`; `autopilot-action`
+ * executes what was matched-and-approved. Turning a rule on needs the
+ * matcher, because there is nothing for the action sweep to execute yet.
+ */
+export const AUTOPILOT_APPLY_QUEUE_TOKEN = 'AUTOPILOT_APPLY_QUEUE';
 
 /** D10 — Observe-mode window before the day-7 prompt (no auto-promote). */
 const OBSERVE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -159,6 +171,9 @@ export class AutopilotReadService {
     @Optional()
     @Inject(AUTOPILOT_ACTION_QUEUE_TOKEN)
     private readonly actionQueue: Queue<AutopilotActionJobData> | null = null,
+    @Optional()
+    @Inject(AUTOPILOT_APPLY_QUEUE_TOKEN)
+    private readonly applyQueue: Queue<AutopilotApplyJobData> | null = null,
   ) {}
 
   /**
@@ -540,6 +555,25 @@ export class AutopilotReadService {
       )
       .returning();
     if (!updated) return null;
+
+    // A rule that just became runnable gets a sweep NOW.
+    //
+    // Nothing else enqueues one on a rule change: `autopilot-apply` is
+    // triggered only by `mailbox.sync_ready`, `triage.score_run_completed`
+    // and the 5-minute incremental-sync delta. So before this, turning a
+    // rule on left it inert until unrelated mail happened to arrive —
+    // which made the enable preview's whole promise ("the rule acts on
+    // matching mail already in your inbox") false on a quiet mailbox.
+    //
+    // Both modes need it: `active` so the first sweep acts on the
+    // backlog the preview just counted, `observe` so the suggestions the
+    // user was told to expect actually appear. `paused` gets nothing.
+    const nowRunnable = updated.enabled && updated.mode !== 'paused';
+    const patchTurnedItOn = patch.enabled === true || patch.mode !== undefined;
+    if (nowRunnable && patchTurnedItOn) {
+      await this.enqueueApplySweep(mailboxAccountId);
+    }
+
     const digests = await this.observeDigests(mailboxAccountId, id);
     return projectRule(updated, digests.get(updated.id) ?? null);
   }
@@ -564,10 +598,11 @@ export class AutopilotReadService {
   }
 
   /**
-   * D251 Pro→Plus downgrade — called by the billing tier writers (via
+   * Downgrade convergence — called by the billing tier writers (via
    * this module's exported facade; billing never touches
    * `automation_rules` directly, D204) whenever a workspace's new tier
-   * no longer grants `autopilot-active`:
+   * no longer grants `autopilot-active`. The tier list is derived, so
+   * this follows the manifest rather than a named pair of plans:
    *
    *   1. Every `active` rule flips back to `observe`, with the same
    *      field semantics as a user mode change in `patchRule` (fresh
@@ -1186,6 +1221,41 @@ export class AutopilotReadService {
    * collapsing onto one job is correct. `-` separator in the jobId —
    * BullMQ rejects custom ids containing `:` (U14 smoke).
    */
+  /**
+   * Enqueue one `autopilot-apply` sweep for the mailbox.
+   *
+   * Fail-open, matching every other queue path in this service: with no
+   * REDIS_URL the rule change still persists and the caller still gets
+   * its 200 — the sweep simply waits for the next sync-driven trigger.
+   * A rule the user turned on must not fail to save because Redis is
+   * unavailable.
+   *
+   * `-` separator in the jobId, not `:` — BullMQ reserves `:` as its
+   * Redis key separator and rejects custom ids containing it.
+   */
+  private async enqueueApplySweep(mailboxAccountId: string): Promise<void> {
+    if (!this.applyQueue) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'autopilot.apply_queue_unwired',
+          mailboxAccountId,
+        }),
+      );
+      return;
+    }
+    const triggeredAtMs = Date.now();
+    await this.applyQueue.add(
+      AUTOPILOT_APPLY_JOB,
+      { mailboxAccountId, triggeredAtMs },
+      {
+        jobId: `${mailboxAccountId}-${triggeredAtMs}`,
+        removeOnComplete: { age: 86_400 },
+        removeOnFail: false,
+      },
+    );
+  }
+
   private async enqueueActionSweep(mailboxAccountId: string): Promise<boolean> {
     if (!this.actionQueue) return false;
     const triggeredAtMs = Date.now();
