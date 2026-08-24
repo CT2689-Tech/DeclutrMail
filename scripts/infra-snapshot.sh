@@ -49,6 +49,21 @@ set -euo pipefail
 
 PROJECT="${GCP_PROJECT:-declutrmail-ai-prod}"
 REGION="${GCP_REGION:-us-central1}"
+# The worker lives in its own region (deploy-cloud-run.yml WORKER_REGION):
+# it has no domain mapping, so it moved to us-west1 to sit in the same
+# metro as the database while the API waits for a certificate cutover.
+# A snapshot that looked in one region would find the worker absent and
+# record `null` — indistinguishable from a worker that is genuinely gone,
+# which is exactly the drift this file exists to detect.
+WORKER_REGION="${GCP_WORKER_REGION:-us-west1}"
+
+# Region for one service name.
+region_for() {
+  case "$1" in
+    declutrmail-worker) printf '%s' "$WORKER_REGION" ;;
+    *)                  printf '%s' "$REGION" ;;
+  esac
+}
 REPO="${GITHUB_REPOSITORY:-CT2689-Tech/DeclutrMail}"
 SNAPSHOT_DATE="${SNAPSHOT_DATE:-$(date -u +%Y-%m-%d)}"
 SNAPSHOT_TS="${SNAPSHOT_TS:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
@@ -121,16 +136,17 @@ json_or() {
 # ─── Cloud Run revisions (API + worker) ─────────────────────────────
 cloud_run_state() {
   local svc=$1
-  local rev_json env_json traffic_json
+  local rev_json env_json traffic_json svc_region
+  svc_region=$(region_for "$svc")
   rev_json=$(safe_gcloud gcloud run revisions list \
-    --service="$svc" --project="$PROJECT" --region="$REGION" \
+    --service="$svc" --project="$PROJECT" --region="$svc_region" \
     --limit=1 \
     --format='json(metadata.name, spec.containers[0].image, metadata.creationTimestamp, status.conditions[0].status)')
   env_json=$(safe_gcloud gcloud run services describe "$svc" \
-    --project="$PROJECT" --region="$REGION" \
+    --project="$PROJECT" --region="$svc_region" \
     --format='json(spec.template.spec.containers[0].env[].name)')
   traffic_json=$(safe_gcloud gcloud run services describe "$svc" \
-    --project="$PROJECT" --region="$REGION" \
+    --project="$PROJECT" --region="$svc_region" \
     --format='json(status.traffic[].revisionName, status.traffic[].percent)')
   jq -n \
     --arg svc "$svc" \

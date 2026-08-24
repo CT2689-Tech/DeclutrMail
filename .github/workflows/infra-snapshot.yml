@@ -73,6 +73,10 @@ jobs:
         env:
           GCP_PROJECT: declutrmail-ai-prod
           GCP_REGION: us-central1
+          # The worker sits in its own region — see WORKER_REGION in
+          # deploy-cloud-run.yml. Passed explicitly so the snapshot and
+          # the deploy cannot drift apart silently.
+          GCP_WORKER_REGION: us-west1
           SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
           GH_TOKEN: ${{ secrets.INFRA_SNAPSHOT_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
