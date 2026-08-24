@@ -3345,3 +3345,45 @@ importantly, `makeQueryClient` now has a `QueryCache.onError` that reports
 non-4xx query failures to Sentry — until now ONLY mutations had a
 cache-level handler, so every failed READ in the product was invisible,
 which is why an app-killing bug produced no telemetry at all.
+
+## 2026-08-24 — A sweep that could not sweep, with a green test named for it
+
+**PR:** branch `perf/d245-scoped-sender-sweeps` (commits `b7c7383e` → `864a7d00`)
+**Caught by:** `/ultrareview` (cloud review), not by any test, gate, or smoke
+
+**What happened:** `SenderIndexSweepWorker` was introduced as the load-bearing
+path for D245 §2.6 — the only place clock-driven auto-protections can retire,
+because no Gmail event announces the passage of time. It could not retire any
+of them. `applyAutomaticProtection`'s demote handled exactly one case
+(`gmail_important` on a non-Primary sender); a `starred` protection whose star
+aged past a year, a `replied` protection whose count decayed, and a still-Primary
+`gmail_important` all survived every sweep forever. The upsert could not
+compensate: a sender qualifying for nothing is filtered out by `WHERE
+protection_reason IS NOT NULL`, and the `DO UPDATE` guard is false for any
+already-protected row.
+
+The test was called `'retires a protection whose star has aged past a year'`.
+It seeded `senders` and a stale-starred `mail_messages` row, then asserted the
+policy was `undefined` — **it never inserted a `sender_policies` row at all.**
+So it proved the sweep does not CREATE a protection from stale evidence, which
+was never in doubt, and said nothing about retiring one. It passed for the whole
+life of the defect, and I cited it in a commit message as evidence the behaviour
+worked.
+
+**Correct approach:** a test for a RETIREMENT must seed the thing being retired.
+The name of the test is a claim; the fixture is what makes it true. When a test
+asserts absence (`toBeUndefined`, `toHaveLength(0)`, `not.toContain`), ask what
+state the assertion would hold in *vacuously* — here, "no policy row exists"
+held because none was ever written.
+
+**Rule:** a test whose name contains a verb of CHANGE (retires, demotes,
+clears, expires, corrects) must assert a before-state and an after-state.
+Asserting only the after-state passes against code that never ran.
+
+**Enforcement update:** none mechanical — this is the §8 "green test is not
+evidence" class, already documented there with three prior instances; this is
+the fourth, so the guidance is right and was not applied. What did work was the
+adversarial review, and the probe-before-fixing habit: the defect was confirmed
+by running a real sweep against a real DB and reading back
+`{is_protected: true, reason: 'starred'}` BEFORE any fix was written, so the
+fix had a measured starting point rather than a believed one.
