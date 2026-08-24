@@ -1,4 +1,4 @@
-import { and, eq, getTableName, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, getTableName, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -26,6 +26,7 @@ import {
   type ReasoningLlmPort,
 } from './reasoning.js';
 import { RateLimiter } from './rate-limiter.js';
+import { sqlTextArray } from './sql-text-array.js';
 import {
   CASCADE_RULE_PHRASE,
   isGovernmentDomain,
@@ -37,6 +38,70 @@ import type { WorkerContext } from './worker-context.js';
 
 /** Bound Drizzle client over the full schema (matches `WorkerDb` in InitialSync). */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Senders scored per chunk.
+ *
+ * The chunk is the unit of BOTH batching and failure isolation, so the
+ * size trades two things off. Larger chunks amortise the six grouped
+ * reads over more senders; smaller chunks lose less work when one throws
+ * and keep the `ANY(...)` parameter lists inside sane planning limits.
+ * 200 puts an 8,000-sender mailbox at 40 chunks — 240 reads where the
+ * per-sender form issued ~48,000.
+ */
+export const SCORE_CHUNK_SIZE = 200;
+
+/**
+ * Everything `loadSignals` reads, prefetched for a chunk of senders.
+ *
+ * A Map per source rather than one merged record per sender: a sender
+ * with no policy row, no manual archives, or no prior decision is the
+ * common case, and a missing key is the natural way to say so. Merging
+ * would force a null-filled shape and invite `?? 0` defaults that hide
+ * whether a zero was measured or absent.
+ */
+interface SignalBatch {
+  senders: Map<
+    string,
+    {
+      senderKey: string;
+      displayName: string;
+      domain: string;
+      email: string;
+      gmailCategory: SenderSignals['gmailCategory'];
+      firstSeenAt: Date;
+      lastSeenAt: Date;
+    }
+  >;
+  policies: Map<
+    string,
+    { isProtected: boolean; protectionReason: SenderSignals['protectionReason'] | null }
+  >;
+  wroteTo: Map<string, number>;
+  messageAggregates: Map<
+    string,
+    {
+      totalMessages: number;
+      hasOneClickUnsub: boolean | null;
+      hasAnyUnsub: boolean | null;
+      starredCount: number;
+      volume90: number;
+      reads90: number;
+      recent30: number;
+      prior30to90: number;
+    }
+  >;
+  manualArchives: Map<string, number>;
+  existingDecisions: Map<
+    string,
+    {
+      verdict: TriageVerdict;
+      generatedBy: string;
+      reasoning: string | null;
+      expiresAt: Date;
+    }
+  >;
+}
 
 /**
  * Re-score TTL (D25). The worker writes `expires_at = produced_at + TTL`;
@@ -104,6 +169,18 @@ export interface ScoreJobResult {
    * sender is never re-flagged (`ON CONFLICT DO NOTHING`).
    */
   screenerFlagged: number;
+  /**
+   * Senders whose scoring threw, and chunks whose prefetch threw.
+   *
+   * Both are zero on a healthy run. They exist because the sweep no
+   * longer fails whole when one sender does — which is the fix, but it
+   * also means a partially-failing sweep now returns SUCCESS. Without
+   * these two counts on the ops line, "scored 7,900 of 8,000" would be
+   * indistinguishable from "scored all 8,000", and a chunk failing every
+   * night would never surface.
+   */
+  sendersFailed: number;
+  chunksFailed: number;
 }
 
 /** Window for "monthly volume" — D21 reads the last full calendar month. */
@@ -281,30 +358,81 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       ? [payload.senderKey]
       : await this.listMailboxSenderKeys(payload.mailboxAccountId);
 
-    // Bounded fan-out. Each task runs `scoreOne` under the shared
-    // limiter; the limiter caps concurrent in-flight `llm.explain()`
-    // calls. Sequential DB writes were the original bottleneck; even
-    // with concurrency = 4 the wall-clock for a 1000-sender sweep drops
-    // by ~4x when the LLM is the long pole.
-    const results = await Promise.all(
-      senderKeys.map((senderKey) =>
-        this.limiter(() =>
-          this.scoreOne(payload.mailboxAccountId, senderKey, producedAt, expiresAt),
-        ),
-      ),
-    );
-
+    // CHUNKED, and each chunk isolated.
+    //
+    // This was one `Promise.all` over every sender in the mailbox. Two
+    // problems, both of which only appear at the size this actually
+    // runs at. `Promise.all` rejects on the FIRST rejection, so a single
+    // sender throwing discarded the other ~8,000 senders' completed work
+    // and the retry started again from zero — and `perMailboxPolicy` has
+    // `timeoutMs: null`, so there was no wall-clock bound to stop it.
+    // And every sender issued its own six reads.
+    //
+    // Now: prefetch a chunk's reads in six queries, score the chunk
+    // under the same LLM concurrency limiter, and keep the completed
+    // chunks when one fails. `allSettled` inside a chunk means one bad
+    // sender costs its own row, not its neighbours'.
     let llmExplanations = 0;
     let templateExplanations = 0;
     let llmTimeouts = 0;
     let screenerFlagged = 0;
-    for (const written of results) {
-      if (!written) continue;
-      if (written.generatedBy === 'llm_haiku') llmExplanations += 1;
-      else templateExplanations += 1;
-      if (written.timedOut) llmTimeouts += 1;
-      if (written.screenerFlagged) screenerFlagged += 1;
+    let sendersFailed = 0;
+    let chunksFailed = 0;
+
+    for (let i = 0; i < senderKeys.length; i += SCORE_CHUNK_SIZE) {
+      const chunk = senderKeys.slice(i, i + SCORE_CHUNK_SIZE);
+      let batch: SignalBatch;
+      try {
+        batch = await this.loadSignalBatch(payload.mailboxAccountId, chunk);
+      } catch (err) {
+        // A failed PREFETCH loses the chunk, not the sweep. Logged with
+        // its size so a chunk silently skipped is never mistaken for a
+        // chunk with nothing in it.
+        chunksFailed += 1;
+        sendersFailed += chunk.length;
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'score.chunk_prefetch_failed',
+            worker: this.workerName,
+            mailboxAccountId: payload.mailboxAccountId,
+            chunkSize: chunk.length,
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+        continue;
+      }
+
+      const settled = await Promise.allSettled(
+        chunk.map((senderKey) =>
+          this.limiter(() =>
+            this.scoreOne(payload.mailboxAccountId, senderKey, producedAt, expiresAt, batch),
+          ),
+        ),
+      );
+
+      for (const outcome of settled) {
+        if (outcome.status === 'rejected') {
+          sendersFailed += 1;
+          continue;
+        }
+        const written = outcome.value;
+        if (!written) continue;
+        if (written.generatedBy === 'llm_haiku') llmExplanations += 1;
+        else templateExplanations += 1;
+        if (written.timedOut) llmTimeouts += 1;
+        if (written.screenerFlagged) screenerFlagged += 1;
+      }
     }
+
+    // A sweep where EVERY sender failed is a failure, not a quiet
+    // success with zero decisions — that shape is indistinguishable from
+    // an empty mailbox on the ops line, and it is how a broken sweep
+    // stays broken.
+    if (senderKeys.length > 0 && sendersFailed === senderKeys.length) {
+      throw new Error(`score sweep failed for all ${senderKeys.length} senders in the mailbox`);
+    }
+
     const decisionsWritten = llmExplanations + templateExplanations;
 
     // U14 — `triage.score_run_completed` drives the Autopilot apply
@@ -347,6 +475,8 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       templateExplanations,
       llmTimeouts,
       screenerFlagged,
+      sendersFailed,
+      chunksFailed,
     };
   }
 
@@ -360,13 +490,14 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     senderKey: string,
     producedAt: Date,
     expiresAt: Date,
+    batch: SignalBatch,
   ): Promise<{
     verdict: TriageVerdict;
     generatedBy: 'llm_haiku' | 'template';
     timedOut: boolean;
     screenerFlagged: boolean;
   } | null> {
-    const signals = await this.loadSignals(mailboxAccountId, senderKey);
+    const signals = this.loadSignals(mailboxAccountId, senderKey, batch);
     if (!signals) return null;
     const result = runCascade(signals.signals);
 
@@ -387,21 +518,7 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
       // it and skip the call. Any verdict change (or template row, or
       // expiry) still gets a fresh call — reasoning must never explain
       // a verdict it wasn't written for.
-      const [existing] = await this.deps.db
-        .select({
-          verdict: triageDecisions.verdict,
-          generatedBy: triageDecisions.generatedBy,
-          reasoning: triageDecisions.reasoning,
-          expiresAt: triageDecisions.expiresAt,
-        })
-        .from(triageDecisions)
-        .where(
-          and(
-            eq(triageDecisions.mailboxAccountId, mailboxAccountId),
-            eq(triageDecisions.senderKey, senderKey),
-          ),
-        )
-        .limit(1);
+      const existing = batch.existingDecisions.get(senderKey);
       const reusable =
         existing &&
         existing.generatedBy === 'llm_haiku' &&
@@ -585,6 +702,220 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
   }
 
   /**
+   * Every per-sender read the cascade needs, for a whole CHUNK of
+   * senders, in six queries instead of six per sender.
+   *
+   * ## The problem this replaces
+   *
+   * `loadSignals` used to issue six round trips per sender: the sender
+   * row, its policy, a wrote-to count, a `mail_messages` aggregate, a
+   * manual-archive count, and the existing decision. On a mailbox with
+   * ~8,000 senders a full sweep was therefore ~48,000 round trips —
+   * and the database is in `us-west-2` while the worker runs in
+   * `us-central1`, where a single round trip measures 94 ms against
+   * 1.4 ms of server-side execution. The sweep spent its life waiting
+   * on geography.
+   *
+   * The wrote-to count was worse than a round trip. It scans all of the
+   * mailbox's outbound mail, unnests `recipient_emails`, and applies
+   * `dm_normalize_email()` to BOTH sides — so no index can serve it and
+   * every sender paid a full scan. Grouping it means the scan happens
+   * once per chunk and every sender in that chunk reads its own row out
+   * of the result.
+   *
+   * ## Why grouped, not joined
+   *
+   * One six-way join would return a row per sender per matching message
+   * and re-aggregate work the individual queries do once. Six grouped
+   * queries keep each aggregate on its own index and cost six round
+   * trips regardless of chunk size, which is the term that actually
+   * dominated.
+   *
+   * METADATA ONLY throughout (D7/D228). `mail_messages` is read for
+   * `sender_key`, `label_ids`, `is_unread`, `is_outbound`,
+   * `internal_date` and the List-Unsubscribe capability columns — no
+   * body field is touched by any query here.
+   */
+  private async loadSignalBatch(
+    mailboxAccountId: string,
+    senderKeys: string[],
+  ): Promise<SignalBatch> {
+    const empty: SignalBatch = {
+      senders: new Map(),
+      policies: new Map(),
+      wroteTo: new Map(),
+      messageAggregates: new Map(),
+      manualArchives: new Map(),
+      existingDecisions: new Map(),
+    };
+    if (senderKeys.length === 0) return empty;
+
+    const now = (this.deps.now ?? (() => new Date()))();
+    const day = 24 * 60 * 60 * 1000;
+    const at = (ms: number) => sql`${new Date(now.getTime() - ms).toISOString()}::timestamptz`;
+    const since90 = at(NINETY_DAYS_MS);
+    const since30 = at(30 * day);
+    const since365 = at(365 * day);
+    // EVERY window is bound from the worker's injected clock, not from
+    // Postgres `now()`, so a run is deterministic and a replayed job
+    // measures the same windows it did the first time.
+    const inWindow = sql`${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${since90}`;
+    const keys = senderKeys;
+
+    const [senderRows, policyRows, wroteToRows, aggRows, archiveRows, decisionRows] =
+      await Promise.all([
+        this.deps.db
+          .select({
+            senderKey: senders.senderKey,
+            displayName: senders.displayName,
+            domain: senders.domain,
+            // Identity for the explanation check — the local part is
+            // where a sender's own underscores live, and the model is
+            // allowed to quote them. Also the wrote-to join key.
+            email: senders.email,
+            gmailCategory: senders.gmailCategory,
+            firstSeenAt: senders.firstSeenAt,
+            lastSeenAt: senders.lastSeenAt,
+          })
+          .from(senders)
+          .where(
+            and(eq(senders.mailboxAccountId, mailboxAccountId), inArray(senders.senderKey, keys)),
+          ),
+
+        this.deps.db
+          .select({
+            senderKey: senderPolicies.senderKey,
+            isProtected: senderPolicies.isProtected,
+            protectionReason: senderPolicies.protectionReason,
+          })
+          .from(senderPolicies)
+          .where(
+            and(
+              eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+              inArray(senderPolicies.senderKey, keys),
+            ),
+          ),
+
+        // Outbound mail ADDRESSED to these senders in the same window,
+        // read from `mail_messages` rather than a per-month counter
+        // (mig 0063). The counter this replaced lived on
+        // `sender_timeseries`, whose rows exist only for months the
+        // sender sent INBOUND mail — so a month in which the user wrote
+        // to someone who sent them nothing had no row, and 21% of
+        // credited messages on the mailbox this was measured against
+        // were invisible to exactly this window. Under-reporting here
+        // costs a Keep, which is the destructive direction.
+        //
+        // Raw SQL: the `LATERAL unnest(recipient_emails)` has no Drizzle
+        // query-builder form, and hand-rolling one would drift from the
+        // identical predicate in mig 0063 and both sync workers.
+        //
+        // Grouped on the SENDER side: the normalized recipient address
+        // is joined back to `senders.email` so one scan serves the whole
+        // chunk. `COUNT(DISTINCT m.id)` is preserved exactly — a message
+        // addressed to the same sender twice still counts once.
+        this.deps.db.execute(sql`
+        SELECT s.${sql.identifier('sender_key')} AS sender_key,
+               COUNT(DISTINCT m.${sql.identifier('id')})::int AS n
+        FROM ${senders} AS s
+        JOIN ${mailMessages} AS m
+          ON m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+         AND m.${sql.identifier('is_outbound')} = true
+         AND m.${sql.identifier('internal_date')} >= ${at(NINETY_DAYS_MS)}
+        CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
+        WHERE s.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
+          AND s.${sql.identifier('sender_key')} = ANY(${sqlTextArray(keys)})
+          AND dm_normalize_email(r.addr) = dm_normalize_email(s.${sql.identifier('email')})
+        GROUP BY s.${sql.identifier('sender_key')}
+      `),
+
+        this.deps.db
+          .select({
+            senderKey: mailMessages.senderKey,
+            // INBOUND only. Counting the user's own sent mail toward the
+            // sender's message count decides `insufficient_signal` (< 3)
+            // — a sender the user wrote to repeatedly looked established
+            // on the strength of the user's own messages.
+            totalMessages: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false)::int`,
+            hasOneClickUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeOneClick})`,
+            hasAnyUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeUrl} is not null or ${mailMessages.unsubscribeMailtoUrl} is not null)`,
+            // `is_outbound = false`: starring your OWN sent message is
+            // not the sender earning a Keep.
+            starredCount: sql<number>`coalesce(sum(case when 'STARRED' = any(${mailMessages.labelIds}) and ${mailMessages.isOutbound} = false and ${mailMessages.internalDate} >= ${since365} then 1 else 0 end), 0)::int`,
+            volume90: sql<number>`count(*) filter (where ${inWindow})::int`,
+            // Decontaminated numerator (mig 0064, F012): a message a
+            // third-party sweeper marked read is not evidence the USER
+            // read it. Excluded from the numerator only — the message
+            // did arrive, so removing it from the denominator would
+            // shrink the sender instead of correcting the rate.
+            reads90: sql<number>`count(*) filter (where ${inWindow} AND ${mailMessages.isUnread} = false AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))})::int`,
+            // Spike inputs — a per-day rate over the last 30 days
+            // against the 30-90 day period before it. Replaces a
+            // calendar-month ratio that reported a crash for every
+            // sender on the 2nd of the month.
+            recent30: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${since30})::int`,
+            prior30to90: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} < ${since30} AND ${mailMessages.internalDate} >= ${since90})::int`,
+          })
+          .from(mailMessages)
+          .where(
+            and(
+              eq(mailMessages.mailboxAccountId, mailboxAccountId),
+              inArray(mailMessages.senderKey, keys),
+            ),
+          )
+          .groupBy(mailMessages.senderKey),
+
+        this.deps.db
+          .select({ senderKey: activityLog.senderKey, n: sql<number>`count(*)::int` })
+          .from(activityLog)
+          .where(
+            and(
+              eq(activityLog.mailboxAccountId, mailboxAccountId),
+              inArray(activityLog.senderKey, keys),
+              eq(activityLog.source, 'manual'),
+              eq(activityLog.action, 'archive'),
+            ),
+          )
+          .groupBy(activityLog.senderKey),
+
+        this.deps.db
+          .select({
+            senderKey: triageDecisions.senderKey,
+            verdict: triageDecisions.verdict,
+            generatedBy: triageDecisions.generatedBy,
+            reasoning: triageDecisions.reasoning,
+            expiresAt: triageDecisions.expiresAt,
+          })
+          .from(triageDecisions)
+          .where(
+            and(
+              eq(triageDecisions.mailboxAccountId, mailboxAccountId),
+              inArray(triageDecisions.senderKey, keys),
+            ),
+          ),
+      ]);
+
+    const batch: SignalBatch = {
+      senders: new Map(senderRows.map((r) => [r.senderKey, r])),
+      policies: new Map(policyRows.map((r) => [r.senderKey, r])),
+      wroteTo: new Map(),
+      messageAggregates: new Map(aggRows.map((r) => [r.senderKey, r])),
+      // `activity_log.sender_key` is nullable — an action can be
+      // recorded against a message with no resolved sender. The
+      // `inArray` above already excludes those rows; this narrows the
+      // type without pretending the column is non-null.
+      manualArchives: new Map(
+        archiveRows.flatMap((r) => (r.senderKey === null ? [] : [[r.senderKey, r.n] as const])),
+      ),
+      existingDecisions: new Map(decisionRows.map((r) => [r.senderKey, r])),
+    };
+    for (const row of allRows<{ sender_key: string; n: number }>(wroteToRows)) {
+      batch.wroteTo.set(row.sender_key, Number(row.n));
+    }
+    return batch;
+  }
+
+  /**
    * Materialize the `SenderSignals` the cascade needs from `senders`,
    * `sender_policies`, `sender_timeseries`, and `mail_messages` metadata.
    * Returns `null` when no `senders` row exists yet.
@@ -592,48 +923,22 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
    * METADATA ONLY. The `mail_messages` query reads `is_unread`,
    * `label_ids`, `internal_date` — none of which are body fields.
    */
-  private async loadSignals(
+  private loadSignals(
     mailboxAccountId: string,
     senderKey: string,
-  ): Promise<{
+    batch: SignalBatch,
+  ): {
     signals: SenderSignals;
     displayName: string;
     domain: string;
     email: string;
-  } | null> {
-    const [sender] = await this.deps.db
-      .select({
-        displayName: senders.displayName,
-        domain: senders.domain,
-        // Identity for the explanation check — the local part is where a
-        // sender's own underscores live, and the model is allowed to
-        // quote them. Also the join key for the wrote-to count below.
-        email: senders.email,
-        gmailCategory: senders.gmailCategory,
-        firstSeenAt: senders.firstSeenAt,
-        lastSeenAt: senders.lastSeenAt,
-      })
-      .from(senders)
-      .where(and(eq(senders.mailboxAccountId, mailboxAccountId), eq(senders.senderKey, senderKey)))
-      .limit(1);
+  } | null {
+    const sender = batch.senders.get(senderKey);
     if (!sender) return null;
 
-    const [policy] = await this.deps.db
-      .select({
-        isProtected: senderPolicies.isProtected,
-        protectionReason: senderPolicies.protectionReason,
-      })
-      .from(senderPolicies)
-      .where(
-        and(
-          eq(senderPolicies.mailboxAccountId, mailboxAccountId),
-          eq(senderPolicies.senderKey, senderKey),
-        ),
-      )
-      .limit(1);
+    const policy = batch.policies.get(senderKey);
 
     const now = (this.deps.now ?? (() => new Date()))();
-    const ninetyDaysAgo = new Date(now.getTime() - NINETY_DAYS_MS);
 
     // Outbound mail ADDRESSED to this sender in the same window, read
     // from `mail_messages` rather than a per-month counter (mig 0063).
@@ -645,87 +950,14 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
     // against were invisible to exactly this window. Under-reporting here
     // costs a Keep (rule 2 below), which is the destructive direction.
     //
-    // Raw SQL: the `LATERAL unnest(recipient_emails)` this needs has no
-    // Drizzle query-builder form, and hand-rolling one would drift from
-    // the identical predicate in mig 0063 and both sync workers.
-    const wroteToRows = await this.deps.db.execute(sql`
-      SELECT COUNT(DISTINCT m.${sql.identifier('id')})::int AS n
-      FROM ${mailMessages} AS m
-      CROSS JOIN LATERAL unnest(m.${sql.identifier('recipient_emails')}) AS r(addr)
-      WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
-        AND m.${sql.identifier('is_outbound')} = true
-        AND m.${sql.identifier('internal_date')} >= ${ninetyDaysAgo.toISOString()}::timestamptz
-        AND dm_normalize_email(r.addr) = dm_normalize_email(${sender.email})
-    `);
-    const wroteTo90 = Number(firstRow<{ n: number }>(wroteToRows)?.n ?? 0);
+    // Prefetched once per CHUNK rather than once per sender — see
+    // `loadSignalBatch`. This is the query that made the sweep
+    // quadratic: a full scan of the mailbox's outbound mail with
+    // `dm_normalize_email()` applied to both sides, so no index can
+    // serve it, repeated for every one of ~8,000 senders.
+    const wroteTo90 = batch.wroteTo.get(senderKey) ?? 0;
 
-    // `mail_messages` metadata aggregates — one scan, every per-sender
-    // fact the cascade reads. Bodies are NEVER touched; only sender_key,
-    // label_ids, is_unread, is_outbound, internal_date and the
-    // List-Unsubscribe capability columns are read.
-    //
-    // The 90-day volume + read count USED to come from
-    // `sender_timeseries`, summing every bucket whose `year_month` was
-    // `>= (now - 90 days)`. `year_month` is a DATE pinned to the first of
-    // the month, so that comparison dropped the oldest bucket WHOLE and
-    // then still divided by three — 3,977 of 14,972 messages (26.6%) on
-    // the founder's mailbox, every scoring run. A rolling 90-day window
-    // cannot be expressed over calendar buckets at all, so the window is
-    // read from the message rows the display path already reads. One
-    // definition, one source (ADR-0037).
-    // EVERY window below is bound from the worker's injected clock, not
-    // from Postgres `now()`. The worker takes `deps.now` so a run is
-    // deterministic; a mix of the two would have the 90-day window
-    // honour the test clock while the spike and starred windows silently
-    // used wall-clock time, which is both untestable and wrong on a
-    // replayed job.
-    const day = 24 * 60 * 60 * 1000;
-    const at = (ms: number) => sql`${new Date(now.getTime() - ms).toISOString()}::timestamptz`;
-    const since90 = at(NINETY_DAYS_MS);
-    const since30 = at(30 * day);
-    const since365 = at(365 * day);
-    const inWindow = sql`${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${since90}`;
-    const [msgAgg] = await this.deps.db
-      .select({
-        // INBOUND only. This counted the user's own sent mail toward the
-        // sender's message count, which decides `insufficient_signal`
-        // (< 3) — a sender the user wrote to repeatedly looked
-        // established on the strength of the user's own messages.
-        totalMessages: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false)::int`,
-        hasOneClickUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeOneClick})`,
-        hasAnyUnsub: sql<boolean>`bool_or(${mailMessages.unsubscribeUrl} is not null or ${mailMessages.unsubscribeMailtoUrl} is not null)`,
-        // `is_outbound = false` added: starring your OWN sent message is
-        // not the sender earning a Keep. The automatic-protection sweep
-        // has always required it (`automatic-protection.ts`); the cascade
-        // signal of the same name did not, so the two disagreed about
-        // what "you starred them" means.
-        starredCount: sql<number>`coalesce(sum(case when 'STARRED' = any(${mailMessages.labelIds}) and ${mailMessages.isOutbound} = false and ${mailMessages.internalDate} >= ${since365} then 1 else 0 end), 0)::int`,
-        volume90: sql<number>`count(*) filter (where ${inWindow})::int`,
-        // Decontaminated numerator (mig 0064, F012): a message a
-        // third-party sweeper marked read is not evidence the USER read
-        // it. Excluded from the numerator only — the message did arrive,
-        // so removing it from the denominator would shrink the sender
-        // instead of correcting the rate. The senders list and the
-        // timeseries reconcile already do this; the engine did not, so
-        // the engine scored on the contaminated rate that suppresses
-        // exactly the unsubscribe suggestions it exists to make.
-        reads90: sql<number>`count(*) filter (where ${inWindow} AND ${mailMessages.isUnread} = false AND ${readStateNotSweeperMarked(mailboxAccountId, getTableName(mailMessages))})::int`,
-        // Spike ratio inputs — a per-day rate over the last 30 days
-        // against the 30-90 day period before it. This replaces a
-        // calendar-month ratio (current month / average of prior
-        // buckets), which reported a crash for every sender on the 2nd
-        // of the month because the current bucket was two days old.
-        recent30: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${since30})::int`,
-        prior30to90: sql<number>`count(*) filter (where ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} < ${since30} AND ${mailMessages.internalDate} >= ${since90})::int`,
-      })
-      .from(mailMessages)
-      .where(
-        and(
-          eq(mailMessages.mailboxAccountId, mailboxAccountId),
-          eq(mailMessages.senderKey, senderKey),
-        ),
-      );
-
+    const msgAgg = batch.messageAggregates.get(senderKey);
     const totalMessages = msgAgg?.totalMessages ?? 0;
     const volume90 = msgAgg?.volume90 ?? 0;
     const reads90 = msgAgg?.reads90 ?? 0;
@@ -744,23 +976,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         : 'none';
     const starredInLastYear = (msgAgg?.starredCount ?? 0) > 0;
 
-    // User-manual archive count — D21 §archive_score uses it as one of the
-    // "user pattern" weights. Read from `activity_log` where source='manual'
-    // AND action='archive' for THIS sender.
-    const [archiveAgg] = await this.deps.db
-      .select({
-        n: sql<number>`count(*)::int`,
-      })
-      .from(activityLog)
-      .where(
-        and(
-          eq(activityLog.mailboxAccountId, mailboxAccountId),
-          eq(activityLog.senderKey, senderKey),
-          eq(activityLog.source, 'manual'),
-          eq(activityLog.action, 'archive'),
-        ),
-      );
-    const userManuallyArchivedCount = archiveAgg?.n ?? 0;
+    // User-manual archive count — D21 §archive_score uses it as one of
+    // the "user pattern" weights. Prefetched per chunk.
+    const userManuallyArchivedCount = batch.manualArchives.get(senderKey) ?? 0;
 
     // Age signals.
     const dayMs = 24 * 60 * 60 * 1000;
@@ -862,11 +1080,21 @@ export const SCORE_JOB = 'score';
  * mismatch here would turn into a confident `0` on `wroteTo90`, which
  * silently withdraws cascade rule 2's Keep — the destructive direction.
  */
-function firstRow<T>(result: unknown): T | undefined {
-  if (Array.isArray(result)) return result[0] as T | undefined;
+/**
+ * All rows from a Drizzle `execute`.
+ *
+ * postgres.js returns an array-like; PGlite (the test driver) returns
+ * `{ rows }`. Both appear in this package. `firstRow` below handles the
+ * same split for single-row reads — reading only one shape would make
+ * the grouped wrote-to counts silently empty under the other driver,
+ * and an empty wrote-to map costs a Keep on every sender the user has
+ * written to.
+ */
+function allRows<T>(result: unknown): T[] {
+  if (Array.isArray(result)) return result as T[];
   if (result && typeof result === 'object') {
     const rows = (result as { rows?: unknown }).rows;
-    if (Array.isArray(rows)) return rows[0] as T | undefined;
+    if (Array.isArray(rows)) return rows as T[];
   }
-  return undefined;
+  return [];
 }

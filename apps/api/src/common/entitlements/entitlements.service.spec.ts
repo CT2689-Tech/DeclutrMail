@@ -804,10 +804,10 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
   });
 });
 
-describe('migration 0073 — purge of unentitled Brief / Follow-ups rows', () => {
+describe('migration 0074 — purge of unentitled Brief / Follow-ups rows', () => {
   /**
    * `packages/db` depends on no workspace package, so migration SQL
-   * cannot read `TIER_MANIFEST` and 0073 names its tiers as literals.
+   * cannot read `TIER_MANIFEST` and 0074 names its tiers as literals.
    * A literal tier list is exactly the shape that produced the drift
    * PR #621 spent a day unwinding, so it is checked rather than trusted:
    * this test reads the migration and compares it to the tiers that
@@ -830,7 +830,7 @@ describe('migration 0073 — purge of unentitled Brief / Follow-ups rows', () =>
       'packages',
       'db',
       'migrations',
-      '0073_purge_unentitled_brief_and_followup_rows.sql',
+      '0074_purge_unentitled_brief_and_followup_rows.sql',
     ),
     'utf8',
   );
@@ -841,7 +841,7 @@ describe('migration 0073 — purge of unentitled Brief / Follow-ups rows', () =>
     const stmt = MIGRATION.split('--> statement-breakpoint').find((chunk) =>
       chunk.includes(`DELETE FROM "${table}"`),
     );
-    expect(stmt, `0073 has no DELETE for ${table}`).toBeDefined();
+    expect(stmt, `0074 has no DELETE for ${table}`).toBeDefined();
     const kept = [...stmt!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
     return TIER_IDS.filter((id) => !kept.includes(id));
   }
@@ -864,7 +864,7 @@ describe('migration 0073 — purge of unentitled Brief / Follow-ups rows', () =>
       for (const tierId of purgedTiersFor(table)) {
         expect(
           hasCapability(tierId, capability),
-          `0073 would delete ${table} rows for ${tierId}, which HAS ${capability}`,
+          `0074 would delete ${table} rows for ${tierId}, which HAS ${capability}`,
         ).toBe(false);
       }
     }

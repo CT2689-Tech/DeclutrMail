@@ -230,6 +230,7 @@ async function runSyncDelta(
   const onNewSender = vi.fn().mockResolvedValue(undefined);
   const worker = new IncrementalSyncWorker({
     db: db as never,
+    lock: PASSTHROUGH_MAILBOX_LOCK,
     gmailAccess: accessFor(new FakeGmailClient(delta.records, delta.metadata)),
     onNewSender,
     onDeltaProcessed: buildAutopilotApplyDeltaTrigger({ add: applyAdd } as never, {
@@ -540,6 +541,7 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
 
     const worker = new IncrementalSyncWorker({
       db: db as never,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(new FakeGmailClient(delta.records, delta.metadata)),
       onDeltaProcessed: () => Promise.reject(new Error('redis down')),
     });

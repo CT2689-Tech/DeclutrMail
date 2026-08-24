@@ -1,5 +1,7 @@
 import 'reflect-metadata';
 
+import { createHash } from 'node:crypto';
+
 import Anthropic from '@anthropic-ai/sdk';
 import { Queue, Worker } from 'bullmq';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -22,6 +24,9 @@ import {
   buildAutopilotApplyDeltaTrigger,
   createAutopilotExecutionChain,
   createRedisConnection,
+  createRedisProducerConnection,
+  GMAIL_QUOTA_SCRIPT,
+  type GmailQuotaLimiter,
   DEAD_LETTER_INTERVAL_MS,
   DEAD_LETTER_QUEUE,
   DeadLetterWorker,
@@ -40,6 +45,8 @@ import {
   enqueueDeadLetterTick,
   enqueueDeletionSweepTick,
   enqueueFollowupCheckTick,
+  enqueueOpsRetentionTick,
+  enqueueSenderIndexSweepTick,
   enqueueSendersCounterReconciliationTick,
   enqueueSnoozeWakeTick,
   enqueueUndoExpiryTick,
@@ -60,12 +67,19 @@ import {
   selectIncrementalDriftCandidates,
   OutboxPublisher,
   RateLimiter,
+  RedisGmailQuotaLimiter,
   RedisSnoozeLabelMapStore,
   SCORE_JOB,
   SCORE_QUEUE,
   ScoreWorker,
+  OPS_RETENTION_INTERVAL_MS,
+  OPS_RETENTION_QUEUE,
+  OpsRetentionWorker,
+  SENDER_INDEX_SWEEP_INTERVAL_MS,
   SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS,
+  SENDER_INDEX_SWEEP_QUEUE,
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
+  SenderIndexSweepWorker,
   SendersCounterReconciliationWorker,
   SNOOZE_WAKE_INTERVAL_MS,
   SNOOZE_WAKE_QUEUE,
@@ -127,6 +141,10 @@ import type {
   LapseReengagementResult,
   ScoreJobData,
   ScoreJobResult,
+  OpsRetentionJobData,
+  OpsRetentionResult,
+  SenderIndexSweepJobData,
+  SenderIndexSweepResult,
   SendersCounterReconciliationJobData,
   SendersCounterReconciliationResult,
   SnoozeWakeJobData,
@@ -145,6 +163,7 @@ import { AnthropicHaikuAdapter } from './adapters/anthropic-haiku.adapter.js';
 import { buildBriefLlmAdapter } from './adapters/brief-llm-anthropic.adapter.js';
 import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
+import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
 import { createMailboxActionLock } from './db/mailbox-action-lock.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
@@ -472,7 +491,72 @@ async function bootstrap(): Promise<void> {
    * each holding at most `windowMs / minRequestSpacing` events
    * (~thousands). Bounded; process restart clears the cache.
    */
-  const limiterByMailbox = new Map<string, RateLimiter>();
+  const limiterByMailbox = new Map<string, GmailQuotaLimiter>();
+
+  // Moved ahead of `getGmailClient` (2026-08-24): the Gmail quota
+  // limiter is now Redis-backed, so the connection has to exist before
+  // the client factory that builds limiters. Nothing between here and
+  // its old position touched Redis.
+  bootStep('redis_connection_init');
+  const connection = createRedisConnection(requireEnv('REDIS_URL'));
+  bootStep('redis_connection_done');
+
+  /**
+   * SHA of the quota script, computed once — the body is immutable, so
+   * the digest is too. EVALSHA ships this instead of the ~900-byte Lua.
+   */
+  const gmailQuotaSha = createHash('sha1').update(GMAIL_QUOTA_SCRIPT).digest('hex');
+
+  /**
+   * A SEPARATE, FAIL-FAST Redis connection for the Gmail quota limiter.
+   *
+   * The limiter degrades to an in-process `RateLimiter` when Redis
+   * errors — but on `connection` above that degrade path is unreachable,
+   * which makes it worse than useless: it reads as handled. BullMQ's
+   * connection is built with `maxRetriesPerRequest: null` (mandatory for
+   * its workers) and ioredis's default `enableOfflineQueue: true`.
+   * Together those mean an `EVALSHA` issued during an outage is BUFFERED
+   * or retried across reconnects rather than rejected, so the `catch`
+   * never runs and `acquire()` simply blocks until Redis returns —
+   * stalling every Gmail call behind it instead of falling back.
+   *
+   * `createRedisProducerConnection` is the shape that turns silence into
+   * an immediate rejection (`maxRetriesPerRequest: 0` flushes in-flight
+   * commands on the first reconnect attempt; `enableOfflineQueue: false`
+   * rejects new ones outright). Its documented trade — a command
+   * attempted during an outage is LOST rather than deferred — is exactly
+   * what this caller wants: a lost quota reservation degrades to the
+   * per-process limiter, which still limits.
+   *
+   * Caught by review 2026-08-24. The unit test covering the degrade path
+   * passed throughout, because it mocks a client that REJECTS and the
+   * real client does not.
+   */
+  bootStep('gmail_quota_connection_init');
+  const gmailQuotaConnection = createRedisProducerConnection(requireEnv('REDIS_URL'));
+  gmailQuotaConnection.on('error', (err: Error) => {
+    // An unhandled 'error' on an ioredis client is an uncaught exception
+    // that takes the process down. This connection is EXPECTED to error
+    // during an outage — that is the mechanism the fallback rides on.
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'gmail.quota.connection_error',
+        message: err.message,
+      }),
+    );
+  });
+  bootStep('gmail_quota_connection_done');
+
+  /**
+   * Reuse of the KMS unwrap, keyed on the ciphertext the row read
+   * returns. See `TokenUnwrapCache` for why the built client is
+   * deliberately NOT cached — the short version is that
+   * `MailboxAccountsService.disconnect` nullifies the token columns to
+   * block a stale refresh, and a cached client never re-reads the row
+   * that went null.
+   */
+  const tokenUnwrapCache = new TokenUnwrapCache();
 
   /**
    * `GmailAccess` port impl: load the mailbox row, decrypt its OAuth
@@ -522,17 +606,37 @@ async function bootstrap(): Promise<void> {
     }
     const tKms = Date.now();
 
-    console.log(
-      JSON.stringify({
-        level: 'info',
-        kind: 'gmail.getClient.kms_decrypt_begin',
-        mailboxAccountId,
-      }),
-    );
-    const refreshToken = await tokenCrypto.decrypt(
+    // ORDER IS THE SAFETY PROPERTY. The row read above is
+    // unconditional and the null check on its token columns is ABOVE
+    // this line, so a disconnected mailbox throws before the cache is
+    // ever consulted — `disconnect()` nullifies those columns precisely
+    // to block a stale refresh, and that block must not be reachable
+    // around. The cache only ever answers for ciphertext that is still
+    // in the row we just read.
+    const cachedToken = tokenUnwrapCache.get(
+      mailboxAccountId,
       account.encryptedRefreshToken,
       account.dekEncrypted,
     );
+    let refreshToken: string;
+    if (cachedToken !== null) {
+      refreshToken = cachedToken;
+    } else {
+      console.log(
+        JSON.stringify({
+          level: 'info',
+          kind: 'gmail.getClient.kms_decrypt_begin',
+          mailboxAccountId,
+        }),
+      );
+      refreshToken = await tokenCrypto.decrypt(account.encryptedRefreshToken, account.dekEncrypted);
+      tokenUnwrapCache.set(
+        mailboxAccountId,
+        account.encryptedRefreshToken,
+        account.dekEncrypted,
+        refreshToken,
+      );
+    }
 
     console.log(
       JSON.stringify({
@@ -540,16 +644,34 @@ async function bootstrap(): Promise<void> {
         kind: 'gmail.getClient.kms_decrypt_done',
         mailboxAccountId,
         kmsDurationMs: Date.now() - tKms,
+        // The measurement this change is judged on. Without it the KMS
+        // call simply gets rarer and the log gives no way to tell a
+        // working cache from a mailbox that stopped syncing.
+        cached: cachedToken !== null,
       }),
     );
     const oauth = new OAuth2Client(clientId, clientSecret);
     oauth.setCredentials({ refresh_token: refreshToken });
 
-    // Reuse the limiter across attempts so its sliding-window state
-    // outlives a single `processJob` call (D5 / Codex iter 3).
+    // Reuse the limiter across attempts so its window state outlives a
+    // single `processJob` call (D5 / Codex iter 3).
+    //
+    // The budget now lives in Redis, so it is shared across worker
+    // INSTANCES rather than per-process. The in-process `RateLimiter`
+    // stays as the degrade path — it is still constructed per mailbox
+    // and still cached here, so a Redis outage falls back to exactly
+    // the behaviour that shipped before this change rather than to no
+    // limiting at all.
     let limiter = limiterByMailbox.get(mailboxAccountId);
     if (!limiter) {
-      limiter = new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS);
+      limiter = new RedisGmailQuotaLimiter(
+        gmailQuotaConnection,
+        gmailQuotaSha,
+        mailboxAccountId,
+        GMAIL_QUOTA_UNITS_PER_MIN,
+        GMAIL_QUOTA_WINDOW_MS,
+        new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS),
+      );
       limiterByMailbox.set(mailboxAccountId, limiter);
     }
     // D181: close over the mailbox row's workspace/user so the audit
@@ -602,10 +724,6 @@ async function bootstrap(): Promise<void> {
       }),
     );
   }
-
-  bootStep('redis_connection_init');
-  const connection = createRedisConnection(requireEnv('REDIS_URL'));
-  bootStep('redis_connection_done');
 
   // BullMQ idle-poll tuning (2026-06-10 Upstash command-volume audit).
   // Resolved once; spread into every Worker constructor below. Pickup
@@ -694,6 +812,12 @@ async function bootstrap(): Promise<void> {
   const incrementalSync = new IncrementalSyncWorker({
     db,
     gmailAccess,
+    // The lock moved INSIDE the worker (2026-08-23). It used to wrap the
+    // whole job here, which meant a user's Delete queued behind this
+    // worker's Gmail history read and token refresh as well as its
+    // writes. The worker now takes it around the mutating half only —
+    // see its LOCK BOUNDARY comment. Same lock, same key, narrower hold.
+    lock: mailboxLock,
     // First-seen sender → single-sender score job (D25 signal_change
     // trigger; D75 incremental path). The ScoreWorker's Phase-B branch
     // is what flags the sender into `screener_quarantine` — this only
@@ -718,7 +842,7 @@ async function bootstrap(): Promise<void> {
   incrementalSync.setDeadLetterRecorder(deadLetterRecorder);
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
     INCREMENTAL_SYNC_QUEUE,
-    (job) => mailboxLock.run(job.data.mailboxAccountId, () => incrementalSync.run(job)),
+    (job) => incrementalSync.run(job),
     { connection, concurrency: 20, ...userFacingTuning },
   );
   incrementalBullWorker.on('error', (err) => {
@@ -1341,6 +1465,132 @@ async function bootstrap(): Promise<void> {
     void enqueueSendersCounterReconciliation();
   }, SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS);
   sendersCounterReconciliationSchedulerHandle.unref();
+
+  /**
+   * SenderIndexSweepWorker consumer + nightly scheduler (D245, D159 —
+   * cronPolicy). The UNSCOPED half of the derived sender index: full
+   * auto-protection + full `sender_timeseries` reconcile, per mailbox.
+   *
+   * Both used to run on every Pub/Sub push inside the per-mailbox lock.
+   * The push path now runs auto-protection scoped to the senders it
+   * touched, which cannot see the two CLOCK-driven rules (a star or an
+   * IMPORTANT count ageing past a year). This sweep is what retires
+   * those, so it is load-bearing for D245's "the reason must be true",
+   * not an optimisation.
+   *
+   * Takes the same per-mailbox advisory lock as the label actions so a
+   * sweep and a sync never write each other's snapshot. concurrency 1 —
+   * it is nightly and holds a lock per mailbox.
+   */
+  const senderIndexSweepWorker = new SenderIndexSweepWorker({ db, lock: mailboxLock });
+  senderIndexSweepWorker.setObserver(observer);
+  senderIndexSweepWorker.setDeadLetterRecorder(deadLetterRecorder);
+
+  const senderIndexSweepBullWorker = new Worker<SenderIndexSweepJobData, SenderIndexSweepResult>(
+    SENDER_INDEX_SWEEP_QUEUE,
+    (job) => senderIndexSweepWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+
+  senderIndexSweepBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: SENDER_INDEX_SWEEP_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
+    SENDER_INDEX_SWEEP_QUEUE,
+    { connection },
+  );
+
+  async function enqueueSenderIndexSweep(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueSenderIndexSweepTick(senderIndexSweepSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'sender_index_sweep.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'sender_index_sweep.scheduler_failed' });
+    }
+  }
+
+  await enqueueSenderIndexSweep();
+  const senderIndexSweepSchedulerHandle = setInterval(() => {
+    void enqueueSenderIndexSweep();
+  }, SENDER_INDEX_SWEEP_INTERVAL_MS);
+  senderIndexSweepSchedulerHandle.unref();
+
+  /**
+   * OpsRetentionWorker consumer + daily scheduler (D225, D159 —
+   * cronPolicy). Prunes the two ops ledgers that had never been pruned:
+   * `cron_runs` (30d, always keeping the newest row per worker so the
+   * staleness watchdog keeps a reading) and `dead_letter_jobs` (90d).
+   *
+   * `cron_runs` is one of the two heaviest WAL producers on this
+   * database — ~10,900 bytes of WAL per 100-byte row — and nothing reads
+   * a row of it after the week it was written.
+   *
+   * concurrency 1: it is a whole-table delete, and two passes racing
+   * would take overlapping row locks for no gain.
+   */
+  const opsRetentionWorker = new OpsRetentionWorker({ db });
+  opsRetentionWorker.setObserver(observer);
+  opsRetentionWorker.setDeadLetterRecorder(deadLetterRecorder);
+
+  const opsRetentionBullWorker = new Worker<OpsRetentionJobData, OpsRetentionResult>(
+    OPS_RETENTION_QUEUE,
+    (job) => opsRetentionWorker.run(job),
+    { connection, concurrency: 1, ...cronTuning },
+  );
+
+  opsRetentionBullWorker.on('error', (err) => {
+    console.error(
+      JSON.stringify({
+        level: 'error',
+        kind: 'bullmq.error',
+        queue: OPS_RETENTION_QUEUE,
+        message: err.message,
+      }),
+    );
+  });
+
+  const opsRetentionSchedulerQueue = new Queue<OpsRetentionJobData>(OPS_RETENTION_QUEUE, {
+    connection,
+  });
+
+  async function enqueueOpsRetention(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      await enqueueOpsRetentionTick(opsRetentionSchedulerQueue);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'ops_retention.scheduler_failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'ops_retention.scheduler_failed' });
+    }
+  }
+
+  await enqueueOpsRetention();
+  const opsRetentionSchedulerHandle = setInterval(() => {
+    void enqueueOpsRetention();
+  }, OPS_RETENTION_INTERVAL_MS);
+  opsRetentionSchedulerHandle.unref();
 
   /**
    * WatchRenewalWorker consumer + scheduler (D8, D225, D229 —
@@ -2415,6 +2665,8 @@ async function bootstrap(): Promise<void> {
     clearInterval(briefSchedulerHandle);
     clearInterval(undoExpirySchedulerHandle);
     clearInterval(sendersCounterReconciliationSchedulerHandle);
+    clearInterval(senderIndexSweepSchedulerHandle);
+    clearInterval(opsRetentionSchedulerHandle);
     clearInterval(watchRenewalSchedulerHandle);
     clearInterval(incrementalDriftHandle);
     clearInterval(snoozeWakeSchedulerHandle);
@@ -2454,7 +2706,12 @@ async function bootstrap(): Promise<void> {
       await undoExpiryBullWorker.close();
       await undoExpirySchedulerQueue.close();
       await sendersCounterReconciliationBullWorker.close();
+      await senderIndexSweepBullWorker.close();
+      await opsRetentionBullWorker.close();
       await sendersCounterReconciliationSchedulerQueue.close();
+      await senderIndexSweepSchedulerQueue.close();
+      await opsRetentionSchedulerQueue.close();
+      await gmailQuotaConnection.quit().catch(() => undefined);
       await watchRenewalBullWorker.close();
       await watchRenewalSchedulerQueue.close();
       await emailSendBullWorker.close();

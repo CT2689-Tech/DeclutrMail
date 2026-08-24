@@ -5,7 +5,7 @@ import {
   InvalidGrantError,
   PermanentError,
   RateLimitError,
-  type RateLimiter,
+  type GmailQuotaLimiter,
   TransientError,
 } from '@declutrmail/workers';
 import type {
@@ -226,7 +226,12 @@ export class GmailClientService
 
   constructor(
     private readonly oauth: OAuth2Client,
-    private readonly limiter: RateLimiter,
+    // The INTERFACE, not the class. `RateLimiter` satisfies it
+    // structurally, so the in-process limiter still drops in — but the
+    // production wiring now passes `RedisGmailQuotaLimiter`, whose
+    // budget is shared across worker instances (D5/D156). This class
+    // never cared about anything except `acquire(units)`.
+    private readonly limiter: GmailQuotaLimiter,
     onRefreshFailed?: OauthRefreshFailureRecorder,
   ) {
     this.onRefreshFailed = onRefreshFailed;
