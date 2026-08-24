@@ -2,6 +2,7 @@ import { mailMessages, readStateNotSweeperMarked, senderTimeseries } from '@decl
 import { sql } from 'drizzle-orm';
 
 import type { OutboxTx } from './outbox-publisher.js';
+import { sqlTextArray } from './sql-text-array.js';
 
 /**
  * Recompute `sender_timeseries.volume` + `read_count` from `mail_messages`.
@@ -106,10 +107,46 @@ export interface SenderTimeseriesReconcileResult {
   zeroed: number;
 }
 
+export interface SenderTimeseriesScope {
+  /**
+   * Reconcile only these senders. Omit for the whole mailbox.
+   *
+   * The nightly sweep runs UNSCOPED — it is what corrects drift nobody
+   * asked about. The push path runs SCOPED to the senders a delta
+   * touched, because `read_count` is not maintained incrementally on a
+   * read: `handleMessageAdded` bumps `volume`/`read_count` on arrival,
+   * but `handleLabelChange` does not touch `sender_timeseries` at all.
+   * So marking mail read moves `mail_messages.is_unread` and leaves
+   * `sender_timeseries.read_count` behind until something recomputes it.
+   *
+   * That gap is not cosmetic. `autopilot-signals` derives
+   * `readRateLifetime` from `read_count / volume`, and the
+   * `newsletter_graveyard` preset UNSUBSCRIBES when that rate is under
+   * 5% — so a stale zero on a dormant sender the user has just been
+   * reading is enough to unsubscribe them from it. The reconcile used to
+   * run on every push, which closed the gap in the same transaction;
+   * moving it to nightly opened a window in which reading your mail gets
+   * you unsubscribed from it.
+   */
+  senderKeys?: string[];
+}
+
 export async function reconcileSenderTimeseries(
   tx: OutboxTx,
   mailboxAccountId: string,
+  scope?: SenderTimeseriesScope,
 ): Promise<SenderTimeseriesReconcileResult> {
+  const senderKeys = scope?.senderKeys;
+  // An explicitly EMPTY scope means "no senders moved" — not "do the
+  // whole mailbox". Falling through to unscoped here would silently
+  // restore the full-mailbox recompute on every push, which is the cost
+  // this scoping exists to remove.
+  if (senderKeys !== undefined && senderKeys.length === 0) {
+    return { corrected: 0, zeroed: 0 };
+  }
+  const keyArray = senderKeys !== undefined ? sqlTextArray(senderKeys) : null;
+  const msgScope = keyArray ? sql`AND m.${sql.identifier('sender_key')} = ANY(${keyArray})` : sql``;
+  const stScope = keyArray ? sql`AND st.${sql.identifier('sender_key')} = ANY(${keyArray})` : sql``;
   // Both statements below hash-aggregate every inbound row in the
   // mailbox, and prod runs on `work_mem = 2184kB`. Measured over the 76
   // days to 2026-08-23, statement 2 alone wrote 1,399,564 temp blocks
@@ -145,6 +182,7 @@ export async function reconcileSenderTimeseries(
       FROM ${mailMessages} AS m
       WHERE m.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
         AND m.${sql.identifier('is_outbound')} = false
+        ${msgScope}
       GROUP BY
         m.${sql.identifier('mailbox_account_id')},
         m.${sql.identifier('sender_key')},
@@ -157,6 +195,7 @@ export async function reconcileSenderTimeseries(
         st.${sql.identifier('volume')} IS DISTINCT FROM sub.total
         OR st.${sql.identifier('read_count')} IS DISTINCT FROM sub.read_total
       )
+      ${stScope}
     RETURNING 1
   `);
 
@@ -171,6 +210,7 @@ export async function reconcileSenderTimeseries(
         ${sql.identifier('read_count')} = 0
     WHERE st.${sql.identifier('mailbox_account_id')} = ${mailboxAccountId}
       AND (st.${sql.identifier('volume')} <> 0 OR st.${sql.identifier('read_count')} <> 0)
+      ${stScope}
       AND NOT EXISTS (
         SELECT 1
         FROM ${mailMessages} AS m

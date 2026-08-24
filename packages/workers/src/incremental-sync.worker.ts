@@ -12,6 +12,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { applyAutomaticProtection } from './automatic-protection.js';
 import type { MailboxActionLock } from './label-action.worker.js';
+import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { syncMailboxLabels } from './mailbox-label-sync.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
 import { notNeedingReconnect } from './mailbox-reconnect.js';
@@ -395,30 +396,41 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // historyIds so the final cursor advance uses Gmail's LATEST
     // reported value (matches the mailbox's actual state on the
     // server, not the stale webhook's view).
-    const events: GmailHistoryRecord[] = [];
-    let pageToken: string | undefined;
-    let lastPageHistoryId: string | null = null;
-    for (;;) {
-      const page = await client.listHistory(startHistoryId, pageToken);
-      if (page === null) {
-        // Cursor too old (Gmail 404). Don't advance — composition root
-        // re-enqueues full sync.
-        return {
-          recordsProcessed: 0,
-          added: 0,
-          deleted: 0,
-          labelChanges: 0,
-          cursorTooOld: true,
-          advancedToHistoryId: null,
-        };
+    /** Page every history record from `cursor`. `null` = Gmail 404. */
+    const pageHistoryFrom = async (
+      cursor: string,
+    ): Promise<{ events: GmailHistoryRecord[]; lastPageHistoryId: string | null } | null> => {
+      const collected: GmailHistoryRecord[] = [];
+      let token: string | undefined;
+      let latest: string | null = null;
+      for (;;) {
+        const page = await client.listHistory(cursor, token);
+        if (page === null) return null;
+        collected.push(...page.records);
+        latest = page.historyId;
+        if (!page.nextPageToken) break;
+        token = page.nextPageToken;
       }
-      events.push(...page.records);
-      lastPageHistoryId = page.historyId;
-      if (!page.nextPageToken) {
-        break;
-      }
-      pageToken = page.nextPageToken;
+      return { events: collected, lastPageHistoryId: latest };
+    };
+
+    const cursorTooOldResult = {
+      recordsProcessed: 0,
+      added: 0,
+      deleted: 0,
+      labelChanges: 0,
+      cursorTooOld: true,
+      advancedToHistoryId: null,
+    } as const;
+
+    const firstPass = await pageHistoryFrom(startHistoryId);
+    if (firstPass === null) {
+      // Cursor too old (Gmail 404). Don't advance — composition root
+      // re-enqueues full sync.
+      return { ...cursorTooOldResult };
     }
+    let events: GmailHistoryRecord[] = firstPass.events;
+    let lastPageHistoryId: string | null = firstPass.lastPageHistoryId;
 
     // ── LOCK BOUNDARY ────────────────────────────────────────────
     // Everything ABOVE is a READ: the eligibility lookup, the token
@@ -437,6 +449,57 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     // reading early is a redelivery, and every handler here is already
     // idempotent for exactly that reason.
     return await this.deps.lock.run(mailboxAccountId, async () => {
+      // REVALIDATE THE CURSOR. The pages above were fetched BEFORE the
+      // lock, and `incremental-sync` runs at concurrency 20 — so another
+      // job for this mailbox can advance `last_history_id` while we wait
+      // here, and our pages are then a snapshot of a range that has
+      // already been applied.
+      //
+      // The comment below says reading early is safe because history is
+      // append-only and the failure mode is "a redelivery, and every
+      // handler here is already idempotent". That is true for
+      // `message_added` and `message_deleted`, and it is NOT true for
+      // labels: `handleLabelChange` applies DELTAS (`labels_added` /
+      // `labels_removed`). Deltas are idempotent individually but not
+      // COMMUTATIVE across overlapping ranges — replaying an older
+      // `labels_added` after a newer `labels_removed` puts the label
+      // back. Idempotent is not the same as order-independent, and
+      // conflating the two is what made this look safe.
+      //
+      // The mirror would then stay wrong indefinitely: the cursor is
+      // monotonic, so Gmail never re-sends those records, and only a
+      // full resync or the drift reconciler would notice.
+      //
+      // Refetch rather than skip. Skipping loses records whenever the
+      // stale-looking job is the one that fetched LATER and therefore
+      // holds MORE than whoever advanced the cursor. The refetch only
+      // happens when the cursor actually moved, so the uncontended path
+      // — every push on a quiet mailbox — still pays nothing.
+      const [fresh] = await this.deps.db
+        .select({ lastHistoryId: providerSyncState.lastHistoryId })
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .limit(1);
+      const currentCursor = fresh?.lastHistoryId == null ? null : String(fresh.lastHistoryId);
+      // ADVANCED PAST US, not merely different. Gmail history ids are
+      // monotonic integers, so the hazard is precisely `cursor >
+      // startHistoryId`: our pages then cover a range already applied,
+      // and replaying their label deltas reverts newer state.
+      //
+      // A cursor BEHIND our start is a different situation entirely —
+      // the payload was enqueued against a reading we have not caught up
+      // to — and refetching there would change long-standing behaviour
+      // for a case that carries no stale-delta risk. Deliberately left
+      // alone.
+      if (currentCursor !== null && isAheadOf(currentCursor, startHistoryId)) {
+        const refetched = await pageHistoryFrom(currentCursor);
+        if (refetched === null) {
+          return { ...cursorTooOldResult };
+        }
+        events = refetched.events;
+        lastPageHistoryId = refetched.lastPageHistoryId;
+      }
+
       // Process events in source order. Idempotent per-event so a partial
       // failure mid-batch can be retried without double-applying earlier
       // records.
@@ -703,6 +766,35 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
               sql`(${providerSyncState.lastHistoryId} IS NULL OR ${providerSyncState.lastHistoryId} < ${candidate})`,
             ),
           );
+      }
+
+      // `sender_timeseries` for the senders this delta touched, BEFORE
+      // Autopilot reads it.
+      //
+      // `handleMessageAdded` maintains `volume`/`read_count` on arrival,
+      // but `handleLabelChange` does not touch `sender_timeseries` at
+      // all — so marking mail READ moves `mail_messages.is_unread` and
+      // leaves `read_count` stale. This reconcile used to run unscoped
+      // on every push, which closed that gap in the same transaction;
+      // moving it to the nightly sweep opened a window of up to 24h.
+      //
+      // That window is not cosmetic: `autopilot-signals` derives
+      // `readRateLifetime` from `read_count / volume`, and the
+      // `newsletter_graveyard` preset UNSUBSCRIBES below 5%. A dormant
+      // sender whose mail the user has just been reading would still
+      // read as 0% — so reading your mail could get you unsubscribed
+      // from it, automatically, with a 25/day cap. Caught by review
+      // 2026-08-24.
+      //
+      // SCOPED to `touchedSenderKeys`, so this is a few sender-months
+      // rather than the full-mailbox recompute whose removal from the
+      // push path was the point of the change that introduced the bug.
+      if (touchedSenderKeys.size > 0) {
+        await this.deps.db.transaction(async (tx) => {
+          await reconcileSenderTimeseries(tx, mailboxAccountId, {
+            senderKeys: [...touchedSenderKeys],
+          });
+        });
       }
 
       // Delta processed → Autopilot apply trigger (D100 "on new message
@@ -1267,4 +1359,22 @@ function sqlTextArray(values: readonly string[]) {
     values.map((value) => sql`${value}`),
     sql`, `,
   )}]::text[]`;
+}
+
+/**
+ * Is `a` a strictly later Gmail history id than `b`?
+ *
+ * String comparison would be wrong ('9' > '10' lexically) and Number
+ * loses precision above 2^53 — Gmail history ids are unbounded
+ * integers, so BigInt is the only safe form. A non-numeric value from
+ * either side answers `false`: refusing to refetch is the behaviour
+ * that shipped, so an unparseable id degrades to it rather than to a
+ * refetch loop.
+ */
+function isAheadOf(a: string, b: string): boolean {
+  try {
+    return BigInt(a) > BigInt(b);
+  } catch {
+    return false;
+  }
 }

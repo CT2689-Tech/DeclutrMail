@@ -10,6 +10,7 @@ import {
   type GmailQuotaLimiter,
   type GmailQuotaRedis,
 } from './gmail-quota-limiter.js';
+import { createRedisConnection, createRedisProducerConnection } from './queue.js';
 import { RateLimiter } from './rate-limiter.js';
 
 const SHA = createHash('sha1').update(GMAIL_QUOTA_SCRIPT).digest('hex');
@@ -277,6 +278,45 @@ describe('RedisGmailQuotaLimiter — degradation and guards', () => {
     );
     await lim.acquire(5);
     expect(evalFn).not.toHaveBeenCalled();
+  });
+});
+
+describe('the connection the limiter must be given', () => {
+  // The degrade path above is tested against a mock that REJECTS. The
+  // production client did not, and that is the whole bug: the limiter
+  // was wired to BullMQ's shared connection, built with
+  // `maxRetriesPerRequest: null` (mandatory for BullMQ workers) and
+  // ioredis's default `enableOfflineQueue: true`. An EVALSHA during an
+  // outage is then buffered or retried across reconnects instead of
+  // rejecting, so `catch` never runs and `acquire()` blocks forever —
+  // a fallback that reads as handled and cannot fire.
+  //
+  // Mocking cannot catch that. These assertions read the real option
+  // shapes, which is where the difference actually lives.
+  it('rejects rather than buffers, on the producer connection', () => {
+    const c = createRedisProducerConnection('redis://127.0.0.1:6379');
+    try {
+      // Flushes in-flight commands on the first reconnect attempt.
+      expect(c.options.maxRetriesPerRequest).toBe(0);
+      // Rejects commands issued while already down, instead of queueing.
+      expect(c.options.enableOfflineQueue).toBe(false);
+    } finally {
+      c.disconnect();
+    }
+  });
+
+  it("does NOT have those semantics on BullMQ's connection", () => {
+    // The negative half. If this ever starts matching the producer
+    // shape, the test above stops proving anything — and if someone
+    // rewires the limiter back to this connection, the comment in
+    // `worker.ts` is the only thing left saying why that breaks.
+    const c = createRedisConnection('redis://127.0.0.1:6379');
+    try {
+      expect(c.options.maxRetriesPerRequest).toBeNull();
+      expect(c.options.enableOfflineQueue).not.toBe(false);
+    } finally {
+      c.disconnect();
+    }
   });
 });
 

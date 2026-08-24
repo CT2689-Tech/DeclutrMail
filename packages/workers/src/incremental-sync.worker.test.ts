@@ -1619,6 +1619,171 @@ describe('IncrementalSyncWorker', () => {
     expect(rows[0]!.volume).toBe(1);
   });
 
+  it('refetches when the cursor moved while it waited for the lock', async () => {
+    // The pages are fetched BEFORE the per-mailbox lock, and this queue
+    // runs at concurrency 20 — so another job can advance the cursor
+    // while this one waits. Its pages are then a snapshot of a range
+    // already applied, and `handleLabelChange` applies DELTAS: replaying
+    // an older `labels_added` after a newer `labels_removed` puts the
+    // label back. Idempotent per record is not the same as commutative
+    // across overlapping ranges, and the cursor is monotonic, so Gmail
+    // never re-sends those records to correct it.
+    const meta = makeMetadata(
+      'rf-001',
+      'thread-rf',
+      'sender@example.com',
+      ['INBOX'],
+      Date.UTC(2026, 5, 15),
+    );
+    // Seed the message so the label deltas below have a row to move.
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(
+        new FakeGmailClient(
+          [
+            {
+              forCursor: '1000',
+              page: {
+                records: [
+                  {
+                    kind: 'added',
+                    messageId: 'rf-001',
+                    threadId: 'thread-rf',
+                    labelIds: ['INBOX'],
+                  },
+                ],
+                historyId: '1500',
+              },
+            },
+          ],
+          new Map([['rf-001', meta]]),
+        ),
+      ),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    // The cursor is now 1500. This job claims to start from 1000 — the
+    // shape of a job whose pages were fetched before a concurrent job
+    // advanced the cursor past it. Its stale page would re-add a label;
+    // the page at the CURRENT cursor removes it.
+    const client = new FakeGmailClient(
+      [
+        {
+          forCursor: '1000',
+          page: {
+            records: [{ kind: 'labels_added', messageId: 'rf-001', labelIds: ['IMPORTANT'] }],
+            historyId: '1500',
+          },
+        },
+        {
+          forCursor: '1500',
+          page: {
+            records: [{ kind: 'labels_removed', messageId: 'rf-001', labelIds: ['IMPORTANT'] }],
+            historyId: '1600',
+          },
+        },
+      ],
+      new Map([['rf-001', meta]]),
+    );
+
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1600' }, CTX);
+
+    const [msg] = await db.select().from(mailMessages);
+    // Refetched from cursor 1500, so IMPORTANT is REMOVED. Applying the
+    // stale page from 1000 instead would leave it present.
+    expect(msg!.labelIds).not.toContain('IMPORTANT');
+  });
+
+  it('brings read_count up to date on a READ, before Autopilot can see it', async () => {
+    // THE REGRESSION THIS EXISTS TO PREVENT, and it is destructive.
+    //
+    // `handleMessageAdded` maintains volume/read_count on arrival, but
+    // `handleLabelChange` does NOT touch `sender_timeseries` — so
+    // marking mail read moves `mail_messages.is_unread` and leaves
+    // `read_count` at whatever arrival recorded. The unscoped reconcile
+    // used to run on every push and closed that gap in the same
+    // transaction; moving it to the nightly sweep left up to 24h where
+    // `read_count` says nobody read a thing.
+    //
+    // `autopilot-signals` derives `readRateLifetime` from
+    // `read_count / volume`, and `newsletter_graveyard` UNSUBSCRIBES
+    // below 5%. So a dormant sender whose mail the user has just been
+    // reading still reads as 0% — reading your mail gets you
+    // unsubscribed from it, automatically, 25 a day.
+    const arrive = makeMetadata(
+      'rd-001',
+      'thread-rd',
+      'dormant@example.com',
+      ['INBOX', 'UNREAD'],
+      Date.UTC(2026, 5, 15),
+    );
+    const client = new FakeGmailClient(
+      [
+        {
+          forCursor: '1000',
+          page: {
+            records: [
+              {
+                kind: 'added',
+                messageId: 'rd-001',
+                threadId: 'thread-rd',
+                labelIds: ['INBOX', 'UNREAD'],
+              },
+            ],
+            historyId: '1500',
+          },
+        },
+      ],
+      new Map([['rd-001', arrive]]),
+    );
+    const build = () =>
+      new IncrementalSyncWorker({
+        db,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailAccess: accessFor(client),
+      });
+
+    await build().processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const [afterArrival] = await db.select().from(senderTimeseries);
+    expect(afterArrival!.volume).toBe(1);
+    expect(afterArrival!.readCount).toBe(0);
+
+    // The user reads it: Gmail sends UNREAD removed.
+    const readClient = new FakeGmailClient(
+      [
+        {
+          forCursor: '1500',
+          page: {
+            records: [{ kind: 'labels_removed', messageId: 'rd-001', labelIds: ['UNREAD'] }],
+            historyId: '1600',
+          },
+        },
+      ],
+      new Map([['rd-001', arrive]]),
+    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(readClient),
+    }).processJob({ mailboxAccountId, startHistoryId: '1500', endHistoryId: '1600' }, CTX);
+
+    const [afterRead] = await db.select().from(senderTimeseries);
+    // The message row moved...
+    const [msg] = await db.select().from(mailMessages);
+    expect(msg!.isUnread).toBe(false);
+    // ...and so must the counter Autopilot reads. Without the scoped
+    // reconcile this is still 0, and readRateLifetime is 0%.
+    expect(afterRead!.readCount).toBe(1);
+  });
+
   it('onTerminalFailure stamps last_incremental_error_at/_code without flipping readiness_status', async () => {
     // Per finding: a fully-onboarded mailbox must NOT be flipped to
     // readiness='failed' on an incremental terminal failure — that

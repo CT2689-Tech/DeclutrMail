@@ -24,6 +24,7 @@ import {
   buildAutopilotApplyDeltaTrigger,
   createAutopilotExecutionChain,
   createRedisConnection,
+  createRedisProducerConnection,
   GMAIL_QUOTA_SCRIPT,
   type GmailQuotaLimiter,
   DEAD_LETTER_INTERVAL_MS,
@@ -507,6 +508,47 @@ async function bootstrap(): Promise<void> {
   const gmailQuotaSha = createHash('sha1').update(GMAIL_QUOTA_SCRIPT).digest('hex');
 
   /**
+   * A SEPARATE, FAIL-FAST Redis connection for the Gmail quota limiter.
+   *
+   * The limiter degrades to an in-process `RateLimiter` when Redis
+   * errors — but on `connection` above that degrade path is unreachable,
+   * which makes it worse than useless: it reads as handled. BullMQ's
+   * connection is built with `maxRetriesPerRequest: null` (mandatory for
+   * its workers) and ioredis's default `enableOfflineQueue: true`.
+   * Together those mean an `EVALSHA` issued during an outage is BUFFERED
+   * or retried across reconnects rather than rejected, so the `catch`
+   * never runs and `acquire()` simply blocks until Redis returns —
+   * stalling every Gmail call behind it instead of falling back.
+   *
+   * `createRedisProducerConnection` is the shape that turns silence into
+   * an immediate rejection (`maxRetriesPerRequest: 0` flushes in-flight
+   * commands on the first reconnect attempt; `enableOfflineQueue: false`
+   * rejects new ones outright). Its documented trade — a command
+   * attempted during an outage is LOST rather than deferred — is exactly
+   * what this caller wants: a lost quota reservation degrades to the
+   * per-process limiter, which still limits.
+   *
+   * Caught by review 2026-08-24. The unit test covering the degrade path
+   * passed throughout, because it mocks a client that REJECTS and the
+   * real client does not.
+   */
+  bootStep('gmail_quota_connection_init');
+  const gmailQuotaConnection = createRedisProducerConnection(requireEnv('REDIS_URL'));
+  gmailQuotaConnection.on('error', (err: Error) => {
+    // An unhandled 'error' on an ioredis client is an uncaught exception
+    // that takes the process down. This connection is EXPECTED to error
+    // during an outage — that is the mechanism the fallback rides on.
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'gmail.quota.connection_error',
+        message: err.message,
+      }),
+    );
+  });
+  bootStep('gmail_quota_connection_done');
+
+  /**
    * Reuse of the KMS unwrap, keyed on the ciphertext the row read
    * returns. See `TokenUnwrapCache` for why the built client is
    * deliberately NOT cached — the short version is that
@@ -623,7 +665,7 @@ async function bootstrap(): Promise<void> {
     let limiter = limiterByMailbox.get(mailboxAccountId);
     if (!limiter) {
       limiter = new RedisGmailQuotaLimiter(
-        connection,
+        gmailQuotaConnection,
         gmailQuotaSha,
         mailboxAccountId,
         GMAIL_QUOTA_UNITS_PER_MIN,
@@ -2669,6 +2711,7 @@ async function bootstrap(): Promise<void> {
       await sendersCounterReconciliationSchedulerQueue.close();
       await senderIndexSweepSchedulerQueue.close();
       await opsRetentionSchedulerQueue.close();
+      await gmailQuotaConnection.quit().catch(() => undefined);
       await watchRenewalBullWorker.close();
       await watchRenewalSchedulerQueue.close();
       await emailSendBullWorker.close();
