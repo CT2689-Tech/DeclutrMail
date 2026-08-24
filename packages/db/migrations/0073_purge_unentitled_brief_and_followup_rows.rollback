@@ -1,0 +1,16 @@
+-- Rollback for 0073_purge_unentitled_brief_and_followup_rows.sql
+--
+-- Not restorable, and deliberately not faked.
+--
+-- The forward migration deletes rows; nothing captures them first. A
+-- rollback that recreated them would have to invent subjects it never
+-- had, and a rollback that silently did nothing while claiming to
+-- restore is worse than one that says so.
+--
+-- Reverting is also not something anyone should want. These rows were
+-- Gmail subject lines collected for workspaces that never had Brief or
+-- Follow-ups — the point of deleting them is that we should not hold
+-- them. Both producers are gated as of PR #621, so nothing refills the
+-- tables for unentitled workspaces, and entitled workspaces were never
+-- touched: their Brief regenerates nightly regardless.
+SELECT 1;
