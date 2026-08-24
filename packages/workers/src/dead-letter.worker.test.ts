@@ -262,6 +262,52 @@ describe('dead-letter pipeline (D225)', () => {
   });
 
   describe('DeadLetterWorker sweep', () => {
+    it('still alerts a NEW failure when the backlog exceeds SCAN_LIMIT', async () => {
+      // THE BUG THIS ORDERING EXISTS TO PREVENT, reproduced.
+      //
+      // The sweep scanned `failed_at ASC LIMIT 500`, on the reasoning
+      // that "overflow rows surface on later sweeps once older rows are
+      // replayed". Replay is manual (D233) and on prod nothing ever had
+      // been: 781 unreplayed rows, 692 of them one revoked OAuth grant
+      // retrying for eight days.
+      //
+      // Past 500 rows the window was permanently full of August 10th,
+      // and every dead letter parked afterwards sorted out of view. The
+      // sweep ran every 60 seconds, returned success, and could not see
+      // a single new failure. All 17 tests in this file passed
+      // throughout, because none of them seeded past the limit.
+      const db = await freshDb();
+      const backlog = Array.from({ length: DeadLetterWorker.SCAN_LIMIT + 20 }, (_, i) => ({
+        queue: 'incremental-sync' as const,
+        jobId: `old-${i}`,
+        payload: { mailboxAccountId: 'mb-old' },
+        error: 'InvalidGrantError: Gmail OAuth grant is no longer valid',
+        failedAt: new Date(Date.UTC(2026, 7, 10, 0, 0, i % 60)),
+      }));
+      await db.insert(deadLetterJobs).values(backlog);
+
+      // The one that matters: parked now, after the backlog.
+      await db.insert(deadLetterJobs).values({
+        queue: 'label-action',
+        jobId: 'the-new-failure',
+        payload: { mailboxAccountId: 'mb-live' },
+        error: 'PostgresError: something just broke',
+        failedAt: new Date(Date.UTC(2026, 7, 23, 12, 0, 0)),
+      });
+
+      const obs = recordingObserver();
+      const worker = new DeadLetterWorker({ db: db as never, observer: obs });
+      const result = await worker.processJob({ scheduledAtMinute: '2026-08-23T12:00' }, FAKE_CTX);
+
+      const alertedQueues = obs.notices.map((n) => n.tags?.queue);
+      expect(alertedQueues).toContain('label-action');
+      // And the backlog is REPORTABLE rather than silent — `alerted`
+      // alone cannot tell "nothing is wrong" from "the window is full
+      // of things we already shouted about".
+      expect(result.unreplayedTotal).toBe(DeadLetterWorker.SCAN_LIMIT + 21);
+      expect(result.unreplayedTotal).toBeGreaterThan(result.scanned);
+    });
+
     it('alerts exactly once per parked row — second sweep is silent', async () => {
       const db = await freshDb();
       await db.insert(deadLetterJobs).values([

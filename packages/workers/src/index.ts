@@ -116,8 +116,28 @@ export {
 export { deriveSenderKey, emailDomain, normalizeEmail, parseFromHeader } from './sender-key.js';
 export type { ParsedSender } from './sender-key.js';
 export { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
+export {
+  OPS_RETENTION_INTERVAL_MS,
+  OPS_RETENTION_JOB,
+  OPS_RETENTION_QUEUE,
+  enqueueOpsRetentionTick,
+  opsRetentionJobOptions,
+  opsRetentionScheduledAtMinute,
+} from './ops-retention.queue.js';
+export { OpsRetentionWorker } from './ops-retention.worker.js';
+export type {
+  OpsRetentionDeps,
+  OpsRetentionJobData,
+  OpsRetentionResult,
+} from './ops-retention.worker.js';
 export { RateLimiter } from './rate-limiter.js';
 export type { RateLimiterClock } from './rate-limiter.js';
+export {
+  GMAIL_QUOTA_SCRIPT,
+  gmailQuotaKey,
+  RedisGmailQuotaLimiter,
+} from './gmail-quota-limiter.js';
+export type { GmailQuotaClock, GmailQuotaLimiter, GmailQuotaRedis } from './gmail-quota-limiter.js';
 export { InitialSyncWorker } from './initial-sync.worker.js';
 export type { InitialSyncDeps, InitialSyncResult } from './initial-sync.worker.js';
 export {
@@ -351,6 +371,19 @@ export {
   SENDERS_COUNTER_RECONCILIATION_QUEUE,
   sendersCounterReconciliationJobOptions,
 } from './senders-counter-reconciliation.queue.js';
+export { SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
+export type {
+  SenderIndexSweepJobData,
+  SenderIndexSweepResult,
+} from './sender-index-sweep.worker.js';
+export {
+  enqueueSenderIndexSweepTick,
+  scheduledAtMinute as senderIndexSweepScheduledAtMinute,
+  SENDER_INDEX_SWEEP_INTERVAL_MS,
+  SENDER_INDEX_SWEEP_JOB,
+  SENDER_INDEX_SWEEP_QUEUE,
+  senderIndexSweepJobOptions,
+} from './sender-index-sweep.queue.js';
 export {
   deletionPendingSql,
   hasInFlightDeletion,

@@ -128,7 +128,7 @@ export interface OutboxDispatcherDeps {
 
 const DEFAULT_CLAIM_BATCH = 32;
 const DEFAULT_MAX_ATTEMPTS = 5;
-const DEFAULT_POLL_INTERVAL_MS = 5_000;
+const DEFAULT_POLL_INTERVAL_MS = 60_000;
 const DEFAULT_MAX_PENDING_TICKS = 16;
 const NOOP_OBSERVER: OutboxObserver = {
   captureBackgroundFailure: () => undefined,
@@ -165,12 +165,33 @@ export interface DispatcherTickResult {
  * notification → typical end-to-end latency ~10ms (network + scheduler
  * jitter dominate).
  *
- * Polling safety net: every `pollIntervalMs` (default 5s) the
+ * Polling safety net: every `pollIntervalMs` (default 60s) the
  * dispatcher runs a tick whether or not a notification fired. Covers
  * the windows where NOTIFY can be lost — worker restart between the
  * publisher's commit and the listener's connection ready, Postgres
  * failover, or a network partition that drops the wire-protocol async
  * frame.
+ *
+ * The interval was 5s until 2026-08-23. Measured on prod over 76 days,
+ * that fallback ran 1,208,817 times to deliver 1,242 events, and each
+ * tick is three statements (BEGIN + claim + COMMIT):
+ *
+ *   claim query        1,208,817 calls   11.19% of ALL statements
+ *   + its BEGIN/COMMIT ~2,400,000 calls
+ *   ------------------------------------------------------------
+ *   ~3.6M of 10.8M total statements — 33% of the entire database's
+ *   traffic, for a path that is BY DESIGN almost always a no-op.
+ *
+ * 60s costs nothing on the normal path: NOTIFY still wakes the
+ * dispatcher in ~10ms, and that is how every event in practice gets
+ * delivered. It costs up to 60s of extra latency ONLY in the cases the
+ * fallback exists for — a lost notification — which the listener's own
+ * reconnect already covers for the common one (worker restart).
+ *
+ * Do not treat this as a latency knob. If outbox delivery ever looks
+ * slow, the NOTIFY path is broken (check `outbox_listen_session_mode`
+ * at boot — over a transaction pooler LISTEN silently lands on the
+ * wrong backend) and lowering this number would only mask it.
  *
  * Why not BullMQ for the wake-up? BullMQ adds a hop (publish into
  * Redis, worker reads from Redis) and a failure surface (Redis must

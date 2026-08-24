@@ -1,4 +1,4 @@
-import { asc, eq, isNull } from 'drizzle-orm';
+import { count, desc, eq, isNull } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { deadLetterJobs } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
@@ -29,6 +29,16 @@ export interface DeadLetterSweepResult {
   scanned: number;
   /** Rows alerted for the first time this sweep. */
   alerted: number;
+  /**
+   * Every unreplayed row, not just the scanned window.
+   *
+   * `alerted` goes quiet both when nothing is failing and when the
+   * scan window is saturated by rows already shouted about. This
+   * number separates them. When it exceeds `SCAN_LIMIT` the backlog
+   * needs replaying or purging (D233: replay is manual, never
+   * automatic).
+   */
+  unreplayedTotal: number;
   /** Total wall-clock ms. */
   durationMs: number;
 }
@@ -75,9 +85,28 @@ export class DeadLetterWorker extends BaseDeclutrWorker<
 
   /**
    * Upper bound per sweep. Dead letters are rare (each one is a
-   * terminal worker failure); 500 bounds both the query and the
-   * dedup set. Overflow rows surface on later sweeps once older rows
-   * are replayed.
+   * terminal worker failure); 500 bounds both the query and the dedup
+   * set.
+   *
+   * The window is NEWEST-FIRST, and that ordering is the alert's
+   * correctness, not a preference.
+   *
+   * It was `failed_at ASC` until 2026-08-23, under the reasoning that
+   * "overflow rows surface on later sweeps once older rows are
+   * replayed". That reasoning has a dependency the product never
+   * satisfied: replay is manual (D233), and on prod NOTHING had ever
+   * been replayed — 781 unreplayed rows against a limit of 500, 692 of
+   * them one revoked OAuth grant retrying for eight days.
+   *
+   * Oldest-first means the window was permanently saturated by August
+   * 10th, and every dead letter parked after it sorted past position
+   * 500 — so a NEW terminal failure in any queue would never have been
+   * alerted. The sweep ran every 60s, reported success, and was deaf.
+   *
+   * Newest-first cannot develop that blind spot: a row parked one
+   * second ago is always position 1. The backlog is still visible, as
+   * `unreplayedTotal` below, which is the honest shape for it — a
+   * number to act on, not 781 individual alerts.
    */
   static readonly SCAN_LIMIT = 500;
 
@@ -109,8 +138,20 @@ export class DeadLetterWorker extends BaseDeclutrWorker<
       })
       .from(deadLetterJobs)
       .where(isNull(deadLetterJobs.replayedAt))
-      .orderBy(asc(deadLetterJobs.failedAt))
+      // NEWEST first — see SCAN_LIMIT. Ascending made this sweep deaf
+      // to every new failure once the backlog passed 500 rows.
+      .orderBy(desc(deadLetterJobs.failedAt))
       .limit(DeadLetterWorker.SCAN_LIMIT);
+
+    // The backlog as a NUMBER, so a saturated window is inspectable
+    // instead of silent. `alerted` alone cannot distinguish "nothing is
+    // wrong" from "the window is full of things we already shouted
+    // about" — which is exactly how the ordering bug above survived.
+    const [totalRow] = await this.deps.db
+      .select({ n: count() })
+      .from(deadLetterJobs)
+      .where(isNull(deadLetterJobs.replayedAt));
+    const unreplayedTotal = Number(totalRow?.n ?? 0);
 
     // Prune ids that are no longer parked (replayed or deleted) so the
     // set stays bounded by the live row count.
@@ -180,7 +221,12 @@ export class DeadLetterWorker extends BaseDeclutrWorker<
       }
     }
 
-    return { scanned: rows.length, alerted, durationMs: Date.now() - startedAt };
+    return {
+      scanned: rows.length,
+      alerted,
+      unreplayedTotal,
+      durationMs: Date.now() - startedAt,
+    };
   }
 }
 

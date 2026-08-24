@@ -1,0 +1,32 @@
+-- atlas:txmode none
+-- Rollback for 0073_fk_cascade_indexes.sql
+--
+-- CONCURRENTLY to match the forward build, and IF EXISTS because this is
+-- also the recovery path when a forward CREATE INDEX CONCURRENTLY leaves
+-- an INVALID index behind.
+--
+-- Reverting restores the sequential scan on every cascade DELETE: one
+-- scan of `rule_match_log` per expired undo token (every cron tick), and
+-- three scans of `security_events` per deleted user or workspace.
+-- Correctness is unaffected -- the FKs enforce the same thing either way
+-- -- so this is a pure performance revert.
+
+DROP INDEX CONCURRENTLY IF EXISTS "rule_match_log_intent_token_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "followup_tracker_workspace_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "brief_runs_workspace_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "product_feedback_workspace_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "product_feedback_activity_log_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "product_feedback_brief_run_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "product_feedback_followup_tracker_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "security_events_workspace_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "security_events_user_id_idx";
+--> statement-breakpoint
+DROP INDEX CONCURRENTLY IF EXISTS "security_events_reviewed_by_user_id_idx";
