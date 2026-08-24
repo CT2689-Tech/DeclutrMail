@@ -1,6 +1,6 @@
 import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import { applyAutomaticProtection } from './automatic-protection.js';
@@ -11,6 +11,40 @@ import type { WorkerContext } from './worker-context.js';
 
 /** Drizzle client bound to the full `@declutrmail/db` schema. */
 type WorkerDb = PostgresJsDatabase<typeof schema>;
+
+/**
+ * Mailboxes swept per tick.
+ *
+ * `cronPolicy` caps the job at 60s, and `withTimeout` enforces that with
+ * a bare `Promise.race` — it rejects the outer promise but does NOT
+ * cancel the transaction underneath, which keeps running on its backend
+ * still holding the per-mailbox advisory lock. So an unbounded serial
+ * loop does not merely run long; it fails the job, and the retry starts
+ * again from the FIRST mailbox and then blocks up to
+ * `MAILBOX_LOCK_TIMEOUT` (45s of its own 60s budget) on the lock the
+ * previous attempt leaked.
+ *
+ * With a stable select order that starves the tail deterministically:
+ * the same head mailboxes are swept every night and the same tail
+ * mailboxes are never swept at all. Since this worker is the ONLY path
+ * that retires the clock-driven protections, those mailboxes would keep
+ * showing "protected because you starred it" against a two-year-old
+ * star — the D245 §2.6 violation this file exists to prevent, reached by
+ * a different route.
+ *
+ * `random()` is what makes the cap a DELAY rather than an exclusion: a
+ * capped tick truncates at different mailboxes each night, so every
+ * mailbox is swept eventually instead of a fixed set never being swept.
+ * Same reasoning and same shape as `LapseReengagementWorker`'s
+ * `CANDIDATE_BATCH_SIZE`, which documents this failure mode for the same
+ * policy.
+ *
+ * Sized against the measured worst case in the header below: ~10-15s for
+ * a 100k-message mailbox, so 4 fits inside 60s with margin. Raise it
+ * only alongside a real measurement, or move to one job per mailbox
+ * under `perMailboxPolicy` if the fleet outgrows a single tick.
+ */
+export const MAILBOX_BATCH_SIZE = 4;
 
 /**
  * Nightly sweep payload. The cron scheduler enqueues one job per tick
@@ -128,7 +162,25 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       .innerJoin(providerSyncState, eq(providerSyncState.mailboxAccountId, mailboxAccounts.id))
       .where(
         and(eq(mailboxAccounts.status, 'active'), eq(providerSyncState.readinessStatus, 'ready')),
+      )
+      // RANDOM, and BOUNDED. Both matter, and neither is a performance
+      // tweak — see MAILBOX_BATCH_SIZE.
+      .orderBy(sql`random()`)
+      .limit(MAILBOX_BATCH_SIZE);
+
+    if (mailboxes.length >= MAILBOX_BATCH_SIZE) {
+      // Never silent. A full page means eligible mailboxes went unswept
+      // this tick, and `mailboxesProcessed` cannot show it — a capped
+      // run and a complete run report the same shape.
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'sender_index_sweep.batch_capped',
+          mailboxes: mailboxes.length,
+          cap: MAILBOX_BATCH_SIZE,
+        }),
       );
+    }
 
     let mailboxesProcessed = 0;
     let mailboxesFailed = 0;

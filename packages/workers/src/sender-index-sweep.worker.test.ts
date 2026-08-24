@@ -5,7 +5,7 @@ import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
-import { SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
+import { MAILBOX_BATCH_SIZE, SenderIndexSweepWorker } from './sender-index-sweep.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
@@ -65,16 +65,56 @@ describe('SenderIndexSweepWorker', () => {
     mailboxId = await seedMailbox();
   });
 
+  /** Seed a sweep-authored protection so retirement has something to retire. */
+  async function seedProtection(
+    senderKey: string,
+    reason: 'replied' | 'starred' | 'gmail_important',
+  ): Promise<void> {
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      policyType: 'keep',
+      isProtected: true,
+      protectionReason: reason,
+      protectionSetAt: LONG_AGO,
+    });
+  }
+
+  async function policyFor(senderKey: string) {
+    const [row] = await db
+      .select({
+        isProtected: senderPolicies.isProtected,
+        reason: senderPolicies.protectionReason,
+        setAt: senderPolicies.protectionSetAt,
+      })
+      .from(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxId),
+          eq(senderPolicies.senderKey, senderKey),
+        ),
+      );
+    return row;
+  }
+
   it('retires a protection whose star has aged past a year', async () => {
-    // THE reason this worker exists. No Gmail event announces the
-    // passage of time, so the scoped per-push sweep can never reach
-    // this sender — its evidence expired without anything happening.
+    // THE reason this worker exists, and for one commit it did not work.
+    //
+    // This test shipped asserting `policy` was `undefined` while seeding
+    // NO `sender_policies` row at all — so it proved the sweep does not
+    // CREATE a protection from a stale star, and said nothing about
+    // whether it RETIRES one. It passed for the entire life of the
+    // defect it is named for. The demote statement only handled
+    // `gmail_important` on a non-Primary sender; a `starred` protection
+    // with a two-year-old star survived every sweep, which is the exact
+    // D245 §2.6 violation this file claims to prevent. Caught by review,
+    // 2026-08-24, not by this test.
     await db.insert(senders).values({
       mailboxAccountId: mailboxId,
       senderKey: 'stale-star',
       email: 'stale@ex.com',
       domain: 'ex.com',
-      gmailCategory: 'primary',
+      gmailCategory: 'promotions',
       firstSeenAt: LONG_AGO,
       lastSeenAt: LONG_AGO,
     });
@@ -90,19 +130,151 @@ describe('SenderIndexSweepWorker', () => {
       isUnread: false,
       isOutbound: false,
     });
+    await seedProtection('stale-star', 'starred');
 
     await run();
 
-    const [policy] = await db
-      .select({ reason: senderPolicies.protectionReason })
-      .from(senderPolicies)
-      .where(
-        and(
-          eq(senderPolicies.mailboxAccountId, mailboxId),
-          eq(senderPolicies.senderKey, 'stale-star'),
-        ),
-      );
-    expect(policy).toBeUndefined();
+    const policy = await policyFor('stale-star');
+    expect(policy?.isProtected).toBe(false);
+    expect(policy?.reason).toBeNull();
+  });
+
+  it('retires a replied protection once the reply count decays below 3', async () => {
+    // `wrote_to_count` is a stored counter that the senders index can
+    // revise downward. Nothing in Gmail announces it, so only this sweep
+    // can notice — the second of the three clock-driven cases the
+    // narrow demote could not reach.
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'quiet-friend',
+      email: 'qf@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'promotions',
+      wroteToCount: 1,
+      firstSeenAt: LONG_AGO,
+      lastSeenAt: RECENT,
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'qf1',
+      providerThreadId: 't-qf1',
+      senderKey: 'quiet-friend',
+      subject: 's',
+      snippet: '',
+      internalDate: RECENT,
+      labelIds: ['INBOX'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    await seedProtection('quiet-friend', 'replied');
+
+    await run();
+
+    expect((await policyFor('quiet-friend'))?.isProtected).toBe(false);
+  });
+
+  it('corrects a stored reason that is no longer the true one', async () => {
+    // D245 requires the reason SHOWN to be true, not merely that some
+    // reason holds. A sender whose star aged out but who is now replied-to
+    // is still protected — but "because you starred it" is a false
+    // statement, so the reason has to move to `replied`.
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'now-replied',
+      email: 'nr@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'promotions',
+      wroteToCount: 5,
+      firstSeenAt: LONG_AGO,
+      lastSeenAt: RECENT,
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'nr1',
+      providerThreadId: 't-nr1',
+      senderKey: 'now-replied',
+      subject: 's',
+      snippet: '',
+      internalDate: LONG_AGO,
+      labelIds: ['INBOX', 'STARRED'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    await seedProtection('now-replied', 'starred');
+
+    await run();
+
+    const policy = await policyFor('now-replied');
+    // Demoted by the first statement, re-protected by the upsert in the
+    // same transaction under its CURRENT reason.
+    expect(policy?.isProtected).toBe(true);
+    expect(policy?.reason).toBe('replied');
+  });
+
+  it('leaves a still-true protection completely alone', async () => {
+    // The churn guard. `IS DISTINCT FROM` must not fire on an UNCHANGED
+    // reason — an `IS NULL` test would demote-and-reprotect every
+    // protected sender every night, resetting `protection_set_at` and
+    // making "protected since" meaningless.
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'fresh-star',
+      email: 'fs@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: LONG_AGO,
+      lastSeenAt: RECENT,
+    });
+    await db.insert(mailMessages).values({
+      mailboxAccountId: mailboxId,
+      providerMessageId: 'fs1',
+      providerThreadId: 't-fs1',
+      senderKey: 'fresh-star',
+      subject: 's',
+      snippet: '',
+      internalDate: RECENT,
+      labelIds: ['INBOX', 'STARRED'],
+      isUnread: false,
+      isOutbound: false,
+    });
+    await seedProtection('fresh-star', 'starred');
+
+    await run();
+
+    const policy = await policyFor('fresh-star');
+    expect(policy?.isProtected).toBe(true);
+    expect(policy?.reason).toBe('starred');
+    // Untouched, not demoted-and-restored.
+    expect(policy?.setAt?.getTime()).toBe(LONG_AGO.getTime());
+  });
+
+  it('never withdraws a protection the USER set', async () => {
+    // `user_defined` is manual agency. A sweep that could retire it
+    // would silently overrule the person — the one outcome D245 rules
+    // out entirely, however stale the signals look.
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'manual',
+      email: 'm@ex.com',
+      domain: 'ex.com',
+      gmailCategory: 'promotions',
+      firstSeenAt: LONG_AGO,
+      lastSeenAt: LONG_AGO,
+    });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: 'manual',
+      policyType: 'keep',
+      isProtected: true,
+      protectionReason: 'user_defined',
+      protectionSetAt: LONG_AGO,
+    });
+
+    await run();
+
+    const policy = await policyFor('manual');
+    expect(policy?.isProtected).toBe(true);
+    expect(policy?.reason).toBe('user_defined');
   });
 
   it('corrects a sender-month whose stored counters drifted', async () => {
@@ -202,6 +374,42 @@ describe('SenderIndexSweepWorker', () => {
       })
       .find((l) => l?.kind === 'worker.succeeded');
     expect(succeeded?.result).toHaveProperty('mailboxesProcessed');
+  });
+
+  it('caps the mailboxes per tick and says so, rather than running past the budget', async () => {
+    // `cronPolicy` allows 60s and `withTimeout` is a bare `Promise.race`
+    // — it does not cancel the transaction underneath. So an unbounded
+    // serial loop does not run long, it FAILS, and the retry restarts
+    // from the first mailbox while blocking on the advisory lock the
+    // previous attempt leaked. With a stable order that starves the tail
+    // forever, and this worker is the only thing that retires
+    // clock-driven protections.
+    db = await freshTestDb();
+    for (let i = 0; i < MAILBOX_BATCH_SIZE + 3; i += 1) await seedMailbox();
+
+    // Collected into a plain array, not read off `warn.mock.calls` after
+    // the fact: `mockRestore()` resets the recorded calls as well as
+    // restoring the original, so reading them afterwards yields `[]` and
+    // the assertion fails against perfectly correct code.
+    const kinds: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation((line: unknown) => {
+      try {
+        kinds.push(JSON.parse(String(line)).kind);
+      } catch {
+        /* non-JSON warn lines are not this test's business */
+      }
+    });
+    let result;
+    try {
+      result = await run();
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(result.mailboxesProcessed).toBe(MAILBOX_BATCH_SIZE);
+    // Bounded is not enough on its own: a capped tick and a complete
+    // tick report the same shape, so the truncation has to be visible.
+    expect(kinds).toContain('sender_index_sweep.batch_capped');
   });
 
   it('keeps sweeping after one mailbox throws, and fails only when all do', async () => {
