@@ -1,0 +1,16 @@
+-- Rollback for 0071_autopilot_match_superseded_reason.sql
+--
+-- Postgres has no `ALTER TYPE ... DROP VALUE`, so the 'superseded'
+-- label stays in the type — additive and inert, exactly as 0053 and
+-- 0045 left theirs: no reader switches exhaustively on dismiss_reason
+-- at the DB boundary, and Activity's review-outcome surfaces allowlist
+-- their values explicitly, so older code never sees it.
+--
+-- The rows the label was written to are deliberately NOT restored.
+-- Flipping superseded matches back to (resolution='pending') would put
+-- stale suggestions back in front of the user for mail an Active rule
+-- has since moved — re-creating the duplicate-action hazard the forward
+-- migration exists to remove, and for Unsubscribe that means offering a
+-- second irreversible request. A rollback reverts schema; it must not
+-- re-arm mail-moving side effects (the 0053 precedent).
+SELECT 1;

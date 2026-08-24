@@ -52,10 +52,18 @@ export class UndoService {
    * architecture-guardian Check D and D58) so the client can render the
    * tray entry / "Undo" affordance.
    *
-   * `expiresAt` is optional — omitted → 7-day default (Free tier, D232);
-   * Pro tier passes `now + 30d` (D81). Validation that the caller's
-   * tier supports the chosen window is the caller's responsibility (the
+   * `expiresAt` is optional — omitted → `DEFAULT_WINDOW_DAYS` from now,
+   * the floor across the ladder. Validation that the caller's tier
+   * supports the chosen window is the caller's responsibility (the
    * journal itself is tier-agnostic).
+   *
+   * The fallback is computed HERE rather than left to the column
+   * default. Omitting the column meant the real answer lived in
+   * `0007_undo_journal.sql` — which still said 7 days after every tier
+   * moved to 30, so `DEFAULT_WINDOW_DAYS` was a constant that described
+   * behaviour it did not produce. Passing it explicitly makes the
+   * manifest the single source and leaves the column default as
+   * defense-in-depth rather than the mechanism.
    */
   async issue(input: {
     mailboxAccountId: string;
@@ -67,7 +75,7 @@ export class UndoService {
       mailboxAccountId: input.mailboxAccountId,
       actionKind: input.actionKind,
       payload: input.payload,
-      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+      expiresAt: input.expiresAt ?? UndoService.defaultExpiresAt(),
     };
     const [issued] = await this.db.insert(undoJournal).values(row).returning();
     if (!issued) {

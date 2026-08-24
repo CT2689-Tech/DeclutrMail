@@ -1,22 +1,14 @@
 import { Module } from '@nestjs/common';
 import { Queue } from 'bullmq';
 
-import {
-  AUTOPILOT_ACTION_QUEUE,
-  AUTOPILOT_APPLY_QUEUE,
-  createRedisConnection,
-} from '@declutrmail/workers';
-import type { AutopilotActionJobData, AutopilotApplyJobData } from '@declutrmail/workers';
+import { AUTOPILOT_ACTION_QUEUE, createRedisConnection } from '@declutrmail/workers';
+import type { AutopilotActionJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
 import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { AutopilotController } from './autopilot.controller.js';
-import {
-  AUTOPILOT_ACTION_QUEUE_TOKEN,
-  AUTOPILOT_APPLY_QUEUE_TOKEN,
-  AutopilotReadService,
-} from './autopilot.read-service.js';
+import { AUTOPILOT_ACTION_QUEUE_TOKEN, AutopilotReadService } from './autopilot.read-service.js';
 
 /**
  * AutopilotModule (D99-D105, D124, D196, D197, D234) — read + small
@@ -56,22 +48,6 @@ import {
           return null;
         }
         return new Queue<AutopilotActionJobData>(AUTOPILOT_ACTION_QUEUE, {
-          connection: createRedisConnection(url),
-        });
-      },
-    },
-    {
-      // The MATCHER queue, distinct from the action queue above.
-      // Turning a rule on has to run the matcher before there is
-      // anything for the action sweep to execute — see
-      // `enqueueApplySweep` in the read service.
-      provide: AUTOPILOT_APPLY_QUEUE_TOKEN,
-      useFactory: (): Queue<AutopilotApplyJobData> | null => {
-        const url = process.env.REDIS_URL;
-        if (!url) {
-          return null;
-        }
-        return new Queue<AutopilotApplyJobData>(AUTOPILOT_APPLY_QUEUE, {
           connection: createRedisConnection(url),
         });
       },

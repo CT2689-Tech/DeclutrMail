@@ -116,6 +116,13 @@ export function ActivateRuleModal({
   // Observe, so the acting label and the second button both disappear
   // rather than offering a commit that would 402.
   const enablingToAct = enabling && canRunUnattended;
+  // Does the PRIMARY button leave the rule in `active`? Both the day-7
+  // promote (`intent='activate'`) and an entitled enable do; an enable
+  // without the capability, and the "Watch first" secondary, do not.
+  // The backlog clause below reads differently either way, because the
+  // server supersedes this rule's pending Observe suggestions only on
+  // the transition into `active`.
+  const primaryCommitsActive = !enabling || enablingToAct;
 
   return (
     <ConfirmModalFrame
@@ -169,13 +176,40 @@ export function ActivateRuleModal({
             suggestions stay unapproved. */}
         {pendingApproximate || pendingCount > 0 ? (
           <li>
-            {pendingApproximate
-              ? `Suggestions already collected stay pending below — ${enabling ? 'turning the rule on' : 'activating'} does not approve them. Approve or skip them separately.`
-              : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
-                  pendingCount === 1 ? 'stays' : 'stay'
-                } pending below — ${enabling ? 'turning the rule on' : 'activating'} does not approve ${
-                  pendingCount === 1 ? 'it' : 'them'
-                }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
+            {/* Two different truths, and saying the wrong one is not a
+                wording slip. Going ACTIVE, the server clears this rule's
+                pending suggestions (`dismiss_reason='superseded'`) in the
+                same transaction as the mode change, because the sweep
+                below re-matches those senders and acts on them — leaving
+                the old rows would show the user a second, stale copy of
+                a suggestion for mail that has already moved, and
+                approving it would fire a duplicate action (for
+                Unsubscribe, a second irreversible request). Going to
+                OBSERVE, nothing is superseded and they really do stay
+                pending. */}
+            {primaryCommitsActive
+              ? pendingApproximate
+                ? 'The suggestions already collected are covered by this — the rule acts on them itself and they clear from the pending list.'
+                : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
+                    pendingCount === 1 ? 'is' : 'are'
+                  } covered by this — the rule acts on ${
+                    pendingCount === 1 ? 'it' : 'them'
+                  } itself and ${pendingCount === 1 ? 'it clears' : 'they clear'} from the pending list.`
+              : pendingApproximate
+                ? 'Suggestions already collected stay pending below — turning the rule on does not approve them. Approve or skip them separately.'
+                : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
+                    pendingCount === 1 ? 'stays' : 'stay'
+                  } pending below — turning the rule on does not approve ${
+                    pendingCount === 1 ? 'it' : 'them'
+                  }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
+          </li>
+        ) : null}
+        {/* The secondary button's different outcome, stated where the
+            user chooses. Only shown when both paths are actually on
+            offer and there is a backlog for them to differ about. */}
+        {primaryCommitsActive && enablingToAct && (pendingApproximate || pendingCount > 0) ? (
+          <li>
+            <strong>Watch first</strong> instead and they stay pending for your approval.
           </li>
         ) : null}
         {/* Turning a paused rule on resumes it. `{enabled:true, mode}`

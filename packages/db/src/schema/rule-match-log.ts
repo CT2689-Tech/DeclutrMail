@@ -96,11 +96,21 @@ export const autopilotMatchResolution = pgEnum('autopilot_match_resolution', [
  * rule the downgrade flipped back to Observe. Activity's review-outcome
  * surfaces intentionally exclude this value — it is a system state
  * change, not a user decision.
+ *
+ * `superseded` marks an Observe-provenance pending match invalidated by
+ * the user turning the same rule Active. The activation preview already
+ * told them what would happen to that backlog, and the Active sweep
+ * rewrites it as `(active, approved)` rows — so leaving the Observe rows
+ * pending would show a second, stale copy of the same suggestion for
+ * mail that has already moved. Like `entitlement`, it is a system state
+ * change rather than a user decision, so review-outcome surfaces
+ * exclude it.
  */
 export const autopilotMatchDismissReason = pgEnum('autopilot_match_dismiss_reason', [
   'user',
   'protected',
   'entitlement',
+  'superseded',
 ]);
 
 export const ruleMatchLog = pgTable(

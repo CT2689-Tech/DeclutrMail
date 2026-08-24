@@ -5,6 +5,7 @@ import {
   ActionLabelAppliedPayloadSchema,
   ActionsUnsubscribeExecutedPayloadSchema,
   ActionsUnsubscribeIntentRecordedPayloadSchema,
+  AutopilotRuleActivatedPayloadSchema,
   MailboxSyncFailedPayloadSchema,
   MailboxSyncReadyPayloadSchema,
   TOPICS,
@@ -83,6 +84,26 @@ export interface OutboxConsumerDeps {
 export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}) {
   return async function consumeOutboxEvent(event: DispatchedEvent): Promise<void> {
     switch (event.topic) {
+      case TOPICS.AUTOPILOT_RULE_ACTIVATED: {
+        // A rule PATCH left the rule runnable. Nothing else enqueues a
+        // sweep on a rule change — `autopilot-apply` is otherwise
+        // triggered only by `mailbox.sync_ready`,
+        // `triage.score_run_completed` and the 5-minute incremental-sync
+        // delta — so without this a freshly-enabled rule sat inert until
+        // unrelated mail happened to arrive, which made the enable
+        // preview's promise ("it acts on matching mail already in your
+        // inbox") false on a quiet mailbox.
+        //
+        // Redelivery is safe twice over: the jobId carries the publish
+        // timestamp so BullMQ dedups, and the sweep itself is idempotent
+        // against the pending-dedup partial unique index.
+        const payload = AutopilotRuleActivatedPayloadSchema.parse(event.payload);
+        await enqueueAutopilotApply(deps, {
+          mailboxAccountId: payload.mailboxAccountId,
+          triggeredAtMs: Date.parse(payload.activatedAt),
+        });
+        return;
+      }
       case TOPICS.MAILBOX_SYNC_READY: {
         // U14 — Autopilot bootstrap on first ready (D10, D99, D101).
         // 1. Seed the 5 D101 preset rules — idempotent (`ON CONFLICT

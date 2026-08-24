@@ -1187,6 +1187,70 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
   });
 
+  // The backlog clause had NO test until 2026-08-24, which is how it
+  // came to state the opposite of what the server does. It promised
+  // "suggestions already collected stay pending — turning the rule on
+  // does not approve them"; going Active, `patchRule` supersedes them in
+  // the same transaction, because the sweep it triggers re-matches those
+  // senders and acts on them. Rewriting that sentence turned nothing
+  // red. Both branches are pinned here now.
+  it('going Active, says the rule takes over the collected backlog', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        intent="enable"
+        canRunUnattended
+        pendingCount={3}
+        pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.plus.undoWindowDays}
+        preview={{ status: 'ready', result: RULE_PREVIEW_RESULT }}
+        onRetryPreview={() => undefined}
+        onWatchFirst={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByText(/3 suggestions already collected are covered by this/i),
+    ).toBeInTheDocument();
+    // The secondary path leads somewhere different, and the user is
+    // choosing between them right here.
+    expect(within(dialog).getByText(/stay pending for your approval/i)).toBeInTheDocument();
+    // The old promise must be gone, not merely joined by the new one.
+    expect(
+      within(dialog).queryByText(/does not approve them\. Approve or skip them separately/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it('turning on into Observe, says the backlog stays pending', () => {
+    render(
+      <ActivateRuleModal
+        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        intent="enable"
+        canRunUnattended={false}
+        pendingCount={3}
+        pendingApproximate={false}
+        undoWindowDays={TIER_MANIFEST.plus.undoWindowDays}
+        preview={{ status: 'ready', result: RULE_PREVIEW_RESULT }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByText(/3 suggestions already collected stay pending below/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/covered by this/i)).not.toBeInTheDocument();
+  });
+
   // The recovery line used to read `TIER_MANIFEST.pro.undoWindowDays`
   // outright, on the reasoning that only Pro could open this modal.
   // That stopped being true when `autopilot-active` moved to Plus.
