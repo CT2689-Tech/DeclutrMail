@@ -163,6 +163,20 @@ Enforced by `webhook-security-auditor` subagent.
   live and has no production users or production data. Remove superseded
   routes, columns, contracts, fixtures, and docs directly unless a current
   technical invariant—not an imagined legacy user—requires them.
+- **Quiet governs Autopilot, so it can never sit above it** — no tier may
+  grant `autopilot` without `quiet`. Pinned by an invariant in
+  `packages/shared/src/entitlements/entitlements.test.ts`. Violating it
+  strands a stored quiet window on downgrade: nothing clears it, so it
+  silently defers batches the user already approved, behind a screen the
+  app hides and a PUT that 402s.
+- **A capability guard is a REQUEST guard; a cron has no request.** Any
+  feature whose data is produced by a scheduled job needs its own tier
+  filter at the PRODUCER, derived via `hasCapability` and never a literal
+  tier list. The read side keeps 402-ing correctly while the producer
+  runs for every tier, so the two drift with nothing to notice. This
+  shipped: the Brief cron sent Gmail subject lines and snippets to
+  Anthropic daily, in production, for Free and Plus workspaces, for a
+  Pro-only feature.
 
 ---
 
@@ -188,8 +202,23 @@ it autonomously.
 
 **Patch awareness.** Many D-decisions have inline patches (e.g., D29's
 "K/A/U/S" is reverbed to "K/A/U/L" by D227). When reading a D-body,
-always check for `[GRILL2 PATCH on D###]` or `[AUDIT PATCH on D###]`
-sections later in the plan — the patched behavior wins.
+always check for a later amending section — `[AUDIT PATCH …]`,
+`[GRILL2 PATCH …]`, `[REVERSAL …]`, `[PACKAGING PATCH …]` — anywhere
+later in the plan; the patched behavior wins.
+
+**Absence of a marker is not evidence a D-body is current.** Decisions
+have been superseded with no marker written at all: D83 ("Later is
+Pro-only") was retired by the A3 free-tier rework and nothing in the
+plan says so, and D77 ("Screener is Pro-only") is retired by a
+`[REVERSAL 2026-08-02 on D77]` 7,695 lines later — a marker form the
+previous version of this paragraph did not name. So a reader following
+the documented procedure *correctly* still arrived at stale text, which
+is how the D77/D83 mis-reads happened rather than through carelessness.
+
+When a D-body contradicts
+`packages/shared/src/entitlements/pricing.config.ts`, **the manifest is
+the truth and the plan needs a marker** — say so rather than
+implementing the stale body.
 
 ---
 
@@ -211,7 +240,7 @@ If only the local path exists (pre-PR 1), use it.
 |---|---|---|
 | Branding & typography | D1–D2 | Geist Sans/Mono; Cool/Vercel palette |
 | Privacy posture | D7, D228 | The trust wedge of the product |
-| Pricing & tiers | D17–D21, D77, D81 | Free / Plus / Pro gating |
+| Pricing & tiers | D17–D21, D77, D81, D251, `[PACKAGING PATCH 2026-08-23]` | Free / Plus / Pro gating |
 | Onboarding & sync | D6, D109, D224 | First-run flow + sync gate transport |
 | Triage UX | D29, D33, D34, D200, D207, D208, D226 | The core ritual |
 | Action lifecycle | D34, D200, D208, D226 | sheet → preview → mutation → undo |
