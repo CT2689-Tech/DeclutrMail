@@ -412,6 +412,33 @@ describe('SenderIndexSweepWorker', () => {
     expect(kinds).toContain('sender_index_sweep.batch_capped');
   });
 
+  it('does NOT cry wolf when the eligible set exactly fills the batch', async () => {
+    // Production has exactly MAILBOX_BATCH_SIZE eligible mailboxes right
+    // now, so a `length >= cap` test would warn every night having swept
+    // every one of them. A guard that fires on a clean run is one nobody
+    // reads by the time it means something.
+    db = await freshTestDb();
+    for (let i = 0; i < MAILBOX_BATCH_SIZE; i += 1) await seedMailbox();
+
+    const kinds: string[] = [];
+    const warn = vi.spyOn(console, 'warn').mockImplementation((line: unknown) => {
+      try {
+        kinds.push(JSON.parse(String(line)).kind);
+      } catch {
+        /* not this test's business */
+      }
+    });
+    let result;
+    try {
+      result = await run();
+    } finally {
+      warn.mockRestore();
+    }
+
+    expect(result.mailboxesProcessed).toBe(MAILBOX_BATCH_SIZE);
+    expect(kinds).not.toContain('sender_index_sweep.batch_capped');
+  });
+
   it('keeps sweeping after one mailbox throws, and fails only when all do', async () => {
     const second = await seedMailbox();
     const lock = {

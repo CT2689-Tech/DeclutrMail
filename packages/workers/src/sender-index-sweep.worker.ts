@@ -166,20 +166,28 @@ export class SenderIndexSweepWorker extends BaseDeclutrWorker<
       // RANDOM, and BOUNDED. Both matter, and neither is a performance
       // tweak — see MAILBOX_BATCH_SIZE.
       .orderBy(sql`random()`)
-      .limit(MAILBOX_BATCH_SIZE);
+      // ONE MORE THAN THE CAP, deliberately. The extra row is a probe:
+      // it is the difference between "the batch was full" and "there was
+      // more than the batch could take", and only the second is worth
+      // warning about. Prod currently has exactly MAILBOX_BATCH_SIZE
+      // eligible mailboxes, so a `>= cap` test would fire every single
+      // night having swept every one of them — and a guard that cries
+      // wolf nightly is one nobody reads by the time it is true.
+      .limit(MAILBOX_BATCH_SIZE + 1);
 
-    if (mailboxes.length >= MAILBOX_BATCH_SIZE) {
-      // Never silent. A full page means eligible mailboxes went unswept
-      // this tick, and `mailboxesProcessed` cannot show it — a capped
-      // run and a complete run report the same shape.
+    const overflowed = mailboxes.length > MAILBOX_BATCH_SIZE;
+    if (overflowed) {
+      // Never silent. Mailboxes went unswept this tick and
+      // `mailboxesProcessed` cannot show it — a capped run and a
+      // complete run otherwise report the same shape.
       console.warn(
         JSON.stringify({
           level: 'warn',
           kind: 'sender_index_sweep.batch_capped',
-          mailboxes: mailboxes.length,
           cap: MAILBOX_BATCH_SIZE,
         }),
       );
+      mailboxes.length = MAILBOX_BATCH_SIZE;
     }
 
     let mailboxesProcessed = 0;
