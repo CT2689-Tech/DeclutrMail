@@ -75,6 +75,27 @@ on:
 env:
   PROJECT: declutrmail-ai-prod
   REGION: us-central1
+  # The WORKER's region, deliberately separate from REGION.
+  #
+  # Measured 2026-08-24: the `getGmailClient` mailbox lookup takes 94 ms
+  # of wall clock in the worker against 1.381 ms of server-side execution
+  # (19,283 calls, pg_stat_statements). ~93 ms of every round trip is the
+  # distance from us-central1 (Iowa) to Supabase in us-west-2 (Oregon),
+  # and a user action makes 16-19 trips. us-west1 is Oregon — the same
+  # metro as the database.
+  #
+  # The worker moves first because it has NO domain mapping: there is no
+  # DNS record and no managed certificate to reissue, so the move is a
+  # stop-then-start with no cutover. The API keeps REGION until that
+  # cutover is scheduled, which is the only reason these are two
+  # variables instead of one.
+  #
+  # KMS_KEY_RESOURCE stays pinned to us-central1 (key rings cannot move),
+  # so a decrypt becomes cross-region — roughly +40 ms. The ciphertext-
+  # keyed unwrap cache added in #625 makes that ~1 call per 10 minutes
+  # per mailbox instead of ~975/day, which is why this trade is worth
+  # taking rather than a reason to avoid it.
+  WORKER_REGION: us-west1
   REPO: declutrmail
   # Runtime SA used by BOTH Cloud Run services. Declared as an env so a
   # future rename touches one place.
@@ -413,7 +434,7 @@ jobs:
           # variable was read by nothing.
           gcloud run deploy declutrmail-worker \
             --image="$IMAGE" \
-            --region="$REGION" \
+            --region="$WORKER_REGION" \
             --project="$PROJECT" \
             --service-account="$RUNTIME_SA" \
             --min-instances=1 \
@@ -452,10 +473,10 @@ jobs:
           # hit it from CI. Instead, assert the revision is Ready via
           # the Cloud Run control plane.
           REVISION=$(gcloud run services describe declutrmail-worker \
-            --region="$REGION" --project="$PROJECT" \
+            --region="$WORKER_REGION" --project="$PROJECT" \
             --format="value(status.latestReadyRevisionName)")
           STATUS=$(gcloud run revisions describe "$REVISION" \
-            --region="$REGION" --project="$PROJECT" \
+            --region="$WORKER_REGION" --project="$PROJECT" \
             --format="value(status.conditions[0].status)")
           echo "Worker revision $REVISION status: $STATUS"
           test "$STATUS" = "True" || (echo "Worker revision NOT Ready" && exit 1)
