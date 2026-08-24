@@ -210,8 +210,12 @@ later in the plan; the patched behavior wins.
 have been superseded with no marker written at all: D83 ("Later is
 Pro-only") was retired by the A3 free-tier rework and nothing in the
 plan says so, and D77 ("Screener is Pro-only") is retired by a
-`[REVERSAL 2026-08-02 on D77]` 7,695 lines later — a marker form the
-previous version of this paragraph did not name. So a reader following
+`[REVERSAL 2026-08-02 on D77]` thousands of lines below the D-body it
+amends — a marker form the previous version of this paragraph did not
+name. (An earlier draft of this line quoted an exact line number. It was
+already wrong by 25 when it was written, and the plan moves every time
+anyone appends to it — the same self-invalidating literal this file
+warns about elsewhere.) So a reader following
 the documented procedure *correctly* still arrived at stale text, which
 is how the D77/D83 mis-reads happened rather than through carelessness.
 
