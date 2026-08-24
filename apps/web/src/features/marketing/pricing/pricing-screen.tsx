@@ -99,9 +99,9 @@ export function PricingScreen() {
           }}
         >
           Free includes every manual cleanup action, with a monthly limit. Plus removes the limit
-          and finds matching mail for you to approve. Pro can run the rules you turn on
-          automatically and adds Brief, Quiet hours, and Follow-ups. Keep, Archive, Unsubscribe,
-          Later, and Delete work the same way on every plan. {ACTION_SAFETY_SUMMARY}
+          and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours.
+          Pro adds the Daily Brief, Follow-ups, and more connected inboxes. Keep, Archive,
+          Unsubscribe, Later, and Delete work the same way on every plan. {ACTION_SAFETY_SUMMARY}
         </p>
       </header>
 

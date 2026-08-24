@@ -5,6 +5,7 @@ import { Button, tokens } from '@declutrmail/shared';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { useAccountDeletionStatus, useCancelAccountDeletion } from './api/use-account-deletion';
 import { formatDate } from './delete-account-modal';
+import { MAX_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 const { color, font } = tokens;
 
@@ -63,8 +64,9 @@ export function GracePeriodBanner() {
         </span>
         {!executing && request.basis === 'undo-window' && (
           <span style={{ fontSize: 11.5, color: color.fgSoft }}>
-            The date extends past the 7-day grace period so your open undo windows keep working
-            until they expire.
+            This date is later than the usual 7 days so your open undo windows keep working until
+            they expire. Undo runs {MAX_UNDO_WINDOW_DAYS} days, so a recent action commonly pushes
+            it out.
           </span>
         )}
         {cancelError != null && (

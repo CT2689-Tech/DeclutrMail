@@ -56,7 +56,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'future-mail',
     question: 'Does archiving a sender automatically archive future messages?',
     answer:
-      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail also has preset Autopilot rules on Plus and Pro; those begin in Observe and collect matches for your approval, and only on Pro can a rule be switched to act on future matches by itself.',
+      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail also has preset Autopilot rules on Plus and Pro; you preview what a rule would do before you turn it on, and from then on it acts on future matches. You can instead run a rule in Observe, where it collects matches and waits for your approval.',
     link: {
       href: '/how-to/auto-archive-future-emails-in-gmail',
       label: 'Compare filters and Autopilot',
@@ -102,7 +102,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Plus and Pro include five preset rules. Each rule starts in Observe, collecting possible matches without moving mail, and you approve or dismiss each batch yourself. On Pro you can turn on a rule after the seven-day review period, after checking a sample of what it would affect, so it can handle future matches automatically. Custom rule creation is not part of the launch product, and every rule can be paused.',
+      'Plus and Pro include five preset rules. Turning one on shows a sample of what it would do to matching mail already in your inbox; confirm and it acts, then keeps acting on matching mail that arrives. Choose Watch first instead and the rule collects possible matches without moving mail, for you to approve or dismiss batch by batch. It can handle future matches automatically. Custom rule creation is not part of the launch product, and every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',
@@ -114,7 +114,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
     answer:
-      'Free supports one inbox with Senders, Triage, Later, bulk actions, and Activity, limited to 50 cleanup actions a month with a seven-day Undo window. Plus removes the monthly limit and adds Screener plus Autopilot rules that find matching email for your approval. Pro supports up to three inboxes, a thirty-day Undo window, rules that can run without approving each batch, and Brief, Quiet, and Follow-ups. Use the pricing page for current plan details.',
+      'Free supports one inbox with Senders, Triage, Later, bulk actions, and Activity, limited to 50 cleanup actions a month. Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro adds more connected inboxes and the two attention surfaces, Brief and Follow-ups. Use the pricing page for current plan details.',
     link: {
       href: '/pricing',
       label: 'Compare current plans',

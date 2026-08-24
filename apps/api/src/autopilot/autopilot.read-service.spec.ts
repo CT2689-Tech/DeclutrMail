@@ -5,6 +5,7 @@ import {
   automationRules,
   mailboxAccounts,
   mailMessages,
+  outboxEvents,
   ruleMatchLog,
   schema,
   senderPolicies,
@@ -1058,6 +1059,194 @@ describe('AutopilotReadService', () => {
       expect(dismissedAsB!.alreadyDismissed).toBe(false);
       const crossTenant = await service.dismissMatch(mailboxA, matchB!.id);
       expect(crossTenant).toBeNull();
+    });
+  });
+
+  describe('activation reconciliation (Observe → Active)', () => {
+    /**
+     * Turning a rule Active enqueues an immediate apply sweep, which
+     * re-matches the same senders and writes `(active, approved)` rows
+     * that execute unattended. Any `(observe, pending)` rows already in
+     * the buffer for that rule therefore describe mail the sweep is
+     * about to move — and the pending-dedup partial unique index does
+     * NOT suppress them, because it is scoped `WHERE resolution =
+     * 'pending'` and an approved insert is not a conflict.
+     *
+     * Left alone they render as live suggestions for mail that has
+     * already moved. Approving one is a no-op for Archive and a SECOND
+     * request for Unsubscribe — the one verb the product tells users
+     * cannot be taken back.
+     */
+    async function seedObservePending(
+      mailboxId: string,
+      presetKey: string,
+      senderKey: string,
+    ): Promise<{ ruleId: string; matchId: string }> {
+      const ruleId = await getRuleId(db, mailboxId, presetKey);
+      const [m] = await db
+        .insert(ruleMatchLog)
+        .values({
+          ruleId,
+          mailboxAccountId: mailboxId,
+          senderKey,
+          modeAtMatch: 'observe',
+          confidence: '0.93',
+          reason: 'activation-reconciliation',
+        })
+        .returning({ id: ruleMatchLog.id });
+      return { ruleId, matchId: m!.id };
+    }
+
+    async function readMatch(matchId: string) {
+      const [row] = await db
+        .select({
+          resolution: ruleMatchLog.resolution,
+          dismissReason: ruleMatchLog.dismissReason,
+          resolvedAt: ruleMatchLog.resolvedAt,
+        })
+        .from(ruleMatchLog)
+        .where(eq(ruleMatchLog.id, matchId));
+      return row!;
+    }
+
+    async function sweepIntents(): Promise<{ ruleId: string; mode: string }[]> {
+      const rows = await db
+        .select({ payload: outboxEvents.payload })
+        .from(outboxEvents)
+        .where(eq(outboxEvents.topic, 'autopilot.rule_activated'));
+      return rows.map((r) => r.payload as { ruleId: string; mode: string });
+    }
+
+    it('supersedes the rule’s pending Observe matches and publishes one sweep intent', async () => {
+      const { ruleId, matchId } = await seedObservePending(
+        mailboxA,
+        'auto_archive_low_engagement',
+        'd'.repeat(64),
+      );
+
+      const updated = await service.patchRule(mailboxA, ruleId, {
+        enabled: true,
+        mode: 'active',
+      });
+      expect(updated).not.toBeNull();
+
+      const match = await readMatch(matchId);
+      expect(match.resolution).toBe('dismissed');
+      expect(match.dismissReason).toBe('superseded');
+      expect(match.resolvedAt).not.toBeNull();
+
+      // Exactly one sweep intent, naming the rule and the mode it landed
+      // in — this is what the dispatcher turns into the apply job.
+      const intents = await sweepIntents();
+      expect(intents).toHaveLength(1);
+      expect(intents[0]).toMatchObject({ ruleId, mode: 'active' });
+    });
+
+    it('supersedes an unsubscribe rule’s backlog, so activation cannot queue a second request', async () => {
+      // The verb that makes this more than tidiness: a delivered
+      // one-click unsubscribe is irreversible, so a stale approvable
+      // suggestion alongside the sweep's own approved row is a second
+      // request to the sender, not a no-op.
+      const { ruleId, matchId } = await seedObservePending(
+        mailboxA,
+        'long_dormant_unsubscribe',
+        'e'.repeat(64),
+      );
+
+      await service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' });
+
+      const match = await readMatch(matchId);
+      expect(match.resolution, 'an unsubscribe suggestion must not survive activation').toBe(
+        'dismissed',
+      );
+      expect(match.dismissReason).toBe('superseded');
+
+      // And it is no longer offered: the pending-suggestions read is the
+      // surface the user would have approved from.
+      const pending = await service.listPendingSuggestions(mailboxA);
+      expect(pending.some((i) => i.id === matchId)).toBe(false);
+    });
+
+    it('leaves pending matches pending when the rule is turned on into Observe', async () => {
+      // Watch first must keep the backlog approvable — the modal says so.
+      const { ruleId, matchId } = await seedObservePending(
+        mailboxA,
+        'auto_archive_low_engagement',
+        'd'.repeat(64),
+      );
+
+      await service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'observe' });
+
+      const match = await readMatch(matchId);
+      expect(match.resolution).toBe('pending');
+      expect(match.dismissReason).toBeNull();
+      expect(await sweepIntents()).toMatchObject([{ ruleId, mode: 'observe' }]);
+    });
+
+    it('supersedes only the activated rule’s matches, not a sibling rule’s', async () => {
+      const activated = await seedObservePending(
+        mailboxA,
+        'auto_archive_low_engagement',
+        'd'.repeat(64),
+      );
+      const untouched = await seedObservePending(mailboxA, 'newsletter_graveyard', 'f'.repeat(64));
+
+      await service.patchRule(mailboxA, activated.ruleId, { enabled: true, mode: 'active' });
+
+      expect((await readMatch(activated.matchId)).resolution).toBe('dismissed');
+      expect((await readMatch(untouched.matchId)).resolution).toBe('pending');
+    });
+
+    it('never rewrites a match that already produced an action', async () => {
+      // `intent_applied = true` means an undo-journal row exists for it.
+      // Rewriting that row would detach the action from its match.
+      const { ruleId, matchId } = await seedObservePending(
+        mailboxA,
+        'auto_archive_low_engagement',
+        'd'.repeat(64),
+      );
+      await db
+        .update(ruleMatchLog)
+        .set({ intentApplied: true })
+        .where(eq(ruleMatchLog.id, matchId));
+
+      await service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' });
+
+      expect((await readMatch(matchId)).resolution).toBe('pending');
+    });
+
+    it('rolls back the rule change when the sweep intent cannot be published', async () => {
+      // The failure this replaces: the old shape committed the rule
+      // update and THEN awaited `applyQueue.add()`, so a Redis outage
+      // returned an error for a save that had already landed and the
+      // caller could not tell which half happened. Publishing inside the
+      // transaction makes the two agree — the request fails and the rule
+      // is untouched.
+      const { ruleId, matchId } = await seedObservePending(
+        mailboxA,
+        'auto_archive_low_engagement',
+        'd'.repeat(64),
+      );
+      const before = await service.getRule(mailboxA, ruleId);
+
+      const failing = new AutopilotReadService(
+        db as never,
+        null as never,
+        {
+          publish: vi.fn().mockRejectedValue(new Error('outbox unavailable')),
+        } as never,
+      );
+
+      await expect(
+        failing.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
+      ).rejects.toThrow('outbox unavailable');
+
+      const after = await service.getRule(mailboxA, ruleId);
+      expect(after!.enabled).toBe(before!.enabled);
+      expect(after!.mode).toBe(before!.mode);
+      // …and the supersede rolled back with it, so the user's backlog is
+      // exactly as they left it.
+      expect((await readMatch(matchId)).resolution).toBe('pending');
     });
   });
 

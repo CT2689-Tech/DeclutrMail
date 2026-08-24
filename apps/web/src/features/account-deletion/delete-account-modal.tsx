@@ -8,6 +8,8 @@ import {
   type AccountDeletionProjection,
 } from '@declutrmail/shared/contracts';
 
+import { MAX_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 
 const { color, font } = tokens;
@@ -210,9 +212,12 @@ export function DeleteAccountModal({
                 }
                 detail={
                   undoExtends
-                    ? 'Your deletion is delayed past the 7-day grace period because an undo ' +
-                      `window stays open until ${formatDate(projection!.latestUndoExpiresAt!, timeZone)}. ` +
-                      'Undo keeps working for its full window; you can cancel any time before then.'
+                    ? 'Deletion waits for your open undo windows, so it runs on ' +
+                      `${formatDate(projection!.latestUndoExpiresAt!, timeZone)} rather than after the ` +
+                      `usual 7 days. Undo windows run up to ${MAX_UNDO_WINDOW_DAYS} days, so a recent ` +
+                      'action can push this several weeks out. Undo keeps working the whole time, ' +
+                      'and you can cancel any time before then. The immediate option below skips ' +
+                      'the wait by waiving those windows.'
                     : '7-day grace period. You can cancel any time before then.'
                 }
               />

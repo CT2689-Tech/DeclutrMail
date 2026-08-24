@@ -58,9 +58,11 @@ import {
   AUTOPILOT_PRESETS,
   autopilotActionJobOptions,
   materializeAutopilotSignals,
+  OutboxPublisher,
   type AutopilotActionJobData,
   type PresetInput,
 } from '@declutrmail/workers';
+import { AutopilotRuleActivatedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { TIER_IDS, hasCapability } from '@declutrmail/shared/entitlements';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
 import type {
@@ -154,12 +156,22 @@ function claimKeySqlForms(): SQL {
 
 @Injectable()
 export class AutopilotReadService {
+  private readonly outbox: OutboxPublisher;
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     @Optional()
     @Inject(AUTOPILOT_ACTION_QUEUE_TOKEN)
     private readonly actionQueue: Queue<AutopilotActionJobData> | null = null,
-  ) {}
+    // OutboxPublisher (D13, D204). `@Optional()` is REQUIRED for Nest
+    // DI for the reason spelled out in ActionsService: without it the
+    // reflector looks for a provider keyed on the class itself and
+    // throws at boot. The publisher is stateless, so falling back to a
+    // fresh instance is safe and keeps the `new AutopilotReadService(db)`
+    // test wiring working unchanged.
+    @Optional() outbox?: OutboxPublisher,
+  ) {
+    this.outbox = outbox ?? new OutboxPublisher();
+  }
 
   /**
    * List all rules for a mailbox. Returns rows in creation order
@@ -528,18 +540,100 @@ export class AutopilotReadService {
       set.observePromptDismissedAt = patch.observePromptDismissed ? sql`now()` : null;
     }
 
-    const [updated] = await this.db
-      .update(automationRules)
-      .set(set)
-      .where(
-        and(
-          eq(automationRules.mailboxAccountId, mailboxAccountId),
-          eq(automationRules.id, id),
-          eq(automationRules.isPreset, true),
-        ),
-      )
-      .returning();
+    // ONE transaction: the rule update, the supersede of any pending
+    // Observe suggestions it invalidates, and the durable sweep intent.
+    //
+    // These three cannot be allowed to disagree. The previous shape ran
+    // the update, then awaited `applyQueue.add()` — so a Redis outage
+    // returned an error for a rule that HAD saved, and the caller could
+    // not tell which half happened. Publishing to the outbox inside the
+    // same transaction removes the question: either all three land or
+    // none do, and the dispatcher owns delivery from there.
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(automationRules)
+        .set(set)
+        .where(
+          and(
+            eq(automationRules.mailboxAccountId, mailboxAccountId),
+            eq(automationRules.id, id),
+            eq(automationRules.isPreset, true),
+          ),
+        )
+        .returning();
+      if (!row) return null;
+
+      // A rule that just became runnable gets a sweep NOW.
+      //
+      // Nothing else enqueues one on a rule change: `autopilot-apply` is
+      // triggered only by `mailbox.sync_ready`,
+      // `triage.score_run_completed` and the 5-minute incremental-sync
+      // delta. So before this, turning a rule on left it inert until
+      // unrelated mail happened to arrive — which made the enable
+      // preview's whole promise ("the rule acts on matching mail already
+      // in your inbox") false on a quiet mailbox.
+      //
+      // Both modes need it: `active` so the first sweep acts on the
+      // backlog the preview just counted, `observe` so the suggestions
+      // the user was told to expect actually appear. `paused` gets
+      // nothing.
+      const nowRunnable = row.enabled && row.mode !== 'paused';
+      const patchTurnedItOn = patch.enabled === true || patch.mode !== undefined;
+      if (!nowRunnable || !patchTurnedItOn) return row;
+
+      if (row.mode === 'active') {
+        // Supersede this rule's unresolved Observe suggestions.
+        //
+        // Without this the mailbox ends up holding TWO rows per sender:
+        // the old `(observe, pending)` suggestion and the
+        // `(active, approved)` row the sweep below is about to write.
+        // The pending-dedup partial unique index does not stop it — it
+        // is scoped `WHERE resolution = 'pending'`, so an approved
+        // insert simply is not a conflict (the apply worker's own
+        // comment says as much). The approved row then executes, and
+        // the stale suggestion stays on screen offering the user an
+        // action against mail that has already moved. Approving it is a
+        // no-op for Archive and a SECOND request for Unsubscribe, which
+        // is the one verb the product tells users cannot be taken back.
+        //
+        // `dismissed` + `superseded` rather than a delete: the row is
+        // audit history, and the reason distinguishes this from a user
+        // dismissal exactly as `entitlement` does for downgrades.
+        // Scoped to `intent_applied = false` so a match that already
+        // produced an action is never rewritten.
+        await tx
+          .update(ruleMatchLog)
+          .set({
+            resolution: 'dismissed',
+            dismissReason: 'superseded',
+            resolvedAt: sql`now()`,
+          })
+          .where(
+            and(
+              eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+              eq(ruleMatchLog.ruleId, row.id),
+              eq(ruleMatchLog.modeAtMatch, 'observe'),
+              eq(ruleMatchLog.resolution, 'pending'),
+              eq(ruleMatchLog.intentApplied, false),
+            ),
+          );
+      }
+
+      await this.outbox.publish(tx, {
+        topic: TOPICS.AUTOPILOT_RULE_ACTIVATED,
+        aggregateId: row.id,
+        payload: {
+          mailboxAccountId,
+          ruleId: row.id,
+          mode: row.mode === 'active' ? ('active' as const) : ('observe' as const),
+          activatedAt: new Date().toISOString(),
+        },
+        schema: AutopilotRuleActivatedPayloadSchema,
+      });
+      return row;
+    });
     if (!updated) return null;
+
     const digests = await this.observeDigests(mailboxAccountId, id);
     return projectRule(updated, digests.get(updated.id) ?? null);
   }
@@ -564,10 +658,11 @@ export class AutopilotReadService {
   }
 
   /**
-   * D251 Pro→Plus downgrade — called by the billing tier writers (via
+   * Downgrade convergence — called by the billing tier writers (via
    * this module's exported facade; billing never touches
    * `automation_rules` directly, D204) whenever a workspace's new tier
-   * no longer grants `autopilot-active`:
+   * no longer grants `autopilot-active`. The tier list is derived, so
+   * this follows the manifest rather than a named pair of plans:
    *
    *   1. Every `active` rule flips back to `observe`, with the same
    *      field semantics as a user mode change in `patchRule` (fresh

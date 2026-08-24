@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-246 decisions — ⬜ Not started 76 · 🔵 Shipped 112 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
+246 decisions — ⬜ Not started 75 · 🔵 Shipped 113 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -146,7 +146,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D95 | Per-inbox scope | ⬜ |  |  |  |
 | D96 | Held messages screen content | ⬜ |  |  |  |
 | D97 | Brief and Quiet interaction | ⬜ |  |  |  |
-| D98 | Pro gating | ⬜ |  |  |  |
+| D98 | Pro gating | 🔵 | #621 |  |  |
 | D99 | Rule format: **Preset rules + custom rule builder, both at launch | 🟢 | #107 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
 | D100 | Condition vocabulary (sender-layer only per D22) | 🔵 | #284 |  |  |
 | D101 | Preset library at launch (5 rules) | 🔵 | #107 | packages/workers/src/autopilot-presets.test.ts — 5 preset library locked | Truth sweep 2026-07-02 (🟡→🔵): seedAutopilotPresets called on connect (outbox-consumer-router.ts:87); autopilot apply + action workers registered (worker.ts:1493-1533); rules UI shipped — 2026-06-11 note stale. NOTE plan says 8 launch presets, code ships 5 (open decision DQ13). Pending verify-d |

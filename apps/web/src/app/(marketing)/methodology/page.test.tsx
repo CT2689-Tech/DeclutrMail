@@ -50,8 +50,14 @@ describe('/methodology', () => {
     expect(copy).toContain('Activity records the result');
     expect(copy).toContain('Once a one-click request is delivered, DeclutrMail cannot recall it');
     expect(copy).toContain('A manual decision does not create an automatic rule');
-    expect(copy).toContain('On Plus, you approve each matching batch');
     expect(copy).toContain('only rules you deliberately turn on');
+    expect(copy).toContain('you see what a rule would do before you turn it on');
+    // No plan name in the automation boundary. It read "On Plus, you
+    // approve each matching batch. On Pro, only rules you deliberately
+    // turn on…", which pinned a Plus/Pro contrast that went false when
+    // both behaviours moved to Plus (2026-08-23). The boundary is about
+    // what automation does, not what it costs.
+    expect(copy).not.toMatch(/\bOn (?:Free|Plus|Pro),/);
     expect(copy).not.toMatch(/every action (?:is |stays |remains )?(?:reversible|undoable)/i);
   });
 

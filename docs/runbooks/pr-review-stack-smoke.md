@@ -41,7 +41,10 @@ Always SQL-force edge states reversibly and RESTORE after (note pre-values first
   with no aged INBOX mail → worker resolves 0 → re-check `/api/auth/me`
   `cleanupRemaining` is UNCHANGED (the no-op consumed nothing). Then a real
   archive (>0) DOES decrement.
-- **Free cap:** drive used to 5 → next archive `402 FREE_CAP_REACHED`.
+- **Free cap:** drive used to the manifest's Free quota
+  (`TIER_MANIFEST.free.cleanupActionsPerMonth`, 50 at time of writing — it was
+  5 when this line was first written and the number went stale silently) →
+  next archive `402 FREE_CAP_REACHED`.
 - **Inbox limit at activation:** free workspace already at its limit →
   `GET /api/auth/google/connect-mailbox/start` 402, AND completing an OAuth
   callback for a NEW account is now also blocked (the fix) — but reconnecting
@@ -60,7 +63,11 @@ Always SQL-force edge states reversibly and RESTORE after (note pre-values first
   re-score → leaves the Screener (no longer shows in both Screener + Triage).
 - **Keyboard:** expand a row → press A → preview opens (not a direct mutation);
   Enter confirms, Escape cancels. K/A/U/L/D all map.
-- **Tier gate:** non-pro → `/api/screener/*` 402 PRO_FEATURE_REQUIRED + upsell.
+- **Tier gate:** a tier BELOW the Screener's granting plan → `/api/screener/*`
+  402 PRO_FEATURE_REQUIRED + upsell. Derive it, do not assume "non-pro": D251
+  moved the Screener to Plus, so a Plus workspace passes this gate and only
+  Free is rejected. Check `minimumTierForCapability('screener')` before
+  choosing the tier to force.
 
 ## #219 — Billing
 

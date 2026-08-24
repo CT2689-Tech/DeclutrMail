@@ -1,7 +1,14 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { followupTracker, mailboxAccounts, senderPolicies, type schema } from '@declutrmail/db';
+import {
+  followupTracker,
+  mailboxAccounts,
+  senderPolicies,
+  type schema,
+  workspaces,
+} from '@declutrmail/db';
+import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { createLimiter } from './reasoning.js';
@@ -28,6 +35,19 @@ function resolveConcurrency(raw: string | undefined): number {
   if (!Number.isFinite(n) || n < 1) return DEFAULT_FOLLOWUP_CHECK_CONCURRENCY;
   return Math.min(n, MAX_FOLLOWUP_CHECK_CONCURRENCY);
 }
+
+/**
+ * Tiers whose workspaces may see Follow-ups — DERIVED from the pricing
+ * manifest, never a literal, so re-tiering `followups` moves this with
+ * it.
+ *
+ * Same producer-gate class as `BriefSnapshotWorker`:
+ * `@RequiresCapability('followups')` guards the READ endpoint, but this
+ * cron has no principal and swept every mailbox in the system, building
+ * `followup_tracker` rows for workspaces that cannot open the feature.
+ * A request guard never runs for a cron, so the filter has to live here.
+ */
+const FOLLOWUP_TIERS = TIER_IDS.filter((tier) => hasCapability(tier, 'followups'));
 
 /**
  * Periodic sweep payload — the scheduler enqueues one tick per cron
@@ -158,7 +178,9 @@ export class FollowupCheckWorker extends BaseDeclutrWorker<
 
     const mailboxes = await this.deps.db
       .select({ id: mailboxAccounts.id, workspaceId: mailboxAccounts.workspaceId })
-      .from(mailboxAccounts);
+      .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .where(inArray(workspaces.tier, FOLLOWUP_TIERS));
 
     let awaitingUpserted = 0;
     let repliedFlipped = 0;

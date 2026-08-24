@@ -12,6 +12,12 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_IDS,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AutopilotApplyWorker } from './autopilot-apply.worker.js';
@@ -45,7 +51,7 @@ async function freshDb() {
 
 async function seedMailbox(
   db: Awaited<ReturnType<typeof freshDb>>,
-  tier: 'free' | 'plus' | 'pro' = 'pro',
+  tier: TierId = 'pro',
 ): Promise<string> {
   const [ws] = await db
     .insert(workspaces)
@@ -375,7 +381,12 @@ describe('AutopilotApplyWorker', () => {
     expect(match!.intentToken).toBeNull();
   });
 
-  it.each(['free', 'plus'] as const)(
+  /**
+   * Tiers denied unattended action, DERIVED. Hardcoded `['free','plus']`
+   * until 2026-08-23, when `autopilot-active` moved to Plus and this
+   * asserted a refusal that correctly stopped happening.
+   */
+  it.each(TIER_IDS.filter((t) => !hasCapability(t, 'autopilot-active')))(
     '%s workspaces do not evaluate enabled Active rules or enqueue actions',
     async (tier) => {
       const db = await freshDb();
@@ -417,13 +428,23 @@ describe('AutopilotApplyWorker', () => {
     },
   );
 
-  // The GRANT side of D251 — without this, the deny test above passes
-  // just as happily against a loader that blanket-refuses Plus (the
-  // blind-guard class): a Plus workspace with one Observe and one
-  // Active rule must evaluate EXACTLY the Observe one.
-  it('D251 — plus evaluates Observe rules and writes pending matches; only Active is excluded', async () => {
+  // The GRANT side — without this, the deny test above passes just as
+  // happily against a loader that blanket-refuses everything (the
+  // blind-guard class). An ENTITLED workspace with one Observe and one
+  // Active rule must evaluate BOTH, and write one match of each kind.
+  //
+  // COVERAGE NOTE, recorded rather than papered over. Until 2026-08-23
+  // this asserted something stronger: a *review-only* tier (holding
+  // `autopilot` but not `autopilot-active`) evaluates EXACTLY the
+  // Observe rule. No tier is in that position any more — both
+  // capabilities sit on Plus — so the loader's per-mode tier filter has
+  // no reachable state left to exercise, and that leg of the coverage
+  // is GONE, not relocated. The filter itself stays (re-tiering must
+  // remain a one-line manifest edit); if `autopilot-active` ever moves
+  // back up the ladder, restore the stronger assertion with it.
+  it('an entitled tier evaluates BOTH Observe and Active rules', async () => {
     const db = await freshDb();
-    const mbId = await seedMailbox(db, 'plus');
+    const mbId = await seedMailbox(db, minimumTierForCapability('autopilot-active'));
     await seedAutopilotPresets(db as never, mbId);
     const observeRuleId = await enablePreset(db, mbId, 'auto_archive_low_engagement', {
       enabled: true,
@@ -433,9 +454,16 @@ describe('AutopilotApplyWorker', () => {
       enabled: true,
       mode: 'active',
     });
+    // One sender per rule — the Active rule needs its own match or the
+    // "both evaluated" claim rests on a counter alone.
     await seedSender(db, mbId, {
-      email: 'plus-grant@example.com',
+      email: 'entitled-archive@example.com',
       decision: { verdict: 'archive', confidence: 0.92 },
+      totalMessages: 10,
+    });
+    await seedSender(db, mbId, {
+      email: 'entitled-unsub@example.com',
+      decision: { verdict: 'unsubscribe', confidence: 0.95 },
       totalMessages: 10,
     });
 
@@ -445,16 +473,19 @@ describe('AutopilotApplyWorker', () => {
       FAKE_CTX,
     );
 
-    expect(result.rulesEvaluated).toBe(1);
-    expect(result.matchesWritten).toBe(1);
+    expect(result.rulesEvaluated).toBe(2);
     expect(result.observeMatches).toBe(1);
-    expect(result.activeMatches).toBe(0);
-    const matches = await db
-      .select({ ruleId: ruleMatchLog.ruleId, resolution: ruleMatchLog.resolution })
-      .from(ruleMatchLog);
-    expect(matches).toEqual([{ ruleId: observeRuleId, resolution: 'pending' }]);
-    // Reference activeRuleId so a failure names the excluded rule.
-    expect(matches.find((m) => m.ruleId === activeRuleId)).toBeUndefined();
+    const byRule = new Map(
+      (
+        await db
+          .select({ ruleId: ruleMatchLog.ruleId, modeAtMatch: ruleMatchLog.modeAtMatch })
+          .from(ruleMatchLog)
+      ).map((m) => [m.ruleId, m.modeAtMatch]),
+    );
+    // Each rule logged a match stamped with ITS OWN mode — the
+    // provenance the action worker later filters on.
+    expect(byRule.get(observeRuleId)).toBe('observe');
+    expect(byRule.get(activeRuleId)).toBe('active');
   });
 
   it('protected senders are filtered out BEFORE matching', async () => {

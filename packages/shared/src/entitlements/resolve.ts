@@ -32,10 +32,31 @@ export function inboxLimitFor(id: TierId): number {
   return TIER_MANIFEST[id].inboxLimit;
 }
 
-/** Undo retention window in days (D19: 7d; Pro+ 30d). */
+/** Undo retention window in days for one tier. */
 export function undoWindowDaysFor(id: TierId): number {
   return TIER_MANIFEST[id].undoWindowDays;
 }
+
+/**
+ * The undo window's FLOOR and CEILING across the whole ladder.
+ *
+ * For copy that cannot know the reader's tier — public marketing and
+ * legal pages, and any in-app surface rendering before auth resolves.
+ * The floor can only under-promise and the ceiling can only over-warn,
+ * so both stay true under any ladder, including one that splits the
+ * window again.
+ *
+ * They exist because the alternative kept going wrong in the same way:
+ * copy hardcoded the SHAPE of a split ("N days on Free and Plus, M on
+ * Pro") around correctly-derived numbers, which is how true values end
+ * up inside a false sentence. Derive the reduction, not just the value.
+ */
+export const MIN_UNDO_WINDOW_DAYS = Math.min(
+  ...TIER_IDS.map((id) => TIER_MANIFEST[id].undoWindowDays),
+);
+export const MAX_UNDO_WINDOW_DAYS = Math.max(
+  ...TIER_IDS.map((id) => TIER_MANIFEST[id].undoWindowDays),
+);
 
 /**
  * Monthly cleanup-action quota — Free = 50/month on the signup

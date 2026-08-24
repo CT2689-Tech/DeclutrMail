@@ -25,6 +25,7 @@ import {
   TIER_MANIFEST,
   hasCapability,
   minimumTierForCapability,
+  undoWindowDaysFor,
 } from '@declutrmail/shared/entitlements';
 
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
@@ -191,7 +192,28 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
-  const [activateTarget, setActivateTarget] = useState<AutopilotRuleDto | null>(null);
+  /**
+   * The rule whose D226 preview is open, and WHY.
+   *
+   * One piece of state for both entry points — turning a rule on, and
+   * promoting an already-watching rule — because both commit the same
+   * decision behind the same mandatory dry-run. Two states would let
+   * the two paths drift apart, and the preview is the thing that must
+   * not drift.
+   */
+  const [confirmTarget, setConfirmTarget] = useState<{
+    rule: AutopilotRuleDto;
+    intent: 'enable' | 'activate';
+  } | null>(null);
+  /**
+   * Which of the modal's two commits is running. The frame needs it to
+   * put the busy label on the button the user actually clicked — one
+   * shared `isPending` made the acting button claim to run when the
+   * user had chosen Watch first.
+   */
+  const [pendingCommit, setPendingCommit] = useState<'primary' | 'secondary' | undefined>(
+    undefined,
+  );
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
   const shownPatternKeys = useRef<Set<string>>(new Set());
 
@@ -208,7 +230,11 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const patternSuggestion =
     state.kind === 'ready' || state.kind === 'empty' ? (state.patternSuggestion ?? null) : null;
   const allPaused = rules.length > 0 && rules.every((r) => r.mode === 'paused');
-  const hasRunningRules = rules.some((r) => r.mode !== 'paused');
+  // "Pause all" is only meaningful for rules that could actually run.
+  // Without the `enabled` term a workspace whose rules are all switched
+  // off still offered an enabled Pause-all button, which pauses nothing
+  // a user can observe.
+  const hasRunningRules = rules.some((r) => r.enabled && r.mode !== 'paused');
 
   useEffect(() => {
     if (patternSuggestion == null) return;
@@ -290,29 +316,33 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 
   /** First-sweep preview state for the activation modal (D226). */
   const activatePreviewState: RulePreviewState = useMemo(() => {
-    if (activateTarget == null) return { status: 'loading' };
-    return derivePreviewState(activatePreview, activateTarget.id);
-  }, [activateTarget, activatePreview]);
+    if (confirmTarget == null) return { status: 'loading' };
+    return derivePreviewState(activatePreview, confirmTarget.rule.id);
+  }, [confirmTarget, activatePreview]);
 
   // ── Rule mutations (D101) ──────────────────────────────────────────
 
   const savingRuleId =
     patchRule.isPending && patchRule.variables != null ? patchRule.variables.ruleId : null;
 
+  /**
+   * Turning a rule ON is a D226 mutation — it starts changing mail — so
+   * it goes through the mandatory preview, where the user also chooses
+   * whether it acts or watches. Turning a rule OFF changes no mail and
+   * is fully reversible, so it commits immediately; putting a preview
+   * in front of "stop doing things" would be ceremony, not safety.
+   */
   const onToggleEnabled = (rule: AutopilotRuleDto, next: boolean) => {
-    void track('autopilot_preset_changed', {
-      preset_id: rule.id,
-      action: next ? 'enabled' : 'disabled',
-    });
-    addBreadcrumb({
-      category: 'action',
-      message: `autopilot: rule ${next ? 'enabled' : 'disabled'}`,
-      level: 'info',
-    });
+    if (next) {
+      openConfirm(rule, 'enable');
+      return;
+    }
+    void track('autopilot_preset_changed', { preset_id: rule.id, action: 'disabled' });
+    addBreadcrumb({ category: 'action', message: 'autopilot: rule disabled', level: 'info' });
     patchRule.mutate(
-      { ruleId: rule.id, patch: { enabled: next } },
+      { ruleId: rule.id, patch: { enabled: false } },
       {
-        onSuccess: () => toast(`Rule ${next ? 'enabled' : 'disabled'}`, 'info'),
+        onSuccess: () => toast('Rule disabled', 'info'),
         onError: (err) => {
           toast(patchFailureMessage(err), 'warn');
           captureFeatureException(err, { surface: 'autopilot', reason: 'rule_toggle_failed' });
@@ -357,11 +387,68 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
    * Opening the modal ALSO fires the first-sweep dry-run — the D226
    * preview the confirm button gates on (`activatePreviewState`).
    */
-  const openActivate = (rule: AutopilotRuleDto) => {
+  const openConfirm = (rule: AutopilotRuleDto, intent: 'enable' | 'activate') => {
     patchRule.reset();
     activatePreview.reset();
-    setActivateTarget(rule);
+    setPendingCommit(undefined);
+    setConfirmTarget({ rule, intent });
     activatePreview.mutate(rule.id);
+  };
+
+  const openActivate = (rule: AutopilotRuleDto) => openConfirm(rule, 'activate');
+
+  /**
+   * Commit whatever the open preview was gating.
+   *
+   * `enabled` and `mode` go in ONE patch on purpose. Turning a rule on
+   * and choosing how it runs is a single user decision; two sequential
+   * PATCHes would leave a window where the rule is on in whichever mode
+   * the row happened to hold, and the second call can fail.
+   */
+  const commitConfirm = (mode: 'observe' | 'active', source: 'primary' | 'secondary') => {
+    // Re-entrancy guard, matching `onApproveConfirm`. The buttons do
+    // disable once `patchRule.isPending` flips, but two commit paths
+    // widen the window between click and re-render.
+    if (confirmTarget == null || patchRule.isPending) return;
+    const { rule, intent } = confirmTarget;
+    // Tracked by which BUTTON was pressed, not by the mode. Under-tier,
+    // the PRIMARY button commits `observe`, so deriving the source from
+    // the mode would put the busy label on a button that isn't there.
+    setPendingCommit(source);
+    const patch = intent === 'enable' ? { enabled: true, mode } : { mode };
+    void track('autopilot_preset_changed', {
+      preset_id: rule.id,
+      action: intent === 'enable' ? 'enabled' : 'activated',
+    });
+    addBreadcrumb({
+      category: 'action',
+      message: `autopilot: rule ${intent === 'enable' ? `enabled in ${mode}` : 'switched to active'}`,
+      level: 'info',
+    });
+    patchRule.mutate(
+      { ruleId: rule.id, patch },
+      {
+        onSuccess: () => {
+          setConfirmTarget(null);
+          setPendingCommit(undefined);
+          toast(
+            mode === 'active'
+              ? intent === 'enable'
+                ? 'Rule is on and running'
+                : 'Rule is now Active'
+              : 'Rule is on and watching — nothing moves until you approve',
+            'info',
+          );
+        },
+        onError: (err) => {
+          setPendingCommit(undefined);
+          captureFeatureException(err, {
+            surface: 'autopilot',
+            reason: intent === 'enable' ? 'rule_enable_failed' : 'rule_activate_failed',
+          });
+        },
+      },
+    );
   };
 
   /** D10 — persist the day-7 prompt dismissal on the rule row. */
@@ -394,27 +481,20 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       ? patchRule.variables.ruleId
       : null;
 
-  const onActivateConfirm = () => {
-    if (activateTarget == null) return;
-    void track('autopilot_preset_changed', { preset_id: activateTarget.id, action: 'activated' });
-    addBreadcrumb({
-      category: 'action',
-      message: 'autopilot: rule switched to active',
-      level: 'info',
-    });
-    patchRule.mutate(
-      { ruleId: activateTarget.id, patch: { mode: 'active' } },
-      {
-        onSuccess: () => {
-          setActivateTarget(null);
-          toast('Rule is now Active', 'info');
-        },
-        onError: (err) => {
-          captureFeatureException(err, { surface: 'autopilot', reason: 'rule_activate_failed' });
-        },
-      },
+  /**
+   * The modal's PRIMARY commit.
+   *
+   * Which mutation that is depends on entitlement, and the decision
+   * belongs here rather than in the modal: without `autopilot-active`
+   * there is no acting path to offer, so turning a rule on can only
+   * mean Observe. The modal hides the acting label to match; both must
+   * agree or the button lies about what it does.
+   */
+  const onActivateConfirm = () =>
+    commitConfirm(
+      confirmTarget?.intent === 'enable' && !canActivate ? 'observe' : 'active',
+      'primary',
     );
-  };
 
   // ── Approve flow (D104 + D226) ─────────────────────────────────────
 
@@ -474,8 +554,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     'Approve failed. Please retry.',
   );
   const activateError = mutationErrorMessage(
-    activateTarget != null ? patchRule.error : null,
-    'Activation failed. Please retry.',
+    confirmTarget != null ? patchRule.error : null,
+    confirmTarget?.intent === 'enable'
+      ? 'Could not turn the rule on. Please retry.'
+      : 'Activation failed. Please retry.',
   );
 
   // ── Skip suggestion (D104; API state remains `dismissed`) ──────────
@@ -616,7 +698,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             }}
           >
             {canActivate
-              ? 'Observe first. Activate when ready.'
+              ? 'Preview it. Then let it run.'
               : 'Rules find it. You approve each batch.'}
           </h1>
         </div>
@@ -630,31 +712,37 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         </Button>
       </div>
 
-      {/* D251 — both explainers are tier-conditional. The Pro wording
-          promises "Active applies future matches automatically", which is
-          a per-rule setting Plus cannot reach; showing it to Plus is a
-          promise that always fails (the same defect class as offering the
-          Activate button). */}
+      {/* Both explainers are tier-conditional: the under-tier wording must
+          never promise unattended action, which is a per-rule setting that
+          tier cannot reach — a promise that always fails, the same defect
+          class as offering the Activate button.
+
+          2026-08-23: the entitled copy no longer teaches "starts in
+          Observe, switch to Active later". Turning a rule on now shows the
+          first-sweep preview and asks which way it should run, so telling
+          a user their rule begins by doing nothing would describe a flow
+          the screen does not have. */}
       <ScreenIntro
         id="autopilot"
         title="How Autopilot works"
         body={
           canActivate
-            ? 'Rules start in Observe so you can review matching email before Gmail changes. Switch a rule to Active when you want it to handle future matches automatically.'
-            : `Rules collect matching email in Observe for you to approve. Active rules that handle future matches automatically are part of ${ACT_PLAN_NAME}.`
+            ? 'Turning a rule on shows exactly what it would do to mail already in your inbox. Confirm and it acts, then keeps acting on matching mail that arrives — or choose Watch first and it collects matches for your approval instead.'
+            : `Rules collect matching email in Observe for you to approve. Rules that act on future matches on their own are part of ${ACT_PLAN_NAME}.`
         }
       />
 
       <ContextualHelp
-        question={
-          canActivate ? 'What changes between Observe and Active?' : 'What does Observe do?'
-        }
+        question={canActivate ? 'What does "Watch first" do?' : 'What does Observe do?'}
       >
         {canActivate ? (
           <>
-            Observe records matches as suggestions and changes no Gmail mail until you approve them.
-            Active applies future matches automatically after you review the first-sweep preview.
-            Suggestions already collected in Observe stay pending for you to approve or skip.
+            Watch first turns the rule on in Observe: it records matches as suggestions and changes
+            no Gmail mail until you approve them. Confirming instead lets the rule act on the first
+            sweep you just previewed, and on matching mail that arrives after it. A watching rule
+            can be switched over later — turn it off and on again, or use the prompt that appears
+            once it has collected matches; the suggestions it collected stay pending for you to
+            approve or skip.
           </>
         ) : (
           <>
@@ -845,17 +933,27 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       )}
 
       <ActivateRuleModal
-        rule={activateTarget}
-        pendingCount={activateTarget != null ? (pendingCountByRule.get(activateTarget.id) ?? 0) : 0}
+        rule={confirmTarget?.rule ?? null}
+        intent={confirmTarget?.intent ?? 'activate'}
+        canRunUnattended={canActivate}
+        pendingAction={pendingCommit}
+        pendingCount={
+          confirmTarget != null ? (pendingCountByRule.get(confirmTarget.rule.id) ?? 0) : 0
+        }
         pendingApproximate={pendingBufferTruncated}
         preview={activatePreviewState}
+        undoWindowDays={undoWindowDaysFor(auth?.me.tier ?? 'free')}
         onRetryPreview={() => {
-          if (activateTarget != null) activatePreview.mutate(activateTarget.id);
+          if (confirmTarget != null) activatePreview.mutate(confirmTarget.rule.id);
         }}
-        isActivating={activateTarget != null && patchRule.isPending}
+        onWatchFirst={() => commitConfirm('observe', 'secondary')}
+        isActivating={confirmTarget != null && patchRule.isPending}
         error={activateError}
         onCancel={() => {
-          if (!patchRule.isPending) setActivateTarget(null);
+          if (!patchRule.isPending) {
+            setConfirmTarget(null);
+            setPendingCommit(undefined);
+          }
         }}
         onConfirm={onActivateConfirm}
       />

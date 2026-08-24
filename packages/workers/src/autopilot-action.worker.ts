@@ -95,10 +95,10 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  *
  * GUARDS (in evaluation order, all per sweep):
  *   1. ENTITLEMENT: the mailbox workspace must currently grant
- *      `autopilot` (the review capability, Plus+Pro). Matches with
+ *      `autopilot` (the review capability). Matches with
  *      `modeAtMatch='active'` additionally require `autopilot-active`
- *      (D251) — a Pro→Plus downgrade stops unattended matches while
- *      human-approved batches still complete.
+ *      — a downgrade stops unattended matches while human-approved
+ *      batches still complete.
  *   2. QUIET (U18 — D92/D93/D95): when `mailbox_accounts.quiet_state`
  *      says quiet is active — the manual toggle OR the recurring
  *      quiet-hours window (`isQuietActive`, quiet-hours-state.ts) —
@@ -389,11 +389,11 @@ interface EligibleMatch {
   ruleEnabled: boolean;
   ruleMode: string;
   /**
-   * D251 — the rule's mode WHEN THIS MATCH WAS RECORDED, which is the
+   * The rule's mode WHEN THIS MATCH WAS RECORDED, which is the
    * provenance the entitlement gate keys on. `observe` means a human
-   * approved this batch (Plus is entitled to that); `active` means the
-   * rule acted unattended (Pro only). `ruleMode` is the rule's mode NOW
-   * and can have changed since, so it must NOT be used for the gate.
+   * approved this batch; `active` means the rule acted unattended.
+   * `ruleMode` is the rule's mode NOW and can have changed since, so it
+   * must NOT be used for the gate.
    */
   modeAtMatch: string;
   senderId: string | null;
@@ -469,17 +469,23 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // never runs again, so the change was invisible and unrecoverable
     // forever. Record the reason instead and fall through to a
     // completion-only pass over the in-flight claims.
-    // D251 — TWO capabilities, not one, and the split is per-match.
+    // TWO capabilities, not one, and the split is per-match.
     //
-    //   `autopilot` (Plus, Pro) — a human approved this batch.
-    //   `autopilot-active`        (Pro only)  — the rule acted unattended.
+    //   `autopilot`        — a human approved this batch.
+    //   `autopilot-active` — the rule acted unattended.
     //
-    // A single tier-wide gate cannot express this. Gating the sweep on
-    // `autopilot-active` would strand the very batch a Plus user just approved;
-    // granting Plus `autopilot-active` would let an `active` rule fire without
-    // approval, i.e. hand Plus the thing Pro is sold on. So the sweep is
-    // gated only on the review capability, and unattended matches are
-    // filtered per-match below on `modeAtMatch`.
+    // A single tier-wide gate cannot express that: gating the sweep on
+    // `autopilot-active` would strand the very batch a review-entitled
+    // user just approved. So the sweep gates on the review capability
+    // and unattended matches are filtered per-match on `modeAtMatch`.
+    //
+    // 2026-08-23: both capabilities now sit on Plus, so the per-match
+    // filter cannot drop anything for a tier that reaches this point —
+    // the only tier lacking `autopilot-active` is `free`, which is
+    // already stopped by the entitlement gate below. The filter stays so
+    // that moving `autopilot-active` back up the ladder remains a
+    // one-line manifest edit; see the matching note in
+    // `apps/api/src/autopilot/autopilot.controller.ts`.
     let gatedBy: 'entitlement' | 'quiet' | null = null;
     if (!hasCapability(mailbox.tier, 'autopilot')) {
       gatedBy = 'entitlement';
@@ -523,8 +529,9 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // Unattended matches on a tier without `autopilot-active` are dropped from
     // NEW work but, like the sweep gates above, never stranded mid-flight:
     // a claim that already mutated Gmail still completes so it gets its
-    // Activity row and undo token. This is the path a Pro→Plus downgrade
-    // takes, and it must not silently lose a half-applied change.
+    // Activity row and undo token. This is the path a downgrade out of
+    // `autopilot-active` takes, and it must not silently lose a
+    // half-applied change.
     const entitledLoaded = mayActUnattended
       ? loaded
       : loaded.filter((m) => m.modeAtMatch === 'observe' || inFlightBy.get(m.matchId));
@@ -1535,9 +1542,9 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * D81 undo window — Pro+ → 30d; Free/Plus → the column default (7d)
-   * via `undefined`. Mirrors `LabelActionWorker.undoExpiresAt` for the
-   * archive/later verbs (autopilot never emits `delete`).
+   * Undo window, resolved from the tier manifest. Mirrors
+   * `LabelActionWorker.undoExpiresAt` for the archive/later verbs
+   * (autopilot never emits `delete`).
    */
   private async undoExpiresAt(mailboxAccountId: string): Promise<Date> {
     const [row] = await this.deps.db
@@ -1550,9 +1557,11 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // does. This used to hard-code `['pro','team','enterprise'] -> 30d`
     // and otherwise return `undefined`, leaning on the column default
     // for everyone else — three places encoding one policy, agreeing
-    // only by coincidence. They agree today (free/plus 7, pro+ 30); the
-    // first manifest change would have made a manual undo and an
-    // autopilot undo differ with nothing to catch it.
+    // only by coincidence. The first manifest change would have made a
+    // manual undo and an autopilot undo differ with nothing to catch
+    // it — and one duly came: every tier moved to 30 days on
+    // 2026-08-23, which this line absorbed and the two hard-coded
+    // copies would not have.
     return new Date(Date.now() + undoWindowDaysFor(row?.tier ?? 'free') * DAY_MS);
   }
 }

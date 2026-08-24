@@ -130,8 +130,8 @@ export default function MethodologyPage() {
         intro={
           <p>
             Archive, Later, and Delete affect only the email shown before you confirm. Autopilot is
-            separate. On Plus, you approve each matching batch. On Pro, only rules you deliberately
-            turn on can handle future matches automatically.
+            separate: only rules you deliberately turn on handle future matches, and you see what a
+            rule would do before you turn it on.
           </p>
         }
       >

@@ -10274,3 +10274,192 @@ more" is a promise nothing keeps.
 senders pending in the founder's Screener, 28 would graduate: the quarantine
 rule needs three messages, and 2,490 of those senders sent exactly one and
 always will. The backlog's exit is D256, not this entry.
+
+---
+
+## [PACKAGING PATCH 2026-08-23]
+
+Founder decision, taken in session and locked. Six blocks below, each
+naming the decision it amends. Prices, Founding Pro and every provider
+SKU are **unchanged** — this patch moves capability boundaries and two
+limits, nothing about what anything costs.
+
+The ladder now reads:
+
+| | Free | Plus $9 | Pro $19 |
+|---|---|---|---|
+| The job | See it, dig out — metered | It stops coming back, on its own | Know what matters, across every account |
+| Adds | — | Screener, the whole Autopilot, Quiet hours | Daily Brief, Follow-ups |
+| Cleanup volume | 50/mo | unlimited | unlimited |
+| Inboxes | 1 | 1 | 5 |
+| Undo window | 30d | 30d | 30d |
+
+---
+
+### [PACKAGING PATCH 2026-08-23 on D251]
+
+**The Autopilot find/act split is retired.** D251 put `autopilot` (rules
+match, the user approves each batch) on Plus and kept `autopilot-active`
+(rules act unattended) on Pro. Both now sit on Plus.
+
+**Why.** No vendor in the category sells a find-but-don't-act tier; the
+nearest analogue, Inbox Zero's rule dry-run, is a debugging affordance
+given to everyone on a paid plan. The precedented free/paid split is
+act-once vs. make-it-stick, which is already the Free/Plus line — the
+find/act split was a second cut inside a boundary that was already
+correct. In practice it made Plus into Pro-with-a-chore: approval is
+per-batch, not one-time (`POST /rules/:id/approve-all` does not change
+the rule's mode), so a Plus rule asks forever.
+
+**What does NOT change.** The two capabilities remain two capabilities.
+`AutopilotActionWorker` still filters per match on `modeAtMatch`, and
+the `mode='active'` check in `AutopilotController.patchRule` stays. Both
+are unreachable under this manifest and both are deliberately kept: the
+point of the tier manifest is that moving a capability between tiers is
+a one-line edit, and deleting enforcement because today's config makes
+it unreachable is what turns that back into a code change.
+
+---
+
+### [PACKAGING PATCH 2026-08-23 on D19]
+
+Three values change.
+
+1. **`undoWindowDays`: 7 → 30 on every tier.** No competitor in a
+   9-vendor scan paywalls undo, and ADR-0030 already names the undo
+   window as a core differentiator while requiring the lead claim to
+   hold at Free. The lever was also inverted: Delete carries ~30 days of
+   Gmail Trash at every tier already, so the extra days bought least on
+   the most destructive verb and most on Archive and Later — the two
+   Gmail already makes recoverable.
+
+   **Consequence, accepted knowingly (see the D232 block below).**
+
+2. **Pro `inboxLimit`: 3 → 5**, with `team` and `enterprise` following
+   (their provisional Pro-equivalent values must never sit below Pro —
+   the manifest's monotonicity invariant enforces this).
+
+   Account count is the category's proven ladder axis (1/2/4, 1/5/10,
+   1/3/20, 2/4/∞ across five vendors), and it is what Pro leans on now
+   that automation sits on Plus. Plus stays at **1** inbox: the axis
+   earns its keep at Plus→Pro, which is where Pro was thin.
+
+3. **`quiet`: Pro → Plus.** See the D98 block.
+
+**D19's 2-inbox Pro figure was already stale** before this patch — the
+A3 rework moved it to 3 without a marker. Both hops are recorded here.
+
+---
+
+### [PACKAGING PATCH 2026-08-23 on D98]
+
+**Quiet hours moves to Plus, with Autopilot.**
+
+Quiet is not a feature in its own right; it is the **governor** on
+Autopilot — it decides when rules may act. Selling the governor one tier
+above the thing it governs is how the upsell ended up telling a Plus
+user it would "schedule when Autopilot acts", describing control over a
+feature they already owned.
+
+**This also removes a live break by construction.**
+`AutopilotActionWorker` applies the quiet window with no tier condition
+— correctly, because the window is mailbox state, not a request. A
+Pro→Plus downgrade therefore stranded a stored window: nothing cleared
+it, so it silently deferred batches the user had already approved,
+behind a screen the app hides and a PUT that 402s. With `quiet` granted
+wherever `autopilot` is, that state is unreachable rather than merely
+unhandled.
+
+The guarantee is pinned as a manifest invariant (`entitlements.test.ts`
+— "never grants autopilot to a tier that lacks quiet"), so a future
+re-tier cannot reintroduce it quietly.
+
+**What does NOT change.** The unbuilt half of Quiet — D93–D96's
+delivery-timing behaviour, where mail *waits outside the inbox* until
+the window ends — is untouched by this patch and remains a legitimate
+Pro candidate. Today's shipped Quiet governs DeclutrMail's own
+automation and nothing else.
+
+---
+
+### [PACKAGING PATCH 2026-08-23 on D10]
+
+**"Enable" now means the rule runs. Observe becomes a choice, not a
+default.**
+
+D10 specced observe-first: a newly enabled rule collects matches for
+seven days, and a day-7 banner offers to promote it. In practice that
+meant enabling a rule did nothing visible for a week, and the only exit
+was a banner requiring both an elapsed window and at least one pending
+match — so a Pro user paying for "it runs on its own" got a week of
+silence first.
+
+**New shape.** Turning a rule on opens the D226 preview
+(`ActivateRuleModal`, `intent='enable'`), which states what the rule
+would do to matching mail already in the inbox **and** that it keeps
+acting on mail that arrives. Two commit paths, both gated on the
+dry-run resolving:
+
+- **Turn on and run it** → `PATCH { enabled: true, mode: 'active' }`
+- **Watch first** → `PATCH { enabled: true, mode: 'observe' }`
+
+Turning a rule **off** still commits immediately: it changes no mail and
+is fully reversible, so a preview there is ceremony, not safety.
+
+**Why Observe survives.** "Watch it before I trust it" is a real need on
+a product whose wedge is *preview before anything moves*. What it must
+not be is a price point — charging for the cautious mode makes caution
+the cheap product and contradicts the wedge. Both modes are available on
+every tier that has Autopilot.
+
+**What does NOT change.** The day-7 banner and its
+`observePromptDismissedAt` lifecycle stay, for rules the user
+deliberately put in Observe. There is still no auto-promotion. The seven
+days were never a server gate and are not one now.
+
+---
+
+### [PACKAGING PATCH 2026-08-23 on D232]
+
+**Account deletion can now land up to 30 days out. Accepted, not fixed.**
+
+Deletion is scheduled at `max(now + 7-day flat grace, latest open undo
+expiry)` (`AccountDeletionOrchestrator.computeProjection`). While undo
+was 7 days on Free and Plus, the undo basis almost never won and the
+flat grace was the effective answer. With the window uniform at 30 days,
+**any action in the last 23 days pushes the date out** — so the extended
+case is the norm, not the exception.
+
+`FLAT_GRACE_DAYS` does not derive from the undo window; the coupling is
+purely emergent from the `max()`. Nothing about it was intended.
+
+**Founder decision: accept the behaviour, change the copy.** No logic
+changes. The scheduled-deletion copy now leads with the real date, names
+the 30-day ceiling, and points at the existing immediate path
+(`DELETE AND WAIVE UNDO` → `effective_at = now()`), which waives open
+undo windows and deletes within minutes.
+
+**Explicitly rejected:** capping deletion at 7 days flat by expiring
+undo tokens early. That silently shortens a window the user was promised
+and makes the undo guarantee conditional on an unrelated action.
+
+---
+
+### [PACKAGING PATCH 2026-08-23 on D77 and D83 — marker hygiene]
+
+Neither decision's behaviour changes here. Both are recorded because
+their bodies still read as current and are not:
+
+- **D77** ("Screener is Pro-only") was retired by
+  `[REVERSAL 2026-08-02 on D77]`, 7,695 lines later in this document.
+- **D83** ("Later is Pro-only") was retired by the A3 free-tier rework;
+  Later has been Free since. No marker was ever written.
+
+**Root cause, and the fix that matters more than either marker.**
+CLAUDE.md §3 tells every agent to check a D-body for later patches, and
+names exactly two marker forms: `[GRILL2 PATCH on D###]` and
+`[AUDIT PATCH on D###]`. It does not name `[REVERSAL …]` — the marker
+that actually retires D77 — and it cannot name a marker that was never
+written, as with D83. So a reader following the documented procedure
+correctly arrives at the stale text. The CLAUDE.md §3 amendment is the
+real repair; these markers are the backfill.

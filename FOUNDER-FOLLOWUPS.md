@@ -24,6 +24,58 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-23 — Apply the CLAUDE.md edits for the packaging patch
+
+**Source:** session — tier/feature packaging decision (see
+`[PACKAGING PATCH 2026-08-23]` in `docs/execution/Implementation-Plan.md`)
+**Why:** §11 says agents never write CLAUDE.md. Three edits are needed;
+the third is the one that actually prevents a repeat, the other two are
+bookkeeping.
+
+**How:**
+
+**1 — §3 "Patch awareness" (the repair that matters).** It currently
+names only two marker forms:
+
+> always check for `[GRILL2 PATCH on D###]` or `[AUDIT PATCH on D###]`
+> sections later in the plan
+
+A reader who follows that instruction *correctly* still lands on stale
+text, because D77 is retired by a `[REVERSAL 2026-08-02 on D77]` marker
+that the sentence does not name, and D83 was retired with **no marker at
+all**. Suggested replacement:
+
+> always check for a later amending section — `[AUDIT PATCH …]`,
+> `[GRILL2 PATCH …]`, `[REVERSAL …]`, `[PACKAGING PATCH …]` — anywhere
+> later in the plan; the patched behaviour wins. **Absence of a marker is
+> not evidence a D-body is current.** Decisions have been superseded
+> without one (D83's Pro-only Later). When a D-body contradicts
+> `packages/shared/src/entitlements/pricing.config.ts`, the manifest is
+> the truth and the plan needs a marker.
+
+**2 — §4 plan-navigation table, "Pricing & tiers" row.** It routes to
+`D17–D21, D77, D81` and names neither decision that defines today's
+ladder. Suggested: `D17–D21, D77, D81, D251, [PACKAGING PATCH 2026-08-23]`.
+
+**3 — §2.6 invariants.** Add two that this change relies on and that
+nothing else states:
+
+> - **Quiet governs Autopilot, so it can never sit above it** — no tier
+>   may grant `autopilot` without `quiet`. Pinned by an invariant in
+>   `packages/shared/src/entitlements/entitlements.test.ts`. Violating it
+>   strands a stored quiet window on downgrade and silently defers
+>   approved batches.
+> - **A capability guard is a REQUEST guard; a cron has no request.** Any
+>   feature whose data is produced by a scheduled job needs its own tier
+>   filter at the producer, derived via `hasCapability` and never a
+>   literal tier list. The read side keeps 402-ing correctly while the
+>   producer runs for everyone, so the two drift silently.
+
+**Verifies by:** CLAUDE.md §3 names four marker forms and the
+"absence is not evidence" line; §4's pricing row cites the packaging
+patch; §2.6 carries both invariants.
+**Status:** Open
+
 ### 2026-08-22 — Supabase compute tier looks undersized for the read path
 
 **Source:** session — production profiling of the `/api/senders` latency report

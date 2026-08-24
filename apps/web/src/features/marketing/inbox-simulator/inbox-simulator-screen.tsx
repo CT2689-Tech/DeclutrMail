@@ -637,11 +637,11 @@ function DemoCompletion({
         </span>
         <span>
           <strong>Plus</strong>
-          Approve suggested batches
+          Rules keep it clean for you
         </span>
         <span>
           <strong>Pro</strong>
-          Activate rules to run alone
+          Brief and Follow-ups
         </span>
       </div>
       <div className="dm-simulator-complete-actions">

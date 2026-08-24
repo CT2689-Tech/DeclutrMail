@@ -73,9 +73,9 @@ export function HowItWorks() {
           <div className="dm-mkt-step-no">STEP 3</div>
           <h3 className="dm-mkt-step-title">Keep control</h3>
           <p className="dm-mkt-step-body">
-            Activity shows what happened and when Undo is available. Plus can collect matching mail
-            for your approval. Pro can run only the rules you deliberately turn on. Sent unsubscribe
-            requests cannot be taken back.
+            Activity shows what happened and when Undo is available. Only rules you deliberately
+            turn on handle future mail, and you can have one collect matches for your approval
+            instead. Sent unsubscribe requests cannot be taken back.
           </p>
         </div>
       </div>

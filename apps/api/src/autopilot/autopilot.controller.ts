@@ -156,11 +156,17 @@ export class AutopilotController {
       throw new BadRequestException('Rule id must be a UUID.');
     }
     const patch = parseRulePatch(body);
-    // D251 — the class guard only requires `autopilot`, which Plus
-    // has. Promoting a rule to `active` is the delegated-approval step and
-    // is Pro-only, so it is enforced here rather than at the class level.
-    // Without this, a Plus workspace could PATCH mode='active' and get
-    // unattended automation it is not paying for.
+    // The class guard requires `autopilot`; promoting a rule to `active`
+    // requires `autopilot-active`, checked here because the class level
+    // cannot express a per-FIELD requirement.
+    //
+    // 2026-08-23: both capabilities now sit on Plus, so under the
+    // current manifest this branch cannot 402 — a caller that reached
+    // the class guard already holds `autopilot-active`. It stays anyway.
+    // Deleting an enforcement point because today's config makes it
+    // unreachable is what turns a one-line re-tier into a code change,
+    // and the whole point of the manifest is that moving a capability
+    // between tiers edits ONE file.
     if (patch.mode === 'active') {
       const tier = await this.entitlements.tierForWorkspace(principal.workspaceId);
       assertTierCapability(tier, 'autopilot-active');

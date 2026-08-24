@@ -10,6 +10,12 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_IDS,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import { describe, expect, it } from 'vitest';
 
 import { FollowupCheckWorker } from './followup-check.worker.js';
@@ -33,13 +39,21 @@ async function freshDb(): Promise<Db> {
   return freshTestDb();
 }
 
+/**
+ * Seeds at an ENTITLED tier by default. `workspaces.tier` defaults to
+ * `free`, and the sweep now filters unentitled tiers out of its mailbox
+ * select — a harness taking the column default would seed a workspace
+ * the cron must skip, and every assertion below would pass having
+ * exercised nothing. Derived from the manifest so a re-tier moves it.
+ */
 async function seedMailbox(
   db: Db,
   email = 'owner@example.com',
+  tier: TierId = minimumTierForCapability('followups'),
 ): Promise<{ workspaceId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
-    .values({ name: `WS-${email}` })
+    .values({ name: `WS-${email}`, tier })
     .returning({
       id: workspaces.id,
     });
@@ -98,6 +112,40 @@ const FAKE_CTX: WorkerContext = {
 };
 
 describe('FollowupCheckWorker', () => {
+  it('D19 — an unentitled tier is never swept and gets no tracker rows', async () => {
+    const db = await freshDb();
+    // Derived, not `'free'`: if `followups` is ever granted to every
+    // tier this must fail loudly rather than seed an entitled workspace
+    // and assert nothing.
+    const unentitled = TIER_IDS.find((tier) => !hasCapability(tier, 'followups'));
+    expect(unentitled).toBeDefined();
+
+    const { mailboxAccountId } = await seedMailbox(db, 'free@example.com', unentitled!);
+    await seedMessage(db, {
+      mailboxAccountId,
+      threadId: 'thread-1',
+      internalDate: new Date('2026-05-20T08:00:00Z'),
+      isOutbound: true,
+      recipients: ['boss@example.com'],
+      subject: 'Q4 plans',
+    });
+
+    const worker = new FollowupCheckWorker({ db: db as never, now: () => NOW });
+    const result = await worker.processJob(
+      { scheduledAtMinute: followupCheckScheduledAtMinute(NOW) },
+      FAKE_CTX,
+    );
+
+    expect(result.mailboxesProcessed).toBe(0);
+    expect(result.awaitingUpserted).toBe(0);
+
+    const rows = await db
+      .select({ id: followupTracker.id })
+      .from(followupTracker)
+      .where(eq(followupTracker.mailboxAccountId, mailboxAccountId));
+    expect(rows).toHaveLength(0);
+  });
+
   it('outbound thread with no reply → creates an awaiting row', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

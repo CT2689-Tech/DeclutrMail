@@ -1,0 +1,12 @@
+-- Rollback for 0072_undo_journal_30_day_window.sql
+--
+-- Restores the previous column default. Clean and total: the forward
+-- migration rewrites no rows, so there is no data state to reason about
+-- and nothing to leave behind.
+--
+-- Reverting is inert in practice — no application path reads this
+-- default (`UndoService.issue()` resolves its own window from
+-- `TIER_MANIFEST`, and both workers pass `expires_at` explicitly). It
+-- would only matter to a future writer that omits the column, which is
+-- exactly the trap the forward migration exists to close.
+ALTER TABLE "undo_journal" ALTER COLUMN "expires_at" SET DEFAULT now() + interval '7 days';

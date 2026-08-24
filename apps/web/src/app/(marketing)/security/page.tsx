@@ -26,6 +26,8 @@ import {
   PRIVACY_STORAGE_LABEL,
   PRIVACY_NEVER_LABEL,
 } from '@declutrmail/shared';
+import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -137,10 +139,12 @@ export default function SecurityPage() {
         <p>
           You can disconnect an inbox (which revokes our Google access, stops syncing, and preserves
           its historical DeclutrMail record for reconnection), delete one inbox&rsquo;s saved data,
-          or schedule deletion of your whole account from Settings. Account deletion has a 7-day
-          grace period, and if you have actions still inside a longer undo window, deletion is
-          scheduled after the latest window expires so undo keeps working for its full window.
-          Details are in the <a href="/privacy">Privacy Policy</a>.
+          or schedule deletion of your whole account from Settings. Account deletion waits at least
+          7 days, and also waits for any open undo window, so undo keeps working for its full
+          window. Undo windows run {MIN_UNDO_WINDOW_DAYS} days on every plan, so a recent action
+          commonly puts deletion up to {MAX_UNDO_WINDOW_DAYS} days out; you can waive both with a
+          typed confirmation to delete immediately. Details are in the{' '}
+          <a href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
 
