@@ -1,19 +1,12 @@
 -- Rollback for 0072_undo_journal_30_day_window.sql
 --
--- Restores the column default only.
+-- Restores the previous column default. Clean and total: the forward
+-- migration rewrites no rows, so there is no data state to reason about
+-- and nothing to leave behind.
+--
+-- Reverting is inert in practice — no application path reads this
+-- default (`UndoService.issue()` resolves its own window from
+-- `TIER_MANIFEST`, and both workers pass `expires_at` explicitly). It
+-- would only matter to a future writer that omits the column, which is
+-- exactly the trap the forward migration exists to close.
 ALTER TABLE "undo_journal" ALTER COLUMN "expires_at" SET DEFAULT now() + interval '7 days';
---> statement-breakpoint
-
--- The backfilled rows are deliberately NOT shortened back to 7 days.
---
--- Undo is a promise made to a user at action time and repeated on the
--- pricing, help and legal pages. Clawing back 23 days of it during a
--- schema revert would break that promise for people who never saw the
--- revert, and would do so silently — the row simply stops being
--- undoable earlier than the UI said. Leaving the windows long is inert:
--- it costs a slightly larger `undo_journal` and slightly later deletion
--- projections, and nothing reads `expires_at` expecting exactly 7 days.
---
--- A rollback reverts schema; it must not retract a user-facing guarantee
--- (the 0053 precedent, in the opposite direction).
-SELECT 1;
