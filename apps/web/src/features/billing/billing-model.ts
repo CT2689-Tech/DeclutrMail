@@ -330,6 +330,14 @@ function nonBackingReason(sub: SubscriptionRecord, entitlementTier: TierId): Non
   // slot; a settled chargeback never does (founder decision, 2026-08-13),
   // so "you'll be able to subscribe again once this is confirmed" would be
   // false for it. It keeps the existing story until its period ends.
+  //
+  // Since 2026-08-25 this is the BACKSTOP, not the default. A pending
+  // refund now keeps its entitlement, so the row stays BACKING and tells
+  // its story through `backingStatusNote` instead. Reaching here means
+  // the grace deadline elapsed with no settlement and no rejection —
+  // i.e. we have been unable to read the provider for a week, which now
+  // alerts. The copy below is still exactly right for that case, and it
+  // is the one case where a locked picker is genuinely unavoidable.
   if (sub.cancelSource === 'refund') return 'refund_settling';
   if (sub.status === 'paused') {
     // A paused row under an entitlement that OUTRANKS it is the A6
@@ -426,18 +434,44 @@ export function backingStatusNote(
   backing: BackingState,
 ): { tone: 'warn' | 'muted'; text: string } | null {
   if (backing.state === 'cancel_scheduled') {
-    // A refund or a chargeback ends entitlement IMMEDIATELY
-    // (`entitlement_ends_at` = now, founder decision 2026-07-31), while
-    // `currentPeriodEnd` is still a future date — so the "stays active
-    // until <date>" line below would be a confident lie for both. Claim
-    // no date, and name the cause: "Cancellation scheduled" reads as
-    // something the user did, and the "Keep my subscription" affordance
-    // beside this note is refused for these rows.
-    if (backing.sub.cancelSource === 'refund' || backing.sub.cancelSource === 'chargeback') {
-      const cause = backing.sub.cancelSource === 'refund' ? 'a refund' : 'a chargeback';
+    // Neither verdict may claim `currentPeriodEnd`: it is still a future
+    // date that no longer describes when this plan ends, so the "stays
+    // active until <date>" line below would be a confident lie for both.
+    // Claim no date, and name the cause — "Cancellation scheduled" reads
+    // as something the user did. The "Keep my subscription" affordance is
+    // refused for these rows either way.
+    //
+    // The two verdicts now differ in TENSE, and that is the point.
+    //
+    // A REFUND is pending, not finished. Since 2026-08-25 the plan runs
+    // until the provider confirms the refund, so past tense here would
+    // tell a customer their plan had ended while they were still using
+    // it. There is no date to give: approval is a provider review queue
+    // we cannot see — the first live one took 10.5 hours, and the next
+    // is not promised to. So the note says what is true (you still have
+    // this) and what happens next (it ends when the money goes back),
+    // and promises no clock.
+    //
+    // A CHARGEBACK still ends entitlement immediately (founder decision
+    // 2026-07-20), so its copy stays in the past tense.
+    if (backing.sub.cancelSource === 'refund') {
       return {
         tone: 'warn',
-        text: `This plan ended after ${cause}. Email support@declutrmail.com if that looks wrong.`,
+        // "…or your current period ends" is not padding. The deadline is
+        // `LEAST(now() + 7d, current_period_end)`, so a refund with fewer
+        // than seven days of period left switches the customer to Free
+        // with no confirmation ever arriving. An earlier draft of this
+        // line promised the plan "until your payment provider confirms
+        // it" full stop, which is precisely the assert-what-you-don't-know
+        // shape this screen exists to avoid — caught by the design gate,
+        // not by a test.
+        text: 'Your refund is being processed — you keep this plan until your payment provider confirms it or your current period ends, whichever comes first. Nothing to do until then.',
+      };
+    }
+    if (backing.sub.cancelSource === 'chargeback') {
+      return {
+        tone: 'warn',
+        text: 'This plan ended after a chargeback. Email support@declutrmail.com if that looks wrong.',
       };
     }
     const end = formatBillingDate(backing.sub.currentPeriodEnd);

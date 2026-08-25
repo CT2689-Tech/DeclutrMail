@@ -319,21 +319,57 @@ describe('backingStatusNote', () => {
     );
   });
 
-  // Both verdicts end entitlement at once (`entitlement_ends_at` = now)
-  // while `currentPeriodEnd` is still a future date, so promising access
-  // "until Jul 1" would be a confident lie in either case.
-  for (const [source, word] of [
-    ['refund', 'a refund'],
-    ['chargeback', 'a chargeback'],
-  ] as const) {
-    it(`names ${source} as the cause and claims NO date`, () => {
+  // `currentPeriodEnd` no longer describes when EITHER verdict ends the
+  // plan, so promising access "until Jul 1" stays a confident lie in both
+  // cases — that invariant is unchanged and shared.
+  for (const source of ['refund', 'chargeback'] as const) {
+    it(`claims NO date for ${source}, and never calls it a cancellation`, () => {
       const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: source };
       const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
-      expect(note.text).toContain(word);
       expect(note.text).not.toContain('Jul 1, 2026');
       expect(note.text).not.toContain('Cancellation scheduled');
     });
   }
+
+  // Where the two verdicts diverge, 2026-08-25. A pending refund keeps
+  // the plan until the provider confirms it, so past-tense copy would
+  // tell a customer their plan had ended while they were still using it —
+  // the assert-what-you-don't-know defect this screen exists to avoid,
+  // pointed at the customer's own account state.
+  it('refund copy is PRESENT tense — the plan is still held', () => {
+    const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'refund' as const };
+    const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
+    expect(note.text).toContain('being processed');
+    expect(note.text).toContain('you keep this plan');
+    // The exact claim that was wrong: this row has NOT ended.
+    expect(note.text).not.toContain('ended');
+    // No deadline is promised — provider approval is a review queue we
+    // cannot see. The first live one took 10.5 hours; nothing guarantees
+    // the next.
+    expect(note.text).not.toMatch(/\d+\s*(hour|day)/i);
+  });
+
+  // DEFENSIVE ARM, not a user-visible state — say so rather than let the
+  // test imply otherwise. A chargeback sets `entitlement_ends_at = now()`
+  // and recomputes the tier in the SAME transaction, so `sub.tier` can
+  // never equal `entitlementTier` afterwards and `planViewOf` always
+  // routes the row to nonBacking. Nothing the app builds reaches this
+  // branch; the state below is hand-constructed.
+  //
+  // Kept, and kept tested, for one reason: the refund arm beside it IS
+  // now reachable, and the two are one `if` apart. If a later change
+  // makes chargebacks hold entitlement the way refunds do, this arm goes
+  // live instantly — and the tense is the whole point of the pair. The
+  // gate network flagged the original version of this test for asserting
+  // copy the derive layer cannot produce, which was fair: the defect was
+  // the silence about it, not the coverage.
+  it('chargeback copy stays PAST tense (defensive arm — see comment)', () => {
+    const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'chargeback' as const };
+    const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
+    // Founder decision 2026-07-20, untouched by the refund grace.
+    expect(note.text).toContain('ended after a chargeback');
+    expect(note.text).toContain('support@declutrmail.com');
+  });
 });
 
 describe('nonBackingBlocksNewCheckout — mirrors the server SUBSCRIPTION_EXISTS set', () => {

@@ -95,10 +95,19 @@ const PAUSED_BODY: BillingSubscription = {
 };
 
 /**
- * What the read ACTUALLY returns during the D253 settling window, copied
- * from the first live refund (prod, 2026-08-14): a full refund ends
- * entitlement at once, so `tier` is already `free`, while the row stays
- * `active` with `cancel_at_period_end` pinned until the provider confirms.
+ * The refund BACKSTOP read — NOT the ordinary settling window any more.
+ *
+ * This shape (`tier: 'free'` beside an `active` refund row) was what the
+ * first live refund produced on 2026-08-14, when entitlement ended the
+ * moment the refund was REQUESTED. Since 2026-08-25 it does not: a
+ * pending refund keeps its tier, so the ordinary case renders as a
+ * BACKING plan and is covered by the held-state test further down.
+ *
+ * The shape is still reachable, and still worth pinning, but it now means
+ * something narrower and worse — the grace elapsed with nothing settled
+ * and nothing refuted, i.e. a week of not being able to get an answer out
+ * of the provider. That is why its copy names support instead of telling
+ * the customer to sit tight.
  *
  * The pre-existing settling test stubs `FREE_BODY` — a `subscription:
  * null` read — and manufactures the 409 from the checkout endpoint. That
@@ -720,12 +729,22 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('non-backing-subscription-notice');
-    expect(notice).toHaveTextContent('Your refund is being processed');
-    expect(notice).toHaveTextContent(/subscribe again once your payment provider confirms/i);
+    expect(notice).toHaveTextContent(/haven.t been able to confirm your refund/i);
+    expect(notice).toHaveTextContent(/until it confirms/i);
 
     // The two lies, gone.
     expect(notice).not.toHaveTextContent(/Cancel it if you/i);
     expect(notice).not.toHaveTextContent(/isn.t what grants it/i);
+
+    // A THIRD one, removed 2026-08-25: "Nothing to do until then — we'll
+    // switch this back on automatically". Written when this state was
+    // expected to last minutes; by the time a customer actually reaches
+    // it, automatic recovery has been failing for a week. Telling them to
+    // sit still is what kept one of them stuck for eleven days.
+    expect(notice).not.toHaveTextContent(/automatically/i);
+    expect(notice).not.toHaveTextContent(/Nothing to do/i);
+    // It names the one route that actually works from here.
+    expect(notice).toHaveTextContent(/support@declutrmail\.com/);
 
     // No verb: resume is refused server-side (CANCELLATION_NOT_REVOCABLE)
     // and cancel is a no-op on an already-scheduled row, so offering
@@ -738,9 +757,60 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByRole('button', { name: /Upgrade to Pro/i })).toBeNull();
   });
 
+  // The state this change makes PRIMARY, and the one the founder's
+  // original screenshot got wrong: refund pending, plan still held.
+  //
+  // The gate network flagged that the backstop above had three tests
+  // while the newly-common case had none at screen level — the shape
+  // where a fixture documents the behaviour a change REMOVED and the
+  // behaviour it ADDS goes uncovered.
+  it('a PENDING refund keeps the plan on screen — no dead zone', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PRO_SUB,
+              subscription: {
+                ...SUB,
+                tier: 'pro',
+                cancelAtPeriodEnd: true,
+                cancelSource: 'refund',
+              },
+            },
+          }),
+      },
+    ]);
+    mockTier = 'pro';
+    renderScreen();
+
+    // Present tense, and the clamp is disclosed: the deadline is
+    // LEAST(now()+7d, period_end), so promising the plan until
+    // confirmation ALONE would be false for a short remaining period.
+    expect(await screen.findByText(/refund is being processed/i)).toBeInTheDocument();
+    expect(screen.getByText(/whichever comes first/i)).toBeInTheDocument();
+
+    // The plan is theirs, so there is nothing to buy — a locked picker is
+    // CORRECT here, unlike in the backstop where it is a trap.
+    expect(screen.queryByRole('button', { name: /Upgrade to Pro/i })).toBeNull();
+
+    // And the state it must NOT be: the pre-2026-08-25 screen said the
+    // plan had ended while the account sat on Free.
+    expect(screen.queryByText(/access has ended/i)).toBeNull();
+    // You cannot un-refund, so no undo affordance is offered.
+    expect(screen.queryByRole('button', { name: 'Keep my subscription' })).toBeNull();
+  });
+
   it('the settling window polls itself back to life when the refund settles', async () => {
-    // The notice promises "we'll switch this back on automatically", and
-    // nothing else in the app can keep that promise: `refetchOnWindowFocus`
+    // The poll outlives the promise that motivated it. The notice no
+    // longer says "we'll switch this back on automatically" (that
+    // sentence was removed 2026-08-25 — see the copy test above), but the
+    // poll is MORE load-bearing now, not less: this state is only reached
+    // after a week of failure, and a customer sitting on it should see the
+    // screen recover the moment the provider finally answers. Without it
+    // `refetchOnWindowFocus` is off globally, so: `refetchOnWindowFocus`
     // is off globally, so without a poll an open tab sits on the settling
     // state past the moment the plan became purchasable again — the screen
     // asserting a recovery it does not perform (Codex stop-review,
@@ -776,7 +846,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     try {
       renderScreen();
       expect(await screen.findByTestId('non-backing-subscription-notice')).toHaveTextContent(
-        'Your refund is being processed',
+        /haven.t been able to confirm your refund/i,
       );
       expect(reads).toBe(1);
 
@@ -1870,7 +1940,12 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    expect(await screen.findByText(/This plan ended after a refund/)).toBeInTheDocument();
+    // Present tense since 2026-08-25 — the refund is pending at the
+    // provider and this customer still holds the plan. The button must
+    // stay absent either way: you cannot un-refund, and
+    // `resume-cancellation` answers CANCELLATION_NOT_REVOCABLE whether
+    // the refund has settled or not.
+    expect(await screen.findByText(/Your refund is being processed/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Keep my subscription' })).not.toBeInTheDocument();
   });
 

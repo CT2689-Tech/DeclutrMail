@@ -17,7 +17,11 @@ import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import { BillingService } from '../billing.service.js';
-import { BillingWebhookService, projectWebhookPayload } from '../billing-webhook.service.js';
+import {
+  BillingWebhookService,
+  projectWebhookPayload,
+  REFUND_PENDING_GRACE_DAYS,
+} from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
 import {
@@ -510,7 +514,7 @@ describe('BillingWebhookService.process', () => {
     expect(row!.cancelSource).toBe('chargeback');
   });
 
-  it('a REFUND ends entitlement at once, and a renewal preserves the verdict', async () => {
+  it('a REFUND holds entitlement to the grace, and a renewal preserves the verdict', async () => {
     const activate = paddleSubscriptionActivated({
       workspaceId,
       eventId: 'evt_rf_1',
@@ -525,13 +529,20 @@ describe('BillingWebhookService.process', () => {
     });
     await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
 
-    // The money went back, so the service stops — even though the paid
-    // period runs another 10 days (founder decision, 2026-07-31). The
-    // old rule held to `current_period_end`, which on an ANNUAL plan
-    // returned $190 and granted the rest of the year.
+    // The refund is PENDING at the provider, so the plan holds — 2026-08-25.
+    // The 2026-07-31 rule it replaced ("the money went back, so the
+    // service stops") is intact in substance and moved to settlement;
+    // what changed is that this event no longer proves the money went
+    // back. The annual giveaway that rule was written against stays
+    // closed from two directions: LEAST() clamps the deadline to the
+    // paid period, and settlement revokes it outright.
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('free');
+    expect(ws!.tier).toBe('plus');
     const [row] = await db.select().from(subscriptions);
+    // 10 days of period remain, so the 7-day grace is what binds here.
+    expect(row!.entitlementEndsAt!.getTime()).toBeLessThanOrEqual(
+      Date.now() + REFUND_PENDING_GRACE_DAYS * 24 * 60 * 60 * 1000 + 60_000,
+    );
     expect(row!.cancelSource).toBe('refund');
     expect(row!.entitlementEndsAt).not.toBeNull();
     expect(row!.cancelAtPeriodEnd).toBe(true);
@@ -623,9 +634,24 @@ describe('BillingWebhookService.process', () => {
     expect(after.filter((s) => s.foundingMember)).toHaveLength(2);
   });
 
-  it('refund drops the tier even with a month of paid period left', async () => {
+  // 2026-08-25. This assertion is INVERTED from what it was, and the old
+  // version was not wrong when it was written — it pinned the founder's
+  // 2026-07-31 rule that a refund stops the service at once.
+  //
+  // What that rule did not anticipate: `adjustment.created` fires while
+  // Paddle still has the refund at `pending_approval`, so the tier
+  // dropped on a decision the provider had not made. Meanwhile the row
+  // stayed `active` and kept the workspace's one live-subscription slot,
+  // so checkout refused too. No product, no way to buy one, for however
+  // long the provider took — 10.5 hours on the first live refund, and
+  // eleven days when the settlement read silently 403'd.
+  //
+  // The service now stops when the money actually goes back. The rule is
+  // unchanged; only its timing is.
+  it('refund KEEPS the tier while the provider is still deciding', async () => {
     // The period end is genuinely IN THE FUTURE so the assertion means
-    // something: a month of paid time remains and the tier drops anyway.
+    // something: a month of paid time remains, so the grace — not the
+    // period — is what bounds the deadline.
     // Computed relative to now so the premise cannot rot (an earlier
     // revision used the fixture's fixed date, which quietly became a PAST
     // date and left the test asserting nothing).
@@ -643,19 +669,70 @@ describe('BillingWebhookService.process', () => {
     const [sub] = await db.select().from(subscriptions);
     expect(sub!.cancelAtPeriodEnd).toBe(true);
     expect(sub!.status).toBe('active');
+    // The provenance is recorded immediately — only the ENTITLEMENT waits.
+    expect(sub!.cancelSource).toBe('refund');
+
+    // Still on the paid tier: the refund is pending, not settled.
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('free'); // the money went back; the service stops
+    expect(ws!.tier).toBe('plus');
+
+    // …and it is bounded. Never null (that would grant forever) and never
+    // beyond the 7-day grace, even though 30 days of period remain.
     expect(sub!.entitlementEndsAt).not.toBeNull();
+    const deadline = sub!.entitlementEndsAt!.getTime();
+    expect(deadline).toBeGreaterThan(Date.now());
+    expect(deadline).toBeLessThanOrEqual(
+      Date.now() + REFUND_PENDING_GRACE_DAYS * 24 * 60 * 60 * 1000 + 60_000,
+    );
   });
 
-  // These two used to be the ONLY cases where a refund's deadline was not
-  // in the future — the deadline is now always `now()`, so they no longer
-  // isolate anything a refund does not already do. They stay because the
-  // recompute was once gated on `isChargeback` and silently left
-  // `workspaces.tier` paid while the row stopped granting (free Pro until
-  // the next webhook or the 6-hourly sweep; found by sandbox smoke
-  // 2026-07-29), and a missing period end is still the shape most likely
-  // to resurrect that bug.
+  it('the refund grace never outlasts the period the customer paid for', async () => {
+    // Two days left, not thirty: LEAST() must pick the period end, so a
+    // refund can never hand back more plan than was bought.
+    const periodEnd = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_ref_short_1',
+      periodEndsAt: periodEnd.toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const refund = paddleAdjustmentCreated({ eventId: 'evt_ref_short_2', action: 'refund' });
+    await service.process('paddle', paddle.mapWebhookEvent(refund), refund);
+
+    const [sub] = await db.select().from(subscriptions);
+    // Clamped to the period end, well short of now()+7d.
+    expect(sub!.entitlementEndsAt!.getTime()).toBeLessThanOrEqual(periodEnd.getTime() + 1_000);
+    expect(sub!.entitlementEndsAt!.getTime()).toBeLessThan(
+      Date.now() + REFUND_PENDING_GRACE_DAYS * 24 * 60 * 60 * 1000 - 60_000,
+    );
+  });
+
+  it('CHARGEBACK still ends the tier immediately — the grace is refund-only', async () => {
+    const activate = paddleSubscriptionActivated({
+      workspaceId,
+      eventId: 'evt_cb_grace_1',
+      periodEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
+
+    const chargeback = paddleAdjustmentCreated({ eventId: 'evt_cb_grace_2', action: 'chargeback' });
+    await service.process('paddle', paddle.mapWebhookEvent(chargeback), chargeback);
+
+    // Founder decision 2026-07-20, untouched by the refund grace: a
+    // disputed charge revokes at once and does not wait for anyone.
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('free');
+  });
+
+  // These two are the cases where a refund's deadline is NOT in the
+  // future even under the grace, because `LEAST(now()+7d, period_end)`
+  // collapses to a past or present timestamp. They also guard the
+  // original bug: the recompute was once gated on `isChargeback` and
+  // silently left `workspaces.tier` paid while the row stopped granting
+  // (free Pro until the next webhook or the 6-hourly sweep; found by
+  // sandbox smoke 2026-07-29), and a missing period end is still the
+  // shape most likely to resurrect that bug.
   it('refund on an ALREADY-ENDED period drops the tier in the same transaction', async () => {
     const activate = paddleSubscriptionActivated({
       workspaceId,
@@ -814,6 +891,42 @@ describe('BillingWebhookService.process', () => {
       // the post-flip watch pass selects on these two columns.
       expect(row!.cancelSource).toBe('refund');
       expect(row!.entitlementEndsAt).not.toBeNull();
+    });
+
+    // The highest-risk line in the 2026-08-25 change, and the one with no
+    // second chance. Since the pending refund now KEEPS the plan, this
+    // projector is the only thing that takes it away. Before the change
+    // it wrote `status` alone and left `entitlement_ends_at` deliberately
+    // untouched, because the deadline had already been set to now()
+    // upstream — a comment in the method said so.
+    //
+    // Carry that assumption forward and the outcome is a refunded
+    // customer sitting on Plus until the grace elapses: paid back, still
+    // holding the product, and now with an OPEN plan picker because the
+    // slot was freed in the same write. The flip and the revocation have
+    // to happen together or the fix invents a worse bug than the one it
+    // removes.
+    it('ENDS the tier in the same transaction that frees the slot', async () => {
+      await seedRefunded();
+      const [before] = await db.select().from(subscriptions);
+      const [wsBefore] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      // Precondition, and the whole premise of the grace: they still hold
+      // the plan while the provider decides. Without this line the
+      // assertion below would pass against a tier that was already free.
+      expect(wsBefore!.tier).toBe('plus');
+
+      await service.process('paddle', settledEvent('evt_rs_ent', before!.providerSubscriptionId), {
+        occurred_at: new Date().toISOString(),
+      });
+
+      const [wsAfter] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(wsAfter!.tier).toBe('free');
+
+      // The deadline moved BACK from the grace to now — it must no longer
+      // be in the future, or the recompute would re-grant on the next
+      // pass and the tier drop above would be temporary.
+      const [row] = await db.select().from(subscriptions);
+      expect(row!.entitlementEndsAt!.getTime()).toBeLessThanOrEqual(Date.now() + 1_000);
     });
 
     it('emits the SAME structured shape the dunning sweep does — the churn count must not have a blind side', async () => {
@@ -1017,8 +1130,14 @@ describe('BillingWebhookService.process', () => {
 
       const [row] = await db.select().from(subscriptions);
       expect(row!.cancelSource).toBe('refund');
-      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-      expect(ws!.tier).toBe('free');
+      // Assert on the VERDICT columns, not on the tier. Since a pending
+      // refund holds the plan (2026-08-25), tier is `plus` both when the
+      // verdict stands and when it has been wrongly lifted — so a tier
+      // assertion here would pass either way and prove nothing. A lift
+      // writes `cancel_source = NULL, entitlement_ends_at = NULL`; both
+      // surviving is what "never lifts a REFUND verdict" actually means.
+      expect(row!.entitlementEndsAt).not.toBeNull();
+      expect(row!.cancelAtPeriodEnd).toBe(true);
     });
 
     it('a SECOND reversal is a no-op, not an un-cancel', async () => {

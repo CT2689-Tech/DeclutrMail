@@ -41,6 +41,7 @@ import type {
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
 } from './billing-provider.interface.js';
+import { providerErrorBody } from './provider-error-body.js';
 
 const API_BASE = 'https://api.razorpay.com';
 const API_TIMEOUT_MS = 10_000;
@@ -427,7 +428,7 @@ export class RazorpayAdapter implements BillingProvider {
     }
     if (!res.ok) {
       this.logger.error(
-        `razorpay.checkout.failed workspace=${input.workspaceId} status=${res.status}`,
+        `razorpay.checkout.failed workspace=${input.workspaceId} status=${res.status} body=${await providerErrorBody(res)}`,
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
@@ -468,7 +469,7 @@ export class RazorpayAdapter implements BillingProvider {
     }
     if (!res.ok) {
       this.logger.error(
-        `razorpay.cancel.failed sub=${providerSubscriptionId} status=${res.status}`,
+        `razorpay.cancel.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
@@ -558,7 +559,9 @@ export class RazorpayAdapter implements BillingProvider {
         return null;
       }
       if (!res.ok) {
-        this.logger.error(`razorpay.${subsystem}.failed ${label} status=${res.status}`);
+        this.logger.error(
+          `razorpay.${subsystem}.failed ${label} status=${res.status} body=${await providerErrorBody(res)}`,
+        );
         return null;
       }
       let batch: unknown;
@@ -744,7 +747,7 @@ export class RazorpayAdapter implements BillingProvider {
     if (res.status === 404) return { kind: 'not_found' };
     if (!res.ok) {
       this.logger.error(
-        `razorpay.reconcile_read.failed sub=${providerSubscriptionId} status=${res.status}`,
+        `razorpay.reconcile_read.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
@@ -806,7 +809,9 @@ export class RazorpayAdapter implements BillingProvider {
           throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
         }
         if (!res.ok) {
-          this.logger.error(`razorpay.reconcile_search.failed plan=${planId} status=${res.status}`);
+          this.logger.error(
+            `razorpay.reconcile_search.failed plan=${planId} status=${res.status} body=${await providerErrorBody(res)}`,
+          );
           throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
         }
         const body = (await res.json()) as { items?: RazorpaySubscription[] };
@@ -889,7 +894,9 @@ export class RazorpayAdapter implements BillingProvider {
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     if (!res.ok) {
-      this.logger.error(`razorpay.invoice_read.failed invoice=${invoiceId} status=${res.status}`);
+      this.logger.error(
+        `razorpay.invoice_read.failed invoice=${invoiceId} status=${res.status} body=${await providerErrorBody(res)}`,
+      );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     let entity: RazorpayInvoice;

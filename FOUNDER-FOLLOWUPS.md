@@ -24,6 +24,66 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-25 — Create the billing-verdict alert, and audit the Paddle key's other permissions
+
+**Source:** the eleven-day refund lockout (MISTAKES.md 2026-08-25); this PR
+**Why:** the code half is merged, but an alert policy is not code — it lives in
+the GCP project and has to be created once. Until you run this, a billing
+provider read can fail continuously and silently, exactly as it just did for
+eleven days. The script is idempotent and creates only what is missing; it never
+mutates or deletes an existing metric, channel or policy.
+
+**How:**
+
+```bash
+./scripts/setup-billing-verdict-alert.sh
+```
+
+Then confirm it landed:
+
+```bash
+gcloud alpha monitoring policies list --project=declutrmail-ai-prod --format="value(displayName)"
+```
+
+Second, separate task — **audit the rest of the Paddle key's permissions.** One
+missing checkbox hid for eleven days because only one endpoint needed it. Others
+may be missing on endpoints that are rarer still (portal sessions, plan-change
+previews, invoice listing). Paddle > Developer Tools > Authentication > API keys
+> overflow > Edit, and compare the ticked set against every endpoint
+`paddle.adapter.ts` calls. The same audit is worth doing for the Razorpay key.
+
+**Verifies by:** the policy appears in the list above under "Billing: provider
+read blocked or refund verdict frozen", and a deliberate test — temporarily
+pointing the metric filter at a line you can trigger — delivers mail to the
+founder address. For the permission audit, every endpoint the adapter calls
+answers something other than 403 against the stored prod key.
+
+
+**One decision inside this, and it is yours.** The new alert covers a provider
+we cannot READ (`verdict_unreadable`). It deliberately does NOT cover a provider
+we can read that simply leaves the refund at `pending_approval` past the seven-day
+grace — that logs `verdict_unsettled`, which is the normal state of every pending
+refund and would page on all of them.
+
+So there is a gap: a genuinely slow provider drops that customer to Free with a
+locked plan picker and nothing pages. It is much narrower than the eleven-day
+hole this PR closes (it needs a provider that answers but never decides, for a
+week), and the gate network raised it rather than letting the code's own comment
+claim full coverage.
+
+Three ways to close it, if you want it closed:
+- alert on `verdict_unsettled` only where the row's grace has already lapsed —
+  needs a distinct log line, ~10 lines;
+- lengthen `REFUND_PENDING_GRACE_DAYS` so the window outlives any plausible
+  review, trading exposure for latency;
+- accept it, and let support catch these from the backstop screen, which now
+  names support instead of telling the customer to wait.
+
+Recommendation: accept it for now. The backstop copy already routes the customer
+to a human, and this needs a failure mode nobody has seen yet.
+
+**Status:** Open
+
 ### 2026-08-24 — Turn on point-in-time recovery before the first paying customer
 
 **Source:** session 2026-08-24 (Supabase production review), founder decision

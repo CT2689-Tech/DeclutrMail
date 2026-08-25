@@ -262,6 +262,56 @@ export const CancelScheduled: Story<typeof BillingScreen> = {
     ),
 };
 
+/**
+ * Refund pending — the plan is HELD while the provider decides.
+ *
+ * The state a customer is in between asking for their money back and the
+ * provider confirming it (2026-08-25). It renders on the same
+ * cancel-scheduled card as the story above, which is exactly why it needs
+ * its own: same layout, different tense, and the difference is the whole
+ * point. `CancelScheduled` promises a date; this one deliberately does
+ * not, because provider approval is a review queue with no SLA — the
+ * first live one took 10.5 hours.
+ *
+ * Before this, the equivalent screen said the plan had ALREADY ended and
+ * the account was on Free while the picker stayed locked — no product and
+ * no way to buy one. That state is now the `RefundUnconfirmed` backstop
+ * below, reachable only after a week of provider silence.
+ */
+export const RefundPending: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('pro', null), {
+        ...PRO_SUB,
+        subscription: PRO_SUB.subscription
+          ? { ...PRO_SUB.subscription, cancelAtPeriodEnd: true, cancelSource: 'refund' }
+          : null,
+      }),
+    ),
+};
+
+/**
+ * Refund unconfirmed past the grace — the backstop, and the only state
+ * here where a locked picker is unavoidable.
+ *
+ * `tier: 'free'` beside a still-`active` refund row: entitlement lapsed
+ * because seven days passed with the provider neither confirming nor
+ * rejecting. The copy names support rather than telling the customer to
+ * wait, because by the time this renders, waiting has already failed.
+ */
+export const RefundUnconfirmed: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(
+      makeClient(meFixture('free', null), {
+        ...PRO_SUB,
+        tier: 'free',
+        subscription: PRO_SUB.subscription
+          ? { ...PRO_SUB.subscription, cancelAtPeriodEnd: true, cancelSource: 'refund' }
+          : null,
+      }),
+    ),
+};
+
 /** Payment past due — provider-side dunning surfaced honestly. */
 export const PastDue: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>

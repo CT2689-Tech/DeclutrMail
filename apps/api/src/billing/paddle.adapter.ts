@@ -45,6 +45,7 @@ import type {
   SubscriptionSearchQuery,
   SubscriptionSearchResult,
 } from './billing-provider.interface.js';
+import { providerErrorBody } from './provider-error-body.js';
 
 /** Default tolerated clock skew between Paddle's `ts` and now (seconds). */
 const DEFAULT_MAX_SKEW_SEC = 5;
@@ -343,9 +344,15 @@ export class PaddleAdapter implements BillingProvider {
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     if (!res.ok) {
-      // Body is Paddle's error envelope — log status only; never log
-      // the API key (it is not in the response, but keep the line lean).
-      this.logger.error(`paddle.cancel.failed sub=${providerSubscriptionId} status=${res.status}`);
+      // Body is Paddle's error envelope, and it is the whole point of
+      // the line — see provider-error-body.ts. This comment used to read
+      // "log status only … keep the line lean", which is what made a
+      // `403` on /adjustments indistinguishable from every other 403 for
+      // eleven days. The API key is not in a response body; leanness was
+      // never the thing protecting it.
+      this.logger.error(
+        `paddle.cancel.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
+      );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
   }
@@ -388,7 +395,7 @@ export class PaddleAdapter implements BillingProvider {
     }
     if (!res.ok) {
       this.logger.error(
-        `paddle.clear_scheduled_cancellation.failed sub=${providerSubscriptionId} status=${res.status}`,
+        `paddle.clear_scheduled_cancellation.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
@@ -427,7 +434,9 @@ export class PaddleAdapter implements BillingProvider {
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     if (!res.ok) {
-      this.logger.error(`paddle.pause.failed sub=${providerSubscriptionId} status=${res.status}`);
+      this.logger.error(
+        `paddle.pause.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
+      );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
   }
@@ -477,7 +486,7 @@ export class PaddleAdapter implements BillingProvider {
     }
     if (!res.ok) {
       this.logger.error(
-        `paddle.change_plan.failed sub=${providerSubscriptionId} status=${res.status}`,
+        `paddle.change_plan.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
       );
       throw new AppException({
         code: 'BILLING_PROVIDER_ERROR',
@@ -554,7 +563,7 @@ export class PaddleAdapter implements BillingProvider {
     }
     if (!res.ok) {
       this.logger.error(
-        `paddle.preview_plan_change.failed sub=${providerSubscriptionId} status=${res.status}`,
+        `paddle.preview_plan_change.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
@@ -625,7 +634,9 @@ export class PaddleAdapter implements BillingProvider {
       if (providerCode === 'subscription_continuing_existing_billing_period_not_allowed') {
         throw new AppException({ code: 'RESUME_PERIOD_ENDED' });
       }
-      this.logger.error(`paddle.resume.failed sub=${providerSubscriptionId} status=${res.status}`);
+      this.logger.error(
+        `paddle.resume.failed sub=${providerSubscriptionId} status=${res.status} body=${await providerErrorBody(res)}`,
+      );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
   }
@@ -663,7 +674,9 @@ export class PaddleAdapter implements BillingProvider {
     }
     if (res.status === 404) return null;
     if (!res.ok) {
-      this.logger.error(`paddle.api_read.failed ${label} status=${res.status}`);
+      this.logger.error(
+        `paddle.api_read.failed ${label} status=${res.status} body=${await providerErrorBody(res)}`,
+      );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     return res.json();
@@ -1035,7 +1048,7 @@ export class PaddleAdapter implements BillingProvider {
     }
     if (!res.ok) {
       this.logger.error(
-        `paddle.portal_session.failed customer=${input.providerCustomerId} status=${res.status}`,
+        `paddle.portal_session.failed customer=${input.providerCustomerId} status=${res.status} body=${await providerErrorBody(res)}`,
       );
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
