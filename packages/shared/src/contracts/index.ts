@@ -237,10 +237,12 @@ export {
 } from './email-prefs';
 export type { EmailPrefs, EmailPrefsPatch } from './email-prefs';
 
-// D66 Daily Brief schedule preferences — shared between the
+// D64 Daily Brief schedule preferences — shared between the
 // PATCH /api/me/brief-prefs route and the BriefSnapshotWorker's
-// generation-time weekend gate (Mon–Fri default; weekends opt-in).
+// generation-time hour gate (8am local default; the Brief generates
+// every day).
 export {
+  BRIEF_DEFAULT_HOUR,
   BriefPrefsPatchSchema,
   BriefPrefsSchema,
   DEFAULT_BRIEF_PREFS,

@@ -20,6 +20,39 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-25 — A typed-but-unvalidated read boundary lets one new contract key white-screen a whole route
+
+**Context:** adding `briefPrefs.hour` to `GET /api/me/settings` and rendering
+it from a new Settings card (D64).
+
+**Finding:** the FE settings read is *typed* as `MeSettings` but never
+runtime-parsed — `meSettingsQueryOptions` takes a reader returning
+`Promise<MeSettings>` and trusts it. So a payload MISSING the new key
+type-checks everywhere and throws at render (`state.prefs.hour` on
+`undefined`), taking down the entire Settings route: mailboxes, account
+deletion, data export, cookie preferences, all of it. The existing
+`settings-screen.test.tsx` caught it immediately — 18 tests went red — but only
+because its fixture predated the key. In production the same shape is reachable
+without a stale fixture: any window where the web deploy leads the API deploy.
+
+The server side already had the right instinct — `parseEmailPrefs` /
+`parseBriefPrefs` are documented "never throws, falls back to defaults" — but
+that discipline stops at the API boundary and was never mirrored on the client
+that consumes it.
+
+**Rule (provisional):** when adding a REQUIRED key to a contract a client
+already reads, default it at the consuming call site (`?? DEFAULT_X`) unless
+the read is genuinely runtime-validated. A route that renders unrelated
+account-critical surfaces must not be able to crash on a preference slice.
+Same family as the 2026-07-09 whole-screen takeover that trapped account
+deletion: the failure is not the missing key, it is that one card's assumption
+gets to decide whether the page exists.
+
+**Distillation trigger:** promote to CLAUDE.md §8 (Flow & state completeness)
+if a third contract-key addition breaks a consuming screen — this is the second
+(after the 2026-07-09 class) where a single component's data assumption took a
+whole route with it.
+
 ## 2026-08-24 — Vite 8 swaps esbuild for Oxc and silently discards `esbuild:`
 
 **Context:** Dependabot #624 bumped `vite` 7.3.6 → 8.2.2. CI failed with

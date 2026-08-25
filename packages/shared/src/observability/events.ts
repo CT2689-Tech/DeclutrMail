@@ -90,6 +90,7 @@ export type EventName =
   | 'wake_now_clicked'
   // — Settings surface (U23 — D34/D116/D216) —
   | 'settings_pref_changed'
+  | 'brief_hour_changed'
   | 'data_export_requested';
 
 /**
@@ -589,6 +590,16 @@ export interface EventPayloads {
     enabled: boolean;
     /** Where the flip happened — settings card vs the sheet's remember toggle. */
     source: 'settings' | 'action_sheet';
+  };
+  /**
+   * D64 — the Brief's local delivery hour was changed from Settings.
+   * Separate from `settings_pref_changed`, which carries a boolean:
+   * the question this answers is which hours people actually pick,
+   * i.e. whether the picker earned its build.
+   */
+  brief_hour_changed: {
+    /** Local hour chosen, 0-23. */
+    hour: number;
   };
   data_export_requested: {
     /** Which export artifact was downloaded. */

@@ -5,6 +5,7 @@
  *     actionSheetPrefs }` read.
  *   - PATCH /api/me/action-sheet-prefs — D34 per-verb skip-sheet write.
  *   - PATCH /api/me/email-prefs        — D165 reminder toggle write.
+ *   - PATCH /api/me/brief-prefs        — D64 Brief delivery-hour write.
  *
  * USER-scoped (like account-deletion): preferences roam mailboxes and
  * must render with zero connected accounts, so the key lives outside
@@ -25,6 +26,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   ActionSheetPrefs,
   ActionSheetPrefsPatch,
+  BriefPrefs,
+  BriefPrefsPatch,
   EmailPrefs,
   EmailPrefsPatch,
   MeSettings,
@@ -157,6 +160,30 @@ export function useUpdateEmailPrefs() {
           source: 'settings',
         });
       }
+    },
+  });
+}
+
+/**
+ * PATCH /api/me/brief-prefs (D64) — the Brief's local delivery hour.
+ *
+ * The worker reads the same key at generation time, so the next hourly
+ * tick honours the new hour. Nothing about today's already-frozen
+ * Brief changes (D69), which is why this writes no optimistic state
+ * beyond the settings cache itself.
+ */
+export function useUpdateBriefPrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (patch: BriefPrefsPatch): Promise<{ briefPrefs: BriefPrefs }> => {
+      const env = await apiPatch<{ briefPrefs: BriefPrefs }>('/api/me/brief-prefs', patch);
+      return env.data;
+    },
+    onSuccess: (data) => {
+      qc.setQueryData<MeSettings>(ME_SETTINGS_QUERY_KEY, (prev) =>
+        prev ? { ...prev, briefPrefs: data.briefPrefs } : prev,
+      );
+      void track('brief_hour_changed', { hour: data.briefPrefs.hour });
     },
   });
 }

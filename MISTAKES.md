@@ -21,6 +21,46 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-25 — A capability gate keyed on the billing read is dark whenever billing is
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` (D64, D66) — caught pre-merge by the local browser smoke, after 42 green tests
+
+**What happened:** the new Settings → Daily Brief card is gated on whether the
+workspace has the `brief` capability. I read the tier from the screen's
+existing `useBillingSubscription()` result (`billing.data?.tier ?? null`),
+because it was already in scope two lines above. But `GET
+/api/billing/subscription` answers **503 `BILLING_DISABLED`** until the founder
+flips `BILLING_ENABLED` — a DESIGNED state, and the current production posture.
+So `billing.data` is undefined, `tier` is null, and the gate is false for every
+workspace including Pro. The card would have shipped invisible to 100% of the
+users it exists for, on the exact deployment we run today.
+
+Every test passed — 42 of them, including the two I had just written for this
+gate — because `happyHandlers()` answers `/api/billing/subscription` with a 200
+payload. The fixture encodes billing-live as the only world. The browser smoke
+found it in one run: the card simply was not on the page, and the network log
+showed the 503 sitting right there.
+
+**Correct approach:** a FEATURE capability gate reads `useTier()`, which
+derives from `/api/auth/me` and has no billing dependency — the same source
+`TierGate` uses on every paid screen, and the reason that component keeps
+working while billing is dark. The billing subscription read answers "what is
+this workspace paying and through which provider", not "what may this
+workspace do".
+
+**Rule:** entitlement gates read `useTier()`/`hasCapability`, never a billing
+endpoint's payload. If a gate's tier can be null because a *different* service
+is turned off, the gate is wrong — a capability does not depend on the billing
+provider being reachable.
+
+**Enforcement update:** gate switched to `useTier()`; a regression test now
+stubs `/api/billing/subscription` as a 503 `BILLING_DISABLED` and asserts the
+card still renders (verified red against the old gate). Fourth entry in the
+"green tests, broken at the seam" family, and the second where a fixture that
+only models the happy service state hid a whole-feature outage — candidate for
+a CLAUDE.md §8 line: any screen reading two services needs one fixture where
+the optional one is down.
+
 ## 2026-08-21 — Brief pipeline sent Gmail metadata to Anthropic for tiers that cannot read the Brief
 
 **PR:** #621 (https://github.com/CT2689-Tech/DeclutrMail/pull/621)

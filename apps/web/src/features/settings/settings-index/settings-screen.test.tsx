@@ -119,6 +119,7 @@ const DELETION_STATUS = {
 const SETTINGS_PAYLOAD = {
   emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
   actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
+  briefPrefs: { hour: 8 },
 };
 
 const SUBSCRIPTION_PAYLOAD = {
@@ -548,6 +549,94 @@ describe('SettingsScreen', () => {
     await waitFor(() =>
       expect(screen.getByRole('switch', { name: /enable reminder emails/i })).toBeInTheDocument(),
     );
+  });
+
+  it('D64 — Brief delivery hour round-trips through PATCH /api/me/brief-prefs', async () => {
+    const patches: unknown[] = [];
+    installFetchStub([
+      ...happyHandlers(),
+      {
+        method: 'PATCH',
+        path: '/api/me/brief-prefs',
+        respond: async (req) => {
+          const body = (await req.json()) as { hour: number };
+          patches.push(body);
+          return jsonOk({ data: { briefPrefs: { hour: body.hour } } });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const select = await screen.findByRole('combobox', { name: /daily brief delivery hour/i });
+    expect(select).toHaveValue('8');
+
+    await userEvent.selectOptions(select, '18');
+
+    await waitFor(() => expect(patches).toEqual([{ hour: 18 }]));
+    // The select reflects the server-confirmed hour, in 12-hour copy.
+    await waitFor(() => expect(select).toHaveValue('18'));
+    expect(screen.getByRole('option', { name: '6:00 PM' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: '12:00 AM' })).toBeInTheDocument();
+  });
+
+  it('D64 — hides the Brief schedule card on a tier without the Brief', async () => {
+    me = { ...me, tier: 'free' };
+    installFetchStub(happyHandlers());
+    renderScreen();
+
+    // Wait for a card that always renders, so absence below is a real
+    // absence rather than the screen not having painted yet.
+    await screen.findByRole('switch', { name: /disable reminder emails/i });
+    expect(
+      screen.queryByRole('combobox', { name: /daily brief delivery hour/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('D64 — still shows the Brief schedule card while billing is dark', async () => {
+    // `GET /api/billing/subscription` 503s BILLING_DISABLED until the
+    // founder flips the flag — the CURRENT production posture. Gating
+    // the card on that read hid it from every entitled workspace, and
+    // every test passed because the fixture answers that call 200.
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/billing/subscription'),
+      {
+        method: 'GET' as const,
+        path: '/api/billing/subscription',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'BILLING_DISABLED' } }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const select = await screen.findByRole('combobox', {
+      name: /daily brief delivery hour/i,
+    });
+    expect(select).toHaveValue('8');
+  });
+
+  it('D64 — a settings payload with no briefPrefs still renders Settings', async () => {
+    // The read is typed, not runtime-validated: an API deploy that
+    // predates the key returns a payload TypeScript accepts. Reading
+    // `.hour` off the absent slice threw and took the whole screen —
+    // account deletion and data export included — down with it.
+    const { briefPrefs: _omitted, ...withoutBriefPrefs } = SETTINGS_PAYLOAD;
+    installFetchStub([
+      ...happyHandlers().filter((h) => h.path !== '/api/me/settings'),
+      {
+        method: 'GET' as const,
+        path: '/api/me/settings',
+        respond: () => jsonOk({ data: withoutBriefPrefs }),
+      },
+    ]);
+    renderScreen();
+
+    const select = await screen.findByRole('combobox', { name: /daily brief delivery hour/i });
+    expect(select).toHaveValue('8');
+    // The rest of the screen is still reachable.
+    expect(screen.getByRole('switch', { name: /disable reminder emails/i })).toBeInTheDocument();
   });
 
   it('sync-completion toggle PATCHes only the syncComplete key (D165)', async () => {

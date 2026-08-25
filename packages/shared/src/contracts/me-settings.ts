@@ -6,7 +6,7 @@ import { EmailPrefsSchema } from './email-prefs';
 import { SenderViewsSchema } from './sender-views';
 
 /**
- * GET /api/me/settings response `data` (D34 + D66 + D116 + D165).
+ * GET /api/me/settings response `data` (D34 + D64 + D116 + D165).
  *
  * One read for the Settings index — the per-key PATCH endpoints
  * (`/api/me/email-prefs`, `/api/me/action-sheet-prefs`,

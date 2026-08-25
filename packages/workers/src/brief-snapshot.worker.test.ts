@@ -56,6 +56,7 @@ async function seedMailbox(
   email = 'owner@example.com',
   timezone: string | null = null,
   tier: TierId = minimumTierForCapability('brief'),
+  preferences: Record<string, unknown> | null = null,
 ): Promise<{ workspaceId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
@@ -65,7 +66,7 @@ async function seedMailbox(
     });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email, timezone })
+    .values({ workspaceId: ws!.id, email, timezone, ...(preferences ? { preferences } : {}) })
     .returning({ id: users.id });
   const [mb] = await db
     .insert(mailboxAccounts)
@@ -300,18 +301,63 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.briefPayload.reply[0]!.subject).toBe('Inside local yesterday');
   });
 
-  it('D66 — applies the weekend preference using the mailbox local date', async () => {
+  it('D64 — generates on a Saturday, so Friday mail is never skipped', async () => {
     const db = await freshDb();
-    await seedMailbox(db, 'friday@example.com', 'America/Los_Angeles');
+    await seedMailbox(db, 'saturday@example.com', 'America/Los_Angeles');
 
-    // UTC Saturday, but still Friday after 08:00 in Los Angeles.
+    // 08:00 Saturday in Los Angeles — the run date is a LOCAL weekend
+    // day, covering Friday's mail. Under the retired D66 weekday
+    // schedule this mailbox was skipped and Friday was summarized by
+    // nothing, ever.
     const worker = new BriefSnapshotWorker({
       db: db as never,
-      now: () => new Date('2026-05-30T01:00:00Z'),
+      now: () => new Date('2026-05-30T15:00:00Z'),
     });
-    const result = await worker.processJob({ scheduledAtMinute: '2026-05-30T01:00' }, FAKE_CTX);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-05-30T15:00' }, FAKE_CTX);
 
-    expect(result.weekendSkips).toBe(0);
+    expect(result.briefsGenerated).toBe(1);
+    const [row] = await db.select({ runDateLocal: briefRuns.runDateLocal }).from(briefRuns);
+    expect(row!.runDateLocal).toBe('2026-05-30');
+  });
+
+  it('D64 — waits for the configured delivery hour instead of 08:00', async () => {
+    const db = await freshDb();
+    await seedMailbox(db, 'evening@example.com', 'America/Los_Angeles', undefined, {
+      briefPrefs: { hour: 17 },
+    });
+
+    // 08:00 local: past the default gate, before this user's.
+    const morning = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T15:00:00Z'),
+    });
+    const early = await morning.processJob({ scheduledAtMinute: '2026-05-25T15:00' }, FAKE_CTX);
+    expect(early.briefsGenerated).toBe(0);
+
+    // 17:00 the same local day — the same run date now materializes.
+    const evening = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-26T00:00:00Z'),
+    });
+    const late = await evening.processJob({ scheduledAtMinute: '2026-05-26T00:00' }, FAKE_CTX);
+    expect(late.briefsGenerated).toBe(1);
+
+    const [row] = await db.select({ runDateLocal: briefRuns.runDateLocal }).from(briefRuns);
+    expect(row!.runDateLocal).toBe('2026-05-25');
+  });
+
+  it('D64 — a malformed stored hour falls back to 8am rather than stalling', async () => {
+    const db = await freshDb();
+    await seedMailbox(db, 'bad-pref@example.com', 'America/Los_Angeles', undefined, {
+      briefPrefs: { hour: 25 },
+    });
+
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T15:00:00Z'),
+    });
+    const result = await worker.processJob({ scheduledAtMinute: '2026-05-25T15:00' }, FAKE_CTX);
+
     expect(result.briefsGenerated).toBe(1);
   });
 
