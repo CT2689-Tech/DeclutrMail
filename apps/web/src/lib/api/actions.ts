@@ -264,7 +264,7 @@ export interface CompositeActionPreviewResult {
     name: string;
     domain: string;
     lastSeenDays: number | null;
-    /** `senders.replied_count` from mig 0022 — drives the
+    /** `senders.wrote_to_count` from mig 0063 — drives the
      *  sender-context-strip "you replied N×" copy. */
     wroteToCount: number | null;
   };

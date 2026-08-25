@@ -231,7 +231,7 @@ export class ActionsService {
         name: sender.displayName,
         domain: sender.domain,
         lastSeenDays,
-        // `senders.replied_count` from mig 0022 — populated
+        // `senders.wrote_to_count` from mig 0063 — populated
         // authoritatively by `InitialSyncWorker.buildSenderIndex` and
         // incrementally by `IncrementalSyncWorker`. The number IS the
         // sender-context-strip "you replied N×" copy.

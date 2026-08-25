@@ -629,7 +629,7 @@ export interface CompositeActionPreviewResult {
     name: string;
     domain: string;
     lastSeenDays: number | null;
-    /** `senders.replied_count` (mig 0022) — `null` only when sender
+    /** `senders.wrote_to_count` (mig 0063) — `null` only when sender
      *  row pre-dates the backfill. The sender-context strip renders
      *  `you replied N×` from this value. */
     wroteToCount: number | null;

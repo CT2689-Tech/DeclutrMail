@@ -1476,7 +1476,7 @@ describe('InitialSyncWorker', () => {
       // The D40/D42 PATCH endpoint's manual Unprotect demotes a
       // user_defined-protected row to `is_protected=false` while
       // PRESERVING `protection_reason='user_defined'` as the memory
-      // pin (senders-policy.service.ts). With replied_count >= 3 the
+      // pin (senders-policy.service.ts). With wrote_to_count >= 3 the
       // engagement auto-protect MUST NOT silently re-protect the
       // sender — the guard auto-protects only `protection_reason IS
       // NULL` rows.
