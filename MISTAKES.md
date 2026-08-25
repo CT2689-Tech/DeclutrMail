@@ -21,6 +21,48 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-21 — Brief pipeline sent Gmail metadata to Anthropic for tiers that cannot read the Brief
+
+**PR:** #621 (https://github.com/CT2689-Tech/DeclutrMail/pull/621)
+**Caught by:** founder tiering review
+
+**What happened.** `brief.controller.ts` carries
+`@RequiresCapability('brief')`, so every under-tier read 402s
+`PRO_FEATURE_REQUIRED`. But `CapabilityGuard` is a NestJS *request* guard,
+and `BriefSnapshotWorker` is a cron with no request and no principal — it
+cannot inherit it. The worker selected every row in `mailbox_accounts` with
+no tier predicate, so it built a Brief for every workspace and, because
+`ANTHROPIC_API_KEY` is mounted on the live `declutrmail-worker` revision,
+shipped `senderName + senderEmail + subject + snippet` to Anthropic to
+narrate output those users can never open. Confirmed firing in prod:
+`jsonPayload.generatedBy = "llm_haiku"` on `brief.generated`, daily.
+`FollowupCheckWorker` had the identical shape against
+`@RequiresCapability('followups')` — same defect, no external data flow.
+Not a D7/D228 breach: the envelope matches `BRIEF_AI_DISCLOSURE` exactly and
+carries no body. The defect is WHO, not WHAT.
+
+**Correct approach:** a capability enforced only as a controller decorator is
+enforced on READING, not on PRODUCING. Every capability-gated surface must
+gate its producer too, and the producer's tier list must be DERIVED from the
+same `TIER_MANIFEST` the guard reads — `hasCapability` — not hardcoded. A
+literal `['pro']` would have silently cut off `team` and `enterprise` (both
+map to `PRO_CAPABILITIES`); the tempting `['plus','pro']` copied from
+`weekly-value-receipt.worker.ts` would have leaked Plus AND cut those two off.
+
+**Rule:** for every `@RequiresCapability(x)`, the worker that produces `x`'s
+data must filter on `TIER_IDS.filter((t) => hasCapability(t, x))` — derived,
+never a tier literal.
+
+**Enforcement update:** `BRIEF_TIERS` / `FOLLOWUP_TIERS` now gate both crons,
+and both suites carry an unentitled-tier regression asserting zero rows and
+zero LLM calls. Every layer is manifest-derived rather than a literal: the
+harness seeds at `minimumTierForCapability('brief')`, and the regression picks
+its unentitled tier with `TIER_IDS.find((t) => !hasCapability(t, 'brief'))`, so
+re-tiering `brief` moves the fixture and the test together instead of leaving
+either asserting a stale tier name. That inversion is the actual fix — this
+shipped green because every pre-existing test seeded a `free` workspace and
+asserted the Brief WAS built for it, encoding the defect as the contract.
+
 ## 2026-08-21 — A retired unit, a lying type predicate, and a debounce shorter than a keystroke
 
 **PR:** #613 (https://github.com/CT2689-Tech/DeclutrMail/pull/613)
