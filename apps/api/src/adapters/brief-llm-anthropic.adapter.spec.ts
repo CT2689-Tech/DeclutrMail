@@ -179,6 +179,29 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     expect(callArg.messages[0].content).toBe(renderBriefUserPrompt(SAMPLE_INPUT));
   });
 
+  it('the system prompt carries the constraints that encode decisions, not just voice', async () => {
+    // These four rules are product decisions, not prose preferences, and
+    // a future prompt edit should have to delete them on purpose:
+    //   - length + "say what the list cannot" is why the narrative stopped
+    //     being a ~100-word recap of the rows rendered directly beneath it;
+    //   - "never state counts" stops it restating the section headers;
+    //   - "never repeat figures from a snippet" stops a Bank of America
+    //     balance ($4,284.44, observed on real mail 2026-08-25) being
+    //     lifted out of an allowlisted snippet and rendered on the page.
+    const create = vi.fn().mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: 'ok' }],
+    } satisfies MockMessage);
+    const adapter = new BriefLlmAnthropicAdapter({ client: stubClient(create) });
+    await adapter.generateNarrative(SAMPLE_INPUT);
+
+    const system = create.mock.calls[0]![0].system as string;
+    expect(system).toContain('at most 40 words');
+    expect(system).toContain('say what that list cannot');
+    expect(system).toContain('Never state counts');
+    expect(system).toContain('Never repeat figures from a snippet');
+  });
+
   it('trims leading/trailing whitespace on the returned text', async () => {
     const create = vi.fn().mockResolvedValue({
       stop_reason: 'end_turn',

@@ -48,27 +48,44 @@ import type {
 const HAIKU_MODEL_ID = 'claude-haiku-4-5';
 
 /**
- * The narrative is short (2-4 sentences). 384 tokens gives comfortable
- * headroom for a three-section summary without letting the model
- * wander.
+ * The narrative is short (1-2 sentences, ≤40 words). 384 tokens is far
+ * more than that needs; the headroom is kept deliberately so a model
+ * that runs slightly long still returns a COMPLETE sentence rather than
+ * a truncated one. The prompt, not the token cap, is what keeps it
+ * brief — a cap tight enough to enforce length would cut mid-word.
  */
 const MAX_OUTPUT_TOKENS = 384;
 
 /**
- * D62 system prompt — "sharp executive assistant" voice. The narrative
- * frames the three D63 sections in plain English. Rules are explicit so
- * the model doesn't drift toward marketing copy or fabricate counts.
+ * D62 system prompt — "sharp executive assistant" voice.
+ *
+ * REWRITTEN 2026-08-25. The previous prompt said "reference the three
+ * sections" and "mention specific senders by name", which produced a
+ * ~100-word paragraph recapping the exact rows rendered directly
+ * beneath it — including the Noise counts the section header already
+ * states verbatim. The only clause a reader could not reconstruct from
+ * the lists was the one piece of synthesis ("this came after a failed
+ * phone attempt"), and it was buried mid-paragraph.
+ *
+ * So the job is narrowed: the lists are the inventory, this is the
+ * judgment. Say the one thing the rows cannot, in under 40 words, or
+ * say that nothing stands out.
  */
 const SYSTEM_PROMPT = [
-  "You are a sharp executive assistant writing a morning briefing about yesterday's email.",
+  'You are a sharp executive assistant. Below your text the reader already sees every Reply and FYI item with its sender and subject, and every Noise sender with a message count.',
+  '',
+  'Your job is to say what that list cannot.',
   '',
   'Rules:',
-  '- Write 2-4 sentences. Plain English. No lists, no headings, no markdown.',
-  '- Reference the three sections: Reply (needs response), FYI (facts to know), Noise (bulk-archivable).',
+  '- Write 1-2 sentences, at most 40 words. Plain English. No lists, no headings, no markdown.',
+  '- Say which single item deserves attention first, and WHY. The reason is the point — a deadline, an escalation, a second attempt after no reply.',
+  '- Never state counts. The section headers already carry them.',
+  '- Name at most one sender: the one you are calling out. Do not walk the list.',
+  '- Do not summarize the FYI or Noise sections. They are visible and self-explanatory.',
   '- Stay grounded in the senders, subjects, and snippets provided. Never invent details.',
-  '- Mention specific senders by name when calling out the most important item — at most two name-drops.',
-  '- Do not address the user directly. Write in the third person about the email landscape.',
-  '- Keep the tone calm and direct. No exclamation marks, no hype.',
+  '- Never repeat figures from a snippet — no balances, amounts, or account numbers.',
+  '- If nothing genuinely stands out, say exactly that in one short sentence.',
+  '- Do not address the user directly. Calm and direct. No exclamation marks, no hype.',
 ].join('\n');
 
 /**

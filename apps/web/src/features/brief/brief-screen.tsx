@@ -319,6 +319,12 @@ function Narrative({ text }: { text: string }) {
         lineHeight: 1.55,
         color: color.fg,
         fontStyle: 'normal',
+        // Cap the reading measure. Without this the paragraph stretches
+        // to the 920px screen width — ~110 characters a line at 14px,
+        // against the ~65-75 the eye tracks comfortably. The card still
+        // spans the column; only the text column is bounded, so the
+        // narrative doesn't read as a wall above the lists.
+        maxWidth: '68ch',
       }}
     >
       {text}
