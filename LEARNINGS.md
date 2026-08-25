@@ -20,6 +20,46 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-24 — Vite 8 swaps esbuild for Oxc and silently discards `esbuild:`
+
+**Context:** Dependabot #624 bumped `vite` 7.3.6 → 8.2.2. CI failed with
+`Unexpected JSX expression` across ~147 `.tsx` test files, on source that
+parses fine. The printed snippet is *post-TypeScript-strip* output
+(`function renderScreen(initialIntent = null)`), so it reads like a source
+bug rather than a config one — a full detour before the real line surfaced.
+
+**Finding:** Vite 8 makes Oxc the default transformer and does not fall
+back. It logs `esbuild options will be ignored` once, near the top of the
+run, and drops the key. `apps/web/vitest.config.ts` carried
+`esbuild: { jsx: 'automatic' }`, so every `.tsx` test was parsed without
+the automatic JSX runtime.
+
+Two things the migration docs don't make obvious:
+
+1. **The shape changed, not just the key.** `oxc: { jsx: 'automatic' }`
+   gets 191/192 files passing and then fails with
+   `Invalid jsx option: 'automatic'`. Oxc takes `{ runtime: 'automatic' }`;
+   esbuild took the bare string. The partial success is the trap — it
+   looks like the fix worked.
+2. **`tsconfig` is `Omit`ted from `OxcOptions`.** So `experimentalDecorators`
+   / `emitDecoratorMetadata` cannot be forwarded. TC39 standard decorators
+   have no *parameter* decorators, so NestJS `@Optional()` on a constructor
+   param is dropped and its metadata never lands. That is why `apps/api`
+   still fails one DI-shape spec even after the JSX fix, and why the bump
+   was held rather than merged.
+
+**Rule (provisional):** On any Vite major, grep the run's first lines for
+`will be ignored` before reading the failure. A transformer swap makes
+config *inert* rather than invalid, so the error surfaces far from the
+cause and never names the option that stopped being read. And when a
+config fix takes failures from "everything" to "one", treat the remaining
+one as a *different* bug — not as the same fix being incomplete.
+
+**Distillation trigger:** promote to CLAUDE.md §10 if a silently-ignored
+config key bites a third time (Cloud Run `--set-env-vars` full-replace and
+the `x-goog-authenticated-user-email` header are the same class: the
+config is accepted, then not used).
+
 ## 2026-08-19 — A required check you don't own is a veto you can't see
 
 **Context:** The merge queue was enabled on `main`. The first PR through
