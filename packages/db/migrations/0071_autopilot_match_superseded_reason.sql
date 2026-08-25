@@ -1,0 +1,21 @@
+-- Observe→Active supersede. A rule sitting in Observe accumulates
+-- (mode_at_match='observe', resolution='pending') suggestions. When the
+-- user turns that same rule Active, the immediate apply sweep rewrites
+-- the same senders as (mode_at_match='active', resolution='approved')
+-- and executes them — but the old pending rows survive, because the
+-- pending-dedup partial unique index is scoped `WHERE resolution =
+-- 'pending'` and an approved insert is therefore not a conflict. The
+-- user is left looking at a suggestion for mail that has already moved:
+-- a no-op for Archive, and a SECOND request for Unsubscribe, which is
+-- the one verb the product tells them cannot be taken back.
+--
+-- Neither existing reason fits. 'user' claims a decision they never
+-- made; 'protected' claims a safety check that never ran. 'superseded'
+-- says what happened: the activation preview already accounted for this
+-- backlog, so the suggestion was subsumed rather than declined.
+--
+-- Append-only enum change; no rows are rewritten here —
+-- `AutopilotReadService.patchRule` writes the value inside the same
+-- transaction as the rule update. Idempotent (`IF NOT EXISTS`), matching
+-- the 0053 precedent and the migrate-apply workflow's re-run recovery.
+ALTER TYPE "public"."autopilot_match_dismiss_reason" ADD VALUE IF NOT EXISTS 'superseded';

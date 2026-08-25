@@ -255,7 +255,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         paragraphs: [
           'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that mailbox so a retry does not repeat or compound them.',
           'DeclutrMail stores Gmail message IDs and label changes rather than a duplicate email body. Activity shows Undo while recovery is available. Triage also shows recent actions, but Activity remains the dependable place to review results and start recovery.',
-          'The deadline should be visible. Free and Plus offer Undo for seven days, while Pro offers thirty days. Gmail Trash can end recovery earlier if the user empties it or permanently deletes an email.',
+          'The deadline should be visible. Every plan offers Undo for thirty days. Gmail Trash can end recovery earlier if the user empties it or permanently deletes an email.',
         ],
       },
       {
@@ -277,7 +277,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Automation needs observation in addition to undo',
         paragraphs: [
           'A manual mistake affects one reviewed set. An active rule can repeat the mistake every time the condition matches. Undoing yesterday’s messages does not correct tomorrow’s rule unless the automation state is also paused or changed.',
-          'DeclutrMail’s presets begin in Observe for seven days. Matches collect without moving mail. Before activation, you review the matching email and deliberately switch the rule on. The safety model is not “the rule is fine because actions can be undone”; it is “the user saw representative matches before the rule began and can still review each result.”',
+          'DeclutrMail’s presets show what they would do before you turn them on. Choose Watch first and matches collect without moving mail, for your approval. Either way you review the matching email and deliberately turn the rule on. The safety model is not “the rule is fine because actions can be undone”; it is “the user saw representative matches before the rule began and can still review each result.”',
           'Unsubscribe automation deserves extra caution because delivered requests have no inverse. Protected senders are excluded before recommendations so known exceptions do not enter the automation path.',
         ],
       },
@@ -285,7 +285,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'trust',
         title: 'Trust comes from specific claims',
         paragraphs: [
-          '“Recoverable for seven days from Activity,” “restorable from Gmail Trash for up to thirty days,” and “cannot be undone after delivery” are less elegant than one universal promise. They are also useful when something goes wrong.',
+          '“Recoverable for thirty days from Activity,” “restorable from Gmail Trash for up to thirty days,” and “cannot be undone after delivery” are less elegant than one universal promise. They are also useful when something goes wrong.',
           'The standard for a cleanup product should be that every action names the affected email and gives an honest recovery statement, including when recovery is unavailable. Reversibility then becomes a real product property instead of a marketing adjective.',
         ],
       },

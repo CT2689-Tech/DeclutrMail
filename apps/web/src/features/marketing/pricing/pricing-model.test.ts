@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { CAPABILITIES, TIER_IDS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  CAPABILITIES,
+  TIER_IDS,
+  TIER_MANIFEST,
+  type Capability,
+} from '@declutrmail/shared/entitlements';
 
 import {
   CAPABILITY_LABELS,
@@ -101,9 +106,15 @@ describe('CAPABILITY_LABELS — D227 verb language', () => {
 });
 
 describe('compareRows — derived from the manifest', () => {
-  it('emits one row per capability plus quota rows for the three available tiers', () => {
+  it('emits one row per LABEL plus quota rows for the three available tiers', () => {
     const rows = compareRows();
-    expect(rows).toHaveLength(CAPABILITIES.length + 2);
+    // Per label, not per capability: `autopilot` and `autopilot-active`
+    // share the "Autopilot" label and draw a single row. Derived from
+    // the label set rather than pinned to a number, so collapsing or
+    // splitting a label later does not need this line edited — and a
+    // capability added with no label is still a compile error.
+    const distinctLabels = new Set(CAPABILITIES.map((c) => CAPABILITY_LABELS[c]));
+    expect(rows).toHaveLength(distinctLabels.size + 2);
     const comparableCount = TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable).length;
     for (const row of rows) {
       expect(row.values).toHaveLength(comparableCount);
@@ -158,16 +169,23 @@ describe('cardBullets — manifest-derived card copy', () => {
     expect(bullets).toContain('Unlimited cleanup actions');
   });
 
-  it('Pro adds the automation set and the manifest quota deltas', () => {
+  it('Pro adds the attention surfaces and the manifest quota deltas', () => {
     const bullets = cardBullets(TIER_MANIFEST.pro);
     expect(bullets).toContain('Everything in Plus');
-    expect(bullets).toContain(CAPABILITY_LABELS['autopilot-active']);
-    expect(bullets).toContain(
-      `${TIER_MANIFEST.pro.undoWindowDays}-day Activity Undo for Archive, Later, and Delete`,
-    );
+    expect(bullets).toContain(CAPABILITY_LABELS.brief);
+    expect(bullets).toContain(CAPABILITY_LABELS.followups);
     expect(bullets).toContain(
       `${TIER_MANIFEST.pro.inboxLimit} connected ${TIER_MANIFEST.pro.inboxLimit === 1 ? 'inbox' : 'inboxes'}`,
     );
+    // Autopilot in both modes is Plus now, so Pro's card must not
+    // re-advertise it as something the upgrade buys.
+    expect(bullets).not.toContain(CAPABILITY_LABELS.autopilot);
+    expect(bullets).not.toContain(CAPABILITY_LABELS['autopilot-active']);
+    expect(bullets).not.toContain(CAPABILITY_LABELS.quiet);
+    // The undo window is uniform across the ladder, so it is not a Pro
+    // delta and must not appear as one. `cardBullets` only emits a
+    // limit line when the value CHANGES — this asserts the silence.
+    expect(bullets.some((b) => b.includes('Activity Undo'))).toBe(false);
   });
 });
 
@@ -204,6 +222,55 @@ describe('currency (D117)', () => {
         expect(Number.isFinite(point.inrPaise)).toBe(true);
         expect(point.inrPaise).toBeGreaterThan(0);
       }
+    }
+  });
+});
+
+describe('shared capability labels', () => {
+  /**
+   * `autopilot` and `autopilot-active` deliberately share the label
+   * "Autopilot", so the comparison table draws ONE row for them.
+   *
+   * That collapse is only honest while every tier grants them together.
+   * If a future re-tier gave a plan one without the other, the single
+   * row would tick "Included" off whichever capability the map reached
+   * first and quietly over-promise the other — the exact class of
+   * false-but-plausible pricing copy this suite exists to catch.
+   *
+   * So the invariant is enforced rather than remembered: sharing a
+   * label REQUIRES identical grants. Splitting the tiers fails here and
+   * forces the label decision at that moment.
+   */
+  it('capabilities sharing a label are granted identically on every tier', () => {
+    const byLabel = new Map<string, Capability[]>();
+    for (const capability of CAPABILITIES) {
+      const label = CAPABILITY_LABELS[capability];
+      byLabel.set(label, [...(byLabel.get(label) ?? []), capability]);
+    }
+
+    for (const [label, capabilities] of byLabel) {
+      if (capabilities.length < 2) continue;
+      for (const tierId of TIER_IDS) {
+        const granted = capabilities.filter((c) => TIER_MANIFEST[tierId].capabilities.includes(c));
+        expect(
+          granted.length === 0 || granted.length === capabilities.length,
+          `${tierId} grants ${granted.join(', ')} but not all of "${label}" (${capabilities.join(', ')}) — ` +
+            'they cannot share one comparison row while they differ by tier',
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('draws one comparison row per label, not one per capability', () => {
+    const labels = compareRows().map((r) => r.label);
+    expect(new Set(labels).size, 'duplicate rows in the comparison table').toBe(labels.length);
+    expect(labels).toContain('Autopilot');
+  });
+
+  it('never lists the same bullet twice on a card', () => {
+    for (const tierId of TIER_IDS) {
+      const bullets = cardBullets(TIER_MANIFEST[tierId]);
+      expect(new Set(bullets).size, `${tierId} card repeats a bullet`).toBe(bullets.length);
     }
   });
 });

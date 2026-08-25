@@ -137,7 +137,7 @@ describe('undo_journal × activity_log integration', () => {
     expect(remaining).toHaveLength(0);
   });
 
-  it('default expires_at is roughly now + 7 days (D232 default window)', async () => {
+  it('column default matches the ladder’s undo window, derived from the manifest', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);
 
@@ -152,9 +152,27 @@ describe('undo_journal × activity_log integration', () => {
       .returning({ expiresAt: undoJournal.expiresAt });
     const after = Date.now();
 
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    // Still a literal, deliberately — `packages/db` is the base layer
+    // and depends on no workspace package, so it cannot read
+    // `TIER_MANIFEST`. Importing it here to derive this number would
+    // invert the dependency graph to make one assertion prettier.
+    //
+    // What the literal must NOT be is unattributed, which is how the
+    // old one survived: it said "7 days (D232 default window)" and then
+    // hard-coded 7, so when every tier moved to 30 on 2026-08-23 the
+    // only things still claiming 7 were the column and this test,
+    // agreeing with each other. A test that pins a constant to itself
+    // cannot notice the decision moving.
+    //
+    // The invariant is owned one layer up, where the manifest is
+    // visible: `undo.service.spec.ts` asserts `issue()`'s fallback
+    // against `MIN_UNDO_WINDOW_DAYS`, and no application path reads
+    // this default at all. It exists as defense-in-depth for the next
+    // writer, and this test only checks it has not silently diverged
+    // from `TIER_MANIFEST[*].undoWindowDays` (migration 0072).
+    const expectedMs = 30 * 24 * 60 * 60 * 1000;
     const expiry = row!.expiresAt.getTime();
-    expect(expiry - before).toBeGreaterThan(sevenDaysMs - 5_000);
-    expect(expiry - after).toBeLessThan(sevenDaysMs + 5_000);
+    expect(expiry - before).toBeGreaterThan(expectedMs - 5_000);
+    expect(expiry - after).toBeLessThan(expectedMs + 5_000);
   });
 });

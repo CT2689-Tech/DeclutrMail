@@ -156,7 +156,7 @@ describe('UpgradeModal', () => {
       screen.getByText('Your Plus plan includes 1 connected Gmail account'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Pro raises the limit to 3 connected Gmail accounts/),
+      screen.getByText(/Pro raises the limit to 5 connected Gmail accounts/),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Upgrade to Pro' })).toHaveAttribute(
       'href',

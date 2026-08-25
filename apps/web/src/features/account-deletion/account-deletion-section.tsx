@@ -129,8 +129,9 @@ function PendingState({
       </p>
       {!executing && basis === 'undo-window' && (
         <p style={{ ...mutedTextStyle, marginTop: 0 }}>
-          The date extends past the 7-day grace period because an undo window is still open — undo
-          keeps working for its full window.
+          This date is later than the usual 7 days because an undo window from a recent action is
+          still open. Undo keeps working until then. To delete sooner, cancel this request and
+          choose “Delete immediately”, which waives those windows.
         </p>
       )}
       {cancelFailed && (

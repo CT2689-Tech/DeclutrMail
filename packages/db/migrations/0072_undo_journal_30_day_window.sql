@@ -1,0 +1,35 @@
+-- Undo window: 30 days on every tier (packaging patch 2026-08-23 on D19).
+--
+-- The column default was `now() + interval '7 days'`, written when D232
+-- put Free on 7 days and only Pro passed an explicit `expires_at`. Every
+-- tier now carries 30 (`TIER_MANIFEST[*].undoWindowDays`), and the
+-- marketing, help and legal surfaces say so on every plan.
+--
+-- WHY THIS WAS NOT ALREADY BROKEN, AND WHY IT STILL NEEDS FIXING. Both
+-- production writers — `LabelActionWorker.undoExpiresAt` and
+-- `AutopilotActionWorker.undoExpiresAt` — resolve the window from the
+-- manifest and pass `expires_at` explicitly, so no row is landing on
+-- this default today. `UndoService.issue()` is the exposed seam that
+-- did not: it omitted the column when the caller passed no `expiresAt`,
+-- and it is documented for the per-verb reverters still to land. The
+-- next one written would have promised 30 days in the UI and stored 7
+-- in the row, with nothing to catch it — the same one-policy-in-three-
+-- places shape that produced this drift in the first place.
+--
+-- The application no longer relies on this default at all: `issue()`
+-- now derives its own fallback from the manifest floor. It is set
+-- correctly anyway, because a column default that disagrees with the
+-- app is a trap for whoever writes the next insert.
+--
+-- NO BACKFILL, BY FOUNDER DECISION 2026-08-24. An earlier draft
+-- extended open, unreverted rows to `created_at + 30 days`. Two reasons
+-- it is not here. First, it is unnecessary: DeclutrMail is prelaunch,
+-- the only affected rows belong to the founder's own dogfood mailboxes,
+-- and nobody is waiting on a 7-day window they were promised 30 of.
+-- Second, it is not free — account deletion is scheduled at
+-- `max(now + FLAT_GRACE_DAYS, latest open undo expiry)`
+-- (`AccountDeletionOrchestrator.computeProjection`), so lengthening
+-- open undo rows silently pushes out any pending deletion date. Taking
+-- the change forward-only keeps a schema migration from moving a date a
+-- user may already have been shown.
+ALTER TABLE "undo_journal" ALTER COLUMN "expires_at" SET DEFAULT now() + interval '30 days';

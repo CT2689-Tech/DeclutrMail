@@ -24,49 +24,138 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-23 — There is no AI-processing consent anywhere, and non-Pro subject lines already went to Anthropic
+### 2026-08-24 — Turn on point-in-time recovery before the first paying customer
 
-**Source:** session sweep of PR #619 (`fix/d019-brief-llm-tier-filter`), plus
-production counts taken 2026-08-23
-**Why:** `BriefSnapshotWorker` selected every row in `mailbox_accounts` with no
-tier predicate, so it narrated a Brief for workspaces that cannot open one —
-`/brief` returns 402 for them. `CapabilityGuard` is a NestJS *request* guard;
-a cron has no request and no principal, so a capability enforced only as a
-controller decorator gates READING, never PRODUCING.
-
-The blast radius is small but it is not zero, and it is not all yours.
-Production today: **4 workspaces, all `free`; 4 users, of which 3 are not
-your address**; 81 rows in `brief_runs` across all 4 mailboxes, 2026-06-09 to
-2026-08-21. PR #619 confirms the LLM path (`generatedBy = "llm_haiku"`) firing
-daily back through at least 2026-08-13. So three real people's `senderName +
-senderEmail + subject + snippet` went to Anthropic for a feature none of them
-could open.
-
-**This is not a D7/D228 breach.** The envelope matches `BRIEF_AI_DISCLOSURE`
-verbatim — no bodies, no attachments, no non-allowlisted headers. The defect
-is *who*, not *what*. But it surfaces the larger gap: `aiConsent`,
-`ai_consent`, `AI_CONSENT` and `aiProcessing` return nothing across
-`apps/api/src`, `packages/shared/src` and `packages/db/src`, and
-`apps/web/src/features/consent/` is cookie-consent only. **The disclosure copy
-exists; the opt-in does not.** Shipping a privacy-positioned product with a
-third-party AI path and no consent surface is a launch-blocking posture
-question, not an engineering one.
-
-**How:** three separate calls, in this order.
-1. **Merge #619** (mergeable, clean, negative-controlled) — stops the ongoing
-   send. This one is not really a decision.
-2. **Decide whether the three affected users are told.** They are beta users
-   on a pre-launch product; there is no regulator-facing obligation you have
-   taken on yet, and the data was covered by the published disclosure. A short
-   note is the trust-positive move and costs nothing.
-3. **Decide whether AI processing needs an explicit opt-in before launch**, or
-   whether the disclosure plus tier-gating is the launch posture and consent
-   lands post-launch. If opt-in: it needs a D-number, a settings surface, and a
-   worker-side check — not a controller decorator.
-**Verifies by:** #619 merged and deployed; a decision recorded here for (2) and
-(3); if (3) is yes, a D-row in `IMPLEMENTATION-LOG.md`.
+**Source:** session 2026-08-24 (Supabase production review), founder decision
+**Why:** The project has 7 daily backups and PITR is OFF, so a disaster costs up
+to 24 hours of data. Acceptable while the founder is the only user — a day of
+their own dogfooding. Not acceptable once someone has paid for the mail in there.
+Founder decided to defer rather than accept permanently, so this exists to stop
+"defer" quietly becoming "never".
+**How:** Supabase Dashboard → Database → Backups → **Point in time** →
+**Enable add-on**. It is a paid add-on; the price is shown on that page (not
+verified in this session — do not quote a figure without checking).
+**Verifies by:** the Point in time tab shows a recovery window instead of the
+"available as an add-on" prompt.
+**Trigger:** first paying customer. Not a date.
 **Status:** Open
 
+### 2026-08-24 — Require an adversarial review for context-moving changes
+
+**Source:** session 2026-08-24, founder decision. Agents do not edit CLAUDE.md.
+**Why:** Two independent reviews found five real defects in one branch that
+2,630 passing tests, typecheck, lint, every structural gate, and a live worker
+smoke all missed. Three were introduced in that same branch. This is the fourth
+logged instance of the "green test is not evidence" class (CLAUDE.md §8), and
+the guidance was already there and already correct — the gap is that nothing in
+the pipeline is ADVERSARIAL. One of the five could auto-unsubscribe a user from
+mail they had just been reading.
+**How:** add to CLAUDE.md §8 "Definition of done", after the existing bullets:
+
+```markdown
+- **Adversarial review for context-moving changes.** A change that moves work
+  between execution contexts — off a request/push path into a background job,
+  from in-process state into shared state, from inside a lock to outside it —
+  needs a review pass before merge (`/code-review ultra`, or an equivalent
+  second opinion). Structural gates do not run the app and tests assert what
+  their author already believed; neither catches a reader that was fine until
+  the write moved. Before the review, write down every reader of the data the
+  change relocates and what each does with a stale value. If any reader takes a
+  DESTRUCTIVE action on it, the write cannot be deferred past that reader —
+  scope it instead.
+```
+
+**Verifies by:** the section exists in CLAUDE.md and the next context-moving PR
+cites a review pass in its Verification block.
+**Status:** Open
+
+### 2026-08-24 — Drop the dead-letter snapshot table once you are happy
+
+**Source:** session 2026-08-24, founder approved "snapshot, then delete"
+**Why:** The 781-row dead-letter backlog was cleared. The rows were copied to
+`dead_letter_jobs_snapshot_20260824` first so the delete is reversible; that
+table is now clutter in the production schema and should not outlive its
+usefulness.
+**How:** `DROP TABLE dead_letter_jobs_snapshot_20260824;` in the SQL Editor.
+**Verifies by:** the table no longer appears in Database → Tables.
+**Status:** Open
+### 2026-08-24 — Scheduled account deletion waits up to 30 days in silence — ACCEPTED AS IS
+
+**Source:** session — packaging patch review (PR #621), founder decision same day
+**Why recorded rather than fixed:** deletion is scheduled at
+`max(now + 7d, latest open undo expiry)`
+(`AccountDeletionOrchestrator.computeProjection`). With the undo window
+uniform at 30 days, any action in the last 23 days pushes the date out,
+so the long wait is now the NORMAL case rather than the exception.
+
+There are exactly two emails in the flow — `deletion-scheduled` at
+request time and `deletion-receipt` after the fact
+(`packages/workers/src/email-send.worker.ts`). Nothing in between. A
+user can be told "the 14th of next month" and then hear nothing for a
+month, with no reminder that it is coming and no nudge that cancelling
+is still possible. The in-app banner does show the date.
+
+**Founder decision 2026-08-24: leave it.** Prelaunch, no users are
+waiting on a deletion. Recorded so the silence is a known state rather
+than a surprise, and so this is not re-raised as a finding.
+
+**Revisit when:** the first real user schedules a deletion, or support
+asks why someone did not know it was coming. The fix if it comes up is a
+reminder email a few days out carrying the date and the cancel link —
+the immediate path (`DELETE AND WAIVE UNDO`) already exists and is
+unaffected.
+**Verifies by:** n/a — a decision to take no action.
+**Status:** Skipped 2026-08-24 — accepted behaviour, revisit trigger above.
+
+
+
+---
+
+### 2026-08-23 — AI processing has no consent mechanism; the send is stopped, the decision is not
+
+**Source:** session sweep; updated 2026-08-24 after #621 and #626 landed
+**Why:** `BriefSnapshotWorker` and `FollowupCheckWorker` selected every row in
+`mailbox_accounts` with no tier predicate, so they produced data for surfaces
+that are capability-gated on READ. `CapabilityGuard` is a NestJS *request*
+guard; a cron has no request and no principal, so a capability enforced only
+as a controller decorator gates reading, never producing.
+
+Measured before the fix: production held **4 workspaces, all `free`; 4 users,
+of whom 3 are not the founder**; **81 `brief_runs`** across all 4 mailboxes,
+2026-06-09 to 2026-08-21. Three real people's `senderName + senderEmail +
+subject + snippet` went to Anthropic for a feature none of them could open.
+
+Not a D7/D228 breach — the envelope matched `BRIEF_AI_DISCLOSURE` and carried
+no bodies, attachments or non-allowlisted headers. The defect was *who*, not
+*what*.
+
+**Two of the three parts are now closed by code:**
+
+- **The send is stopped.** #621 shipped `BRIEF_TIERS` / `FOLLOWUP_TIERS`,
+  derived from `TIER_MANIFEST` via `hasCapability` rather than hardcoded, so
+  producer and reader move together if pricing changes
+  (`brief-snapshot.worker.ts:74`, `followup-check.worker.ts:50`).
+- **The data is purged.** #626 shipped migration
+  `0074_purge_unentitled_brief_and_followup_rows.sql`.
+
+**What is still open is the part only you can answer.** `aiConsent`,
+`ai_consent`, `AI_CONSENT` and `aiProcessing` return nothing across
+`apps/api/src`, `packages/shared/src` and `packages/db/src`;
+`apps/web/src/features/consent/` is cookie-consent only. The disclosure copy
+exists — the opt-in does not.
+
+**How:** two calls.
+1. **Do the three affected users get told?** They are beta users on a
+   pre-launch product and the data was covered by the published disclosure,
+   so there is no obligation you have taken on. A short note is the
+   trust-positive move and costs nothing.
+2. **Does AI processing need an explicit opt-in before launch**, or is
+   disclosure + tier-gating the launch posture with consent landing after? If
+   opt-in: it needs a D-number, a settings surface, and a worker-side check —
+   not a controller decorator.
+**Verifies by:** a decision recorded here for (1) and (2); if (2) is yes, a
+D-row in `IMPLEMENTATION-LOG.md`.
+**Status:** Open — narrowed 2026-08-24 to the consent decision only
 ### 2026-08-22 — Supabase compute tier looks undersized for the read path
 
 **Source:** session — production profiling of the `/api/senders` latency report
@@ -2000,6 +2089,59 @@ session auto-discovered Supabase, GitHub, Sentry, PostHog, Vercel, Figma,
 Gmail and Resend on startup, which is the entry's own acceptance bar.
 
 ---
+
+### 2026-08-23 — Apply the CLAUDE.md edits for the packaging patch
+
+**Source:** session — tier/feature packaging decision (see
+`[PACKAGING PATCH 2026-08-23]` in `docs/execution/Implementation-Plan.md`)
+**Why:** §11 says agents never write CLAUDE.md. Three edits are needed;
+the third is the one that actually prevents a repeat, the other two are
+bookkeeping.
+
+**How:**
+
+**1 — §3 "Patch awareness" (the repair that matters).** It currently
+names only two marker forms:
+
+> always check for `[GRILL2 PATCH on D###]` or `[AUDIT PATCH on D###]`
+> sections later in the plan
+
+A reader who follows that instruction *correctly* still lands on stale
+text, because D77 is retired by a `[REVERSAL 2026-08-02 on D77]` marker
+that the sentence does not name, and D83 was retired with **no marker at
+all**. Suggested replacement:
+
+> always check for a later amending section — `[AUDIT PATCH …]`,
+> `[GRILL2 PATCH …]`, `[REVERSAL …]`, `[PACKAGING PATCH …]` — anywhere
+> later in the plan; the patched behaviour wins. **Absence of a marker is
+> not evidence a D-body is current.** Decisions have been superseded
+> without one (D83's Pro-only Later). When a D-body contradicts
+> `packages/shared/src/entitlements/pricing.config.ts`, the manifest is
+> the truth and the plan needs a marker.
+
+**2 — §4 plan-navigation table, "Pricing & tiers" row.** It routes to
+`D17–D21, D77, D81` and names neither decision that defines today's
+ladder. Suggested: `D17–D21, D77, D81, D251, [PACKAGING PATCH 2026-08-23]`.
+
+**3 — §2.6 invariants.** Add two that this change relies on and that
+nothing else states:
+
+> - **Quiet governs Autopilot, so it can never sit above it** — no tier
+>   may grant `autopilot` without `quiet`. Pinned by an invariant in
+>   `packages/shared/src/entitlements/entitlements.test.ts`. Violating it
+>   strands a stored quiet window on downgrade and silently defers
+>   approved batches.
+> - **A capability guard is a REQUEST guard; a cron has no request.** Any
+>   feature whose data is produced by a scheduled job needs its own tier
+>   filter at the producer, derived via `hasCapability` and never a
+>   literal tier list. The read side keeps 402-ing correctly while the
+>   producer runs for everyone, so the two drift silently.
+
+**Verifies by:** CLAUDE.md §3 names four marker forms and the
+"absence is not evidence" line; §4's pricing row cites the packaging
+patch; §2.6 carries both invariants.
+**Status:** Done 2026-08-24 — applied in `chore/distill-packaging-markers`.
+
 
 ### 2026-08-19 — Decide whether the `redesign` label should actually gate
 

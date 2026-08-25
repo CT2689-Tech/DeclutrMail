@@ -29,6 +29,7 @@ import { storeConsent } from '@/lib/cookie-consent';
 import HelpPage from './help/page';
 import ContactPage from './contact/page';
 import SecurityPage from './security/page';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 const { trackSpy } = vi.hoisted(() => ({
   trackSpy: vi.fn().mockResolvedValue(undefined),
@@ -132,7 +133,12 @@ describe('/help content — D219 + D137', () => {
 
   it('states the undo windows and the 7-day account-deletion grace', () => {
     const { container } = render(<HelpPage />);
-    expect(container.textContent).toMatch(/7 days on Free and Plus and 30 days on Pro/);
+    // The undo window is uniform; the split this asserted went false
+    // on 2026-08-23. Derived so a future re-tier moves the assertion.
+    expect(container.textContent).toMatch(
+      new RegExp(`${TIER_MANIFEST.free.undoWindowDays} days on every plan`),
+    );
+    expect(container.textContent).not.toMatch(/on Free and Plus and .* on Pro/);
     expect(container.textContent).toMatch(/7-day grace period/);
   });
 

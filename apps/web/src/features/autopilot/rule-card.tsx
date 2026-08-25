@@ -209,6 +209,13 @@ function describeRuleAction(kind: AutopilotActionKind): string {
 
 /** Rule lifecycle pill — Observing / Active / Not running / Paused (D10, D251). */
 function ModePill({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate: boolean }) {
+  // A disabled rule keeps whatever mode it had — `{enabled:false}` does
+  // not reset it — so an off rule could render a green "Active" pill
+  // directly above "Off — this rule records no new matches and takes no
+  // actions". That was rare while `mode='active'` needed the day-7
+  // banner; since turning a rule on defaults to acting, off-but-active
+  // is now the ordinary end state of enable-then-disable.
+  if (!rule.enabled) return <Pill tone="default">Off</Pill>;
   if (rule.mode === 'paused') return <Pill tone="amber">Paused</Pill>;
   if (rule.mode === 'active') {
     // D251 — the apply worker skips `active` rules on a tier without

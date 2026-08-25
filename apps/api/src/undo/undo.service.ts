@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { mailboxAccounts, undoJournal } from '@declutrmail/db';
 import type { NewUndoJournalEntry, UndoJournalEntry } from '@declutrmail/db';
+import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { UndoActionKind, UndoPayload } from './undo.types.js';
@@ -24,12 +25,22 @@ import type { UndoActionKind, UndoPayload } from './undo.types.js';
 @Injectable()
 export class UndoService {
   /**
-   * Default undo window per D232 — 7 days from issue time. Pro tier's
-   * 30-day window (D81) is opted into by the caller passing an explicit
-   * `expiresAt`; the column default (also 7d) keeps Free correct without
-   * coordination.
+   * Fallback undo window for a caller that passes no explicit
+   * `expiresAt` — the FLOOR across the ladder, derived.
+   *
+   * Was the literal 7, with a comment claiming "the column default
+   * (also 7d) keeps Free correct without coordination". That stopped
+   * being true when every tier moved to 30 days (2026-08-23). It was
+   * latent rather than live — both production writers set `expires_at`
+   * from `undoWindowDaysFor(tier)` and `issue()` has no production
+   * callers — but `issue()` is exported and documented for the
+   * per-verb reverters still to land, so the next slice that used it
+   * would have promised 30 days and written a 7-day row.
+   *
+   * The floor, not a named tier: it can only ever under-promise, and a
+   * caller who needs the reader's real window must pass it explicitly.
    */
-  private static readonly DEFAULT_WINDOW_DAYS = 7;
+  private static readonly DEFAULT_WINDOW_DAYS = MIN_UNDO_WINDOW_DAYS;
 
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
@@ -41,10 +52,18 @@ export class UndoService {
    * architecture-guardian Check D and D58) so the client can render the
    * tray entry / "Undo" affordance.
    *
-   * `expiresAt` is optional — omitted → 7-day default (Free tier, D232);
-   * Pro tier passes `now + 30d` (D81). Validation that the caller's
-   * tier supports the chosen window is the caller's responsibility (the
+   * `expiresAt` is optional — omitted → `DEFAULT_WINDOW_DAYS` from now,
+   * the floor across the ladder. Validation that the caller's tier
+   * supports the chosen window is the caller's responsibility (the
    * journal itself is tier-agnostic).
+   *
+   * The fallback is computed HERE rather than left to the column
+   * default. Omitting the column meant the real answer lived in
+   * `0007_undo_journal.sql` — which still said 7 days after every tier
+   * moved to 30, so `DEFAULT_WINDOW_DAYS` was a constant that described
+   * behaviour it did not produce. Passing it explicitly makes the
+   * manifest the single source and leaves the column default as
+   * defense-in-depth rather than the mechanism.
    */
   async issue(input: {
     mailboxAccountId: string;
@@ -56,7 +75,7 @@ export class UndoService {
       mailboxAccountId: input.mailboxAccountId,
       actionKind: input.actionKind,
       payload: input.payload,
-      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+      expiresAt: input.expiresAt ?? UndoService.defaultExpiresAt(),
     };
     const [issued] = await this.db.insert(undoJournal).values(row).returning();
     if (!issued) {
@@ -280,11 +299,11 @@ export class UndoService {
   }
 
   /**
-   * Default expiry timestamp (D232 — 7 days).
+   * Default expiry timestamp — `DEFAULT_WINDOW_DAYS` from now.
    *
    * Surfaced as a static helper so callers that need to pass an
-   * explicit `expiresAt` (Pro tier extending to 30d, tests anchoring on
-   * a fixed clock) can derive theirs from the same base.
+   * explicit `expiresAt` (a tier-resolved window, tests anchoring on a
+   * fixed clock) can derive theirs from the same base.
    */
   static defaultExpiresAt(now: Date = new Date()): Date {
     return new Date(now.getTime() + UndoService.DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
   actionJobs,
   activityLog,
@@ -13,7 +16,12 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  TIER_IDS,
+  TIER_MANIFEST,
+  hasCapability,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 
 import { ActionsService } from '../../actions/actions.service.js';
 import { AppException } from '../app-exception.js';
@@ -549,22 +557,27 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
   });
 
-  it('pro (limit 3, A3): allows the 3rd, blocks the 4th', async () => {
+  it('pro: allows connections up to the manifest limit, blocks the next', async () => {
+    // Derived from the manifest ON PURPOSE, unlike the capability
+    // ladders in capability.guard.spec.ts. Those assert WHICH tier owns
+    // a surface, so they must restate it by hand. This asserts that the
+    // ENFORCEMENT honours whatever number is configured — the limit is
+    // this test's input, not its claim, so re-tiering inboxes must not
+    // require editing it.
+    const limit = TIER_MANIFEST.pro.inboxLimit;
     const { workspaceId, userId } = await seedWorkspace(db, 'pro');
-    await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
-    await db.insert(mailboxAccounts).values({
-      workspaceId,
-      userId,
-      provider: 'gmail',
-      providerAccountId: 'second@x',
-    });
-    await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
-    await db.insert(mailboxAccounts).values({
-      workspaceId,
-      userId,
-      provider: 'gmail',
-      providerAccountId: 'third@x',
-    });
+
+    // seedWorkspace already connected one mailbox.
+    for (let n = 2; n <= limit; n += 1) {
+      await expect(svc.assertCanConnectMailbox(workspaceId), `slot ${n}`).resolves.toBeUndefined();
+      await db.insert(mailboxAccounts).values({
+        workspaceId,
+        userId,
+        provider: 'gmail',
+        providerAccountId: `mailbox-${n}@x`,
+      });
+    }
+
     const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AppException);
     expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
@@ -788,5 +801,72 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     });
     expect(await db.select().from(actionJobs)).toHaveLength(FREE_LIMIT - 1);
     expect(await db.select().from(activityLog)).toHaveLength(0);
+  });
+});
+
+describe('migration 0074 — purge of unentitled Brief / Follow-ups rows', () => {
+  /**
+   * `packages/db` depends on no workspace package, so migration SQL
+   * cannot read `TIER_MANIFEST` and 0074 names its tiers as literals.
+   * A literal tier list is exactly the shape that produced the drift
+   * PR #621 spent a day unwinding, so it is checked rather than trusted:
+   * this test reads the migration and compares it to the tiers that
+   * actually hold each capability.
+   *
+   * If `brief` or `followups` is ever re-tiered, this fails and names
+   * the migration as stale — which is the correct outcome. A shipped
+   * one-time purge cannot be edited after the fact; the fix is a NEW
+   * migration for the newly-unentitled tiers, and this failure is where
+   * someone finds that out.
+   */
+  const MIGRATION = readFileSync(
+    join(
+      import.meta.dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      '..',
+      'packages',
+      'db',
+      'migrations',
+      '0074_purge_unentitled_brief_and_followup_rows.sql',
+    ),
+    'utf8',
+  );
+
+  function purgedTiersFor(table: string): TierId[] {
+    // The DELETE keeps rows for the tiers listed in NOT IN (...), so the
+    // PURGED set is every tier absent from that list.
+    const stmt = MIGRATION.split('--> statement-breakpoint').find((chunk) =>
+      chunk.includes(`DELETE FROM "${table}"`),
+    );
+    expect(stmt, `0074 has no DELETE for ${table}`).toBeDefined();
+    const kept = [...stmt!.matchAll(/'([a-z]+)'/g)].map((m) => m[1]!);
+    return TIER_IDS.filter((id) => !kept.includes(id));
+  }
+
+  it.each([['brief_runs', 'brief'] as const, ['followup_tracker', 'followups'] as const])(
+    'purges %s for exactly the tiers without %s',
+    (table, capability) => {
+      const shouldPurge = TIER_IDS.filter((id) => !hasCapability(id, capability));
+      expect(purgedTiersFor(table).sort()).toEqual([...shouldPurge].sort());
+    },
+  );
+
+  it('never purges a tier that holds the capability', () => {
+    // The direction that matters: an over-broad list would delete an
+    // entitled workspace's real Brief history, not just leftovers.
+    for (const [table, capability] of [
+      ['brief_runs', 'brief'],
+      ['followup_tracker', 'followups'],
+    ] as const) {
+      for (const tierId of purgedTiersFor(table)) {
+        expect(
+          hasCapability(tierId, capability),
+          `0074 would delete ${table} rows for ${tierId}, which HAS ${capability}`,
+        ).toBe(false);
+      }
+    }
   });
 });

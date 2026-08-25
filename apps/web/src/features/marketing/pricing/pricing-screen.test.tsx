@@ -132,7 +132,11 @@ describe('PricingScreen (D19)', () => {
     fireEvent.submit(input.closest('form')!);
 
     await waitFor(() => expect(screen.getByText(/You’re on the list/)).toBeInTheDocument());
-    expect(screen.queryByText(/already/i)).not.toBeInTheDocument();
+    // Scoped to the CLAIM, not the word. A bare /already/i matched any
+    // prose on the page — the hero copy says "mail already in your
+    // inbox" — so this asserted the absence of an English word rather
+    // than the absence of a duplicate-signup branch.
+    expect(screen.queryByText(/already (signed up|on the list|registered|joined)/i)).toBeNull();
   });
 
   it('shows the error state when the waitlist call fails, and recovers on edit', async () => {

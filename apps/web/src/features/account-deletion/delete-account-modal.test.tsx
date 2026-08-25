@@ -114,7 +114,12 @@ describe('DeleteAccountModal', () => {
 
     expect(screen.getByText(/3 undoable actions/i)).toBeInTheDocument();
     expect(screen.getByText(/undo windows are waived/i)).toBeInTheDocument();
-    expect(screen.getByText(/delayed past the 7-day grace period/i)).toBeInTheDocument();
+    // The extended date is now the NORM, not an exception, so the copy
+    // leads with the real date and names the ceiling instead of framing
+    // it as a delay past the usual grace period.
+    expect(screen.getByText(/rather than after the usual 7 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/undo windows run up to 30 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/immediate option below skips the wait/i)).toBeInTheDocument();
   });
 
   it('shows the submit error and keeps the modal open', () => {

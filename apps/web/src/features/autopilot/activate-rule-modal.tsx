@@ -1,6 +1,6 @@
 'use client';
 
-import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
+import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame } from './confirm-modal-frame';
@@ -9,14 +9,6 @@ import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
 const { color, font } = tokens;
-/**
- * Pro's window, and that is correct BY CONSTRUCTION rather than by
- * accident: after D251 only a workspace with the `autopilot-active` capability
- * can open this modal, and `autopilot-active` is Pro-only. If activation is ever
- * granted to a cheaper tier, this constant becomes a lie — thread the
- * caller's real tier through instead of widening the gate.
- */
-const AUTOPILOT_UNDO_WINDOW_DAYS = TIER_MANIFEST.pro.undoWindowDays;
 
 /**
  * D226 mandatory preview for switching a rule Observe → Active — the
@@ -40,22 +32,77 @@ const AUTOPILOT_UNDO_WINDOW_DAYS = TIER_MANIFEST.pro.undoWindowDays;
  */
 export function ActivateRuleModal({
   rule,
+  intent = 'activate',
+  canRunUnattended = true,
+  pendingAction,
   pendingCount,
   pendingApproximate,
   preview,
+  undoWindowDays,
   onRetryPreview,
+  onWatchFirst,
   isActivating,
   error,
   onCancel,
   onConfirm,
 }: {
   rule: AutopilotRuleDto | null;
+  /**
+   * Which mutation this preview is gating.
+   *
+   *   `'enable'`   — the rule is OFF. Confirm turns it on AND sets
+   *                  `mode='active'`, so the very first sweep acts.
+   *                  `onWatchFirst` turns it on in Observe instead.
+   *   `'activate'` — the rule is already on in Observe; confirm only
+   *                  promotes it. This is the day-7 banner's path.
+   *
+   * One modal, because the DECISION is identical either way: "here is
+   * what this rule would do to mail that is already here, and it will
+   * keep doing it to mail that arrives". Splitting it into two
+   * components would have duplicated the dry-run panel and the
+   * per-verb recovery copy, and those are exactly the parts that must
+   * never drift between the two entry points.
+   */
+  intent?: 'enable' | 'activate';
+  /**
+   * Whether this workspace may let rules act unattended
+   * (`autopilot-active`). When false the acting path is not offered at
+   * all — turning a rule on commits Observe.
+   *
+   * No tier is in that position under the current manifest. It is wired
+   * because every OTHER Activate entry point is gated this way, and the
+   * enable path was not: a one-line re-tier of `autopilot-active` would
+   * otherwise put an always-402 button in the modal's PRIMARY slot,
+   * re-creating the exact defect the D251 gate was built for. The
+   * comments elsewhere in this change promise that re-tiering stays a
+   * config edit; this is what makes that true here.
+   */
+  canRunUnattended?: boolean;
+  /** Which commit is in flight — drives the busy label on the right button. */
+  pendingAction?: 'primary' | 'secondary' | undefined;
   pendingCount: number;
   /** True when the pending buffer hit the BE's 50-row cap (count is a floor). */
   pendingApproximate: boolean;
+  /**
+   * The CALLER'S undo window, in days. Passed in rather than read from
+   * `TIER_MANIFEST.pro` — this file used to hardcode Pro's window on the
+   * reasoning that only Pro could open the modal, which stopped being
+   * true the moment `autopilot-active` moved to Plus (2026-08-23). The
+   * recovery line below is a promise about the reader's own account, so
+   * it has to come from the reader's own tier.
+   */
+  undoWindowDays: number;
   /** First-sweep dry-run state — fired by the opener when the modal opens. */
   preview: RulePreviewState;
   onRetryPreview: () => void;
+  /**
+   * Turn the rule on in Observe instead of acting. Only meaningful for
+   * `intent='enable'`; the second button is hidden without it.
+   *
+   * Observe is a CHOICE here, not a tier: watching first is what a
+   * cautious user picks, not what a cheaper plan is limited to.
+   */
+  onWatchFirst?: () => void;
   isActivating: boolean;
   error: string | null;
   onCancel: () => void;
@@ -64,16 +111,43 @@ export function ActivateRuleModal({
   if (rule == null) return null;
   const name = presetDisplayName(rule.presetKey, rule.name);
 
+  const enabling = intent === 'enable';
+  // Turning a rule on without the unattended capability can only mean
+  // Observe, so the acting label and the second button both disappear
+  // rather than offering a commit that would 402.
+  const enablingToAct = enabling && canRunUnattended;
+  // Does the PRIMARY button leave the rule in `active`? Both the day-7
+  // promote (`intent='activate'`) and an entitled enable do; an enable
+  // without the capability, and the "Watch first" secondary, do not.
+  // The backlog clause below reads differently either way, because the
+  // server supersedes this rule's pending Observe suggestions only on
+  // the transition into `active`.
+  const primaryCommitsActive = !enabling || enablingToAct;
+
   return (
     <ConfirmModalFrame
       open
       titleId="dm-activate-title"
-      title={`Switch "${name}" to Active`}
-      lead="The rule stops asking and starts acting. Here is exactly what changes:"
+      title={enabling ? `Turn on "${name}"` : `Switch "${name}" to Active`}
+      lead={
+        enablingToAct
+          ? 'The rule acts on matching mail already in your inbox, and keeps acting on matching mail that arrives. Here is exactly what changes:'
+          : enabling
+            ? 'The rule starts collecting matches for your approval. Nothing moves until you approve a batch. Here is exactly what it would collect:'
+            : 'The rule stops asking and starts acting. Here is exactly what changes:'
+      }
       footnote="Pause any time — the rule card's toggle or Pause all."
-      confirmLabel="Switch to Active"
-      confirmBusyLabel="Switching…"
+      confirmLabel={
+        enablingToAct ? 'Turn on and run it' : enabling ? 'Turn on and watch' : 'Switch to Active'
+      }
+      confirmBusyLabel={enabling ? 'Turning on…' : 'Switching…'}
       canConfirm={preview.status === 'ready'}
+      pendingAction={pendingAction}
+      secondaryAction={
+        enablingToAct && onWatchFirst != null
+          ? { label: 'Watch first', busyLabel: 'Starting to watch…', onClick: onWatchFirst }
+          : undefined
+      }
       isBusy={isActivating}
       error={error}
       onCancel={onCancel}
@@ -92,15 +166,64 @@ export function ActivateRuleModal({
         }}
       >
         <li>{goingForwardCopy(rule)}</li>
-        <li>
-          {pendingApproximate
-            ? 'Suggestions already collected stay pending below — activating does not approve them. Approve or skip them separately.'
-            : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
-                pendingCount === 1 ? 'stays' : 'stay'
-              } pending below — activating does not approve ${
-                pendingCount === 1 ? 'it' : 'them'
-              }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
-        </li>
+        {/* The backlog clause is gated on the COUNT, not on the intent.
+            Gating it on `intent === 'enable'` assumed a rule being turned
+            on has collected nothing — false for a RE-enabled rule:
+            disabling a rule leaves its pending matches in the buffer
+            (`listPendingSuggestions` filters on mode + resolution, never
+            on `enabled`), and they render on this same screen. Dropping
+            the clause there let a user confirm without being told those
+            suggestions stay unapproved. */}
+        {pendingApproximate || pendingCount > 0 ? (
+          <li>
+            {/* Two different truths, and saying the wrong one is not a
+                wording slip. Going ACTIVE, the server clears this rule's
+                pending suggestions (`dismiss_reason='superseded'`) in the
+                same transaction as the mode change, because the sweep
+                below re-matches those senders and acts on them — leaving
+                the old rows would show the user a second, stale copy of
+                a suggestion for mail that has already moved, and
+                approving it would fire a duplicate action (for
+                Unsubscribe, a second irreversible request). Going to
+                OBSERVE, nothing is superseded and they really do stay
+                pending. */}
+            {primaryCommitsActive
+              ? pendingApproximate
+                ? 'The suggestions already collected are covered by this — the rule acts on them itself and they clear from the pending list.'
+                : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
+                    pendingCount === 1 ? 'is' : 'are'
+                  } covered by this — the rule acts on ${
+                    pendingCount === 1 ? 'it' : 'them'
+                  } itself and ${pendingCount === 1 ? 'it clears' : 'they clear'} from the pending list.`
+              : pendingApproximate
+                ? 'Suggestions already collected stay pending below — turning the rule on does not approve them. Approve or skip them separately.'
+                : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
+                    pendingCount === 1 ? 'stays' : 'stay'
+                  } pending below — turning the rule on does not approve ${
+                    pendingCount === 1 ? 'it' : 'them'
+                  }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
+          </li>
+        ) : null}
+        {/* The secondary button's different outcome, stated where the
+            user chooses. Only shown when both paths are actually on
+            offer and there is a backlog for them to differ about. */}
+        {primaryCommitsActive && enablingToAct && (pendingApproximate || pendingCount > 0) ? (
+          <li>
+            <strong>Watch first</strong> instead and they stay pending for your approval.
+          </li>
+        ) : null}
+        {/* Turning a paused rule on resumes it. `{enabled:true, mode}`
+            overwrites `paused`, so without this line the commit
+            silently undoes a "Pause all" the user had set. */}
+        {enabling && rule.mode === 'paused' ? (
+          <li>This rule is paused. Turning it on resumes it.</li>
+        ) : null}
+        {!pendingApproximate && pendingCount === 0 && enablingToAct ? (
+          <li>
+            Prefer to look before it acts? <strong>Watch first</strong> turns the rule on in
+            Observe: it collects matches for your approval and moves nothing until you say so.
+          </li>
+        ) : null}
         <li>Senders you mark Protected are always skipped.</li>
       </ul>
 
@@ -121,7 +244,7 @@ export function ActivateRuleModal({
           First sweep, right now
         </span>
         <RulePreviewPanel ruleName={name} state={preview} onRetry={onRetryPreview} />
-        <ActivationReport rule={rule} preview={preview} />
+        <ActivationReport rule={rule} preview={preview} undoWindowDays={undoWindowDays} />
       </div>
     </ConfirmModalFrame>
   );
@@ -131,9 +254,12 @@ export function ActivateRuleModal({
 function ActivationReport({
   rule,
   preview,
+  undoWindowDays,
 }: {
   rule: AutopilotRuleDto;
   preview: RulePreviewState;
+  /** The caller's own undo window — see the prop note on the modal. */
+  undoWindowDays: number;
 }) {
   if (preview.status !== 'ready') return null;
   const { result } = preview;
@@ -180,7 +306,9 @@ function ActivationReport({
         Daily safety cap: {result.dailyActionCap.toLocaleString('en-US')} action
         {result.dailyActionCap === 1 ? '' : 's'}. Extra matches wait for a later sweep.
       </div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{recoveryCopy(rule)}</div>
+      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+        {recoveryCopy(rule, undoWindowDays)}
+      </div>
     </section>
   );
 }
@@ -200,12 +328,12 @@ function actionableNowCopy(
   return `${senderCount.toLocaleString('en-US')} sender${senderCount === 1 ? '' : 's'} and ${messageCount.toLocaleString('en-US')} inbox message${messageCount === 1 ? '' : 's'} actionable now.`;
 }
 
-function recoveryCopy(rule: AutopilotRuleDto): string {
+function recoveryCopy(rule: AutopilotRuleDto, undoWindowDays: number): string {
   if (rule.actionKind === 'archive') {
-    return `Recovery: archive results can be undone from Activity for ${AUTOPILOT_UNDO_WINDOW_DAYS} days.`;
+    return `Recovery: archive results can be undone from Activity for ${undoWindowDays} days.`;
   }
   if (rule.actionKind === 'later') {
-    return `Recovery: Later results return automatically at their scheduled time and can be undone from Activity for ${AUTOPILOT_UNDO_WINDOW_DAYS} days.`;
+    return `Recovery: Later results return automatically at their scheduled time and can be undone from Activity for ${undoWindowDays} days.`;
   }
   return 'Recovery: unsubscribe requests cannot be undone. Existing messages stay in your inbox unless a separate archive action applies.';
 }

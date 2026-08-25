@@ -3345,3 +3345,99 @@ importantly, `makeQueryClient` now has a `QueryCache.onError` that reports
 non-4xx query failures to Sentry — until now ONLY mutations had a
 cache-level handler, so every failed READ in the product was invisible,
 which is why an app-killing bug produced no telemetry at all.
+
+## 2026-08-24 — A sweep that could not sweep, with a green test named for it
+
+**PR:** branch `perf/d245-scoped-sender-sweeps` (commits `b7c7383e` → `864a7d00`)
+**Caught by:** `/ultrareview` (cloud review), not by any test, gate, or smoke
+
+**What happened:** `SenderIndexSweepWorker` was introduced as the load-bearing
+path for D245 §2.6 — the only place clock-driven auto-protections can retire,
+because no Gmail event announces the passage of time. It could not retire any
+of them. `applyAutomaticProtection`'s demote handled exactly one case
+(`gmail_important` on a non-Primary sender); a `starred` protection whose star
+aged past a year, a `replied` protection whose count decayed, and a still-Primary
+`gmail_important` all survived every sweep forever. The upsert could not
+compensate: a sender qualifying for nothing is filtered out by `WHERE
+protection_reason IS NOT NULL`, and the `DO UPDATE` guard is false for any
+already-protected row.
+
+The test was called `'retires a protection whose star has aged past a year'`.
+It seeded `senders` and a stale-starred `mail_messages` row, then asserted the
+policy was `undefined` — **it never inserted a `sender_policies` row at all.**
+So it proved the sweep does not CREATE a protection from stale evidence, which
+was never in doubt, and said nothing about retiring one. It passed for the whole
+life of the defect, and I cited it in a commit message as evidence the behaviour
+worked.
+
+**Correct approach:** a test for a RETIREMENT must seed the thing being retired.
+The name of the test is a claim; the fixture is what makes it true. When a test
+asserts absence (`toBeUndefined`, `toHaveLength(0)`, `not.toContain`), ask what
+state the assertion would hold in *vacuously* — here, "no policy row exists"
+held because none was ever written.
+
+**Rule:** a test whose name contains a verb of CHANGE (retires, demotes,
+clears, expires, corrects) must assert a before-state and an after-state.
+Asserting only the after-state passes against code that never ran.
+
+**Enforcement update:** none mechanical — this is the §8 "green test is not
+evidence" class, already documented there with three prior instances; this is
+the fourth, so the guidance is right and was not applied. What did work was the
+adversarial review, and the probe-before-fixing habit: the defect was confirmed
+by running a real sweep against a real DB and reading back
+`{is_protected: true, reason: 'starred'}` BEFORE any fix was written, so the
+fix had a measured starting point rather than a believed one.
+
+## 2026-08-24 — "Idempotent" and "eventually consistent" used to justify moving work out of a hot path
+
+**PR:** branch `perf/d245-scoped-sender-sweeps` (commit `b7c7383e`, fixed in `7d167129`)
+**Caught by:** two independent adversarial reviews (`/ultrareview`, Codex). Not by
+131 unit tests, not by typecheck, not by lint, not by a live worker smoke, and
+not by any gate agent.
+
+**What happened:** one performance change — moving recomputes off the Gmail push
+path — produced THREE separate regressions, all from the same reasoning error.
+Each time I asked "is this operation safe to defer?" and never asked "what reads
+this in between?"
+
+1. `reconcileSenderTimeseries` moved to a nightly sweep. But
+   `handleLabelChange` never maintained `sender_timeseries.read_count`, so only
+   that reconcile ever corrected it — and `autopilot-signals` derives
+   `readRateLifetime` from it, and `newsletter_graveyard` UNSUBSCRIBES below 5%,
+   firing from the same worker a few lines later. Reading dormant mail could get
+   the user auto-unsubscribed from it, 25/day, no confirmation.
+2. History pages moved outside the per-mailbox lock, justified in a comment as
+   safe because "every handler here is already idempotent". Idempotent is not
+   COMMUTATIVE. `handleLabelChange` applies deltas, so replaying an older
+   `labels_added` after a newer `labels_removed` restores the label — and the
+   cursor is monotonic, so Gmail never re-sends the records to correct it.
+3. The new Redis quota limiter's Redis-error fallback was wired to BullMQ's
+   connection (`maxRetriesPerRequest: null`, offline queue on), which never
+   rejects — so the `catch` was unreachable and `acquire()` would block through
+   an outage instead of degrading.
+
+**Correct approach:** deferring or relocating a write is a change to every READER
+of that data, not just to the writer. Before moving one, enumerate the readers
+and the worst thing each does with a stale value. For (1) the reader was two
+files away and its worst action was destructive and automatic.
+
+**Rule:** when moving a write off a hot path, grep for every reader of the
+columns it maintains and write down what each does with a stale value. If any
+reader takes a DESTRUCTIVE action on it, the write cannot be deferred past that
+reader — scope it instead.
+
+**Enforcement update:** none mechanical yet. Both of the tests covering these
+paths passed the whole time, for the two reasons §8 already names: (2) had no
+test at all for concurrent cursor advance, and (3) mocked a client that REJECTS
+while the real client does not — asserting the producer while mocking the
+consumer. The new tests assert connection OPTIONS rather than mocked behaviour,
+which is the shape that would have caught it.
+
+**Distillation candidate (founder's call):** this is the third+ instance of
+"green tests, structural gates, and a live smoke all passed while a real defect
+shipped" (see §8's three prior examples, plus the 2026-08-24 sweep entry above),
+and this one carries user-harm severity — an automatic, irreversible-feeling
+unsubscribe. Both §11 triggers (recurrence and severity) are met. The gap is not
+more tests; it is that nothing in the pipeline is ADVERSARIAL. Worth considering
+whether a review pass belongs in the definition of done for changes that move
+work between execution contexts.

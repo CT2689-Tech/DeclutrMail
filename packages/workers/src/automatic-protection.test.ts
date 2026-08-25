@@ -87,9 +87,9 @@ describe('applyAutomaticProtection', () => {
     });
   }
 
-  async function sweep() {
+  async function sweep(scope?: { senderKeys?: readonly string[] }) {
     await db.transaction(async (tx) => {
-      await applyAutomaticProtection(tx as never, mailboxId);
+      await applyAutomaticProtection(tx as never, mailboxId, scope);
     });
     const rows = await db
       .select({ senderKey: senderPolicies.senderKey, reason: senderPolicies.protectionReason })
@@ -168,5 +168,55 @@ describe('applyAutomaticProtection', () => {
     await seedSender('plain');
     await seedMessage('plain', 'p1', ['INBOX']);
     expect((await sweep()).get('plain')).toBeUndefined();
+  });
+  describe('scope', () => {
+    /**
+     * The per-push path passes only the senders a Pub/Sub push touched.
+     * Before that scoping, every push ran the sweep across the whole
+     * mailbox — 95,090 rows and 5,984 ms on the founder's mailbox,
+     * inside the advisory lock a user's Delete waits on.
+     *
+     * These pin the contract that made the narrowing safe: a scoped
+     * sweep must reach exactly the same verdict for the senders named,
+     * and must not touch anyone else.
+     */
+    beforeEach(async () => {
+      await seedSender('touched');
+      await seedMessage('touched', 'tm1', ['INBOX', 'STARRED']);
+      await seedSender('untouched');
+      await seedMessage('untouched', 'um1', ['INBOX', 'STARRED']);
+    });
+
+    it('protects only the scoped sender, leaving an equally-eligible one alone', async () => {
+      const protections = await sweep({ senderKeys: ['touched'] });
+      expect(protections.get('touched')).toBe('starred');
+      // The negative control for the whole change. Against the unscoped
+      // sweep this is 'starred' and the test fails — which is the point:
+      // it proves the scope is doing the narrowing, not the seed data.
+      expect(protections.get('untouched')).toBeUndefined();
+    });
+
+    it('reaches the same verdict scoped as unscoped', async () => {
+      expect((await sweep({ senderKeys: ['touched'] })).get('touched')).toBe(
+        (await sweep()).get('touched'),
+      );
+    });
+
+    it('treats an empty scope as "this push moved nobody", not "sweep everything"', async () => {
+      // The blind case. `= ANY('{}')` is false for every row, but the
+      // early return is what makes that independent of how Postgres
+      // reads an empty array — and a scope that silently meant "all"
+      // would reintroduce the full-mailbox scan on every push.
+      const protections = await sweep({ senderKeys: [] });
+      expect(protections.size).toBe(0);
+    });
+
+    it('still sweeps the whole mailbox when unscoped', async () => {
+      // What `SenderIndexSweepWorker` runs nightly. Without this the
+      // clock-driven rules would never retire a stale protection.
+      const protections = await sweep();
+      expect(protections.get('touched')).toBe('starred');
+      expect(protections.get('untouched')).toBe('starred');
+    });
   });
 });

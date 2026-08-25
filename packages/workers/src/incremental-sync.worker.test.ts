@@ -27,6 +27,7 @@ import type {
 } from './ports.js';
 import { deriveSenderKey } from './sender-key.js';
 import type { WorkerContext } from './worker-context.js';
+import { PASSTHROUGH_MAILBOX_LOCK } from './label-action.worker.js';
 
 /**
  * IncrementalSyncWorker integration tests (D8, D229 follow-up).
@@ -186,6 +187,7 @@ describe('IncrementalSyncWorker', () => {
 
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: { getClient },
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
@@ -228,6 +230,7 @@ describe('IncrementalSyncWorker', () => {
 
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
@@ -284,10 +287,11 @@ describe('IncrementalSyncWorker', () => {
     );
 
     await expect(
-      new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-        { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-        CTX,
-      ),
+      new IncrementalSyncWorker({
+        db,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailAccess: accessFor(client),
+      }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX),
     ).rejects.toThrow(/not advancing the history cursor/);
 
     const [state] = await db
@@ -316,6 +320,7 @@ describe('IncrementalSyncWorker', () => {
 
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
@@ -353,6 +358,7 @@ describe('IncrementalSyncWorker', () => {
 
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
@@ -389,6 +395,7 @@ describe('IncrementalSyncWorker', () => {
 
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1000' }, CTX);
     expect(result.recordsProcessed).toBe(0);
@@ -418,6 +425,7 @@ describe('IncrementalSyncWorker', () => {
     ];
     const worker = new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(
         new FakeGmailClient(
           [{ forCursor: '1000', page: { records, historyId: '1500' } }],
@@ -468,6 +476,7 @@ describe('IncrementalSyncWorker', () => {
 
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
     expect(result.deleted).toBe(1);
@@ -486,6 +495,7 @@ describe('IncrementalSyncWorker', () => {
     );
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
     expect(result.deleted).toBe(0);
@@ -510,10 +520,11 @@ describe('IncrementalSyncWorker', () => {
       new Map(),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     const [row] = await db
       .select()
@@ -540,10 +551,11 @@ describe('IncrementalSyncWorker', () => {
       [{ forCursor: '1000', page: { records, historyId: '1500' } }],
       new Map(),
     );
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
     const [row] = await db
       .select()
       .from(mailMessages)
@@ -627,10 +639,11 @@ describe('IncrementalSyncWorker', () => {
       new Map(),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '2000', endHistoryId: '2500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '2000', endHistoryId: '2500' }, CTX);
 
     const [row] = await db
       .select()
@@ -703,10 +716,11 @@ describe('IncrementalSyncWorker', () => {
       new Map([['inbound-new', meta]]),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     const [row] = await db
       .select()
@@ -775,10 +789,11 @@ describe('IncrementalSyncWorker', () => {
       new Map([['multi-send', send]]),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     const rows = await db
       .select({ senderKey: senders.senderKey, wroteToCount: senders.wroteToCount })
@@ -870,10 +885,11 @@ describe('IncrementalSyncWorker', () => {
       new Map([['reply-target', newReply]]),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     const [target] = await db
       .select()
@@ -942,10 +958,11 @@ describe('IncrementalSyncWorker', () => {
       new Map(),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     const [row] = await db
       .select()
@@ -990,10 +1007,11 @@ describe('IncrementalSyncWorker', () => {
       new Map([['inbound-first', meta]]),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     const [row] = await db
       .select()
@@ -1076,10 +1094,11 @@ describe('IncrementalSyncWorker', () => {
       new Map([['reply-2', newReply]]),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     // wrote_to_count flipped to 3 — post-pass ran.
     const [updated] = await db.select().from(senders).where(eq(senders.senderKey, senderKey));
@@ -1179,10 +1198,11 @@ describe('IncrementalSyncWorker', () => {
       new Map([['reply-2', newReply]]),
     );
 
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     // Signal crossed the threshold…
     const [updated] = await db.select().from(senders).where(eq(senders.senderKey, senderKey));
@@ -1207,6 +1227,7 @@ describe('IncrementalSyncWorker', () => {
     const client = new FakeGmailClient([{ forCursor: '1000', page: null }], new Map());
     const result = await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(client),
     }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
     expect(result.cursorTooOld).toBe(true);
@@ -1221,7 +1242,11 @@ describe('IncrementalSyncWorker', () => {
 
   it('rejects payload missing mailboxAccountId / startHistoryId (ValidationError)', async () => {
     const client = new FakeGmailClient([], new Map());
-    const worker = new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) });
+    const worker = new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    });
     await expect(
       worker.processJob(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1268,6 +1293,7 @@ describe('IncrementalSyncWorker', () => {
     const olderMeta = makeMetadata('sym-old', 'thread-old', senderEmail, ['INBOX'], older);
     await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(
         new FakeGmailClient(
           [
@@ -1295,6 +1321,7 @@ describe('IncrementalSyncWorker', () => {
     const newerMeta = makeMetadata('sym-new', 'thread-new', senderEmail, ['INBOX'], newer);
     await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(
         new FakeGmailClient(
           [
@@ -1348,6 +1375,7 @@ describe('IncrementalSyncWorker', () => {
     ];
     await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(
         new FakeGmailClient(
           [{ forCursor: '1000', page: { records: run1, historyId: '1500' } }],
@@ -1390,6 +1418,7 @@ describe('IncrementalSyncWorker', () => {
     ];
     await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(
         new FakeGmailClient(
           [{ forCursor: '1500', page: { records: run2, historyId: '2000' } }],
@@ -1434,6 +1463,7 @@ describe('IncrementalSyncWorker', () => {
     ): Promise<void> => {
       await new IncrementalSyncWorker({
         db,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
         gmailAccess: accessFor(
           new FakeGmailClient(
             [
@@ -1540,6 +1570,7 @@ describe('IncrementalSyncWorker', () => {
     ];
     await new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(
         new FakeGmailClient(
           [{ forCursor: '1000', page: { records, historyId: '1500' } }],
@@ -1577,14 +1608,180 @@ describe('IncrementalSyncWorker', () => {
       [{ forCursor: '1000', page: { records, historyId: '1500' } }],
       new Map([['ts-001', meta]]),
     );
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
     const rows = await db.select().from(senderTimeseries);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.yearMonth).toBe('2026-06-01');
     expect(rows[0]!.volume).toBe(1);
+  });
+
+  it('refetches when the cursor moved while it waited for the lock', async () => {
+    // The pages are fetched BEFORE the per-mailbox lock, and this queue
+    // runs at concurrency 20 — so another job can advance the cursor
+    // while this one waits. Its pages are then a snapshot of a range
+    // already applied, and `handleLabelChange` applies DELTAS: replaying
+    // an older `labels_added` after a newer `labels_removed` puts the
+    // label back. Idempotent per record is not the same as commutative
+    // across overlapping ranges, and the cursor is monotonic, so Gmail
+    // never re-sends those records to correct it.
+    const meta = makeMetadata(
+      'rf-001',
+      'thread-rf',
+      'sender@example.com',
+      ['INBOX'],
+      Date.UTC(2026, 5, 15),
+    );
+    // Seed the message so the label deltas below have a row to move.
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(
+        new FakeGmailClient(
+          [
+            {
+              forCursor: '1000',
+              page: {
+                records: [
+                  {
+                    kind: 'added',
+                    messageId: 'rf-001',
+                    threadId: 'thread-rf',
+                    labelIds: ['INBOX'],
+                  },
+                ],
+                historyId: '1500',
+              },
+            },
+          ],
+          new Map([['rf-001', meta]]),
+        ),
+      ),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    // The cursor is now 1500. This job claims to start from 1000 — the
+    // shape of a job whose pages were fetched before a concurrent job
+    // advanced the cursor past it. Its stale page would re-add a label;
+    // the page at the CURRENT cursor removes it.
+    const client = new FakeGmailClient(
+      [
+        {
+          forCursor: '1000',
+          page: {
+            records: [{ kind: 'labels_added', messageId: 'rf-001', labelIds: ['IMPORTANT'] }],
+            historyId: '1500',
+          },
+        },
+        {
+          forCursor: '1500',
+          page: {
+            records: [{ kind: 'labels_removed', messageId: 'rf-001', labelIds: ['IMPORTANT'] }],
+            historyId: '1600',
+          },
+        },
+      ],
+      new Map([['rf-001', meta]]),
+    );
+
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1600' }, CTX);
+
+    const [msg] = await db.select().from(mailMessages);
+    // Refetched from cursor 1500, so IMPORTANT is REMOVED. Applying the
+    // stale page from 1000 instead would leave it present.
+    expect(msg!.labelIds).not.toContain('IMPORTANT');
+  });
+
+  it('brings read_count up to date on a READ, before Autopilot can see it', async () => {
+    // THE REGRESSION THIS EXISTS TO PREVENT, and it is destructive.
+    //
+    // `handleMessageAdded` maintains volume/read_count on arrival, but
+    // `handleLabelChange` does NOT touch `sender_timeseries` — so
+    // marking mail read moves `mail_messages.is_unread` and leaves
+    // `read_count` at whatever arrival recorded. The unscoped reconcile
+    // used to run on every push and closed that gap in the same
+    // transaction; moving it to the nightly sweep left up to 24h where
+    // `read_count` says nobody read a thing.
+    //
+    // `autopilot-signals` derives `readRateLifetime` from
+    // `read_count / volume`, and `newsletter_graveyard` UNSUBSCRIBES
+    // below 5%. So a dormant sender whose mail the user has just been
+    // reading still reads as 0% — reading your mail gets you
+    // unsubscribed from it, automatically, 25 a day.
+    const arrive = makeMetadata(
+      'rd-001',
+      'thread-rd',
+      'dormant@example.com',
+      ['INBOX', 'UNREAD'],
+      Date.UTC(2026, 5, 15),
+    );
+    const client = new FakeGmailClient(
+      [
+        {
+          forCursor: '1000',
+          page: {
+            records: [
+              {
+                kind: 'added',
+                messageId: 'rd-001',
+                threadId: 'thread-rd',
+                labelIds: ['INBOX', 'UNREAD'],
+              },
+            ],
+            historyId: '1500',
+          },
+        },
+      ],
+      new Map([['rd-001', arrive]]),
+    );
+    const build = () =>
+      new IncrementalSyncWorker({
+        db,
+        lock: PASSTHROUGH_MAILBOX_LOCK,
+        gmailAccess: accessFor(client),
+      });
+
+    await build().processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+
+    const [afterArrival] = await db.select().from(senderTimeseries);
+    expect(afterArrival!.volume).toBe(1);
+    expect(afterArrival!.readCount).toBe(0);
+
+    // The user reads it: Gmail sends UNREAD removed.
+    const readClient = new FakeGmailClient(
+      [
+        {
+          forCursor: '1500',
+          page: {
+            records: [{ kind: 'labels_removed', messageId: 'rd-001', labelIds: ['UNREAD'] }],
+            historyId: '1600',
+          },
+        },
+      ],
+      new Map([['rd-001', arrive]]),
+    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(readClient),
+    }).processJob({ mailboxAccountId, startHistoryId: '1500', endHistoryId: '1600' }, CTX);
+
+    const [afterRead] = await db.select().from(senderTimeseries);
+    // The message row moved...
+    const [msg] = await db.select().from(mailMessages);
+    expect(msg!.isUnread).toBe(false);
+    // ...and so must the counter Autopilot reads. Without the scoped
+    // reconcile this is still 0, and readRateLifetime is 0%.
+    expect(afterRead!.readCount).toBe(1);
   });
 
   it('onTerminalFailure stamps last_incremental_error_at/_code without flipping readiness_status', async () => {
@@ -1595,6 +1792,7 @@ describe('IncrementalSyncWorker', () => {
     // readiness lifecycle.
     const worker = new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(new FakeGmailClient([], new Map())),
     });
     const error = new Error('cursor advance failed after retries');
@@ -1634,10 +1832,11 @@ describe('IncrementalSyncWorker', () => {
       [{ forCursor: '1000', page: { records: [], historyId: '1500' } }],
       new Map(),
     );
-    await new IncrementalSyncWorker({ db, gmailAccess: accessFor(client) }).processJob(
-      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
-      CTX,
-    );
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
 
     const [state] = await db
       .select()
@@ -1682,6 +1881,7 @@ describe('IncrementalSyncWorker — onNewSender first-seen callback (D75)', () =
     const seen: string[] = [];
     const worker = new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(
         clientWithAdds([
           { id: 'm-n1', from: 'brandnew@example.com' },
@@ -1714,6 +1914,7 @@ describe('IncrementalSyncWorker — onNewSender first-seen callback (D75)', () =
     const seen: string[] = [];
     const worker = new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(clientWithAdds([{ id: 'm-k1', from: 'known@example.com' }])),
       onNewSender: async (_mb, senderKey) => {
         seen.push(senderKey);
@@ -1729,6 +1930,7 @@ describe('IncrementalSyncWorker — onNewSender first-seen callback (D75)', () =
   it('a callback failure is swallowed (WARN) — the sync delta still lands', async () => {
     const worker = new IncrementalSyncWorker({
       db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
       gmailAccess: accessFor(clientWithAdds([{ id: 'm-f1', from: 'flaky@example.com' }])),
       onNewSender: async () => {
         throw new Error('enqueue exploded');

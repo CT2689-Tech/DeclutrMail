@@ -234,7 +234,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Undo records the inverse, not a copy of your email',
         paragraphs: [
           'For a reversible mail-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one mailbox and expires after the plan’s configured window.',
-          'Free and Plus currently offer Undo in Activity for seven days; Pro offers thirty days. Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
+          'Every plan currently offers Undo in Activity for thirty days. Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
         ],
       },
       {

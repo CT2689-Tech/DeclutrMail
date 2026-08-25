@@ -27,6 +27,17 @@ CANONICAL_ORIGIN="https://${APEX}"
 # infrastructure — a green run that proves nothing.
 GCP_PROJECT=declutrmail-ai-prod
 GCP_REGION=us-central1
+# The worker deploys to its own region — see WORKER_REGION in
+# deploy-cloud-run.yml. Looking in the API region would report the
+# worker missing rather than misplaced.
+GCP_WORKER_REGION=us-west1
+
+region_for() {
+  case "$1" in
+    declutrmail-worker) printf '%s' "$GCP_WORKER_REGION" ;;
+    *)                  printf '%s' "$GCP_REGION" ;;
+  esac
+}
 VERCEL_PROJECT=declutr-mail
 
 PASS=0 FAIL=0 WARN=0 SKIP=0
@@ -638,7 +649,7 @@ svc_pairs() {
 }
 
 svc_live() {
-  gcloud run services describe "$1" --project="$GCP_PROJECT" --region="$GCP_REGION" --format=json 2>/dev/null \
+  gcloud run services describe "$1" --project="$GCP_PROJECT" --region="$(region_for "$1")" --format=json 2>/dev/null \
     | python3 -c "
 import json,sys
 try: e=json.load(sys.stdin)['spec']['template']['spec']['containers'][0]['env']
@@ -786,7 +797,7 @@ EOF
   local api_sa worker_sa
   api_sa=$(gcloud run services describe declutrmail-api --project="$GCP_PROJECT" --region="$GCP_REGION" \
              --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null)
-  worker_sa=$(gcloud run services describe declutrmail-worker --project="$GCP_PROJECT" --region="$GCP_REGION" \
+  worker_sa=$(gcloud run services describe declutrmail-worker --project="$GCP_PROJECT" --region="$GCP_WORKER_REGION" \
              --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null)
 
   # WARN, not FAIL. Both IAM findings are long-standing posture with a

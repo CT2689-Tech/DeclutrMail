@@ -96,11 +96,21 @@ export const autopilotMatchResolution = pgEnum('autopilot_match_resolution', [
  * rule the downgrade flipped back to Observe. Activity's review-outcome
  * surfaces intentionally exclude this value — it is a system state
  * change, not a user decision.
+ *
+ * `superseded` marks an Observe-provenance pending match invalidated by
+ * the user turning the same rule Active. The activation preview already
+ * told them what would happen to that backlog, and the Active sweep
+ * rewrites it as `(active, approved)` rows — so leaving the Observe rows
+ * pending would show a second, stale copy of the same suggestion for
+ * mail that has already moved. Like `entitlement`, it is a system state
+ * change rather than a user decision, so review-outcome surfaces
+ * exclude it.
  */
 export const autopilotMatchDismissReason = pgEnum('autopilot_match_dismiss_reason', [
   'user',
   'protected',
   'entitlement',
+  'superseded',
 ]);
 
 export const ruleMatchLog = pgTable(
@@ -164,6 +174,13 @@ export const ruleMatchLog = pgTable(
       .where(sql`${table.modeAtMatch} = 'observe' AND ${table.resolution} = 'pending'`),
     /** "Recently affected senders" for a rule (D101 last-N mini-list). */
     ruleMatchedIdx: index('rule_match_log_rule_matched_idx').on(table.ruleId, table.matchedAt),
+    /**
+     * FK cascade index (mig 0073). `intent_token -> undo_journal.token`
+     * is ON DELETE SET NULL, and the undo-expiry cron deletes from
+     * `undo_journal` every tick — without this, each expired token
+     * sequentially scans this table.
+     */
+    intentTokenIdx: index('rule_match_log_intent_token_idx').on(table.intentToken),
     /** Per-mailbox audit history. */
     mailboxMatchedIdx: index('rule_match_log_mailbox_matched_idx').on(
       table.mailboxAccountId,

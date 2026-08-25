@@ -173,8 +173,8 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
  */
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'Review and act on senders yourself.',
-  plus: 'Remove the monthly limit and approve suggested batches.',
-  pro: 'Let rules you turn on handle recurring mail automatically.',
+  plus: 'Remove the monthly limit and let rules keep it clean.',
+  pro: 'See what matters, across every account.',
   team: 'Review and manage mail together.',
   enterprise: 'Manage more inboxes with organizational controls.',
 };
@@ -191,10 +191,23 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   activity: 'Activity history',
   'cleanup-actions': 'Cleanup actions — Keep · Archive · Unsubscribe · Later · Delete',
   triage: 'Triage sessions',
-  // D251 — one feature name, two behaviours. The ladder reads as an
-  // upgrade in kind ("stop approving"), not as a second product.
-  autopilot: 'Autopilot — finds matching mail, you approve each batch',
-  'autopilot-active': 'Autopilot — runs on its own',
+  // ONE feature name, deliberately shared by two capabilities.
+  //
+  // These were two labels until 2026-08-24. Both capabilities sit on
+  // the same tier since the packaging patch, so the table drew two rows
+  // ticking identically in every column — which reads as padding, and
+  // in a comparison table a row that distinguishes nothing is worse
+  // than no row.
+  //
+  // Sharing the label rather than deleting a capability keeps the
+  // internal split intact, so re-tiering stays a manifest edit. The
+  // merge is safe only while both are granted identically, and that is
+  // not left to memory: `pricing-model.test.ts` fails if two
+  // capabilities share a label while any tier grants one without the
+  // other, which forces a label decision at the moment they diverge
+  // rather than shipping a row that over-promises.
+  autopilot: 'Autopilot',
+  'autopilot-active': 'Autopilot',
   brief: 'Daily Brief',
   screener: 'Screener — new senders collected for review',
   quiet: 'Quiet hours',
@@ -211,7 +224,18 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
 export function cardBullets(tier: TierDefinition): readonly string[] {
   const idx = PRICING_TIER_ORDER.indexOf(tier.id);
   const prev = idx > 0 ? TIER_MANIFEST[PRICING_TIER_ORDER[idx - 1] as TierId] : null;
-  const bullets: string[] = [];
+  // De-duplicated on the way out: capabilities may share a label (see
+  // `CAPABILITY_LABELS`), and a card that lists "Autopilot" twice reads
+  // as a bug regardless of how many capabilities back it.
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const bullets = {
+    push(line: string): void {
+      if (seen.has(line)) return;
+      seen.add(line);
+      out.push(line);
+    },
+  };
 
   if (!prev) {
     for (const capability of tier.capabilities) {
@@ -240,7 +264,7 @@ export function cardBullets(tier: TierDefinition): readonly string[] {
     bullets.push(`${tier.undoWindowDays}-day Activity Undo for Archive, Later, and Delete`);
   }
 
-  return bullets;
+  return out;
 }
 
 /** A comparison-table row: label + one cell per tier in display order. */
@@ -265,18 +289,29 @@ export function compareRows(): readonly CompareRow[] {
   // tiers remain visible below the cards as waitlist/contact rows.
   const tiers = comparablePricingTiers();
 
-  const capabilityRows: CompareRow[] = CAPABILITIES.map((capability) => ({
-    label: CAPABILITY_LABELS[capability],
-    values: tiers.map((tier) => {
-      if (!tier.capabilities.includes(capability)) return null;
-      if (capability === 'cleanup-actions') {
-        return tier.cleanupActionsPerMonth === null
-          ? 'Unlimited'
-          : `${tier.cleanupActionsPerMonth}/month`;
-      }
-      return 'Included';
-    }),
-  }));
+  // One row per LABEL, not per capability. Capabilities that share a
+  // label collapse into a single row — see `CAPABILITY_LABELS` for why
+  // the sharing is safe and what enforces it.
+  const capabilityRows: CompareRow[] = [];
+  const rowByLabel = new Map<string, CompareRow>();
+  for (const capability of CAPABILITIES) {
+    const label = CAPABILITY_LABELS[capability];
+    if (rowByLabel.has(label)) continue;
+    const row: CompareRow = {
+      label,
+      values: tiers.map((tier) => {
+        if (!tier.capabilities.includes(capability)) return null;
+        if (capability === 'cleanup-actions') {
+          return tier.cleanupActionsPerMonth === null
+            ? 'Unlimited'
+            : `${tier.cleanupActionsPerMonth}/month`;
+        }
+        return 'Included';
+      }),
+    };
+    rowByLabel.set(label, row);
+    capabilityRows.push(row);
+  }
 
   const quotaRows: CompareRow[] = [
     {

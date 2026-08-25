@@ -75,6 +75,20 @@ export const TOPICS = {
   AUTOPILOT_ACTION_INTENT_EMITTED: 'autopilot.action_intent_emitted',
 
   /**
+   * A rule PATCH left the rule runnable (`enabled`, mode != paused),
+   * so its backlog needs a sweep NOW rather than whenever unrelated
+   * mail next arrives.
+   *
+   * Published in the SAME transaction as the rule update, because the
+   * alternative — enqueueing to Redis after the update commits — has
+   * no way to be both correct and honest: a `Queue.add()` rejection
+   * there either fails a request whose write already landed, or is
+   * swallowed and the rule silently never runs. The outbox makes the
+   * intent durable with the write, and the dispatcher retries.
+   */
+  AUTOPILOT_RULE_ACTIVATED: 'autopilot.rule_activated',
+
+  /**
    * User clicked "Mark resolved" on a followup row (D88). Carries
    * the followup id and the mailbox. Activity-log projection lives
    * inside FollowupReadService.dismiss for now (single-tx with the
