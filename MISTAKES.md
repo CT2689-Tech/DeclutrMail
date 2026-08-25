@@ -3556,3 +3556,51 @@ correctly. This is the §8 pattern from the other side: the tests were green and
 faithful for the entire life of the defect, because the defect was in the rule,
 not in the code's fidelity to it. A test can only catch a mistake someone has
 already thought of.
+
+## 2026-08-25 — A surrogate primary key used as the frontend's sender handle
+
+**PR:** (pending — branch `claude/gmail-labels-retry-preview-625707`)
+**Caught by:** production — founder report, confirmed in Cloud Run logs
+**What happened:** `senders.id` was `uuid().defaultRandom()`, and
+`InitialSyncWorker.buildSenderIndex` rebuilds the index by
+`DELETE … WHERE mailbox_account_id = $1` followed by a plain `INSERT`.
+Every rebuild therefore reissued every sender id in the mailbox. On
+2026-08-25 an initial sync for `mailbox=295aa232…` committed at 08:05:17
+(`email.send.accepted email__sync-complete__…`); the founder had the
+Senders page open, loaded at 08:03. `GET /api/actions/preview?senderId=
+018db6ee…` returned **200 at 08:03:52 and 404 at 08:06:21 for the same
+sender**. Every id the page held was dangling, so the confirm modal's
+"Retry preview" button — which refetches the same `senderId` — could
+never succeed no matter how many times it was pressed. Five 404s across
+two sender ids in 30 seconds, then the founder gave up. With
+`refetchOnWindowFocus: false` the list never healed itself either; only
+a reload did.
+
+Nothing foreign-keys to `senders.id` — every durable consumer joins on
+`sender_key`, and `action_jobs` keeps `senderId` "for audit" only — so
+there was no data loss and no failing test. The rebuild's own suite was
+green throughout, because every assertion was about counts and rows, not
+about identity surviving the churn.
+
+**Correct approach:** derive the id from `(mailbox_account_id,
+sender_key)` — the pair that already uniquely identifies the row via
+`senders_account_sender_key_uniq` — so delete+reinsert regenerates the
+same id. Shipped as `deriveSenderId` in `@declutrmail/db`, applied at all
+three writers (`buildSenderIndex`, `toIdentityRow`, the incremental
+upsert). No migration: the column shape is unchanged.
+
+**Rule:** an id the API hands the frontend is a CONTRACT, not a row
+number. Before any teardown+rebuild, ask what identity the client is
+holding across it — if the answer is "a `defaultRandom()` surrogate",
+the rebuild is silently invalidating live handles.
+
+**Second rule (the retry half):** a retry control must be offered only
+where retrying can change the outcome. Branch on the error CODE, not the
+status: `SENDER_NOT_FOUND` is terminal for a given id and now renders a
+"Refresh senders" exit instead of a Retry button that loops forever.
+
+**Enforcement update:** regression test `initial-sync.worker.test.ts`
+→ "sender id — the handle survives a rebuild, so an already-open page
+never 404s" (verified red against the old code before landing), plus
+`packages/db/tests/sender-id.test.ts` pinning the derivation to a
+literal so a future change to it cannot silently reissue every handle.

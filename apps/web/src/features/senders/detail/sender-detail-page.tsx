@@ -1347,6 +1347,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         compositePreviewLoading={compositePreviewQuery.isFetching}
         compositePreviewError={compositePreviewQuery.isError}
         onRetryPreview={() => void compositePreviewQuery.refetch()}
+        previewSenderGone={apiErrorCode(compositePreviewQuery.error) === 'SENDER_NOT_FOUND'}
+        onRefreshSenders={() => {
+          closePending();
+          void qc.invalidateQueries({ queryKey: ['senders'] });
+        }}
         cleanupQuota={{
           remaining: auth?.me.cleanupRemaining ?? null,
           resetsAt: auth?.me.cleanupResetsAt ?? null,

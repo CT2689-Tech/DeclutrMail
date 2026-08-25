@@ -1,4 +1,5 @@
 import {
+  deriveSenderId,
   mailboxAccounts,
   mailMessages,
   providerSyncState,
@@ -980,6 +981,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
         const senderUpsert = await tx
           .insert(senders)
           .values({
+            id: deriveSenderId(mailboxAccountId, senderKey),
             mailboxAccountId,
             senderKey,
             displayName: parsedFrom.displayName,

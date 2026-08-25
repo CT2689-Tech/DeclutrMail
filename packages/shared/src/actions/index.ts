@@ -28,8 +28,13 @@ export {
   getActionSemantics,
   staticActionPreviewCopy,
 } from './action-semantics';
-export { describeInboxScope, inboxScopeNoticeCopy, tiedWindowNoticeCopy } from './inbox-scope';
-export type { InboxScopeInput, InboxScopeNotice } from './inbox-scope';
+export {
+  describeInboxScope,
+  inboxScopeNoticeCopy,
+  mailLocationCopy,
+  tiedWindowNoticeCopy,
+} from './inbox-scope';
+export type { InboxScopeInput, InboxScopeNotice, MailLocationInput } from './inbox-scope';
 export {
   UNSUBSCRIBE_ACCEPTED_CAVEAT,
   UNSUBSCRIBE_CAPABILITIES,

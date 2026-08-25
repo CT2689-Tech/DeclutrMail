@@ -2618,6 +2618,15 @@ function SendersScreenContent({
           void compositePreviewQuery.refetch();
           if (bulkPreviewSenderIds != null) void bulkPreviewQuery.refetch();
         }}
+        // A dead sender id cannot be retried into life — see the prop's
+        // doc on ConfirmActionModal. Branch on the CODE, not the 404:
+        // `CurrentMailboxGuard` sits in front of this read and answers
+        // 404 for causes that have nothing to do with the sender.
+        previewSenderGone={apiErrorCode(compositePreviewQuery.error) === 'SENDER_NOT_FOUND'}
+        onRefreshSenders={() => {
+          closePending();
+          void qc.invalidateQueries({ queryKey: ['senders'] });
+        }}
       />
 
       {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
