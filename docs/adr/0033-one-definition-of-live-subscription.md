@@ -38,6 +38,22 @@ workspace's live subscription, and the refunded customer cannot buy again until
 the period they already paid for elapses: up to a year on annual, with no
 in-app route back.
 
+> **Amended 2026-08-25 ([REVERSAL on D253 §1], PR #633).** "A full refund ends
+> entitlement immediately" was true when this ADR was written and is not any
+> more. Entitlement now ends when the refund SETTLES, clamped by
+> `LEAST(now() + 7 days, current_period_end)` until then, because
+> `adjustment.created` fires while a live Paddle refund is still
+> `pending_approval` — so the old timing revoked on a decision the provider had
+> not made, while §§3–4 freed the plan slot only on settlement. The gap between
+> the two was a customer with no product and no way to buy one.
+>
+> **Nothing below this line changes.** The argument this ADR makes is about
+> which rows count as live and why one definition must serve all five surfaces;
+> the settled-refund flip to `canceled` and the terminal-canceled floor are
+> untouched. Only the moment entitlement stops moved, and it moved TOWARD the
+> flip — the two writes now happen in the same transaction, which strengthens
+> the singleton this ADR exists to protect rather than weakening it.
+
 The defining property of that bug is that **no single-surface change fixes
 it**:
 

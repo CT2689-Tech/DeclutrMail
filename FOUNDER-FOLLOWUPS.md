@@ -58,6 +58,30 @@ pointing the metric filter at a line you can trigger — delivers mail to the
 founder address. For the permission audit, every endpoint the adapter calls
 answers something other than 403 against the stored prod key.
 
+
+**One decision inside this, and it is yours.** The new alert covers a provider
+we cannot READ (`verdict_unreadable`). It deliberately does NOT cover a provider
+we can read that simply leaves the refund at `pending_approval` past the seven-day
+grace — that logs `verdict_unsettled`, which is the normal state of every pending
+refund and would page on all of them.
+
+So there is a gap: a genuinely slow provider drops that customer to Free with a
+locked plan picker and nothing pages. It is much narrower than the eleven-day
+hole this PR closes (it needs a provider that answers but never decides, for a
+week), and the gate network raised it rather than letting the code's own comment
+claim full coverage.
+
+Three ways to close it, if you want it closed:
+- alert on `verdict_unsettled` only where the row's grace has already lapsed —
+  needs a distinct log line, ~10 lines;
+- lengthen `REFUND_PENDING_GRACE_DAYS` so the window outlives any plausible
+  review, trading exposure for latency;
+- accept it, and let support catch these from the backstop screen, which now
+  names support instead of telling the customer to wait.
+
+Recommendation: accept it for now. The backstop copy already routes the customer
+to a human, and this needs a failure mode nobody has seen yet.
+
 **Status:** Open
 
 ### 2026-08-24 — Turn on point-in-time recovery before the first paying customer

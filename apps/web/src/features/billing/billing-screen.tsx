@@ -1479,28 +1479,44 @@ function NonBackingSubscriptionNotice({
     );
   }
 
-  // The D253 settling window. Says why the picker is locked and that it
-  // clears itself, and offers NO verb: resume is refused server-side
-  // (`CANCELLATION_NOT_REVOCABLE`), and cancel is inert here because the
-  // projector already pinned `cancel_at_period_end` — the service skips
-  // the provider round-trip on a second cancel, so the button would
-  // change nothing while implying it did.
+  // The refund BACKSTOP — not the settling window it used to be.
   //
-  // No date is promised. The refund clears when the provider approves it,
-  // and on a live Paddle account that is a review queue we cannot see —
-  // the first real refund sat pending well past the "a few minutes" the
-  // error copy claims (2026-08-14). Naming a deadline we cannot keep is
-  // the same assert-what-you-don't-know defect this screen exists to
-  // avoid, so the copy stays vague where the truth is.
+  // Since 2026-08-25 a pending refund keeps its entitlement, so the
+  // ordinary case renders as a backing plan with a present-tense note.
+  // Reaching HERE means the grace deadline elapsed with nothing settled
+  // and nothing refuted: we have been unable to get an answer out of the
+  // provider for a week, or the paid period ran out first.
+  //
+  // The copy changed with the meaning. It previously ended "Nothing to do
+  // until then — we'll switch this back on automatically", which was
+  // written when this state was expected to last minutes. In the state
+  // that actually reaches this branch, automatic recovery has ALREADY
+  // been failing for days — so that sentence told a customer to sit still
+  // in precisely the situation where sitting still is what traps them.
+  // That is what happened: a customer sat here eleven days while a 403 we
+  // were not alerted on froze the settlement read, and the screen assured
+  // them it was handled (MISTAKES.md 2026-08-25).
+  //
+  // So it now names a route out. Support is the only real one: resume is
+  // refused server-side (`CANCELLATION_NOT_REVOCABLE`), and cancel is
+  // inert because the projector already pinned `cancel_at_period_end` —
+  // the service skips the provider round-trip on a second cancel, so the
+  // button would change nothing while implying it did.
+  //
+  // Still no date. Approval is a provider review queue we cannot see, and
+  // naming a deadline we cannot keep is the same assert-what-you-don't-know
+  // defect in the other direction.
   if (reason === 'refund_settling') {
     return (
       <div role="status" data-testid="non-backing-subscription-notice" style={boxStyle}>
         <span>
-          <strong style={{ fontWeight: 600 }}>Your refund is being processed.</strong>{' '}
+          <strong style={{ fontWeight: 600 }}>
+            We haven&rsquo;t been able to confirm your refund.
+          </strong>{' '}
           <span style={{ color: color.fgSoft }}>
-            Your {tierName} access has ended and your account is on {entitlementName}. You can
-            subscribe again once your payment provider confirms the refund. Nothing to do until then
-            — we&rsquo;ll switch this back on automatically.
+            Your {tierName} access has ended and your account is on {entitlementName}. We&rsquo;re
+            still checking with your payment provider, and until it confirms we can&rsquo;t start a
+            new subscription for you. Email support@declutrmail.com and we&rsquo;ll sort it out.
           </span>
         </span>
       </div>

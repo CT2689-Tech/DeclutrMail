@@ -94,8 +94,25 @@ const DUNNING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
  * period of one. Settlement overwrites it (`applyRefundSettlement`), and
  * a rejection clears it (`applyRevokedCancellation`), so in every healthy
  * path this value is never reached.
+ *
+ * What happens if it IS reached is a real downgrade with a locked plan
+ * picker, and it is only PARTLY observed. An unreadable provider logs
+ * `verdict_unreadable` and pages (scripts/setup-billing-verdict-alert.sh).
+ * A provider we CAN read that simply keeps the refund at
+ * `pending_approval` past seven days logs `verdict_unsettled` at LOG
+ * severity, which that filter deliberately does not match — it is the
+ * normal state of every pending refund and would page on all of them.
+ * An earlier revision of this comment claimed the expiry "now alerts"
+ * full stop; that was true of one path and not the other, and the gate
+ * network caught the over-claim. Whether that second path deserves its
+ * own signal is recorded for the founder in FOUNDER-FOLLOWUPS.md.
+ *
+ * Exported so tests pin THIS value rather than re-encoding `7` as a raw
+ * millisecond literal — four assertions did, all as upper bounds, so
+ * shortening the constant would have left them green while they quietly
+ * stopped describing the behaviour they name.
  */
-const REFUND_PENDING_GRACE_DAYS = 7;
+export const REFUND_PENDING_GRACE_DAYS = 7;
 
 /** Postgres unique_violation (23505) on a NAMED constraint/index. */
 function isUniqueViolation(err: unknown, constraint: string): boolean {
@@ -911,10 +928,21 @@ export class BillingWebhookService {
           // drops the tier in the same transaction. Without the LEAST a
           // refund on an already-lapsed period would have HANDED BACK a
           // week of the plan it was refunding.
+          //
+          // Written as an explicit `chargeback` test rather than
+          // `reason === 'refund' ? grace : now()`. The union has THREE
+          // members and the binary form silently swept
+          // `provider_scheduled` into the chargeback arm — revoking
+          // immediately for a member whose own doc says it is an ordinary
+          // provider-side scheduled cancel. No adapter mints it today
+          // (grep: it appears only in the interface and in the
+          // `cancelSource` map below), so nothing was broken — but "dead
+          // today" is the condition under which the next person wires it
+          // up and inherits chargeback semantics by accident.
           entitlementEndsAt:
-            event.reason === 'refund'
-              ? sql`LEAST(now() + make_interval(days => ${REFUND_PENDING_GRACE_DAYS}), COALESCE(${subscriptions.currentPeriodEnd}, now()))`
-              : sql`now()`,
+            event.reason === 'chargeback'
+              ? sql`now()`
+              : sql`LEAST(now() + make_interval(days => ${REFUND_PENDING_GRACE_DAYS}), COALESCE(${subscriptions.currentPeriodEnd}, now()))`,
           updatedAt: new Date(),
         })
         .where(

@@ -17,7 +17,11 @@ import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import { BillingService } from '../billing.service.js';
-import { BillingWebhookService, projectWebhookPayload } from '../billing-webhook.service.js';
+import {
+  BillingWebhookService,
+  projectWebhookPayload,
+  REFUND_PENDING_GRACE_DAYS,
+} from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import { RazorpayAdapter } from '../razorpay.adapter.js';
 import {
@@ -537,7 +541,7 @@ describe('BillingWebhookService.process', () => {
     const [row] = await db.select().from(subscriptions);
     // 10 days of period remain, so the 7-day grace is what binds here.
     expect(row!.entitlementEndsAt!.getTime()).toBeLessThanOrEqual(
-      Date.now() + 7 * 24 * 60 * 60 * 1000 + 60_000,
+      Date.now() + REFUND_PENDING_GRACE_DAYS * 24 * 60 * 60 * 1000 + 60_000,
     );
     expect(row!.cancelSource).toBe('refund');
     expect(row!.entitlementEndsAt).not.toBeNull();
@@ -677,7 +681,9 @@ describe('BillingWebhookService.process', () => {
     expect(sub!.entitlementEndsAt).not.toBeNull();
     const deadline = sub!.entitlementEndsAt!.getTime();
     expect(deadline).toBeGreaterThan(Date.now());
-    expect(deadline).toBeLessThanOrEqual(Date.now() + 7 * 24 * 60 * 60 * 1000 + 60_000);
+    expect(deadline).toBeLessThanOrEqual(
+      Date.now() + REFUND_PENDING_GRACE_DAYS * 24 * 60 * 60 * 1000 + 60_000,
+    );
   });
 
   it('the refund grace never outlasts the period the customer paid for', async () => {
@@ -698,7 +704,7 @@ describe('BillingWebhookService.process', () => {
     // Clamped to the period end, well short of now()+7d.
     expect(sub!.entitlementEndsAt!.getTime()).toBeLessThanOrEqual(periodEnd.getTime() + 1_000);
     expect(sub!.entitlementEndsAt!.getTime()).toBeLessThan(
-      Date.now() + 7 * 24 * 60 * 60 * 1000 - 60_000,
+      Date.now() + REFUND_PENDING_GRACE_DAYS * 24 * 60 * 60 * 1000 - 60_000,
     );
   });
 

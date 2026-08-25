@@ -349,7 +349,21 @@ describe('backingStatusNote', () => {
     expect(note.text).not.toMatch(/\d+\s*(hour|day)/i);
   });
 
-  it('chargeback copy stays PAST tense — entitlement really did end', () => {
+  // DEFENSIVE ARM, not a user-visible state — say so rather than let the
+  // test imply otherwise. A chargeback sets `entitlement_ends_at = now()`
+  // and recomputes the tier in the SAME transaction, so `sub.tier` can
+  // never equal `entitlementTier` afterwards and `planViewOf` always
+  // routes the row to nonBacking. Nothing the app builds reaches this
+  // branch; the state below is hand-constructed.
+  //
+  // Kept, and kept tested, for one reason: the refund arm beside it IS
+  // now reachable, and the two are one `if` apart. If a later change
+  // makes chargebacks hold entitlement the way refunds do, this arm goes
+  // live instantly — and the tense is the whole point of the pair. The
+  // gate network flagged the original version of this test for asserting
+  // copy the derive layer cannot produce, which was fair: the defect was
+  // the silence about it, not the coverage.
+  it('chargeback copy stays PAST tense (defensive arm — see comment)', () => {
     const sub = { ...SUB, cancelAtPeriodEnd: true, cancelSource: 'chargeback' as const };
     const note = backingStatusNote({ state: 'cancel_scheduled', sub })!;
     // Founder decision 2026-07-20, untouched by the refund grace.

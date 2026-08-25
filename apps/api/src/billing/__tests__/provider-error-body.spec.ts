@@ -57,6 +57,32 @@ describe('providerErrorBody', () => {
     expect(out).toContain('[email]');
   });
 
+  // The body is third-party text entering a line-delimited log stream,
+  // so newlines make it a log-INJECTION surface. Two concrete harms, both
+  // aimed at things this same PR adds: a forged `billing.subscription_ended`
+  // line corrupts the founder's churn tally, and splitting the entry
+  // strands the `api_read.failed` token away from its body, which is what
+  // the new alert filter matches on.
+  it('flattens newlines so a provider body cannot forge a second log entry', async () => {
+    const hostile = 'oops\n{"level":"info","kind":"billing.subscription_ended","reason":"refund"}';
+    const out = await providerErrorBody(new Response(hostile, { status: 500 }));
+    expect(out).not.toContain('\n');
+    expect(out).not.toContain('\r');
+    // The text survives — flattened, not dropped. It is still diagnostic.
+    expect(out).toContain('oops');
+    expect(out).toContain('billing.subscription_ended');
+    // One line, always: the whole mitigation.
+    expect(out.split(/\r?\n/)).toHaveLength(1);
+  });
+
+  it('strips other control characters that could corrupt a log line', async () => {
+    const out = await providerErrorBody(new Response('a\u0000b\u0007c\u007Fd\te', { status: 400 }));
+    // eslint-disable-next-line no-control-regex -- asserting their ABSENCE
+    expect(out).not.toMatch(/[\u0000-\u001F\u007F]/);
+    expect(out).toContain('a');
+    expect(out).toContain('e');
+  });
+
   it('caps the body so a proxy HTML error page cannot flood the line', async () => {
     const out = await providerErrorBody(new Response('y'.repeat(5_000), { status: 502 }));
     expect(out.length).toBeLessThanOrEqual(301);

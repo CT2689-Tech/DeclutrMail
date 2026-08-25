@@ -15,7 +15,10 @@ import { AppException } from '../../common/app-exception.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 import type { SecurityEventsService } from '../../security-events/security-events.service.js';
 import { BillingCatalog, type CatalogEntry } from '../../billing/billing-catalog.js';
-import { BillingWebhookService } from '../../billing/billing-webhook.service.js';
+import {
+  BillingWebhookService,
+  REFUND_PENDING_GRACE_DAYS,
+} from '../../billing/billing-webhook.service.js';
 import { PaddleAdapter } from '../../billing/paddle.adapter.js';
 import { RazorpayAdapter } from '../../billing/razorpay.adapter.js';
 import {
@@ -384,7 +387,7 @@ describe('billing webhook controllers', () => {
         expect(ws!.tier).toBe(sub!.tier);
         expect(sub!.entitlementEndsAt).not.toBeNull();
         expect(sub!.entitlementEndsAt!.getTime()).toBeLessThanOrEqual(
-          Date.now() + 7 * 24 * 60 * 60 * 1000 + 60_000,
+          Date.now() + REFUND_PENDING_GRACE_DAYS * 24 * 60 * 60 * 1000 + 60_000,
         );
       });
 

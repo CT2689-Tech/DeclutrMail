@@ -43,6 +43,25 @@ const MAX_BODY_CHARS = 300;
 const EMAIL_PATTERN = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
 
 /**
+ * Newlines and control characters are flattened to spaces.
+ *
+ * This body is third-party text going into a line-delimited log stream,
+ * which makes it a log-INJECTION surface, not just a formatting one. A
+ * body containing a newline splits into two Cloud Logging entries, and
+ * the second is attacker-shaped: it can forge a structured line the
+ * founder's churn query keys on (`billing.subscription_ended`), and it
+ * can strand the `api_read.failed` token on entry one while the body
+ * lands on entry two — defeating the very alert filter this change adds.
+ *
+ * Flattening is the whole mitigation: one read, one line, always.
+ */
+// Matching control characters IS the point here: this is the sanitizer
+// that stops untrusted provider text from forging a second log entry.
+// The rule exists to catch them written by ACCIDENT.
+// eslint-disable-next-line no-control-regex -- deliberate; see above
+const CONTROL_PATTERN = /[\u0000-\u001F\u007F]+/g;
+
+/**
  * Read a failed `Response`'s body as log-safe text.
  *
  * Never throws — every failure mode returns a marker instead, because
@@ -68,7 +87,7 @@ export async function providerErrorBody(res: Response): Promise<string> {
     // Redact BEFORE truncating. The other order lets the cut fall inside
     // an address, leaving a fragment the pattern no longer matches — a
     // partial email in a log is still an email in a log.
-    const text = raw.replace(EMAIL_PATTERN, '[email]');
+    const text = raw.replace(EMAIL_PATTERN, '[email]').replace(CONTROL_PATTERN, ' ');
     return text.length > MAX_BODY_CHARS ? `${text.slice(0, MAX_BODY_CHARS)}…` : text;
   } catch {
     return '<unreadable>';

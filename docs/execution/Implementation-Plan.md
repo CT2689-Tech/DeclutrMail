@@ -10463,3 +10463,51 @@ that actually retires D77 — and it cannot name a marker that was never
 written, as with D83. So a reader following the documented procedure
 correctly arrives at the stale text. The CLAUDE.md §3 amendment is the
 real repair; these markers are the backfill.
+
+---
+
+### [REVERSAL 2026-08-25 on D253 §1]
+
+**D253 §1 is retired. Entitlement now ends when the refund SETTLES, not when
+it is recorded.** Founder-directed 2026-08-25. §§2–5 stand.
+
+D253 §1 reads: *"Entitlement is unchanged. Money back still means the service
+stops, the moment the refund is recorded."* Its "Not this decision" clause adds
+that the 2026-07-31 refund policy *"is not reopened"*. Both are superseded here,
+and only on **timing** — money back still means the service stops. What was
+wrong is the assumption that the refund EVENT proves the money went back.
+
+**Why it had to move.** D253 §1 was written against sandbox behaviour, where
+Paddle auto-approves. On a live account `adjustment.created` fires while the
+refund is still `pending_approval` — a decision the provider has not made. The
+plan slot, per §§3–4, is freed only on settlement. So between the two the
+customer held no product and could not buy one, and §5's "resolves on its own,
+in minutes" was the only part of the design that named the gap — and it was
+wrong about the duration.
+
+Measured on the first live refund: created 2026-08-14 05:52Z, approved by Paddle
+10.5 hours later. The customer stayed stranded until 2026-08-25 because the
+settlement read had been answering 403 unnoticed for eleven days (MISTAKES.md
+2026-08-25). The 403 was a separate defect and is fixed separately; the eleven
+days exposed the gap but did not create it. Even at 10.5 hours the design put
+the wait on the customer, with no product and no way to pay.
+
+**What the code does now.** `applyScheduledCancellation` sets
+`entitlement_ends_at = LEAST(now() + 7 days, current_period_end)` for a refund
+verdict; `applyRefundSettlement` sets it to `now()` and recomputes the tier in
+the same transaction that frees the plan slot. One moment of change instead of
+two, so the dead zone is unrepresentable rather than merely short.
+
+The 2026-07-31 giveaway this reopens the door to is closed from two directions:
+`LEAST` clamps the grace to the period already paid for — so a refund on an
+annual plan cannot grant the rest of the year, and a refund on a lapsed period
+grants nothing — and settlement revokes outright.
+
+**Unchanged.** Chargebacks still revoke immediately (2026-07-20): the grace is
+refund-only. §5's "interim refusal" still exists but describes the BACKSTOP —
+the grace elapsing with nothing settled — rather than the ordinary window.
+
+**Also amends ADR-0033**, whose Context still described a full refund as ending
+entitlement immediately. Updated in the same change.
+
+Shipped in PR #633.

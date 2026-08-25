@@ -457,7 +457,15 @@ export function backingStatusNote(
     if (backing.sub.cancelSource === 'refund') {
       return {
         tone: 'warn',
-        text: "Your refund is being processed — you keep this plan until your payment provider confirms it, then you'll switch to Free. Nothing to do until then.",
+        // "…or your current period ends" is not padding. The deadline is
+        // `LEAST(now() + 7d, current_period_end)`, so a refund with fewer
+        // than seven days of period left switches the customer to Free
+        // with no confirmation ever arriving. An earlier draft of this
+        // line promised the plan "until your payment provider confirms
+        // it" full stop, which is precisely the assert-what-you-don't-know
+        // shape this screen exists to avoid — caught by the design gate,
+        // not by a test.
+        text: 'Your refund is being processed — you keep this plan until your payment provider confirms it or your current period ends, whichever comes first. Nothing to do until then.',
       };
     }
     if (backing.sub.cancelSource === 'chargeback') {
