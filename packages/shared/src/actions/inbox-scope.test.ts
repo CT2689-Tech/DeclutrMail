@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { describeInboxScope, inboxScopeNoticeCopy, tiedWindowNoticeCopy } from './inbox-scope';
+import {
+  describeInboxScope,
+  inboxScopeNoticeCopy,
+  mailLocationCopy,
+  tiedWindowNoticeCopy,
+} from './inbox-scope';
 
 describe('describeInboxScope', () => {
   it('stays silent when the selected window actually matches mail', () => {
@@ -270,5 +275,87 @@ describe('tiedWindowNoticeCopy — age is caller-supplied, never inferred', () =
     ];
     expect(tiedWindowNoticeCopy(counts, 5269)).toContain('5,269 days old');
     expect(tiedWindowNoticeCopy(counts, 0)).toContain('0 days old');
+  });
+});
+
+// Founder report 2026-08-25: a Later preview on `ealerts.bankofamerica.com`
+// read "0 emails currently match" beside a strip reading "200 in last 90d ·
+// 6,668 received". The numbers were all correct and the founder still had to
+// open Gmail to find out the mail was sitting under a label.
+describe('mailLocationCopy', () => {
+  it("partitions the sender's mail into segments that sum to the received figure", () => {
+    // The prod shape: header reads "6,668 received", inbox reads 0, and
+    // the two never reconciled on screen.
+    expect(mailLocationCopy({ inboxNow: 0, allMailNow: 6275, receivedTotal: 6668 })).toBe(
+      'Where this mail is now: 0 in your inbox \u00b7 6,275 emails elsewhere in Gmail ' +
+        '(archived or under a label) \u00b7 393 in Trash or Spam.',
+    );
+  });
+
+  it('subtracts the inbox out of the all-mail superset rather than double-counting', () => {
+    // `all_mail` INCLUDES inbox mail, so a naive render would claim
+    // 12 + 6,275 = 6,287 messages exist when there are 6,275.
+    expect(mailLocationCopy({ inboxNow: 12, allMailNow: 6275, receivedTotal: 6275 })).toContain(
+      '6,263 emails elsewhere',
+    );
+  });
+
+  it('omits the Trash segment when there is no gap to explain', () => {
+    // Observed on the dev mailbox: received === all-mail, so a
+    // "0 in Trash or Spam" segment would be noise, and a sentence about
+    // what "received" includes would explain a gap the reader cannot see.
+    const copy = mailLocationCopy({ inboxNow: 0, allMailNow: 6668, receivedTotal: 6668 })!;
+    expect(copy).toContain('6,668 emails elsewhere in Gmail');
+    expect(copy).not.toContain('Trash or Spam');
+  });
+
+  it('omits the Trash segment when the caller has no received figure', () => {
+    expect(mailLocationCopy({ inboxNow: 0, allMailNow: 71, receivedTotal: null })).not.toContain(
+      'Trash',
+    );
+  });
+
+  it('says so plainly when the inbox holds everything', () => {
+    const copy = mailLocationCopy({ inboxNow: 9, allMailNow: 9, receivedTotal: 9 })!;
+    expect(copy).toContain('9 in your inbox');
+    expect(copy).toContain('everything the mailbox holds');
+    expect(copy).not.toContain('elsewhere');
+  });
+
+  it('never claims anyone archived the mail — only that it is not in the inbox', () => {
+    // `mail_messages` stores CURRENT labels and no history, so a
+    // "you archived these" reading is unprovable. A Gmail filter with
+    // "Skip the Inbox" produces this exact shape with no transition.
+    const copy = mailLocationCopy({ inboxNow: 0, allMailNow: 71, receivedTotal: 71 })!;
+    expect(copy).not.toMatch(/you (archived|deleted|moved)/i);
+    expect(copy).toContain('archived or under a label');
+  });
+
+  it('stays silent until BOTH reaches resolve, and against an API with no all-mail block', () => {
+    expect(
+      mailLocationCopy({ inboxNow: undefined, allMailNow: 6275, receivedTotal: 6668 }),
+    ).toBeNull();
+    expect(
+      mailLocationCopy({ inboxNow: 0, allMailNow: undefined, receivedTotal: 6668 }),
+    ).toBeNull();
+  });
+
+  it('stays silent when the mailbox holds nothing for the sender', () => {
+    expect(mailLocationCopy({ inboxNow: 0, allMailNow: 0, receivedTotal: 0 })).toBeNull();
+  });
+
+  it('clamps rather than rendering a negative segment', () => {
+    // Counter drift is bounded and reconciled nightly, but a nonsense
+    // number rendered confidently is the failure mode this file exists
+    // to prevent — degrade to omission, never to "-5 in Trash".
+    const copy = mailLocationCopy({ inboxNow: 9, allMailNow: 4, receivedTotal: 1 })!;
+    expect(copy).toContain('everything the mailbox');
+    expect(copy).not.toContain('-');
+  });
+
+  it('singularizes one message', () => {
+    expect(mailLocationCopy({ inboxNow: 0, allMailNow: 1, receivedTotal: 1 })).toContain(
+      '1 email elsewhere',
+    );
   });
 });

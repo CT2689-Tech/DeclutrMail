@@ -1,4 +1,5 @@
 import {
+  deriveSenderId,
   mailboxAccounts,
   mailMessages,
   providerSyncState,
@@ -962,6 +963,11 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
       }
       const { method: unsubscribeMethod, url: unsubscribeUrl } = deriveUnsubscribe(agg);
       senderRows.push({
+        // Derived, not `defaultRandom()`: the teardown below drops every
+        // row for this mailbox, and a random id would hand each sender a
+        // new handle on every rebuild — killing the ids an open page,
+        // a `/senders/:id` URL or an in-flight confirm modal is holding.
+        id: deriveSenderId(mailboxAccountId, senderKey),
         mailboxAccountId,
         senderKey,
         displayName: who.displayName,
@@ -1282,6 +1288,7 @@ export class InitialSyncWorker extends BaseDeclutrWorker<InitialSyncJobData, Ini
     row: { senderKey: string; facts: ParsedFacts },
   ): NewSender {
     return {
+      id: deriveSenderId(mailboxAccountId, row.senderKey),
       mailboxAccountId,
       senderKey: row.senderKey,
       displayName: row.facts.displayName,

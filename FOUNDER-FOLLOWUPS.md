@@ -84,6 +84,49 @@ to a human, and this needs a failure mode nobody has seen yet.
 
 **Status:** Open
 
+### 2026-08-25 — The ADR index stops at 0007; 32 ADRs are unlisted
+
+**Source:** session — writing ADR-0039
+**Why:** `docs/adr/README.md` §"Authoring an ADR" step 4 says "Add the
+row to the index above." The index lists 0000–0007. The directory holds
+0001–0039. So 32 ADRs — including every one from the last several months
+(brand grouping, action reach, senders wire model, the Data API roles) —
+are invisible to anyone who reads the index instead of the directory,
+and the documented process has silently not been followed 32 times.
+Same shape as the three "automated" guardrails found to be no-ops on
+2026-07-28: a written procedure that reads as maintained and is not.
+ADR-0039 deliberately did NOT add a lone row after 0007 — a row numbered
+0039 sitting directly under 0007 asserts that 0008–0038 do not exist,
+which is a worse lie than the omission.
+**How:** either backfill the 32 rows (mechanical — title, status and
+"Related D-decisions" are all in each file's frontmatter, so it can be
+generated) and keep the step, or delete step 4 and the index and let the
+directory listing be the index. Backfill is one `chore/` PR; the agent
+can do it on request. Deferred here because it is tidying, not launch
+work.
+**Verifies by:** `ls docs/adr/*.md | wc -l` matches the index row count,
+or the index and step 4 are both gone.
+**Status:** Open
+
+
+### 2026-08-25 — Reconnect the Sentry connector for agent sessions
+
+**Source:** session — investigating the prod "Retry preview" 404s
+**Why:** the frontend already reports this class to Sentry
+(`captureFeatureException(err, { surface: 'senders', reason:
+'composite_preview' })` in `senders-screen.tsx`), so the 08:05–08:06
+preview failures are sitting in Sentry right now. The connector answered
+`The user's connection to this connector was invalidated. The user needs
+to reconnect it.`, so the investigation had to go through
+`gcloud logging read` against Cloud Run instead — which works, but only
+surfaces status codes, not the captured exception, its breadcrumbs, or
+how many other users hit the same thing.
+**How:** reconnect Sentry in claude.ai → Settings → Connectors (the
+`plugin:sentry` / `sentry` MCP servers both need it). A non-interactive
+agent session cannot run the OAuth flow.
+**Verifies by:** `find_organizations()` returns the org instead of the
+invalidated-connection error.
+**Status:** Open
 ### 2026-08-24 — Turn on point-in-time recovery before the first paying customer
 
 **Source:** session 2026-08-24 (Supabase production review), founder decision
