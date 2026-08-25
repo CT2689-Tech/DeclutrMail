@@ -24,6 +24,42 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-25 — Create the billing-verdict alert, and audit the Paddle key's other permissions
+
+**Source:** the eleven-day refund lockout (MISTAKES.md 2026-08-25); this PR
+**Why:** the code half is merged, but an alert policy is not code — it lives in
+the GCP project and has to be created once. Until you run this, a billing
+provider read can fail continuously and silently, exactly as it just did for
+eleven days. The script is idempotent and creates only what is missing; it never
+mutates or deletes an existing metric, channel or policy.
+
+**How:**
+
+```bash
+./scripts/setup-billing-verdict-alert.sh
+```
+
+Then confirm it landed:
+
+```bash
+gcloud alpha monitoring policies list --project=declutrmail-ai-prod --format="value(displayName)"
+```
+
+Second, separate task — **audit the rest of the Paddle key's permissions.** One
+missing checkbox hid for eleven days because only one endpoint needed it. Others
+may be missing on endpoints that are rarer still (portal sessions, plan-change
+previews, invoice listing). Paddle > Developer Tools > Authentication > API keys
+> overflow > Edit, and compare the ticked set against every endpoint
+`paddle.adapter.ts` calls. The same audit is worth doing for the Razorpay key.
+
+**Verifies by:** the policy appears in the list above under "Billing: provider
+read blocked or refund verdict frozen", and a deliberate test — temporarily
+pointing the metric filter at a line you can trigger — delivers mail to the
+founder address. For the permission audit, every endpoint the adapter calls
+answers something other than 403 against the stored prod key.
+
+**Status:** Open
+
 ### 2026-08-24 — Turn on point-in-time recovery before the first paying customer
 
 **Source:** session 2026-08-24 (Supabase production review), founder decision

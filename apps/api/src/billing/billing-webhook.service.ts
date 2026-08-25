@@ -81,6 +81,22 @@ export const GRANTING_STATUSES = ['active', 'past_due'] as const;
  */
 const DUNNING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
+/**
+ * Founder decision 2026-08-25: while a refund sits unconfirmed at the
+ * provider, the customer KEEPS their plan. This is the outer bound on
+ * that — entitlement lapses on its own after this many days if no
+ * settlement and no rejection ever arrives.
+ *
+ * Sized as a backstop, not as an SLA. The real approval latency measured
+ * on this account was 10.5 hours; seven days is wide enough that a slow
+ * provider review never drops a customer mid-decision, and narrow enough
+ * that a broken settlement read costs a week of one plan rather than a
+ * period of one. Settlement overwrites it (`applyRefundSettlement`), and
+ * a rejection clears it (`applyRevokedCancellation`), so in every healthy
+ * path this value is never reached.
+ */
+const REFUND_PENDING_GRACE_DAYS = 7;
+
 /** Postgres unique_violation (23505) on a NAMED constraint/index. */
 function isUniqueViolation(err: unknown, constraint: string): boolean {
   // Drizzle wraps the driver error as `cause`; postgres.js exposes the
@@ -832,22 +848,45 @@ export class BillingWebhookService {
           // cancel) is provenance 'provider'; refund/chargeback map
           // verbatim — they are the local verdicts.
           cancelSource: event.reason === 'provider_scheduled' ? 'provider' : event.reason,
-          // The deadline is NOW for BOTH reasons — the recompute below
-          // drops the tier in the same transaction.
+          // CHARGEBACK ends entitlement NOW. REFUND gets a grace window.
           //
-          // Refunds used to hold to `current_period_end`, from the
-          // 2026-07-20 rule "a voluntary refund holds to the period end".
-          // That is right for a monthly plan — refund the month, let them
-          // finish it — and became a giveaway the moment annual plans
-          // carried a 30-day money-back guarantee: a full refund on an
-          // annual plan returned all $190 AND granted the rest of the
-          // year. Measured, not theorised: a sandbox refund on 2026-07-31
-          // produced `entitlement_ends_at = 2027-07-31`. Money back means
-          // the service stops (founder decision, 2026-07-31).
+          // Both used to end it now, and for a refund that was wrong in a
+          // way only a live account could show. This event is minted from
+          // `adjustment.created`, which on a live Paddle account fires
+          // while the refund is still `pending_approval` — a decision
+          // Paddle has not made yet. Ending entitlement there, while the
+          // one-live-subscription guard still counts this row, put the
+          // customer in a state with no product AND no way to pay: the
+          // plan picker refuses (`SUBSCRIPTION_REFUND_SETTLING`) until the
+          // provider confirms. Nothing the customer could do moved it.
           //
-          // Only FULL refunds reach here — a partial one is filtered at
-          // the adapter and never becomes a verdict — so there is no case
-          // left where someone keeps paying for a period this ends.
+          // Measured: refund created 2026-08-14 05:52Z, approved by Paddle
+          // 10.5 hours later, customer still stranded on 2026-08-25 —
+          // eleven days, because the settlement read 403'd unnoticed
+          // (see provider-error-body.ts). The approval latency is real and
+          // ours to absorb; the eleven days were a blind spot. Either way
+          // the customer should never have been the one holding it.
+          //
+          // So the service now stops when the money actually goes back,
+          // not when someone asks. That keeps the 2026-07-31 rule — "money
+          // back means the service stops" — and fixes only its timing. The
+          // giveaway that rule was written against is untouched: a full
+          // annual refund still cannot grant the rest of the year, because
+          // settlement ends entitlement immediately (applyRefundSettlement)
+          // and the grace below is measured in days, not months.
+          //
+          // The grace is a BACKSTOP, not a promise. It bounds the one
+          // failure this design introduces — a refund that never settles
+          // because we cannot read the provider — at
+          // REFUND_PENDING_GRACE_DAYS of free service instead of a period.
+          // In normal operation it never elapses: settlement arrives in
+          // hours and overwrites it. `verdict_unreadable` now alerts, so
+          // the case it guards should be loud long before it fires.
+          //
+          // A REJECTED refund needs nothing here: `applyRevokedCancellation`
+          // clears `entitlement_ends_at` to NULL, and the recompute treats
+          // NULL as granting. Under the old timing that was a restore after
+          // a wrongful loss; now the customer never lost anything.
           //
           // sql now() (not a JS Date): the recompute in this SAME
           // transaction compares `entitlement_ends_at > now()`, and
@@ -857,7 +896,25 @@ export class BillingWebhookService {
           // recompute (CI caught exactly that race; local PGlite hid
           // it). tx-now == tx-now compares NOT-greater → excluded,
           // deterministically.
-          entitlementEndsAt: sql`now()`,
+          // LEAST(...), not a flat deadline. The grace may never grant
+          // MORE than the customer already had:
+          //
+          //   mid-period, month left  → now()+7d   (grace applies)
+          //   3 days left on the plan → period end (never extended)
+          //   period already ENDED    → past       (drops immediately)
+          //   period end is NULL      → now()      (drops immediately)
+          //
+          // The last two are the cases the 2026-07-29 sandbox smoke
+          // found, and they still behave exactly as they did before this
+          // change — COALESCE collapses an unknown period to now(), and
+          // a past period end is not > now(), so the recompute below
+          // drops the tier in the same transaction. Without the LEAST a
+          // refund on an already-lapsed period would have HANDED BACK a
+          // week of the plan it was refunding.
+          entitlementEndsAt:
+            event.reason === 'refund'
+              ? sql`LEAST(now() + make_interval(days => ${REFUND_PENDING_GRACE_DAYS}), COALESCE(${subscriptions.currentPeriodEnd}, now()))`
+              : sql`now()`,
           updatedAt: new Date(),
         })
         .where(
@@ -919,8 +976,18 @@ export class BillingWebhookService {
    * The provider confirmed a refund settled — stop counting this row as
    * the workspace's live subscription, so they can buy again (D253).
    *
-   * A full refund already ended entitlement the moment it landed
-   * (`entitlement_ends_at = now()` above), but left `status='active'`.
+   * This is the ONE moment a refunded customer's plan changes hands:
+   * entitlement ends here and the live slot is freed here, in the same
+   * transaction. Before 2026-08-25 the two were split — entitlement died
+   * when the refund was REQUESTED and the slot was freed when it was
+   * APPROVED — and the gap between them was a state with no product and
+   * no way to buy one. Keeping both writes in this method is what makes
+   * that gap unrepresentable rather than merely short.
+   *
+   * `applyScheduledCancellation` now leaves a grace deadline instead of
+   * `now()`, so the row still granted right up to this write and
+   * `status='active'` still counted it as the workspace's one live
+   * subscription.
    * Five surfaces independently read `active` as "this workspace has a
    * subscription": the checkout guard (`billing.service.ts`), the
    * `subscriptions_one_live_per_workspace` partial index, the drift and
@@ -944,12 +1011,21 @@ export class BillingWebhookService {
    *   - provider + subscription id, under the same advisory lock as
    *     every other writer of this row.
    *
-   * `cancel_source` and `entitlement_ends_at` are deliberately left
-   * alone. They are the provenance that keeps "ended by refund"
-   * distinguishable from "cancelled normally" for churn reporting, and
-   * the verdict-watch pass keys on them to keep this row monitored: a
-   * locally-canceled row the provider is still billing is a worse state
-   * than the lockout this fixes, so the flip does not end our interest.
+   * `cancel_source` is deliberately left alone. It is the provenance
+   * that keeps "ended by refund" distinguishable from "cancelled
+   * normally" for churn reporting, and the verdict-watch pass keys on it
+   * to keep this row monitored: a locally-canceled row the provider is
+   * still billing is a worse state than the lockout this fixes, so the
+   * flip does not end our interest.
+   *
+   * `entitlement_ends_at` IS written here, and must be. It carries the
+   * grace deadline `applyScheduledCancellation` set when the refund was
+   * requested — a future timestamp that is still granting. Flipping
+   * `status` alone would free the slot while leaving the customer on the
+   * paid tier until that deadline elapsed: refunded, and still holding
+   * the product they were refunded for. The recompute below is what
+   * turns this write into a tier change, which is why it stays
+   * unconditional.
    */
   private async applyRefundSettlement(
     provider: BillingProviderId,
@@ -961,7 +1037,7 @@ export class BillingWebhookService {
 
       const [row] = await tx
         .update(subscriptions)
-        .set({ status: 'canceled', updatedAt: new Date() })
+        .set({ status: 'canceled', entitlementEndsAt: sql`now()`, updatedAt: new Date() })
         .where(
           and(
             eq(subscriptions.provider, provider),
@@ -989,12 +1065,11 @@ export class BillingWebhookService {
         return { kind: 'processed', effect: 'refund_settled:no_row' } as const;
       }
 
-      // Entitlement already ended when the refund landed, so this is
-      // normally a no-op — but it is the same cheap, idempotent call the
-      // cancellation path makes unconditionally, and skipping it would
-      // leave `workspaces.tier` stale in exactly the edge cases that
-      // motivated making THAT one unconditional (sandbox smoke
-      // 2026-07-29).
+      // LOAD-BEARING, not hygiene. This used to be a near-no-op because
+      // entitlement had already ended upstream; since 2026-08-25 the row
+      // was granting until the line above, and this call is what actually
+      // moves `workspaces.tier` off the paid plan. Drop it and a refunded
+      // customer keeps Plus until the grace deadline elapses.
       await this.recomputeWorkspaceTier(tx, row.workspaceId);
 
       // The line that records a customer becoming able to pay us again.

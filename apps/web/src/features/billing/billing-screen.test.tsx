@@ -1870,7 +1870,12 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    expect(await screen.findByText(/This plan ended after a refund/)).toBeInTheDocument();
+    // Present tense since 2026-08-25 — the refund is pending at the
+    // provider and this customer still holds the plan. The button must
+    // stay absent either way: you cannot un-refund, and
+    // `resume-cancellation` answers CANCELLATION_NOT_REVOCABLE whether
+    // the refund has settled or not.
+    expect(await screen.findByText(/Your refund is being processed/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Keep my subscription' })).not.toBeInTheDocument();
   });
 

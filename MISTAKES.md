@@ -3483,3 +3483,76 @@ unsubscribe. Both §11 triggers (recurrence and severity) are met. The gap is no
 more tests; it is that nothing in the pipeline is ADVERSARIAL. Worth considering
 whether a review pass belongs in the definition of done for changes that move
 work between execution contexts.
+
+## 2026-08-25 — A refund settled on day one; the customer was locked out for eleven
+
+**PR:** #TBD
+**Caught by:** the founder opening the billing page by hand. Nothing else
+would have. Not CI, not a gate, not an alert, not a dashboard.
+
+**What happened:** a full refund was issued on a live Paddle account. Paddle
+approved it 10.5 hours later. The customer stayed locked out of the product —
+and out of the ability to buy it again — for eleven days.
+
+Three independent defects, each individually reasonable, composed into it:
+
+1. **The take-away and the give-back keyed on different events.** Entitlement
+   ended on `adjustment.created`, which on a live account fires while the refund
+   is still `pending_approval`. The plan slot was freed on settlement. Between
+   those two the customer had no product AND no way to pay us: the checkout
+   guard still counted the `active` row and answered
+   `SUBSCRIPTION_REFUND_SETTLING`. Nothing the customer could do moved it. The
+   screen told them to wait for a confirmation that had already happened.
+
+2. **The settlement read 403'd, and the log line said only `status=403`.** The
+   prod API key was missing one permission (`adjustment.read`). Paddle named the
+   exact cause in every response body; the adapter logged the status and threw
+   the body away, on a comment that read *"log status only … keep the line
+   lean"*. Diagnosis eventually took a hand-run `curl` — to retrieve a sentence
+   the provider had already sent us 1,223 times.
+
+3. **Nothing was watching.** `verdict_unreadable` fired every ten minutes for
+   eight days at LOG severity with no consumer, and `paddle.api_read.failed`
+   fired beside it at ERROR with no alert policy. The lines were correct and
+   well-formed. They had no audience.
+
+There was a fourth consequence nobody had looked for: because the outbound
+cancel is gated on the same unreadable facts, **no cancel was ever sent to the
+provider.** The subscription was still set to renew. A customer who had been
+refunded was going to be charged again at the end of the period.
+
+**Correct approach:** end entitlement when the money actually goes back, not
+when someone asks for it — the two are hours apart on a live account and the
+customer should never be the one holding that gap. And when an automated
+decision depends on a provider read, the failure of that read is a first-class
+event: it needs the provider's own words in the log, and it needs to page.
+
+**Rule:** three, in the order they would each have caught this.
+1. An error log on an integration boundary carries the counterparty's
+   explanation, not just the status code. A status code is a category; the body
+   is the answer.
+2. A read that gates a revenue path must alert when it cannot be made. "No
+   action taken" is the correct behaviour and the wrong silence.
+3. Never revoke on a request and restore on a confirmation. If a state
+   transition has a pending phase, the customer keeps what they had until it
+   resolves — and the resolution writes both halves in one transaction, so the
+   gap is unrepresentable rather than merely short.
+
+**Enforcement update:**
+- `apps/api/src/billing/provider-error-body.ts` — the counterparty's body now
+  reaches the log at all 14 failed-read sites across both adapters. A unit test
+  pins that the reason (not just the status) survives to the line.
+- `scripts/setup-billing-verdict-alert.sh` — log-based metric + policy on
+  `verdict_unreadable` / `api_read.failed` / `reconcile_read.failed`, sustained
+  30 min so a transient provider blip does not page but a misconfiguration does.
+  Provider-agnostic by construction, so it cannot go blind on Razorpay.
+- Entitlement now holds through the pending window, clamped by
+  `LEAST(now() + 7d, current_period_end)` so it can never hand back more plan
+  than was paid for, and revoked in the same transaction that frees the slot.
+
+**Note on the tests.** Two existing tests asserted the old timing and had to be
+inverted. Neither was wrong when written — they pinned a founder decision
+correctly. This is the §8 pattern from the other side: the tests were green and
+faithful for the entire life of the defect, because the defect was in the rule,
+not in the code's fidelity to it. A test can only catch a mistake someone has
+already thought of.

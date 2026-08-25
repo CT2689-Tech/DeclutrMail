@@ -532,6 +532,50 @@ describe('PaddleAdapter checkout + cancel', () => {
       expect(await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('s')).toBeNull();
     });
 
+    // 2026-08-25. The failure above is correct and was, for eleven days,
+    // undiagnosable: the log line carried `status=403` and nothing else,
+    // so a missing API-key permission looked identical to a revoked key,
+    // a wrong environment and a blocked account. It took a hand-run curl
+    // to learn that Paddle had been naming the cause in the response body
+    // on every one of 1,223 attempts.
+    //
+    // The line now carries that body. This test pins the fact that it
+    // reaches the log, because the whole defect was a diagnostic that
+    // existed and was discarded.
+    it('logs the provider error BODY, not just the status, on a failed read', async () => {
+      const errorSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+      try {
+        vi.stubGlobal(
+          'fetch',
+          vi.fn().mockResolvedValue(
+            new Response(
+              JSON.stringify({
+                error: {
+                  type: 'request_error',
+                  code: 'forbidden',
+                  detail: 'You do not have permission to perform this request (adjustment.read)',
+                },
+              }),
+              { status: 403 },
+            ),
+          ),
+        );
+        expect(
+          await makeAdapter({ PADDLE_API_KEY: 'k' }).providerCancellationFacts('s'),
+        ).toBeNull();
+
+        const line = errorSpy.mock.calls
+          .map((call) => String(call[0]))
+          .find((text) => text.includes('paddle.api_read.failed'));
+        expect(line).toBeDefined();
+        expect(line).toContain('status=403');
+        // The half that was missing — the sentence that names the fix.
+        expect(line).toContain('adjustment.read');
+      } finally {
+        errorSpy.mockRestore();
+      }
+    });
+
     // Pagination (D253). `settled` is about to gate whether a refunded
     // customer may buy again, so "which page was the chargeback on?" is
     // the difference between a lockout and a repurchase during a live
