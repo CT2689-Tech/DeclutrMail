@@ -153,55 +153,17 @@ the point.
 _None open._ The five that stood here — F008, F009, F010, F011, F012 — were
 all resolved on 2026-08-19 by #566, #572 and #583, but their status lines were
 never flipped; the entries moved to **Done** on 2026-08-23 after the code was
-re-verified against each one. F010 left a residue in production data, tracked
-as **F013** below.
+re-verified against each one. F010 left a residue in production data — 135
+senders still shielded by the retired rule — which was filed as **F013** and
+closed the next day when #625 generalised the demotion and the production
+sweep drove it to zero.
 
 ---
 
 ## P1 — launch week
 
-### F013 — 135 senders are still Protected on a rule the product retired
-
-**Found:** 2026-08-23 · session sweep, while verifying F010 was closed
-**Observed:** F010's counter was fixed and its migration backfilled, but
-nothing revokes a protection the old rule already granted. Measured in
-production 2026-08-23: **703** senders carry `protection_reason = 'replied'`,
-of which **135 no longer qualify** under the shipped `wrote_to_count >= 3`
-rule. `user_defined` protections: **0** — so every one of these is
-sweep-authored, not a user's own choice.
-
-**Verdict — a real residue, and it fails safe.** `applyAutomaticProtection`
-demotes exactly one reason, `gmail_important`, and only when the sender has
-left Gmail's Primary category
-([automatic-protection.ts:46-61](packages/workers/src/automatic-protection.ts:46)).
-A `replied` row has no such path, and the INSERT's `ON CONFLICT DO UPDATE` is
-guarded `WHERE is_protected = false AND protection_reason IS NULL`, so it
-never revisits a row that is already protected. Migration 0063 backfilled
-`senders.wrote_to_count` and deliberately touched no policy row.
-
-The direction matters. A wrongly-Protected sender is EXCLUDED from bulk and
-automatic cleanup (D245), so the failure is the product being too
-conservative on 135 senders — not mail moving that should not have moved.
-Nothing is at risk; a cleanup the user expects simply is not offered.
-
-**Scope is historical, not ongoing.** New protections are granted under the
-corrected rule, so a mailbox synced today cannot acquire a phantom one. All
-135 predate 0063.
-
-**Options.** (a) A one-shot demotion sweep for `replied` rows failing the
-current rule, with reason and `set_at` set NULL so they re-qualify under any
-live signal — the same shape the `gmail_important` reconcile already uses.
-(b) Generalise that reconcile to re-evaluate every sweep-authored reason on
-each pass, fixing the class rather than the instance. (c) Leave them —
-re-protecting is one click and nothing is unsafe.
-
-**Recommendation:** (b), with (a) as its backfill. The demotion sweep already
-exists and covers one reason out of three, which is the same shape of gap
-that produced this finding.
-
-**Priority:** P1 — it touches automatic protection on production data
-(CLAUDE.md §9), and it fails conservative rather than destructive.
-**Status:** Open
+_None open._ F013 was filed here 2026-08-23 and closed 2026-08-24 when #625
+generalised the auto-protection demotion and the production sweep caught up.
 
 ---
 
@@ -265,6 +227,71 @@ separable P2 if it keeps nagging.
 **Status:** Open
 
 ## Done
+
+### F013 — 135 senders are still Protected on a rule the product retired
+
+**Found:** 2026-08-23 · session sweep, while verifying F010 was closed
+**Observed:** F010's counter was fixed and its migration backfilled, but
+nothing revokes a protection the old rule already granted. Measured in
+production 2026-08-23: **703** senders carry `protection_reason = 'replied'`,
+of which **135 no longer qualify** under the shipped `wrote_to_count >= 3`
+rule. `user_defined` protections: **0** — so every one of these is
+sweep-authored, not a user's own choice.
+
+**Verdict — a real residue, and it fails safe.** `applyAutomaticProtection`
+demotes exactly one reason, `gmail_important`, and only when the sender has
+left Gmail's Primary category
+([automatic-protection.ts:46-61](packages/workers/src/automatic-protection.ts:46)).
+A `replied` row has no such path, and the INSERT's `ON CONFLICT DO UPDATE` is
+guarded `WHERE is_protected = false AND protection_reason IS NULL`, so it
+never revisits a row that is already protected. Migration 0063 backfilled
+`senders.wrote_to_count` and deliberately touched no policy row.
+
+The direction matters. A wrongly-Protected sender is EXCLUDED from bulk and
+automatic cleanup (D245), so the failure is the product being too
+conservative on 135 senders — not mail moving that should not have moved.
+Nothing is at risk; a cleanup the user expects simply is not offered.
+
+**Scope is historical, not ongoing.** New protections are granted under the
+corrected rule, so a mailbox synced today cannot acquire a phantom one. All
+135 predate 0063.
+
+**Options.** (a) A one-shot demotion sweep for `replied` rows failing the
+current rule, with reason and `set_at` set NULL so they re-qualify under any
+live signal — the same shape the `gmail_important` reconcile already uses.
+(b) Generalise that reconcile to re-evaluate every sweep-authored reason on
+each pass, fixing the class rather than the instance. (c) Leave them —
+re-protecting is one click and nothing is unsafe.
+
+**Recommendation:** (b), with (a) as its backfill. The demotion sweep already
+exists and covers one reason out of three, which is the same shape of gap
+that produced this finding.
+
+**Priority:** P1 — it touches automatic protection on production data
+(CLAUDE.md §9), and it fails conservative rather than destructive.
+**Status:** Done 2026-08-24 — fixed in code AND reconciled in production,
+verified after the founder's review on #620 prompted a re-check rather than a
+re-assertion.
+
+**Code:** #625 (`29db76e`) generalised the demotion to exactly the shape this
+entry recommended as option (b). The sweep no longer targets one reason — it
+recomputes `current_reason` per sender and revokes any stored reason that
+disagrees, over `protection_reason IN ('replied', 'starred',
+'gmail_important')`
+([automatic-protection.ts:178-195](packages/workers/src/automatic-protection.ts:178)).
+The `ON CONFLICT` guard at `:283` is unchanged, but it no longer has to carry
+the load: demotion now happens before escalation on every pass.
+
+**Production, re-measured 2026-08-24:** senders carrying a `replied`
+protection that no longer qualifies — **0**, down from the 135 this entry was
+filed on. Total `replied` protections fell 703 → 570, so ~133 rows were
+actually demoted rather than the rule merely changing. Last `sender_policies`
+write: 2026-08-24 18:24 UTC, so the sweep has run against live data.
+
+Filed 2026-08-23, closed 2026-08-24 — one day, and closed by evidence rather
+than by the commit message that claimed it.
+
+---
 
 ### F011 — Search says "no senders match" when the sender exists and the app's own dropdown just showed it
 
@@ -476,7 +503,7 @@ same surface as F008.
 adds `senders.wrote_to_count`, credited only when the sender's address is in
 an outbound message's To/Cc, and automatic protection now reads
 `wrote_to_count >= 3 AND has inbound`
-([automatic-protection.ts:106](packages/workers/src/automatic-protection.ts:106)).
+([automatic-protection.ts:165,241](packages/workers/src/automatic-protection.ts:165)).
 
 **The protections already granted were never revoked — that half is open as
 F013.** Measured in production 2026-08-23: 135 senders still carry a
@@ -534,11 +561,11 @@ counter that no code path can correct is not worth its drift.
 **Priority:** P0 — a destructive recommendation derived from a fabricated
 signal. Higher real severity than F008, which only misreports.
 **Status:** Done 2026-08-23 — shipped in #566 (`d8b0468`).
-[`reconcileSenderTimeseries`](packages/workers/src/sender-timeseries-reconcile.ts:109)
+[`reconcileSenderTimeseries`](packages/workers/src/sender-timeseries-reconcile.ts:134)
 recomputes `volume` / `read_count` from `mail_messages` instead of
 accumulating them at insert time, and runs in the incremental-sync post-pass
 whenever a label change or delete lands
-([incremental-sync.worker.ts:587,1104](packages/workers/src/incremental-sync.worker.ts:587)).
+([incremental-sync.worker.ts:15,794](packages/workers/src/incremental-sync.worker.ts:794)).
 [autopilot-signals.ts:137](packages/workers/src/autopilot-signals.ts:137)
 confirms the recommendation path now reads decontaminated counts. Dedicated
 test file: `sender-timeseries-reconcile.test.ts`.
@@ -725,7 +752,7 @@ from the hamburger button; visibility lives solely in `tokens.css`, so the
 desktop breakpoint's `display: none` is no longer outranked and a desktop
 click can no longer mount a second sidebar over the real one. The regression
 window (live 2026-07-14 → 2026-08-18, introduced by #325) is recorded at
-[app-shell.tsx:210-224](packages/shared/src/shell/app-shell.tsx:210).
+[app-shell.tsx:210-224](packages/shared/src/shell/app-shell.tsx:212).
 
 ---
 
