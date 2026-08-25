@@ -17,7 +17,7 @@
     "bullmq": "^6.0.5",
     "drizzle-orm": "^0.45.2",
     "ioredis": "5.10.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
