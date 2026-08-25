@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-246 decisions — ⬜ Not started 75 · 🔵 Shipped 113 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
+246 decisions — ⬜ Not started 74 · 🔵 Shipped 114 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -114,7 +114,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D63 cases (3 sections + caps) |  |
 | D64 | Brief timing: **Default 8am local; user-configurable | 🔵 | #194 |  |  |
 | D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | ⬜ |  |  |  |
-| D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | ⬜ |  |  |  |
+| D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | 🔵 | #635 |  |  |
 | D67 | **SUPERSEDED by D245: Brief priority uses observed facts | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D67 — VIP elevation to Reply |  |
 | D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | 🔵 | #219 |  |  |
 | D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74 | apps/api/src/briefs/brief.read-service.spec.ts |  |
