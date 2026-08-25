@@ -765,7 +765,7 @@ export class SendersReadService {
         // `mode: 'number'` coerces to a JS number at the boundary. The
         // assertion makes a violation explicit at the wire boundary.
         totalReceived: ensureSafeIntegerNumber(row.totalReceived, 'senders.total_received'),
-        // `replied_count` — mig 0022 integer column, NOT NULL DEFAULT 0.
+        // `wrote_to_count` — mig 0063 integer column, NOT NULL DEFAULT 0.
         // Drives the Sender Detail "you replied N×" copy.
         wroteToCount: ensureSafeIntegerNumber(row.wroteToCount, 'senders.wrote_to_count'),
         // `monthlyVolume` carries the ENGINE's window (ADR-0037), so the
@@ -1070,7 +1070,7 @@ export class SendersReadService {
           quiet: ensureSafeIntegerNumber(counts.quiet ?? 0, 'filterCounts.quiet'),
           dormant: ensureSafeIntegerNumber(counts.dormant ?? 0, 'filterCounts.dormant'),
           unsubReady: ensureSafeIntegerNumber(counts.unsubReady ?? 0, 'filterCounts.unsubReady'),
-          // D38 honest count — `senders.replied_count > 0` (mig 0022 +
+          // D38 honest count — `senders.wrote_to_count > 0` (mig 0063 +
           // buildSenderIndex/IncrementalSyncWorker write paths).
           wroteTo: ensureSafeIntegerNumber(counts.wroteToCount ?? 0, 'filterCounts.wroteTo'),
           protected: ensureSafeIntegerNumber(counts.protectedCount ?? 0, 'filterCounts.protected'),

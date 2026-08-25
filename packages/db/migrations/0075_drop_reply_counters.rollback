@@ -1,0 +1,16 @@
+-- Reverse 0075 — restore the column shells, not their values.
+--
+-- LOSSY BY CONSTRUCTION, and deliberately so. Both columns held a number
+-- produced by a rule 0063 removed as wrong: it credited every outbound
+-- message in a thread the sender appeared in, with no predicate tying
+-- the message to the sender it was counted against. A bounce notifier
+-- scored 14 "replies" on the founder's mailbox; a real correspondent
+-- with 529 messages addressed to them scored 94.
+--
+-- Nothing can recompute those values and nothing should. `NOT NULL
+-- DEFAULT 0` restores exactly what any reader would see, because at the
+-- time of writing there are no readers — the rollback exists to make the
+-- forward migration reversible in shape, not to resurrect a bad number.
+ALTER TABLE "senders" ADD COLUMN "replied_count" integer DEFAULT 0 NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "sender_timeseries" ADD COLUMN "reply_count" integer DEFAULT 0 NOT NULL;

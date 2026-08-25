@@ -1,0 +1,53 @@
+-- Contract half of 0063 — drop the reply counters it superseded (D245).
+--
+-- Renumbered from 0068. That number, and 0069/0070 alongside it, were
+-- taken on main while the original PR (#601) sat open; two of that PR's
+-- three migrations were also superseded outright by main's own
+-- 0068_security_and_webhook_fk_index, which pins `dm_normalize_email`
+-- and revokes the Data API grants in a better-guarded form. This file is
+-- the one piece of #601 nothing else did.
+--
+-- 0063 added `senders.wrote_to_count` beside `senders.replied_count` and
+-- deliberately left the old column standing. Its comment explains why:
+-- `migration-apply.yml` fires on push to main with no CI gate while
+-- `deploy-cloud-run.yml` waits for green, so the schema moves 10-20
+-- minutes ahead of the code that understands it. Dropping in the same
+-- migration would have 500'd every senders request inside that window.
+-- That comment names this file as the follow-up.
+--
+-- THE WINDOW IS CLOSED. #572 (cd690ab0, 2026-08-19) shipped the reader
+-- swap. Re-verified at HEAD rather than inherited from #601: neither
+-- column appears in `packages/db/src/schema/`, and the only remaining
+-- mentions anywhere in `apps/**` or `packages/**` are two doc-comments,
+-- both of which this change corrects. Automatic protection reads
+-- `wrote_to_count >= 3` (`automatic-protection.ts:165`, `:241`).
+--
+-- No index, view, materialised view or constraint depends on either
+-- column — checked against `pg_indexes`, `pg_views`, `pg_matviews` and
+-- `pg_constraint`. Both are plain `integer NOT NULL DEFAULT 0`.
+--
+-- WHY BOTHER WITH INERT COLUMNS. Two reasons, neither cosmetic.
+--
+-- The values are WRONG, not merely stale, and the column name is exactly
+-- the one a future query would reach for. 0063 removed the rule that
+-- produced them: it credited every outbound message in a thread the
+-- sender appeared in, with no predicate tying the message to the sender
+-- it was counted against. A bounce notifier scored 14 "replies"; a real
+-- correspondent with 529 messages addressed to them scored 94. That fed
+-- `replied_count >= 3`, an automatic-protection trigger, and shielded
+-- 460 senders on the founder's mailbox from cleanup.
+--
+-- And their retired UPDATE statements are not inert. `pg_stat_statements`
+-- keys on normalised query text, so a deleted statement's totals freeze
+-- and become indistinguishable from a live one — same shape, same table,
+-- no marker. The two frozen rows here (9.3h and 1.5h cumulative, last
+-- called 2026-08-19 23:29 UTC) were read as current cost by two separate
+-- audits before anyone checked whether the code still existed. Dropping
+-- the columns is what stops the third; the statistics reset that follows
+-- is the other half.
+--
+-- Privacy (D7, D228): removes two derived integers. No Gmail field is
+-- added, and nothing here reads message content.
+ALTER TABLE "senders" DROP COLUMN "replied_count";
+--> statement-breakpoint
+ALTER TABLE "sender_timeseries" DROP COLUMN "reply_count";
