@@ -196,10 +196,19 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     await adapter.generateNarrative(SAMPLE_INPUT);
 
     const system = create.mock.calls[0]![0].system as string;
-    expect(system).toContain('at most 40 words');
+    expect(system).toContain('at most 60 words');
     expect(system).toContain('say what that list cannot');
     expect(system).toContain('Never state counts');
     expect(system).toContain('Never repeat figures from a snippet');
+
+    // The number of senders named is decided by how many have a REASON,
+    // never by a constant. An earlier draft capped it at "at most one
+    // sender", which under-served exactly the morning the narrative
+    // exists for — three real deadlines across three senders — and
+    // repeated the "6 OF 6" mistake of dressing a fixed cap as a fact
+    // about the day.
+    expect(system).toContain('Name every item that has such a reason');
+    expect(system).not.toContain('at most one sender');
   });
 
   it('trims leading/trailing whitespace on the returned text', async () => {

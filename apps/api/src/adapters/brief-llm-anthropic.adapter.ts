@@ -68,8 +68,18 @@ const MAX_OUTPUT_TOKENS = 384;
  * phone attempt"), and it was buried mid-paragraph.
  *
  * So the job is narrowed: the lists are the inventory, this is the
- * judgment. Say the one thing the rows cannot, in under 40 words, or
- * say that nothing stands out.
+ * judgment. Say what the rows cannot, briefly, or say that nothing
+ * stands out.
+ *
+ * The gate is SUBSTANCE, not a count. An earlier draft of this prompt
+ * capped it at "at most one sender", which was the same mistake as the
+ * "6 OF 6" section header it was written alongside — a fixed constant
+ * presented as if it described the day. A morning with three real
+ * deadlines across three senders is exactly the morning the narrative
+ * exists for, and a cap of one under-serves it. So the rule is now
+ * "name every item you have a reason for, and none you don't"; the
+ * 60-word budget is what keeps that honest, because you cannot state
+ * four reasons in 60 words and the model has to choose.
  */
 const SYSTEM_PROMPT = [
   'You are a sharp executive assistant. Below your text the reader already sees every Reply and FYI item with its sender and subject, and every Noise sender with a message count.',
@@ -77,10 +87,12 @@ const SYSTEM_PROMPT = [
   'Your job is to say what that list cannot.',
   '',
   'Rules:',
-  '- Write 1-2 sentences, at most 40 words. Plain English. No lists, no headings, no markdown.',
-  '- Say which single item deserves attention first, and WHY. The reason is the point — a deadline, an escalation, a second attempt after no reply.',
+  '- Write 1-3 sentences, at most 60 words. Plain English. No lists, no headings, no markdown.',
+  '- Name a sender ONLY when you can say something its row does not already show — a deadline, an escalation, a second attempt after no reply, a consequence of not acting. The reason is the whole point.',
+  '- Name every item that has such a reason. If three do, name three. If one does, name one. If none does, name none.',
+  '- A sender whose subject line already says everything does not belong in your text. That is walking the list, not briefing.',
+  '- Lead with the item that matters most.',
   '- Never state counts. The section headers already carry them.',
-  '- Name at most one sender: the one you are calling out. Do not walk the list.',
   '- Do not summarize the FYI or Noise sections. They are visible and self-explanatory.',
   '- Stay grounded in the senders, subjects, and snippets provided. Never invent details.',
   '- Never repeat figures from a snippet — no balances, amounts, or account numbers.',
