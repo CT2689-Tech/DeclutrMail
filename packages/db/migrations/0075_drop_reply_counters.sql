@@ -48,6 +48,24 @@
 --
 -- Privacy (D7, D228): removes two derived integers. No Gmail field is
 -- added, and nothing here reads message content.
+-- atlas:nolint destructive — DS103 fires on both statements below, and it
+-- is right to: these are real column drops and the data is not
+-- recoverable. Accepted deliberately, and this is the FIRST DROP COLUMN
+-- in this repo's history, so the exception is stated rather than assumed.
+--
+-- The analyzer's own remedy does not apply. It suggests a pre-migration
+-- check that the column IS NULL before dropping; both columns are
+-- `integer NOT NULL DEFAULT 0`, so that check can never pass and no
+-- amount of waiting makes it pass. The condition it is really asking
+-- about -- is anything still reading this -- is answered above and was
+-- re-verified at HEAD: no reader outside comments, and no index, view,
+-- materialised view or constraint depends on either column.
+--
+-- Losing these values is the POINT, not the cost. They were produced by
+-- a rule 0063 removed as wrong, and `0075_drop_reply_counters.rollback`
+-- restores the column shells at DEFAULT 0 rather than resurrecting a
+-- number that mis-protected 460 senders.
 ALTER TABLE "senders" DROP COLUMN "replied_count";
 --> statement-breakpoint
+-- atlas:nolint destructive
 ALTER TABLE "sender_timeseries" DROP COLUMN "reply_count";
