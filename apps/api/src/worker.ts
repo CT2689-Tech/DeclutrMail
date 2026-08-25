@@ -9,6 +9,7 @@ import { eq, sql } from 'drizzle-orm';
 import { OAuth2Client } from 'google-auth-library';
 import postgres from 'postgres';
 import { mailboxAccounts, providerSyncState, schema } from '@declutrmail/db';
+import { reconcileInitialSyncs } from './sync/initial-sync-reconciler.js';
 import {
   AccountDeletionPurgeWorker,
   ACTION_RECOVERY_QUEUE,
@@ -1157,7 +1158,6 @@ async function bootstrap(): Promise<void> {
   // per `queued` row, batch-capped) and self-throttling: once the DB
   // has no `queued` rows the sweep is a single `SELECT ... LIMIT N`.
   const reconcilerQueue = new Queue<InitialSyncJobData>(INITIAL_SYNC_QUEUE, { connection });
-  const RECONCILE_BATCH = 100;
   const RECONCILE_INTERVAL_MS = 60_000;
 
   // Overlap + shutdown guards (Codex iter 6). A slow sweep (e.g.
@@ -1172,45 +1172,44 @@ async function bootstrap(): Promise<void> {
   let shuttingDown = false;
 
   /**
-   * One reconciliation tick. Reads up to `RECONCILE_BATCH` rows whose
-   * `readiness_status='queued'` and ensures each has a live BullMQ job.
-   * Delegates the per-mailbox state machine to `ensureInitialSyncJob`
-   * — the single scheduling implementation shared with the connect
-   * path — so this loop cannot diverge from connect-time semantics.
+   * One reconciliation tick. Sweeps both stuck shapes — `queued` rows
+   * that never got a job, and `syncing` rows whose heartbeat went stale
+   * because their BullMQ hash was evicted mid-active — and ensures each
+   * has a live job. The sweep itself lives in
+   * `./sync/initial-sync-reconciler.js` so it is testable without a
+   * composition root; this wrapper owns only the logging and the Sentry
+   * seam, which are worker concerns.
+   *
+   * Delegates per-mailbox scheduling to `ensureInitialSyncJob` — the
+   * single scheduling implementation shared with the connect path — so
+   * this loop cannot diverge from connect-time semantics.
    *
    * Returns counts for the structured log; never throws (it's a
    * background sweep, not a request).
    */
-  async function reconcileQueuedInitialSyncs(): Promise<{ added: number; replaced: number }> {
-    let added = 0;
-    let replaced = 0;
+  async function reconcileStuckInitialSyncs(): Promise<{ added: number; replaced: number }> {
     try {
-      const queuedRows = await db
-        .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
-        .from(providerSyncState)
-        .where(eq(providerSyncState.readinessStatus, 'queued'))
-        .limit(RECONCILE_BATCH);
-      for (const { mailboxAccountId } of queuedRows) {
-        if (shuttingDown) {
-          // Honor a mid-sweep shutdown signal — leftover rows pick up
-          // on the next worker boot.
-          break;
-        }
-        const outcome = await ensureInitialSyncJob(reconcilerQueue, mailboxAccountId);
-        if (outcome === 'added') added += 1;
-        if (outcome === 'replaced') replaced += 1;
-      }
-      if (added > 0 || replaced > 0) {
+      const outcome = await reconcileInitialSyncs({
+        db,
+        schedule: (mailboxAccountId) => ensureInitialSyncJob(reconcilerQueue, mailboxAccountId),
+        isShuttingDown: () => shuttingDown,
+      });
+      if (outcome.added > 0 || outcome.replaced > 0) {
         console.log(
           JSON.stringify({
             level: 'info',
             kind: 'reconciler.swept',
-            added,
-            replaced,
-            scanned: queuedRows.length,
+            added: outcome.added,
+            replaced: outcome.replaced,
+            scanned: outcome.scanned,
+            // Broken out so a fire is legible: a non-zero count here is
+            // the rare Redis-eviction class, not the ordinary
+            // enqueue-lost-at-connect one.
+            staleSyncing: outcome.staleSyncing,
           }),
         );
       }
+      return { added: outcome.added, replaced: outcome.replaced };
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       console.error(
@@ -1225,8 +1224,8 @@ async function bootstrap(): Promise<void> {
       // reconciler runs outside the BullMQ loop, so without this call
       // it would silently miss Sentry once the DSN is configured.
       observer.captureBackgroundFailure(error, { kind: 'reconciler.failed' });
+      return { added: 0, replaced: 0 };
     }
-    return { added, replaced };
   }
 
   /**
@@ -1239,12 +1238,12 @@ async function bootstrap(): Promise<void> {
     if (shuttingDown || inFlight) {
       return;
     }
-    // `reconcileQueuedInitialSyncs` is documented to never reject (its
+    // `reconcileStuckInitialSyncs` is documented to never reject (its
     // body is wrapped in try/catch). The terminal `.catch` defends
     // against future drift: if a refactor moves a line out of that try,
     // an unhandled rejection here would otherwise be invisible
     // (silent-failure-hunter, post-iter-6 review).
-    const p = reconcileQueuedInitialSyncs()
+    const p = reconcileStuckInitialSyncs()
       .then(() => undefined)
       .finally(() => {
         inFlight = null;
@@ -1258,7 +1257,7 @@ async function bootstrap(): Promise<void> {
             message: error.message,
           }),
         );
-        // Defense-in-depth seam: `reconcileQueuedInitialSyncs` is
+        // Defense-in-depth seam: `reconcileStuckInitialSyncs` is
         // documented never to reject, but if a future refactor moves a
         // line out of its try/catch, an unhandled rejection here would
         // otherwise be invisible. Route through the same Sentry seam
