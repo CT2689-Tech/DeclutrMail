@@ -24,6 +24,22 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-26 — Two different migrations are both numbered 0076
+
+**Source:** session — found while smoking this PR against a throwaway database
+**Why:** This PR adds `packages/db/migrations/0076_signup_attribution.sql`. Another session, working in a different worktree, has an UNPUSHED `0076_entitlement_grants` and has already applied it to the shared local dev database (`declutrmail`, revision row written 2026-08-26 11:18). `origin/main` currently has neither, so this PR is correct as it stands — but whichever of the two merges second will collide on the version number AND on `migrations/atlas.sum`, and the shared dev DB will then refuse `./scripts/db-migrate.sh apply` with a checksum mismatch, because its recorded 0076 is the other migration.
+**How:** Decide the merge order. The one that merges second gets renumbered to 0077 (rename both `.sql` and `.rollback`, re-run `atlas migrate hash`). Then repair the local dev DB — the cheapest route is `atlas migrate set 0075 --url <dev url> --dir file://migrations` followed by a normal apply, since the entitlement_grants DDL is still unmerged.
+**Verifies by:** `./scripts/db-migrate.sh --status` against the local dev DB reports no checksum error and lists both migrations under distinct versions.
+**Status:** Open
+
+### 2026-08-26 — `/inbox-simulator` logs a hydration text mismatch on main
+
+**Source:** session — found while verifying this PR's hydration fix, then isolated
+**Why:** Loading `/inbox-simulator` logs `Hydration failed because the server rendered text ...` in the console. It is NOT from this PR: reverting `inbox-simulator-screen.tsx` to its `origin/main` version leaves the error in place, so it is pre-existing. Flagged rather than fixed, per CLAUDE.md §1.3 — this PR's own hydration concern (a `ref` in a server-rendered OAuth href) is separate and is fixed here. It is left open because a hydration error on the busiest public demo page is the "no console errors" bar failing on main.
+**How:** Reproduce with `pnpm --filter @declutrmail/web dev`, open `/inbox-simulator`, read the console. The mismatching node is TEXT, not an attribute; `triage-row.tsx`'s clock is already hydration-safe (`useNow()` returns null on the server), so the source is elsewhere on that page.
+**Verifies by:** `/inbox-simulator` loads with an empty console.
+**Status:** Open
+
 ### 2026-08-26 — Exclude Google OAuth from PostHog referring-domain classification
 **Source:** session (marketing runbook Phase B)
 **Why:** Signup attribution now persists first-touch `ref` through OAuth state into Postgres. PostHog still classifies journeys by referrer. If `accounts.google.com` (and our own hosts / localhost) stay as referring domains, every Google-login session looks like it came from Google, which fights the first-touch `ref` we just stored.
