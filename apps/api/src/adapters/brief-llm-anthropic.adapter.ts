@@ -78,8 +78,11 @@ const MAX_OUTPUT_TOKENS = 384;
  * deadlines across three senders is exactly the morning the narrative
  * exists for, and a cap of one under-serves it. So the rule is now
  * "name every item you have a reason for, and none you don't"; the
- * 60-word budget is what keeps that honest, because you cannot state
- * four reasons in 60 words and the model has to choose.
+ * word budget is what keeps that honest, because you cannot state four
+ * reasons in 60 words and the model has to choose.
+ *
+ * The budget is stated per-day in the user prompt rather than fixed
+ * here — see `narrativeWordBudget`.
  */
 const SYSTEM_PROMPT = [
   'You are a sharp executive assistant. Below your text the reader already sees every Reply and FYI item with its sender and subject, and every Noise sender with a message count.',
@@ -87,7 +90,7 @@ const SYSTEM_PROMPT = [
   'Your job is to say what that list cannot.',
   '',
   'Rules:',
-  '- Write 1-3 sentences, at most 60 words. Plain English. No lists, no headings, no markdown.',
+  '- Plain English prose, within the word budget stated at the end of the user message. No lists, no headings, no markdown.',
   '- Name a sender ONLY when you can say something its row does not already show — a deadline, an escalation, a second attempt after no reply, a consequence of not acting. The reason is the whole point.',
   '- Name every item that has such a reason. If three do, name three. If one does, name one. If none does, name none.',
   '- A sender whose subject line already says everything does not belong in your text. That is walking the list, not briefing.',
@@ -99,6 +102,37 @@ const SYSTEM_PROMPT = [
   '- If nothing genuinely stands out, say exactly that in one short sentence.',
   '- Do not address the user directly. Calm and direct. No exclamation marks, no hype.',
 ].join('\n');
+
+/**
+ * Word budget for the narrative, scaled to the number of Reply items.
+ *
+ * 60 words is about three properly stated reasons, and three is what a
+ * normal morning holds. A day carrying six items that each have a real
+ * reason is the day the narrative exists for, and squeezing six reasons
+ * into 60 words produces exactly the list-walking the rules above spend
+ * ten lines forbidding.
+ *
+ * The trigger is COMPUTED, never model-judged. "Go longer when it
+ * matters" is self-granting as an instruction — the model finds
+ * something that matters most mornings, and the ceiling quietly becomes
+ * the default. `reply.length` is the engine's own count of what needs
+ * the user, so the room to explain scales with the thing being
+ * explained while the model still cannot vote itself more.
+ *
+ * ~25 words buys one stated reason ("Ridge's invoice is 14 days overdue
+ * and they have now called twice"), so the slope is one reason per item
+ * past the second. Reply is capped at 6 (D63), so 150 is reached
+ * exactly at a full section and never exceeded.
+ */
+const NARRATIVE_BASE_WORDS = 60;
+const NARRATIVE_MAX_WORDS = 150;
+const WORDS_PER_REASON = 25;
+const REASONS_WITHIN_BASE = 2;
+
+export function narrativeWordBudget(replyCount: number): number {
+  const extra = Math.max(0, replyCount - REASONS_WITHIN_BASE) * WORDS_PER_REASON;
+  return Math.min(NARRATIVE_BASE_WORDS + extra, NARRATIVE_MAX_WORDS);
+}
 
 /**
  * Hard cap on per-section item lines in the prompt. The worker already
@@ -198,6 +232,7 @@ export function renderBriefUserPrompt(input: BriefNarrativeInput): string {
     }
   }
   lines.push('');
+  lines.push(`Word budget: at most ${narrativeWordBudget(input.reply.length)} words.`);
   lines.push('Write the morning briefing now.');
   return lines.join('\n');
 }

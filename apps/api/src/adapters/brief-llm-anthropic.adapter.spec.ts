@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   BriefLlmAnthropicAdapter,
   buildBriefLlmAdapter,
+  narrativeWordBudget,
   renderBriefUserPrompt,
 } from './brief-llm-anthropic.adapter.js';
 
@@ -54,6 +55,30 @@ function stubClient(mock: ReturnType<typeof vi.fn>): Anthropic {
   return { messages: { create: mock } } as unknown as Anthropic;
 }
 
+describe('narrativeWordBudget', () => {
+  // The budget scales with Reply length so that a genuinely heavy
+  // morning gets room to state its reasons, WITHOUT handing the model
+  // the decision. "Go longer when it matters" as a prompt rule is
+  // self-granting — the model finds something that matters most days,
+  // and the ceiling becomes the floor.
+  it('holds the base budget for a light morning', () => {
+    expect(narrativeWordBudget(0)).toBe(60);
+    expect(narrativeWordBudget(1)).toBe(60);
+    expect(narrativeWordBudget(2)).toBe(60);
+  });
+
+  it('buys ~one stated reason per Reply item past the second', () => {
+    expect(narrativeWordBudget(3)).toBe(85);
+    expect(narrativeWordBudget(4)).toBe(110);
+    expect(narrativeWordBudget(5)).toBe(135);
+  });
+
+  it('caps at 150 — reached exactly at a full Reply section (D63 caps it at 6)', () => {
+    expect(narrativeWordBudget(6)).toBe(150);
+    expect(narrativeWordBudget(20)).toBe(150);
+  });
+});
+
 describe('renderBriefUserPrompt', () => {
   it('includes section headers + items + snippets', () => {
     const out = renderBriefUserPrompt(SAMPLE_INPUT);
@@ -67,6 +92,22 @@ describe('renderBriefUserPrompt', () => {
     expect(out).toContain('Statement available');
     expect(out).toContain('Promo Co (3 messages)');
     expect(out).toContain('News Daily (2 messages)');
+  });
+
+  it("states the day's word budget to the model", () => {
+    // SAMPLE_INPUT has one Reply item, so the base budget applies.
+    expect(renderBriefUserPrompt(SAMPLE_INPUT)).toContain('Word budget: at most 60 words.');
+
+    const heavy = {
+      ...SAMPLE_INPUT,
+      reply: Array.from({ length: 5 }, (_, i) => ({
+        senderName: `Sender ${i}`,
+        senderEmail: `s${i}@example.com`,
+        subject: `Subject ${i}`,
+        snippet: `Snippet ${i}`,
+      })),
+    };
+    expect(renderBriefUserPrompt(heavy)).toContain('Word budget: at most 135 words.');
   });
 
   it('renders "(none)" for empty sections', () => {
@@ -196,7 +237,7 @@ describe('BriefLlmAnthropicAdapter.generateNarrative', () => {
     await adapter.generateNarrative(SAMPLE_INPUT);
 
     const system = create.mock.calls[0]![0].system as string;
-    expect(system).toContain('at most 60 words');
+    expect(system).toContain('within the word budget stated at the end of the user message');
     expect(system).toContain('say what that list cannot');
     expect(system).toContain('Never state counts');
     expect(system).toContain('Never repeat figures from a snippet');
