@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  citedEvidencePath,
   closedDecisions,
   composeRow,
   decisionsOwnedBy,
@@ -134,5 +135,97 @@ describe('decisionsOwnedBy — what a PR is answerable for', () => {
 
   it('owns nothing for an unrelated change', () => {
     expect([...decisionsOwnedBy('Fixes a typo', ['apps/web/src/page.tsx'])]).toEqual([]);
+  });
+});
+
+describe('citedEvidencePath', () => {
+  // Both branches below are regression tests for demotions that actually
+  // happened. Neither had a test before, which is why the first ran for
+  // a month over every recorded 🟢.
+  it('keeps the x on a .tsx path — alternation is ordered longest-first', () => {
+    expect(
+      citedEvidencePath('apps/web/src/features/brief/noise-archive.test.tsx — Done marks'),
+    ).toBe('apps/web/src/features/brief/noise-archive.test.tsx');
+    expect(
+      citedEvidencePath('apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded'),
+    ).toBe('apps/web/src/features/triage/triage-screen.stories.tsx');
+  });
+
+  it('still resolves the other cited extensions', () => {
+    expect(citedEvidencePath('packages/db/migrations/0074_purge.sql applied')).toBe(
+      'packages/db/migrations/0074_purge.sql',
+    );
+    expect(citedEvidencePath('scripts/dev-up.sh runs clean')).toBe('scripts/dev-up.sh');
+    expect(citedEvidencePath('docs/adr/0019-verb-registry-and-kauld.md')).toBe(
+      'docs/adr/0019-verb-registry-and-kauld.md',
+    );
+    expect(citedEvidencePath('packages/workers/src/reasoning.test.ts — exhaustiveness')).toBe(
+      'packages/workers/src/reasoning.test.ts',
+    );
+  });
+
+  it('treats a verify-d cmd receipt as no citation at all', () => {
+    // The path inside is relative to the FILTERED WORKSPACE, not the repo
+    // root, so reading it as a citation demotes the row whose evidence is
+    // strongest — a command that ran and exited 0 at a recorded commit.
+    expect(
+      citedEvidencePath(
+        'cmd: `pnpm --filter @declutrmail/web exec vitest run src/features/triage/action-sheet.test.tsx` → exit 0 @ 2b7b57e 2026-08-26',
+      ),
+    ).toBeNull();
+  });
+
+  it('resolves a path wrapped in punctuation or trailed by a line number', () => {
+    // Real recorded notes cite this way — the tokenized scan has to keep
+    // finding them, and did not on the first attempt at this rewrite.
+    expect(citedEvidencePath('server-side persistence (store.ts:32 documents it)')).toBe(
+      'store.ts',
+    );
+    expect(citedEvidencePath('every leg now on disk (worker-policies.ts)')).toBe(
+      'worker-policies.ts',
+    );
+    expect(citedEvidencePath('see packages/db/src/schema/senders.ts.')).toBe(
+      'packages/db/src/schema/senders.ts',
+    );
+  });
+
+  it('stays linear on every pathological shape (CodeQL: polynomial regex)', () => {
+    // Two separate high-severity alerts landed on this function. The
+    // first was the unanchored scan (137 ms on 8 KB of `-`; 4.6 MINUTES
+    // on 256 KB). The second was the trailing-dot trim `/\.+$/` —
+    // anchored at the end but not the start, 5.3 s on 64 KB of `.`.
+    //
+    // The guard written for the first one MISSED the second, because its
+    // inputs were runs of `-`. The first REWRITE of this guard missed it
+    // too, and the negative control is what caught that: a leading run
+    // of dots is stripped as punctuation before the trim ever sees it,
+    // so the input never reached the quadratic line. Only dots MID-token
+    // do — `a……b` is 1332 ms at 32 KB, the other two placements 0.3 ms.
+    //
+    // Hence a table rather than one clever string: a run of each
+    // character class this function treats specially, in each position
+    // it can occupy, so a quadratic path shows up here rather than in a
+    // CodeQL annotation.
+    const N = 64_000;
+    const shapes = [
+      'a' + '.'.repeat(N) + 'b', // dots MID-token — the trailing-dot trim
+      '.'.repeat(N) + 'a', // dots leading (stripped before the trim sees them)
+      'a' + '.'.repeat(N), // dots trailing
+      'a.'.repeat(N / 2), // dot-alternating
+      '-'.repeat(N) + '.', // dashes — the original scan
+      '-.'.repeat(N / 2), // dash-alternating
+      'a/.'.repeat(N / 3), // path separators
+      ' '.repeat(N) + 'a', // whitespace, which drives the split
+    ];
+    const started = performance.now();
+    for (const shape of shapes) expect(citedEvidencePath(shape)).toBeNull();
+    // Generous against a loaded CI runner; the real numbers are single-digit ms.
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
+  it('returns null when the evidence names no file', () => {
+    expect(citedEvidencePath('docs/adr/ has template + 6 ADRs')).toBeNull();
+    expect(citedEvidencePath('manual')).toBeNull();
+    expect(citedEvidencePath('')).toBeNull();
   });
 });

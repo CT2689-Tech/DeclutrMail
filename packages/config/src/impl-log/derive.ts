@@ -68,6 +68,71 @@ export type EvidenceCheck = (evidence: string) => 'no-path' | 'exists' | 'missin
  * recorded. Pure: the caller supplies the evidence check so this stays
  * testable without a filesystem.
  */
+/**
+ * The repo file an evidence string cites, or `null` if it cites none.
+ *
+ * The 🟢 audit demotes a Verified row whose cited file has vanished, so
+ * everything this returns is load-bearing — and it has been wrong four
+ * times:
+ *
+ * 1. **Alternation order.** `(?:ts|tsx)` takes the first branch that
+ *    matches, so `…noise-archive.test.tsx` truncated to a `.ts` path
+ *    that does not exist. Six decisions were demoted with "the cited
+ *    evidence file no longer exists" written into rows whose files sat
+ *    right there. EXTENSIONS STAY ORDERED LONGEST-FIRST.
+ * 2. **`cmd:` receipts are not citations.** `verify-d --cmd` records the
+ *    command it ran, and a workspace-scoped one carries a
+ *    workspace-relative path (`pnpm --filter @declutrmail/web … run
+ *    src/…/action-sheet.test.tsx`). Resolved against the repo root that
+ *    file is missing, so the audit would demote the row whose evidence
+ *    is strongest: a command that ran and exited 0 at a recorded commit.
+ * 3. **Quadratic scan** (CodeQL, high). The original was one unanchored
+ *    pattern over the whole string, so the engine restarted at every
+ *    offset and re-consumed a long run of class characters at each —
+ *    O(n²), 137 ms on 8 KB of `-`. Rewriting the pattern to remove its
+ *    internal ambiguity did NOT fix that; measuring showed the restarts
+ *    were the cost, not the ambiguity.
+ *
+ * 4. **The trailing-dot trim, same shape again.** The tokenizer in (3)
+ *    stripped sentence punctuation with `/\.+$/`, which is anchored at
+ *    the END but not the START — so a long run of dots not at the end
+ *    restarts at every offset. 5.3 s on 64 KB. The timing guard written
+ *    for (3) missed it because its inputs were runs of `-`, not `.`; it
+ *    now covers six shapes, and every remaining pattern here was
+ *    measured against all six.
+ *
+ * So the scan is now tokenized: evidence splits on whitespace, and each
+ * token is matched ANCHORED, which is linear (256 KB in under 10 ms).
+ * The trade is that a path must be its own whitespace-delimited token —
+ * surrounding punctuation and a trailing `:12` are stripped, so
+ * `(store.ts:32 documents it)` still resolves, but a path glued to
+ * prose with no space would not. All 95 recorded evidence and note
+ * strings parse identically to the pre-rewrite behaviour.
+ *
+ * The first two failures had no test, which is why the first ran for a
+ * month over every recorded 🟢.
+ */
+const LEADING_PUNCTUATION = /^[^\w@/-]+/;
+const PATH_RUN = /^[\w@./-]+/;
+const CITED_PATH = /^[\w@/-]+(?:\.[\w@/-]+)*\.(?:tsx|ts|sql|sh|md)$/;
+
+export function citedEvidencePath(evidence: string): string | null {
+  if (evidence.startsWith('cmd:')) return null;
+  for (const token of evidence.split(/\s+/)) {
+    const run = PATH_RUN.exec(token.replace(LEADING_PUNCTUATION, ''));
+    if (!run) continue;
+    // A trailing `.` is sentence punctuation, never part of the path.
+    // Trimmed by hand, not by `/\.+$/`: that pattern is unanchored at the
+    // START, so on a long run of dots NOT at the end it restarts at every
+    // offset — 5.3 s on 64 KB, the second CodeQL alert on this function.
+    let end = run[0].length;
+    while (end > 0 && run[0][end - 1] === '.') end -= 1;
+    const candidate = run[0].slice(0, end);
+    if (CITED_PATH.test(candidate)) return candidate;
+  }
+  return null;
+}
+
 export function composeRow(
   decision: Decision,
   fragment: Fragment | undefined,

@@ -24,44 +24,28 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-26 — Seven decisions were demoted from Verified by a regex bug, not by evidence
+### 2026-08-26 — D34 needs a hand-smoke to reach Verified
 
-**Source:** session 2026-08-26 — surfaced when the implementation-log gate
-rejected a row I was recording; traced to the cause rather than worked around
+**Source:** session 2026-08-26 — found while executing the founder's answer on
+the seven demoted decisions (see Done, same date)
 
-**Why:** the log's evidence check truncated any `.tsx` path to a `.ts` one that
-does not exist (alternation order — `ts` matched before `tsx`). The
-2026-07-29 evidence audit ran it over every recorded 🟢 and marked seven
-decisions down from **Verified** to **Shipped**:
+**Why:** D34 (action sheet always shows, with a remember-preference toggle in
+Settings) sits at 🔵 with the note *"Truth sweep 2026-07-02 (🟡→🔵): server-side
+persistence under `users.preferences.actionSheetPrefs` … Pending verify-d"*. It
+was **not** demoted by the regex bug — it is an honest pending verification and
+the only one of the seven still outstanding. Its cited test file exists and
+passes; what has never been watched is the round-trip through the real
+Settings card.
 
-**D31, D32, D33, D34, D36, D208, D226** — all triage-surface decisions, all
-cited to `.tsx` tests that are present in the repo today.
+**How:** dev-login smoke — toggle the per-verb preference in Settings, confirm
+the sheet stops appearing for that verb, reload, confirm it persisted, toggle
+back. Then record it:
 
-Each row now carries *"Evidence audit 2026-07-29 (🟢→🔵): the cited evidence
-file no longer exists"*. That sentence is false for all seven. Worse, the audit
-also removed `status: 🟢` from their `.impl-log/` fragments, so the wrong
-answer is the recorded state — re-running the generator will not put it back.
+```
+pnpm verify-d D34 --observed "dev-login: toggled Archive remember-preference in Settings, sheet skipped with inline preview, survived reload, toggled back"
+```
 
-D226 is the action-lifecycle decision (sheet → preview → mutation → undo), one
-of the Section 2 guardrails. Its verification currently reads as never
-established.
-
-**How:** the regex is fixed in this branch, which stops it recurring. Restoring
-the seven is a separate call and yours to make:
-
-1. Re-add `status: 🟢` to each of `.impl-log/D{31,32,33,34,36,208,226}.md` and
-   strip the false audit sentence from their `note:` — treats the original 🟢
-   as sound and the demotion as the bug it was. Fast, and it restores a claim
-   somebody did make.
-2. Or leave them 🔵 and re-verify each with `pnpm verify-d` — slower, but the
-   verification is then something we watched happen rather than inherited.
-
-I did not pick for you: option 1 re-asserts Verified on seven decisions I have
-not checked, which is a claim about the product, not a formatting fix.
-
-**Verifies by:** the seven rows read 🟢 with no audit sentence, and
-`pnpm generate-impl-log --check --strict` is clean.
-
+**Verifies by:** D34 reads 🟢 with an observation naming what was exercised.
 **Status:** Open
 
 ### 2026-08-25 — Brief schedule decisions taken in session: every day, hourly slots
@@ -285,51 +269,6 @@ unaffected.
 
 ---
 
-### 2026-08-23 — AI processing has no consent mechanism; the send is stopped, the decision is not
-
-**Source:** session sweep; updated 2026-08-24 after #621 and #626 landed
-**Why:** `BriefSnapshotWorker` and `FollowupCheckWorker` selected every row in
-`mailbox_accounts` with no tier predicate, so they produced data for surfaces
-that are capability-gated on READ. `CapabilityGuard` is a NestJS *request*
-guard; a cron has no request and no principal, so a capability enforced only
-as a controller decorator gates reading, never producing.
-
-Measured before the fix: production held **4 workspaces, all `free`; 4 users,
-of whom 3 are not the founder**; **81 `brief_runs`** across all 4 mailboxes,
-2026-06-09 to 2026-08-21. Three real people's `senderName + senderEmail +
-subject + snippet` went to Anthropic for a feature none of them could open.
-
-Not a D7/D228 breach — the envelope matched `BRIEF_AI_DISCLOSURE` and carried
-no bodies, attachments or non-allowlisted headers. The defect was *who*, not
-*what*.
-
-**Two of the three parts are now closed by code:**
-
-- **The send is stopped.** #621 shipped `BRIEF_TIERS` / `FOLLOWUP_TIERS`,
-  derived from `TIER_MANIFEST` via `hasCapability` rather than hardcoded, so
-  producer and reader move together if pricing changes
-  (`brief-snapshot.worker.ts:74`, `followup-check.worker.ts:50`).
-- **The data is purged.** #626 shipped migration
-  `0074_purge_unentitled_brief_and_followup_rows.sql`.
-
-**What is still open is the part only you can answer.** `aiConsent`,
-`ai_consent`, `AI_CONSENT` and `aiProcessing` return nothing across
-`apps/api/src`, `packages/shared/src` and `packages/db/src`;
-`apps/web/src/features/consent/` is cookie-consent only. The disclosure copy
-exists — the opt-in does not.
-
-**How:** two calls.
-1. **Do the three affected users get told?** They are beta users on a
-   pre-launch product and the data was covered by the published disclosure,
-   so there is no obligation you have taken on. A short note is the
-   trust-positive move and costs nothing.
-2. **Does AI processing need an explicit opt-in before launch**, or is
-   disclosure + tier-gating the launch posture with consent landing after? If
-   opt-in: it needs a D-number, a settings surface, and a worker-side check —
-   not a controller decorator.
-**Verifies by:** a decision recorded here for (1) and (2); if (2) is yes, a
-D-row in `IMPLEMENTATION-LOG.md`.
-**Status:** Open — narrowed 2026-08-24 to the consent decision only
 ### 2026-08-22 — Supabase compute tier looks undersized for the read path
 
 **Source:** session — production profiling of the `/api/senders` latency report
@@ -358,7 +297,11 @@ while this project is AWS `us-west-2`.
 mail_messages` with `enable_indexonlyscan=off`. Today it is ~10 s for
 17,515 buffers. If the tier is the constraint, that should drop to well
 under a second at the same buffer count.
-**Status:** Open
+**Status:** Deferred 2026-08-26 — founder decision: stay on Micro until there
+are more users. The ~10 s scan is on a 4-workspace database nobody is waiting
+on. **Revisit trigger:** the first paying customer, or `/api/senders` p95
+crossing the D235 threshold already recorded there (150 ms) — whichever comes
+first. The measurement above is the test to re-run at that point.
 
 ### 2026-08-22 — Narrowing the mailbox lock around incremental sync needs sign-off
 
@@ -2129,6 +2072,151 @@ the shipped design; a fresh session reading them finds no contradiction with
 **Status:** Open
 
 ## Done
+
+### 2026-08-26 — Seven decisions were demoted from Verified by a regex bug, not by evidence
+
+**Source:** session 2026-08-26 — surfaced when the implementation-log gate
+rejected a row I was recording; traced to the cause rather than worked around
+
+**Why:** the log's evidence check truncated any `.tsx` path to a `.ts` one that
+does not exist (alternation order — `ts` matched before `tsx`). The
+2026-07-29 evidence audit ran it over every recorded 🟢 and marked seven
+decisions down from **Verified** to **Shipped**:
+
+**D31, D32, D33, D34, D36, D208, D226** — all triage-surface decisions, all
+cited to `.tsx` tests that are present in the repo today.
+
+Each row now carries *"Evidence audit 2026-07-29 (🟢→🔵): the cited evidence
+file no longer exists"*. That sentence is false for all seven. Worse, the audit
+also removed `status: 🟢` from their `.impl-log/` fragments, so the wrong
+answer is the recorded state — re-running the generator will not put it back.
+
+D226 is the action-lifecycle decision (sheet → preview → mutation → undo), one
+of the Section 2 guardrails. Its verification currently reads as never
+established.
+
+**How:** the regex is fixed in this branch, which stops it recurring. Restoring
+the seven is a separate call and yours to make:
+
+1. Re-add `status: 🟢` to each of `.impl-log/D{31,32,33,34,36,208,226}.md` and
+   strip the false audit sentence from their `note:` — treats the original 🟢
+   as sound and the demotion as the bug it was. Fast, and it restores a claim
+   somebody did make.
+2. Or leave them 🔵 and re-verify each with `pnpm verify-d` — slower, but the
+   verification is then something we watched happen rather than inherited.
+
+I did not pick for you: option 1 re-asserts Verified on seven decisions I have
+not checked, which is a claim about the product, not a formatting fix.
+
+**Verifies by:** the seven rows read 🟢 with no audit sentence, and
+`pnpm generate-impl-log --check --strict` is clean.
+
+**Answered 2026-08-26 — option 2-and-3, "restore what the regex ate, verify the
+guardrail for real":**
+
+- **Five restored** (D31, D32, D33, D36, D208). Before restoring, each cited
+  file was run: `action-toolbar.test.tsx`, `triage-screen.test.tsx` and
+  `action-sheet.test.tsx` — 82 tests, all green — and each cited assertion
+  confirmed present (confidence emphasis, no-bulk-select, empty state,
+  RowExpanded story, preview-before-mutation). The false audit sentence is
+  gone from all six fragments and from the log.
+- **D226 was not restored, it was verified.** `pnpm verify-d D226 --cmd "…
+  vitest run src/features/triage/action-sheet.test.tsx"` executed the suite
+  (23 tests, exit 0) and recorded the command, commit `2b7b57e` and date. The
+  action-lifecycle guardrail's 🟢 is now something we watched happen.
+
+**Correction to this entry as originally written.** It said all seven rows
+carried the false audit sentence. **D34 does not** — its note reads *"Truth
+sweep 2026-07-02 (🟡→🔵) … Pending verify-d"*. D34 was never a regex casualty;
+it is an honest 🔵 awaiting a hand-smoke of the remember-preference toggle.
+**It stays 🔵**, and is the one item left from this entry.
+
+**Status:** Done 2026-08-26 — six rows corrected; D34 remains a genuine
+pending verification (see the 2026-08-26 D34 entry in Open).
+
+### 2026-08-23 — AI processing has no consent mechanism; the send is stopped, the decision is not
+
+**Source:** session sweep; updated 2026-08-24 after #621 and #626 landed
+**Why:** `BriefSnapshotWorker` and `FollowupCheckWorker` selected every row in
+`mailbox_accounts` with no tier predicate, so they produced data for surfaces
+that are capability-gated on READ. `CapabilityGuard` is a NestJS *request*
+guard; a cron has no request and no principal, so a capability enforced only
+as a controller decorator gates reading, never producing.
+
+Measured before the fix: production held **4 workspaces, all `free`; 4 users,
+of whom 3 are not the founder**; **81 `brief_runs`** across all 4 mailboxes,
+2026-06-09 to 2026-08-21. Three real people's `senderName + senderEmail +
+subject + snippet` went to Anthropic for a feature none of them could open.
+
+Not a D7/D228 breach — the envelope matched `BRIEF_AI_DISCLOSURE` and carried
+no bodies, attachments or non-allowlisted headers. The defect was *who*, not
+*what*.
+
+**Two of the three parts are now closed by code:**
+
+- **The send is stopped.** #621 shipped `BRIEF_TIERS` / `FOLLOWUP_TIERS`,
+  derived from `TIER_MANIFEST` via `hasCapability` rather than hardcoded, so
+  producer and reader move together if pricing changes
+  (`brief-snapshot.worker.ts:74`, `followup-check.worker.ts:50`).
+- **The data is purged.** #626 shipped migration
+  `0074_purge_unentitled_brief_and_followup_rows.sql`.
+
+**What is still open is the part only you can answer.** `aiConsent`,
+`ai_consent`, `AI_CONSENT` and `aiProcessing` return nothing across
+`apps/api/src`, `packages/shared/src` and `packages/db/src`;
+`apps/web/src/features/consent/` is cookie-consent only. The disclosure copy
+exists — the opt-in does not.
+
+**How:** two calls.
+1. **Do the three affected users get told?** They are beta users on a
+   pre-launch product and the data was covered by the published disclosure,
+   so there is no obligation you have taken on. A short note is the
+   trust-positive move and costs nothing.
+2. **Does AI processing need an explicit opt-in before launch**, or is
+   disclosure + tier-gating the launch posture with consent landing after? If
+   opt-in: it needs a D-number, a settings surface, and a worker-side check —
+   not a controller decorator.
+**Verifies by:** a decision recorded here for (1) and (2); if (2) is yes, a
+D-row in `IMPLEMENTATION-LOG.md`.
+**Answered 2026-08-26:**
+
+1. **No notification.** The three non-founder accounts are the founder's own
+   family. There is no third party here, which retires this as an incident —
+   what remains is the product posture, below. *(This also means the
+   "3 real people" framing in every earlier write-up of this defect overstates
+   it; the producer-side tier bug it exposed was real and is fixed regardless.)*
+
+2. **Disclosure, not opt-in, is the launch posture.** Pro users buy the Brief;
+   processing that delivers a feature someone purchased is contract
+   performance, not a secondary purpose needing separate consent. An opt-in
+   before launch would gate the one feature that sells the tier.
+
+   The founder asked whether to add a subtle note on a public page. **It is
+   already there, and not subtly — which is the right call and should stay
+   that way:**
+   - `/privacy` lists Anthropic in the subprocessor table with exactly what is
+     sent: *"Suggestion explanations and Pro Brief summaries. A Pro Brief can
+     include the subject line and Gmail preview snippet, but never full email
+     contents."*
+   - `/faq` carries Anthropic processing in its page metadata and answers.
+   - `BRIEF_AI_DISCLOSURE` (`packages/shared/src/copy/action-safety.ts`) states
+     it in-product.
+   - `gmail-data-inventory.ts` records Anthropic as a processor with its
+     30-day retention policy and a link to Anthropic's own doc.
+
+   Making that *subtler* is the change that would hurt: a quiet disclosure
+   reads as concealment if it is ever questioned, while a plain one reads as
+   normal practice. The cost of plain is zero here — the product is openly
+   "AI reads your inbox so you don't have to", so a user who finds this on the
+   privacy page finds exactly what they bought.
+
+   **Revisit if:** enterprise or EU-heavy go-to-market, where opt-in stops
+   being posture and becomes a sales question. Then it needs a D-number, a
+   settings surface, and — non-negotiably — a **worker-side** check, since an
+   opt-in enforced only at the controller would repeat the exact bug that
+   caused this entry.
+
+**Status:** Done 2026-08-26 — both calls answered; no code change required.
 
 ### 2026-08-26 — D61 is marked Verified for an email digest that was never built
 
