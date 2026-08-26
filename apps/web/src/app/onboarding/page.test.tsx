@@ -81,7 +81,7 @@ const onboardingState = (over: Record<string, unknown> = {}): FetchStubHandler =
           {
             key: 'auto_archive_low_engagement',
             name: 'Auto-archive low-engagement',
-            description: 'Archives mail from senders you almost never open.',
+            description: 'Archives email from senders you almost never open.',
             verb: 'archive',
           },
         ],

@@ -893,7 +893,7 @@ export function ConfirmActionModal({
               role="note"
               style={{ fontSize: 12, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}
             >
-              No sendable unsubscribe for these senders. Archive moves their mail out of your inbox
+              No sendable unsubscribe for these senders. Archive moves their email out of your inbox
               instead.
             </p>
           )}
@@ -1200,7 +1200,7 @@ export function ConfirmActionModal({
               {activeReach === 'all_mail' && (
                 <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
                   Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo
-                  restores every email — inbox mail to the inbox, archived mail to the archive.
+                  restores every email — inbox email to the inbox, archived email to the archive.
                 </span>
               )}
             </div>
@@ -1375,8 +1375,8 @@ export function ConfirmActionModal({
                 if (livePreviewUnavailable) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Couldn’t load a live preview. Close and retry — no inbox mail can move without
-                      one.
+                      Couldn’t load a live preview. Close and retry — no inbox email can move
+                      without one.
                     </span>
                   );
                 }

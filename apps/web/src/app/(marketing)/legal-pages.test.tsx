@@ -210,7 +210,7 @@ describe('/privacy content — D7 + D228 posture', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('Gmail account email/status/connection details');
+    expect(text).toContain('mailbox email/status/connection details');
     expect(text).toContain('sender records and standing decisions');
     expect(text).toContain('decision/activity history');
     expect(text).toContain('does not include app preferences');

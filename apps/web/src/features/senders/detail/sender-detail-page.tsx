@@ -1201,7 +1201,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       `mail_messages`. Two windows, one sentence, and the
                       pronoun tied the percentage to the wrong one. Name
                       the window instead of implying a denominator. */}
-                  of the last 90 days&rsquo; mail was marked read.
+                  of the last 90 days&rsquo; email was marked read.
                   {/* THE SPLIT (F012). A third-party sweeper can mark
                       mail read through the API, and on the mailbox this
                       was measured against one did so 20,819 times — 27.5%

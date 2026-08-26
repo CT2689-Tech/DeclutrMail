@@ -47,8 +47,8 @@ export function QuietRoute() {
         title="Quiet hours"
         body={
           <>
-            Pick a daily window per mailbox — while it&apos;s active, Autopilot holds its moves and
-            runs them after the window ends. Your own actions always run immediately.
+            Pick a daily window per Gmail account — while it&apos;s active, Autopilot holds its
+            moves and runs them after the window ends. Your own actions always run immediately.
           </>
         }
       />

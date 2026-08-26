@@ -24,7 +24,7 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
     expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
     expect(screen.getByText('Details used')).toBeInTheDocument();
     expect(screen.getByText('12 messages received in the last 30 days')).toBeInTheDocument();
-    expect(screen.getByText(/does not change mail/i)).toBeInTheDocument();
+    expect(screen.getByText(/does not change email/i)).toBeInTheDocument();
   });
 
   /**

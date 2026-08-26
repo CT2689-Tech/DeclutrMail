@@ -28,8 +28,8 @@ describe('ProductGlossary — D245', () => {
     expect(text).toMatch(/applies its action automatically/);
     expect(text).toMatch(/Activity Undo or Gmail Trash recovery/);
     expect(text).toMatch(/separate recovery path/);
-    expect(text).toMatch(/required wake time/);
-    expect(text).toMatch(/Future mail from the sender is unchanged/);
+    expect(text).toMatch(/the return time you choose/);
+    expect(text).toMatch(/Future email from the sender is unchanged/);
   });
 
   it('offers topic navigation, contextual disclosures, and specific exits', () => {

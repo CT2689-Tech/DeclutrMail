@@ -496,7 +496,7 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     renderScreen();
 
     await screen.findByText('Alpha');
-    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+    expect(screen.queryByText(/most shielded unread email first/i)).toBeNull();
     // The rest of the header still stands — it is a fact about the list.
     expect(screen.getByText(/Bulk and automatic actions skip these senders/)).toBeInTheDocument();
   });
@@ -513,7 +513,7 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     renderScreen();
 
     await screen.findByText('Alpha');
-    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+    expect(screen.queryByText(/most shielded unread email first/i)).toBeNull();
   });
 
   it('makes no ordering claim when only SOME rows carry the measure', async () => {
@@ -528,7 +528,7 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     renderScreen();
 
     await screen.findByText('Measured');
-    expect(screen.queryByText(/most shielded unread mail first/i)).toBeNull();
+    expect(screen.queryByText(/most shielded unread email first/i)).toBeNull();
   });
 
   it('sorts an unmeasured row after a known zero, never as if it were zero', async () => {
@@ -579,7 +579,7 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     renderScreen();
 
     await screen.findByText('Zeta');
-    expect(screen.getByText(/most shielded unread mail first/i)).toBeInTheDocument();
+    expect(screen.getByText(/most shielded unread email first/i)).toBeInTheDocument();
   });
 
   it('never prints a fabricated "shielding 0" when nothing is shielded', async () => {

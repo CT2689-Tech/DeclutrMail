@@ -94,7 +94,11 @@ export function ActionSheet({
   // cleanup action on Free. Senders already blocks this (`nothingToActOn`,
   // confirm-action-modal.tsx); triage did not, so the two surfaces disagreed
   // on the same decision.
-  const nothingToActOn = requiresLivePreview && inboxCount === 0;
+  // Gate on the PRIMARY verb only. Unsubscribe is deliberately excluded, as
+  // it is in senders (`primaryActsOnInbox`): it cuts FUTURE mail, so it is
+  // real work at a zero backlog and is charged a unit either way.
+  const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
+  const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
   const confirmDisabled =
     (requiresLivePreview && (previewPending || previewUnavailable)) ||
     nothingToActOn ||
@@ -223,9 +227,9 @@ export function ActionSheet({
           />
 
           <ContextualHelp question="Why do I review this before confirming?">
-            The preview uses the current mailbox count and separates what will change from what will
-            stay unchanged. DeclutrMail sends the action only after this preview loads and you
-            confirm; Cancel changes nothing.
+            The preview uses the current Gmail account count and separates what will change from
+            what will stay unchanged. DeclutrMail sends the action only after this preview loads and
+            you confirm; Cancel changes nothing.
           </ContextualHelp>
 
           {verb === 'Later' && (

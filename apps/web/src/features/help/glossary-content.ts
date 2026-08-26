@@ -65,7 +65,7 @@ export const GLOSSARY_TERMS = {
   later: {
     term: 'Later',
     definition:
-      'Moves matching email currently in Inbox to the DeclutrMail/Later label until the required wake time. Future email from the sender is unchanged.',
+      'Moves matching email currently in Inbox to the DeclutrMail/Later label until the return time you choose. Future email from the sender is unchanged.',
   },
 } as const;
 

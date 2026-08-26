@@ -433,7 +433,7 @@ describe('SettingsScreen', () => {
     });
     await waitFor(() => expect(reconnect).toBeDisabled());
     const describedBy = reconnect.getAttribute('aria-describedby');
-    expect(describedBy).toBe('Gmail accounts-inbox-limit-explanation');
+    expect(describedBy).toBe('mailboxes-inbox-limit-explanation');
     expect(document.getElementById(describedBy!)).toHaveTextContent(
       new RegExp(`your plan includes ${TIER_MANIFEST.pro.inboxLimit} connected inboxes`, 'i'),
     );
@@ -759,7 +759,8 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'target_invalid',
-      message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
+      message:
+        'Could not match that recovery request to the Gmail account you chose. Try again below.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -771,7 +772,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'failed',
-      message: 'Could not reconnect Gmail. Try again from this mailbox list.',
+      message: 'Could not reconnect Gmail. Try again from this Gmail account list.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -837,7 +838,7 @@ describe('SettingsScreen', () => {
       expect(document.activeElement).toBe(document.getElementById('Gmail accounts'));
       expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
       expect(new URLSearchParams(window.location.search).has('connect_start_result')).toBe(false);
-      expect(window.location.hash).toBe('#Gmail accounts');
+      expect(window.location.hash).toBe('#mailboxes');
       expect(toast).toHaveBeenCalledTimes(1);
     },
   );
@@ -900,7 +901,7 @@ describe('SettingsScreen', () => {
     expect(document.activeElement).toBe(document.getElementById(`Gmail account-${MAILBOX_A}`));
     expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
     expect(new URLSearchParams(window.location.search).has('reconnect_result')).toBe(false);
-    expect(window.location.hash).toBe('#Gmail accounts');
+    expect(window.location.hash).toBe('#mailboxes');
     // Both unrelated reads are still unresolved when the return has
     // already been acknowledged and removed from the address bar.
     expect(screen.getByText('Loading plan…')).toBeInTheDocument();
@@ -930,7 +931,7 @@ describe('SettingsScreen', () => {
       ['source', 'account'],
       ['return', '/settings/privacy'],
     ]);
-    expect(window.location.hash).toBe('#Gmail accounts');
+    expect(window.location.hash).toBe('#mailboxes');
     expect(toast).toHaveBeenCalledTimes(1);
   });
 
@@ -944,7 +945,7 @@ describe('SettingsScreen', () => {
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
     expect(document.querySelector('[data-reconnect-highlighted="true"]')).toBeNull();
-    expect(window.location.hash).toBe('#Gmail accounts');
+    expect(window.location.hash).toBe('#mailboxes');
   });
 
   it('falls back when a valid reconnect UUID has no matching mailbox row', async () => {
@@ -956,7 +957,7 @@ describe('SettingsScreen', () => {
     const section = document.getElementById('mailboxes');
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
-    expect(window.location.hash).toBe('#Gmail accounts');
+    expect(window.location.hash).toBe('#mailboxes');
   });
 
   it('rejects a malformed reconnect fragment without passing it into a DOM selector or id lookup', async () => {
@@ -975,7 +976,7 @@ describe('SettingsScreen', () => {
     const section = document.getElementById('mailboxes');
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
-    expect(window.location.hash).toBe('#Gmail accounts');
+    expect(window.location.hash).toBe('#mailboxes');
 
     getElementByIdSpy.mockRestore();
     querySelectorSpy.mockRestore();
@@ -985,7 +986,7 @@ describe('SettingsScreen', () => {
     setSettingsLocation('source=account&reconnect_result=unexpected', `#mailbox-${MAILBOX_A}`);
     renderScreen();
 
-    await waitFor(() => expect(window.location.hash).toBe('#Gmail accounts'));
+    await waitFor(() => expect(window.location.hash).toBe('#mailboxes'));
     expect(toast).not.toHaveBeenCalled();
     expect(new URLSearchParams(window.location.search).get('source')).toBe('account');
     expect(new URLSearchParams(window.location.search).has('reconnect_result')).toBe(false);
@@ -1046,7 +1047,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Plan & Billing' })).toBeInTheDocument();
     // The "no mailboxes connected" empty state, not a broken list.
-    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
+    expect(screen.getByText(/no Gmail accounts connected/i)).toBeInTheDocument();
     // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.
     expect(syncSpy).not.toHaveBeenCalled();
   });

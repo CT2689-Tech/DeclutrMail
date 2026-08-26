@@ -127,7 +127,7 @@ export default function AppError({
               margin: 0,
             }}
           >
-            Your mailbox and decisions are untouched. Try again, or head back to Triage and
+            Your Gmail account and decisions are untouched. Try again, or head back to Triage and
             we&rsquo;ll retry the rest in the background.
           </p>
 

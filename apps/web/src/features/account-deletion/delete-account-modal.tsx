@@ -174,8 +174,8 @@ export function DeleteAccountModal({
                 style={{ marginTop: 2 }}
               />
               I understand this permanently deletes my DeclutrMail account and mailbox product data,
-              does not delete Gmail mail, and retains the minimal pseudonymous security and deletion
-              evidence described above under its operational policy.
+              does not delete Gmail email, and retains the minimal pseudonymous security and
+              deletion evidence described above under its operational policy.
             </label>
           </div>
         ) : (

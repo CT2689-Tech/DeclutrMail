@@ -291,7 +291,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     // second reason to cover fewer senders than the selection.
     expect(screen.getByText('Archive email from 1 sender')).toBeInTheDocument();
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Acting on 1 of the 40 eligible senders/)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 40 eligible senders/)).toBeInTheDocument();
     expect(screen.getByText(/The rest stay untouched/)).toBeInTheDocument();
     // The whole point: confirm is live, and firing it calls through.
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -339,7 +339,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     // The capped total is the ELIGIBLE count, and says so.
-    expect(screen.getByText(/Acting on 2 of the 4 eligible senders/)).toBeInTheDocument();
+    expect(screen.getByText(/2 of 4 eligible senders/)).toBeInTheDocument();
     expect(screen.queryByText(/4 senders you selected/)).not.toBeInTheDocument();
     // The title is the acted-on count, stated by the caller.
     expect(screen.getByText('Archive email from 2 senders')).toBeInTheDocument();
@@ -434,7 +434,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     expect(screen.getByText(/emails currently match.*Archive/i)).toBeInTheDocument();
-    expect(screen.getByText(/Gmail is checked again when this runs/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: /Show what currently matches \(1 of 4\)/i }),
     ).toBeInTheDocument();
@@ -797,7 +797,7 @@ describe('ConfirmActionModal — composite notice names the acting verb', () => 
     expect(
       screen.getByText(new RegExp(`\\. ${expectedVerb} only acts on email still in the inbox\\.$`)),
     ).toBeTruthy();
-    expect(screen.queryByText(/Unsubscribe only acts on mail still in the inbox/)).toBeNull();
+    expect(screen.queryByText(/Unsubscribe only acts on email still in the inbox/)).toBeNull();
     // The primary still does real work, so confirm stays available.
     expect(screen.getByRole('button', { name: /Unsubscribe/ })).toBeEnabled();
   });
@@ -1072,7 +1072,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     expect(screen.getAllByText('700').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
     // The un-windowed chip stops claiming "inbox" once the reach is wider.
-    expect(screen.getByRole('radio', { name: /All mail/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /All email/ })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: /All inbox/ })).toBeNull();
     // The exclusions + the per-placement undo promise are stated where
     // the choice is made — and the promise is the CONDITIONAL one the
@@ -1080,7 +1080,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // absolute "back where it was".
     expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/)).toBeInTheDocument();
     expect(
-      screen.getByText(/inbox mail to the inbox, archived mail to the archive/),
+      screen.getByText(/inbox email to the inbox, archived email to the archive/),
     ).toBeInTheDocument();
   });
 
@@ -1131,14 +1131,17 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     ).toBeInTheDocument();
     // With the reach control on screen, the notice must NOT claim Delete
     // "only acts on" inbox mail — the next sentence disproves it.
-    expect(screen.getByText(/Delete acts on inbox mail by default/)).toBeInTheDocument();
-    expect(screen.queryByText(/only acts on mail still in the inbox/)).toBeNull();
+    expect(screen.getByText(/Delete acts on inbox email by default/)).toBeInTheDocument();
+    expect(screen.queryByText(/only acts on email still in the inbox/)).toBeNull();
     // Flipping the chip clears the inbox-scope narration AND arms the
     // exact figure the chip advertised: the hidden 180d default resets
     // to "All mail", so the user gets 977, not a silently-shaved 700.
     fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.queryByText(/is in your inbox right now/)).toBeNull();
-    expect(screen.getByRole('radio', { name: /All mail/ })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /All email/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
     expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
   });
@@ -1268,9 +1271,7 @@ describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () =>
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
-    expect(
-      screen.queryByText(/None of these senders has an unsubscribe DeclutrMail can send/),
-    ).toBeNull();
+    expect(screen.queryByText(/No sendable unsubscribe for these senders/)).toBeNull();
     // It still says what will happen: the user sends this one.
     expect(document.getElementById('dm-confirm-lead')?.textContent).toContain(
       'DeclutrMail opens a prefilled Gmail draft; you send it.',
@@ -1292,9 +1293,7 @@ describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () =>
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(/None of these senders has an unsubscribe DeclutrMail can send/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/No sendable unsubscribe for these senders/)).toBeInTheDocument();
   });
 
   it('offers the action as soon as one sender is one-click', () => {

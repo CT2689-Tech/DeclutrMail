@@ -93,8 +93,8 @@ export default function SendersError({
             margin: 0,
           }}
         >
-          Your mailbox and decisions are untouched. Try again, or head to Triage and we&rsquo;ll
-          come back to this in a moment.
+          Your Gmail account and decisions are untouched. Try again, or head to Triage and
+          we&rsquo;ll come back to this in a moment.
         </p>
 
         {error.digest != null && (

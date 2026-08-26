@@ -97,8 +97,8 @@ export function AutopilotObservePreview() {
           }}
         >
           Observe records matches as suggestions; Active applies future matches automatically.
-          Review the preset rules installed for your mailbox, then run a read-only current-match
-          preview. Preview does not create suggestions or change Gmail.
+          Review the preset rules installed for your Gmail account, then run a read-only
+          current-match preview. Preview does not create suggestions or change Gmail.
         </p>
       </div>
 
@@ -113,7 +113,7 @@ export function AutopilotObservePreview() {
         }}
       >
         <h2 id="autopilot-preview-rules" style={{ margin: '0 0 12px', fontSize: 14 }}>
-          Preset rules in your mailbox
+          Preset rules in your Gmail account
         </h2>
         {rules.isLoading && (
           <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: 13 }}>
@@ -128,7 +128,7 @@ export function AutopilotObservePreview() {
         )}
         {rules.data && rules.data.length === 0 && (
           <p style={{ margin: 0, color: color.fgMuted, fontSize: 13 }}>
-            No preset rules are installed yet. They appear after the first mailbox sync.
+            No preset rules are installed yet. They appear after the first Gmail account sync.
           </p>
         )}
         {rules.data && rules.data.length > 0 && (

@@ -88,8 +88,8 @@ describe('DecidePreview — live-preview confirm gate', () => {
     const confirm = screen.getByRole('button', { name: /Confirm Archive/i });
     expect(confirm).toBeEnabled();
     expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText(/emails currently match in Inbox/i)).toBeInTheDocument();
-    expect(screen.getByText(/Gmail is checked again at execution/i)).toBeInTheDocument();
+    expect(screen.getByText(/emails in Inbox now/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
     expect(screen.getByRole('note', { name: 'Gmail account: active@gmail.com' })).toBeVisible();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -121,7 +121,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(allMailChip).toHaveTextContent('9');
     // Default reach keeps the inbox-scoped title + caption.
     expect(screen.getByText(`Delete ${row.senderName}'s inbox email`)).toBeInTheDocument();
-    expect(screen.getByText(/currently match in Inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/in Inbox now/i)).toBeInTheDocument();
   });
 
   it('hides the chips on a non-Delete verb and when the all-mail block is absent', () => {
@@ -179,7 +179,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     // the chip and the headline, while '2' remains only on the inbox chip.
     expect(screen.getAllByText('9')).toHaveLength(2);
     expect(screen.getAllByText('2')).toHaveLength(1);
-    expect(screen.getByText(/currently match across inbox \+ archived/i)).toBeInTheDocument();
+    expect(screen.getByText(/across inbox \+ archived/i)).toBeInTheDocument();
     expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/i)).toBeInTheDocument();
   });
 
@@ -199,8 +199,8 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     );
     // "only acts on mail still in the inbox" would be false right under
     // the chip that reaches past it.
-    expect(screen.getByText(/Delete acts on inbox mail by default\./)).toBeInTheDocument();
-    expect(screen.queryByText(/only acts on mail still in the inbox/)).toBeNull();
+    expect(screen.getByText(/Delete acts on inbox email by default\./)).toBeInTheDocument();
+    expect(screen.queryByText(/only acts on email still in the inbox/)).toBeNull();
   });
 
   it('keeps the absolute empty-inbox wording when no reach control is offered', () => {
@@ -215,6 +215,6 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByText(/Delete only acts on mail still in the inbox\./)).toBeInTheDocument();
+    expect(screen.getByText(/Delete only acts on email still in the inbox\./)).toBeInTheDocument();
   });
 });

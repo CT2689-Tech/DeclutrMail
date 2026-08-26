@@ -212,7 +212,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/emails currently match in Inbox/i);
+    await screen.findByText(/emails in Inbox now/i);
 
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(decidePosted).toBe(true));
@@ -267,7 +267,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     fireEvent.keyDown(window, { key: 'd' });
     const allMailChip = await screen.findByRole('radio', { name: /Inbox \+ archived/ });
     fireEvent.click(allMailChip);
-    await screen.findByText(/currently match across inbox \+ archived/i);
+    await screen.findByText(/across inbox \+ archived/i);
 
     // Enter while the chip has focus: the screen handler claims the key
     // (defaultPrevented → fireEvent returns false), so in a real
@@ -301,7 +301,7 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
-    await screen.findByText(/emails currently match in Inbox/i);
+    await screen.findByText(/emails in Inbox now/i);
     expect(screen.queryByRole('radiogroup', { name: 'Where it applies' })).toBeNull();
 
     fireEvent.keyDown(window, { key: 'Enter' });

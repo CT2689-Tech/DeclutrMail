@@ -24,7 +24,7 @@ describe('StepConnect privacy boundary', () => {
     }
     expect(text).toMatch(/full bodies and attachments are not fetched/i);
     expect(text).toMatch(/connecting grants that access, but does not change any email/i);
-    expect(text).toMatch(/affected mail, future-mail behavior, and available recovery/i);
+    expect(text).toMatch(/affected email, future-mail behavior, and available recovery/i);
     expect(text).not.toMatch(/whole list|exactly this list/i);
   });
 });

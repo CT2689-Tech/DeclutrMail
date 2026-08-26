@@ -102,7 +102,7 @@ export function PrivacyDataView({
         title="Privacy & Data"
         body={
           <>
-            Exactly what DeclutrMail stores about your mail, what it never touches, and how to take
+            Exactly what DeclutrMail stores about your email, what it never touches, and how to take
             your data with you — or leave entirely.
           </>
         }
@@ -163,7 +163,7 @@ export function PrivacyDataView({
           <h3 style={cardTitleStyle}>Gmail accounts in DeclutrMail</h3>
           {mailboxes.length === 0 ? (
             <p style={mutedTextStyle}>
-              No mailboxes connected — no Gmail data is being saved right now.
+              No Gmail accounts connected — no Gmail data is being saved right now.
             </p>
           ) : (
             <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
@@ -263,8 +263,8 @@ export function PrivacyDataView({
           </div>
           {exportFailed && (
             <p role="alert" style={{ fontSize: 12, color: color.danger, margin: '10px 0 0' }}>
-              The export could not be prepared. Wait a moment and try again — large mailboxes are
-              rate-limited to a few exports per five minutes.
+              The export could not be prepared. Wait a moment and try again — large Gmail accounts
+              are rate-limited to a few exports per five minutes.
             </p>
           )}
         </div>
@@ -288,13 +288,13 @@ export function PrivacyDataView({
             <li style={exitRowStyle}>
               <div>
                 <div style={exitTitleStyle}>
-                  Disconnect &amp; delete one mailbox&apos;s saved data
+                  Disconnect &amp; delete one Gmail account&apos;s saved data
                 </div>
                 <div style={exitDetailStyle}>
-                  Also permanently deletes that mailbox&apos;s saved email details, sender data,
-                  decisions, rules, Activity, and Undo data. Your DeclutrMail account, other
-                  mailboxes, disconnected Gmail address, and Gmail mail remain. Choose Manage in the
-                  top-bar account menu.
+                  Also permanently deletes that Gmail account&apos;s saved email details, sender
+                  data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other
+                  Gmail accounts, disconnected Gmail address, and your email in Gmail remain. Choose
+                  Manage in the top-bar account menu.
                 </div>
               </div>
             </li>

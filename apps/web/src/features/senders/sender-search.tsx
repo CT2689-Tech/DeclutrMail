@@ -280,7 +280,7 @@ export function SenderSearch({
                 letterSpacing: '0.04em',
               }}
             >
-              searching mailbox…
+              searching Gmail account…
             </div>
           )}
           {matches.map((s, i) => (

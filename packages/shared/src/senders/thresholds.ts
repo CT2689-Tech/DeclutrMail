@@ -219,7 +219,7 @@ export const PATTERNS = {
    *  `mailer.`). Allows one optional sub-segment before the bulk
    *  marker (e.g. `welcome.email.brand.com`). */
   BULK_SUBDOMAIN_REGEX:
-    '@([a-z0-9]+\\.)?(em|e1|e2|m|email|email|news|notify|notification|alerts?|updates?|mailer|messaging|messages|smtp|delivery)\\.[a-z0-9-]+\\.[a-z]{2,}$',
+    '@([a-z0-9]+\\.)?(em|e1|e2|m|mail|email|news|notify|notification|alerts?|updates?|mailer|messaging|messages|smtp|delivery)\\.[a-z0-9-]+\\.[a-z]{2,}$',
 } as const;
 
 /**

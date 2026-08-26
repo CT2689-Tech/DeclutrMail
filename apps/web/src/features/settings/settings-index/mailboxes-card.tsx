@@ -93,7 +93,7 @@ export function MailboxesCard({
               return (
                 <li
                   key={m.id}
-                  id={`Gmail account-${m.id}`}
+                  id={`mailbox-${m.id}`}
                   tabIndex={-1}
                   data-reconnect-highlighted={reconnectHighlighted ? 'true' : undefined}
                   style={{

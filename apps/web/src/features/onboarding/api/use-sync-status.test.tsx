@@ -76,7 +76,7 @@ describe('useSyncStatus', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(seenHeader).toBe('Gmail account-b');
+    expect(seenHeader).toBe('mailbox-b');
   });
 
   it('uses fast syncing, slower failed, and low-frequency ready cadences', () => {

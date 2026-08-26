@@ -1145,7 +1145,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/emails currently match in Inbox/i);
+    await screen.findByText(/emails in Inbox now/i);
     expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
     fireEvent.keyDown(window, { key: 'a' });
 

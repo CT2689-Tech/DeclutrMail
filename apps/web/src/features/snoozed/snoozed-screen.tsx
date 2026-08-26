@@ -135,7 +135,7 @@ export function SnoozedScreen() {
           description={
             <>
               Send a sender to <strong>Later</strong> from Triage or Senders and it lands here, with
-              its mail tucked into the DeclutrMail/Later label until you bring it back.
+              its email tucked into the DeclutrMail/Later label until you bring it back.
             </>
           }
         />

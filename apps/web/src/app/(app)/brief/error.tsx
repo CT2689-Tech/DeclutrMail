@@ -87,8 +87,8 @@ export default function BriefError({
             margin: 0,
           }}
         >
-          Your mailbox is untouched. Try again, or jump to Triage and we&rsquo;ll regenerate this
-          tomorrow morning anyway.
+          Your Gmail account is untouched. Try again, or jump to Triage and we&rsquo;ll regenerate
+          this tomorrow morning anyway.
         </p>
 
         {error.digest != null && (

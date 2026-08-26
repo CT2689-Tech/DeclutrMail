@@ -189,12 +189,12 @@ describe('ensureInitialSyncJob', () => {
     const q = new FakeQueue();
     // First sweep — adds.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(await ensureInitialSyncJob(q as any, 'Gmail account-1')).toBe('added');
+    expect(await ensureInitialSyncJob(q as any, 'mailbox-1')).toBe('added');
     // Job is now `waiting`; subsequent sweeps must NOT add again.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(await ensureInitialSyncJob(q as any, 'Gmail account-1')).toBe('noop');
+    expect(await ensureInitialSyncJob(q as any, 'mailbox-1')).toBe('noop');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(await ensureInitialSyncJob(q as any, 'Gmail account-1')).toBe('noop');
+    expect(await ensureInitialSyncJob(q as any, 'mailbox-1')).toBe('noop');
     expect(q.addCalls).toBe(1);
   });
 });

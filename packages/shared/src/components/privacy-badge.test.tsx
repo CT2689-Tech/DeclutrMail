@@ -35,7 +35,7 @@ describe('PrivacyBadge — D7 + D228 copy contract', () => {
     expect(PRIVACY_STORAGE_ITEMS).toEqual(
       expect.arrayContaining([
         'Gmail message and conversation IDs',
-        'Recipient email addresses from To and Cc on email you sent',
+        'Recipient email addresses from To and Cc on mail you sent',
         'Unsubscribe links and whether one-click unsubscribe is supported',
         'Estimated Gmail message size',
       ]),

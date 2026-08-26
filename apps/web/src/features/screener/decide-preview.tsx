@@ -235,7 +235,7 @@ export function DecidePreview({
           {activeReach === 'all_mail' && (
             <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
               Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
-              every email — inbox mail to the inbox, archived mail to the archive.
+              every email — inbox email to the inbox, archived email to the archive.
             </span>
           )}
         </div>
@@ -361,7 +361,7 @@ function ImpactFigure({
   if (count === 'unavailable') {
     return (
       <span style={captionStyle}>
-        Couldn&apos;t load a live preview. Cancel and retry — no inbox mail can move without one.
+        Couldn&apos;t load a live preview. Cancel and retry — no inbox email can move without one.
       </span>
     );
   }

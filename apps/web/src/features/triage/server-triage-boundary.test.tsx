@@ -86,7 +86,7 @@ describe('ServerTriageBoundary', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const fetchSpy = vi.fn(async () =>
       Response.json(
-        { error: { code: 'NO_ACTIVE_MAILBOX', message: 'Select a mailbox' } },
+        { error: { code: 'NO_ACTIVE_MAILBOX', message: 'Select a Gmail account' } },
         { status: 409 },
       ),
     );
@@ -103,13 +103,11 @@ describe('ServerTriageBoundary', () => {
   });
 
   it('prefetches only for an authed mailbox that has the triage capability', () => {
-    expect(shouldPrefetchTriage({ activeMailboxId: 'Gmail account-1', tier: 'pro' })).toBe(true);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'Gmail account-1', tier: 'free' })).toBe(true);
+    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'pro' })).toBe(true);
+    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'free' })).toBe(true);
     expect(shouldPrefetchTriage({ activeMailboxId: null, tier: 'pro' })).toBe(false);
     expect(shouldPrefetchTriage(null)).toBe(false);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'Gmail account-1', tier: 'not-a-tier' })).toBe(
-      false,
-    );
+    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'not-a-tier' })).toBe(false);
   });
 
   it('does not fetch mailbox data when the route is not eligible', async () => {

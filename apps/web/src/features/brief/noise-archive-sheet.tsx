@@ -146,12 +146,12 @@ export function NoiseArchiveSheet({
               </span>
             ) : scopeConflict ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Your active mailbox changed while this was open, so these counts no longer apply.
-                Close this and pick a mailbox to start again. Nothing was archived.
+                Your active Gmail account changed while this was open, so these counts no longer
+                apply. Close this and pick a Gmail account to start again. Nothing was archived.
               </span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Couldn&rsquo;t load a live preview. Retry — no inbox mail can move without one.
+                Couldn&rsquo;t load a live preview. Retry — no inbox email can move without one.
               </span>
             ) : (
               <>

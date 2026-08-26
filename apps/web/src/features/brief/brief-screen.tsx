@@ -996,7 +996,7 @@ function NotYetState({ onRefresh }: { onRefresh: () => void }) {
         title="Your Brief lands soon"
         description={
           <>
-            We snapshot yesterday&rsquo;s mail every morning. If you connected recently or
+            We snapshot yesterday&rsquo;s email every morning. If you connected recently or
             you&rsquo;re early in your time zone, refresh in a few minutes.
           </>
         }

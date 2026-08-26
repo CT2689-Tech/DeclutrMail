@@ -101,7 +101,7 @@ describe('SyncErrorBanner', () => {
     });
     render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
-    expect(screen.getByText(/new mail isn't syncing/i)).toBeInTheDocument();
+    expect(screen.getByText(/new email isn't syncing/i)).toBeInTheDocument();
   });
 
   it('shows the banner when the error is recent and no sync has ever completed', () => {
@@ -194,7 +194,7 @@ describe('SyncErrorBanner', () => {
     render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
 
     const banner = screen.getByTestId('sync-status-unavailable-banner');
-    expect(banner).toHaveTextContent(/can.t check whether new mail is syncing/i);
+    expect(banner).toHaveTextContent(/can.t check whether new email is syncing/i);
     fireEvent.click(screen.getByRole('button', { name: /check again/i }));
     expect(refetchSpy).toHaveBeenCalledTimes(1);
   });

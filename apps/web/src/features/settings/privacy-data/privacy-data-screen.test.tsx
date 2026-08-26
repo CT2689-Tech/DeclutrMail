@@ -86,7 +86,9 @@ describe('PrivacyDataView', () => {
     ).toBeGreaterThan(0);
     expect(screen.getAllByText(/Disconnect & delete saved data/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Records we keep to investigate problems/i)).toBeInTheDocument();
-    expect(screen.getByText(/Disconnect & delete one mailbox's saved data/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Disconnect & delete one Gmail account's saved data/i),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
     ).toBeInTheDocument();
@@ -95,7 +97,7 @@ describe('PrivacyDataView', () => {
 
   it('renders the no-mailboxes empty state', () => {
     renderView({ mailboxes: [] });
-    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
+    expect(screen.getByText(/no Gmail accounts connected/i)).toBeInTheDocument();
   });
 
   it('shows the tier-resolved undo window, and generic copy when tier is unknown', () => {

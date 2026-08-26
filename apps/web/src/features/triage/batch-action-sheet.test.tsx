@@ -100,8 +100,8 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
     expect(onConfirm).toHaveBeenCalledTimes(2);
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText(/emails currently match in Inbox/i)).toBeInTheDocument();
-    expect(screen.getByText(/Gmail is checked again at execution/i)).toBeInTheDocument();
+    expect(screen.getByText(/emails in Inbox now/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
     expect(screen.getByRole('note', { name: 'Gmail account: active@gmail.com' })).toBeVisible();
   });

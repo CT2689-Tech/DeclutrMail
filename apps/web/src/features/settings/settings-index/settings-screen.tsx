@@ -391,7 +391,7 @@ export function SettingsScreen({
           }
         />
 
-        <SectionLabel id="Gmail accounts" focusable>
+        <SectionLabel id="mailboxes" focusable>
           Mailboxes
         </SectionLabel>
         <MailboxesCard

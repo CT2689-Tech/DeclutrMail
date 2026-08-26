@@ -107,7 +107,7 @@ describe('StepProtectionReview — the review', () => {
     expect(screen.getByText(/55 senders are protected by one star or a Gmail/)).toBeInTheDocument();
     // The ordering is stated, because otherwise the row order is
     // arbitrary to the reader.
-    expect(screen.getByText(/shielding the most unread mail/)).toBeInTheDocument();
+    expect(screen.getByText(/shielding the most unread email/)).toBeInTheDocument();
   });
 
   it('names the stale shields, and says they are still protected (F010)', () => {
@@ -177,7 +177,7 @@ describe('StepProtectionReview — the review', () => {
 
     renderReview();
 
-    expect(screen.queryByText(/shielding the most unread mail/)).toBeNull();
+    expect(screen.queryByText(/shielding the most unread email/)).toBeNull();
     expect(screen.getByText(/Here are 2 to look at\./)).toBeInTheDocument();
   });
 
@@ -189,7 +189,7 @@ describe('StepProtectionReview — the review', () => {
 
     renderReview();
 
-    expect(screen.getByText(/shielding the most unread mail/)).toBeInTheDocument();
+    expect(screen.getByText(/shielding the most unread email/)).toBeInTheDocument();
   });
 
   it('never reads as failure when nothing was protected by a reply', () => {
@@ -408,7 +408,7 @@ describe('StepProtectionReview — states the flow audit found unpinned (2026-08
 
     renderReview();
 
-    expect(screen.getByText(/Your mailbox connection changed/)).toBeInTheDocument();
+    expect(screen.getByText(/Your Gmail account connection changed/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh connection/i })).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't load your protection summary/)).toBeNull();
   });
@@ -453,7 +453,7 @@ describe('StepProtectionReview — states the flow audit found unpinned (2026-08
 
     renderReview();
 
-    expect(screen.queryByText(/shielding the most unread mail/)).toBeNull();
+    expect(screen.queryByText(/shielding the most unread email/)).toBeNull();
     expect(screen.getByText(/Here are 2 to look at\./)).toBeInTheDocument();
   });
 });

@@ -145,7 +145,7 @@ export function SendersPoliciesScreen() {
           DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
           delete, or unsubscribe them on its own. An action you take on one sender yourself still
           applies. You can protect a sender, and DeclutrMail also protects one when you write to
-          them repeatedly and hear back, star their mail, or Gmail keeps marking it important. Each
+          them repeatedly and hear back, star their email, or Gmail keeps marking it important. Each
           row shows which of those applies, and Unprotect removes it — automatic protection
           won&apos;t re-apply afterwards.
         </p>

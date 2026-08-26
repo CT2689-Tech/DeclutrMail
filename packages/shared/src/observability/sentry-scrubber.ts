@@ -82,7 +82,7 @@ const SENTRY_BREADCRUMB_CATEGORIES = new Set([
   'action',
   'undo',
   'navigation',
-  'Gmail account',
+  'mailbox',
   'auth',
 ]);
 const SENTRY_BREADCRUMB_DATA_KEYS = new Set([

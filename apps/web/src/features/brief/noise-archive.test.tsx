@@ -302,7 +302,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     // 351 is what is in the inbox now; 7 is what yesterday held. The
     // preview must state the number that is about to move.
     await within(dialog).findByText('351');
-    expect(within(dialog).getByText(/currently match in Inbox/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/in Inbox now/i)).toBeInTheDocument();
   });
 
   it('blocks confirm when nothing from those senders is in the inbox', async () => {
@@ -577,7 +577,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
 
-    await screen.findByText(/1 no longer in this mailbox — left out of this archive/i);
+    await screen.findByText(/1 no longer in this Gmail account — left out of this archive/i);
   });
 
   it('renders the scope-conflict state instead of a Retry that would 409 forever', async () => {
@@ -589,7 +589,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/Your active mailbox changed while this was open/i);
+    await within(dialog).findByText(/Your active Gmail account changed while this was open/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     expect(
       within(dialog).queryByRole('button', { name: /retry preview/i }),

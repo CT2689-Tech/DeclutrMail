@@ -131,7 +131,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(within(row).queryByText('Sync failed')).not.toBeInTheDocument();
     expect(
       within(row).getByRole('button', {
-        name: `Selected mailbox ${MAILBOX_A.email}, needs reconnect`,
+        name: `Selected Gmail account ${MAILBOX_A.email}, needs reconnect`,
       }),
     ).toBeEnabled();
 
@@ -158,7 +158,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(within(row).queryByText('Active')).not.toBeInTheDocument();
     expect(within(row).queryByText('Sync failed')).not.toBeInTheDocument();
     const selector = within(row).getByRole('button', {
-      name: `Switch to mailbox ${MAILBOX_B.email}, needs reconnect`,
+      name: `Switch to Gmail account ${MAILBOX_B.email}, needs reconnect`,
     });
     expect(selector).toBeEnabled();
     const reconnect = within(row).getByRole('button', { name: `Reconnect ${MAILBOX_B.email}` });

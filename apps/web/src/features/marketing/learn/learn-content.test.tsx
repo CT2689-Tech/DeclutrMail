@@ -128,7 +128,7 @@ describe('public learning content registry', () => {
     expect(copy).not.toMatch(
       /manual (?:archive|later|delete) (?:creates|installs|becomes|applies to) (?:a )?future/i,
     );
-    expect(copy).toMatch(/manual Archive, Later, and Delete affect current matched mail/i);
+    expect(copy).toMatch(/manual Archive, Later, and Delete affect current matched email/i);
     expect(copy).toMatch(/delivered unsubscribe request (?:is|cannot).{0,25}(?:one-way|recalled)/i);
     expect(copy).toMatch(/never fetches?(?: or stores?)? full email contents/i);
     expect(copy).toMatch(/Gmail(?:’s)? (?:short )?(?:generated )?preview snippet/i);

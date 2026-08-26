@@ -95,7 +95,7 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
     return (
       <SyncBannerFrame testId="sync-status-unavailable-banner">
         <SyncBannerMessage>
-          We can&rsquo;t check whether new mail is syncing right now.
+          We can&rsquo;t check whether new email is syncing right now.
         </SyncBannerMessage>
         <Button
           tone="default"

@@ -280,8 +280,8 @@ describe('ActionSheet — live-preview confirm gate', () => {
     );
 
     expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText(/emails currently match in Inbox/i)).toBeInTheDocument();
-    expect(screen.getByText(/Gmail is checked again at execution/i)).toBeInTheDocument();
+    expect(screen.getByText(/emails in Inbox now/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
   });
 });
@@ -446,7 +446,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // states reach; the notice states the consequence.
     renderSheet(protectedRow);
     const notice = screen.getByRole('status').textContent ?? '';
-    expect(notice).not.toMatch(/moves matching inbox mail/i);
+    expect(notice).not.toMatch(/moves matching inbox email/i);
     expect(notice).not.toMatch(/Archive/);
   });
 

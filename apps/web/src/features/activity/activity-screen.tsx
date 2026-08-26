@@ -1663,7 +1663,7 @@ function ActivitySupportBundleDialog({
               summary="What technical details can be included?"
               style={{ marginTop: 10 }}
             >
-              The optional appendix contains the bundle version, internal mailbox and Activity
+              The optional appendix contains the bundle version, internal Gmail account and Activity
               identifiers, action-attempt identifiers, machine action/source values, execution
               status, classified error codes, and filter dates. It never includes OAuth, session, or
               Undo tokens; idempotency keys; raw provider responses; message bodies; or raw

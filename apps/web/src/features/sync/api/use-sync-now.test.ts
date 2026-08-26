@@ -47,7 +47,7 @@ describe('translateSyncNowError', () => {
       body: {
         error: {
           code: 'MAILBOX_NOT_OWNED',
-          message: 'Selected mailbox is not connected to your workspace.',
+          message: 'Selected Gmail account is not connected to your workspace.',
         },
       },
     };

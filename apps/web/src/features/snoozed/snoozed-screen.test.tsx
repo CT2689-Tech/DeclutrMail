@@ -144,7 +144,7 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     expect(screen.getByRole('heading', { name: /eventually/i })).toBeInTheDocument();
     expect(screen.getByText('12 in Later')).toBeInTheDocument();
     expect(screen.getByText('“after launch week”')).toBeInTheDocument();
-    expect(screen.queryByText(/needs (scheduling|a wake time)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs (scheduling|a return time)/i)).not.toBeInTheDocument();
   });
 
   it('renders honest copy when the mirror count is unknown', async () => {
@@ -208,7 +208,7 @@ describe('SnoozedScreen — wake now flow', () => {
     const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });
     await user.click(confirmButtons[confirmButtons.length - 1]!);
     await waitFor(() => expect(wakePosted).toBe(1));
-    expect(await screen.findByText('Waking…')).toBeInTheDocument();
+    expect(await screen.findByText('Bringing back…')).toBeInTheDocument();
   });
 
   it('surfaces a queue-unavailable failure inline', async () => {
@@ -289,7 +289,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     await screen.findByText('Daily Digest');
 
     await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
-    expect(screen.queryByRole('button', { name: /clear wake time/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /clear return time/i })).not.toBeInTheDocument();
   });
 });
 

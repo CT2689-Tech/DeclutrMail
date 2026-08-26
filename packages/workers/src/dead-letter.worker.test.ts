@@ -138,7 +138,7 @@ describe('dead-letter pipeline (D225)', () => {
       const db = await freshDb();
       const [workspace] = await db
         .insert(workspaces)
-        .values({ name: 'Deleted mailbox fixture' })
+        .values({ name: 'Deleted Gmail account fixture' })
         .returning({ id: workspaces.id });
       const [user] = await db
         .insert(users)

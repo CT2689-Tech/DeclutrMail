@@ -160,8 +160,8 @@ export function BatchActionSheet({
               <span style={{ fontSize: 12, color: color.fgSoft }}>Counting the inbox…</span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12, color: color.fgSoft }}>
-                Couldn&rsquo;t load a live preview. Close and retry — no inbox mail can move without
-                one.
+                Couldn&rsquo;t load a live preview. Close and retry — no inbox email can move
+                without one.
               </span>
             ) : (
               <>

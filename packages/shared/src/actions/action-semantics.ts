@@ -144,7 +144,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     providerRecovery: { kind: 'none' },
     finality: {
       kind: 'reversible-or-changeable',
-      summary: 'Activity Undo or the scheduled wake restores the email to Inbox.',
+      summary: 'Activity Undo or the scheduled return restores the email to Inbox.',
     },
     resultLabel: 'Moved to Later',
   },
