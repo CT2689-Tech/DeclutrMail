@@ -6,9 +6,17 @@
  * inbox simulator render it; the LLM path (`ReasoningLlmPort`, the
  * limiter and the env resolvers) stays in `packages/workers/src/reasoning.ts`,
  * which is server-only.
+ *
+ * The template copy follows D24's spec verbatim:
+ *
+ *     "{name} sends {N}/mo. {pct}% marked read over 90d. Recommended: {verdict}."
+ *
+ * For Phase A and Phase B (no scoring) the template degrades gracefully —
+ * "{name} sends {N}/mo." is kept and the second clause swaps to the
+ * cascade's audit phrase (e.g. "Kept because you've written to them.").
  */
 import type { CascadeResult, CascadeRuleId } from './cascade';
-import type { TriageVerdict } from '../contracts';
+import type { TriageVerdict } from '../contracts/triage-enums';
 
 /**
  * Per-rule audit phrase — the second clause of the template.

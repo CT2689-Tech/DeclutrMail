@@ -1,4 +1,4 @@
-import type { ProtectionReason, TriageVerdict } from '../contracts';
+import type { ProtectionReason, TriageVerdict } from '../contracts/triage-enums';
 
 /**
  * The deterministic decision engine cascade (D20, D21, D22).

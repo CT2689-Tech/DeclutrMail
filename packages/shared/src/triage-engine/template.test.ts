@@ -21,7 +21,13 @@ describe('renderTemplate', () => {
       userManuallyArchivedCount: 0,
     });
 
-    expect(renderTemplate('Groupon', result)).toContain('Groupon');
+    const rendered = renderTemplate('Groupon', result);
+    expect(rendered).toContain('Groupon');
+    // readRate90d: 0 above yields a measured (non-null) readRatePct of 0,
+    // so the clause is printed, not dropped — see the `readPct === null`
+    // branch in `renderTemplate`, which drops it only for an unmeasurable
+    // rate, never for a measured 0%.
+    expect(rendered).toContain('0% marked read over 90d.');
     // Interpolated, not coincidental: the same result under a different
     // display name must produce that name and not the first one.
     const other = renderTemplate('Old Navy', result);

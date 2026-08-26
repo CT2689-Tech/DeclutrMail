@@ -17,7 +17,6 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 import {
   createLimiter,
-  renderTemplate,
   resolveExplainTimeoutMs,
   resolveReasoningConcurrency,
   resolveReasoningRatePerMin,
@@ -30,6 +29,7 @@ import { sqlTextArray } from './sql-text-array.js';
 import {
   CASCADE_RULE_PHRASE,
   isGovernmentDomain,
+  renderTemplate,
   runCascade,
   type SenderSignals,
 } from '@declutrmail/shared/triage-engine';

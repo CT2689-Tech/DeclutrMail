@@ -18,13 +18,10 @@ import type { CascadeResult } from '@declutrmail/shared/triage-engine';
  *      `triage_decisions.generated_by` column records `'template'` so
  *      observability can tell.
  *
- * The template copy follows D24's spec verbatim:
- *
- *     "{name} sends {N}/mo. {pct}% marked read over 90d. Recommended: {verdict}."
- *
- * For Phase A and Phase B (no scoring) the template degrades gracefully —
- * "{name} sends {N}/mo." is kept and the second clause swaps to the
- * cascade's audit phrase (e.g. "Kept because you've written to them.").
+ * The template's own copy shape and its Phase A/B degradation are
+ * specified in `packages/shared/src/triage-engine/template.ts`, which
+ * owns `renderTemplate` — re-exported below. This file keeps only the
+ * LLM adapter port, the limiter, and the env resolvers, all server-only.
  */
 
 export { renderTemplate, VERDICT_LABEL } from '@declutrmail/shared/triage-engine';
