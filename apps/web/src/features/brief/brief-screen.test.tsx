@@ -588,6 +588,27 @@ describe('BriefScreen — D61 history', () => {
     expect(posted).toEqual([]);
   });
 
+  it('stops saying "yesterday" once the switcher reaches a past day', async () => {
+    // The intro and the Noise heading both anchored their counts to
+    // "yesterday". That is true of the latest Brief and false of every
+    // other one the day switcher can now reach.
+    const user = userEvent.setup();
+    renderScreen();
+
+    // Latest: "yesterday" is correct and stays.
+    await waitFor(() => expect(screen.getByText(/yesterday's mail/i)).toBeInTheDocument());
+    expect(
+      screen.getByRole('heading', { name: /noise .*messages yesterday/i }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(await screen.findByLabelText('Brief day'), '2026-05-23');
+
+    // Past day: named, not "yesterday". PAST_BRIEF ran 2026-05-23 and
+    // covers Fri 2026-05-22.
+    await waitFor(() => expect(screen.getByText(/mail from Fri, May 22/i)).toBeInTheDocument());
+    expect(screen.queryByText(/yesterday's mail/i)).not.toBeInTheDocument();
+  });
+
   it('hides the switcher and still renders today when history fails', async () => {
     // History is secondary. A range read that 500s must cost the user
     // the switcher and nothing else.

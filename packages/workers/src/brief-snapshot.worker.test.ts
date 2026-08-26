@@ -559,6 +559,63 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.briefPayload.fyi).toEqual([]);
   });
 
+  it('D63 — an engine `later` verdict outranks a heuristic FYI item in the cap', async () => {
+    // Before the unsubscribe heuristic, every FYI candidate was an
+    // engine decision and the cap only chose between peers. Now an
+    // unscreened promotion carrying a STARRED message scores higher on
+    // observed priority than a plain engine `later` — and would push a
+    // real decision off the Brief. Provenance has to win the cap.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    // 4 engine `later` senders — exactly the FYI cap — all low priority.
+    const engineKeys = [KEY_BANK, KEY_BOSS, KEY_NEWS, KEY_FRESH];
+    for (const [i, key] of engineKeys.entries()) {
+      await seedSender(db, mailboxAccountId, {
+        email: `later${i}@example.com`,
+        senderKey: key,
+        displayName: `Engine ${i}`,
+        verdict: 'later',
+      });
+      await seedMessage(db, {
+        mailboxAccountId,
+        senderKey: key,
+        subject: `Engine later ${i}`,
+        internalDate: YESTERDAY_AT(9),
+      });
+    }
+
+    // One unscreened bulk sender that outscores all of them.
+    await seedSender(db, mailboxAccountId, {
+      email: 'loud@shop.example',
+      senderKey: KEY_LIST,
+      displayName: 'Loud Shop',
+      unsubscribeMethod: 'one_click',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_LIST,
+      subject: 'Starred and important, but still a shop',
+      internalDate: YESTERDAY_AT(10),
+      labelIds: ['INBOX', 'IMPORTANT', 'STARRED'],
+    });
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    const names = row!.briefPayload.fyi.map((r) => r.senderName);
+    expect(names).toHaveLength(4);
+    expect(names).not.toContain('Loud Shop');
+    expect(names.every((n) => n.startsWith('Engine'))).toBe(true);
+    // It was a candidate — the total still counts it.
+    expect(row!.briefPayload.fyiTotal).toBe(5);
+  });
+
   it('D63 — an explicit keep verdict wins over the unsubscribe channel', async () => {
     // Plenty of real correspondents send from list infrastructure. Once
     // the engine has said "keep", that judgment outranks the heuristic.

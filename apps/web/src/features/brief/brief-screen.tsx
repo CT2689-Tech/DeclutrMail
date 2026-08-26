@@ -25,7 +25,7 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
-import { useBriefHistory } from './api/use-brief-history';
+import { shiftLocalDate, useBriefHistory } from './api/use-brief-history';
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
 import {
@@ -192,6 +192,7 @@ function BriefBody({
   onSelectRunDate: (runDate: string | null) => void;
 }) {
   const { reply, fyi, noise, narrative, replyTotal, fyiTotal } = brief.briefPayload;
+  const dateLabel = formatRunDate(coveredDateOf(brief.runDateLocal));
   const isEmpty = reply.length === 0 && fyi.length === 0 && noise.length === 0;
 
   // Below `sm` (D60 mobile treatment) the multi-column reply/FYI/noise
@@ -231,7 +232,14 @@ function BriefBody({
       <ScreenIntro
         id="brief"
         title="Daily Brief"
-        body={`A short summary of yesterday's mail. Reply first, FYI for context, Noise to clear.`}
+        body={
+          // "Yesterday" is only true of the latest Brief. Once the day
+          // switcher reaches back, the same sentence over Saturday's
+          // mail is simply wrong, so past days name the day instead.
+          isToday
+            ? `A short summary of yesterday's mail. Reply first, FYI for context, Noise to clear.`
+            : `A short summary of mail from ${dateLabel}. Reply first, FYI for context, Noise to clear.`
+        }
         tip="Open a message in Gmail to reply or review it."
       />
       <BriefMeta
@@ -278,6 +286,7 @@ function BriefBody({
               noiseSenders={brief.noiseSenders}
               isMobile={isMobile}
               mailboxEmail={mailboxEmail}
+              dayWord={isToday ? 'yesterday' : `on ${dateLabel}`}
             />
           )}
         </>
@@ -311,6 +320,10 @@ function BriefMeta({
   // Brief in the range means the control would be a dropdown with a
   // single option — chrome that does nothing.
   const hasHistory = days.length > 1;
+  const selectedDayValue =
+    selectedRunDate !== null && days.slice(1).some((row) => row.runDateLocal === selectedRunDate)
+      ? selectedRunDate
+      : '';
   return (
     <div
       style={{
@@ -324,7 +337,16 @@ function BriefMeta({
     >
       {hasHistory ? (
         <select
-          value={selectedRunDate ?? ''}
+          // Fall back to the latest option when the selected day is not
+          // among the past ones — the range can narrow (a mailbox switch
+          // resets the scoped cache and refetches), and a <select> whose
+          // value matches no option renders the first one while state
+          // says otherwise. The body already falls back the same way.
+          //
+          // `slice(1)` because the newest day is rendered with value ''
+          // (it is the "latest" option), so matching it by date would
+          // set a value no option carries — the same bug in reverse.
+          value={selectedDayValue}
           onChange={(e) => onSelectRunDate(e.target.value === '' ? null : e.target.value)}
           aria-label="Brief day"
           style={{
@@ -489,11 +511,18 @@ function NoiseSection({
   noiseSenders,
   isMobile,
   mailboxEmail,
+  dayWord,
 }: {
   groups: BriefSenderGroupWire[];
   noiseSenders: BriefNoiseSenderWire[];
   isMobile: boolean;
   mailboxEmail: string | null;
+  /**
+   * How to name the day these counts describe — "yesterday" on the
+   * latest Brief, the covered date once the day switcher reaches back.
+   * The counts are frozen (D69); only the word that anchors them moves.
+   */
+  dayWord: string;
 }) {
   const totalMessages = useMemo(() => groups.reduce((sum, g) => sum + g.messageCount, 0), [groups]);
   const targets = useMemo(() => buildNoiseTargets(groups, noiseSenders), [groups, noiseSenders]);
@@ -507,13 +536,13 @@ function NoiseSection({
       // Carries the same "yesterday" anchor the visible subline does — a
       // screen reader must not get the un-anchored number this whole
       // surface is careful to avoid.
-      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages yesterday)`}
+      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages ${dayWord})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <SectionHeading
         label="Noise"
         count={groups.length}
-        subline={`${totalMessages} messages yesterday`}
+        subline={`${totalMessages} messages ${dayWord}`}
         tone="soft"
       />
       <ul
@@ -1149,13 +1178,7 @@ function QuietInboxState() {
  * reintroduce the shift this is correcting.
  */
 export function coveredDateOf(runDateLocal: string): string {
-  const match = runDateLocal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return runDateLocal;
-  const [, yStr, mStr, dStr] = match;
-  const utc = new Date(Date.UTC(Number(yStr), Number(mStr) - 1, Number(dStr)));
-  if (!Number.isFinite(utc.getTime())) return runDateLocal;
-  utc.setUTCDate(utc.getUTCDate() - 1);
-  return utc.toISOString().slice(0, 10);
+  return shiftLocalDate(runDateLocal, -1);
 }
 
 export function formatRunDate(runDateLocal: string): string {
