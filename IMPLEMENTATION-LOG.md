@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-247 decisions — ⬜ Not started 74 · 🔵 Shipped 108 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
+247 decisions — ⬜ Not started 73 · 🔵 Shipped 109 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -295,6 +295,6 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D254 | Brand logos on sender avatars | 🔵 | #524 |  |  |
 | D256 | A sender leaves the Screener even if it never repeats | 🔵 | #587 |  |  |
 | D257 | An engine read states its age, and refreshes on attention | 🔵 | #587 |  |  |
-| D258 | Signup attribution survives the Google hop | ⬜ |  |  |  |
+| D258 | Signup attribution survives the Google hop | 🔵 | #640 |  |  |
 
 <!-- AUTO:DECISIONS:END -->
