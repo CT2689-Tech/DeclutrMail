@@ -27,7 +27,7 @@ describe('isRecommended', () => {
   });
 
   // The founder-reported regression (screenshot 2026-08-20). 0.74 is the
-  // ceiling `score-cascade.ts` reaches for Archive when the user has
+  // ceiling `packages/shared/src/triage-engine/cascade.ts` reaches for Archive when the user has
   // never manually archived the sender — i.e. what essentially every
   // real Archive row scores. The previous flat 0.85 gate made that
   // unreachable, so Archive could never be recommended anywhere, and the
