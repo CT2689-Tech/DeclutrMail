@@ -480,7 +480,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     if (isScopeConflict(err)) {
       // The guard moved the scope out from under the confirm. Designed
       // state — the app shell owns the recovery (picker / reconnect).
-      toast('Your active Gmail account changed, so nothing was archived.', 'warn');
+      toast('Your active mailbox changed, so nothing was archived.', 'warn');
       return;
     }
     // EVERY other failure — including the remaining 409s — is a real
@@ -560,7 +560,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
             parts.push(`${protectedCount} Protected`);
           }
           if (missingCount > 0) {
-            parts.push(`${missingCount} no longer in this Gmail account`);
+            parts.push(`${missingCount} no longer in this mailbox`);
           }
           if (parts.length > 0) {
             toast(

@@ -801,7 +801,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             {state.kind === 'empty' && (
               <EmptyState
                 title="No Autopilot rules yet"
-                description="The five preset rules appear after your Gmail account finishes its first sync. Matching senders then appear here as suggestions."
+                description="The five preset rules appear after your mailbox finishes its first sync. Matching senders then appear here as suggestions."
               />
             )}
             {state.kind === 'ready' && rules.length > 0 && (

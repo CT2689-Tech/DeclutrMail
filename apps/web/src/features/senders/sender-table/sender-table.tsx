@@ -921,7 +921,7 @@ function ErrorRow({ onRetry }: { onRetry: SenderTableProps['onRetry'] }) {
 const EMPTY_COPY: Record<SenderTableEmptyKind, { headline: string; sub: string }> = {
   'no-senders': {
     headline: 'No senders yet',
-    sub: 'Your Gmail account is syncing — senders appear here once the index builds.',
+    sub: 'Your mailbox is syncing — senders appear here once the index builds.',
   },
   'no-filter-match': {
     headline: 'No senders match this filter',

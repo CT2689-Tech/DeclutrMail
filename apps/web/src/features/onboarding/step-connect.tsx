@@ -43,7 +43,7 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
       sub={
         variant === 'fresh'
           ? "You'll see Google's consent screen next. Here's what it covers."
-          : 'Your account has no connected Gmail account right now — reconnect to continue.'
+          : 'Your account has no connected mailbox right now — reconnect to continue.'
       }
     >
       <ol
@@ -73,9 +73,9 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
           <ConsentDetails label="Show fetched fields" items={GMAIL_MESSAGE_STORAGE_LABELS} />
         </ConsentStep>
         <ConsentStep number="3" title="Stored in DeclutrMail">
-          The fetched metadata is stored in your Gmail account index along with connection records,
-          sender facts, your decisions, and records needed to run and reverse eligible actions.
-          Settings → Privacy &amp; Data lists the purpose and retention for every dataset.
+          The fetched metadata is stored in your mailbox index along with connection records, sender
+          facts, your decisions, and records needed to run and reverse eligible actions. Settings →
+          Privacy &amp; Data lists the purpose and retention for every dataset.
           <ConsentDetails
             label="Show stored and derived data"
             items={[

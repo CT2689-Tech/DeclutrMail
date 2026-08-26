@@ -577,7 +577,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     await waitFor(() => expect(confirm).toBeEnabled());
     fireEvent.click(confirm);
 
-    await screen.findByText(/1 no longer in this Gmail account — left out of this archive/i);
+    await screen.findByText(/1 no longer in this mailbox — left out of this archive/i);
   });
 
   it('renders the scope-conflict state instead of a Retry that would 409 forever', async () => {
@@ -589,7 +589,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/Your active Gmail account changed while this was open/i);
+    await within(dialog).findByText(/Your active mailbox changed while this was open/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     expect(
       within(dialog).queryByRole('button', { name: /retry preview/i }),

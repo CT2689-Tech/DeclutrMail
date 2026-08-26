@@ -11,7 +11,7 @@
 
 /** The breadcrumb subset used by product surfaces. */
 export interface AppBreadcrumb {
-  category: 'sync' | 'action' | 'undo' | 'navigation' | 'Gmail account' | 'auth';
+  category: 'sync' | 'action' | 'undo' | 'navigation' | 'mailbox' | 'auth';
   message: string;
   level: 'info' | 'warning' | 'error';
   data?: Record<string, string | number | boolean | null>;

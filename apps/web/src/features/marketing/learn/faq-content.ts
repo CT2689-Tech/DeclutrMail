@@ -125,7 +125,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'disconnect-delete',
     question: 'How do I disconnect Gmail or delete DeclutrMail data?',
     answer:
-      'Disconnect a Gmail account from the top-bar Gmail account menu; that revokes DeclutrMail’s Google access and stops future sync while preserving its historical DeclutrMail record for reconnection. Settings → Privacy & Data provides export and whole-account deletion. Deleting your DeclutrMail account does not itself delete the emails in Gmail, although email actions you previously approved remain part of Gmail’s state.',
+      'Disconnect a mailbox from the top-bar mailbox menu; that revokes DeclutrMail’s Google access and stops future sync while preserving its historical DeclutrMail record for reconnection. Settings → Privacy & Data provides export and whole-account deletion. Deleting your DeclutrMail account does not itself delete the emails in Gmail, although email actions you previously approved remain part of Gmail’s state.',
     link: {
       href: '/security',
       label: 'Review the exit and security controls',

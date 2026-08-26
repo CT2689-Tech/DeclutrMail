@@ -408,7 +408,7 @@ describe('StepProtectionReview — states the flow audit found unpinned (2026-08
 
     renderReview();
 
-    expect(screen.getByText(/Your Gmail account connection changed/)).toBeInTheDocument();
+    expect(screen.getByText(/Your mailbox connection changed/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Refresh connection/i })).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't load your protection summary/)).toBeNull();
   });

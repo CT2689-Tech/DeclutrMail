@@ -97,8 +97,8 @@ export function AutopilotObservePreview() {
           }}
         >
           Observe records matches as suggestions; Active applies future matches automatically.
-          Review the preset rules installed for your Gmail account, then run a read-only
-          current-match preview. Preview does not create suggestions or change Gmail.
+          Review the preset rules installed for your mailbox, then run a read-only current-match
+          preview. Preview does not create suggestions or change Gmail.
         </p>
       </div>
 
@@ -113,7 +113,7 @@ export function AutopilotObservePreview() {
         }}
       >
         <h2 id="autopilot-preview-rules" style={{ margin: '0 0 12px', fontSize: 14 }}>
-          Preset rules in your Gmail account
+          Preset rules in your mailbox
         </h2>
         {rules.isLoading && (
           <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: 13 }}>
@@ -123,12 +123,12 @@ export function AutopilotObservePreview() {
         {rules.isError && (
           <EmptyState
             title="Couldn't load your preset rules"
-            description="Your Gmail account was not changed. Try this preview again in a moment."
+            description="Your mailbox was not changed. Try this preview again in a moment."
           />
         )}
         {rules.data && rules.data.length === 0 && (
           <p style={{ margin: 0, color: color.fgMuted, fontSize: 13 }}>
-            No preset rules are installed yet. They appear after the first Gmail account sync.
+            No preset rules are installed yet. They appear after the first mailbox sync.
           </p>
         )}
         {rules.data && rules.data.length > 0 && (
@@ -246,7 +246,7 @@ function previewState(
 ): RulePreviewState {
   if (preview.isPending) return { status: 'loading' };
   if (preview.isError) {
-    return { status: 'error', message: 'Preview failed. Your Gmail account was not changed.' };
+    return { status: 'error', message: 'Preview failed. Your mailbox was not changed.' };
   }
   if (preview.data?.ruleId === ruleId) return { status: 'ready', result: preview.data };
   return { status: 'loading' };

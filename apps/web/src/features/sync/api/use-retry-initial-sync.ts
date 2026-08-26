@@ -50,9 +50,7 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       // No id means no retry: the caller disables the control rather
       // than firing a request that could hit the wrong mailbox.
       if (!mailboxId) {
-        throw new Error(
-          'useRetryInitialSync requires the Gmail account id the gate is displaying.',
-        );
+        throw new Error('useRetryInitialSync requires the mailbox id the gate is displaying.');
       }
       const envelope = await apiPost<InitialSyncRetryResponse>(
         '/api/v1/sync/initial/retry',

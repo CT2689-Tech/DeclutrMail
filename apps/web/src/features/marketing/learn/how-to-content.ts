@@ -132,8 +132,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'repeatable-routine',
         title: 'Use a small repeatable routine',
         paragraphs: [
-          'Do not attempt to perfect the entire Gmail account in one sitting. Decide on five to ten obvious senders, verify the results, and stop. The next pass becomes faster because the ambiguous senders are no longer mixed with the easy ones.',
-          'A useful outcome is not inbox zero. It is a Gmail account in which recurring noise has an explicit owner and each action has a known boundary.',
+          'Do not attempt to perfect the entire mailbox in one sitting. Decide on five to ten obvious senders, verify the results, and stop. The next pass becomes faster because the ambiguous senders are no longer mixed with the easy ones.',
+          'A useful outcome is not inbox zero. It is a mailbox in which recurring noise has an explicit owner and each action has a known boundary.',
         ],
       },
     ],
@@ -383,7 +383,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Archive, unsubscribe, and inbox zero free no space',
         paragraphs: [
           'Archiving removes the Inbox label. The message, and every byte of its attachments, stays in All Mail and stays on your quota. The same is true of labels, filters that skip the inbox, and any tool that promises a cleaner inbox without deleting anything.',
-          'Unsubscribing is worth doing, but it is a future-volume decision, not a storage one: it prevents the next hundred messages from arriving and removes nothing that has already landed. If the goal is a working Gmail account today, deletion of large email plus an emptied Trash is the only lever that moves the number.',
+          'Unsubscribing is worth doing, but it is a future-volume decision, not a storage one: it prevents the next hundred messages from arriving and removes nothing that has already landed. If the goal is a working mailbox today, deletion of large email plus an emptied Trash is the only lever that moves the number.',
         ],
         callout: {
           title: 'Only permanent deletion returns bytes',
@@ -421,7 +421,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'prune-or-pay',
         title: 'Decide honestly between pruning and paying',
         paragraphs: [
-          'If a Gmail account is mostly years of attachments you genuinely may need, extra storage through Google One is the cheaper answer than an afternoon of risky bulk deletion. Pruning wins when the weight is concentrated in email you can name and would never open again — old reports, expired offers, superseded drafts.',
+          'If a mailbox is mostly years of attachments you genuinely may need, extra storage through Google One is the cheaper answer than an afternoon of risky bulk deletion. Pruning wins when the weight is concentrated in email you can name and would never open again — old reports, expired offers, superseded drafts.',
           'A useful test: run has:attachment larger:10M and older_than:2y has:attachment, and look at what comes back. If the results are mostly things you would delete without hesitation, prune. If you hesitate on most of them, buy the storage and spend the effort on future volume instead.',
         ],
       },

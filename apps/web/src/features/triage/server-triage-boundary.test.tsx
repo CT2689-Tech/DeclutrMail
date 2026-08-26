@@ -86,7 +86,7 @@ describe('ServerTriageBoundary', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const fetchSpy = vi.fn(async () =>
       Response.json(
-        { error: { code: 'NO_ACTIVE_MAILBOX', message: 'Select a Gmail account' } },
+        { error: { code: 'NO_ACTIVE_MAILBOX', message: 'Select a mailbox' } },
         { status: 409 },
       ),
     );

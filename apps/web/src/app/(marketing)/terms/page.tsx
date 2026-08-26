@@ -111,9 +111,7 @@ export default function TermsOfServicePage() {
       <LegalSection id="acceptable-use" title="5. Acceptable use">
         <p>You agree not to:</p>
         <ul>
-          <li>
-            use DeclutrMail on a Gmail account you do not own or lack authorization to manage;
-          </li>
+          <li>use DeclutrMail on a mailbox you do not own or lack authorization to manage;</li>
           <li>use the service for anything unlawful, or to violate Google&rsquo;s terms;</li>
           <li>
             probe, overload, or disrupt the service, circumvent rate limits or plan limits, or

@@ -76,7 +76,7 @@ describe('QuietRoute', () => {
   it('renders the empty state when no mailboxes are connected', () => {
     me = makeMe([]);
     renderRoute();
-    expect(screen.getByText('No Gmail accounts connected')).toBeInTheDocument();
+    expect(screen.getByText('No mailboxes connected')).toBeInTheDocument();
   });
 
   it('renders one hydrated card per mailbox', async () => {

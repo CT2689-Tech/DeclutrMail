@@ -191,9 +191,7 @@ export function AccountMenu() {
             Accounts
           </div>
           {me.mailboxes.length === 0 && (
-            <div style={{ padding: '6px 8px', color: color.fgMuted }}>
-              No Gmail accounts connected.
-            </div>
+            <div style={{ padding: '6px 8px', color: color.fgMuted }}>No mailboxes connected.</div>
           )}
           {me.mailboxes.map((m) => {
             const isSelected = m.id === activeMailbox?.id;
@@ -225,7 +223,7 @@ export function AccountMenu() {
                   <button
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={`${isSelected ? 'Selected Gmail account' : 'Switch to Gmail account'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
+                    aria-label={`${isSelected ? 'Selected mailbox' : 'Switch to mailbox'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
                     disabled={isDisconnected || setActive.isPending}
                     onClick={() => {
                       if (isSelected) return;

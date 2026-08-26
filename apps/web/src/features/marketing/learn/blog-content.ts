@@ -253,7 +253,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'journal',
         title: 'A good Activity history supports accurate Undo',
         paragraphs: [
-          'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that Gmail account so a retry does not repeat or compound them.',
+          'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that mailbox so a retry does not repeat or compound them.',
           'DeclutrMail stores Gmail message IDs and label changes rather than a duplicate email body. Activity shows Undo while recovery is available. Triage also shows recent actions, but Activity remains the dependable place to review results and start recovery.',
           'The deadline should be visible. Every plan offers Undo for thirty days. Gmail Trash can end recovery earlier if the user empties it or permanently deletes an email.',
         ],

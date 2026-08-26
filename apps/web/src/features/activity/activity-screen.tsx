@@ -1545,8 +1545,7 @@ function ActivitySupportBundleDialog({
             for all matching records, not only rows currently loaded on screen.
           </p>
           <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: 12 }}>
-            Gmail account:{' '}
-            <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active Gmail account'}</strong>
+            mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
           </p>
         </div>
 
@@ -1663,7 +1662,7 @@ function ActivitySupportBundleDialog({
               summary="What technical details can be included?"
               style={{ marginTop: 10 }}
             >
-              The optional appendix contains the bundle version, internal Gmail account and Activity
+              The optional appendix contains the bundle version, internal mailbox and Activity
               identifiers, action-attempt identifiers, machine action/source values, execution
               status, classified error codes, and filter dates. It never includes OAuth, session, or
               Undo tokens; idempotency keys; raw provider responses; message bodies; or raw
@@ -3420,8 +3419,8 @@ function ActivityErrorState({
   const message = isClientInput
     ? 'Nothing changed. Activity could not load this filter. Use a valid outcome and valid dates with From earlier than To, or reset the filters and try again.'
     : error instanceof ApiError
-      ? 'Your Gmail account and actions are unchanged. Activity could not load. Try again in a moment.'
-      : 'Your Gmail account and actions are unchanged. Activity could not load right now. Try again in a moment.';
+      ? 'Your mailbox and actions are unchanged. Activity could not load. Try again in a moment.'
+      : 'Your mailbox and actions are unchanged. Activity could not load right now. Try again in a moment.';
   return (
     <div
       style={{

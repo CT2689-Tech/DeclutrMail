@@ -759,8 +759,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'target_invalid',
-      message:
-        'Could not match that recovery request to the Gmail account you chose. Try again below.',
+      message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -772,7 +771,7 @@ describe('SettingsScreen', () => {
     },
     {
       result: 'failed',
-      message: 'Could not reconnect Gmail. Try again from this Gmail account list.',
+      message: 'Could not reconnect Gmail. Try again from this mailbox list.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -803,14 +802,14 @@ describe('SettingsScreen', () => {
     {
       result: 'target_invalid',
       message:
-        'That Gmail recovery request is no longer available. Choose a Gmail account and try again.',
+        'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
     {
       result: 'inbox_limit',
       message:
-        'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a Gmail account before trying again.',
+        'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
       tone: 'warn',
       liveRole: 'status',
     },
@@ -865,7 +864,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(alertRegion).toHaveTextContent(
-        'Could not reconnect Gmail. Try again from this Gmail account list.',
+        'Could not reconnect Gmail. Try again from this mailbox list.',
       ),
     );
     expect(statusRegion).toBeEmptyDOMElement();
@@ -966,9 +965,9 @@ describe('SettingsScreen', () => {
 
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
     expect(getElementByIdSpy.mock.calls.some(([id]) => id.startsWith('mailbox-'))).toBe(false);
-    expect(
-      querySelectorSpy.mock.calls.some(([selector]) => selector.includes('Gmail account-')),
-    ).toBe(false);
+    expect(querySelectorSpy.mock.calls.some(([selector]) => selector.includes('mailbox-'))).toBe(
+      false,
+    );
     const section = document.getElementById('mailboxes');
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
@@ -1043,7 +1042,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Plan & Billing' })).toBeInTheDocument();
     // The "no mailboxes connected" empty state, not a broken list.
-    expect(screen.getByText(/no Gmail accounts connected/i)).toBeInTheDocument();
+    expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
     // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.
     expect(syncSpy).not.toHaveBeenCalled();
   });

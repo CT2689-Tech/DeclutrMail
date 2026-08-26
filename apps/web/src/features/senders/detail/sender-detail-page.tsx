@@ -1476,7 +1476,7 @@ function NotFoundState() {
     >
       <EmptyState
         title="Sender not found"
-        body="This sender isn't in your Gmail account — either this link is out of date, or the sender hasn't mailed you yet."
+        body="This sender isn't in your mailbox — either this link is out of date, or the sender hasn't mailed you yet."
         action={
           <Button tone="primary" onClick={() => window.history.back()}>
             Back to Senders

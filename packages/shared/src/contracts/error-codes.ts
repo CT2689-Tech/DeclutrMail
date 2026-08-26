@@ -417,7 +417,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "This Gmail account's saved data is still being deleted. Reconnect after it finishes.",
+    message: "This mailbox's saved data is still being deleted. Reconnect after it finishes.",
   },
 
   // --- domain codes recovered by the 2026-08-21 audit (ADR-0014) ---
@@ -564,7 +564,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Initial sync has not completed for this Gmail account yet.',
+    message: 'Initial sync has not completed for this mailbox yet.',
   },
   // not found — scoped to the current mailbox
   SENDER_NOT_FOUND: {

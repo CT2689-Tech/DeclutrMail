@@ -227,9 +227,9 @@ export function ActionSheet({
           />
 
           <ContextualHelp question="Why do I review this before confirming?">
-            The preview uses the current Gmail account count and separates what will change from
-            what will stay unchanged. DeclutrMail sends the action only after this preview loads and
-            you confirm; Cancel changes nothing.
+            The preview uses the current mailbox count and separates what will change from what will
+            stay unchanged. DeclutrMail sends the action only after this preview loads and you
+            confirm; Cancel changes nothing.
           </ContextualHelp>
 
           {verb === 'Later' && (

@@ -207,7 +207,7 @@ describe('AutopilotScreen — edge states', () => {
   it('names the active mailbox in the eyebrow, not a static "default mailbox"', () => {
     renderScreen(ready());
     expect(screen.getByText('Autopilot · active@example.com')).toBeInTheDocument();
-    expect(screen.queryByText(/default Gmail account/i)).toBeNull();
+    expect(screen.queryByText(/default mailbox/i)).toBeNull();
   });
 
   it('shows the paused banner + disables Pause-all when every rule is paused', () => {

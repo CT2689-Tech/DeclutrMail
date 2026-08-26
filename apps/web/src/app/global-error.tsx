@@ -109,8 +109,8 @@ export default function GlobalError({
               margin: 0,
             }}
           >
-            Your Gmail account and decisions are untouched. Reload the page to continue —
-            we&rsquo;ll pick up where you left off.
+            Your mailbox and decisions are untouched. Reload the page to continue — we&rsquo;ll pick
+            up where you left off.
           </p>
 
           {error.digest != null && (

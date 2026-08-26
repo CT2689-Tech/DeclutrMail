@@ -60,7 +60,7 @@ function CtaLink({
  */
 export function NotFoundView({ authed }: { authed: boolean }) {
   const body = authed
-    ? 'That link may be out of date, or the page may have moved. Your Gmail account and decisions are untouched.'
+    ? 'That link may be out of date, or the page may have moved. Your mailbox and decisions are untouched.'
     : 'That link may be out of date, or the page may have moved.';
   return (
     <main

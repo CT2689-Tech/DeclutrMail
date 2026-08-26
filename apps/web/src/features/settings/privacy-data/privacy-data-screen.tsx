@@ -160,10 +160,10 @@ export function PrivacyDataView({
       {/* 2 — which mailboxes the storage list applies to. */}
       <Card padding={0}>
         <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Gmail accounts in DeclutrMail</h3>
+          <h3 style={cardTitleStyle}>mailboxes in DeclutrMail</h3>
           {mailboxes.length === 0 ? (
             <p style={mutedTextStyle}>
-              No Gmail accounts connected — no Gmail data is being saved right now.
+              No mailboxes connected — no Gmail data is being saved right now.
             </p>
           ) : (
             <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
@@ -263,8 +263,8 @@ export function PrivacyDataView({
           </div>
           {exportFailed && (
             <p role="alert" style={{ fontSize: 12, color: color.danger, margin: '10px 0 0' }}>
-              The export could not be prepared. Wait a moment and try again — large Gmail accounts
-              are rate-limited to a few exports per five minutes.
+              The export could not be prepared. Wait a moment and try again — large mailboxes are
+              rate-limited to a few exports per five minutes.
             </p>
           )}
         </div>
@@ -277,7 +277,7 @@ export function PrivacyDataView({
           <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
             <li style={{ ...exitRowStyle, borderTop: 'none' }}>
               <div>
-                <div style={exitTitleStyle}>Disconnect a Gmail account</div>
+                <div style={exitTitleStyle}>Disconnect a mailbox</div>
                 <div style={exitDetailStyle}>
                   Removes DeclutrMail's saved Google credential and stops sync and Gmail actions.
                   Saved Gmail and DeclutrMail data stays so reconnecting can continue its history;
@@ -288,12 +288,12 @@ export function PrivacyDataView({
             <li style={exitRowStyle}>
               <div>
                 <div style={exitTitleStyle}>
-                  Disconnect &amp; delete one Gmail account&apos;s saved data
+                  Disconnect &amp; delete one mailbox&apos;s saved data
                 </div>
                 <div style={exitDetailStyle}>
-                  Also permanently deletes that Gmail account&apos;s saved email details, sender
-                  data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other
-                  Gmail accounts, disconnected Gmail address, and your email in Gmail remain. Choose
+                  Also permanently deletes that mailbox&apos;s saved email details, sender data,
+                  decisions, rules, Activity, and Undo data. Your DeclutrMail account, other
+                  mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose
                   Manage in the top-bar account menu.
                 </div>
               </div>
@@ -391,9 +391,9 @@ function deletionTriggerDetail(
     case 'delete-indexed-data':
       return 'Deleted when you choose Disconnect & delete saved data, or when you delete your DeclutrMail account.';
     case 'delete-account':
-      return 'Retained after one Gmail account’s saved data is deleted; deleted with the DeclutrMail account.';
+      return 'Retained after one mailbox’s saved data is deleted; deleted with the DeclutrMail account.';
     case 'retention-policy':
-      return 'Retained after Gmail account or account deletion only under the stated operational retention policy.';
+      return 'Retained after mailbox or account deletion only under the stated operational retention policy.';
   }
 }
 

@@ -49,7 +49,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'declutrmail-scope',
         title: 'What DeclutrMail asks Google for',
         paragraphs: [
-          'DeclutrMail requests gmail.modify, plus OpenID and the email identity used to connect the correct mailbox. gmail.modify is needed to change labels, archive, move messages to Trash, and support other user-approved Gmail account actions. It is a sensitive capability, so treating it as “read-only” would be misleading.',
+          'DeclutrMail requests gmail.modify, plus OpenID and the email identity used to connect the correct mailbox. gmail.modify is needed to change labels, archive, move messages to Trash, and support other user-approved mailbox actions. It is a sensitive capability, so treating it as “read-only” would be misleading.',
           'DeclutrMail uses only part of that permission. It asks Gmail for each email in a limited format and never asks for the full or raw format. The Gmail details stored are: ' +
             STORED_FIELDS +
             '. Attachments, inline images, raw MIME, and full message bodies are not fetched or stored.',
@@ -81,14 +81,14 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Verify that you can leave cleanly',
         paragraphs: [
           'You should be able to revoke access from the app and from Google’s connected-app controls. Revocation should stop future API access immediately even if the service retains a historical activity record under its stated policy.',
-          'DeclutrMail exposes Gmail account disconnection from the top-bar account menu, data export, and whole-account deletion. Disconnecting preserves the historical DeclutrMail record for reconnection; account deletion follows the published grace and undo-window schedule. After revocation, verify Google’s own permissions page no longer lists the connection.',
+          'DeclutrMail exposes mailbox disconnection from the top-bar account menu, data export, and whole-account deletion. Disconnecting preserves the historical DeclutrMail record for reconnection; account deletion follows the published grace and undo-window schedule. After revocation, verify Google’s own permissions page no longer lists the connection.',
         ],
       },
       {
         id: 'decision',
         title: 'Make a threat-model decision, not a brand decision',
         paragraphs: [
-          'A highly sensitive Gmail account used for legal, medical, or financial operations may justify avoiding third-party access even when controls are strong. A separate consumer Gmail account may have a different risk tolerance. The same answer does not fit both.',
+          'A highly sensitive mailbox used for legal, medical, or financial operations may justify avoiding third-party access even when controls are strong. A separate consumer mailbox may have a different risk tolerance. The same answer does not fit both.',
           'The responsible answer is therefore conditional: understand the Gmail permission, stored fields, other companies that process data, exactly what the app may change, and how to leave. Connect only if that complete picture is acceptable to you.',
         ],
       },
@@ -233,7 +233,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'model',
         title: 'Undo records the inverse, not a copy of your email',
         paragraphs: [
-          'For a reversible email-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one Gmail account and expires after the plan’s configured window.',
+          'For a reversible email-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one mailbox and expires after the plan’s configured window.',
           'Every plan currently offers Undo in Activity for thirty days. Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
         ],
       },
@@ -350,7 +350,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       },
       {
         id: 'sequence',
-        title: 'A safe sequence for a large Gmail account',
+        title: 'A safe sequence for a large mailbox',
         paragraphs: [],
         steps: [
           {
@@ -380,7 +380,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Avoid shortcuts that hide what will change',
         paragraphs: [
           'Be skeptical of “delete everything,” universal undo, and category claims that cannot show their inputs. A large result count is not evidence that the selection is correct. A recommendation should remain inspectable and subordinate to your decision.',
-          'Also avoid making inbox zero the only success measure. A small Inbox can still be governed by brittle filters, while a larger Gmail account with deliberate sender rules can be calmer and safer.',
+          'Also avoid making inbox zero the only success measure. A small Inbox can still be governed by brittle filters, while a larger mailbox with deliberate sender rules can be calmer and safer.',
         ],
         callout: {
           title: 'Best means explainable',
@@ -501,7 +501,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Measure prevented recurrence, not just removed messages',
         paragraphs: [
           'Message counts describe the backlog removed today. Sender decisions and filters describe which recurrence will be prevented tomorrow. Both are useful, but they answer different questions and should not be merged into one inflated cleanup number.',
-          'A calm Gmail account comes from preserving context where it matters and compressing repetition where it does not.',
+          'A calm mailbox comes from preserving context where it matters and compressing repetition where it does not.',
         ],
       },
     ],

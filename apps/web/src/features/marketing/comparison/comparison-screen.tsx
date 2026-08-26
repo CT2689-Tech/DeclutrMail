@@ -210,8 +210,8 @@ export function ComparisonIndexScreen() {
           >
             <table className="dm-compare-quick-table">
               <caption className="dm-compare-sr-only">
-                Primary job, supported Gmail accounts, and starting point for{' '}
-                {COMPARISON_COUNT_WORD} DeclutrMail alternatives
+                Primary job, supported mailboxes, and starting point for {COMPARISON_COUNT_WORD}{' '}
+                DeclutrMail alternatives
               </caption>
               <thead>
                 <tr>

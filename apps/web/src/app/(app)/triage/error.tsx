@@ -20,7 +20,7 @@ export default function TriageError({
       boundary="triage"
       eyebrow="Triage hit a snag"
       headline="We couldn't load your triage queue."
-      body="Your Gmail account and decisions are untouched. Try again, or review senders while we sort this out."
+      body="Your mailbox and decisions are untouched. Try again, or review senders while we sort this out."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

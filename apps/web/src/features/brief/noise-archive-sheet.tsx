@@ -146,8 +146,8 @@ export function NoiseArchiveSheet({
               </span>
             ) : scopeConflict ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Your active Gmail account changed while this was open, so these counts no longer
-                apply. Close this and pick a Gmail account to start again. Nothing was archived.
+                Your active mailbox changed while this was open, so these counts no longer apply.
+                Close this and pick a mailbox to start again. Nothing was archived.
               </span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
@@ -246,7 +246,7 @@ export function NoiseArchiveSheet({
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
             {confirmDisabled
               ? scopeConflict
-                ? 'Gmail account changed — close this and start again.'
+                ? 'mailbox changed — close this and start again.'
                 : preview === 'unavailable'
                   ? 'Preview unavailable — retry before confirming.'
                   : nothingToActOn

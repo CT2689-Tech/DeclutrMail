@@ -59,7 +59,7 @@ describe('NotFound page — D167 / D140', () => {
     // /triage would just bounce an anon visitor through a sign-in redirect.
     expect(screen.queryByRole('link', { name: /back to triage/i })).not.toBeInTheDocument();
     // The mailbox-specific reassurance is authed-only copy.
-    expect(screen.queryByText(/your Gmail account/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/your mailbox/i)).not.toBeInTheDocument();
   });
 
   it('carries noindex + a description in page metadata (D132 SEO batch)', () => {

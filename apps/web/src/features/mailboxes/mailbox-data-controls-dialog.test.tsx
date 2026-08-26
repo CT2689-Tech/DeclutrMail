@@ -74,7 +74,7 @@ describe('MailboxDataControlsDialog', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/past Gmail actions stay applied/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Gmail is unchanged/i).length).toBeGreaterThan(0);
-    expect(screen.getByText('Which Gmail account exit should I choose?')).toBeInTheDocument();
+    expect(screen.getByText('Which mailbox exit should I choose?')).toBeInTheDocument();
     expect(screen.getByText(/Keep saved data if you may reconnect/i)).toBeInTheDocument();
   });
 

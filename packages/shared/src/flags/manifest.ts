@@ -42,7 +42,7 @@ export const FLAG_MANIFEST = {
     description:
       'Auto-fetch the next senders page when the list bottom scrolls ' +
       'into view (D49/D202 — kills the load-more click wall on large ' +
-      'Gmail accounts). Off: the manual "Load more senders" button is the ' +
+      'mailboxes). Off: the manual "Load more senders" button is the ' +
       'only pagination affordance (it stays rendered either way).',
   },
   brandLogos: {

@@ -110,7 +110,7 @@ export function StepProtectionReview({
       return (
         <PanelShell corner={corner}>
           <ErrorState
-            title="Your Gmail account connection changed"
+            title="Your mailbox connection changed"
             description="This step needs an active Gmail connection. Refresh your connection state to continue."
             retryLabel="Refresh connection"
             onRetry={() => {
@@ -470,7 +470,7 @@ function donePanel(
     body:
       `Protection turns itself on only for strong evidence — writing to a sender at least three ` +
       `times and hearing back, a starred message, or repeated Gmail importance. Nothing in this ` +
-      `Gmail account has reached that yet, so nothing is being held back from cleanup.`,
+      `mailbox has reached that yet, so nothing is being held back from cleanup.`,
   };
 }
 

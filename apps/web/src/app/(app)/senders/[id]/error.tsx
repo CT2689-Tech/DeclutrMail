@@ -110,8 +110,8 @@ export default function SenderDetailError({
             margin: 0,
           }}
         >
-          Your Gmail account and decisions are untouched. Try again, or head back to Senders — the
-          rest of the app is still good.
+          Your mailbox and decisions are untouched. Try again, or head back to Senders — the rest of
+          the app is still good.
         </p>
 
         {error.digest != null && (

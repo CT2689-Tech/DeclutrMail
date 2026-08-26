@@ -119,18 +119,18 @@ export function MailboxDataControlsDialog({
             style={{ fontSize: 13, color: color.fgSoft, lineHeight: 1.5, margin: '8px 0 0' }}
           >
             {alreadyDisconnected
-              ? 'Gmail access and sync are already stopped. Choose whether to keep or permanently delete this Gmail account’s saved data.'
+              ? 'Gmail access and sync are already stopped. Choose whether to keep or permanently delete this mailbox’s saved data.'
               : 'Choose what DeclutrMail should do with data from this Gmail account.'}{' '}
             Neither option deletes or changes email in Gmail.
           </p>
         </div>
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <ContextualHelp question="Which Gmail account exit should I choose?">
+          <ContextualHelp question="Which mailbox exit should I choose?">
             Keep saved data if you may reconnect and want to continue with the same history. Delete
-            saved data if you want this Gmail account&apos;s DeclutrMail data permanently removed.
-            Both options stop Google access and leave Gmail unchanged; deletion also ends any
-            remaining Activity Undo for this mailbox.
+            saved data if you want this mailbox&apos;s DeclutrMail data permanently removed. Both
+            options stop Google access and leave Gmail unchanged; deletion also ends any remaining
+            Activity Undo for this mailbox.
           </ContextualHelp>
 
           {!alreadyDisconnected && (
@@ -168,10 +168,10 @@ export function MailboxDataControlsDialog({
             </h3>
             <p style={optionBodyStyle}>
               {alreadyDisconnected
-                ? 'Permanently deletes this Gmail account’s saved email details and related data from DeclutrMail.'
-                : 'Removes the saved Google credential, stops access, then permanently deletes this Gmail account’s saved email details and related data from DeclutrMail.'}{' '}
-              Your DeclutrMail account, other Gmail accounts, and this disconnected Gmail address
-              remain. Reconnecting starts a new index.
+                ? 'Permanently deletes this mailbox’s saved email details and related data from DeclutrMail.'
+                : 'Removes the saved Google credential, stops access, then permanently deletes this mailbox’s saved email details and related data from DeclutrMail.'}{' '}
+              Your DeclutrMail account, other mailboxes, and this disconnected Gmail address remain.
+              Reconnecting starts a new index.
             </p>
             <InventoryList
               title="Deleted from DeclutrMail"
@@ -193,8 +193,8 @@ export function MailboxDataControlsDialog({
                 lineHeight: 1.5,
               }}
             >
-              Past Gmail actions stay applied. Any remaining Activity Undo for this Gmail account
-              ends when deletion completes. Gmail email and labels are not changed by this deletion.
+              Past Gmail actions stay applied. Any remaining Activity Undo for this mailbox ends
+              when deletion completes. Gmail email and labels are not changed by this deletion.
             </p>
             <label
               htmlFor="dm-mailbox-data-delete-phrase"

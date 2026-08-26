@@ -97,7 +97,7 @@ export default function HowItWorksPage() {
       <StorySection
         id="preview-first"
         number="04"
-        title="Preview before the Gmail account changes."
+        title="Preview before the mailbox changes."
         intro={
           <p>
             Some actions ask for options first, but the affected-email preview always appears before

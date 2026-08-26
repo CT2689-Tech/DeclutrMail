@@ -2498,7 +2498,7 @@ function SendersScreenContent({
         ) : senders.length === 0 ? (
           <EmptyState
             title="No senders yet"
-            body="Once your Gmail account finishes syncing, the senders who email you will appear here."
+            body="Once your mailbox finishes syncing, the senders who email you will appear here."
           />
         ) : view === 'grid' ? (
           // D49 default — grid of cards. `senders` arrives already

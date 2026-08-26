@@ -52,9 +52,9 @@ export default async function QuietPage() {
       <TierGate
         capability="quiet"
         title="Quiet hours"
-        pitch="A daily window per Gmail account where Autopilot holds its moves and runs them after the window ends. Your own actions always run immediately."
+        pitch="A daily window per mailbox where Autopilot holds its moves and runs them after the window ends. Your own actions always run immediately."
         bullets={[
-          'Pick a start, end, and timezone per Gmail account',
+          'Pick a start, end, and timezone per mailbox',
           'Deferred actions run after the window — nothing is skipped',
           'Manual actions are never held',
         ]}
