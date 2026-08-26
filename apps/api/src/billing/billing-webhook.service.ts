@@ -52,6 +52,7 @@ import {
   billingCustomers,
   subscriptionEvents,
   subscriptions,
+  users,
   workspaces,
 } from '@declutrmail/db';
 import { TIER_RANK } from '@declutrmail/shared/entitlements';
@@ -740,6 +741,16 @@ export class BillingWebhookService {
           }
         }
 
+        const [owner] = await tx
+          .select({
+            signupAttributionRef: users.signupAttributionRef,
+            signupAttributionHeardFrom: users.signupAttributionHeardFrom,
+            signupAttributionHeardDetail: users.signupAttributionHeardDetail,
+          })
+          .from(users)
+          .where(eq(users.workspaceId, workspaceId))
+          .limit(1);
+
         await tx
           .insert(subscriptions)
           .values({
@@ -756,6 +767,9 @@ export class BillingWebhookService {
             entitlementEndsAt: nextEntitlementEndsAt,
             pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
             foundingMember: founding,
+            signupAttributionRef: owner?.signupAttributionRef ?? null,
+            signupAttributionHeardFrom: owner?.signupAttributionHeardFrom ?? null,
+            signupAttributionHeardDetail: owner?.signupAttributionHeardDetail ?? null,
           })
           .onConflictDoUpdate({
             target: [subscriptions.provider, subscriptions.providerSubscriptionId],

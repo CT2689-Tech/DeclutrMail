@@ -158,6 +158,26 @@ describe('BillingWebhookService.process', () => {
     });
   });
 
+  it('snapshots the workspace owner attribution onto the first paid insert', async () => {
+    await db.insert(users).values({
+      workspaceId,
+      email: 'payer@example.com',
+      signupAttributionRef: 'hn',
+      signupAttributionHeardFrom: 'friend',
+    });
+    const fixture = paddleSubscriptionActivated({ workspaceId });
+    const event = paddle.mapWebhookEvent(fixture);
+
+    await service.process('paddle', event, fixture);
+
+    const [sub] = await db.select().from(subscriptions);
+    expect(sub).toMatchObject({
+      signupAttributionRef: 'hn',
+      signupAttributionHeardFrom: 'friend',
+      signupAttributionHeardDetail: null,
+    });
+  });
+
   it('resumes processing when a prior delivery crashed after the dedup insert', async () => {
     const fixture = paddleSubscriptionActivated({ workspaceId });
     const event = paddle.mapWebhookEvent(fixture);

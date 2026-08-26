@@ -21,13 +21,9 @@
 
 import { apiGet } from '@/lib/api/client';
 import { billingIntentPath, type BillingIntent } from '@/features/billing/billing-intent';
+import { oauthStartUrl } from '@/features/marketing/landing/urls';
 
-export function oauthStartUrl(returnTo?: string): string {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-  const base = `${apiBase}/api/auth/google/start`;
-  if (!returnTo) return base;
-  return `${base}?${new URLSearchParams({ returnTo }).toString()}`;
-}
+export { oauthStartUrl };
 
 async function hasSession(): Promise<boolean> {
   try {

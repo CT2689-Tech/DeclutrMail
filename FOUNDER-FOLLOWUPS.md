@@ -24,6 +24,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-26 — Exclude Google OAuth from PostHog referring-domain classification
+**Source:** session (marketing runbook Phase B)
+**Why:** Signup attribution now persists first-touch `ref` through OAuth state into Postgres. PostHog still classifies journeys by referrer. If `accounts.google.com` (and our own hosts / localhost) stay as referring domains, every Google-login session looks like it came from Google, which fights the first-touch `ref` we just stored.
+**How:** In PostHog → Project settings → Web analytics / Toolbar → filter out referring domains. Add `accounts.google.com`, `declutrmail.com`, `www.declutrmail.com`, `app.declutrmail.com`, `localhost`. Exact UI label varies; look for "Filter out internal and test users" adjacent referring-domain / site-domain settings. Do this in the DeclutrMail US cloud project (`456795`), not a personal project.
+**Verifies by:** A signup that started on `https://declutrmail.com/inbox-simulator?ref=hn`, bounced through Google, and landed on `/onboarding` still shows `$initial_referring_domain` as `declutrmail.com` (or empty), never `accounts.google.com`. The Postgres `users.signup_attribution_ref` for that row is `hn`.
+**Status:** Open
+
 ### 2026-08-26 — I asked you to decide the cancel-modal refund line without telling you that you had already decided it
 
 **Source:** session 2026-08-26 — found while implementing the founder's answer

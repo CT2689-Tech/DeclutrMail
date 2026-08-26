@@ -21,6 +21,9 @@ import {
   BETA_DENIED_REASON_PARAM,
   type ErrorCode,
   isErrorCode,
+  parseSignupAttributionRef,
+  SIGNUP_ATTRIBUTION_REFS,
+  type SignupAttributionRef,
 } from '@declutrmail/shared/contracts';
 
 import { InboxLimitGuard } from '../common/entitlements/inbox-limit.guard.js';
@@ -65,6 +68,8 @@ interface LoginOAuthState extends OAuthStateBase {
   mode: 'login';
   /** Canonical local billing destination; login mode only. */
   returnTo?: string | undefined;
+  /** First-touch marketing channel; login mode only. Set-once on new signup. */
+  ref?: SignupAttributionRef | undefined;
 }
 
 interface ConnectOAuthState extends OAuthStateBase {
@@ -104,6 +109,7 @@ const oauthStateSchema = z
         expiresAt: z.number().int().positive(),
         mode: z.literal('login'),
         returnTo: z.string().max(512).optional(),
+        ref: z.enum(SIGNUP_ATTRIBUTION_REFS).optional(),
       })
       .strict(),
     z
@@ -181,8 +187,10 @@ export class GoogleOAuthController {
     @Req() req: Request,
     @Res() res: Response,
     @Query('returnTo') returnTo?: unknown,
+    @Query('ref') ref?: unknown,
   ): Promise<void> {
     const safeReturnTo = parseBillingReturnTo(returnTo);
+    const safeRef = parseSignupAttributionRef(ref);
 
     if (await this.hasLiveSession(req)) {
       const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
@@ -194,6 +202,7 @@ export class GoogleOAuthController {
       nonce: randomBytes(32).toString('base64url'),
       mode: 'login',
       ...(safeReturnTo ? { returnTo: safeReturnTo } : {}),
+      ...(safeRef ? { ref: safeRef } : {}),
     });
   }
 
@@ -621,6 +630,7 @@ export class GoogleOAuthController {
         refreshToken,
         ipAddress,
         userAgent,
+        ...(cookieState.ref ? { signupAttributionRef: cookieState.ref } : {}),
       });
     } catch (err) {
       if (err instanceof BetaGateDeniedError) {

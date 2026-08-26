@@ -113,6 +113,12 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 
+import {
+  parseSignupAttributionRef,
+  resolveFirstTouchRef,
+  SIGNUP_REF_COOKIE,
+} from '@declutrmail/shared/contracts';
+
 import { AUTHED_APP_PATHS } from './app/robots';
 
 /** Origin of a URL-ish env var, or null when unset/garbage. */
@@ -340,7 +346,35 @@ export function middleware(request: NextRequest): NextResponse {
   if (authed) {
     response.headers.set('X-Robots-Tag', 'noindex, nofollow');
   }
+  captureSignupRefCookie(request, response);
   return response;
+}
+
+const SIGNUP_REF_MAX_AGE_SEC = 60 * 60 * 24 * 30;
+
+/**
+ * Set-once first-touch `ref` cookie. Query param wins; a bare
+ * `/inbox-simulator` visit fills `simulator` only when the slot is empty.
+ * Never inferred from Referer (Google OAuth would steal every signup).
+ */
+function captureSignupRefCookie(request: NextRequest, response: NextResponse): void {
+  const existing = request.cookies.get(SIGNUP_REF_COOKIE)?.value;
+  const resolved = resolveFirstTouchRef({
+    existing,
+    queryRef: request.nextUrl.searchParams.get('ref'),
+    pathname: request.nextUrl.pathname,
+  });
+  if (!resolved) return;
+  if (parseSignupAttributionRef(existing) === resolved) return;
+  response.cookies.set({
+    name: SIGNUP_REF_COOKIE,
+    value: resolved,
+    path: '/',
+    maxAge: SIGNUP_REF_MAX_AGE_SEC,
+    sameSite: 'lax',
+    httpOnly: false,
+    secure: process.env.NODE_ENV === 'production',
+  });
 }
 
 export const config = {

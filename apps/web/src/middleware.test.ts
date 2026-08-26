@@ -311,3 +311,25 @@ describe('STATIC_SECURITY_HEADERS (D175)', () => {
     expect(map.get('Permissions-Policy')).not.toContain('payment');
   });
 });
+
+describe('signup first-touch cookie (Phase B)', () => {
+  it('captures an allowlisted query ref', () => {
+    const request = new NextRequest('https://declutrmail.com/inbox-simulator?ref=hn');
+    const response = middleware(request);
+    expect(response.cookies.get('dm_signup_ref')?.value).toBe('hn');
+  });
+
+  it('does not let a later simulator visit overwrite hn', () => {
+    const request = new NextRequest('https://declutrmail.com/inbox-simulator?ref=simulator');
+    request.cookies.set('dm_signup_ref', 'hn');
+    const response = middleware(request);
+    expect(response.cookies.get('dm_signup_ref')).toBeUndefined();
+    expect(response.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('attributes a bare simulator visit when nothing is captured yet', () => {
+    const request = new NextRequest('https://declutrmail.com/inbox-simulator');
+    const response = middleware(request);
+    expect(response.cookies.get('dm_signup_ref')?.value).toBe('simulator');
+  });
+});

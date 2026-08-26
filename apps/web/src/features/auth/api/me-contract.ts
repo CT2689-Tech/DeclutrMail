@@ -53,6 +53,15 @@ export interface Me {
   cleanupRemaining: number | null;
   /** Server-computed next reset instant; the browser never derives it. */
   cleanupResetsAt?: string | null;
+  /**
+   * First-touch tracked `ref` vs skippable self-report. Optional during a
+   * rolling API/web deploy — absent means do not show the prompt.
+   */
+  signupAttribution?: {
+    ref: string | null;
+    heardFrom: string | null;
+    promptNeeded: boolean;
+  };
 }
 
 export const ME_QUERY_KEY = ['auth', 'me'] as const;

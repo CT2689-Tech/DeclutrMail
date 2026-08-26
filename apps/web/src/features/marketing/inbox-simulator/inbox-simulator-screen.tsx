@@ -17,7 +17,8 @@ import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
-import { oauthStartUrl } from '@/features/marketing/landing/urls';
+import { oauthStartUrl, siteUrl } from '@/features/marketing/landing/urls';
+import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
 
 // The FULL fixture queue on purpose (was slice(0,7)): the last two
@@ -612,6 +613,23 @@ function OutcomeSummary({ decisions }: { decisions: readonly DemoDecision[] }) {
   );
 }
 
+function CopySimulatorLink() {
+  const [copied, setCopied] = useState(false);
+
+  return (
+    <Button
+      tone="ghost"
+      onClick={() => {
+        void navigator.clipboard.writeText(simulatorShareUrl(siteUrl())).then(() => {
+          setCopied(true);
+        });
+      }}
+    >
+      {copied ? 'Copied' : 'Copy demo link'}
+    </Button>
+  );
+}
+
 function DemoCompletion({
   decisions,
   onExplore,
@@ -648,6 +666,7 @@ function DemoCompletion({
         <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
           Review my Gmail senders →
         </TrackedCta>
+        <CopySimulatorLink />
         <Button tone="default" onClick={onExplore}>
           Explore all sample senders
         </Button>
@@ -676,6 +695,7 @@ function ExploreCompletion({
         <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
           Review my Gmail senders →
         </TrackedCta>
+        <CopySimulatorLink />
         <Button tone="default" onClick={onReset}>
           Start again
         </Button>
