@@ -21,6 +21,47 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-26 — A paywall billed for a feature the log said was verified and the code never had
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` — found by grounding a
+product backlog review against `main`, not by any test or gate
+
+**Caught by:** manual codebase audit (checking each claimed Brief capability
+against the code that would implement it)
+
+**What happened:** the Pro tier gate for the Brief read *"A daily summary of
+yesterday's email, written in plain English — 8am daily, in-app or by email."*
+There is no Brief email: no template, no trigger in
+`apps/api/src/notifications/`, and no digest key in the `emailPrefs` contract.
+The "8am" half had also gone stale the moment #635 made the hour configurable.
+
+The reason nobody noticed is the interesting part. `IMPLEMENTATION-LOG.md` has
+D61 — *"In-app screen + optional email digest (default off)"* — at 🟢
+**Verified**, cited to `brief.read-service.spec.ts`. That file tests the read
+service and never touches email. The decision had two halves, one shipped, and
+`verify-d` passed on the one that did. So the log asserted the feature existed,
+the paywall sold it, and every check was green.
+
+D65 and D66 drift the same way in the opposite direction: D65 is ⬜ Not started
+while `noise-archive-sheet.tsx` ships and its bar renders, and D66 is 🔵
+Shipped under a title describing behaviour #635 retired.
+
+**Correct approach:** a multi-clause D-decision cannot be verified as a unit.
+Either it is split so each clause has its own row and its own evidence, or the
+evidence has to demonstrate every clause. And any product-surface claim about a
+capability — especially one behind a price — should be traceable to the code
+that performs it, not to a log row.
+
+**Rule:** before writing or trusting marketing copy for a gated feature, find
+the code that performs the claim; if a D-decision has an "and" in it, verify
+each side separately or split the row.
+
+**Enforcement update:** none automated yet — `verify-d` cannot tell which
+clause an evidence file covers. Logged for the founder in FOUNDER-FOLLOWUPS
+(2026-08-26) with the D61/D65/D66 split proposal, since amending a D-body is
+the founder's call. Candidate future check: a test that asserts every
+capability named in `TierGate` copy resolves to a shipped code path.
+
 ## 2026-08-25 — A capability gate keyed on the billing read is dark whenever billing is
 
 **PR:** branch `claude/brief-billing-polish-bzpitp` (D64, D66) — caught pre-merge by the local browser smoke, after 42 green tests
