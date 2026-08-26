@@ -227,6 +227,17 @@ function projectBrief(
       fyi: row.briefPayload.fyi.map(projectItem),
       noise: row.briefPayload.noise,
       narrative: row.briefPayload.narrative,
+      // Pre-cap section totals (D63). This projection is a deliberate
+      // allowlist — it is what stops a stowaway snippet reaching the
+      // wire — which also means a new payload field is dropped unless
+      // it is named here. Conditional spread rather than a plain
+      // assignment because `exactOptionalPropertyTypes` distinguishes
+      // "absent" from "present and undefined", and Briefs frozen before
+      // these existed (D69) genuinely have neither.
+      ...(row.briefPayload.replyTotal !== undefined
+        ? { replyTotal: row.briefPayload.replyTotal }
+        : {}),
+      ...(row.briefPayload.fyiTotal !== undefined ? { fyiTotal: row.briefPayload.fyiTotal } : {}),
     },
     generatedAt: row.generatedAt.toISOString(),
     openedAt: row.openedAt?.toISOString() ?? null,

@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -83,6 +84,38 @@ const BASE_BRIEF: BriefWire = {
   feedbackRating: null,
   noiseSenders: [{ senderKey: 'sk-news', senderId: SENDER_ID_NEWS, isProtected: false }],
 };
+
+/** A frozen Brief from the day before BASE_BRIEF (D61 history). */
+const PAST_BRIEF: BriefWire = {
+  ...BASE_BRIEF,
+  id: '22222222-2222-2222-2222-222222222222',
+  runDateLocal: '2026-05-23',
+  openedAt: null,
+  briefPayload: {
+    ...BASE_BRIEF.briefPayload,
+    narrative: '',
+    reply: [
+      {
+        senderKey: 'sk-landlord',
+        senderName: 'Sunrise Property',
+        senderEmail: 'leases@sunrise.example',
+        subject: 'Lease renewal needs signing',
+        messageIds: ['m-land-1'],
+      },
+    ],
+    fyi: [],
+    noise: [],
+  },
+};
+
+/** Today + one earlier day, newest first — the endpoint's own order. */
+function historyHandler(rows: BriefWire[] = [BASE_BRIEF, PAST_BRIEF]) {
+  return {
+    method: 'GET' as const,
+    path: '/api/briefs',
+    respond: () => jsonOk({ data: rows }),
+  };
+}
 
 function renderScreen() {
   const client = createTestQueryClient();
@@ -486,5 +519,100 @@ describe('BriefScreen — pure helpers', () => {
 
   it('senderSearchHref preserves an exact shareable sender query', () => {
     expect(senderSearchHref('Billing + Reports')).toBe('/senders?q=Billing%20%2B%20Reports');
+  });
+});
+
+describe('BriefScreen — D61 history', () => {
+  beforeEach(() => {
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      historyHandler(),
+    ]);
+  });
+
+  it('offers the days that exist and opens on the latest', async () => {
+    renderScreen();
+
+    const picker = await screen.findByLabelText('Brief day');
+    // Labels are the COVERED day, not the run date — 2026-05-24 ran over
+    // Sat the 23rd, and 2026-05-23 over Fri the 22nd.
+    expect(
+      within(picker).getByRole('option', { name: /Sat, May 23 — latest/ }),
+    ).toBeInTheDocument();
+    expect(within(picker).getByRole('option', { name: /^Fri, May 22$/ })).toBeInTheDocument();
+    // Latest is selected, and today's content is on screen.
+    expect((picker as HTMLSelectElement).value).toBe('');
+    expect(screen.getByText('Q4 plan review')).toBeInTheDocument();
+  });
+
+  it('renders the chosen day in place', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+
+    const picker = await screen.findByLabelText('Brief day');
+    await user.selectOptions(picker, '2026-05-23');
+
+    await waitFor(() =>
+      expect(screen.getByText('Lease renewal needs signing')).toBeInTheDocument(),
+    );
+    // Today's rows are gone — this is a replacement, not an append.
+    expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
+  });
+
+  it('does not mark a past Brief opened', async () => {
+    // opened_at is D61's first-view tracker for the day a Brief was
+    // delivered. Browsing back through history must not rewrite it.
+    const posted: string[] = [];
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      historyHandler(),
+      {
+        method: 'POST',
+        path: /\/api\/briefs\/[^/]+\/mark-opened/,
+        respond: (_req, url) => {
+          posted.push(url.pathname);
+          return jsonOk({ data: { openedAt: '2026-05-25T09:00:00Z' } });
+        },
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderScreen();
+
+    const picker = await screen.findByLabelText('Brief day');
+    await user.selectOptions(picker, '2026-05-23');
+    await waitFor(() =>
+      expect(screen.getByText('Lease renewal needs signing')).toBeInTheDocument(),
+    );
+
+    expect(posted).toEqual([]);
+  });
+
+  it('hides the switcher and still renders today when history fails', async () => {
+    // History is secondary. A range read that 500s must cost the user
+    // the switcher and nothing else.
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      { method: 'GET', path: '/api/briefs', respond: () => jsonServerError() },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Q4 plan review')).toBeInTheDocument());
+    expect(screen.queryByLabelText('Brief day')).not.toBeInTheDocument();
+    // The plain date label takes its place.
+    expect(screen.getByText('Sat, May 23')).toBeInTheDocument();
+  });
+
+  it('hides the switcher when only one Brief exists', async () => {
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      historyHandler([BASE_BRIEF]),
+    ]);
+
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Q4 plan review')).toBeInTheDocument());
+    expect(screen.queryByLabelText('Brief day')).not.toBeInTheDocument();
   });
 });

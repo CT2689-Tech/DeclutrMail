@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import {
@@ -25,6 +25,7 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
+import { useBriefHistory } from './api/use-brief-history';
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
 import {
@@ -91,6 +92,13 @@ export function BriefScreen() {
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const query = useBriefToday();
 
+  // D61 history. `null` means "showing today"; any other value is a
+  // run_date_local the user picked. Held here rather than in BriefBody
+  // so switching days does not remount the body and lose the Noise
+  // section's Done marks for the day the user came back to.
+  const [selectedRunDate, setSelectedRunDate] = useState<string | null>(null);
+  const history = useBriefHistory(query.data?.runDateLocal ?? null);
+
   // `mailbox_id: null` keeps the historical event contract. The nullable
   // auth hook above binds Gmail links in production without making isolated
   // stories invent a mailbox; PostHog identity still attaches separately.
@@ -124,7 +132,27 @@ export function BriefScreen() {
     return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
   }
 
-  return <BriefBody brief={brief} mailboxEmail={activeMailboxEmail} />;
+  // A selected date that is not in the fetched range falls back to
+  // today rather than rendering nothing — the range can legitimately
+  // narrow (a mailbox switch resets the scoped cache and refetches).
+  const selected =
+    selectedRunDate === null
+      ? brief
+      : (history.data?.find((row) => row.runDateLocal === selectedRunDate) ?? brief);
+
+  return (
+    <BriefBody
+      brief={selected}
+      mailboxEmail={activeMailboxEmail}
+      // Only today's Brief is a "first view" worth recording. Marking a
+      // three-week-old snapshot opened because someone browsed back to
+      // it would make D61's opened_at mean something else entirely.
+      isToday={selected.id === brief.id}
+      days={history.data ?? []}
+      selectedRunDate={selectedRunDate}
+      onSelectRunDate={setSelectedRunDate}
+    />
+  );
 }
 
 /**
@@ -146,7 +174,23 @@ function handleBriefRefresh(refetch: () => Promise<unknown>): void {
  * alongside a guaranteed-present `brief` payload and the effect's
  * dependency array stays narrow.
  */
-function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: string | null }) {
+function BriefBody({
+  brief,
+  mailboxEmail,
+  isToday,
+  days,
+  selectedRunDate,
+  onSelectRunDate,
+}: {
+  brief: BriefWire;
+  mailboxEmail: string | null;
+  /** False while a past Brief is being read — suppresses mark-opened. */
+  isToday: boolean;
+  /** Past Briefs available to switch to (D61 history). */
+  days: readonly BriefWire[];
+  selectedRunDate: string | null;
+  onSelectRunDate: (runDate: string | null) => void;
+}) {
   const { reply, fyi, noise, narrative, replyTotal, fyiTotal } = brief.briefPayload;
   const isEmpty = reply.length === 0 && fyi.length === 0 && noise.length === 0;
 
@@ -162,6 +206,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
   const markOpened = useMarkBriefOpened();
   const markedRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!isToday) return;
     if (brief.openedAt !== null) return;
     if (markedRef.current === brief.id) return;
     markedRef.current = brief.id;
@@ -170,7 +215,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
     // identity is stable for a given queryClient and including it
     // would re-fire the mutation on every internal state transition
     // (pending/success/idle) the hook walks through.
-  }, [brief.id, brief.openedAt, markOpened]);
+  }, [brief.id, brief.openedAt, isToday, markOpened]);
 
   return (
     <div
@@ -189,7 +234,12 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
         body={`A short summary of yesterday's mail. Reply first, FYI for context, Noise to clear.`}
         tip="Open a message in Gmail to reply or review it."
       />
-      <BriefMeta brief={brief} />
+      <BriefMeta
+        brief={brief}
+        days={days}
+        selectedRunDate={selectedRunDate}
+        onSelectRunDate={onSelectRunDate}
+      />
       <BriefReturnLinks />
 
       {isEmpty ? (
@@ -245,8 +295,22 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
  * happy-path Haiku case is silent — surfacing it would add noise to
  * every Brief.
  */
-function BriefMeta({ brief }: { brief: BriefWire }) {
+function BriefMeta({
+  brief,
+  days,
+  selectedRunDate,
+  onSelectRunDate,
+}: {
+  brief: BriefWire;
+  days: readonly BriefWire[];
+  selectedRunDate: string | null;
+  onSelectRunDate: (runDate: string | null) => void;
+}) {
   const dateLabel = formatRunDate(coveredDateOf(brief.runDateLocal));
+  // Offer the switcher only when there is somewhere else to go. One
+  // Brief in the range means the control would be a dropdown with a
+  // single option — chrome that does nothing.
+  const hasHistory = days.length > 1;
   return (
     <div
       style={{
@@ -258,7 +322,31 @@ function BriefMeta({ brief }: { brief: BriefWire }) {
         fontFamily: font.mono,
       }}
     >
-      <span>{dateLabel}</span>
+      {hasHistory ? (
+        <select
+          value={selectedRunDate ?? ''}
+          onChange={(e) => onSelectRunDate(e.target.value === '' ? null : e.target.value)}
+          aria-label="Brief day"
+          style={{
+            fontFamily: font.mono,
+            fontSize: 12,
+            color: color.fg,
+            background: color.card,
+            border: `1px solid ${color.line}`,
+            borderRadius: 6,
+            padding: '3px 6px',
+          }}
+        >
+          {days.map((row, i) => (
+            <option key={row.id} value={i === 0 ? '' : row.runDateLocal}>
+              {formatRunDate(coveredDateOf(row.runDateLocal))}
+              {i === 0 ? ' — latest' : ''}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span>{dateLabel}</span>
+      )}
       {brief.generatedBy === 'template' && (
         <>
           <span aria-hidden="true">·</span>

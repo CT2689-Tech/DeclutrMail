@@ -154,6 +154,26 @@ export async function fetchBriefToday(signal?: AbortSignal): Promise<Envelope<Br
 }
 
 /**
+ * `GET /api/briefs?from=&to=` — D61 history. Returns the frozen
+ * snapshots in the range, newest first, each with its full payload, so
+ * the screen can move between days without another round trip.
+ *
+ * Runs `toNoiseSenders` per row for the same reason `fetchBriefToday`
+ * does: an absent field must land as "nothing is actionable", never as
+ * `undefined` the archive controls then index into.
+ */
+export async function fetchBriefHistory(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<Envelope<BriefWire[], unknown>> {
+  const query = new URLSearchParams({ from, to }).toString();
+  const envelope = await apiGet<BriefWire[]>(`/api/briefs?${query}`, { signal });
+  const rows = Array.isArray(envelope.data) ? envelope.data : [];
+  return { ...envelope, data: rows.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })) };
+}
+
+/**
  * Absorb `noiseSenders` at the one boundary it enters through. An API
  * built before D65 omits the field entirely; the archive controls read
  * this array to decide what is actionable, so an absent field must land
