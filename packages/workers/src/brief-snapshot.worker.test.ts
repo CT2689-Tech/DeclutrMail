@@ -652,6 +652,10 @@ describe('BriefSnapshotWorker', () => {
       .from(briefRuns)
       .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
     expect(row!.briefPayload.reply).toHaveLength(6);
+    // The cap dropped 2 of the 8 candidates. Without this the payload
+    // would carry no trace of them, and the screen could only render
+    // "6 of 6" — a constant describing itself as a fact about the day.
+    expect(row!.briefPayload.replyTotal).toBe(8);
     expect(
       row!.briefPayload.reply
         .slice(0, 2)

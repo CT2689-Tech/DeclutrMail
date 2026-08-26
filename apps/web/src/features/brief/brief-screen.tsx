@@ -147,7 +147,7 @@ function handleBriefRefresh(refetch: () => Promise<unknown>): void {
  * dependency array stays narrow.
  */
 function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: string | null }) {
-  const { reply, fyi, noise, narrative } = brief.briefPayload;
+  const { reply, fyi, noise, narrative, replyTotal, fyiTotal } = brief.briefPayload;
   const isEmpty = reply.length === 0 && fyi.length === 0 && noise.length === 0;
 
   // Below `sm` (D60 mobile treatment) the multi-column reply/FYI/noise
@@ -201,7 +201,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
             <ReplyFyiSection
               label="Reply"
               rows={reply}
-              max={6}
+              total={replyTotal}
               isMobile={isMobile}
               mailboxEmail={mailboxEmail}
             />
@@ -210,7 +210,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
             <ReplyFyiSection
               label="FYI"
               rows={fyi}
-              max={4}
+              total={fyiTotal}
               isMobile={isMobile}
               mailboxEmail={mailboxEmail}
             />
@@ -342,13 +342,14 @@ function Narrative({ text }: { text: string }) {
 function ReplyFyiSection({
   label,
   rows,
-  max,
+  total,
   isMobile,
   mailboxEmail,
 }: {
   label: 'Reply' | 'FYI';
   rows: BriefItemWire[];
-  max: number;
+  /** Pre-cap candidate count from the payload; undefined on older rows. */
+  total?: number | undefined;
   isMobile: boolean;
   mailboxEmail: string | null;
 }) {
@@ -358,7 +359,7 @@ function ReplyFyiSection({
       aria-label={`${label} (${rows.length})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
-      <SectionHeading label={label} count={rows.length} max={max} tone={tone} />
+      <SectionHeading label={label} count={rows.length} total={total} tone={tone} />
       <ul
         style={{
           listStyle: 'none',
@@ -601,19 +602,28 @@ type SectionTone = 'accent' | 'muted' | 'soft';
 function SectionHeading({
   label,
   count,
-  max,
+  total,
   subline,
   tone,
 }: {
   label: string;
   count: number;
-  max?: number;
+  /**
+   * How many items existed before the D63 cap. Undefined on Briefs
+   * frozen before the worker recorded it (D69).
+   */
+  total?: number | undefined;
   subline?: string;
   tone: SectionTone;
 }) {
   const dotColor =
     tone === 'accent' ? color.primary : tone === 'muted' ? color.fgSoft : color.fgMuted;
-  const countLabel = max != null ? `${count} of ${max}` : `${count}`;
+  // "of N" only when N says something the count does not. This used to
+  // read `${count} of ${max}` against the hardcoded cap, so a full
+  // section always announced "6 of 6" — a constant dressed as a fact
+  // about the day, and silent about the items the cap actually dropped.
+  const truncated = total != null && total > count;
+  const countLabel = truncated ? `${count} of ${total}` : `${count}`;
   return (
     <h2
       style={{

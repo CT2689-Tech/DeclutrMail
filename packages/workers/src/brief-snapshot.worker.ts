@@ -688,7 +688,18 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     });
 
     return {
-      payload: { reply, fyi, noise, narrative },
+      payload: {
+        reply,
+        fyi,
+        noise,
+        narrative,
+        // Pre-cap counts, so the screen can say "6 of 8" instead of
+        // "6 of 6" — the cap restating itself as a fact about the day.
+        // Captured here because the slice above is where the dropped
+        // items stop existing; nothing downstream can recover them.
+        replyTotal: replyCandidates.length,
+        fyiTotal: fyiCandidates.length,
+      },
       generatedBy,
     };
   }

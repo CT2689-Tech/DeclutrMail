@@ -194,9 +194,9 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2 of 6/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
     );
-    expect(screen.getByRole('heading', { name: /fyi · 1 of 4/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /fyi · 1$/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /noise · 1 · 4 messages/i })).toBeInTheDocument();
   });
 
@@ -217,6 +217,73 @@ describe('BriefScreen — populated', () => {
 
     await waitFor(() => expect(screen.getByText('Sat, May 23')).toBeInTheDocument());
     expect(screen.queryByText('Sun, May 24')).not.toBeInTheDocument();
+  });
+
+  it('shows "of N" only when the cap actually dropped something', async () => {
+    // BASE_BRIEF has 2 reply rows. With replyTotal 2 nothing was
+    // dropped, so "2 of 2" would be the cap describing itself — the
+    // exact defect. With replyTotal 8, "2 of 8" is real information.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...BASE_BRIEF,
+              briefPayload: { ...BASE_BRIEF.briefPayload, replyTotal: 2, fyiTotal: 1 },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('heading', { name: /reply · 2 of 2/i })).not.toBeInTheDocument();
+  });
+
+  it('names the real total when the cap truncated the section', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...BASE_BRIEF,
+              briefPayload: { ...BASE_BRIEF.briefPayload, replyTotal: 8, fyiTotal: 5 },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /reply · 2 of 8/i })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('heading', { name: /fyi · 1 of 5/i })).toBeInTheDocument();
+  });
+
+  it('falls back to a plain count on a Brief frozen before totals existed', async () => {
+    // D69 freezes rows once written, so payloads with no replyTotal are
+    // a real shape the screen must render — not a hypothetical.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => jsonOk({ data: BASE_BRIEF }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+    );
   });
 
   it('renders the narrative pre-amble when non-empty', async () => {
@@ -257,7 +324,7 @@ describe('BriefScreen — populated', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2 of 6/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText(/via template/i)).not.toBeInTheDocument();
   });
@@ -356,7 +423,7 @@ describe('BriefScreen — D61 mark-opened mutation', () => {
     // Wait for the populated content so we know the effect had a
     // chance to run; then assert no POST was made.
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2 of 6/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
     );
     expect(postCount).toBe(0);
   });
