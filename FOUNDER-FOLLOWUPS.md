@@ -24,6 +24,46 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-26 — Seven decisions were demoted from Verified by a regex bug, not by evidence
+
+**Source:** session 2026-08-26 — surfaced when the implementation-log gate
+rejected a row I was recording; traced to the cause rather than worked around
+
+**Why:** the log's evidence check truncated any `.tsx` path to a `.ts` one that
+does not exist (alternation order — `ts` matched before `tsx`). The
+2026-07-29 evidence audit ran it over every recorded 🟢 and marked seven
+decisions down from **Verified** to **Shipped**:
+
+**D31, D32, D33, D34, D36, D208, D226** — all triage-surface decisions, all
+cited to `.tsx` tests that are present in the repo today.
+
+Each row now carries *"Evidence audit 2026-07-29 (🟢→🔵): the cited evidence
+file no longer exists"*. That sentence is false for all seven. Worse, the audit
+also removed `status: 🟢` from their `.impl-log/` fragments, so the wrong
+answer is the recorded state — re-running the generator will not put it back.
+
+D226 is the action-lifecycle decision (sheet → preview → mutation → undo), one
+of the Section 2 guardrails. Its verification currently reads as never
+established.
+
+**How:** the regex is fixed in this branch, which stops it recurring. Restoring
+the seven is a separate call and yours to make:
+
+1. Re-add `status: 🟢` to each of `.impl-log/D{31,32,33,34,36,208,226}.md` and
+   strip the false audit sentence from their `note:` — treats the original 🟢
+   as sound and the demotion as the bug it was. Fast, and it restores a claim
+   somebody did make.
+2. Or leave them 🔵 and re-verify each with `pnpm verify-d` — slower, but the
+   verification is then something we watched happen rather than inherited.
+
+I did not pick for you: option 1 re-asserts Verified on seven decisions I have
+not checked, which is a claim about the product, not a formatting fix.
+
+**Verifies by:** the seven rows read 🟢 with no audit sentence, and
+`pnpm generate-impl-log --check --strict` is clean.
+
+**Status:** Open
+
 ### 2026-08-25 — Brief schedule decisions taken in session: every day, hourly slots
 
 **Source:** session 2026-08-25 — the Brief product review (`/ct-decide`),

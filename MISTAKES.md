@@ -21,6 +21,45 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-26 — A regex demoted seven verified decisions and blamed the missing file on them
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` — found because it rejected
+a row I was legitimately recording
+
+**Caught by:** CI (`Implementation log is derived and current` failed on
+`D65: drifted`), then read back to the cause
+
+**What happened:** the evidence check in `scripts/generate-impl-log.ts` matched
+`/([\w@./-]+\.(?:ts|tsx|sql|sh|md))/`. Regex alternation takes the FIRST
+branch that matches, so on `apps/web/src/features/brief/noise-archive.test.tsx`
+the `ts` branch matched and left the `x` behind. The truncated
+`…noise-archive.test.ts` does not exist, so the check returned `missing`, and
+`composeRow` demoted the row from 🟢 to 🔵 and wrote *"the cited evidence file
+no longer exists"* into its note — about a file sitting in the repo.
+
+The 2026-07-29 evidence audit ran this against every recorded 🟢. Seven
+decisions were marked down on it: **D31, D32, D33, D34, D36, D208, D226** —
+every one cites a `.tsx` test, every one of those tests exists. The audit also
+stripped `status: 🟢` from their fragments, so the false conclusion is now the
+recorded state and re-running the generator cannot undo it.
+
+The failure mode is the one this repo keeps meeting: a guardrail that reports
+something untrue about what is built, in the file whose whole job is to answer
+"is it built yet?".
+
+**Correct approach:** order alternation longest-first (`tsx|ts`) — or anchor
+the match at a word boundary rather than trusting branch order. More generally,
+a check that can DOWNGRADE a recorded human claim needs its own test with a
+case per file extension it accepts; this one had none.
+
+**Rule:** in any regex alternation over file extensions, put the longer
+extension first, and test every extension the pattern claims to accept.
+
+**Enforcement update:** the extension order is fixed in this branch and the
+reason is written above the function so it survives a reformat. The seven
+demoted rows are NOT restored here — re-asserting Verified on someone else's
+decisions is the founder's call, logged in FOUNDER-FOLLOWUPS 2026-08-26.
+
 ## 2026-08-26 — A paywall billed for a feature the log said was verified and the code never had
 
 **PR:** branch `claude/brief-billing-polish-bzpitp` — found by grounding a
