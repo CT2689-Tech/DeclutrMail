@@ -13,7 +13,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TriageReadService } from './triage.read-service.js';
 
@@ -302,6 +302,19 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
       queuedDecisions: 0,
       noiseReductionPct: null,
     });
+  });
+
+  it('builds the route bootstrap while executing the queue read only once', async () => {
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedMessage(db, mailboxId, SENDER_A, 0);
+    const queueSpy = vi.spyOn(svc, 'listQueue');
+
+    const bootstrap = await svc.getBootstrap({ mailboxAccountId: mailboxId, limit: 12 });
+
+    expect(queueSpy).toHaveBeenCalledTimes(1);
+    expect(bootstrap.queue).toHaveLength(1);
+    expect(bootstrap.todaySummary.queuedDecisions).toBe(1);
+    expect(bootstrap.stats).toMatchObject({ tier: 'free' });
   });
 
   it('counts today-received inbound mail + distinct senders, excluding outbound and older mail', async () => {

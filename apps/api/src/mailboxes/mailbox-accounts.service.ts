@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
-import { mailboxAccounts, mailboxDataDeletionRequests, ruleMatchLog } from '@declutrmail/db';
+import { mailboxAccounts, mailboxDataDeletionRequests, ruleMatchLog, users } from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
 import {
   ERROR_CODES,
@@ -109,6 +109,54 @@ export class MailboxAccountsService {
       }
     }
     return rows.map((row) => toMailboxSummary(row, latestByMailbox.get(row.id) ?? null));
+  }
+
+  /**
+   * Resolve the active mailbox needed by `CurrentMailboxGuard` in one
+   * narrow SELECT.
+   *
+   * Do not replace this with `listByWorkspace()`. That presentation read
+   * also loads disconnected mailboxes and each mailbox's latest indexed-
+   * data deletion request, so it executes two statements and returns fields
+   * the guard discards. The old guard then issued a third statement through
+   * `UsersService.findById()` just to read `preferences.activeMailboxId`.
+   * Every mailbox-scoped endpoint paid that fan-out independently.
+   *
+   * With an explicit header, ownership + active status are predicates and
+   * no user row is needed. Without one, a left join reads the preference and
+   * orders it first; `created_at` preserves `listByWorkspace()`'s historical
+   * first-active fallback when the preference is absent or stale.
+   */
+  async resolveActiveForRequest(input: {
+    workspaceId: string;
+    userId: string;
+    requestedMailboxId?: string;
+  }): Promise<{ id: string } | null> {
+    const activeScope = and(
+      eq(mailboxAccounts.workspaceId, input.workspaceId),
+      eq(mailboxAccounts.status, 'active'),
+    );
+
+    if (input.requestedMailboxId !== undefined) {
+      const [row] = await this.db
+        .select({ id: mailboxAccounts.id })
+        .from(mailboxAccounts)
+        .where(and(activeScope, eq(mailboxAccounts.id, input.requestedMailboxId)))
+        .limit(1);
+      return row ?? null;
+    }
+
+    const [row] = await this.db
+      .select({ id: mailboxAccounts.id })
+      .from(mailboxAccounts)
+      .leftJoin(users, and(eq(users.id, input.userId), eq(users.workspaceId, input.workspaceId)))
+      .where(activeScope)
+      .orderBy(
+        sql`CASE WHEN ${mailboxAccounts.id}::text = COALESCE(${users.preferences}->>'activeMailboxId', '') THEN 0 ELSE 1 END`,
+        mailboxAccounts.createdAt,
+      )
+      .limit(1);
+    return row ?? null;
   }
 
   /** Find a single mailbox by id + workspace (ownership scope). */

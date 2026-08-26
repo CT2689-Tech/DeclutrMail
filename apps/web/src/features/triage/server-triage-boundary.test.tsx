@@ -38,29 +38,25 @@ describe('ServerTriageBoundary', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const fetchSpy = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith('/api/triage/queue')) {
-        return Response.json({ data: [] });
-      }
-      if (url.endsWith('/api/triage/stats')) {
+      if (url.endsWith('/api/triage/bootstrap')) {
         return Response.json({
           data: {
-            decidedToday: 0,
-            archivedToday: 0,
-            unsubscribedToday: 0,
-            laterToday: 0,
-            freeRemaining: null,
-            tier: 'pro',
-          },
-        });
-      }
-      if (url.endsWith('/api/triage/today-summary')) {
-        return Response.json({
-          data: {
-            receivedToday: 0,
-            sendersToday: 0,
-            handledAutomatically: 0,
-            queuedDecisions: 0,
-            noiseReductionPct: null,
+            queue: [],
+            stats: {
+              decidedToday: 0,
+              archivedToday: 0,
+              unsubscribedToday: 0,
+              laterToday: 0,
+              freeRemaining: null,
+              tier: 'pro',
+            },
+            todaySummary: {
+              receivedToday: 0,
+              sendersToday: 0,
+              handledAutomatically: 0,
+              queuedDecisions: 0,
+              noiseReductionPct: null,
+            },
           },
         });
       }
@@ -79,7 +75,7 @@ describe('ServerTriageBoundary', () => {
     render(<QueryClientProvider client={makeQueryClient()}>{boundary}</QueryClientProvider>);
 
     expect(screen.getByText('Triage ready')).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('does not retry designed 4xx states during server prefetch', async () => {
@@ -99,7 +95,7 @@ describe('ServerTriageBoundary', () => {
       children: <div>Fallback</div>,
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('prefetches only for an authed mailbox that has the triage capability', () => {

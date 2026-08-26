@@ -33,13 +33,9 @@ import { MailboxesController } from './mailboxes.controller.js';
   imports: [AuthCryptoModule, UsersModule, forwardRef(() => AuthModule), EntitlementsModule],
   providers: [MailboxAccountsService, GmailWatchService, CurrentMailboxGuard],
   controllers: [MailboxesController],
-  // Re-export `UsersModule` so importers (Senders/Triage/Undo/etc.)
-  // that consume `CurrentMailboxGuard` get `UsersService` resolved in
-  // their own DI context — the guard's constructor lists it as a
-  // dependency. Without the re-export, NestJS throws at boot:
-  //   "Nest can't resolve dependencies of the CurrentMailboxGuard
-  //    (?, MailboxAccountsService). Please make sure that the argument
-  //    UsersService at index [0] is available in the UndoModule context."
+  // Re-export `UsersModule` for mailbox controllers imported through
+  // feature modules. `CurrentMailboxGuard` itself now resolves the
+  // preference through MailboxAccountsService's single narrow query.
   // `GmailWatchService` is exported for `AuthSignupOrchestrator`
   // (watch-on-connect/reconnect) and the U22 deletion purge
   // (`stopAllForUser`).

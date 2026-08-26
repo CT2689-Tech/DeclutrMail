@@ -135,6 +135,56 @@ describe('MailboxAccountsService — explicit disconnect and indexed-data deleti
     });
   });
 
+  it('resolves the requested or preferred active mailbox in one guard-facing read', async () => {
+    const seeded = await seed(db);
+    const [preferred, disconnected] = await db
+      .insert(mailboxAccounts)
+      .values([
+        {
+          workspaceId: seeded.workspaceId,
+          userId: seeded.ownerId,
+          provider: 'gmail',
+          providerAccountId: 'preferred@gmail.com',
+          status: 'active',
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        },
+        {
+          workspaceId: seeded.workspaceId,
+          userId: seeded.ownerId,
+          provider: 'gmail',
+          providerAccountId: 'disconnected@gmail.com',
+          status: 'disconnected',
+          createdAt: new Date('2026-01-03T00:00:00Z'),
+        },
+      ])
+      .returning({ id: mailboxAccounts.id });
+    await db
+      .update(users)
+      .set({ preferences: { activeMailboxId: preferred!.id } })
+      .where(eq(users.id, seeded.ownerId));
+
+    await expect(
+      service.resolveActiveForRequest({
+        workspaceId: seeded.workspaceId,
+        userId: seeded.ownerId,
+      }),
+    ).resolves.toEqual({ id: preferred!.id });
+    await expect(
+      service.resolveActiveForRequest({
+        workspaceId: seeded.workspaceId,
+        userId: seeded.ownerId,
+        requestedMailboxId: seeded.mailboxId,
+      }),
+    ).resolves.toEqual({ id: seeded.mailboxId });
+    await expect(
+      service.resolveActiveForRequest({
+        workspaceId: seeded.workspaceId,
+        userId: seeded.ownerId,
+        requestedMailboxId: disconnected!.id,
+      }),
+    ).resolves.toBeNull();
+  });
+
   it('requires the mailbox-specific phrase and idempotently schedules a durable purge', async () => {
     const seeded = await seed(db);
     const input = {
