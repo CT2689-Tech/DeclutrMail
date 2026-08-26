@@ -127,6 +127,7 @@ const SUBSCRIPTION_PAYLOAD = {
   foundingMember: false,
   subscription: null,
   pendingCheckout: null,
+  complimentary: null,
 };
 
 /** Healthy per-mailbox sync status (the useMailboxesHealth read). */

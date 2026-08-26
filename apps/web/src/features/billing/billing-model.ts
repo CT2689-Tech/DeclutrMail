@@ -267,6 +267,12 @@ export interface BillingPlanView {
   /** Only ever read off a BACKING record — a non-backing row's marker is not a plan fact. */
   scheduledChange: SubscriptionRecord['scheduledChange'];
   foundingMember: boolean;
+  /**
+   * A live complimentary grant, or null. The GRANT, not the resolved
+   * tier: a comped Plus who bought Pro reads `plus` here, so the card
+   * can say what the comp covers without claiming the whole plan.
+   */
+  complimentary: BillingSubscription['complimentary'];
 }
 
 export type BillingViewState =
@@ -287,6 +293,10 @@ export function emptyPlanView(entitlementTier: TierId): BillingPlanView {
     nonBacking: null,
     scheduledChange: null,
     foundingMember: false,
+    // No read body means no knowledge of a grant. Null is "we do not
+    // know", not "there is none" — the card renders no comp claim
+    // either way, which is the honest reading of both.
+    complimentary: null,
   };
 }
 
@@ -370,6 +380,7 @@ function planViewOf(payload: BillingSubscription): BillingPlanView {
     nonBacking,
     scheduledChange: backing.state === 'none' ? null : backing.sub.scheduledChange,
     foundingMember: payload.foundingMember,
+    complimentary: payload.complimentary,
   };
 }
 
@@ -422,7 +433,47 @@ export function currentPlanPriceLabel(view: BillingPlanView): string {
     return chargedPlanPrice(sub.tier, sub.cycle, sub.provider, sub.foundingMember) ?? '';
   }
   if (view.entitlementTier === 'free') return formatUsd(0);
+  // A comp is the reason there is no price, so say so instead of the
+  // generic line. Only when the grant reaches the tier being named: a
+  // comped Plus sitting on a paid-but-non-backing Pro row is not a
+  // complimentary Pro, and this headline must not imply the whole plan
+  // is free of charge.
+  if (view.complimentary !== null && TIER_RANK[view.complimentary.tier] >= tierRank(view)) {
+    return 'Complimentary';
+  }
   return 'Included with your account';
+}
+
+function tierRank(view: BillingPlanView): number {
+  return TIER_RANK[view.entitlementTier];
+}
+
+/**
+ * The plan card's complimentary line — who granted this and until when.
+ *
+ * States the EXPIRY and what follows it, because the alternative is the
+ * screen letting a dated comp lapse silently: the tier drops on the next
+ * recompute and nothing on the plan card had ever mentioned a date.
+ * Permanent comps make no end-date claim at all.
+ */
+export function complimentaryNote(view: BillingPlanView): string | null {
+  const comp = view.complimentary;
+  if (comp === null) return null;
+  // A grant the workspace has not actually been raised to yet is NOT in
+  // force, and saying so contradicts the tier printed directly above it.
+  // The window is real: a grant written straight to the table (rather
+  // than through `pnpm grant-tier`, which recomputes) is only applied by
+  // the 6-hourly sweep, and until then the card would read "Free" over
+  // "Pro is complimentary on this account". Claim nothing until the
+  // entitlement agrees. A comp BELOW the resolved tier still renders —
+  // that is a comped Plus who also pays for Pro, and both are true.
+  if (TIER_RANK[comp.tier] > TIER_RANK[view.entitlementTier]) return null;
+  const name = TIER_MANIFEST[comp.tier].name;
+  const until = formatBillingDate(comp.expiresAt);
+  if (until === null) {
+    return `${name} is complimentary on this account, granted by DeclutrMail. There's nothing to pay for it.`;
+  }
+  return `${name} is complimentary on this account through ${until}, granted by DeclutrMail. After that your plan reverts to your paid subscription, or to ${TIER_MANIFEST.free.name} if you have none.`;
 }
 
 /**

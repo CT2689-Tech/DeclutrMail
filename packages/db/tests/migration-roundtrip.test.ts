@@ -107,6 +107,7 @@ describe('migration round-trip', () => {
       'table:cron_runs',
       'table:dead_letter_jobs',
       'table:domain_icons',
+      'table:entitlement_grants',
       'table:followup_tracker',
       'table:mail_messages',
       'table:mailbox_accounts',

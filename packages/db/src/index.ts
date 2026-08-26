@@ -75,6 +75,8 @@ export {
   domainIconStatus,
 } from './schema/domain-icons';
 export type { DomainIcon, NewDomainIcon } from './schema/domain-icons';
+export { entitlementGrants } from './schema/entitlement-grants';
+export type { EntitlementGrant, NewEntitlementGrant } from './schema/entitlement-grants';
 export { followupStatus, followupTracker } from './schema/followup-tracker';
 export type {
   FollowupStatus,

@@ -182,6 +182,26 @@ export const BillingSubscriptionSchema = z.object({
       expiresAt: z.iso.datetime(),
     })
     .nullable(),
+  /**
+   * Complimentary tier granted by DeclutrMail rather than bought.
+   * Non-null while a live grant floors this workspace's tier.
+   *
+   * On the wire because without it the screen asserts a plan it has no
+   * payment for: `tier` says Pro, `subscription` is null, and the
+   * rendered result is a plan with a price the reader was never
+   * charged and management controls with nothing to act on. `tier` is
+   * the GRANTED tier specifically, not the resolved one — a comped
+   * Plus who bought Pro is on Pro and this still reads `plus`, so the
+   * copy can say what the comp covers without claiming the whole plan.
+   *
+   * `expiresAt` null = permanent.
+   */
+  complimentary: z
+    .object({
+      tier: z.enum(['free', 'plus', 'pro', 'team', 'enterprise']),
+      expiresAt: z.iso.datetime().nullable(),
+    })
+    .nullable(),
 });
 export type BillingSubscription = z.infer<typeof BillingSubscriptionSchema>;
 

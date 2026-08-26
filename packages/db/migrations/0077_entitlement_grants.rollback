@@ -1,0 +1,15 @@
+-- Reverse 0076 — drop the grants table.
+--
+-- LOSSY, and the loss is the comp records themselves: who was granted
+-- Plus or Pro, why, by whom, and when it ended. Nothing recomputes
+-- those. Before rolling this back on anything holding real grants,
+-- dump the table — the workspaces keep whatever tier they currently
+-- hold, but the next recompute has no floor to consult and drops every
+-- comped workspace to Free (or to its paid tier, if it has one).
+--
+-- The forward migration's readers must be gone first: the recompute
+-- paths in `billing-webhook.service.ts` and
+-- `billing-reconciliation.sweep.ts` both reference `entitlement_grants`
+-- and will error on a missing relation.
+-- atlas:nolint destructive
+DROP TABLE IF EXISTS "entitlement_grants";

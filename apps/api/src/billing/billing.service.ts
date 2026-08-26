@@ -43,6 +43,7 @@ import type {
 } from '@declutrmail/shared/contracts';
 
 import { AppException } from '../common/app-exception.js';
+import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement-grants.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
@@ -332,10 +333,23 @@ export class BillingService {
           }
         : null;
 
+    // The comp, if any. Read as the GRANT, not as the resolved tier:
+    // `ws.tier` already folds the grant in, so reporting that back
+    // would make a paid Pro look complimentary the moment they also
+    // held a Plus comp.
+    // Ranked in TS, not by `ORDER BY tier` — that would sort by the
+    // pg enum's declaration order, which happens to match TIER_RANK
+    // today and would silently stop matching the first time a tier is
+    // inserted anywhere but the end of the enum.
+    const grant = await highestLiveGrantForWorkspace(this.db, workspaceId);
+
     return {
       tier: ws.tier,
       foundingMember: ws.foundingMember,
       pendingCheckout,
+      complimentary: grant
+        ? { tier: grant.tier, expiresAt: grant.expiresAt?.toISOString() ?? null }
+        : null,
       subscription:
         sub && (sub.tier === 'plus' || sub.tier === 'pro')
           ? {

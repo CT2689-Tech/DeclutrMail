@@ -4,6 +4,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { users, workspaces } from '@declutrmail/db';
 import type { SignupAttributionRef, SignupHeardFromPatch } from '@declutrmail/shared/contracts';
 
+import { liveGrantTierForEmail } from '../common/entitlements/entitlement-grants.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -131,15 +132,23 @@ export class UsersService {
    * `users.email` UNIQUE race.
    *
    * Returns the new ids. The orchestrator owns the race-recovery path.
+   *
+   * The new workspace opens at whatever tier a complimentary grant for
+   * this email says, defaulting to Free. Applied HERE rather than as a
+   * follow-up write so a comped person is never Free for the length of
+   * a request — onboarding reads entitlements immediately, and a
+   * first-run that briefly shows Free limits is the whole reason grants
+   * are keyed on email instead of workspace id.
    */
   async insertWorkspaceAndUser(
     tx: DrizzleDb,
     email: string,
     signupAttributionRef?: SignupAttributionRef,
   ): Promise<{ userId: string; workspaceId: string }> {
+    const grantedTier = await liveGrantTierForEmail(tx, email);
     const [workspace] = await tx
       .insert(workspaces)
-      .values({ name: `${email}'s workspace` })
+      .values({ name: `${email}'s workspace`, ...(grantedTier ? { tier: grantedTier } : {}) })
       .returning({ id: workspaces.id });
     if (!workspace) {
       throw new InternalServerErrorException('Failed to bootstrap a workspace.');
