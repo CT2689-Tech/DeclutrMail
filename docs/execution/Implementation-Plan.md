@@ -10695,3 +10695,78 @@ on top. Consent is the required ask and goes first.
 
 **Privacy (D7, D228).** Channel slugs and optional visitor-typed text. Not
 Gmail data: no bodies, attachments, or non-allowlisted headers.
+### D260 — Complimentary tier is a floor, granted by email
+
+**Status:** Founder-ratified 2026-08-26 (options menu: grant table, named
+on the Billing screen, optional expiry defaulting to never, script-only
+admin surface). Adds a non-billing route onto Plus and Pro; changes
+nothing about what anything costs.
+
+**The need.** Advisors, friends, beta cohorts, and anyone handed an
+account before they are a customer. Prelaunch this is the only way a real
+person reaches a paid tier at all.
+
+**Why not just write the tier.** `workspaces.tier` is the single column
+every gate reads, so `UPDATE workspaces SET tier = 'pro'` looks like the
+whole answer. It works, and then it stops working with no event to notice
+it by. Two paths recompute that column —
+`BillingWebhookService.recomputeWorkspaceTier` on any billing event, and
+the 6-hourly reconciliation sweep — and both derive it from the
+`subscriptions` table alone, falling back to `'free'`. The sweep's
+`WHERE EXISTS` spares a workspace with no subscription rows, which is
+exactly why a hand-set tier appears durable; the first checkout the
+comped person opens, including one they abandon, creates a row and the
+next recompute drops them to Free. Verified against the dev DB: identical
+state, the old recompute returns `free`, the floored one returns `pro`.
+
+Same shape as the capability-guard defect in CLAUDE.md §2.6 — one side of
+a pair taught a rule, the other not, agreeing in every test and drifting
+in production.
+
+**Decision.** Complimentary tier lives in `entitlement_grants` (email,
+tier, reason, granted_by, expires_at, revoked_at) and resolves as a
+FLOOR:
+
+```
+workspaces.tier = max_rank(granting subscriptions, live grant, 'free')
+```
+
+1. **A grant raises; it never replaces.** Comped Pro who later buys Plus
+   stays Pro. A comp that expires drops to whatever the paid subscription
+   grants, and to Free only if there is none. An overwrite-style grant
+   gets that second case wrong in the direction that takes away something
+   the customer pays for.
+
+2. **All three tier-writing paths apply the floor** — the webhook
+   recompute, the sweep, and signup's `insertWorkspaceAndUser`. Signup is
+   included because grants are keyed on EMAIL and can be written before
+   the person exists; a comped invitee spending their whole first session
+   on Free limits, becoming Pro six hours later, is a broken first run.
+
+3. **The tier stays written to `workspaces.tier`.** A resolver-only grant
+   was rejected: several readers query the column in raw SQL without
+   `EntitlementsService`, including the Autopilot demotion cron, which
+   has no request and no principal. It would strip a comped Pro's rules
+   on its next pass.
+
+**Expiry is optional and defaults to never.** A friend gets a permanent
+comp; a cohort gets a date. Expired and revoked rows are kept — the trail
+of who was comped, why, and when it ended is why this is a table rather
+than an env var.
+
+**Named on the Billing screen.** "Pro · Complimentary", plus the end date
+when the grant has one, and what follows it. The screen already refused
+to invent a price for an unbacked paid tier; it now says why the reader
+was never charged instead of leaving them to guess. The note renders only
+once the resolved tier has caught up to the grant — otherwise the card
+would read "Free" above "Pro is complimentary on this account".
+
+**Admin surface is a script**, `pnpm grant-tier` (list / grant / revoke),
+gated behind an explicit `--prod` flag and a typed confirmation. No admin
+API route: a privileged write path granting paid entitlement needs its
+own security review, and at this volume a script does not.
+
+`founding_member` is deliberately NOT floored — that flag is a property
+of what someone bought (D126 price lock), and a comp must not mint one.
+
+Runbook: `docs/runbooks/complimentary-grants.md`. Rule record: ADR-0040.

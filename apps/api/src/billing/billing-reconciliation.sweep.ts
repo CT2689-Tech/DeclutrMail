@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 
 import type { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
+import { liveGrantTiersSql, tierRankSql } from '../common/entitlements/entitlement-grants.js';
 import type { DrizzleDb } from '../db/db.module.js';
 
 /**
@@ -16,14 +17,22 @@ import type { DrizzleDb } from '../db/db.module.js';
  *   1. DUNNING EXPIRY — a `past_due` row whose 14-day deadline passed
  *      flips to canceled (provenance kept; 'provider' when none).
  *   2. TIER RECOMPUTE for every workspace holding a granting-status row
- *      with an expired deadline. NO recency bound: a refund verdict
- *      written months ago whose period ended last week must still drop
- *      — recompute is idempotent and the row set is small, so
- *      re-running for the same workspace every sweep until the
- *      provider's own cancel arrives is the correct cost. The SQL
- *      mirrors BillingWebhookService.recomputeWorkspaceTier — same
- *      statuses, same deadline predicate, same max-rank rule; a drift
- *      between the two IS a bug (cross-referenced in both places).
+ *      with an expired deadline, plus every workspace holding a
+ *      complimentary grant. NO recency bound: a refund verdict written
+ *      months ago whose period ended last week must still drop, and so
+ *      must a comp that lapsed months ago — recompute is idempotent and
+ *      the row set is small, so re-running for the same workspace every
+ *      sweep until the provider's own cancel arrives is the correct
+ *      cost. The resolved tier is the max rank of (granting
+ *      subscriptions, live grant, 'free'): a grant FLOORS the tier and
+ *      never replaces it, so a comped Pro who buys Plus stays Pro and
+ *      an expiring comp falls back to the paid tier. The SQL mirrors
+ *      BillingWebhookService.recomputeWorkspaceTier — same statuses,
+ *      same deadline predicate, same max-rank rule, same grant floor; a
+ *      drift between the two IS a bug (cross-referenced in both places,
+ *      and the shared pieces live in
+ *      `common/entitlements/entitlement-grants.ts` so the ordering and
+ *      the liveness predicate have exactly one definition).
  *   3. `pending_checkouts` rows expired > 7 days deleted — retention
  *      keeps `provider_ref` reachable for stale-lock reconciliation
  *      (D249); expiry itself re-arms checkout via the claim upsert.
@@ -113,16 +122,19 @@ export async function runBillingReconciliationSweep(
 
   const recomputed = await db.execute(sql`
     UPDATE workspaces w
-    SET tier = COALESCE(
-          (SELECT s.tier FROM subscriptions s
-           WHERE s.workspace_id = w.id
-             AND s.status IN ('active', 'past_due')
-             AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())
-           ORDER BY CASE s.tier
-             WHEN 'enterprise' THEN 5 WHEN 'team' THEN 4
-             WHEN 'pro' THEN 3 WHEN 'plus' THEN 2 ELSE 1 END DESC
-           LIMIT 1),
-          'free'),
+    SET tier = (
+          SELECT c.t FROM (
+            SELECT s.tier AS t FROM subscriptions s
+            WHERE s.workspace_id = w.id
+              AND s.status IN ('active', 'past_due')
+              AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())
+            UNION ALL
+            ${liveGrantTiersSql('w.id')}
+            UNION ALL
+            SELECT 'free'::workspace_tier
+          ) c
+          ORDER BY ${tierRankSql('c.t')} DESC
+          LIMIT 1),
         founding_member = COALESCE(
           (SELECT bool_or(s.founding_member) FROM subscriptions s
            WHERE s.workspace_id = w.id
@@ -138,6 +150,24 @@ export async function runBillingReconciliationSweep(
         AND s.entitlement_ends_at < now()
     )
     OR ${flippedFilter(flippedWorkspaceIds)}
+    OR EXISTS (
+      -- Every workspace holding ANY grant row, live or not. This is
+      -- what ages a comp OUT: an expired or revoked grant contributes
+      -- nothing to the UNION above, so the recompute drops the
+      -- workspace to its paid tier (or Free) on the next pass. A
+      -- recency bound on expires_at would be the same mistake 0051
+      -- already made once and had to remove — a grant that lapsed
+      -- months ago must still drop.
+      --
+      -- It doubles as the backstop that applies a NEW grant within one
+      -- sweep even if nothing wrote it through at grant time. The row
+      -- set is tiny (only comped workspaces ever appear) and the
+      -- recompute is idempotent, so re-running it every sweep is the
+      -- correct cost — the same tradeoff the subscription arm takes.
+      SELECT 1 FROM entitlement_grants g
+      JOIN users u ON u.email = g.email
+      WHERE u.workspace_id = w.id
+    )
   `);
 
   // D249 (Codex 2026-07-30): retain expired claims for 7 days instead

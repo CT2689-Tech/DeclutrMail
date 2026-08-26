@@ -439,6 +439,7 @@ describe('BillingService', () => {
       foundingMember: false,
       subscription: null,
       pendingCheckout: null,
+      complimentary: null,
     });
   });
 

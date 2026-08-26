@@ -15,6 +15,7 @@ import { ApiError } from '@/lib/api/client';
 import {
   backingStatusNote,
   BillingPayloadError,
+  complimentaryNote,
   currentPlanPriceLabel,
   deriveBillingViewState,
   emptyPlanView,
@@ -53,7 +54,7 @@ function body(
   subscription: SubscriptionRecord | null,
   foundingMember = false,
 ): BillingSubscription {
-  return { tier, foundingMember, subscription, pendingCheckout: null };
+  return { tier, foundingMember, subscription, pendingCheckout: null, complimentary: null };
 }
 
 function snapshot(overrides: Partial<BillingReadSnapshot>): BillingReadSnapshot {
@@ -291,6 +292,63 @@ describe('currentPlanPriceLabel', () => {
     );
     if (view.kind !== 'plan') throw new Error('expected plan');
     expect(currentPlanPriceLabel(view)).toBe('Included with your account');
+  });
+});
+
+describe('complimentary comps', () => {
+  function comped(
+    tier: BillingSubscription['tier'],
+    grant: NonNullable<BillingSubscription['complimentary']>,
+    subscription: SubscriptionRecord | null = null,
+  ) {
+    const view = deriveBillingViewState(
+      snapshot({ data: { ...body(tier, subscription), complimentary: grant } }),
+    );
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    return view;
+  }
+
+  it('names the comp instead of the generic no-price line', () => {
+    const view = comped('pro', { tier: 'pro', expiresAt: null });
+    expect(currentPlanPriceLabel(view)).toBe('Complimentary');
+    expect(complimentaryNote(view)).toContain('Pro is complimentary on this account');
+    // Permanent comps claim no end date — there isn't one.
+    expect(complimentaryNote(view)).not.toContain('through');
+  });
+
+  it('states the end date and what follows it for a dated comp', () => {
+    const view = comped('pro', { tier: 'pro', expiresAt: '2026-12-31T23:59:59.000Z' });
+    const note = complimentaryNote(view);
+    expect(note).toContain('through Dec 31, 2026');
+    expect(note).toContain('reverts to your paid subscription');
+  });
+
+  it('a BACKING record still owns the headline — a paid plan is not complimentary', () => {
+    // Comped Plus, paying for Pro. The price is a fact about the Pro
+    // subscription; only the note may mention the comp.
+    const view = comped('pro', { tier: 'plus', expiresAt: null }, SUB);
+    expect(currentPlanPriceLabel(view)).toBe('$19/mo');
+    expect(complimentaryNote(view)).toContain('Plus is complimentary');
+  });
+
+  it('a comp BELOW the named tier does not make the headline complimentary', () => {
+    // Comped Plus, entitled to Pro through a non-backing route. Calling
+    // the whole plan "Complimentary" would over-claim.
+    const view = comped('pro', { tier: 'plus', expiresAt: null });
+    expect(currentPlanPriceLabel(view)).toBe('Included with your account');
+  });
+
+  it('says NOTHING while the tier has not caught up to the grant', () => {
+    // The drift window between writing a grant and the recompute that
+    // applies it. "Pro is complimentary" printed under a "Free" headline
+    // is the assert-what-you-don't-know defect, not a helpful hint.
+    const view = comped('free', { tier: 'pro', expiresAt: null });
+    expect(complimentaryNote(view)).toBeNull();
+    expect(currentPlanPriceLabel(view)).toBe('$0');
+  });
+
+  it('no grant means no note at all', () => {
+    expect(complimentaryNote(emptyPlanView('pro'))).toBeNull();
   });
 });
 
