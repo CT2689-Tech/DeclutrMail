@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { SIGNUP_REF_COOKIE } from '@declutrmail/shared/contracts';
 
+import { oauthStartUrl } from './landing/urls';
 import {
   captureSignupRef,
   readCapturedSignupRef,
@@ -52,5 +53,32 @@ describe('simulatorShareUrl', () => {
     expect(simulatorShareUrl('https://declutrmail.com')).toBe(
       'https://declutrmail.com/inbox-simulator?ref=simulator',
     );
+  });
+});
+
+describe('oauthStartUrl stays server-renderable', () => {
+  /**
+   * The regression this pins is a HYDRATION MISMATCH, not a wrong URL.
+   *
+   * `oauthStartUrl()` is called during the server render of the marketing
+   * CTAs, including the `'use client'` inbox simulator whose primary CTA is
+   * in the first paint. The middleware sets `dm_signup_ref` on the SAME
+   * response that renders the page, so if this function reads the cookie
+   * the server emits a bare href and hydration emits `?ref=simulator` —
+   * every first visit to /inbox-simulator logs a mismatch on its main CTA.
+   *
+   * The `ref` is attached where no server render can disagree: on click.
+   */
+  it('never reads the capture cookie', () => {
+    document.cookie = `${SIGNUP_REF_COOKIE}=hn; Path=/`;
+    expect(readCapturedSignupRef()).toBe('hn');
+
+    expect(oauthStartUrl()).not.toContain('ref=');
+    expect(oauthStartUrl('/billing?plan=plus')).not.toContain('ref=');
+  });
+
+  it('is still decoratable at click time', () => {
+    document.cookie = `${SIGNUP_REF_COOKIE}=hn; Path=/`;
+    expect(withSignupRef(oauthStartUrl())).toContain('ref=hn');
   });
 });

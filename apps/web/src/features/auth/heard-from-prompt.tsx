@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, tokens } from '@declutrmail/shared';
 import type { SignupHeardFromPatch } from '@declutrmail/shared/contracts';
 
 import { apiPatch } from '@/lib/api/client';
+import { CONSENT_CHANGE_EVENT, readStoredConsent } from '@/lib/cookie-consent';
 import { ME_QUERY_KEY } from './api/me-contract';
 import { useAuth } from './auth-provider';
 
@@ -24,6 +25,18 @@ const CHOICES = [
 /**
  * Skippable first-login self-report. Not a sixth onboarding step — it
  * sits on authed chrome and does not block sync or triage.
+ *
+ * QUEUED BEHIND THE CONSENT BANNER, and that is a layout fix, not a
+ * preference. Both cards are `position: fixed` at `bottom: 16` with
+ * `width: calc(100vw - 32px); max-width: 400px`, anchored to opposite
+ * sides. Below a 832px viewport those two rectangles are the same
+ * rectangle, and the banner's higher z-index (150 vs 140) puts it on top
+ * — on a phone the prompt is simply invisible underneath it. Both mount
+ * on the onboarding layout AND the app chrome, so a first login is
+ * exactly when they collide. Consent is the required ask and goes first;
+ * this one appears once a choice is stored. Read post-mount and synced on
+ * the consent event, the same way the banner itself does it, so the
+ * server render and the first client paint agree.
  */
 export function HeardFromPrompt() {
   const { me } = useAuth();
@@ -31,21 +44,72 @@ export function HeardFromPrompt() {
   const [otherDetail, setOtherDetail] = useState('');
   const [busy, setBusy] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [consentSettled, setConsentSettled] = useState(false);
 
-  if (dismissed || me.signupAttribution?.promptNeeded !== true) return null;
+  useEffect(() => {
+    const sync = () => setConsentSettled(readStoredConsent() !== null);
+    sync();
+    window.addEventListener(CONSENT_CHANGE_EVENT, sync);
+    return () => window.removeEventListener(CONSENT_CHANGE_EVENT, sync);
+  }, []);
+
+  if (!consentSettled || dismissed || me.signupAttribution?.promptNeeded !== true) return null;
 
   const submit = async (patch: SignupHeardFromPatch) => {
     if (busy) return;
     setBusy(true);
+    setFailed(false);
     try {
       await apiPatch('/api/me/signup-heard-from', patch);
       await queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
       setDismissed(true);
     } catch {
+      // Say so rather than silently resetting the buttons: the previous
+      // version left the card looking untouched, so a repeatable failure
+      // read as a dead control.
+      setFailed(true);
       setBusy(false);
     }
   };
 
+  return (
+    <HeardFromPromptView
+      busy={busy}
+      failed={failed}
+      otherDetail={otherDetail}
+      onOtherDetailChange={setOtherDetail}
+      onChoose={(heardFrom) => void submit({ heardFrom })}
+      onSkip={() => void submit({ heardFrom: 'skipped' })}
+      onSubmitOther={(detail) => void submit({ heardFrom: 'other', detail })}
+    />
+  );
+}
+
+/**
+ * Presentational half — props only, no auth/consent/query.
+ *
+ * Split out for the same reason `NoActiveMailboxView` is: every state
+ * (idle / busy / failed) has to be reachable in a story without mounting
+ * `AuthProvider` (D210).
+ */
+export function HeardFromPromptView({
+  busy,
+  failed,
+  otherDetail,
+  onOtherDetailChange,
+  onChoose,
+  onSkip,
+  onSubmitOther,
+}: {
+  busy: boolean;
+  failed: boolean;
+  otherDetail: string;
+  onOtherDetailChange: (value: string) => void;
+  onChoose: (heardFrom: (typeof CHOICES)[number]['value']) => void;
+  onSkip: () => void;
+  onSubmitOther: (detail: string) => void;
+}) {
   return (
     <section
       aria-label="How did you first hear about us?"
@@ -77,7 +141,7 @@ export function HeardFromPrompt() {
             tone="ghost"
             size="sm"
             disabled={busy}
-            onClick={() => void submit({ heardFrom: choice.value })}
+            onClick={() => onChoose(choice.value)}
           >
             {choice.label}
           </Button>
@@ -92,10 +156,11 @@ export function HeardFromPrompt() {
           color: color.fgMuted,
         }}
       >
-        Other
+        Something else
         <input
           value={otherDetail}
-          onChange={(event) => setOtherDetail(event.target.value)}
+          placeholder="Where did you hear about us?"
+          onChange={(event) => onOtherDetailChange(event.target.value)}
           maxLength={200}
           disabled={busy}
           style={{
@@ -110,23 +175,23 @@ export function HeardFromPrompt() {
         />
       </label>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <Button
-          type="button"
-          tone="ghost"
-          disabled={busy}
-          onClick={() => void submit({ heardFrom: 'skipped' })}
-        >
+        <Button type="button" tone="ghost" disabled={busy} onClick={onSkip}>
           Skip
         </Button>
         <Button
           type="button"
           tone="primary"
           disabled={busy || otherDetail.trim().length === 0}
-          onClick={() => void submit({ heardFrom: 'other', detail: otherDetail.trim() })}
+          onClick={() => onSubmitOther(otherDetail.trim())}
         >
-          Other
+          Send
         </Button>
       </div>
+      {failed ? (
+        <p role="status" style={{ margin: 0, fontSize: 12, color: color.danger }}>
+          That didn&apos;t save. Try again.
+        </p>
+      ) : null}
     </section>
   );
 }

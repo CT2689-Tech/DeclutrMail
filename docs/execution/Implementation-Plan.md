@@ -10639,3 +10639,59 @@ placement — a balance on a summary page (and in any future digest)
 should be a decision someone made, not a side effect of summarising.
 
 The constraint lives in the system prompt and is pinned by a spec test.
+
+---
+
+### D258 — Signup attribution survives the Google hop
+
+**Status:** Allocated 2026-08-26 in PR #640. Awaiting founder ratification
+— the plan is locked and this entry was opened by an agent, so it needs the
+founder's yes before it counts as a decision rather than a proposal.
+
+**Why this is not D159.** D159 is 🟢 and is the OBSERVABILITY STACK —
+Sentry + PostHog, shipped in #34. "Which channel did this signup come
+from" is a product decision about what the database records, not a
+telemetry vendor choice. PR #640 first claimed `Closes D159`, which would
+have filed a new feature under a decision that shipped long ago and
+overwritten its citation. This is the same mis-tag class as D247.
+
+**The state this changes.** Google OAuth is a third-party hop. Read the
+post-callback `Referer` and every signup is `accounts.google.com`. Let a
+later `?ref=simulator` overwrite an earlier `?ref=hn` and Hacker News reads
+as the demo. Neither error is visible in the number it corrupts.
+
+**Decision.** Two signals, on separate columns, NEVER SUMMED.
+
+1. **Tracked `ref`** — an allowlisted query param (`hn`, `ph`, `reddit`,
+   `simulator`, `x`, `linkedin`), captured set-once into a first-party
+   cookie shared across `.declutrmail.com` so the API recovers it at OAuth
+   start, carried through OAuth `state`, and written on NEW-USER INSERT
+   ONLY. Junk drops to NULL rather than being stored. A channel is never
+   inferred from `Referer`.
+
+2. **Self-report** — "How did you first hear about us?", skippable, its own
+   column, `other` carrying 1–200 characters of free text and every other
+   choice forbidding it. Set-once: a second PATCH returns the stored value.
+
+**Postgres `users` is the source of truth for HOW MANY.** PostHog explains
+consent-gated journeys via a set-once person property; it does not redefine
+the count. Both columns snapshot onto the first paid `subscriptions` insert
+— insert-only, excluded from the conflict update — so revenue is not
+optimized only for signups, and a later self-report does not rewrite a paid
+snapshot.
+
+**The `ref` is attached at CLICK TIME, never in a server-rendered href.**
+The capture cookie is set by middleware on the SAME response that renders
+the page, so a function that reads it while building a CTA href emits a
+bare URL on the server and `?ref=…` on hydration — a mismatch on the
+primary CTA of the busiest public routes, on the very first visit. Anchor
+CTAs are stamped by a click listener and imperative navigations wrap the
+URL themselves. `oauthStartUrl()` stays free of it, pinned by a spec test.
+
+**The self-report waits for the consent banner.** Both cards are fixed at
+`bottom: 16`, `calc(100vw - 32px)` wide, capped at 400px, anchored to
+opposite sides — the same rectangle below an 832px viewport, with consent
+on top. Consent is the required ask and goes first.
+
+**Privacy (D7, D228).** Channel slugs and optional visitor-typed text. Not
+Gmail data: no bodies, attachments, or non-allowlisted headers.
