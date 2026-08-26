@@ -437,12 +437,20 @@ export function TriageScreen({
       verb: pendingAction.verb.toLowerCase() as 'archive' | 'unsubscribe' | 'later' | 'delete',
     });
   }, [journey, pendingAction, previewInboxCount]);
+  // Blocked while the live count has not resolved (D226 — no mutation
+  // without a real number) AND when it resolved to zero: an inbox-moving
+  // verb with nothing to move is a no-op that still costs a cleanup
+  // action on Free. The sheet already refuses the zero case
+  // (`nothingToActOn`, action-sheet.tsx), and this is the SAME decision
+  // with the sheet skipped via D34, so it has to refuse it identically.
+  // Unsubscribe is excluded for the same reason it is in the sheet — it
+  // cuts FUTURE mail, so it is real work at a zero count.
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
     (pendingAction.verb === 'Archive' ||
       pendingAction.verb === 'Later' ||
       pendingAction.verb === 'Delete') &&
-    typeof previewInboxCount !== 'number';
+    (typeof previewInboxCount !== 'number' || previewInboxCount === 0);
 
   // Drive the async-action lifecycle off the polled status. On `done`
   // the queue is invalidated and the refetch drops the decided row —

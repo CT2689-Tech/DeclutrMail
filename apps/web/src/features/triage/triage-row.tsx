@@ -212,7 +212,22 @@ export function TriageRow({
       inlinePreview.verb === 'Delete' ||
       (inlinePreview.verb === 'Unsubscribe' && inlinePreview.archiveHistoric)) &&
     typeof inlinePreview.inboxCount !== 'number';
+  // A resolved count of zero makes an inbox-moving verb a no-op that
+  // still costs a cleanup action on Free. `triage-screen.tsx` refuses
+  // the dispatch (`inlinePreviewBlocked`), so without this the button
+  // renders armed and a click does nothing visible. Unsubscribe is
+  // excluded exactly as it is in the sheet — it cuts FUTURE mail.
+  const inlineNothingToActOn =
+    inlinePreview != null &&
+    (inlinePreview.verb === 'Archive' ||
+      inlinePreview.verb === 'Later' ||
+      inlinePreview.verb === 'Delete') &&
+    inlinePreview.inboxCount === 0;
   const actionsDisabled = busy || inlineConfirmBlocked;
+  // Confirm ONLY. Switching to a different verb stays live, as it does in
+  // the sheet where `confirmDisabled` gates the button and nothing else —
+  // a zero Archive count must not trap the row out of Delete or Later.
+  const inlineConfirmDisabled = actionsDisabled || inlineNothingToActOn;
 
   // W1 (2026-07-02 audit) — below the xs ceiling the single-row grid's
   // auto columns consumed the full viewport and the identity cell
@@ -607,7 +622,7 @@ export function TriageRow({
             <Button
               tone={inlinePreview.verb === 'Delete' ? 'danger' : 'primary'}
               size="sm"
-              disabled={actionsDisabled}
+              disabled={inlineConfirmDisabled}
               onClick={() => onAction(inlinePreview.verb)}
             >
               Confirm {inlinePreview.verb}
@@ -628,8 +643,12 @@ export function TriageRow({
                   is false on a collapsed row either way. Escape is
                   different: it is a window listener in triage-screen
                   gated only on the pending inline surface, so it stays
-                  true whether the row is open or closed. */}
-              {expanded && !actionsDisabled ? (
+                  true whether the row is open or closed. A zero count is
+                  the third case: the screen refuses that dispatch, so no
+                  key fires it either. */}
+              {inlineNothingToActOn ? (
+                <>Nothing to act on · Esc cancels</>
+              ) : expanded && !actionsDisabled ? (
                 <>or press {VERB_SHORTCUT[inlinePreview.verb]} again · Esc cancels</>
               ) : (
                 <>Esc cancels</>

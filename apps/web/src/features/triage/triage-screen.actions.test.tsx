@@ -1151,6 +1151,52 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
 
     await waitFor(() => expect(enqueues).toHaveLength(1));
   });
+
+  it('refuses the inline confirm when the live preview resolves to zero', async () => {
+    // A resolved zero is not a loading state — the button looks armed and
+    // the shortcut is live, but the action would move nothing while still
+    // spending a cleanup action on Free. The sheet has always refused this
+    // (`nothingToActOn`); the D34 inline path did not, so the same
+    // decision behaved differently depending on a saved preference.
+    const enqueues: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PREVIEW_BODY,
+              counts: { ...PREVIEW_BODY.counts, all: 0 },
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    // The preview resolved — this is the zero case, not the loading one.
+    await screen.findByText(/Nothing to act on/i);
+
+    fireEvent.keyDown(window, { key: 'a' });
+    fireEvent.click(screen.getByRole('button', { name: /^Confirm Archive$/i }));
+    await Promise.resolve();
+
+    expect(enqueues).toHaveLength(0);
+    // Refused, not silently cancelled: the preview stays up so the user
+    // can switch verbs or press Escape.
+    expect(useTriageStore.getState().pendingAction).not.toBeNull();
+  });
 });
 
 describe('TriageScreen — Protected rows act with an explicit override (D245/D42)', () => {

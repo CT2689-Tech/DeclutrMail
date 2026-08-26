@@ -571,3 +571,87 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
     expect(container.textContent).toMatch(/Esc cancels/);
   });
 });
+
+describe('TriageRow — inline zero-count no-op gate', () => {
+  // D34 lets the sheet be skipped, so this button IS the confirm surface
+  // for those users. The sheet refuses an inbox-moving verb at a resolved
+  // count of zero (`nothingToActOn`) and `triage-screen.tsx` refuses the
+  // matching dispatch; without the same gate here the button renders
+  // armed and a click does nothing the user can see.
+  const inline = (verb: 'Archive' | 'Later' | 'Delete' | 'Unsubscribe', inboxCount: number) => ({
+    verb,
+    archiveHistoric: false,
+    inboxCount,
+  });
+
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'disables Confirm %s and says why at a resolved count of zero',
+    (verb) => {
+      const row = rowById('t-groupon');
+      const { rerender } = render(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={inline(verb, 0)}
+        />,
+      );
+
+      expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeDisabled();
+      expect(screen.getByText(/Nothing to act on/i)).toBeInTheDocument();
+      // The shortcut hint must not advertise a key the screen refuses.
+      expect(screen.queryByText(/press .* again/i)).toBeNull();
+
+      rerender(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={inline(verb, 1)}
+        />,
+      );
+      expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeEnabled();
+      expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
+    },
+  );
+
+  it('leaves Confirm Unsubscribe armed at zero — it cuts future mail', () => {
+    const row = rowById('t-groupon');
+    render(
+      <TriageRow
+        row={row}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={() => {}}
+        inlinePreview={inline('Unsubscribe', 0)}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /^Confirm Unsubscribe$/ })).toBeEnabled();
+    expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
+  });
+
+  it('keeps the verb toolbar live so a zero count does not trap the row', () => {
+    // The sheet's `confirmDisabled` gates the confirm button and nothing
+    // else. Folding the zero case into `actionsDisabled` would also kill
+    // the toolbar and the swipe, leaving a row whose only exit is Esc.
+    const row = rowById('t-groupon');
+    const clicked: string[] = [];
+    render(
+      <TriageRow
+        row={row}
+        expanded={true}
+        onToggleExpand={() => {}}
+        onAction={(verb) => clicked.push(verb)}
+        inlinePreview={inline('Archive', 0)}
+      />,
+    );
+
+    const later = screen.getByRole('button', { name: /^Later \(L\)/ });
+    expect(later).toBeEnabled();
+    later.click();
+    expect(clicked).toEqual(['Later']);
+  });
+});
