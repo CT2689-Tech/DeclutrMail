@@ -11,7 +11,7 @@ import {
   resolveFirstTouchRef,
   SIGNUP_REF_COOKIE,
   type SignupAttributionRef,
-} from '@declutrmail/shared/contracts';
+} from '@declutrmail/shared/contracts/signup-attribution-ref';
 
 const MAX_AGE_SEC = 60 * 60 * 24 * 30;
 
@@ -25,7 +25,12 @@ function readCookieValue(): string | undefined {
 function writeCookie(ref: SignupAttributionRef): void {
   if (typeof document === 'undefined') return;
   const secure = window.location.protocol === 'https:' ? '; Secure' : '';
-  document.cookie = `${SIGNUP_REF_COOKIE}=${ref}; Path=/; Max-Age=${MAX_AGE_SEC}; SameSite=Lax${secure}`;
+  const hostname = window.location.hostname.toLowerCase();
+  const domain =
+    hostname === 'declutrmail.com' || hostname.endsWith('.declutrmail.com')
+      ? '; Domain=.declutrmail.com'
+      : '';
+  document.cookie = `${SIGNUP_REF_COOKIE}=${ref}; Path=/; Max-Age=${MAX_AGE_SEC}; SameSite=Lax${domain}${secure}`;
 }
 
 function readStorageValue(): string | undefined {

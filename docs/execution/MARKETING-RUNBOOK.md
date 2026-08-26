@@ -155,16 +155,16 @@ PostHog explains journeys. It does not get to redefine the signup count. PostHog
 **Two signals, never summed** (first-touch tracked vs memorable self-report — they
 disagree on purpose; the gap is the insight):
 
-| Field                     | What it is                                                                           | Rule                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| Tracked first-touch `ref` | `hn`, `ph`, `reddit`, `simulator`, `x`, `linkedin`, … captured on the marketing site | **Set-once.** Persist into OAuth state _before_ redirect to Google. Never overwrite with a later click |
-| Self-report               | "How did you first hear about us?" pick-list of those channels + free-text Other     | Ask immediately after first successful login, skippable. Stores `basis=self_reported`                  |
+| Field                     | What it is                                                                           | Rule                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Tracked first-touch `ref` | `hn`, `ph`, `reddit`, `simulator`, `x`, `linkedin`, … captured on the marketing site | **Set-once.** Persist into OAuth state _before_ redirect to Google. Never overwrite with a later click           |
+| Self-report               | "How did you first hear about us?" pick-list of those channels + free-text Other     | Ask immediately after first successful login, skippable. Stores in separate `signup_attribution_heard_*` columns |
 
 Audit before building: if PostHog already `identify()`s at signup and `$initial_*`
 survives the API/app hop, do not rebuild that. Close only the OAuth `ref` hole.
 
 - [x] Capture `ref` on marketing CTAs and `/inbox-simulator`. Allowlist the values above
-- [x] Thread `ref` through `oauthStartUrl()` → OAuth state in `apps/api/src/auth/google-oauth.controller.ts` → persist **set-once** on the user (`signup_attribution_ref`, `attribution_basis=journey_linked`, confidence)
+- [x] Thread `ref` through `oauthStartUrl()` → OAuth state in `apps/api/src/auth/google-oauth.controller.ts` → persist **set-once** on the user (`signup_attribution_ref`)
 - [x] Exclude `accounts.google.com` (and our own hosts / localhost) from referrer classification — code never infers a channel from `Referer`; PostHog project filter is a founder follow-up
 - [x] `posthog.identify` at signup with a stable id (audit first). Consent-gated; no mailbox content
 - [x] Skippable self-report pick-list + Other, same session as first login — separate column, not a overwrite of `ref`

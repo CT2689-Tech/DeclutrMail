@@ -46,7 +46,7 @@
 // `subscription_events` insert.
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
   pendingCheckouts,
   billingCustomers,
@@ -749,6 +749,7 @@ export class BillingWebhookService {
           })
           .from(users)
           .where(eq(users.workspaceId, workspaceId))
+          .orderBy(asc(users.createdAt), asc(users.id))
           .limit(1);
 
         await tx

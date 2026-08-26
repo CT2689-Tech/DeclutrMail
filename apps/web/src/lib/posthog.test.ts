@@ -141,9 +141,11 @@ describe('identifyUser() consent gate (D147)', () => {
     await identifyUser('11111111-1111-4111-8111-111111111111', {
       signup_attribution_ref: 'hn',
     });
-    expect(posthogMock.identify).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111', {
-      $set_once: { signup_attribution_ref: 'hn' },
-    });
+    expect(posthogMock.identify).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      undefined,
+      { signup_attribution_ref: 'hn' },
+    );
   });
 });
 

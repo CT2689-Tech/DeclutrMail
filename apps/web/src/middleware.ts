@@ -117,7 +117,7 @@ import {
   parseSignupAttributionRef,
   resolveFirstTouchRef,
   SIGNUP_REF_COOKIE,
-} from '@declutrmail/shared/contracts';
+} from '@declutrmail/shared/contracts/signup-attribution-ref';
 
 import { AUTHED_APP_PATHS } from './app/robots';
 
@@ -370,11 +370,21 @@ function captureSignupRefCookie(request: NextRequest, response: NextResponse): v
     name: SIGNUP_REF_COOKIE,
     value: resolved,
     path: '/',
+    // The OAuth start endpoint lives on api.declutrmail.com. Sharing this
+    // allowlisted, non-sensitive hint across our own subdomains lets the API
+    // recover it even when a user opens an SSR CTA in a new tab before React
+    // has decorated the href. Localhost and preview hosts remain host-only.
+    ...(isDeclutrMailHostname(request.nextUrl.hostname) ? { domain: '.declutrmail.com' } : {}),
     maxAge: SIGNUP_REF_MAX_AGE_SEC,
     sameSite: 'lax',
     httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
   });
+}
+
+function isDeclutrMailHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase();
+  return normalized === 'declutrmail.com' || normalized.endsWith('.declutrmail.com');
 }
 
 export const config = {

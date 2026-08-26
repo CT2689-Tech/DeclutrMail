@@ -45,7 +45,11 @@ import { hasAnalyticsConsent, storeConsent } from './cookie-consent';
 type PosthogSdk = {
   init: (key: string, opts: Record<string, unknown>) => void;
   capture: (eventName: string, props?: Record<string, unknown>) => void;
-  identify: (id: string, props?: Record<string, unknown>) => void;
+  identify: (
+    id: string,
+    userPropertiesToSet?: Record<string, unknown>,
+    userPropertiesToSetOnce?: Record<string, unknown>,
+  ) => void;
   reset: () => void;
   opt_out_capturing: () => void;
   opt_in_capturing: (opts?: { captureEventName?: false }) => void;
@@ -199,7 +203,7 @@ export async function identifyUser(
   try {
     const ref = setOnce?.signup_attribution_ref;
     if (ref) {
-      sdk.identify(internalUserUuid, { $set_once: { signup_attribution_ref: ref } });
+      sdk.identify(internalUserUuid, undefined, { signup_attribution_ref: ref });
     } else {
       sdk.identify(internalUserUuid);
     }

@@ -161,9 +161,18 @@ describe('BillingWebhookService.process', () => {
   it('snapshots the workspace owner attribution onto the first paid insert', async () => {
     await db.insert(users).values({
       workspaceId,
-      email: 'payer@example.com',
+      email: 'owner@example.com',
       signupAttributionRef: 'hn',
       signupAttributionHeardFrom: 'friend',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await db.insert(users).values({
+      workspaceId,
+      email: 'later-member@example.com',
+      signupAttributionRef: 'reddit',
+      signupAttributionHeardFrom: 'other',
+      signupAttributionHeardDetail: 'Newsletter',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
     });
     const fixture = paddleSubscriptionActivated({ workspaceId });
     const event = paddle.mapWebhookEvent(fixture);

@@ -23,6 +23,7 @@ import {
   isErrorCode,
   parseSignupAttributionRef,
   SIGNUP_ATTRIBUTION_REFS,
+  SIGNUP_REF_COOKIE,
   type SignupAttributionRef,
 } from '@declutrmail/shared/contracts';
 
@@ -190,7 +191,12 @@ export class GoogleOAuthController {
     @Query('ref') ref?: unknown,
   ): Promise<void> {
     const safeReturnTo = parseBillingReturnTo(returnTo);
-    const safeRef = parseSignupAttributionRef(ref);
+    const cookies = req.cookies as Record<string, unknown> | undefined;
+    // The shared parent-domain cookie is the set-once source of truth. The
+    // query remains the fallback for preview hosts that cannot write a
+    // .declutrmail.com cookie.
+    const safeRef =
+      parseSignupAttributionRef(cookies?.[SIGNUP_REF_COOKIE]) ?? parseSignupAttributionRef(ref);
 
     if (await this.hasLiveSession(req)) {
       const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');

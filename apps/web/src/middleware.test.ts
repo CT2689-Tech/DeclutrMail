@@ -317,6 +317,14 @@ describe('signup first-touch cookie (Phase B)', () => {
     const request = new NextRequest('https://declutrmail.com/inbox-simulator?ref=hn');
     const response = middleware(request);
     expect(response.cookies.get('dm_signup_ref')?.value).toBe('hn');
+    expect(response.headers.get('set-cookie')).toContain('Domain=.declutrmail.com');
+  });
+
+  it('keeps the cookie host-only outside DeclutrMail production subdomains', () => {
+    const request = new NextRequest('http://localhost:3000/inbox-simulator?ref=hn');
+    const response = middleware(request);
+    expect(response.cookies.get('dm_signup_ref')?.value).toBe('hn');
+    expect(response.headers.get('set-cookie')).not.toContain('Domain=');
   });
 
   it('does not let a later simulator visit overwrite hn', () => {

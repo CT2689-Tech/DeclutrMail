@@ -165,7 +165,7 @@ export const subscriptions = pgTable(
     ),
     signupAttributionHeardDetailCheck: check(
       'subscriptions_signup_attribution_heard_detail_chk',
-      sql`(${table.signupAttributionHeardDetail} IS NULL AND ${table.signupAttributionHeardFrom} IS DISTINCT FROM 'other') OR (${table.signupAttributionHeardFrom} = 'other' AND char_length(${table.signupAttributionHeardDetail}) BETWEEN 1 AND 200)`,
+      sql`(${table.signupAttributionHeardDetail} IS NULL AND ${table.signupAttributionHeardFrom} IS DISTINCT FROM 'other') OR (${table.signupAttributionHeardFrom} = 'other' AND ${table.signupAttributionHeardDetail} IS NOT NULL AND char_length(${table.signupAttributionHeardDetail}) BETWEEN 1 AND 200)`,
     ),
   }),
 );

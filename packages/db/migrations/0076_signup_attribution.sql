@@ -35,7 +35,7 @@ ALTER TABLE "users"
   ADD CONSTRAINT "users_signup_attribution_heard_detail_chk"
     CHECK (
       ("signup_attribution_heard_detail" IS NULL AND "signup_attribution_heard_from" IS DISTINCT FROM 'other')
-      OR ("signup_attribution_heard_from" = 'other' AND char_length("signup_attribution_heard_detail") BETWEEN 1 AND 200)
+      OR ("signup_attribution_heard_from" = 'other' AND "signup_attribution_heard_detail" IS NOT NULL AND char_length("signup_attribution_heard_detail") BETWEEN 1 AND 200)
     );
 --> statement-breakpoint
 ALTER TABLE "subscriptions"
@@ -51,5 +51,5 @@ ALTER TABLE "subscriptions"
   ADD CONSTRAINT "subscriptions_signup_attribution_heard_detail_chk"
     CHECK (
       ("signup_attribution_heard_detail" IS NULL AND "signup_attribution_heard_from" IS DISTINCT FROM 'other')
-      OR ("signup_attribution_heard_from" = 'other' AND char_length("signup_attribution_heard_detail") BETWEEN 1 AND 200)
+      OR ("signup_attribution_heard_from" = 'other' AND "signup_attribution_heard_detail" IS NOT NULL AND char_length("signup_attribution_heard_detail") BETWEEN 1 AND 200)
     );

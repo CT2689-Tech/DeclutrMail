@@ -620,9 +620,17 @@ function CopySimulatorLink() {
     <Button
       tone="ghost"
       onClick={() => {
-        void navigator.clipboard.writeText(simulatorShareUrl(siteUrl())).then(() => {
-          setCopied(true);
-        });
+        if (!navigator.clipboard) return;
+        void navigator.clipboard
+          .writeText(simulatorShareUrl(siteUrl()))
+          .then(() => {
+            setCopied(true);
+          })
+          .catch(() => {
+            // Clipboard access can be denied outside a secure context. Keep
+            // the button retryable and never leak an unhandled rejection.
+            setCopied(false);
+          });
       }}
     >
       {copied ? 'Copied' : 'Copy demo link'}

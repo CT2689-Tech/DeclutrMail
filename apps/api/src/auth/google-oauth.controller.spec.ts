@@ -410,6 +410,18 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       ref: 'hn',
     });
 
+    const fromCookie = { cookie: vi.fn(), redirect: vi.fn() };
+    await controller.start(
+      { cookies: { dm_signup_ref: 'reddit' } } as unknown as Request,
+      fromCookie as unknown as Response,
+      undefined,
+      'simulator',
+    );
+    expect(decodeSignedState(jwt, fromCookie.cookie.mock.calls[0]?.[1] as string)).toMatchObject({
+      mode: 'login',
+      ref: 'reddit',
+    });
+
     const drop = { cookie: vi.fn(), redirect: vi.fn() };
     await controller.start(
       signedOutRequest(),
