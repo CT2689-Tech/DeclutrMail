@@ -193,9 +193,14 @@ policy checking `ApiError`/401, `staleTime: 60_000`,
 `refetchOnWindowFocus: true`, and the `apiPatch('/api/me/timezone', ...)`
 call from the timezone-healing effect. `o` is the minified alias for
 `apps/web/src/lib/api/client.ts` (also present, in full, in the same
-7,714-byte chunk — `ApiError`, CSRF header injection, 401 →
+chunk — `ApiError`, CSRF header injection, 401 →
 `/api/auth/google/start` redirect, the `apiGet`/`apiPost`/`apiPatch`/
-`apiPut`/`apiDelete` functions).
+`apiPut`/`apiDelete` functions). Chunk size, measured directly:
+
+```
+$ wc -c apps/web/.next/static/chunks/5793-1b57f7a60d6cf7b6.js
+    7714 apps/web/.next/static/chunks/5793-1b57f7a60d6cf7b6.js
+```
 
 **`static/chunks/5793-1b57f7a60d6cf7b6.js` is in the Step 2 file list for
 `/(marketing)/inbox-simulator/page`.** Per the task's own criterion — "a
@@ -204,20 +209,27 @@ the failure case.
 
 ### 3c. What Task 4 specifically fixed does hold
 
-Separately checked all 14 JS files in the `/inbox-simulator/page` list
-for `auth-provider.tsx`'s own code (the Context/Provider, not just
-`useMe`) and for the rendered "Gmail account" note markup that
-`MailboxActionContext` produces:
+Separately checked all 15 files in the `/inbox-simulator/page` list (14
+JS + 1 CSS — the CSS file trivially contributes a zero) for
+`auth-provider.tsx`'s own code (the Context/Provider, not just `useMe`)
+and for the rendered "Gmail account" note markup that
+`MailboxActionContext` produces. Fully runnable form (see "Reproduction
+commands" below for how `/tmp/inbox-simulator-chunk-list.txt` is
+produced):
 
 ```
-grep -c "AuthProvider\|getActiveMailboxEmail\|useOptionalAuth\|Gmail account:" <each of the 14 files>
+while IFS= read -r f; do
+  c=$(grep -c "AuthProvider\|getActiveMailboxEmail\|useOptionalAuth\|Gmail account:" "$f" 2>/dev/null)
+  echo "$c  $f"
+done < /tmp/inbox-simulator-chunk-list.txt
 ```
 
-Actual output: **zero matches in all 14 files.** `MailboxActionContext`
-(the auth-reading wrapper), `useOptionalAuth`, and
-`getActiveMailboxEmail` are genuinely absent from this route's bundle.
-Task 4's split is not the source of the Step 3b failure — the
-`use-me.ts` + API-client leak reaches this route by a different path.
+Actual output: `0` for all 15 lines, one per file — every count reads
+`0  apps/web/.next/<path>`. `MailboxActionContext` (the auth-reading
+wrapper), `useOptionalAuth`, and `getActiveMailboxEmail` are genuinely
+absent from this route's bundle. Task 4's split is not the source of the
+Step 3b failure — the `use-me.ts` + API-client leak reaches this route by
+a different path.
 
 ### 3d. Blast radius — is this a marketing-wide pattern or specific to this route?
 
@@ -226,9 +238,11 @@ routes_with = [k for k, files in m['pages'].items()
                if "static/chunks/5793-1b57f7a60d6cf7b6.js" in files]
 ```
 
-Actual output: **17 of 83 total routes** include this chunk. 16 are
-`(app)/*` authenticated routes plus `/onboarding` — all genuine `useMe`
-consumers. Exactly **one** is a public route:
+Actual output: **17 of 83 total routes** include this chunk. Breakdown by
+route-group prefix (computed, not eyeballed): **15** are `/(app)/*`
+authenticated routes, **1** is `/onboarding/page`, **1** is
+`/(marketing)/inbox-simulator/page`. The 16 non-marketing routes are all
+genuine `useMe` consumers. Exactly **one** is a public route:
 `/(marketing)/inbox-simulator/page`. No other marketing page (`/`,
 `/pricing`, `/faq`, etc.) carries this chunk, which rules out "this is
 just how the marketing shell always works" — the `(marketing)/layout.tsx`
@@ -239,14 +253,28 @@ concrete `useMe` module and the API client.
 ### 3e. Why: no source-level import edge, so this is a chunk-splitting effect, not an import leak
 
 Grepped every `.tsx`/`.ts` file under `apps/web/src` for a value-import
-of `api/use-me` or `auth-provider` (excluding tests/stories) and checked
+of `api/use-me` or `auth-provider`, excluding test files, and checked
 each result against `inbox-simulator-screen.tsx`'s own import graph
 (`triage/action-preview-presentation`, `triage/triage-row`,
 `triage/data`, `triage/types`, `marketing/landing/tracked-cta`,
 `marketing/landing/urls`, `@declutrmail/shared/actions`, `lib/posthog`).
-None of the ~28 files importing `use-me.ts` or `auth-provider.tsx` are
-reachable from that graph. **No source file under `inbox-simulator`
-imports the query layer, directly or transitively.**
+Exact command and count:
+
+```
+$ grep -rlnE "from '.*api/use-me'|from \"@/features/auth/api/use-me\"|from '@/features/auth/auth-provider'|from '\.\./auth-provider'|from '\./auth-provider'" apps/web/src --include="*.tsx" --include="*.ts" | grep -v "\.test\." | sort -u | wc -l
+      45
+```
+
+**45 files** (this includes Storybook `.stories.tsx` files, which are
+never bundled into a Next.js page chunk and so are irrelevant to
+reachability from a page — included anyway because excluding them isn't
+needed to reach the right answer, and a broader check is a stronger one).
+Printed the full 45-file list and grepped it for any path under
+`marketing/inbox-simulator`, `triage/action-preview-presentation.tsx`,
+`triage/triage-row.tsx`, `triage/data.ts`, `triage/types.ts`,
+`marketing/landing/{tracked-cta,urls}.ts(x)`, or `lib/posthog.ts` — zero
+matches. **No source file under `inbox-simulator` imports the query
+layer, directly or transitively.**
 
 The leak is webpack's automatic shared-chunk splitting: `use-me.ts` and
 `lib/api/client.ts` are small modules used by many `(app)` routes, and
@@ -294,15 +322,19 @@ baseline:
 pnpm --filter @declutrmail/web build
 
 # 2. Find the page route's key and file list (corrected for the
-#    two-key ambiguity — do not use the brief's literal next()-only form)
+#    two-key ambiguity — do not use the brief's literal next()-only form).
+#    Also writes the full paths to a plain file so step 5 can loop over
+#    them without hand-expanding anything.
 python3 - <<'PY'
 import json, pathlib
 m = json.loads(pathlib.Path('apps/web/.next/app-build-manifest.json').read_text())
 key = next(k for k in m['pages'] if 'inbox-simulator' in k and k.endswith('/page'))
 files = m['pages'][key]
 print(key)
-for f in sorted(files):
-    print(' ', f)
+with open('/tmp/inbox-simulator-chunk-list.txt', 'w') as out:
+    for f in sorted(files):
+        print(' ', f)
+        out.write(f'apps/web/.next/{f}\n')
 PY
 
 # 3. Precise query-layer check (recursive, not just the top-level glob;
@@ -316,8 +348,12 @@ grep -rl "/api/me/timezone" apps/web/.next/static/chunks/
 #    A hit in a chunk that IS in the list is the failure case.
 
 # 5. Independently confirm auth-provider's own code (not just useMe)
-#    stays absent from the route's own chunk set:
-grep -c "AuthProvider\|getActiveMailboxEmail\|useOptionalAuth\|Gmail account:" <each file from step 2>
+#    stays absent from every file in the route's own chunk set.
+#    Fully runnable — no manual expansion needed:
+while IFS= read -r f; do
+  c=$(grep -c "AuthProvider\|getActiveMailboxEmail\|useOptionalAuth\|Gmail account:" "$f" 2>/dev/null)
+  echo "$c  $f"
+done < /tmp/inbox-simulator-chunk-list.txt
 
 # 6. Blast-radius check — how many routes share the flagged chunk:
 python3 - <<'PY'

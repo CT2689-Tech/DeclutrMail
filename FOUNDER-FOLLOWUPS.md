@@ -24,6 +24,57 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-26 — The public /inbox-simulator route ships the authenticated API client and useMe to anonymous visitors
+
+**Source:** session 2026-08-26 — Task 5 of the D133 inbox-simulator-scale
+plan (chunk baseline measurement), independently re-verified by a second
+session the same day.
+
+**Why:** `apps/web/src/features/auth/api/use-me.ts` (the `useMe` TanStack
+Query hook — its `/api/auth/me` fetch, `ME_QUERY_KEY`, retry/refetch
+policy) and `apps/web/src/lib/api/client.ts` (the full authenticated API
+client — CSRF header injection, 401 → `/api/auth/google/start` redirect,
+`apiGet`/`apiPost`/`apiPatch`/`apiPut`/`apiDelete`) are both compiled into
+a chunk that ships to `/inbox-simulator`, a public, unauthenticated
+marketing route. Proved via `app-build-manifest.json` route membership,
+not chunk names — chunk names establish nothing on their own; only
+appearing in a route's manifest file list does. Full measurement in
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md`.
+
+This is not caused by `BatchActionSheet` or `ConfirmModalFrame` (the pair
+D133's Task 4 split away from `auth-provider`) — neither is rendered on
+this route yet, that lands in a later plan. No source file under
+`apps/web/src/features/marketing/inbox-simulator` imports `use-me.ts` or
+`auth-provider.tsx`, directly or transitively — checked all 45 non-test
+files in `apps/web/src` that import either module; none intersect the
+route's import graph. The mechanism is webpack's automatic shared-chunk
+grouping: `use-me.ts` and `client.ts` are small modules used across 15
+`/(app)/*` routes plus `/onboarding`, and webpack bin-packs them into the
+same physical chunk as `packages/shared`'s `tokens`/`Button`, which
+`/inbox-simulator` genuinely does need. 17 of 83 routes in the manifest
+carry this chunk; exactly one — `/(marketing)/inbox-simulator/page` — is
+public.
+
+**How:** per this repo's own prior finding on first-load leaks
+(`LEARNINGS.md`, "Barrel imports leak into first load" — tree-shaking is
+per-module, not per-import, and fixing this kind of leak needs BOTH a
+module split AND a `sideEffects` declaration), the fix here needs the same
+two pieces: split `use-me.ts`/`client.ts` out of whatever module boundary
+currently sits them next to `tokens`/`Button` for webpack's grouping
+heuristic, AND add the `sideEffects` declaration that lets the bundler
+actually drop the unused half once split. Verify any fix the same way
+this baseline was produced — `app-build-manifest.json` route membership,
+never chunk names. No fix is proposed beyond naming this; implementing
+and verifying it is a separate decision for whoever picks up Plan 2–4.
+
+**Verifies by:** re-run the reproduction commands in
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` — the chunk
+containing the `/api/auth/me` and `/api/me/timezone` string literals
+should no longer appear in the `/(marketing)/inbox-simulator/page` file
+list.
+
+**Status:** Open
+
 ### 2026-08-26 — I asked you to decide the cancel-modal refund line without telling you that you had already decided it
 
 **Source:** session 2026-08-26 — found while implementing the founder's answer
