@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
-import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
 import type { DomainBatch } from './domain-batch';
@@ -133,7 +133,7 @@ export function BatchActionSheet({
         </div>
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <MailboxActionContext mailboxEmail={mailboxEmail} />
+          <MailboxActionContextView mailboxEmail={mailboxEmail} />
           <div role="region" aria-label={`Preview · ${verb} ${batch.domain} batch`}>
             <h3 style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
               {title}

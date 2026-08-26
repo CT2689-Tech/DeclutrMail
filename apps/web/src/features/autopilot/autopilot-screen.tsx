@@ -923,6 +923,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           kind={approveTarget.kind}
           pendingTotal={approveTarget.rule.observeDigest?.pendingTotal ?? null}
           pendingApproximate={pendingBufferTruncated}
+          mailboxEmail={activeEmail ?? undefined}
           isApproving={isApproving}
           error={approveError}
           onCancel={() => {
@@ -937,6 +938,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         intent={confirmTarget?.intent ?? 'activate'}
         canRunUnattended={canActivate}
         pendingAction={pendingCommit}
+        mailboxEmail={activeEmail ?? undefined}
         pendingCount={
           confirmTarget != null ? (pendingCountByRule.get(confirmTarget.rule.id) ?? 0) : 0
         }
