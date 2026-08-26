@@ -115,7 +115,7 @@ export function NoiseArchiveSheet({
             id="dm-brief-noise-sheet-title"
             style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
           >
-            Archive mail from {n} sender{n === 1 ? '' : 's'}
+            Archive email from {n} sender{n === 1 ? '' : 's'}
           </h2>
           <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}>
             This archives everything from these senders that is in your inbox now — not only
@@ -151,14 +151,14 @@ export function NoiseArchiveSheet({
               </span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Couldn&rsquo;t load a live preview. Retry — no inbox mail can move without one.
+                Couldn&rsquo;t load a live preview. Retry — no inbox email can move without one.
               </span>
             ) : (
               <>
                 <NumericDisplay variant="stat" value={total!.toLocaleString('en-US')} />
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  email{total === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
-                  execution, so the final moved count can change.
+                  email{total === 1 ? '' : 's'} in Inbox now. Rechecked when it runs, so the final
+                  count can differ.
                 </span>
               </>
             )}
@@ -246,12 +246,12 @@ export function NoiseArchiveSheet({
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
             {confirmDisabled
               ? scopeConflict
-                ? 'Mailbox changed — close this and start again.'
+                ? 'mailbox changed — close this and start again.'
                 : preview === 'unavailable'
                   ? 'Preview unavailable — retry before confirming.'
                   : nothingToActOn
                     ? 'Nothing from these senders is in your inbox — there is nothing to archive.'
-                    : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+                    : 'Counting inbox email — confirm unlocks after the live preview loads.'
               : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>

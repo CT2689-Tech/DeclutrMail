@@ -347,12 +347,12 @@ export function ScreenerScreen({
       invalidateAfterDecision(qc);
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
         'warn',
       );
     } else {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
+        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
         'warn',
       );
     }

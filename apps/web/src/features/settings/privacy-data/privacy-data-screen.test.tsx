@@ -124,7 +124,7 @@ describe('PrivacyDataView', () => {
     const { container } = renderView();
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('Mailbox addresses and status');
+    expect(text).toContain('mailbox addresses and status');
     expect(text).toContain('sender profiles and decisions');
     expect(text).toContain('Activity history');
     expect(text).toContain('App preferences and billing records are not included');

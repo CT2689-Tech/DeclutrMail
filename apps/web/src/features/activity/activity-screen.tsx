@@ -1545,7 +1545,7 @@ function ActivitySupportBundleDialog({
             for all matching records, not only rows currently loaded on screen.
           </p>
           <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: 12 }}>
-            Mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
+            mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
           </p>
         </div>
 

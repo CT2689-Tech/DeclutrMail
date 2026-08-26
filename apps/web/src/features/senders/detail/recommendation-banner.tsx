@@ -117,7 +117,7 @@ export function RecommendationBanner({
           </div>
         )}
         <p style={{ margin: 0, fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-          This suggestion does not change mail. Choose the action that fits.
+          This suggestion does not change email. Choose the action that fits.
         </p>
       </div>
     </details>

@@ -740,10 +740,10 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
         getActionFailureCopy('enqueue', {
-          action: `archive the backlog from ${LINKEDIN.senderName}`,
+          action: `archive the older email from ${LINKEDIN.senderName}`,
           whatChanged: 'The unsubscribe request was queued.',
-          whatDidNotChange: 'The backlog was not archived.',
-          nextStep: 'Archive the backlog from Senders if you still want to move it.',
+          whatDidNotChange: 'The older email was not archived.',
+          nextStep: 'Archive it from Senders if you still want to move it.',
         }).message,
         'warn',
       ),
@@ -902,7 +902,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     expect(
-      screen.getByText("The unsubscribe request can't be undone. Existing inbox mail stays put."),
+      screen.getByText("The unsubscribe request can't be undone. Existing inbox email stays put."),
     ).toBeDefined();
   });
 
@@ -942,7 +942,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${LINKEDIN.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
+        `${LINKEDIN.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
         'warn',
       ),
     );
@@ -960,7 +960,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${LINKEDIN.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        `${LINKEDIN.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
         'warn',
       ),
     );
@@ -1145,11 +1145,57 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/emails currently match in Inbox/i);
+    await screen.findByText(/emails in Inbox now/i);
     expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
     fireEvent.keyDown(window, { key: 'a' });
 
     await waitFor(() => expect(enqueues).toHaveLength(1));
+  });
+
+  it('refuses the inline confirm when the live preview resolves to zero', async () => {
+    // A resolved zero is not a loading state — the button looks armed and
+    // the shortcut is live, but the action would move nothing while still
+    // spending a cleanup action on Free. The sheet has always refused this
+    // (`nothingToActOn`); the D34 inline path did not, so the same
+    // decision behaved differently depending on a saved preference.
+    const enqueues: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...PREVIEW_BODY,
+              counts: { ...PREVIEW_BODY.counts, all: 0 },
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          enqueues.push(await req.json());
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    useTriageStore.getState().setRememberPreference('Archive', true);
+    renderScreen(createTestQueryClient());
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+
+    // The preview resolved — this is the zero case, not the loading one.
+    await screen.findByText(/Nothing to act on/i);
+
+    fireEvent.keyDown(window, { key: 'a' });
+    fireEvent.click(screen.getByRole('button', { name: /^Confirm Archive$/i }));
+    await Promise.resolve();
+
+    expect(enqueues).toHaveLength(0);
+    // Refused, not silently cancelled: the preview stays up so the user
+    // can switch verbs or press Escape.
+    expect(useTriageStore.getState().pendingAction).not.toBeNull();
   });
 });
 

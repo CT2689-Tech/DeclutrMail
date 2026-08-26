@@ -27,7 +27,7 @@ export function FinalCta() {
           </span>
         </TrackedCta>
       </div>
-      <p className="dm-mkt-hero-note">Free tier · no card · preview before mail moves</p>
+      <p className="dm-mkt-hero-note">Free tier · no card · preview before email moves</p>
       <p className="dm-mkt-hero-note">{OAUTH_SCOPE_DISCLOSURE}</p>
     </section>
   );

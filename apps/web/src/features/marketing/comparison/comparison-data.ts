@@ -193,7 +193,7 @@ const cleanEmail: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'mailbox support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Major providers plus IMAP',
@@ -324,7 +324,7 @@ const trimbox: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'mailbox support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail is documented',
@@ -454,7 +454,7 @@ const sanebox: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'mailbox support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Broad provider support',
@@ -587,7 +587,7 @@ const leaveMeAlone: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'mailbox support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Google, Microsoft, major providers, and IMAP',
@@ -731,7 +731,7 @@ const unrollMe: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'mailbox support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail documented; other providers not stated by name',
@@ -888,7 +888,7 @@ const gmailFilters: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'mailbox support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail and Google Workspace',
@@ -1023,7 +1023,7 @@ const gmailNative: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'mailbox support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail and Google Workspace',

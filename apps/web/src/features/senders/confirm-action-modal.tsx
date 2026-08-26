@@ -667,9 +667,9 @@ export function ConfirmActionModal({
   });
 
   const title = isDeleteVerb
-    ? `Delete mail from ${n} sender${plural}`
+    ? `Delete email from ${n} sender${plural}`
     : isArchiveVerb
-      ? `Archive mail from ${n} sender${plural}`
+      ? `Archive email from ${n} sender${plural}`
       : isLaterVerb
         ? `Move ${n} sender${plural} to Later`
         : `Unsubscribe from ${n} sender${plural}`;
@@ -932,8 +932,8 @@ export function ConfirmActionModal({
               role="note"
               style={{ fontSize: 12, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}
             >
-              None of these senders has an unsubscribe DeclutrMail can send. Archive moves their
-              mail out of your inbox instead.
+              No sendable unsubscribe for these senders. Archive moves their email out of your inbox
+              instead.
             </p>
           )}
           {skippedNote && (
@@ -1239,7 +1239,7 @@ export function ConfirmActionModal({
               {activeReach === 'all_mail' && (
                 <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
                   Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo
-                  restores every email — inbox mail to the inbox, archived mail to the archive.
+                  restores every email — inbox email to the inbox, archived email to the archive.
                 </span>
               )}
             </div>
@@ -1391,7 +1391,7 @@ export function ConfirmActionModal({
               </div>
               {isUnsubVerb && (
                 <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-                  On Free, Archive or Delete backlog is a second cleanup action.
+                  Archiving or deleting older email is a second cleanup action on Free.
                 </span>
               )}
             </div>
@@ -1416,7 +1416,7 @@ export function ConfirmActionModal({
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                       {previewSenderGone
                         ? 'This sender is no longer in this mailbox — the list you are looking at is out of date. Refresh to see what is there now.'
-                        : 'Couldn’t load a live preview. Close and retry — no inbox mail can move without one.'}
+                        : 'Couldn’t load a live preview. Close and retry — no inbox email can move without one.'}
                     </span>
                   );
                 }
@@ -1459,7 +1459,7 @@ export function ConfirmActionModal({
                           {compositeCount.toLocaleString('en-US')}
                         </strong>
                         <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                          email{compositeCount === 1 ? '' : 's'} currently match the backlog{' '}
+                          email{compositeCount === 1 ? '' : 's'} currently match{' '}
                           {secondaryVerb === 'delete' ? 'Trash' : 'Archive'} action
                           {showWindowQualifier
                             ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
@@ -1512,7 +1512,7 @@ export function ConfirmActionModal({
                 }
                 return (
                   <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                    Only matching mail currently in your inbox is included.
+                    Only email in your inbox.
                   </span>
                 );
               })()}
@@ -1542,8 +1542,7 @@ export function ConfirmActionModal({
 
             {livePreviewReady && (
               <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
-                Gmail is checked again when this runs. If your inbox changes, the final moved count
-                can differ from this preview.
+                Rechecked when it runs, so the final count can differ from this preview.
               </span>
             )}
 
@@ -1656,7 +1655,7 @@ export function ConfirmActionModal({
                     letterSpacing: '0.04em',
                   }}
                 >
-                  Subjects only · we never read email bodies
+                  Subjects only · we never fetch or store full email contents
                 </div>
               </div>
             )}
@@ -1687,7 +1686,7 @@ export function ConfirmActionModal({
               : livePreviewLoading
                 ? 'Loading the live preview — confirm stays locked until it is ready.'
                 : quotaCappedFrom
-                  ? `Acting on ${unitsNeeded} of the ${quotaCappedFrom} eligible senders — that is every cleanup action you have left this month. The rest stay untouched.`
+                  ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — every cleanup action you have left this month. The rest stay untouched.`
                   : quotaShort
                     ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
                     : quotaRemaining !== null

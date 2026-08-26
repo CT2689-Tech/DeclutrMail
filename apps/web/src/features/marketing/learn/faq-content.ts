@@ -50,7 +50,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'action-effects',
     question: 'What do Keep, Archive, Later, and Delete do?',
     answer:
-      'Keep records your decision for a sender. Archive moves matching email out of Inbox but keeps it in Gmail All Mail. Later moves matching email out of Inbox and adds DeclutrMail/Later. Delete moves matching email to Gmail Trash. Each action starts with inbox email; Delete alone can also include a sender’s archived email when you choose that option before confirming. Manual Archive, Later, and Delete do not create rules for future mail.',
+      'Keep records your decision for a sender. Archive moves matching email out of Inbox but keeps it in Gmail All Mail. Later moves matching email out of Inbox and adds DeclutrMail/Later. Delete moves matching email to Gmail Trash. Each action starts with inbox email; Delete alone can also include a sender’s archived email when you choose that option before confirming. Manual Archive, Later, and Delete do not create rules for future email.',
   },
   {
     id: 'future-mail',
@@ -84,7 +84,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'unsubscribe',
     question: 'How does DeclutrMail Unsubscribe work?',
     answer:
-      'When a legitimate sender exposes the standards-based one-click method, DeclutrMail can submit the request and track its outcome. When the sender exposes only a mailto address, DeclutrMail opens a prepared Gmail draft and you press Send. Existing mail stays where it is unless you separately approve Archive or Delete.',
+      'When a legitimate sender exposes the standards-based one-click method, DeclutrMail can submit the request and track its outcome. When the sender exposes only a mailto address, DeclutrMail opens a prepared Gmail draft and you press Send. Existing email stays where it is unless you separately approve Archive or Delete.',
   },
   {
     id: 'unsubscribe-undo',
@@ -94,15 +94,15 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   },
   {
     id: 'suspicious-mail',
-    question: 'Should I unsubscribe from suspicious or phishing mail?',
+    question: 'Should I unsubscribe from suspicious or phishing email?',
     answer:
-      'No. Interacting with an untrusted unsubscribe link can confirm that your address is active or lead to a malicious site. Use Gmail’s Report spam or Report phishing controls for suspicious mail. Use unsubscribe for recognized, legitimate lists you no longer want.',
+      'No. Interacting with an untrusted unsubscribe link can confirm that your address is active or lead to a malicious site. Use Gmail’s Report spam or Report phishing controls for suspicious email. Use unsubscribe for recognized, legitimate lists you no longer want.',
   },
   {
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Plus and Pro include five preset rules. Turning one on shows a sample of what it would do to matching mail already in your inbox; confirm and it acts, then keeps acting on matching mail that arrives. Choose Watch first instead and the rule collects possible matches without moving mail, for you to approve or dismiss batch by batch. It can handle future matches automatically. Custom rule creation is not part of the launch product, and every rule can be paused.',
+      'Plus and Pro include five preset rules. Turning one on shows a sample of what it would do to matching email already in your inbox; confirm and it acts, then keeps acting on matching email that arrives. Choose Watch first instead and the rule collects possible matches without moving email, for you to approve or dismiss batch by batch. It can handle future matches automatically. Custom rule creation is not part of the launch product, and every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',
@@ -125,7 +125,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'disconnect-delete',
     question: 'How do I disconnect Gmail or delete DeclutrMail data?',
     answer:
-      'Disconnect a mailbox from the top-bar Gmail account menu; that revokes DeclutrMail’s Google access and stops future sync while preserving its historical DeclutrMail record for reconnection. Settings → Privacy & Data provides export and whole-account deletion. Deleting your DeclutrMail account does not itself delete the emails in Gmail, although mail actions you previously approved remain part of Gmail’s state.',
+      'Disconnect a mailbox from the top-bar mailbox menu; that revokes DeclutrMail’s Google access and stops future sync while preserving its historical DeclutrMail record for reconnection. Settings → Privacy & Data provides export and whole-account deletion. Deleting your DeclutrMail account does not itself delete the emails in Gmail, although email actions you previously approved remain part of Gmail’s state.',
     link: {
       href: '/security',
       label: 'Review the exit and security controls',

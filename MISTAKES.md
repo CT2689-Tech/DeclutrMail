@@ -3724,3 +3724,65 @@ status: `SENDER_NOT_FOUND` is terminal for a given id and now renders a
 never 404s" (verified red against the old code before landing), plus
 `packages/db/tests/sender-id.test.ts` pinning the derivation to a
 literal so a future change to it cannot silently reissue every handle.
+
+## 2026-08-26 — A confirm gate shipped on one of two paths into the same decision
+
+**PR:** #637
+**Caught by:** manual review while writing the tests the fix shipped without
+
+**What happened:** Triage's zero-count no-op gate — refusing
+Archive/Later/Delete when the live preview resolves to `0`, because the
+action moves nothing while still spending a cleanup action on Free — was
+added to `action-sheet.tsx` only. D34 lets the user skip the sheet, and
+the inline path (`triage-screen.tsx` + `triage-row.tsx`) checked only
+`typeof previewInboxCount !== 'number'`. A resolved zero is a number, so
+inline the Confirm button rendered armed, the verb shortcut stayed live,
+and the dispatch fired. The same decision behaved differently depending
+on a saved preference.
+
+Then the fix itself was nearly half-made: disabling the button in
+`triage-row.tsx` looks like the fix and is not. The negative control
+proved it — reverted with the disabled button left in place, the
+keyboard path still fired the mutation.
+
+**Correct approach:** when a rule refuses an action, put it where the
+DISPATCH happens, not only where the affordance renders. The button's
+`disabled` is the explanation; the guard is the enforcement. Both are
+needed, and only one of them is load-bearing.
+
+**Rule:** a user-facing decision reachable by more than one surface has
+as many gates as it has surfaces — enumerate them before writing the
+first one. If a preference (D34), a viewport (swipe), or a keyboard
+shortcut can reach the same dispatch, each is a path.
+
+**Enforcement update:** regression tests in `action-sheet.test.tsx`,
+`triage-row.test.tsx` and `triage-screen.actions.test.tsx`, each
+negative-controlled. The screen-level one was controlled in ISOLATION —
+guard reverted, button gate kept — so it can only pass because the
+dispatch refuses, never because the button happened to be disabled.
+
+## 2026-08-26 — A control gated on its own value deleted itself
+
+**PR:** #637
+**Caught by:** manual review
+
+**What happened:** the Later return-time picker rendered on
+`verb === 'Later' && selectedWakeAt !== null`. Its own `onChange` stores
+`null` for an unparseable value, so clearing the field unmounted the
+input that had just been edited. `defaultLaterWakeAtIso()` never returns
+null, so Later always OPENS with a time — the dead end was reachable only
+by clearing it, which is why it survived review. What was left on screen:
+a disabled confirm, a footer asking for a return time, and no control
+anywhere to supply one.
+
+**Correct approach:** mount the control on the VERB, and let the value
+drive `value=""` and the disabled state.
+
+**Rule:** never gate a control's existence on the value it edits. The
+input that fixes a blocked state must outlive every value that state can
+hold — including the empty one.
+
+**Enforcement update:** `action-sheet.test.tsx` → "survives the user
+clearing the field — the real path into the dead end", which mounts with
+a default, clears, and asserts the input is still there and still takes a
+new time. Negative-controlled.

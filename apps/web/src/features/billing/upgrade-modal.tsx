@@ -141,7 +141,7 @@ export function UpgradeModal() {
           <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}>
             {hit.reason === 'free_cap' ? (
               <>
-                Completed mail actions stay in place
+                Completed email actions stay in place
                 {hit.details.resetsAt
                   ? ` — your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
                   : ''}

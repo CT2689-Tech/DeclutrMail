@@ -113,7 +113,7 @@ describe('DeleteAccountModal', () => {
     advanceToStep2();
 
     expect(screen.getByText(/3 undoable actions/i)).toBeInTheDocument();
-    expect(screen.getByText(/undo windows are waived/i)).toBeInTheDocument();
+    expect(screen.getByText(/undo windows end/i)).toBeInTheDocument();
     // The extended date is now the NORM, not an exception, so the copy
     // leads with the real date and names the ceiling instead of framing
     // it as a delay past the usual grace period.

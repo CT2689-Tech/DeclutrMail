@@ -52,7 +52,7 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
             <div>
               <span>3</span>
               <p>
-                <strong>You review senders before mail moves.</strong>
+                <strong>You review senders before email moves.</strong>
                 {ACTION_PREVIEW_CLAIM}
               </p>
             </div>

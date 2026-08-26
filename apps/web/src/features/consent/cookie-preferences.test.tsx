@@ -51,7 +51,7 @@ describe('CookiePreferences (D147 withdrawal surface)', () => {
     // governs optional analytics only.
     const card = screen.getByTestId('cookie-preferences');
     expect(card).toHaveTextContent('Essential cookies for sign-in and billing are always on');
-    expect(card).toHaveTextContent('This preference governs optional analytics only.');
+    expect(card).toHaveTextContent('This setting covers optional analytics only.');
   });
 
   it('renders the stored choice ("all")', async () => {

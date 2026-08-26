@@ -150,8 +150,8 @@ export function inboxScopeNoticeCopy(
   if (notice.kind === 'empty-inbox') {
     const opener = `Nothing from ${subject} is in your inbox right now.`;
     const tail = options.verbActsBeyondInbox
-      ? `${verbLabel} acts on inbox mail by default.`
-      : `${verbLabel} only acts on mail still in the inbox.`;
+      ? `${verbLabel} acts on inbox email by default.`
+      : `${verbLabel} only acts on email still in the inbox.`;
     // Only name arrivals we were actually given a number for.
     if (notice.recentArrivals === null || notice.recentArrivals === 0) {
       return `${opener} ${tail}`;
@@ -276,7 +276,7 @@ export function mailLocationCopy(input: MailLocationInput): string | null {
     parts.push(`${n(binned)} in Trash or Spam`);
   }
   if (parts.length === 1) {
-    return `Where this mail is now: ${parts[0]} — that is everything the mailbox holds for this sender.`;
+    return `Where this email is now: ${parts[0]} — that is everything the mailbox holds for this sender.`;
   }
-  return `Where this mail is now: ${parts.join(' \u00b7 ')}.`;
+  return `Where this email is now: ${parts.join(' \u00b7 ')}.`;
 }

@@ -25,7 +25,7 @@ import { RoutePlaceholder } from './route-placeholder';
 const BASE_PROPS = {
   status: 'Planned for V2.1',
   title: 'Daily Brief',
-  description: "A short summary of yesterday's mail, ready every morning at 8am local.",
+  description: "A short summary of yesterday's email, ready every morning at 8am local.",
   decisions: ['D61', 'D62', 'D63'],
   primaryCta: { href: '/triage', label: 'Open Triage' },
 } as const;
@@ -39,7 +39,7 @@ describe('RoutePlaceholder', () => {
     const heading = screen.getByRole('heading', { name: 'Daily Brief' });
     expect(heading).toBeInTheDocument();
 
-    expect(screen.getByText(/A short summary of yesterday's mail/)).toBeInTheDocument();
+    expect(screen.getByText(/A short summary of yesterday's email/)).toBeInTheDocument();
 
     const cta = screen.getByRole('link', { name: 'Open Triage' });
     expect(cta).toHaveAttribute('href', '/triage');

@@ -7,10 +7,10 @@ describe('getActionFailureCopy', () => {
     expect(getActionFailureCopy('preview')).toEqual({
       title: 'Preview unavailable.',
       whatChanged: 'Nothing changed.',
-      whatDidNotChange: 'No mail was moved and no request was sent.',
+      whatDidNotChange: 'No email was moved and no request was sent.',
       nextStep: 'Retry the preview before confirming.',
       message:
-        'Preview unavailable. Nothing changed. No mail was moved and no request was sent. Retry the preview before confirming.',
+        'Preview unavailable. Nothing changed. No email was moved and no request was sent. Retry the preview before confirming.',
     });
   });
 

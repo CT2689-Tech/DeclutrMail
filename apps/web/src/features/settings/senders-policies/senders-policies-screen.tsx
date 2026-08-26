@@ -136,7 +136,7 @@ export function SendersPoliciesScreen() {
           {/* Two things this must NOT say. Not "senders you've told us to
               leave alone" — three of the four protection_reason values are
               automatic (replied, starred, gmail_important) and this list
-              shows those rows too. And not "their mail always reaches your
+              shows those rows too. And not "their email always reaches your
               inbox" — protection is a guard on OUR bulk and automatic
               actions (actions.service.ts:748), not a delivery guarantee:
               Gmail's own filters, spam and categories are outside our
@@ -145,7 +145,7 @@ export function SendersPoliciesScreen() {
           DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
           delete, or unsubscribe them on its own. An action you take on one sender yourself still
           applies. You can protect a sender, and DeclutrMail also protects one when you write to
-          them repeatedly and hear back, star their mail, or Gmail keeps marking it important. Each
+          them repeatedly and hear back, star their email, or Gmail keeps marking it important. Each
           row shows which of those applies, and Unprotect removes it — automatic protection
           won&apos;t re-apply afterwards.
         </p>
@@ -199,8 +199,8 @@ export function SendersPoliciesScreen() {
               {!ordered
                 ? ''
                 : hasNextPage
-                  ? `Most shielded unread mail first, across the ${protectedSenders.length.toLocaleString('en-US')} loaded so far.`
-                  : 'Most shielded unread mail first.'}
+                  ? `Most shielded unread email first, across the ${protectedSenders.length.toLocaleString('en-US')} loaded so far.`
+                  : 'Most shielded unread email first.'}
             </p>
           </div>
           <span

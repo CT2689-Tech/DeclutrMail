@@ -842,7 +842,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // newline was stripped. Every assertion here matches a substring, so the
     // join between the static text and the expression needs its own check.
     expect(
-      screen.getByText(/touching your mail\. Nothing switches on by itself/i),
+      screen.getByText(/touching your email\. Nothing switches on by itself/i),
     ).toBeInTheDocument();
   });
 
@@ -1178,7 +1178,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByText(/2 unsubscribe requests actionable now/i)).toBeInTheDocument();
     expect(
-      within(dialog).getByText(/unsubscribing does not remove existing mail/i),
+      within(dialog).getByText(/unsubscribing does not remove existing email/i),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByText(/early weekly estimate: about 11 matches/i),
@@ -1350,7 +1350,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     );
 
     const dialog = screen.getByRole('dialog', { name: /approve ALL ~214 pending suggestions/i });
-    expect(within(dialog).getByText(/showing the latest 50 of ~214/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/showing 50 of ~214/i)).toBeInTheDocument();
     expect(
       within(dialog).getByRole('button', { name: /approve all ~214 suggestions/i }),
     ).toBeInTheDocument();

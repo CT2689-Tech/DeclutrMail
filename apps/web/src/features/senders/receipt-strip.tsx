@@ -143,7 +143,7 @@ export function ReceiptStrip({
 
 function receiptCountCopy(receipt: ActionReceipt): string {
   const senderCopy = `${receipt.senderCount} sender${receipt.senderCount === 1 ? '' : 's'}`;
-  if (receipt.outcome === 'no-op') return `· No matching inbox mail moved · ${senderCopy}`;
+  if (receipt.outcome === 'no-op') return `· No matching inbox email moved · ${senderCopy}`;
   if (receipt.outcome === 'partial') {
     return `· ${receipt.affectedCount.toLocaleString('en-US')} of ${receipt.requestedCount.toLocaleString('en-US')} emails changed · ${senderCopy}`;
   }

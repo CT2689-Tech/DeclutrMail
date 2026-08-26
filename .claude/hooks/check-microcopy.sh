@@ -177,7 +177,7 @@ case "$file_path" in
     # T5 — privacy copy is the locked generated badge. Forward-looking
     # absolutes about reading are unfalsifiable AND wrong (listed Gmail details ARE read).
     check "forward-looking privacy absolute (T5 — use the locked plain-language privacy badge)" \
-      "never reads? your (e-?mail|message|inbox)|we never read your|does ?n[o'’]t read your (e-?mail|message)|never looks? at your (e-?mail|message)"
+      "never reads? (your |the )?(e-?mail|message|inbox|body|bodies)|we never read|does ?n[o'’]t read (your |the )?(e-?mail|message|body|bodies)|never looks? at (your |the )?(e-?mail|message)"
 
     # T6 — D209 forbidden words. All nine: AI magic, supercharged, nuke,
     # destroy, blast, obliterate, standalone smart, standalone

@@ -174,14 +174,14 @@ describe('FollowupsScreen — populated list', () => {
 
     renderScreen();
 
-    expect(await screen.findByText(/based on your sent mail/i)).toBeInTheDocument();
+    expect(await screen.findByText(/based on your sent email/i)).toBeInTheDocument();
     expect(screen.getByText(/not live gmail status/i)).toBeInTheDocument();
     const disclosure = screen
       .getByText('Why a thread may still appear — and how to hide it')
       .closest('details');
     expect(disclosure).not.toBeNull();
     expect(disclosure).toHaveTextContent(/checks run about every six hours/i);
-    expect(disclosure).toHaveTextContent(/sent mail from the last 60 days/i);
+    expect(disclosure).toHaveTextContent(/sent email from the last 60 days/i);
     expect(disclosure).toHaveTextContent(/does not mark a recipient reply or change Gmail/i);
     expect(
       screen.getByRole('button', {

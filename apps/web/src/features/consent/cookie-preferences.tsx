@@ -77,7 +77,7 @@ export function CookiePreferences() {
         </h3>
         <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fgSoft }}>
           Essential cookies for sign-in and billing are always on — the service does not work
-          without them. This preference governs optional analytics only.
+          without them. This setting covers optional analytics only.
         </p>
         <ConsentRadio
           value="all"
@@ -95,7 +95,7 @@ export function CookiePreferences() {
         />
         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
           Changes apply immediately and are saved on this device. Switching to Essential only stops
-          analytics and clears its identifier.
+          analytics and clears its ID.
         </p>
       </div>
     </Card>

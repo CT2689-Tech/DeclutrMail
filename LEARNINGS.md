@@ -1936,3 +1936,32 @@ prose, not in backticks, not in a quoted error message.
 
 **Distillation trigger:** this is the third instance (0065 twice, 0069
 once). Promote to CLAUDE.md §6 or add a lint rule if it recurs.
+
+## 2026-08-26 — A copy assertion that matched inside the word it was meant to distinguish
+
+**Context:** merging `main` into #637 (a mail → email vocabulary pass) and
+re-running the tests `main` had just added for the Brief's per-day
+summary line.
+
+**Finding:** `getByText(/mail from Fri, May 22/i)` passes against
+"**e**mail from Fri, May 22" as well as "mail from Fri, May 22" — the
+substring is contained in the very word the assertion exists to
+distinguish. So one of the two assertions in that test was green in both
+directions and would not have caught a regression either way. It looked
+exactly like the assertion next to it, which did fail correctly.
+
+This is the same shape as the corrupted regex alternation in
+`thresholds.ts` earlier in the same PR: a text sweep's two silent failure
+modes are a pattern that stops matching what it should, and a pattern
+that keeps matching what it shouldn't. Neither shows up as a red test.
+
+**Rule (provisional):** an assertion on a term that is a substring of its
+replacement (mail/email, sync/resync, sub/unsub) needs a `\b` anchor or a
+`not.toMatch` partner. When a copy sweep touches a word, grep the test
+suite for the SHORTER form and check each hit for containment before
+trusting a green run.
+
+**Distillation trigger:** promote to CLAUDE.md §8 ("A green test is not
+evidence") if a third vacuous copy assertion is found — this is the
+second, after the windowed-count test that seeded every row with the same
+timestamp.

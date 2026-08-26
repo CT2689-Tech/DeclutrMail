@@ -280,8 +280,8 @@ describe('ActionSheet — live-preview confirm gate', () => {
     );
 
     expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText(/emails currently match in Inbox/i)).toBeInTheDocument();
-    expect(screen.getByText(/Gmail is checked again at execution/i)).toBeInTheDocument();
+    expect(screen.getByText(/emails in Inbox now/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
   });
 });
@@ -446,7 +446,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // states reach; the notice states the consequence.
     renderSheet(protectedRow);
     const notice = screen.getByRole('status').textContent ?? '';
-    expect(notice).not.toMatch(/moves matching inbox mail/i);
+    expect(notice).not.toMatch(/moves matching inbox email/i);
     expect(notice).not.toMatch(/Archive/);
   });
 
@@ -474,5 +474,190 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     expect(container.textContent).not.toMatch(/stays Protected/);
     expect(screen.queryByRole('button', { name: /anyway/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
+  });
+});
+
+describe('ActionSheet — zero-count no-op gate', () => {
+  // A verb that moves inbox email with a resolved count of zero moves
+  // nothing, yet still burns a cleanup action on Free. Senders already
+  // refused this (`nothingToActOn`, confirm-action-modal.tsx); triage did
+  // not, so the two surfaces disagreed about the same decision.
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'blocks %s click and keyboard confirmation at a resolved count of zero',
+    (verb) => {
+      const onConfirm = vi.fn();
+      const wakeAt = verb === 'Later' ? new Date(Date.now() + 86_400_000).toISOString() : null;
+      const { rerender } = render(
+        <ActionSheet
+          open={true}
+          verb={verb}
+          row={row}
+          inboxCount={0}
+          wakeAt={wakeAt}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+        />,
+      );
+
+      const confirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      expect(confirm).toBeDisabled();
+      fireEvent.click(confirm);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      expect(onConfirm).not.toHaveBeenCalled();
+      // The gate has to SAY why, or a dead button reads as a broken one.
+      expect(screen.getByText(/nothing to act on/i)).toBeInTheDocument();
+
+      // One matching email is enough to make it real work again.
+      rerender(
+        <ActionSheet
+          open={true}
+          verb={verb}
+          row={row}
+          inboxCount={1}
+          wakeAt={wakeAt}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+        />,
+      );
+      const readyConfirm = screen.getByRole('button', { name: new RegExp(`^${verb}`) });
+      expect(readyConfirm).toBeEnabled();
+      fireEvent.click(readyConfirm);
+      expect(onConfirm).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('still confirms Unsubscribe at zero — it cuts future mail, not the inbox', () => {
+    // Deliberate asymmetry, matching senders' `primaryActsOnInbox`: an
+    // unsubscribe at an empty inbox is the whole point of unsubscribing.
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open={true}
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={0}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const confirm = screen.getByRole('button', { name: /^Unsubscribe/ });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/nothing to act on/i)).toBeNull();
+  });
+});
+
+describe('ActionSheet — Later return-time picker', () => {
+  // The picker used to be mounted on `selectedWakeAt !== null` — a
+  // control gated on its own value. Later always opens with a default
+  // (`defaultLaterWakeAtIso`, never null), so the dead end was reached by
+  // CLEARING the field: the change handler stores null for an unparseable
+  // value, which unmounted the input that had just been edited. What was
+  // left was a disabled confirm, a footer asking for a return time, and
+  // no control anywhere on screen to supply one.
+  it('renders the time input when no return time is set yet', () => {
+    render(
+      <ActionSheet
+        open={true}
+        verb="Later"
+        row={row}
+        inboxCount={2}
+        wakeAt={null}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+
+    const input = screen.getByLabelText('Later return time');
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveValue('');
+    expect(screen.getByRole('button', { name: /^Later/ })).toBeDisabled();
+    expect(screen.getByText(/needs a future return time/i)).toBeInTheDocument();
+  });
+
+  it('arms confirm once a future time is picked in that input', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open={true}
+        verb="Later"
+        row={row}
+        inboxCount={2}
+        wakeAt={null}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    const future = new Date(Date.now() + 86_400_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    fireEvent.change(screen.getByLabelText('Later return time'), {
+      target: {
+        value: `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`,
+      },
+    });
+
+    const confirm = screen.getByRole('button', { name: /^Later/ });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onConfirm.mock.calls[0]![0].wakeAt).not.toBeNull();
+  });
+
+  it('survives the user clearing the field — the real path into the dead end', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open={true}
+        verb="Later"
+        row={row}
+        inboxCount={2}
+        wakeAt={new Date(Date.now() + 86_400_000).toISOString()}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    // Opens with the default, as Later always does.
+    expect(screen.getByRole('button', { name: /^Later/ })).toBeEnabled();
+
+    // The user clears it: `new Date('')` is NaN, so the handler stores null.
+    fireEvent.change(screen.getByLabelText('Later return time'), { target: { value: '' } });
+
+    const input = screen.getByLabelText('Later return time');
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveValue('');
+    expect(screen.getByRole('button', { name: /^Later/ })).toBeDisabled();
+
+    // …and the same input takes a new time, so the state is escapable.
+    const future = new Date(Date.now() + 172_800_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    fireEvent.change(input, {
+      target: {
+        value: `${future.getFullYear()}-${pad(future.getMonth() + 1)}-${pad(future.getDate())}T${pad(future.getHours())}:${pad(future.getMinutes())}`,
+      },
+    });
+    expect(screen.getByRole('button', { name: /^Later/ })).toBeEnabled();
+  });
+
+  it('refuses a return time in the past', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open={true}
+        verb="Later"
+        row={row}
+        inboxCount={2}
+        wakeAt={new Date(Date.now() - 60_000).toISOString()}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: /^Later/ })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
   });
 });

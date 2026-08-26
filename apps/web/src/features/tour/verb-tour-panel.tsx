@@ -162,7 +162,7 @@ const TOUR_STEPS = [
   {
     kind: 'preview',
     title: 'You see what changes before it changes',
-    body: 'Every decision that moves mail shows a preview first — how many messages match and what happens to them. Nothing moves until you confirm. Archive, Later, and Delete can be undone from Activity; a delivered unsubscribe request cannot be recalled.',
+    body: 'Every decision that moves email shows a preview first — how many messages match and what happens to them. Nothing moves until you confirm. Archive, Later, and Delete can be undone from Activity; a delivered unsubscribe request cannot be recalled.',
   },
   {
     kind: 'recommendation',

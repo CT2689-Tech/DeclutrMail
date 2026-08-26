@@ -727,7 +727,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         title="How Autopilot works"
         body={
           canActivate
-            ? 'Turning a rule on shows exactly what it would do to mail already in your inbox. Confirm and it acts, then keeps acting on matching mail that arrives — or choose Watch first and it collects matches for your approval instead.'
+            ? 'Turning a rule on shows exactly what it would do to email already in your inbox. Confirm and it acts, then keeps acting on matching email that arrives — or choose Watch first and it collects matches for your approval instead.'
             : `Rules collect matching email in Observe for you to approve. Rules that act on future matches on their own are part of ${ACT_PLAN_NAME}.`
         }
       />
@@ -738,17 +738,17 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         {canActivate ? (
           <>
             Watch first turns the rule on in Observe: it records matches as suggestions and changes
-            no Gmail mail until you approve them. Confirming instead lets the rule act on the first
-            sweep you just previewed, and on matching mail that arrives after it. A watching rule
+            no Gmail email until you approve them. Confirming instead lets the rule act on the first
+            sweep you just previewed, and on matching email that arrives after it. A watching rule
             can be switched over later — turn it off and on again, or use the prompt that appears
             once it has collected matches; the suggestions it collected stay pending for you to
             approve or skip.
           </>
         ) : (
           <>
-            Observe records matches as suggestions and changes no Gmail mail until you approve them.
-            Suggestions stay pending until you approve or skip each batch. Rules that apply future
-            matches automatically — Active mode — are part of {ACT_PLAN_NAME}.
+            Observe records matches as suggestions and changes no Gmail email until you approve
+            them. Suggestions stay pending until you approve or skip each batch. Rules that apply
+            future matches automatically — Active mode — are part of {ACT_PLAN_NAME}.
           </>
         )}
       </ContextualHelp>

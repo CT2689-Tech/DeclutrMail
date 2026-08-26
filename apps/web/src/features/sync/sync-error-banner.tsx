@@ -95,7 +95,7 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
     return (
       <SyncBannerFrame testId="sync-status-unavailable-banner">
         <SyncBannerMessage>
-          We can&rsquo;t check whether new mail is syncing right now.
+          We can&rsquo;t check whether new email is syncing right now.
         </SyncBannerMessage>
         <Button
           tone="default"
@@ -126,7 +126,7 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
       <SyncBannerMessage>
         {needsReconnect
           ? 'Gmail access expired. Reconnect this account to resume syncing and Gmail actions. Your existing DeclutrMail history is safe.'
-          : "New mail isn't syncing — the last attempt failed. We retry automatically every few minutes."}
+          : "New email isn't syncing — the last attempt failed. We retry automatically every few minutes."}
       </SyncBannerMessage>
       <Button
         tone="default"

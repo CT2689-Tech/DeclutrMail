@@ -10,7 +10,7 @@ export const GLOSSARY_TERMS = {
   sender: {
     term: 'Sender',
     definition:
-      'A person or service identified by its From address. DeclutrMail groups matching mail by sender so one decision can cover that sender’s mail.',
+      'A person or service identified by its From address. DeclutrMail groups matching email by sender so one decision can cover that sender’s email.',
   },
   gmailPreview: {
     term: 'Gmail preview snippet',
@@ -50,7 +50,7 @@ export const GLOSSARY_TERMS = {
   active: {
     term: 'Active',
     definition:
-      'An Autopilot rule applies its action automatically to new matching mail. Active execution depends on your plan and can be paused.',
+      'An Autopilot rule applies its action automatically to new matching email. Active execution depends on your plan and can be paused.',
   },
   activityUndo: {
     term: 'Activity Undo',
@@ -60,12 +60,12 @@ export const GLOSSARY_TERMS = {
   gmailTrashRecovery: {
     term: 'Gmail Trash recovery',
     definition:
-      'Gmail’s separate recovery path for mail moved to Trash. It normally lasts up to 30 days and is not the same as DeclutrMail’s Activity Undo window.',
+      'Gmail’s separate recovery path for email moved to Trash. It normally lasts up to 30 days and is not the same as DeclutrMail’s Activity Undo window.',
   },
   later: {
     term: 'Later',
     definition:
-      'Moves matching mail currently in Inbox to the DeclutrMail/Later label until the required wake time. Future mail from the sender is unchanged.',
+      'Moves matching email currently in Inbox to the DeclutrMail/Later label until the return time you choose. Future email from the sender is unchanged.',
   },
 } as const;
 
@@ -98,7 +98,7 @@ export const GLOSSARY_GROUPS: ReadonlyArray<{
   },
   {
     title: 'Destinations and recovery',
-    description: 'Where mail goes and which recovery window applies.',
+    description: 'Where email goes and which recovery window applies.',
     terms: ['later', 'activityUndo', 'gmailTrashRecovery'],
   },
 ];

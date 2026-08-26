@@ -88,15 +88,15 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   },
   endpoint_accepted: {
     label: 'Request accepted',
-    title: "The sender's system accepted the request; whether mail stops is up to them",
+    title: "The sender's system accepted the request; whether email stops is up to them",
   },
   failed: {
     label: 'Request failed',
-    title: 'The unsubscribe request failed; Archive remains available for current mail',
+    title: 'The unsubscribe request failed; Archive remains available for current email',
   },
   unconfirmed: {
     label: 'Result unconfirmed',
-    title: "We couldn't confirm the sender received the request; watch for future mail",
+    title: "We couldn't confirm the sender received the request; watch for future email",
   },
   action_required: {
     label: 'Send from Gmail',
@@ -371,7 +371,7 @@ export function SenderCard({
             title={
               sender.inboxCount !== undefined && sender.inboxCount !== null
                 ? "Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. 'In inbox' is what Keep/Archive/Delete can reach right now."
-                : "Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. Not inbox-only; deleted mail drops out."
+                : "Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. Not inbox-only; deleted email drops out."
             }
             style={{
               fontFamily: font.mono,

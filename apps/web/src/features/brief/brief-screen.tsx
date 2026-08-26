@@ -237,8 +237,8 @@ function BriefBody({
           // switcher reaches back, the same sentence over Saturday's
           // mail is simply wrong, so past days name the day instead.
           isToday
-            ? `A short summary of yesterday's mail. Reply first, FYI for context, Noise to clear.`
-            : `A short summary of mail from ${dateLabel}. Reply first, FYI for context, Noise to clear.`
+            ? `A short summary of yesterday's email. Reply first, FYI for context, Noise to clear.`
+            : `A short summary of email from ${dateLabel}. Reply first, FYI for context, Noise to clear.`
         }
         tip="Open a message in Gmail to reply or review it."
       />
@@ -1129,7 +1129,7 @@ function NotYetState({ onRefresh }: { onRefresh: () => void }) {
         title="Your Brief lands soon"
         description={
           <>
-            We snapshot yesterday&rsquo;s mail every morning. If you connected recently or
+            We snapshot yesterday&rsquo;s email every morning. If you connected recently or
             you&rsquo;re early in your time zone, refresh in a few minutes.
           </>
         }

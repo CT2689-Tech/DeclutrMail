@@ -951,10 +951,10 @@ function SendersScreenContent({
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
         const inFlightCopy =
           primaryType === 'delete'
-            ? `Moving mail from ${sender.name} to Trash…`
+            ? `Moving email from ${sender.name} to Trash…`
             : primaryType === 'later'
               ? `Moving ${sender.name} to Later…`
-              : `Archiving mail from ${sender.name}…`;
+              : `Archiving email from ${sender.name}…`;
         setPendingAction(null);
         setSelected(new Set());
         toast(inFlightCopy, 'info');
@@ -1131,7 +1131,7 @@ function SendersScreenContent({
                           reason: `enqueue_${secondary.type}_after_unsub`,
                         });
                         toast(
-                          `Unsubscribe queued, but couldn't ${secondary.type} the backlog from ${sref.name}`,
+                          `Unsubscribe queued, but couldn't ${secondary.type} the older email from ${sref.name}`,
                           'warn',
                         );
                       },
@@ -1228,7 +1228,7 @@ function SendersScreenContent({
                       });
                     }
                     toast(
-                      `Unsubscribes queued, but couldn't ${secondary.type} the backlog — see Activity`,
+                      `Unsubscribes queued, but couldn't ${secondary.type} the older email — see Activity`,
                       'warn',
                     );
                   },
@@ -1247,7 +1247,7 @@ function SendersScreenContent({
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               toast(
                 conflict
-                  ? 'None of these senders has an unsubscribe we can send — Archive moves their mail instead.'
+                  ? 'None of these senders has an unsubscribe we can send — Archive moves their email instead.'
                   : "Couldn't send the unsubscribe requests — try again.",
                 'warn',
               );
@@ -1324,10 +1324,10 @@ function SendersScreenContent({
         setPendingAction(null);
         toast(
           primaryType === 'delete'
-            ? `Moving mail from ${n} senders to Trash…`
+            ? `Moving email from ${n} senders to Trash…`
             : primaryType === 'later'
               ? `Moving ${n} senders to Later…`
-              : `Archiving mail from ${n} senders…`,
+              : `Archiving email from ${n} senders…`,
           'info',
         );
         enqueueBulk.mutate(
@@ -1387,7 +1387,7 @@ function SendersScreenContent({
               toast(
                 apiErrorCode(err) === 'NO_ACTIONABLE_SENDERS'
                   ? 'Nothing to do — the selected senders are protected or gone'
-                  : `Couldn't ${primaryType} mail from ${n} senders`,
+                  : `Couldn't ${primaryType} email from ${n} senders`,
                 'warn',
               );
             },
@@ -1447,7 +1447,7 @@ function SendersScreenContent({
         // no mail in the inbox right now, so the worker did nothing and
         // issued no undo token. Never show a "reversible" receipt with a
         // dead Undo — say plainly that there was nothing to do.
-        toast(`No inbox mail from ${activeAction.senderName} to ${verbLowercase}`, 'info');
+        toast(`No inbox email from ${activeAction.senderName} to ${verbLowercase}`, 'info');
         // The worker still wrote a 0-affected `activity_log` row
         // (label-action.worker.ts:248 — the audit-trail consistency
         // fix 2026-06-05). Invalidate Activity so a user navigating
@@ -1498,7 +1498,7 @@ function SendersScreenContent({
     if (data.status === 'done') {
       if (data.affectedCount === 0 || !data.undoToken) {
         toast(
-          `No inbox mail from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
+          `No inbox email from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
           'info',
         );
         void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -1544,12 +1544,12 @@ function SendersScreenContent({
       );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
         'warn',
       );
     } else {
       toast(
-        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
+        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
         'warn',
       );
     }
@@ -1691,7 +1691,7 @@ function SendersScreenContent({
     if (data.status === 'failed') {
       // Every sibling failed — nothing moved, nothing to undo.
       toast(
-        `Couldn't ${verbLowercase} mail from ${activeBatch.senderCount} senders — see Activity`,
+        `Couldn't ${verbLowercase} email from ${activeBatch.senderCount} senders — see Activity`,
         'warn',
       );
       void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -1704,7 +1704,7 @@ function SendersScreenContent({
       if (data.affectedCount === 0 || !data.undoToken) {
         // No-op batch: nothing was in the inbox for any selected sender,
         // so no undo token exists. Never show a receipt with a dead Undo.
-        toast(`No inbox mail from these senders to ${verbLowercase}`, 'info');
+        toast(`No inbox email from these senders to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         toast(
@@ -1762,7 +1762,7 @@ function SendersScreenContent({
     const verbLowercase = overdueBatch.verb.toLowerCase();
     if (data.status === 'failed') {
       toast(
-        `Couldn't ${verbLowercase} mail from ${overdueBatch.senderCount} senders — see Activity`,
+        `Couldn't ${verbLowercase} email from ${overdueBatch.senderCount} senders — see Activity`,
         'warn',
       );
       void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -1771,7 +1771,7 @@ function SendersScreenContent({
         toast(`${data.failed} of ${data.total} actions failed — see Activity`, 'warn');
       }
       if (data.affectedCount === 0 || !data.undoToken) {
-        toast(`No inbox mail from these senders to ${verbLowercase}`, 'info');
+        toast(`No inbox email from these senders to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         // No success toast — the receipt above still carries the undo.
@@ -2498,7 +2498,7 @@ function SendersScreenContent({
         ) : senders.length === 0 ? (
           <EmptyState
             title="No senders yet"
-            body="Once your mailbox finishes syncing, the senders who mail you will appear here."
+            body="Once your mailbox finishes syncing, the senders who email you will appear here."
           />
         ) : view === 'grid' ? (
           // D49 default — grid of cards. `senders` arrives already

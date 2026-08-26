@@ -102,7 +102,7 @@ export function PrivacyDataView({
         title="Privacy & Data"
         body={
           <>
-            Exactly what DeclutrMail stores about your mail, what it never touches, and how to take
+            Exactly what DeclutrMail stores about your email, what it never touches, and how to take
             your data with you — or leave entirely.
           </>
         }
@@ -160,7 +160,7 @@ export function PrivacyDataView({
       {/* 2 — which mailboxes the storage list applies to. */}
       <Card padding={0}>
         <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Mailboxes in DeclutrMail</h3>
+          <h3 style={cardTitleStyle}>mailboxes in DeclutrMail</h3>
           {mailboxes.length === 0 ? (
             <p style={mutedTextStyle}>
               No mailboxes connected — no Gmail data is being saved right now.
@@ -197,12 +197,12 @@ export function PrivacyDataView({
           <p style={mutedTextStyle}>
             {undoDays !== null ? (
               <>
-                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for{' '}
+                Archive, Later, and archived unsubscribe email can be undone from Activity for{' '}
                 <strong style={{ color: color.fg }}>{undoDays} days</strong> on your plan.
               </>
             ) : (
               <>
-                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for at
+                Archive, Later, and archived unsubscribe email can be undone from Activity for at
                 least {MIN_UNDO_WINDOW_DAYS} days on any plan.
               </>
             )}{' '}
@@ -293,8 +293,8 @@ export function PrivacyDataView({
                 <div style={exitDetailStyle}>
                   Also permanently deletes that mailbox&apos;s saved email details, sender data,
                   decisions, rules, Activity, and Undo data. Your DeclutrMail account, other
-                  mailboxes, disconnected Gmail address, and Gmail mail remain. Choose Manage in the
-                  top-bar account menu.
+                  mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose
+                  Manage in the top-bar account menu.
                 </div>
               </div>
             </li>

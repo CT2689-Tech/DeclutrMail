@@ -48,7 +48,7 @@ export function getActionFailureCopy(
         return {
           title: 'Preview unavailable.',
           whatChanged: 'Nothing changed.',
-          whatDidNotChange: 'No mail was moved and no request was sent.',
+          whatDidNotChange: 'No email was moved and no request was sent.',
           nextStep: 'Retry the preview before confirming.',
         };
       case 'enqueue':

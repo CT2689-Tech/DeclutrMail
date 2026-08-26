@@ -144,7 +144,7 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     expect(screen.getByRole('heading', { name: /eventually/i })).toBeInTheDocument();
     expect(screen.getByText('12 in Later')).toBeInTheDocument();
     expect(screen.getByText('“after launch week”')).toBeInTheDocument();
-    expect(screen.queryByText(/needs (scheduling|a wake time)/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs (scheduling|a return time)/i)).not.toBeInTheDocument();
   });
 
   it('renders honest copy when the mirror count is unknown', async () => {
@@ -198,17 +198,17 @@ describe('SnoozedScreen — wake now flow', () => {
     await screen.findByText('Daily Digest');
 
     // Step 1 — the click opens a confirm; nothing has mutated yet.
-    await user.click(screen.getByRole('button', { name: 'Wake now' }));
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
     expect(wakePosted).toBe(0);
     expect(
       screen.getByText(/12 messages move from DeclutrMail\/Later back to your inbox/i),
     ).toBeInTheDocument();
 
     // Step 2 — confirming fires the POST and flips the row to waking.
-    const confirmButtons = screen.getAllByRole('button', { name: 'Wake now' });
+    const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });
     await user.click(confirmButtons[confirmButtons.length - 1]!);
     await waitFor(() => expect(wakePosted).toBe(1));
-    expect(await screen.findByText('Waking…')).toBeInTheDocument();
+    expect(await screen.findByText('Bringing back…')).toBeInTheDocument();
   });
 
   it('surfaces a queue-unavailable failure inline', async () => {
@@ -228,11 +228,11 @@ describe('SnoozedScreen — wake now flow', () => {
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Wake now' }));
-    const confirmButtons = screen.getAllByRole('button', { name: 'Wake now' });
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
+    const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });
     await user.click(confirmButtons[confirmButtons.length - 1]!);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/wake queue isn't available/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/return schedule isn't available/i);
   });
 });
 
@@ -267,10 +267,10 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Quarterly Newsletter');
 
-    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
     expect(
       screen.getByRole('button', {
-        name: 'Cancel wake-time changes for Quarterly Newsletter',
+        name: 'Cancel return-time changes for Quarterly Newsletter',
       }),
     ).toHaveTextContent('Cancel');
     await user.type(screen.getByPlaceholderText('Note (optional)'), 'travel');
@@ -288,8 +288,8 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
-    expect(screen.queryByRole('button', { name: /clear wake time/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
+    expect(screen.queryByRole('button', { name: /clear return time/i })).not.toBeInTheDocument();
   });
 });
 

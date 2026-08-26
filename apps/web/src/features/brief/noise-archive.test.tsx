@@ -302,7 +302,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     // 351 is what is in the inbox now; 7 is what yesterday held. The
     // preview must state the number that is about to move.
     await within(dialog).findByText('351');
-    expect(within(dialog).getByText(/currently match in Inbox/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/in Inbox now/i)).toBeInTheDocument();
   });
 
   it('blocks confirm when nothing from those senders is in the inbox', async () => {

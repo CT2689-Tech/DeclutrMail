@@ -107,7 +107,7 @@ export function PauseConfirmModal({
             id="dm-pause-lead"
             style={{ fontSize: 13, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}
           >
-            Every running rule flips to <strong>paused</strong>. New mail will not generate
+            Every running rule flips to <strong>paused</strong>. New email will not generate
             suggestions or apply automated actions until you re-enable each rule. Existing pending
             suggestions stay in the buffer — you can keep dismissing them.
           </p>

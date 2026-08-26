@@ -47,7 +47,7 @@ const GOALS: ReadonlyArray<{
   {
     id: 'clear_old_promotions',
     title: 'Clear old promotions',
-    description: 'Prioritize promotional senders with enough mail to make cleanup worthwhile.',
+    description: 'Prioritize promotional senders with enough email to make cleanup worthwhile.',
   },
 ];
 

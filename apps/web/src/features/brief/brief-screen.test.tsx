@@ -596,7 +596,7 @@ describe('BriefScreen — D61 history', () => {
     renderScreen();
 
     // Latest: "yesterday" is correct and stays.
-    await waitFor(() => expect(screen.getByText(/yesterday's mail/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/yesterday's email/i)).toBeInTheDocument());
     expect(
       screen.getByRole('heading', { name: /noise .*messages yesterday/i }),
     ).toBeInTheDocument();
@@ -605,8 +605,8 @@ describe('BriefScreen — D61 history', () => {
 
     // Past day: named, not "yesterday". PAST_BRIEF ran 2026-05-23 and
     // covers Fri 2026-05-22.
-    await waitFor(() => expect(screen.getByText(/mail from Fri, May 22/i)).toBeInTheDocument());
-    expect(screen.queryByText(/yesterday's mail/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/\bemail from Fri, May 22/i)).toBeInTheDocument());
+    expect(screen.queryByText(/yesterday's email/i)).not.toBeInTheDocument();
   });
 
   it('hides the switcher and still renders today when history fails', async () => {

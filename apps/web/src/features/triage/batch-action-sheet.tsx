@@ -80,7 +80,7 @@ export function BatchActionSheet({
   });
   const title =
     verb === 'Archive'
-      ? `Archive all inbox mail from ${eligible.length} senders`
+      ? `Archive all inbox email from ${eligible.length} senders`
       : `Move ${eligible.length} senders to Later`;
   const lead = presentation.previewCopy;
 
@@ -160,8 +160,8 @@ export function BatchActionSheet({
               <span style={{ fontSize: 12, color: color.fgSoft }}>Counting the inbox…</span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12, color: color.fgSoft }}>
-                Couldn&rsquo;t load a live preview. Close and retry — no inbox mail can move without
-                one.
+                Couldn&rsquo;t load a live preview. Close and retry — no inbox email can move
+                without one.
               </span>
             ) : (
               <>
@@ -178,8 +178,8 @@ export function BatchActionSheet({
                   {preview.totals.all.toLocaleString('en-US')}
                 </strong>
                 <span style={{ fontSize: 12, color: color.fgSoft }}>
-                  email{preview.totals.all === 1 ? '' : 's'} currently match in Inbox. Gmail is
-                  checked again at execution, so the final moved count can change.
+                  email{preview.totals.all === 1 ? '' : 's'} in Inbox now. Rechecked when it runs,
+                  so the final count can differ.
                 </span>
               </>
             )}
@@ -255,8 +255,8 @@ export function BatchActionSheet({
               ? wakeAtInvalid
                 ? 'Choose a future return time before confirming Later.'
                 : preview === 'unavailable'
-                  ? 'Preview unavailable — close and retry before confirming.'
-                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+                  ? 'Preview unavailable — close and retry.'
+                  : 'Counting inbox email — confirm unlocks after the live preview loads.'
               : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>

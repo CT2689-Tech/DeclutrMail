@@ -25,7 +25,7 @@ describe('/how-it-works', () => {
     expect(copy).toContain('Keep is not Protect');
     expect(copy).toContain('return time you choose');
     expect(copy).toContain('DeclutrMail/Later');
-    expect(copy).toContain('cannot be recalled');
+    expect(copy).toContain('cannot be undone');
     // Was "Delete is available from Senders and Sender Detail" — true
     // until the 2026-08-06 amendment to ADR-0019 put Delete on the Triage
     // toolbar too. The guard is unchanged in intent: this page must state

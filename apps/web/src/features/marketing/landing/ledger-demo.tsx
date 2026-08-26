@@ -35,7 +35,7 @@ export function LedgerDemo({ verbs }: { verbs: readonly LedgerVerb[] }) {
         data-paused={paused ? 'true' : 'false'}
         data-run={runId}
         role="img"
-        aria-label="Demo: archiving LinkedIn Notifications. 412 messages leave Inbox, remain searchable in All Mail, affect existing mail only, and can be undone in Activity."
+        aria-label="Demo: archiving LinkedIn Notifications. 412 messages leave Inbox, remain searchable in All Mail, affect existing email only, and can be undone in Activity."
       >
         <div className="dm-mkt-ledger-head">
           <span>
@@ -71,7 +71,7 @@ export function LedgerDemo({ verbs }: { verbs: readonly LedgerVerb[] }) {
             <div className="dm-mkt-ledger-preview">
               <b>Preview</b>
               <span>412 messages → All Mail</span>
-              <span>Existing mail only · Undo in Activity</span>
+              <span>Existing email only · Undo in Activity</span>
             </div>
           </div>
           <div
@@ -81,7 +81,7 @@ export function LedgerDemo({ verbs }: { verbs: readonly LedgerVerb[] }) {
           >
             <span className="dm-mkt-ledger-receipt-mark">✓</span>
             <b>412 messages archived from Inbox</b>
-            <span>Still searchable in All Mail · existing mail only</span>
+            <span>Still searchable in All Mail · existing email only</span>
           </div>
         </div>
         <div className="dm-mkt-ledger-toast">

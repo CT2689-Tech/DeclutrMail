@@ -57,7 +57,7 @@ export function ScreenerUpsell({ onSeePricing }: { onSeePricing: () => void }) {
       </p>
       <p style={{ fontSize: 12.5, color: color.fgMuted, lineHeight: 1.6, margin: 0 }}>
         On your current plan, you can still defer any sender from Triage with{' '}
-        <strong>Later (L)</strong> — it parks their mail in the DeclutrMail/Later label until
+        <strong>Later (L)</strong> — it parks their email in the DeclutrMail/Later label until
         you&apos;re ready.
       </p>
       <div>

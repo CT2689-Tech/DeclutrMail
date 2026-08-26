@@ -194,7 +194,7 @@ export function MailboxDataControlsDialog({
               }}
             >
               Past Gmail actions stay applied. Any remaining Activity Undo for this mailbox ends
-              when deletion completes. Gmail mail and labels are not changed by this deletion.
+              when deletion completes. Gmail email and labels are not changed by this deletion.
             </p>
             <label
               htmlFor="dm-mailbox-data-delete-phrase"

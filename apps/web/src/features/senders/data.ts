@@ -130,7 +130,7 @@ export const GROUPS: GroupMeta[] = [
   {
     key: 'primary',
     label: 'Primary',
-    hint: 'Conversations and 1-to-1 mail — always come through.',
+    hint: 'Conversations and direct email — always come through.',
   },
   {
     key: 'promotions',
@@ -145,7 +145,7 @@ export const GROUPS: GroupMeta[] = [
   {
     key: 'updates',
     label: 'Updates',
-    hint: 'Transactional and recurring service mail. Receipts and statements are auto-protected; newsletter-style updates can be acted on.',
+    hint: 'Transactional and recurring service email. Receipts and statements are auto-protected; newsletter-style updates can be acted on.',
   },
   {
     key: 'forums',

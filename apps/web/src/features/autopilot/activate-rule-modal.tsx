@@ -131,10 +131,10 @@ export function ActivateRuleModal({
       title={enabling ? `Turn on "${name}"` : `Switch "${name}" to Active`}
       lead={
         enablingToAct
-          ? 'The rule acts on matching mail already in your inbox, and keeps acting on matching mail that arrives. Here is exactly what changes:'
+          ? 'Acts on matching email now and as it arrives:'
           : enabling
-            ? 'The rule starts collecting matches for your approval. Nothing moves until you approve a batch. Here is exactly what it would collect:'
-            : 'The rule stops asking and starts acting. Here is exactly what changes:'
+            ? 'Collects matches for your approval. Nothing moves until you approve:'
+            : 'Stops asking and starts acting:'
       }
       footnote="Pause any time — the rule card's toggle or Pause all."
       confirmLabel={
@@ -189,14 +189,14 @@ export function ActivateRuleModal({
                 pending. */}
             {primaryCommitsActive
               ? pendingApproximate
-                ? 'The suggestions already collected are covered by this — the rule acts on them itself and they clear from the pending list.'
+                ? 'Already-collected suggestions are covered and clear from the pending list.'
                 : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                     pendingCount === 1 ? 'is' : 'are'
                   } covered by this — the rule acts on ${
                     pendingCount === 1 ? 'it' : 'them'
                   } itself and ${pendingCount === 1 ? 'it clears' : 'they clear'} from the pending list.`
               : pendingApproximate
-                ? 'Suggestions already collected stay pending below — turning the rule on does not approve them. Approve or skip them separately.'
+                ? 'Already-collected suggestions stay pending. Approve or skip them separately.'
                 : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                     pendingCount === 1 ? 'stays' : 'stay'
                   } pending below — turning the rule on does not approve ${
@@ -304,7 +304,7 @@ function ActivationReport({
       <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{weeklyCopy}</div>
       <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
         Daily safety cap: {result.dailyActionCap.toLocaleString('en-US')} action
-        {result.dailyActionCap === 1 ? '' : 's'}. Extra matches wait for a later sweep.
+        {result.dailyActionCap === 1 ? '' : 's'}. The rest wait for the next check.
       </div>
       <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
         {recoveryCopy(rule, undoWindowDays)}
@@ -323,7 +323,7 @@ function actionableNowCopy(
       senderCount === 1 ? '' : 's'
     } actionable now. Those senders currently account for ${messageCount.toLocaleString('en-US')} inbox message${
       messageCount === 1 ? '' : 's'
-    }; unsubscribing does not remove existing mail.`;
+    }; unsubscribing does not remove existing email.`;
   }
   return `${senderCount.toLocaleString('en-US')} sender${senderCount === 1 ? '' : 's'} and ${messageCount.toLocaleString('en-US')} inbox message${messageCount === 1 ? '' : 's'} actionable now.`;
 }

@@ -151,7 +151,7 @@ function expandRow(senderName: string) {
 
 async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe') {
   const dialog = await screen.findByRole('dialog');
-  await screen.findByText(/emails currently match in Inbox/i);
+  await screen.findByText(/emails in Inbox now/i);
   const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
   await waitFor(() => expect(confirm).not.toBeDisabled());
   fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -182,7 +182,7 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText(/emails currently match in Inbox/i);
+    await screen.findByText(/emails in Inbox now/i);
 
     expect(h.track).toHaveBeenCalledWith('action_preview_viewed', {
       journey: 'first_relief',
@@ -204,7 +204,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    await screen.findByText(/emails currently match in Inbox/i);
+    await screen.findByText(/emails in Inbox now/i);
 
     // Preview open alone fires nothing.
     expect(actionTakenCalls()).toHaveLength(0);
@@ -235,7 +235,7 @@ describe('triage_action_taken (D159)', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
     await screen.findByText('Preview · before anything changes');
-    await screen.findByText(/emails currently match in Inbox/i);
+    await screen.findByText(/emails in Inbox now/i);
     expect(actionTakenCalls()).toHaveLength(0);
 
     // Second press of the same verb confirms the inline preview.

@@ -31,7 +31,7 @@ export function VerbTourCard({ onReplay }: { onReplay: () => void }) {
           }}
         >
           Keep, Archive, Unsubscribe, Later, and Delete — what each one does to a sender&rsquo;s
-          mail, and the key that triggers it. Shown once during setup; open it again whenever you
+          email, and the key that triggers it. Shown once during setup; open it again whenever you
           want.
         </p>
         <div style={{ marginTop: 12 }}>

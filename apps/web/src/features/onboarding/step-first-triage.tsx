@@ -130,8 +130,8 @@ export function StepFirstTriage({
         </h1>
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
-            ? "We didn't find enough repeated mail to make this step worthwhile. Continue to Senders to explore everything DeclutrMail found."
-            : `You reviewed ${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'}. Archive, Later, and Delete affected matching inbox mail only after you confirmed. Unsubscribe requests affect future delivery and cannot be recalled. Eligible moves can still be undone from Activity. Welcome aboard.`}
+            ? "We didn't find enough repeated email to make this step worthwhile. Continue to Senders to explore everything DeclutrMail found."
+            : `You reviewed ${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'}. Archive, Later, and Delete affected matching inbox email only after you confirmed. Unsubscribe requests affect future delivery and cannot be recalled. Eligible moves can still be undone from Activity. Welcome aboard.`}
         </p>
         <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
           {/* Tier-aware: the Free caveat is untrue for Plus/Pro. Unknown
@@ -260,5 +260,5 @@ const EMPTY_STATS: TriageSessionStats = {
  */
 const GOAL_FRAMING: Record<OnboardingCleanupGoal, string> = {
   reduce_newsletters: 'Let’s start with recurring newsletters that are easiest to reduce.',
-  clear_old_promotions: 'Let’s start with promotional mail that has been lingering.',
+  clear_old_promotions: 'Let’s start with promotional email that has been lingering.',
 };

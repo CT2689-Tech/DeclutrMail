@@ -37,7 +37,7 @@ describe('wakeBucket (D80)', () => {
   });
 
   it('rejects an invalid server wake time instead of inventing a repair bucket', () => {
-    expect(() => wakeBucket('not-a-time', NOW, TZ)).toThrow('Invalid Later wake time.');
+    expect(() => wakeBucket('not-a-time', NOW, TZ)).toThrow('Invalid Later return time.');
   });
 
   it('day 7 boundary belongs to eventually', () => {

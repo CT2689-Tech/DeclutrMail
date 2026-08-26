@@ -319,7 +319,7 @@ function unsupportedClause(split: OnboardingProtectionSplit): string {
   const they = stale === 1 ? 'It is' : 'They are';
   return (
     `${senders(stale)} ${stale === 1 ? 'was' : 'were'} protected because we counted messages you ` +
-    `sent — but we were counting any mail in a shared conversation, not mail addressed to them. ` +
+    `sent — but we were counting any email in a shared conversation, not email addressed to them. ` +
     `${they} still protected; we have not changed anything. Keep or unprotect each one here.`
   );
 }
@@ -339,8 +339,8 @@ function reviewBody(
       ? 'Here is the one to look at.'
       : `Here are ${shown} to look at.`
     : shown === 1
-      ? 'Here is the one shielding the most unread mail.'
-      : `Here are the ${shown} shielding the most unread mail.`;
+      ? 'Here is the one shielding the most unread email.'
+      : `Here are the ${shown} shielding the most unread email.`;
   if (split === null) {
     return `Protected senders stay out of bulk and automatic cleanup. ${ordering}`;
   }

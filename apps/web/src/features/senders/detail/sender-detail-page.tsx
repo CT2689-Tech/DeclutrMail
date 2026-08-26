@@ -490,10 +490,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
         const inFlightCopy =
           primaryType === 'delete'
-            ? `Moving mail from ${sender.name} to Trash…`
+            ? `Moving email from ${sender.name} to Trash…`
             : primaryType === 'later'
               ? `Moving ${sender.name} to Later…`
-              : `Archiving mail from ${sender.name}…`;
+              : `Archiving email from ${sender.name}…`;
         setPendingAction(null);
         toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
@@ -649,7 +649,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                         reason: `enqueue_${secondary.type}_after_unsub`,
                       });
                       toast(
-                        `Unsubscribe queued, but couldn't ${secondary.type} the backlog from ${sender.name}`,
+                        `Unsubscribe queued, but couldn't ${secondary.type} the older email from ${sender.name}`,
                         'warn',
                       );
                     },
@@ -724,7 +724,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       if (data.affectedCount === 0 || !data.undoToken) {
         // No-op: the sender has no inbox mail in the window. Keep the
         // canonical result visible, but never offer a dead Undo token.
-        toast(`No inbox mail from ${activeAction.senderName} to ${verbLowercase}`, 'info');
+        toast(`No inbox email from ${activeAction.senderName} to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         const resultLabel = getActionSemantics(data.verb).resultLabel;
@@ -767,7 +767,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     if (data.status === 'done') {
       if (data.affectedCount === 0 || !data.undoToken) {
         toast(
-          `No inbox mail from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
+          `No inbox email from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
           'info',
         );
         void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -810,12 +810,12 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
         'warn',
       );
     } else {
       toast(
-        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
+        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
         'warn',
       );
     }
@@ -1158,7 +1158,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                         ? 'Protected. Select to remove protection.'
                         : `Protected — ${protectionReasonClause(reason)}. Select to remove protection.`;
                     })()
-                  : 'Protect this sender from bulk and automatic mail-changing actions.'
+                  : 'Protect this sender from bulk and automatic actions that move email.'
               }
             >
               {detail.isProtected ? '◆ Protect' : 'Protect'}
@@ -1201,7 +1201,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       `mail_messages`. Two windows, one sentence, and the
                       pronoun tied the percentage to the wrong one. Name
                       the window instead of implying a denominator. */}
-                  of the last 90 days&rsquo; mail was marked read.
+                  of the last 90 days&rsquo; email was marked read.
                   {/* THE SPLIT (F012). A third-party sweeper can mark
                       mail read through the API, and on the mailbox this
                       was measured against one did so 20,819 times — 27.5%

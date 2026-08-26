@@ -380,12 +380,12 @@ export function TriageScreen({
       invalidateAfterDecision(qc);
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
         'warn',
       );
     } else {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
+        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
         'warn',
       );
     }
@@ -437,12 +437,20 @@ export function TriageScreen({
       verb: pendingAction.verb.toLowerCase() as 'archive' | 'unsubscribe' | 'later' | 'delete',
     });
   }, [journey, pendingAction, previewInboxCount]);
+  // Blocked while the live count has not resolved (D226 — no mutation
+  // without a real number) AND when it resolved to zero: an inbox-moving
+  // verb with nothing to move is a no-op that still costs a cleanup
+  // action on Free. The sheet already refuses the zero case
+  // (`nothingToActOn`, action-sheet.tsx), and this is the SAME decision
+  // with the sheet skipped via D34, so it has to refuse it identically.
+  // Unsubscribe is excluded for the same reason it is in the sheet — it
+  // cuts FUTURE mail, so it is real work at a zero count.
   const inlinePreviewBlocked =
     pendingAction?.surface === 'inline' &&
     (pendingAction.verb === 'Archive' ||
       pendingAction.verb === 'Later' ||
       pendingAction.verb === 'Delete') &&
-    typeof previewInboxCount !== 'number';
+    (typeof previewInboxCount !== 'number' || previewInboxCount === 0);
 
   // Drive the async-action lifecycle off the polled status. On `done`
   // the queue is invalidated and the refetch drops the decided row —
@@ -834,11 +842,10 @@ export function TriageScreen({
                       });
                       toast(
                         getActionFailureCopy('enqueue', {
-                          action: `archive the backlog from ${row.senderName}`,
+                          action: `archive the older email from ${row.senderName}`,
                           whatChanged: 'The unsubscribe request was queued.',
-                          whatDidNotChange: 'The backlog was not archived.',
-                          nextStep:
-                            'Archive the backlog from Senders if you still want to move it.',
+                          whatDidNotChange: 'The older email was not archived.',
+                          nextStep: 'Archive it from Senders if you still want to move it.',
                         }).message,
                         'warn',
                       );
@@ -1240,7 +1247,7 @@ export function TriageScreen({
           body={
             <>
               Choose what happens for each sender: Keep, Archive, Unsubscribe, Later, or Delete.
-              You’ll see the affected mail before anything changes.{' '}
+              You’ll see the affected email before anything changes.{' '}
               <a href="/inbox-simulator" style={{ color: color.primary, fontWeight: 600 }}>
                 Practice with sample data.
               </a>

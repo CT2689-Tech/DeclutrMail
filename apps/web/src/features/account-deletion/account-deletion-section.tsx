@@ -124,7 +124,7 @@ function PendingState({
         {executing
           ? 'Deletion is in progress — your data is being removed.'
           : basis === 'waived-immediate'
-            ? 'Deletion requested with the undo waiver — your data deletes shortly.'
+            ? 'Deletion requested without the undo wait — your data deletes shortly.'
             : `Deletion scheduled for ${formatDate(effectiveAt, timeZone)}.`}
       </p>
       {!executing && basis === 'undo-window' && (

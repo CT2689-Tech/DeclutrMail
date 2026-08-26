@@ -68,8 +68,8 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
           . Connecting grants that access, but does not change any email.
         </ConsentStep>
         <ConsentStep number="2" title="Fetched during the scan">
-          DeclutrMail fetches only sender and message metadata used to group mail and show previews.
-          Full bodies and attachments are not fetched.
+          DeclutrMail fetches only sender and message metadata used to group email and show
+          previews. Full bodies and attachments are not fetched.
           <ConsentDetails label="Show fetched fields" items={GMAIL_MESSAGE_STORAGE_LABELS} />
         </ConsentStep>
         <ConsentStep number="3" title="Stored in DeclutrMail">
@@ -86,7 +86,7 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
         </ConsentStep>
         <ConsentStep number="4" title="Actions you approve">
           After the scan, every Archive, Unsubscribe, Later, or Delete confirmation identifies the
-          affected mail, future-mail behavior, and available recovery before anything changes. Keep
+          affected email, future-mail behavior, and available recovery before anything changes. Keep
           records a sender decision without moving email.
         </ConsentStep>
       </ol>

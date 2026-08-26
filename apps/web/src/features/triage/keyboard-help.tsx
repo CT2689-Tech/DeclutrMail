@@ -62,7 +62,7 @@ const VERB_HELP: Record<(typeof VERB_ORDER)[number], string> = {
   Archive: 'Archive the expanded sender',
   Unsubscribe: 'Unsubscribe from the expanded sender',
   Later: 'Move the expanded sender to Later',
-  Delete: 'Move the expanded sender’s inbox mail to Gmail Trash',
+  Delete: 'Move the expanded sender’s inbox email to Gmail Trash',
 };
 
 /**

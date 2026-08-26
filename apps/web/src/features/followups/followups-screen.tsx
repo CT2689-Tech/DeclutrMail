@@ -97,7 +97,7 @@ export function FollowupsScreen() {
       <ScreenIntro
         id="followups"
         title="Followups"
-        body="Based on your sent mail: conversations where you wrote last and haven't heard back."
+        body="Based on your sent email: conversations where you wrote last and haven't heard back."
       />
 
       <FollowupsScopeDisclosure />
@@ -220,7 +220,7 @@ function FollowupsScopeDisclosure() {
           not full email contents — to find conversations where your latest saved email is outgoing.
         </p>
         <p style={{ margin: 0 }}>
-          This is not live Gmail status. Checks run about every six hours and consider sent mail
+          This is not live Gmail status. Checks run about every six hours and consider sent email
           from the last 60 days, so a recent reply can remain here until the next check.
         </p>
         <p style={{ margin: 0 }}>
@@ -537,7 +537,7 @@ function LoadingState() {
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>
-        Loading follow-ups from your sent mail
+        Loading follow-ups from your sent email
       </span>
     </div>
   );
@@ -557,7 +557,7 @@ function FollowupsErrorState({ onRetry }: { onRetry: () => void }) {
     >
       <RecoverableErrorState
         title="We couldn't load your follow-ups"
-        description="Your sent mail and tracked follow-ups are unchanged. Try again in a moment."
+        description="Your sent email and tracked follow-ups are unchanged. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

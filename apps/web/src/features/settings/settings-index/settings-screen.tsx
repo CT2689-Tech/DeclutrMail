@@ -164,7 +164,7 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
 
 /** Left-nav anchor targets — ids stamped on each SectionLabel. */
 const NAV_SECTIONS = [
-  { id: 'mailboxes', label: 'Mailboxes' },
+  { id: 'mailboxes', label: 'mailboxes' },
   { id: 'actions', label: 'Actions' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'autopilot', label: 'Autopilot' },

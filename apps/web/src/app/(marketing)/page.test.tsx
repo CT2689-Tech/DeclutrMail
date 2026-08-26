@@ -102,10 +102,10 @@ describe('landing page — D134', () => {
     const receipt = container.querySelector('.dm-mkt-ledger-receipt');
     expect(receipt?.textContent).toContain('412 messages archived from Inbox');
     expect(receipt?.textContent).toContain('Still searchable in All Mail');
-    expect(receipt?.textContent).toContain('existing mail only');
+    expect(receipt?.textContent).toContain('existing email only');
     expect(
       screen.getByRole('img', {
-        name: /412 messages leave Inbox, remain searchable in All Mail, affect existing mail only/i,
+        name: /412 messages leave Inbox, remain searchable in All Mail, affect existing email only/i,
       }),
     ).toBeInTheDocument();
   });
