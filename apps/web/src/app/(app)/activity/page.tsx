@@ -18,7 +18,7 @@ import {
   activityInfiniteQueryOptions,
   activityWeeklyReviewQueryOptions,
 } from '@/features/activity/api/query-options';
-import { getServerMe } from '@/features/auth/api/server-me';
+import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import {
   activityListPath,
   parseActivityListEnvelope,
@@ -45,7 +45,6 @@ export default async function ActivityPage({
 }) {
   const [requestHeaders, params] = await Promise.all([headers(), searchParams]);
   const cookieHeader = requestHeaders.get('cookie') ?? '';
-  const me = await getServerMe(cookieHeader);
   const url = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (typeof value === 'string') url.set(key, value);
@@ -54,7 +53,7 @@ export default async function ActivityPage({
   const dates = readActivityDateFilters(url);
   const outcomes = readActivityOutcomeFilters(url);
   const filters = readActivityFilters(url, dates, outcomes);
-  const eligible = me?.activeMailboxId != null;
+  const eligible = hasServerAccessCookie(cookieHeader);
 
   return (
     <ServerQueryHydration

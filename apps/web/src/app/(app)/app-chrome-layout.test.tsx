@@ -40,21 +40,34 @@ import { makeQueryClient } from '@/lib/query-client';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, type FetchStubHandler } from '@/test/fetch-stub';
 
-const { pushSpy, replaceSpy, refreshSpy, undoTrayPropsSpy, pathnameRef, searchParamsRef } =
-  vi.hoisted(() => ({
-    pushSpy: vi.fn(),
-    replaceSpy: vi.fn(),
-    refreshSpy: vi.fn(),
-    undoTrayPropsSpy: vi.fn(),
-    // Mutable so tests can drive the pathname-dependent branch (the
-    // user-scoped-route fallback under no active mailbox). Defaults to a
-    // mailbox-scoped route so every pre-existing test is unaffected.
-    pathnameRef: { current: '/senders' },
-    searchParamsRef: { current: '' },
-  }));
+const {
+  pushSpy,
+  prefetchSpy,
+  replaceSpy,
+  refreshSpy,
+  undoTrayPropsSpy,
+  pathnameRef,
+  searchParamsRef,
+} = vi.hoisted(() => ({
+  pushSpy: vi.fn(),
+  prefetchSpy: vi.fn(),
+  replaceSpy: vi.fn(),
+  refreshSpy: vi.fn(),
+  undoTrayPropsSpy: vi.fn(),
+  // Mutable so tests can drive the pathname-dependent branch (the
+  // user-scoped-route fallback under no active mailbox). Defaults to a
+  // mailbox-scoped route so every pre-existing test is unaffected.
+  pathnameRef: { current: '/senders' },
+  searchParamsRef: { current: '' },
+}));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: pushSpy, replace: replaceSpy, refresh: refreshSpy }),
+  useRouter: () => ({
+    push: pushSpy,
+    prefetch: prefetchSpy,
+    replace: replaceSpy,
+    refresh: refreshSpy,
+  }),
   usePathname: () => pathnameRef.current,
   useSearchParams: () => new URLSearchParams(searchParamsRef.current),
 }));
@@ -71,6 +84,7 @@ import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbo
 afterEach(() => {
   vi.restoreAllMocks();
   pushSpy.mockClear();
+  prefetchSpy.mockClear();
   replaceSpy.mockClear();
   refreshSpy.mockClear();
   undoTrayPropsSpy.mockClear();
@@ -451,6 +465,29 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(laterNav).toHaveAttribute('aria-current', 'page');
     await user.click(laterNav);
     expect(pushSpy).toHaveBeenCalledWith('/later');
+  });
+
+  it('prefetches a sidebar destination on intent before navigation', async () => {
+    installFetchStub([
+      ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderLayout();
+
+    const triageNav = await screen.findByRole('button', { name: 'Triage' });
+    await user.hover(triageNav);
+
+    expect(prefetchSpy).toHaveBeenCalledWith('/triage');
+    expect(pushSpy).not.toHaveBeenCalled();
+
+    await user.click(triageNav);
+    expect(pushSpy).toHaveBeenCalledWith('/triage');
   });
 
   it('mounts the grace-period banner above the shell while a deletion is pending (D216)', async () => {

@@ -8,7 +8,6 @@ vi.mock('@sentry/nextjs', () => ({
 }));
 
 import { makeQueryClient } from '@/lib/query-client';
-import { shouldPrefetchTriage } from './api/query-options';
 import { useTriageQueue, useTriageStats } from './api/use-triage-queue';
 import { useTodaySummary } from './api/use-triage-queue';
 import { useMeSettings } from '@/features/settings/api/use-me-settings';
@@ -38,29 +37,25 @@ describe('ServerTriageBoundary', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const fetchSpy = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith('/api/triage/queue')) {
-        return Response.json({ data: [] });
-      }
-      if (url.endsWith('/api/triage/stats')) {
+      if (url.endsWith('/api/triage/bootstrap')) {
         return Response.json({
           data: {
-            decidedToday: 0,
-            archivedToday: 0,
-            unsubscribedToday: 0,
-            laterToday: 0,
-            freeRemaining: null,
-            tier: 'pro',
-          },
-        });
-      }
-      if (url.endsWith('/api/triage/today-summary')) {
-        return Response.json({
-          data: {
-            receivedToday: 0,
-            sendersToday: 0,
-            handledAutomatically: 0,
-            queuedDecisions: 0,
-            noiseReductionPct: null,
+            queue: [],
+            stats: {
+              decidedToday: 0,
+              archivedToday: 0,
+              unsubscribedToday: 0,
+              laterToday: 0,
+              freeRemaining: null,
+              tier: 'pro',
+            },
+            todaySummary: {
+              receivedToday: 0,
+              sendersToday: 0,
+              handledAutomatically: 0,
+              queuedDecisions: 0,
+              noiseReductionPct: null,
+            },
           },
         });
       }
@@ -79,7 +74,7 @@ describe('ServerTriageBoundary', () => {
     render(<QueryClientProvider client={makeQueryClient()}>{boundary}</QueryClientProvider>);
 
     expect(screen.getByText('Triage ready')).toBeInTheDocument();
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('does not retry designed 4xx states during server prefetch', async () => {
@@ -99,15 +94,7 @@ describe('ServerTriageBoundary', () => {
       children: <div>Fallback</div>,
     });
 
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
-  });
-
-  it('prefetches only for an authed mailbox that has the triage capability', () => {
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'pro' })).toBe(true);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'free' })).toBe(true);
-    expect(shouldPrefetchTriage({ activeMailboxId: null, tier: 'pro' })).toBe(false);
-    expect(shouldPrefetchTriage(null)).toBe(false);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'not-a-tier' })).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('does not fetch mailbox data when the route is not eligible', async () => {

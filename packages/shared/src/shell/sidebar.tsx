@@ -64,10 +64,17 @@ const NAV: NavGroup[] = [
 export function Sidebar({
   active,
   onNavigate,
+  onNavigateIntent,
   counts = {},
 }: {
   active: string;
   onNavigate: (id: string) => void;
+  /**
+   * Optional early navigation signal for framework hosts to prefetch a
+   * destination before the click. Fired on pointer hover, keyboard focus,
+   * and touch start; active destinations are ignored.
+   */
+  onNavigateIntent?: ((id: string) => void) | undefined;
   /**
    * Per-item badge slot. A `string | number` renders the built-in
    * count pill; a React element renders as-is (bring-your-own badge —
@@ -137,12 +144,18 @@ export function Sidebar({
               {group.items.map((item) => {
                 const on = active === item.id;
                 const badge = counts[item.id];
+                const signalNavigationIntent = () => {
+                  if (!on) onNavigateIntent?.(item.id);
+                };
                 return (
                   <button
                     key={item.id}
                     onClick={() => onNavigate(item.id)}
+                    onFocus={signalNavigationIntent}
+                    onTouchStart={signalNavigationIntent}
                     aria-current={on ? 'page' : undefined}
                     onMouseEnter={(e) => {
+                      signalNavigationIntent();
                       if (!on) e.currentTarget.style.background = 'rgba(14,20,19,0.04)';
                     }}
                     onMouseLeave={(e) => {

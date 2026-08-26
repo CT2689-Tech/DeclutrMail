@@ -2,7 +2,18 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { getServerMe } from './server-me';
+import { getServerMe, hasServerAccessCookie } from './server-me';
+
+describe('hasServerAccessCookie', () => {
+  it('detects only a non-empty access cookie', () => {
+    expect(hasServerAccessCookie('theme=dark; dm_access=token; dm_refresh=refresh')).toBe(true);
+    expect(hasServerAccessCookie('dm_access=token.with=padding')).toBe(true);
+    expect(hasServerAccessCookie('theme=dark; dm_refresh=refresh')).toBe(false);
+    expect(hasServerAccessCookie('other_dm_access=token')).toBe(false);
+    expect(hasServerAccessCookie('dm_access=')).toBe(false);
+    expect(hasServerAccessCookie('')).toBe(false);
+  });
+});
 
 describe('getServerMe', () => {
   afterEach(() => {

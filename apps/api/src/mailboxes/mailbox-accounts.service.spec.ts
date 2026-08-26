@@ -135,6 +135,129 @@ describe('MailboxAccountsService — explicit disconnect and indexed-data deleti
     });
   });
 
+  /**
+   * Pins BOTH `created_at` values.
+   *
+   * The first version of this test left the seeded mailbox on its `now()`
+   * default and gave the preferred one a date in the past, so `created_at`
+   * ASC alone already produced the expected row: deleting the preference
+   * `CASE` from `resolveActiveForRequest` left all 53 mailbox/auth/user
+   * tests green. The preference must be the ONLY thing that can reorder
+   * these two, or the assertion proves nothing.
+   */
+  async function seedTwoActiveMailboxes(): Promise<{
+    workspaceId: string;
+    ownerId: string;
+    first: string;
+    preferred: string;
+    disconnected: string;
+  }> {
+    const seeded = await seed(db);
+    await db
+      .update(mailboxAccounts)
+      .set({ createdAt: new Date('2026-01-01T00:00:00Z') })
+      .where(eq(mailboxAccounts.id, seeded.mailboxId));
+    const [preferred, disconnected] = await db
+      .insert(mailboxAccounts)
+      .values([
+        {
+          workspaceId: seeded.workspaceId,
+          userId: seeded.ownerId,
+          provider: 'gmail',
+          providerAccountId: 'preferred@gmail.com',
+          status: 'active',
+          // LATER than the seeded mailbox on purpose — `created_at` ASC
+          // ranks this one SECOND, so only the preference can lift it.
+          createdAt: new Date('2026-01-02T00:00:00Z'),
+        },
+        {
+          workspaceId: seeded.workspaceId,
+          userId: seeded.ownerId,
+          provider: 'gmail',
+          providerAccountId: 'disconnected@gmail.com',
+          status: 'disconnected',
+          createdAt: new Date('2026-01-03T00:00:00Z'),
+        },
+      ])
+      .returning({ id: mailboxAccounts.id });
+    return {
+      workspaceId: seeded.workspaceId,
+      ownerId: seeded.ownerId,
+      first: seeded.mailboxId,
+      preferred: preferred!.id,
+      disconnected: disconnected!.id,
+    };
+  }
+
+  it('falls back to the first active mailbox by connection order when no preference is stored', async () => {
+    const ws = await seedTwoActiveMailboxes();
+    await expect(
+      service.resolveActiveForRequest({ workspaceId: ws.workspaceId, userId: ws.ownerId }),
+    ).resolves.toEqual({ kind: 'resolved', id: ws.first });
+  });
+
+  it('lifts the stored preference above connection order', async () => {
+    const ws = await seedTwoActiveMailboxes();
+    await db
+      .update(users)
+      .set({ preferences: { activeMailboxId: ws.preferred } })
+      .where(eq(users.id, ws.ownerId));
+    await expect(
+      service.resolveActiveForRequest({ workspaceId: ws.workspaceId, userId: ws.ownerId }),
+    ).resolves.toEqual({ kind: 'resolved', id: ws.preferred });
+  });
+
+  it('ignores a preference pointing at a disconnected mailbox', async () => {
+    const ws = await seedTwoActiveMailboxes();
+    await db
+      .update(users)
+      .set({ preferences: { activeMailboxId: ws.disconnected } })
+      .where(eq(users.id, ws.ownerId));
+    await expect(
+      service.resolveActiveForRequest({ workspaceId: ws.workspaceId, userId: ws.ownerId }),
+    ).resolves.toEqual({ kind: 'resolved', id: ws.first });
+  });
+
+  it('honours an explicit request for an active mailbox', async () => {
+    const ws = await seedTwoActiveMailboxes();
+    await expect(
+      service.resolveActiveForRequest({
+        workspaceId: ws.workspaceId,
+        userId: ws.ownerId,
+        requestedMailboxId: ws.preferred,
+      }),
+    ).resolves.toEqual({ kind: 'resolved', id: ws.preferred });
+  });
+
+  it('separates a not-owned request from a workspace with nothing active', async () => {
+    const ws = await seedTwoActiveMailboxes();
+    // Active mailboxes exist, the requested one is not among them.
+    await expect(
+      service.resolveActiveForRequest({
+        workspaceId: ws.workspaceId,
+        userId: ws.ownerId,
+        requestedMailboxId: ws.disconnected,
+      }),
+    ).resolves.toEqual({ kind: 'not-owned' });
+
+    // Disconnect everything: the SAME stale header must now report
+    // `none-active`, because the recovery screen is the reconnect gate.
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.workspaceId, ws.workspaceId));
+    await expect(
+      service.resolveActiveForRequest({
+        workspaceId: ws.workspaceId,
+        userId: ws.ownerId,
+        requestedMailboxId: ws.first,
+      }),
+    ).resolves.toEqual({ kind: 'none-active' });
+    await expect(
+      service.resolveActiveForRequest({ workspaceId: ws.workspaceId, userId: ws.ownerId }),
+    ).resolves.toEqual({ kind: 'none-active' });
+  });
+
   it('requires the mailbox-specific phrase and idempotently schedules a durable purge', async () => {
     const seeded = await seed(db);
     const input = {

@@ -5,7 +5,7 @@ import { activeSessions, schema, users, workspaces } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import type { DrizzleDb } from '../db/db.module.js';
 import { hashRefreshToken } from './jwt.service.js';
@@ -13,6 +13,67 @@ import type { JwtService } from './jwt.service.js';
 import { SessionsService } from './sessions.service.js';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
+
+describe('SessionsService.lookupByJti hot-path writes', () => {
+  let pg: PGlite;
+  let db: Db;
+
+  beforeAll(async () => {
+    pg = await freshTestPglite();
+    db = drizzle(pg, { schema });
+  });
+
+  afterAll(async () => {
+    await pg.close();
+  });
+
+  it('coalesces repeated last-used bumps for one active session', async () => {
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({ name: 'Session touch workspace' })
+      .returning({ id: workspaces.id });
+    const [user] = await db
+      .insert(users)
+      .values({ workspaceId: workspace!.id, email: 'session-touch@example.com' })
+      .returning({ id: users.id });
+    const oldLastUsed = new Date('2020-01-01T00:00:00Z');
+    const jti = randomUUID();
+    const [session] = await db
+      .insert(activeSessions)
+      .values({
+        userId: user!.id,
+        jti,
+        refreshTokenHash: 'touch-refresh-hash',
+        lastUsedAt: oldLastUsed,
+      })
+      .returning({ id: activeSessions.id });
+    const service = new SessionsService(db as unknown as DrizzleDb, null, {} as JwtService);
+
+    await expect(service.lookupByJti(jti)).resolves.toMatchObject({ id: session!.id });
+    await vi.waitFor(async () => {
+      const [row] = await db
+        .select({ lastUsedAt: activeSessions.lastUsedAt })
+        .from(activeSessions)
+        .where(eq(activeSessions.id, session!.id));
+      expect(row!.lastUsedAt.getTime()).toBeGreaterThan(oldLastUsed.getTime());
+    });
+
+    // A second authenticated request in the same burst still validates
+    // against the database, but must not create another UPDATE/dead tuple.
+    const sentinel = new Date('2021-01-01T00:00:00Z');
+    await db
+      .update(activeSessions)
+      .set({ lastUsedAt: sentinel })
+      .where(eq(activeSessions.id, session!.id));
+    await expect(service.lookupByJti(jti)).resolves.toMatchObject({ id: session!.id });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const [row] = await db
+      .select({ lastUsedAt: activeSessions.lastUsedAt })
+      .from(activeSessions)
+      .where(eq(activeSessions.id, session!.id));
+    expect(row!.lastUsedAt).toEqual(sentinel);
+  });
+});
 
 describe('SessionsService.lookupActiveById', () => {
   let pg: PGlite;

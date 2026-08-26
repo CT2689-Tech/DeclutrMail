@@ -38,12 +38,15 @@ const TRUST_CLAIMS = [
 export function AppShell({
   active,
   onNavigate,
+  onNavigateIntent,
   counts,
   topbarRight,
   children,
 }: {
   active: string;
   onNavigate: (id: string) => void;
+  /** Early signal used by framework hosts to prefetch nav destinations. */
+  onNavigateIntent?: ((id: string) => void) | undefined;
   /** Per-item badge slot — see `Sidebar`'s `counts` doc. */
   counts?: Partial<Record<string, string | number | ReactNode>>;
   /**
@@ -118,7 +121,12 @@ export function AppShell({
     >
       {/* Desktop sidebar — CSS-hidden below the `sm` breakpoint. */}
       <div className="dm-sidebar-desktop" style={{ flexShrink: 0 }}>
-        <Sidebar active={active} onNavigate={onNavigate} counts={counts ?? {}} />
+        <Sidebar
+          active={active}
+          onNavigate={onNavigate}
+          onNavigateIntent={onNavigateIntent}
+          counts={counts ?? {}}
+        />
       </div>
 
       {/* Mobile drawer + scrim — the hamburger is CSS-hidden on desktop,
@@ -166,7 +174,12 @@ export function AppShell({
             >
               ×
             </button>
-            <Sidebar active={active} onNavigate={navigate} counts={counts ?? {}} />
+            <Sidebar
+              active={active}
+              onNavigate={navigate}
+              onNavigateIntent={onNavigateIntent}
+              counts={counts ?? {}}
+            />
           </div>
         </>
       )}

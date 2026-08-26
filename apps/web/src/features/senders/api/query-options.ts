@@ -64,10 +64,6 @@ export function sendersQueryFromSearchParams(params: SendersSearchParams): Sende
   return sendersListQueryFromScreen(parseSendersScope(searchParamsFromRecord(params)));
 }
 
-export function shouldPrefetchSenders(me: { activeMailboxId: string | null } | null): boolean {
-  return me !== null && me.activeMailboxId !== null;
-}
-
 type SendersReader = (
   params: ListSendersParams,
   signal: AbortSignal,

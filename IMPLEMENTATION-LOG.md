@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-248 decisions — ⬜ Not started 73 · 🔵 Shipped 110 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
+249 decisions — ⬜ Not started 73 · 🔵 Shipped 111 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -296,6 +296,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D256 | A sender leaves the Screener even if it never repeats | 🔵 | #587 |  |  |
 | D257 | An engine read states its age, and refreshes on attention | 🔵 | #587 |  |  |
 | D258 | Signup attribution survives the Google hop | 🔵 | #640 |  |  |
+| D259 | A route's server render is one request per surface | 🔵 | #641 |  |  |
 | D260 | Complimentary tier is a floor, granted by email | 🔵 | #642 |  |  |
 
 <!-- AUTO:DECISIONS:END -->

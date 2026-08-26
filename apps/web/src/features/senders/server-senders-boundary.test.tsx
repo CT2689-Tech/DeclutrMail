@@ -15,7 +15,6 @@ import {
   DEFAULT_SENDERS_QUERY,
   sendersListQueryFromScreen,
   sendersQueryFromSearchParams,
-  shouldPrefetchSenders,
 } from './api/query-options';
 import { useSenders } from './api/use-senders';
 import { useSendersSummary } from './api/use-senders-summary';
@@ -99,13 +98,6 @@ describe('ServerSendersBoundary', () => {
 
     expect(screen.getByText('Reconnect required')).toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('prefetches the exact route URL whenever a mailbox is active', () => {
-    const me = { activeMailboxId: 'mailbox-1' };
-    expect(shouldPrefetchSenders(me)).toBe(true);
-    expect(shouldPrefetchSenders(null)).toBe(false);
-    expect(shouldPrefetchSenders({ activeMailboxId: null })).toBe(false);
   });
 
   it('hydrates the same list key the Senders screen reads on a bare URL', () => {

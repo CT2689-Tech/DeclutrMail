@@ -32,6 +32,10 @@ import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { isFeatureEnabled } from '@/lib/flags';
 
+function shellRoute(id: string): string {
+  return id === 'snoozed' ? '/later' : `/${id}`;
+}
+
 /**
  * Authed app chrome. Wires the routing-agnostic AppShell to the
  * Next.js router — `active` from the path, `onNavigate` to `router.push`.
@@ -258,7 +262,8 @@ function AppChrome({ children }: { children: ReactNode }) {
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
-            onNavigate={(id) => router.push(id === 'snoozed' ? '/later' : `/${id}`)}
+            onNavigate={(id) => router.push(shellRoute(id))}
+            onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
             counts={{
               ...tierChips,
               ...(sendersCount === undefined ? {} : { senders: sendersCount }),
