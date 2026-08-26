@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-246 decisions — ⬜ Not started 73 · 🔵 Shipped 114 · 🟢 Verified 56 · 🟡 In progress 1 · 🚫 Retired 2
+246 decisions — ⬜ Not started 73 · 🔵 Shipped 108 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
