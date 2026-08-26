@@ -68,6 +68,35 @@ export type EvidenceCheck = (evidence: string) => 'no-path' | 'exists' | 'missin
  * recorded. Pure: the caller supplies the evidence check so this stays
  * testable without a filesystem.
  */
+/**
+ * The repo file an evidence string cites, or `null` if it cites none.
+ *
+ * The 🟢 audit demotes a Verified row whose cited file has vanished, so
+ * everything this returns is load-bearing — and it has been wrong twice:
+ *
+ * 1. **Alternation order.** `(?:ts|tsx)` takes the first branch that
+ *    matches, so `…noise-archive.test.tsx` truncated to a `.ts` path
+ *    that does not exist. Six decisions were demoted with "the cited
+ *    evidence file no longer exists" written into rows whose files sat
+ *    right there. EXTENSIONS ARE ORDERED LONGEST-FIRST, and that is
+ *    load-bearing.
+ * 2. **`cmd:` receipts are not citations.** `verify-d --cmd` records the
+ *    command it ran, and a workspace-scoped one carries a
+ *    workspace-relative path (`pnpm --filter @declutrmail/web … run
+ *    src/…/action-sheet.test.tsx`). Resolved against the repo root that
+ *    file is missing, so the audit would demote the row whose evidence
+ *    is strongest: a command that ran and exited 0 at a recorded commit.
+ *
+ * Both failures had the same shape — a path this function could not
+ * resolve, reported as a file that is not there — and neither had a
+ * test, which is why the first one ran for a month.
+ */
+export function citedEvidencePath(evidence: string): string | null {
+  if (evidence.startsWith('cmd:')) return null;
+  const match = /([\w@./-]+\.(?:tsx|ts|sql|sh|md))/.exec(evidence);
+  return match?.[1] ?? null;
+}
+
 export function composeRow(
   decision: Decision,
   fragment: Fragment | undefined,

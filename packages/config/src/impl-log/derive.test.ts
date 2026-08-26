@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  citedEvidencePath,
   closedDecisions,
   composeRow,
   decisionsOwnedBy,
@@ -134,5 +135,49 @@ describe('decisionsOwnedBy — what a PR is answerable for', () => {
 
   it('owns nothing for an unrelated change', () => {
     expect([...decisionsOwnedBy('Fixes a typo', ['apps/web/src/page.tsx'])]).toEqual([]);
+  });
+});
+
+describe('citedEvidencePath', () => {
+  // Both branches below are regression tests for demotions that actually
+  // happened. Neither had a test before, which is why the first ran for
+  // a month over every recorded 🟢.
+  it('keeps the x on a .tsx path — alternation is ordered longest-first', () => {
+    expect(
+      citedEvidencePath('apps/web/src/features/brief/noise-archive.test.tsx — Done marks'),
+    ).toBe('apps/web/src/features/brief/noise-archive.test.tsx');
+    expect(
+      citedEvidencePath('apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded'),
+    ).toBe('apps/web/src/features/triage/triage-screen.stories.tsx');
+  });
+
+  it('still resolves the other cited extensions', () => {
+    expect(citedEvidencePath('packages/db/migrations/0074_purge.sql applied')).toBe(
+      'packages/db/migrations/0074_purge.sql',
+    );
+    expect(citedEvidencePath('scripts/dev-up.sh runs clean')).toBe('scripts/dev-up.sh');
+    expect(citedEvidencePath('docs/adr/0019-verb-registry-and-kauld.md')).toBe(
+      'docs/adr/0019-verb-registry-and-kauld.md',
+    );
+    expect(citedEvidencePath('packages/workers/src/reasoning.test.ts — exhaustiveness')).toBe(
+      'packages/workers/src/reasoning.test.ts',
+    );
+  });
+
+  it('treats a verify-d cmd receipt as no citation at all', () => {
+    // The path inside is relative to the FILTERED WORKSPACE, not the repo
+    // root, so reading it as a citation demotes the row whose evidence is
+    // strongest — a command that ran and exited 0 at a recorded commit.
+    expect(
+      citedEvidencePath(
+        'cmd: `pnpm --filter @declutrmail/web exec vitest run src/features/triage/action-sheet.test.tsx` → exit 0 @ 2b7b57e 2026-08-26',
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null when the evidence names no file', () => {
+    expect(citedEvidencePath('docs/adr/ has template + 6 ADRs')).toBeNull();
+    expect(citedEvidencePath('manual')).toBeNull();
+    expect(citedEvidencePath('')).toBeNull();
   });
 });

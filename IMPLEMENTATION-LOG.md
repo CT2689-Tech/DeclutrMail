@@ -79,12 +79,12 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D28 | Queue ranking: **Hybrid (confidence-first first 30 days, noise-impact after) | 🔵 | #32 |  |  |
 | D29 | Screen as the 4th verb (S key) | 🔵 | #44 |  |  |
 | D30 | Queue size: **Adaptive 5–12 based on inbox activity | 🟢 | #112 | apps/api/src/triage/triage.service.spec.ts — D30 adaptive queue sizing |  |
-| D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🔵 | #44 | apps/web/src/features/triage/action-toolbar.test.tsx — confidence>0.85 emphasis | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D32 | No bulk operations in Triage | 🔵 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
-| D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🔵 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D31 | Recommended verb emphasis: **Highlight only when confidence > 0.85 | 🟢 | #44 | apps/web/src/features/triage/action-toolbar.test.tsx — confidence>0.85 emphasis |  |
+| D32 | No bulk operations in Triage | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — no bulk-select UI asserted |  |
+| D33 | Empty state: **Stats summary + come back tomorrow + subtle upgrade nudge | 🟢 | #44 | apps/web/src/features/triage/triage-screen.test.tsx — empty-state stats+nudge |  |
 | D34 | Action sheet on Archive/Unsubscribe: **Always show + remember-preference toggle in Settings | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — remember-preference + always-show | Truth sweep 2026-07-02 (🟡→🔵): server-side persistence under users.preferences.actionSheetPrefs (store.ts:32 documents it) + per-verb ActionSheetPrefsCard in Settings shipped via #224 — 2026-06-11 in-memory-only note stale. Pending verify-d |
 | D35 | Undo via persistent action tray (Doc 05 §11) | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts | Evidence updated 2026-06-11: tray wired to triage in #180; tray requires injected dataSource in #182 |
-| D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🔵 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D36 | Row content: **Collapse/expand pattern — critical info default, full stats on click | 🟢 | #44 | apps/web/src/features/triage/triage-screen.stories.tsx — RowExpanded variant (collapse/expand) |  |
 | D37 | Mobile layout: **Vertical card with same collapse/expand pattern + swipe gestures | 🔵 | #293 |  |  |
 | D38 | First-time education: **Onboarding-only tour + tooltips on hover | 🔵 | #501 |  | Reclaimed 2026-07-28 (D158): the tour has never been built. Prior D38 trailers were umbrella mis-tags, now rewritten in the source PR bodies; the senders wire-model work lives at ADR-0029 |
 | D39 | Sender Detail layout order: **Header → Recommendation banner → Actions → Messages → Stats → Charts → History | 🟢 | #30 | apps/api/src/senders/senders.read-service.spec.ts — layout order |  |
@@ -256,7 +256,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D205 | 4-module auth structure + AuthSignupOrchestrator exception (refines D155, D204) | 🔵 | #121 |  |  |
 | D206 | Per-layer test templates + shared harnesses (refines D182, D183, D184) | 🔵 | #127 |  |  |
 | D207 | Discover→Decide→Automate→Audit→Undo as the load-bearing UI principle | 🟢 | #113 | apps/api/src/autopilot/autopilot.read-service.spec.ts |  |
-| D208 | "What happens next" preview mandatory before every automation or destructive action | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation | Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D208 | "What happens next" preview mandatory before every automation or destructive action | 🟢 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — preview mandatory before mutation |  |
 | D209 | Trust-first microcopy hard rule (extends D194) | 🔵 | #410 |  |  |
 | D210 | Component-first build with Storybook (Storybook YES, Chromatic NO at launch) | 🔵 | #12 |  |  |
 | D211 | Edge-state screen inventory at launch (extends D166-D171) | 🔵 | #51 | packages/shared/src/edge-states/inventory.test.ts (9 contract tests incl. route-dir parity guard) | Drift fix 2026-06-11: prior 🟢 covered only 6 screens; #195 refreshed to all 17 surfaces + parity guard — pending verify-d |
@@ -274,7 +274,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D223 | Landing page primary headline (locks tentative) | 🔵 | #202 |  |  |
 | D224 | Sync gate transport schema + `useSyncStatus` contract (resolves HC-1) | 🟢 | #38 | apps/api/src/auth/google-oauth.controller.spec.ts |  |
 | D225 | Worker policy expansion + named exceptions (resolves HC-3) | 🔵 | #194 |  | Truth sweep 2026-07-02 (🟡→🔵): every leg now on disk — policies + cron idempotency (worker-policies.ts:54-101), cron_runs + dead_letter_jobs tables (migration 0030, #194), DeadLetterWorker (worker.ts:1603), WatchRenewalWorker (worker.ts:1239) — 2026-06-11 missing-legs note stale. Pending verify-d |
-| D226 | Action lifecycle ordering (resolves SC-1) | 🔵 | #44 | apps/web/src/features/triage/action-sheet.test.tsx — sheet → preview → confirm lifecycle | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. Evidence audit 2026-07-29 (🟢→🔵): the cited evidence file no longer exists; re-verify via `pnpm verify-d` |
+| D226 | Action lifecycle ordering (resolves SC-1) | 🟢 | #44 | cmd: `pnpm --filter @declutrmail/web exec vitest run src/features/triage/action-sheet.test.tsx` → exit 0 @ 2b7b57e 2026-08-26 | Evidence updated 2026-06-11: lifecycle wired to real K/A/U/L mutations + undo tray in #180. |
 | D227 | Canonical UI verbs K/A/U/L; "Screen" internal only | 🟢 | #12 | packages/workers/src/reasoning.test.ts — K/A/U/L verdict labels |  |
 | D228 | Privacy badge rewrite: "Full bodies fetched: 0" + explicit storage list | 🟢 | #26 | 2026-07-02 audit: PrivacyBadge mounted sync-gate/landing/pricing/settings; banned-phrase negative tests; live content check app.declutrmail.com/privacy | Drift fix 2026-06-11: prior 🟢 predated mounts; #192 replaced banned sync-gate copy with PrivacyBadge + microcopy hook rule; settings/landing mounts ride those surfaces — pending verify-d |
 | D229 | Pub/Sub OIDC verification contract | 🟢 | #31 | apps/api/src/webhooks/__tests__/oidc-verifier.spec.ts — full OIDC verification |  |
