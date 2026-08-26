@@ -87,7 +87,7 @@ function zonedInstant(y: number, m0: number, d: number, hour: number, timeZone: 
 export function wakeBucket(snoozedUntil: string, now: Date, timeZone: string): WakeBucket {
   const wake = new Date(snoozedUntil);
   if (Number.isNaN(wake.getTime())) {
-    throw new RangeError('Invalid Later wake time.');
+    throw new RangeError('Invalid Later return time.');
   }
   const dayDiff = calendarDayOrdinal(wake, timeZone) - calendarDayOrdinal(now, timeZone);
   if (dayDiff <= 0) return 'today';
@@ -114,7 +114,7 @@ export function groupByWakeTime(
 export function formatWakeTime(iso: string, now: Date, timeZone: string): string {
   const wake = new Date(iso);
   if (Number.isNaN(wake.getTime())) {
-    throw new RangeError('Invalid Later wake time.');
+    throw new RangeError('Invalid Later return time.');
   }
   const time = wake.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone });
   const bucket = wakeBucket(iso, now, timeZone);

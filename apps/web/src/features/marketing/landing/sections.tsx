@@ -102,10 +102,10 @@ export function HowItWorks() {
 
 /** One-line explainer per canonical verb, keyed by registry id. */
 const VERB_EXPLAINERS: Record<(typeof VERB_REGISTRY)[number]['id'], string> = {
-  keep: 'Record a Keep decision and leave this sender’s mail in the inbox. Protect is a separate setting.',
+  keep: 'Record a Keep decision and leave this sender’s email in the inbox. Protect is a separate setting.',
   archive: 'Move matching inbox messages out of Inbox. They remain searchable in All Mail.',
   unsubscribe:
-    'Request that the sender stop future mail. Existing messages stay put unless you choose another action.',
+    'Request that the sender stop future email. Existing messages stay put unless you choose another action.',
   later:
     'Move matching inbox email to DeclutrMail/Later until the return time you choose for that sender.',
   delete:
@@ -178,7 +178,7 @@ export function GmailCompanion() {
           <ul>
             <li>Rank recurring senders by volume and attention</li>
             <li>See which emails Archive, Later, or Delete will affect</li>
-            <li>Turn on preset rules for future matching mail</li>
+            <li>Turn on preset rules for future matching email</li>
             <li>Review results and use Activity Undo when available</li>
           </ul>
         </div>

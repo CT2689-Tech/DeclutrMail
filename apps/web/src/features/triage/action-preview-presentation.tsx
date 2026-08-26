@@ -78,13 +78,13 @@ export function ActionPreviewPresentation({
   // Keep moves nothing.
   const title =
     verb === 'Archive'
-      ? `Archive all inbox mail from ${subject}`
+      ? `Archive all inbox email from ${subject}`
       : verb === 'Later'
         ? `Move ${subject} to Later`
         : verb === 'Unsubscribe'
           ? `Unsubscribe from ${subject}`
           : verb === 'Delete'
-            ? `Move inbox mail from ${subject} to Gmail Trash`
+            ? `Move inbox email from ${subject} to Gmail Trash`
             : `Keep ${subject}`;
 
   const lead = presentation.previewCopy;
@@ -241,7 +241,7 @@ function ImpactFigure({
   if (inboxCount === 'unavailable') {
     return (
       <span style={captionStyle}>
-        Couldn't load a live preview. Close and retry — no inbox mail can move without one.
+        Couldn't load a live preview. Close and retry — no inbox email can move without one.
       </span>
     );
   }
@@ -249,8 +249,8 @@ function ImpactFigure({
     <>
       <strong style={strongStyle}>{inboxCount.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
-        execution, so the final moved count can change.
+        email{inboxCount === 1 ? '' : 's'} in Inbox now. Rechecked when it runs, so the final count
+        can differ.
       </span>
     </>
   );

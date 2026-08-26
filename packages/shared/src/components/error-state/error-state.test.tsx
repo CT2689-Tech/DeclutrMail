@@ -8,13 +8,13 @@ describe('<ErrorState />', () => {
     const html = renderToStaticMarkup(
       <ErrorState
         title="Your queue didn't load"
-        description="Your mailbox is untouched."
+        description="Your Gmail account is untouched."
         onRetry={vi.fn()}
       />,
     );
 
     expect(html).toContain('Your queue didn&#x27;t load');
-    expect(html).toContain('Your mailbox is untouched.');
+    expect(html).toContain('Your Gmail account is untouched.');
     expect(html).toContain('Try again');
   });
 

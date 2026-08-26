@@ -122,7 +122,7 @@ export type PageSurface =
   | 'triage'
   | 'onboarding'
   | 'settings'
-  | 'mailboxes'
+  | 'Gmail accounts'
   | 'pricing'
   | 'snoozed'
   | 'billing'

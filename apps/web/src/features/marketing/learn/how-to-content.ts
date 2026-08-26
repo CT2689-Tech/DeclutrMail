@@ -34,13 +34,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           sender: 'Weekly Market Note',
           detail: '38 inbox messages · 3% read',
           action: 'Archive',
-          result: 'Current inbox mail moves to All Mail.',
+          result: 'Current inbox email moves to All Mail.',
         },
         {
           sender: 'Project Digest',
           detail: '12 inbox messages · marked read often',
           action: 'Later',
-          result: 'Current mail moves to DeclutrMail/Later.',
+          result: 'Current email moves to DeclutrMail/Later.',
         },
         {
           sender: 'Coupon Parade',
@@ -55,7 +55,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'why-sender-first',
         title: 'Start with the source, not the unread count',
         paragraphs: [
-          'Unread counts measure accumulation. They do not tell you which decision will prevent the next hundred messages. A sender-first pass asks a more durable question: do I still want mail from this source, and what should happen to the mail already here?',
+          'Unread counts measure accumulation. They do not tell you which decision will prevent the next hundred messages. A sender-first pass asks a more durable question: do I still want email from this source, and what should happen to the email already here?',
           'Gmail can already do this manually. Search for one exact address with the from: operator, inspect a few recent messages, then archive, label, delete, or create a filter. The limitation is repetition: you must know which sender to search for and repeat the investigation for every source.',
         ],
         bullets: [
@@ -81,11 +81,11 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Choose which email to change',
-            text: 'Select the visible page or use Gmail’s “select all conversations that match this search” option only after checking the query. The second option can affect years of mail.',
+            text: 'Select the visible page or use Gmail’s “select all conversations that match this search” option only after checking the query. The second option can affect years of email.',
           },
           {
             name: 'Apply one clear outcome',
-            text: 'Archive removes Inbox, Delete moves mail to Trash, and a label organizes it. If you want future behavior, create a Gmail filter separately; a one-time archive is not a future rule.',
+            text: 'Archive removes Inbox, Delete moves email to Trash, and a label organizes it. If you want future behavior, create a Gmail filter separately; a one-time archive is not a future rule.',
           },
         ],
       },
@@ -106,7 +106,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
             text: 'Use sender volume, read rate, whether you write back, and recent subjects as evidence. Recommendations are guidance; the decision remains yours.',
           },
           {
-            name: 'Preview the mail-moving action',
+            name: 'Preview the email-moving action',
             text: 'Archive, Later, Delete, and Unsubscribe show what they will affect before you confirm. Check both what changes and what remains untouched.',
           },
           {
@@ -119,8 +119,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'action-boundaries',
         title: 'Know what each decision actually means',
         paragraphs: [
-          'Archive removes the Inbox label from the matching mail that exists now. Later removes Inbox and adds DeclutrMail/Later to that current mail. Delete moves current matching mail to Gmail Trash. None of those manual actions creates a standing rule for future messages.',
-          'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing mail where it is unless you separately approve a cleanup action. Keep records your current sender decision, while Protected is the standing safety control.',
+          'Archive removes the Inbox label from the matching email that exists now. Later removes Inbox and adds DeclutrMail/Later to that current email. Delete moves current matching email to Gmail Trash. None of those manual actions creates a standing rule for future messages.',
+          'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing email where it is unless you separately approve a cleanup action. Keep records your current sender decision, while Protected is the standing safety control.',
         ],
         callout: {
           title: 'Each action has its own Undo rules',
@@ -132,8 +132,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'repeatable-routine',
         title: 'Use a small repeatable routine',
         paragraphs: [
-          'Do not attempt to perfect the entire mailbox in one sitting. Decide on five to ten obvious senders, verify the results, and stop. The next pass becomes faster because the ambiguous senders are no longer mixed with the easy ones.',
-          'A useful outcome is not inbox zero. It is a mailbox in which recurring noise has an explicit owner and each action has a known boundary.',
+          'Do not attempt to perfect the entire Gmail account in one sitting. Decide on five to ten obvious senders, verify the results, and stop. The next pass becomes faster because the ambiguous senders are no longer mixed with the easy ones.',
+          'A useful outcome is not inbox zero. It is a Gmail account in which recurring noise has an explicit owner and each action has a known boundary.',
         ],
       },
     ],
@@ -185,7 +185,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           sender: 'Sale Signal',
           detail: 'from:offers@salesignal.example · 84 current messages',
           action: 'Delete',
-          result: '84 move to Gmail Trash; future mail can still arrive.',
+          result: '84 move to Gmail Trash; future email can still arrive.',
         },
       ],
     },
@@ -199,7 +199,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         ],
         callout: {
           title: 'Delete is not unsubscribe',
-          body: 'Deleting current mail changes only the messages matched now. It does not contact the sender, create a filter, or stop future delivery.',
+          body: 'Deleting current email changes only the messages matched now. It does not contact the sender, create a filter, or stop future delivery.',
           tone: 'warning',
         },
       },
@@ -233,7 +233,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Delete by sender in DeclutrMail',
         paragraphs: [
           'DeclutrMail groups the saved Gmail details by sender. Delete is intentionally placed behind the action menu and a confirmation preview because its recovery model differs from Archive and Later.',
-          'The preview names the sender and affected count available from the current index. The action moves matching mail to Gmail Trash and removes it from Inbox. It does not install a future sender rule.',
+          'The preview names the sender and affected count available from the current index. The action moves matching email to Gmail Trash and removes it from Inbox. It does not install a future sender rule.',
         ],
         steps: [
           {
@@ -256,9 +256,9 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
       },
       {
         id: 'future-mail',
-        title: 'Decide what should happen to future mail separately',
+        title: 'Decide what should happen to future email separately',
         paragraphs: [
-          'If the sender is legitimate but no longer wanted, use Unsubscribe after reading its preview. If it lacks a usable unsubscribe method, a Gmail filter can route future mail to Trash or skip Inbox. Blocking the sender routes future mail to Spam; that is a different outcome again.',
+          'If the sender is legitimate but no longer wanted, use Unsubscribe after reading its preview. If it lacks a usable unsubscribe method, a Gmail filter can route future email to Trash or skip Inbox. Blocking the sender routes future email to Spam; that is a different outcome again.',
           'Keeping cleanup and future routing as two explicit decisions prevents a one-time housekeeping action from silently becoming permanent automation.',
         ],
       },
@@ -266,7 +266,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'safer-alternatives',
         title: 'Use a less destructive option when uncertain',
         paragraphs: [
-          'Archive preserves mail in All Mail and Gmail search. Later keeps it under a DeclutrMail/Later label. Both are better first moves when the sender mixes useful and noisy messages, and both can be undone from Activity while their undo window is open.',
+          'Archive preserves email in All Mail and Gmail search. Later keeps it under a DeclutrMail/Later label. Both are better first moves when the sender mixes useful and noisy messages, and both can be undone from Activity while their undo window is open.',
           'The fastest cleanup is not always the one with the largest count. The better measure is how confidently you can explain what moved and how you would recover it.',
         ],
       },
@@ -308,7 +308,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     description:
       'Free space when Gmail says storage is full: empty Trash and Spam first, find large attachments with Gmail’s size operators, and see why archiving frees nothing.',
     intro:
-      'A full Gmail is usually not a Gmail problem. Google gives each personal account up to 15 GB shared across Gmail, Drive, and Photos, so the mail is competing with backups and photo libraries for the same quota. That also means most cleanup advice aimed at tidiness — archive, unsubscribe, inbox zero — recovers no space at all.',
+      'A full Gmail is usually not a Gmail problem. Google gives each personal account up to 15 GB shared across Gmail, Drive, and Photos, so the email is competing with backups and photo libraries for the same quota. That also means most cleanup advice aimed at tidiness — archive, unsubscribe, inbox zero — recovers no space at all.',
     readingMinutes: 8,
     example: {
       label: 'Made-up example',
@@ -341,10 +341,10 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'What “full” actually refers to',
         paragraphs: [
           'Google documents a single quota of up to 15 GB per personal account, shared between Gmail, Google Drive, and Google Photos. Gmail messages and their attachments count toward it, and Google states explicitly that Spam and Trash count too until those folders are cleared.',
-          'Consequences arrive across every service, not just mail. Google says that when you are over quota you cannot upload files to Drive or back up photos, your ability to send and receive email can be impacted, and Drive Help adds that messages sent to you go back to the sender. Google also warns that content in an account left over quota for two years may be deleted, with at least three months of notice first.',
+          'Consequences arrive across every service, not just email. Google says that when you are over quota you cannot upload files to Drive or back up photos, your ability to send and receive email can be impacted, and Drive Help adds that messages sent to you go back to the sender. Google also warns that content in an account left over quota for two years may be deleted, with at least three months of notice first.',
         ],
         bullets: [
-          'Check where the space actually went before deleting mail: Drive and Photos share the same 15 GB.',
+          'Check where the space actually went before deleting email: Drive and Photos share the same 15 GB.',
           'Emptying Spam and Trash is the fastest recovery Google documents, because both still occupy quota.',
           'Expect a delay — Google says storage can take 48–72 hours to reflect a large deletion.',
         ],
@@ -361,7 +361,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
             text: 'Google calls this the quickest way to recover space. Both folders count against the quota until you permanently clear them, and clearing them is not reversible.',
           },
           {
-            name: 'Find the heavy mail with size operators',
+            name: 'Find the heavy email with size operators',
             text: 'Search has:attachment larger:10M for the worst offenders, filename:.pdf larger:5M for document build-up, and older_than:2y has:attachment for stale attachments. Add in:anywhere to include Spam and Trash.',
           },
           {
@@ -370,7 +370,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Delete, then empty Trash again',
-            text: 'Deleting moves mail to Trash, which still counts against your quota. The space is only released when Trash is emptied or Gmail’s roughly 30-day retention expires.',
+            text: 'Deleting moves email to Trash, which still counts against your quota. The space is only released when Trash is emptied or Gmail’s roughly 30-day retention expires.',
           },
           {
             name: 'Check Drive and Photos, not just Gmail',
@@ -383,7 +383,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Archive, unsubscribe, and inbox zero free no space',
         paragraphs: [
           'Archiving removes the Inbox label. The message, and every byte of its attachments, stays in All Mail and stays on your quota. The same is true of labels, filters that skip the inbox, and any tool that promises a cleaner inbox without deleting anything.',
-          'Unsubscribing is worth doing, but it is a future-volume decision, not a storage one: it prevents the next hundred messages from arriving and removes nothing that has already landed. If the goal is a working mailbox today, deletion of large mail plus an emptied Trash is the only lever that moves the number.',
+          'Unsubscribing is worth doing, but it is a future-volume decision, not a storage one: it prevents the next hundred messages from arriving and removes nothing that has already landed. If the goal is a working Gmail account today, deletion of large email plus an emptied Trash is the only lever that moves the number.',
         ],
         callout: {
           title: 'Only permanent deletion returns bytes',
@@ -396,7 +396,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Attack it by sender when a few sources own the weight',
         paragraphs: [
           'Attachment volume is rarely spread evenly. Statements, scanned documents, automated reports, and image-heavy newsletters tend to concentrate in a handful of recurring senders, which makes the sender the efficient unit of work. In Gmail you can combine the two ideas directly: from:(reports@example.com) has:attachment larger:5M.',
-          'DeclutrMail ranks recurring senders by volume and shows the size of each message in a sender’s recent-messages list, so you can see which sources are heavy before acting. Two limits are worth stating plainly: it does not compute a storage total per sender or report space reclaimed, and its Delete moves matching mail to Gmail Trash — you still empty Trash in Gmail to get the space back.',
+          'DeclutrMail ranks recurring senders by volume and shows the size of each message in a sender’s recent-messages list, so you can see which sources are heavy before acting. Two limits are worth stating plainly: it does not compute a storage total per sender or report space reclaimed, and its Delete moves matching email to Gmail Trash — you still empty Trash in Gmail to get the space back.',
         ],
         steps: [
           {
@@ -421,7 +421,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'prune-or-pay',
         title: 'Decide honestly between pruning and paying',
         paragraphs: [
-          'If a mailbox is mostly years of attachments you genuinely may need, extra storage through Google One is the cheaper answer than an afternoon of risky bulk deletion. Pruning wins when the weight is concentrated in mail you can name and would never open again — old reports, expired offers, superseded drafts.',
+          'If a Gmail account is mostly years of attachments you genuinely may need, extra storage through Google One is the cheaper answer than an afternoon of risky bulk deletion. Pruning wins when the weight is concentrated in email you can name and would never open again — old reports, expired offers, superseded drafts.',
           'A useful test: run has:attachment larger:10M and older_than:2y has:attachment, and look at what comes back. If the results are mostly things you would delete without hesitation, prune. If you hesitate on most of them, buy the storage and spend the effort on future volume instead.',
         ],
       },
@@ -489,7 +489,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     description:
       'Archive Gmail automatically with a Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
     intro:
-      'A one-time Archive removes Inbox from mail that already exists. Future auto-archive requires a separate filter or automation rule. Keeping that distinction visible is the safest way to avoid mail disappearing unexpectedly.',
+      'A one-time Archive removes Inbox from email that already exists. Future auto-archive requires a separate filter or automation rule. Keeping that distinction visible is the safest way to avoid email disappearing unexpectedly.',
     readingMinutes: 7,
     example: {
       label: 'Made-up example',
@@ -515,19 +515,19 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Choose between an exact filter and an observed preset',
         paragraphs: [
           'Gmail filters are best when you can state an exact condition such as one sender address or a stable subject prefix. They are transparent, free, and run entirely in Gmail. A filter can Skip Inbox, apply a label, mark as read, forward, or delete future matches.',
-          'DeclutrMail’s launch automation uses presets instead of a custom rule builder. Its “Auto-archive low-engagement” preset watches sender volume and read rate. Every preset begins in Observe, where matches are collected but mail is not moved. After seven days, you review the matching email before choosing Active.',
+          'DeclutrMail’s launch automation uses presets instead of a custom rule builder. Its “Auto-archive low-engagement” preset watches sender volume and read rate. Every preset begins in Observe, where matches are collected but email is not moved. After seven days, you review the matching email before choosing Active.',
         ],
       },
       {
         id: 'gmail-filter',
         title: 'Create a native Gmail auto-archive filter',
         paragraphs: [
-          'Use an exact query and test it against existing mail before saving the future rule.',
+          'Use an exact query and test it against existing email before saving the future rule.',
         ],
         steps: [
           {
             name: 'Build and test the search',
-            text: 'Search for from:(updates@example.com), a stable subject, or another narrow condition. Read several results and verify the query excludes wanted mail.',
+            text: 'Search for from:(updates@example.com), a stable subject, or another narrow condition. Read several results and verify the query excludes wanted email.',
           },
           {
             name: 'Open filter creation',
@@ -535,15 +535,15 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Select Skip the Inbox',
-            text: 'Choose “Skip the Inbox (Archive it).” Applying a label as well makes the routed mail easy to find. Avoid Delete unless the condition is exceptionally stable.',
+            text: 'Choose “Skip the Inbox (Archive it).” Applying a label as well makes the routed email easy to find. Avoid Delete unless the condition is exceptionally stable.',
           },
           {
-            name: 'Decide whether existing mail is included',
-            text: 'Gmail offers a separate option to apply the filter to matching conversations that already exist. Leave it off if your goal is future mail only.',
+            name: 'Decide whether existing email is included',
+            text: 'Gmail offers a separate option to apply the filter to matching conversations that already exist. Leave it off if your goal is future email only.',
           },
           {
             name: 'Review the filter later',
-            text: 'Return to Gmail Settings → Filters and Blocked Addresses after a few days. Edit or remove the filter if legitimate mail is being routed away.',
+            text: 'Return to Gmail Settings → Filters and Blocked Addresses after a few days. Edit or remove the filter if legitimate email is being routed away.',
           },
         ],
       },
@@ -577,8 +577,8 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'manual-is-not-future',
         title: 'Do not mistake manual Archive for a standing rule',
         paragraphs: [
-          'A manual Archive in Senders or Triage targets matching mail currently in the inbox. It removes the Inbox label and can be reversed through Activity while its undo window is open. New mail from the sender may still arrive in Inbox.',
-          'The same boundary applies to manual Later and Delete: they change current matched mail, not future delivery. Use Gmail filters or an explicitly activated Autopilot preset when future behavior is the goal.',
+          'A manual Archive in Senders or Triage targets matching email currently in the inbox. It removes the Inbox label and can be reversed through Activity while its undo window is open. New email from the sender may still arrive in Inbox.',
+          'The same boundary applies to manual Later and Delete: they change current matched email, not future delivery. Use Gmail filters or an explicitly activated Autopilot preset when future behavior is the goal.',
         ],
         callout: {
           title: 'Automation deserves a different standard',
@@ -590,7 +590,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'monitor',
         title: 'Monitor outcomes instead of assuming the rule is finished',
         paragraphs: [
-          'Open Activity periodically and sample Gmail’s All Mail or the label attached by your filter. A useful automation removes predictable attention cost without hiding exceptional mail.',
+          'Open Activity periodically and sample Gmail’s All Mail or the label attached by your filter. A useful automation removes predictable attention cost without hiding exceptional email.',
           'Pause first when results look wrong. Tighten the condition only after identifying why the false match occurred; otherwise the same mistake returns under a different threshold.',
         ],
       },
@@ -632,7 +632,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     description:
       'Use unsubscribe, filters, or spam reporting for the right kind of promotional email, with guidance organized by sender.',
     intro:
-      'Promotional mail is not one category of risk. A legitimate newsletter, an unwanted store campaign, and deceptive spam require different actions. Start by identifying the sender and the outcome you actually want.',
+      'Promotional email is not one category of risk. A legitimate newsletter, an unwanted store campaign, and deceptive spam require different actions. Start by identifying the sender and the outcome you actually want.',
     readingMinutes: 6,
     example: {
       label: 'Made-up example',
@@ -664,7 +664,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Classify by your relationship, not by Gmail’s tab',
         paragraphs: [
           'The Promotions tab is only Gmail’s way of organizing your inbox. It may contain a discount you want, a campaign from a store you trust, or a list you never knowingly joined. DeclutrMail does not use machine learning to assign categories such as “shopping” or “banking.” It uses sender identity, listed email details, volume, read rate, and your decisions.',
-          'Ask whether the sender is legitimate, whether you want future mail, and whether current messages should remain searchable. Those questions map to different tools.',
+          'Ask whether the sender is legitimate, whether you want future email, and whether current messages should remain searchable. Those questions map to different tools.',
         ],
       },
       {
@@ -674,9 +674,9 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         bullets: [
           'Unsubscribe asks a legitimate list sender to stop future delivery. It does not clean up old messages.',
           'Create filter can skip Inbox, add a label, mark as read, or delete future matches you define.',
-          'Block sends future mail from an address to Spam; it does not notify or unsubscribe the sender.',
-          'Report spam trains Gmail’s abuse handling and is preferable to clicking links in suspicious mail.',
-          'Archive or Delete changes existing mail only unless you separately create a filter.',
+          'Block sends future email from an address to Spam; it does not notify or unsubscribe the sender.',
+          'Report spam trains Gmail’s abuse handling and is preferable to clicking links in suspicious email.',
+          'Archive or Delete changes existing email only unless you separately create a filter.',
         ],
       },
       {
@@ -684,7 +684,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Review promotional senders in DeclutrMail',
         paragraphs: [
           'DeclutrMail’s Senders view makes recurring senders visible without downloading full email contents. It stores the sender, subject line, Gmail preview snippet, dates, labels, read state, volume, and read rate.',
-          'A low read rate is evidence, not proof that mail is promotional or unwanted. Read recent subjects and protect any sender you are uncertain about before performing a bulk action.',
+          'A low read rate is evidence, not proof that email is promotional or unwanted. Read recent subjects and protect any sender you are uncertain about before performing a bulk action.',
         ],
         steps: [
           {
@@ -701,7 +701,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Choose a separate current-mail action if needed',
-            text: 'Existing mail stays put after unsubscribe unless you separately approve Archive or Delete. That second action shows its own affected count and recovery options.',
+            text: 'Existing email stays put after unsubscribe unless you separately approve Archive or Delete. That second action shows its own affected count and recovery options.',
           },
         ],
       },
@@ -709,12 +709,12 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'unsubscribe-boundary',
         title: 'Treat unsubscribe as a one-way delivery request',
         paragraphs: [
-          'For standards-compliant one-click lists, DeclutrMail sends the request and records whether the sender’s system accepted it; the sender still controls whether and when mail stops. For mailto-only lists, it opens a prepared Gmail draft and you press Send. It never sends that email silently on your behalf.',
+          'For standards-compliant one-click lists, DeclutrMail sends the request and records whether the sender’s system accepted it; the sender still controls whether and when email stops. For mailto-only lists, it opens a prepared Gmail draft and you press Send. It never sends that email silently on your behalf.',
           'Once the unsubscribe request reaches the sender, DeclutrMail cannot recall it. A separately archived backlog may still be undoable from Activity, but that does not resubscribe you.',
         ],
         callout: {
           title: 'Suspicious sender? Do not unsubscribe',
-          body: 'An unsubscribe link can confirm that an address is active. For deceptive or malicious mail, use Gmail’s Report spam or phishing controls instead.',
+          body: 'An unsubscribe link can confirm that an address is active. For deceptive or malicious email, use Gmail’s Report spam or phishing controls instead.',
           tone: 'warning',
         },
       },
@@ -769,7 +769,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     description:
       'Unsubscribe safely in Gmail or DeclutrMail, with the difference between one-click, mailto, old-mail cleanup, and undo made explicit.',
     intro:
-      'Unsubscribe controls future delivery. Archive, Later, and Delete control mail already in the mailbox. Combining those ideas without showing both scopes is how cleanup tools create surprises.',
+      'Unsubscribe controls future delivery. Archive, Later, and Delete control email already in the mailbox. Combining those ideas without showing both scopes is how cleanup tools create surprises.',
     readingMinutes: 7,
     example: {
       label: 'Made-up example',
@@ -816,11 +816,11 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Use a trusted preference link if needed',
-            text: 'If Gmail has no control, use the sender’s footer only when the sender and destination are trustworthy. Never enter account credentials after following an unexpected mail link.',
+            text: 'If Gmail has no control, use the sender’s footer only when the sender and destination are trustworthy. Never enter account credentials after following an unexpected email link.',
           },
           {
             name: 'Wait before escalating',
-            text: 'Legitimate senders may need several days to process the request. Report continued unwanted mail as spam if it persists beyond the stated period.',
+            text: 'Legitimate senders may need several days to process the request. Report continued unwanted email as spam if it persists beyond the stated period.',
           },
         ],
       },
@@ -829,7 +829,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Unsubscribe by sender in DeclutrMail',
         paragraphs: [
           'DeclutrMail reads the sender’s unsubscribe information along with the other listed Gmail details. When a sender offers the standard one-click method, DeclutrMail can submit the request. When it offers only an email address, DeclutrMail opens a Gmail draft with the supplied address and text; you remain the person who sends it.',
-          'The confirmation preview states that existing mail will not move. If you also choose to archive or delete old mail, that is a second action with a separately visible count.',
+          'The confirmation preview states that existing email will not move. If you also choose to archive or delete old email, that is a second action with a separately visible count.',
         ],
         steps: [
           {
@@ -846,7 +846,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
           },
           {
             name: 'Track the outcome',
-            text: 'Activity distinguishes the recorded intent from a confirmed delivery outcome. Watch for later mail rather than assuming every sender complies instantly.',
+            text: 'Activity distinguishes the recorded intent from a confirmed delivery outcome. Watch for later email rather than assuming every sender complies instantly.',
           },
         ],
       },
@@ -855,7 +855,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Understand why unsubscribe cannot be undone',
         paragraphs: [
           'A delivered unsubscribe request leaves DeclutrMail and reaches another organization. There is no universal protocol for retracting it, so the request itself has no undo window. You can subscribe again through the sender’s site if you later change your mind.',
-          'If the same confirmation also archived existing mail, only that archive portion is reversible while its Activity undo window is open. Delete has Gmail Trash recovery. Those recovery mechanisms must not be presented as unsubscribe undo.',
+          'If the same confirmation also archived existing email, only that archive portion is reversible while its Activity undo window is open. Delete has Gmail Trash recovery. Those recovery mechanisms must not be presented as unsubscribe undo.',
         ],
         callout: {
           title: 'One confirmation may contain two effects',

@@ -175,7 +175,7 @@ export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'Review and act on senders yourself.',
   plus: 'Remove the monthly limit and let rules keep it clean.',
   pro: 'See what matters, across every account.',
-  team: 'Review and manage mail together.',
+  team: 'Review and manage email together.',
   enterprise: 'Manage more inboxes with organizational controls.',
 };
 

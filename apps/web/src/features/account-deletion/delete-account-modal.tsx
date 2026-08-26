@@ -134,7 +134,7 @@ export function DeleteAccountModal({
             <div>
               <div style={listHeadStyle}>What gets permanently deleted</div>
               <ul style={listStyle}>
-                <li>Gmail metadata index (senders, subjects, snippets, labels, dates)</li>
+                <li>Saved Gmail details (senders, subjects, snippets, labels, dates)</li>
                 <li>Sender decisions and Screener history</li>
                 <li>Automation rules</li>
                 <li>Undo history</li>
@@ -217,7 +217,7 @@ export function DeleteAccountModal({
                       `usual 7 days. Undo windows run up to ${MAX_UNDO_WINDOW_DAYS} days, so a recent ` +
                       'action can push this several weeks out. Undo keeps working the whole time, ' +
                       'and you can cancel any time before then. The immediate option below skips ' +
-                      'the wait by waiving those windows.'
+                      'the wait and gives up those undo windows.'
                     : '7-day grace period. You can cancel any time before then.'
                 }
               />
@@ -231,7 +231,7 @@ export function DeleteAccountModal({
                 detail={
                   hasUndo
                     ? 'No grace period — deletion runs within minutes, and your open undo ' +
-                      'windows are waived: actions you could still undo become permanent.'
+                      'windows end: actions you could still undo become permanent.'
                     : 'No grace period — deletion runs within minutes.'
                 }
                 danger

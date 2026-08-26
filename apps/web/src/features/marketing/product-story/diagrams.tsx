@@ -23,13 +23,13 @@ const TRIAGE_VERBS = [
 const ACTION_CLARIFIERS: Readonly<Record<VerbId, string>> = {
   keep: 'Keep records your decision and leaves email where it is. Protect is separate: it keeps a sender out of bulk and automatic changes.',
   archive:
-    'Archive applies only to the emails shown before you confirm. New mail from the sender is unchanged.',
+    'Archive applies only to the emails shown before you confirm. New email from the sender is unchanged.',
   unsubscribe:
     'A sent one-click unsubscribe request cannot be taken back. Existing email stays where it is unless you choose another action.',
   later:
-    'Later moves the emails shown in the preview to DeclutrMail/Later until the return time you choose. New mail from the sender is unchanged.',
+    'Later moves the emails shown in the preview to DeclutrMail/Later until the return time you choose. New email from the sender is unchanged.',
   delete:
-    'Delete is never recommended for you — you pick it yourself, and it always shows a full preview first. It moves the previewed mail to Gmail Trash, where Gmail normally keeps it for 30 days.',
+    'Delete is never recommended for you — you pick it yourself, and it always shows a full preview first. It moves the previewed email to Gmail Trash, where Gmail normally keeps it for 30 days.',
 };
 
 /** All content remains visible; motion only moves the focus ring between steps. */
@@ -53,7 +53,7 @@ export function ProductWalkthroughFigure() {
           <span className="dm-story-step-label">2 · Preview</span>
           <strong>Archive 47 current messages?</strong>
           <span>Moves them out of Inbox and keeps them searchable in Gmail All Mail.</span>
-          <small>Future LinkedIn mail is unaffected by this manual action.</small>
+          <small>Future LinkedIn email is unaffected by this manual action.</small>
         </li>
         <li className="dm-story-walkthrough-step">
           <span className="dm-story-step-label">3 · Confirmed</span>
@@ -123,7 +123,7 @@ export function GmailBridgeTable() {
           <tr>
             <th scope="col">DeclutrMail decision</th>
             <th scope="col">What changes in Gmail</th>
-            <th scope="col">Future mail</th>
+            <th scope="col">Future email</th>
             <th scope="col">Undo or recovery</th>
           </tr>
         </thead>
@@ -139,7 +139,7 @@ export function GmailBridgeTable() {
           <tr>
             <th scope="row">Archive</th>
             <td>Moves the previewed emails out of Inbox; they remain in All Mail.</td>
-            <td>New mail is unchanged unless you separately turn on an Autopilot rule.</td>
+            <td>New email is unchanged unless you separately turn on an Autopilot rule.</td>
             <td>Undo: {undoDays} days on every plan.</td>
           </tr>
           <tr>
@@ -155,13 +155,13 @@ export function GmailBridgeTable() {
           <tr>
             <th scope="row">Later</th>
             <td>Moves the previewed email out of Inbox and adds DeclutrMail/Later.</td>
-            <td>New mail is unchanged unless you separately turn on an Autopilot rule.</td>
+            <td>New email is unchanged unless you separately turn on an Autopilot rule.</td>
             <td>Undo: {undoDays} days on every plan.</td>
           </tr>
           <tr>
             <th scope="row">Delete</th>
-            <td>Moves previewed current mail to Gmail Trash.</td>
-            <td>New mail is unchanged unless you separately turn on an Autopilot rule.</td>
+            <td>Moves previewed current email to Gmail Trash.</td>
+            <td>New email is unchanged unless you separately turn on an Autopilot rule.</td>
             <td>
               Activity Undo: {undoDays} days on every plan. Gmail Trash is a separate fallback,
               normally up to 30 days unless emptied sooner.

@@ -1814,7 +1814,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(previewedSenderIds).toEqual(['a']));
-    expect(within(dialog).getByText('Archive mail from 1 sender')).toBeInTheDocument();
+    expect(within(dialog).getByText('Archive email from 1 sender')).toBeInTheDocument();
     expect(within(dialog).getByLabelText('Senders included in this bulk action')).toHaveTextContent(
       '3 selected · 2 eligible · 1 skipped',
     );

@@ -154,7 +154,7 @@ const COLUMNS: ReadonlyArray<{
   // both views so the Grid↔Table toggle never drops a fact (2026-07-03
   // consistency pass). Not sortable: the wire `SenderListSort` union
   // has no volume axis yet.
-  { key: null, label: '90d mail', alignRight: true },
+  { key: null, label: '90d email', alignRight: true },
   { key: null, label: 'Trend' },
   // 'Read 90d', not 'Read': the bucket is a rolling 90-day ratio — the
   // ENGINE's window (ADR-0037) — and this column sits between 'Total'
@@ -891,7 +891,7 @@ function ErrorRow({ onRetry }: { onRetry: SenderTableProps['onRetry'] }) {
           {/* Never render the raw ApiError/fetch message — it carries
               method + path + status ("GET /api/senders failed: 500…").
               Plain copy here; the console keeps the technical detail. */}
-          <span>Couldn&apos;t load senders. Your mail is unchanged — try again.</span>
+          <span>Couldn&apos;t load senders. Your email is unchanged — try again.</span>
           {onRetry ? (
             <button
               type="button"
@@ -921,7 +921,7 @@ function ErrorRow({ onRetry }: { onRetry: SenderTableProps['onRetry'] }) {
 const EMPTY_COPY: Record<SenderTableEmptyKind, { headline: string; sub: string }> = {
   'no-senders': {
     headline: 'No senders yet',
-    sub: 'Your mailbox is syncing — senders appear here once the index builds.',
+    sub: 'Your Gmail account is syncing — senders appear here once the index builds.',
   },
   'no-filter-match': {
     headline: 'No senders match this filter',

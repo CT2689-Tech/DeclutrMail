@@ -902,7 +902,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
     expect(
-      screen.getByText("The unsubscribe request can't be undone. Existing inbox mail stays put."),
+      screen.getByText("The unsubscribe request can't be undone. Existing inbox email stays put."),
     ).toBeDefined();
   });
 

@@ -110,7 +110,7 @@ export function StepProtectionReview({
       return (
         <PanelShell corner={corner}>
           <ErrorState
-            title="Your mailbox connection changed"
+            title="Your Gmail account connection changed"
             description="This step needs an active Gmail connection. Refresh your connection state to continue."
             retryLabel="Refresh connection"
             onRetry={() => {
@@ -319,7 +319,7 @@ function unsupportedClause(split: OnboardingProtectionSplit): string {
   const they = stale === 1 ? 'It is' : 'They are';
   return (
     `${senders(stale)} ${stale === 1 ? 'was' : 'were'} protected because we counted messages you ` +
-    `sent — but we were counting any mail in a shared conversation, not mail addressed to them. ` +
+    `sent — but we were counting any email in a shared conversation, not email addressed to them. ` +
     `${they} still protected; we have not changed anything. Keep or unprotect each one here.`
   );
 }
@@ -339,8 +339,8 @@ function reviewBody(
       ? 'Here is the one to look at.'
       : `Here are ${shown} to look at.`
     : shown === 1
-      ? 'Here is the one shielding the most unread mail.'
-      : `Here are the ${shown} shielding the most unread mail.`;
+      ? 'Here is the one shielding the most unread email.'
+      : `Here are the ${shown} shielding the most unread email.`;
   if (split === null) {
     return `Protected senders stay out of bulk and automatic cleanup. ${ordering}`;
   }
@@ -470,7 +470,7 @@ function donePanel(
     body:
       `Protection turns itself on only for strong evidence — writing to a sender at least three ` +
       `times and hearing back, a starred message, or repeated Gmail importance. Nothing in this ` +
-      `mailbox has reached that yet, so nothing is being held back from cleanup.`,
+      `Gmail account has reached that yet, so nothing is being held back from cleanup.`,
   };
 }
 

@@ -73,8 +73,8 @@ const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
   {
     row: requireDemoRow('t-groupon'),
     shortLabel: 'Reversible',
-    title: 'Clear the inbox without losing the mail.',
-    body: "Archive moves this sender's existing inbox mail to All Mail. It stays searchable and can be undone from Activity.",
+    title: 'Clear the inbox without losing the email.',
+    body: "Archive moves this sender's existing inbox email to All Mail. It stays searchable and can be undone from Activity.",
     prompt: 'Try Archive — the highlighted decision.',
   },
   {
@@ -88,8 +88,8 @@ const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     row: requireDemoRow('t-priya'),
     shortLabel: 'Protected',
     title: 'See why relationships stay protected.',
-    body: 'Replies keep this sender out of bulk and automatic cleanup. Keep records your decision without moving any mail.',
-    prompt: 'Try Keep — no preview is needed because no mail moves.',
+    body: 'Replies keep this sender out of bulk and automatic cleanup. Keep records your decision without moving any email.',
+    prompt: 'Try Keep — no preview is needed because no email moves.',
   },
 ] as const;
 

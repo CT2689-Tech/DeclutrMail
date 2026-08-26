@@ -153,7 +153,7 @@ export default async function BetaPage({
         >
           {denied
             ? 'Your Google sign-in worked, but this email isn’t on the invite list yet. No account was created. Write to us and we’ll sort out your invite.'
-            : 'Anyone can sign in with Google and start reviewing senders — no invite or waitlist. It’s still a beta: expect the occasional rough edge. Manual mail-moving actions show a preview and Activity undo; delivered unsubscribe requests are one-way.'}
+            : 'Anyone can sign in with Google and start reviewing senders — no invite or waitlist. It’s still a beta: expect the occasional rough edge. Manual email-moving actions show a preview and Activity undo; delivered unsubscribe requests are one-way.'}
         </p>
 
         <div

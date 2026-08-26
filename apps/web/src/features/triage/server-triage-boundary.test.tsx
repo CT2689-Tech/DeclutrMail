@@ -103,11 +103,13 @@ describe('ServerTriageBoundary', () => {
   });
 
   it('prefetches only for an authed mailbox that has the triage capability', () => {
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'pro' })).toBe(true);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'free' })).toBe(true);
+    expect(shouldPrefetchTriage({ activeMailboxId: 'Gmail account-1', tier: 'pro' })).toBe(true);
+    expect(shouldPrefetchTriage({ activeMailboxId: 'Gmail account-1', tier: 'free' })).toBe(true);
     expect(shouldPrefetchTriage({ activeMailboxId: null, tier: 'pro' })).toBe(false);
     expect(shouldPrefetchTriage(null)).toBe(false);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'not-a-tier' })).toBe(false);
+    expect(shouldPrefetchTriage({ activeMailboxId: 'Gmail account-1', tier: 'not-a-tier' })).toBe(
+      false,
+    );
   });
 
   it('does not fetch mailbox data when the route is not eligible', async () => {

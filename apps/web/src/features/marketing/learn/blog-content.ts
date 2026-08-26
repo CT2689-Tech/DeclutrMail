@@ -20,7 +20,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     description:
       'The product thesis behind sender-first Gmail cleanup: compress recurrence, preserve message context, and separate current cleanup from future delivery.',
     intro:
-      'The inbox presents mail in arrival order. That is the right view for reading what arrived next, but a poor view for understanding what keeps creating the backlog.',
+      'The inbox presents email in arrival order. That is the right view for reading what arrived next, but a poor view for understanding what keeps creating the backlog.',
     readingMinutes: 9,
     example: {
       label: 'Made-up example',
@@ -67,10 +67,10 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
       },
       {
         id: 'two-decisions',
-        title: 'Current mail and future mail are two decisions',
+        title: 'Current email and future email are two decisions',
         paragraphs: [
           'Cleanup products often blur two questions because a single confirmation feels efficient. What should happen to the email already here? What should happen when this sender emails again? The answers may differ. You may unsubscribe but preserve receipts, archive a backlog but allow new email, or route future updates while keeping a recent conversation in Inbox.',
-          'DeclutrMail therefore treats manual Archive, Later, and Delete as actions on current matching mail. They do not install an invisible standing rule. Unsubscribe requests future-delivery change and leaves existing mail untouched unless the user separately approves backlog cleanup.',
+          'DeclutrMail therefore treats manual Archive, Later, and Delete as actions on current matching email. They do not install an invisible standing rule. Unsubscribe requests future-delivery change and leaves existing email untouched unless the user separately approves backlog cleanup.',
           'The distinction costs an extra line of preview copy. It saves the much larger trust cost of discovering that a one-time cleanup quietly became permanent automation.',
         ],
         callout: {
@@ -235,7 +235,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'different-meanings',
         title: '“Reversible” means something different for each action',
         paragraphs: [
-          'Archive is a label change: remove Inbox, then add it back. Later is two label changes: remove Inbox and add DeclutrMail/Later, then invert both. Delete moves mail to Gmail Trash, where Gmail supplies a temporary recovery period. Keep and Protected are sender settings that can be changed again.',
+          'Archive is a label change: remove Inbox, then add it back. Later is two label changes: remove Inbox and add DeclutrMail/Later, then invert both. Delete moves email to Gmail Trash, where Gmail supplies a temporary recovery period. Keep and Protected are sender settings that can be changed again.',
           'Unsubscribe is categorically different. Once a standards request or a user-sent mailto message reaches another organization, DeclutrMail cannot pull it back. A user may subscribe again later, but that is a new request rather than an inverse operation.',
           'Putting all five under one “Everything is undoable” message makes the easiest promise win over the actual system. A trustworthy interface names the recovery mechanism beside the action.',
         ],
@@ -244,7 +244,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'preview',
         title: 'A preview answers questions that undo cannot',
         paragraphs: [
-          'Undo can reverse a supported operation after it runs. It cannot tell the user beforehand whether the selected sender was correct, whether the count includes years of mail, whether future messages are affected, or whether an external request will be delivered.',
+          'Undo can reverse a supported operation after it runs. It cannot tell the user beforehand whether the selected sender was correct, whether the count includes years of email, whether future messages are affected, or whether an external request will be delivered.',
           'A useful preview states what changes, what does not change, which email is affected, and how recovery works. For Unsubscribe it should say that existing email stays put and the delivered request is one-way. For manual Archive it should say that future messages may still arrive.',
           'The preview is therefore not decorative friction. It is the place where the product makes its model inspectable before consequences begin.',
         ],
@@ -253,7 +253,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'journal',
         title: 'A good Activity history supports accurate Undo',
         paragraphs: [
-          'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that mailbox so a retry does not repeat or compound them.',
+          'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that Gmail account so a retry does not repeat or compound them.',
           'DeclutrMail stores Gmail message IDs and label changes rather than a duplicate email body. Activity shows Undo while recovery is available. Triage also shows recent actions, but Activity remains the dependable place to review results and start recovery.',
           'The deadline should be visible. Every plan offers Undo for thirty days. Gmail Trash can end recovery earlier if the user empties it or permanently deletes an email.',
         ],
@@ -277,7 +277,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         title: 'Automation needs observation in addition to undo',
         paragraphs: [
           'A manual mistake affects one reviewed set. An active rule can repeat the mistake every time the condition matches. Undoing yesterday’s messages does not correct tomorrow’s rule unless the automation state is also paused or changed.',
-          'DeclutrMail’s presets show what they would do before you turn them on. Choose Watch first and matches collect without moving mail, for your approval. Either way you review the matching email and deliberately turn the rule on. The safety model is not “the rule is fine because actions can be undone”; it is “the user saw representative matches before the rule began and can still review each result.”',
+          'DeclutrMail’s presets show what they would do before you turn them on. Choose Watch first and matches collect without moving email, for your approval. Either way you review the matching email and deliberately turn the rule on. The safety model is not “the rule is fine because actions can be undone”; it is “the user saw representative matches before the rule began and can still review each result.”',
           'Unsubscribe automation deserves extra caution because delivered requests have no inverse. Protected senders are excluded before recommendations so known exceptions do not enter the automation path.',
         ],
       },

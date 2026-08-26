@@ -64,7 +64,7 @@ export function MailboxesCard({
         </p>
 
         {mailboxes.length === 0 ? (
-          <p style={mutedTextStyle}>No mailboxes connected yet — connect one to start.</p>
+          <p style={mutedTextStyle}>No Gmail accounts connected yet — connect one to start.</p>
         ) : (
           <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0 }}>
             {mailboxes.map((m, i) => {
@@ -87,13 +87,13 @@ export function MailboxesCard({
                   ? 'Data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
                   : "You can reconnect once we've finished erasing what we stored."
                 : undefined;
-              const reconnectBlockedReasonId = `mailbox-${m.id}-reconnect-blocked`;
+              const reconnectBlockedReasonId = `Gmail account-${m.id}-reconnect-blocked`;
               const reconnectBlocked = deletionInFlight || (atLimit && !needsReconnect);
               const reconnectHighlighted = m.id === highlightMailboxId;
               return (
                 <li
                   key={m.id}
-                  id={`mailbox-${m.id}`}
+                  id={`Gmail account-${m.id}`}
                   tabIndex={-1}
                   data-reconnect-highlighted={reconnectHighlighted ? 'true' : undefined}
                   style={{
@@ -178,7 +178,7 @@ export function MailboxesCard({
                         {/* The sibling #418 missed: the onboarding gate got a
                             real retry while this card kept a dead-end tag
                             (fix-the-class, D158 triage). Same endpoint, same
-                            explicit mailbox scoping — the row's id, never
+                            explicit Gmail account scoping — the row's id, never
                             "whatever is active". */}
                         <RetrySyncButton mailboxId={m.id} />
                       </>

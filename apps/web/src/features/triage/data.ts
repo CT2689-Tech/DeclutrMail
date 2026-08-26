@@ -391,7 +391,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     signals: [
       'Read rate: 85% over the last 90 days',
       'Volume: 8 messages/month',
-      '"Later" keeps the mail in Gmail but stops surfacing it in your daily queue',
+      '"Later" keeps the email in Gmail but stops surfacing it in your daily queue',
     ],
     protectionReason: null,
     monthlyVolume: 8,
@@ -444,7 +444,7 @@ export const TRIAGE_QUEUE: readonly TriageDecisionRow[] = [
     unsubscribeMethod: 'none',
     verdict: 'keep',
     confidence: 0.88,
-    reasoning: "You read 95% of Priya's mail. No change recommended.",
+    reasoning: "You read 95% of Priya's email. No change recommended.",
     signals: [
       'Read rate: 95% over the last 90 days',
       'Volume: 6 messages/month',

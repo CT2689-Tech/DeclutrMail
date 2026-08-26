@@ -96,7 +96,7 @@ describe('terminal action invalidation', () => {
 
     await waitFor(() => expect(result.current.data?.status).toBe('done'));
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: undoKeys.all }));
-    expect(mailboxHeaders).toEqual(['mailbox-a']);
+    expect(mailboxHeaders).toEqual(['Gmail account-a']);
   });
 
   it('invalidates the global undo root when a batch becomes terminal', async () => {

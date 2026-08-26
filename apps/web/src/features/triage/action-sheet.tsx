@@ -90,8 +90,15 @@ export function ActionSheet({
   const previewPending = inboxCount === 'loading';
   const wakeAtInvalid =
     verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
+  // A mail-moving verb with zero matches is a no-op that still costs a
+  // cleanup action on Free. Senders already blocks this (`nothingToActOn`,
+  // confirm-action-modal.tsx); triage did not, so the two surfaces disagreed
+  // on the same decision.
+  const nothingToActOn = requiresLivePreview && inboxCount === 0;
   const confirmDisabled =
-    (requiresLivePreview && (previewPending || previewUnavailable)) || wakeAtInvalid;
+    (requiresLivePreview && (previewPending || previewUnavailable)) ||
+    nothingToActOn ||
+    wakeAtInvalid;
 
   // Acting on a Protected sender. D245 excludes Protected from BULK and
   // AUTOMATIC actions, so this explicit single-row action stays open —
@@ -221,13 +228,13 @@ export function ActionSheet({
             confirm; Cancel changes nothing.
           </ContextualHelp>
 
-          {verb === 'Later' && selectedWakeAt !== null && (
+          {verb === 'Later' && (
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
               <span style={{ color: color.fg, fontWeight: 600 }}>Return to Inbox</span>
               <input
                 type="datetime-local"
                 aria-label="Later return time"
-                value={toLocalDateTimeInput(selectedWakeAt)}
+                value={selectedWakeAt === null ? '' : toLocalDateTimeInput(selectedWakeAt)}
                 min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
                 onChange={(event) => {
                   const next = new Date(event.currentTarget.value);
@@ -284,7 +291,7 @@ export function ActionSheet({
                   already in the inbox
                 </span>
                 <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-                  On Free, this separate backlog move uses a second cleanup action.
+                  Uses a second cleanup action on Free.
                 </span>
               </span>
             </button>
@@ -366,17 +373,19 @@ export function ActionSheet({
                 it by design. Only the archived backlog is undoable.
                 Archive/Later are fully reversible (D232). */}
             {confirmDisabled
-              ? wakeAtInvalid
-                ? 'Choose a future return time before confirming Later.'
-                : inboxCount === 'unavailable'
-                  ? "Couldn't load a live preview. Close and retry — no inbox mail can move without one."
-                  : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+              ? nothingToActOn
+                ? 'No matching email in Inbox right now — nothing to act on.'
+                : wakeAtInvalid
+                  ? 'Later needs a future return time before you can confirm.'
+                  : inboxCount === 'unavailable'
+                    ? "Couldn't load a live preview. Close and retry — no inbox email can move without one."
+                    : 'Counting inbox email — confirm unlocks after the live preview loads.'
               : verb === 'Unsubscribe'
                 ? effectiveArchiveHistoric
-                  ? "The unsubscribe itself can't be undone — the archived backlog uses your plan's Activity undo window."
-                  : "The unsubscribe request can't be undone. Existing inbox mail stays put."
+                  ? "The unsubscribe itself can't be undone — the archived email uses your plan's Activity undo window."
+                  : "The unsubscribe request can't be undone. Existing inbox email stays put."
                 : verb === 'Delete'
-                  ? "Moves matching inbox mail to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days."
+                  ? "Moves matching inbox email to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days."
                   : "Reversible for your plan's undo window from Activity."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>

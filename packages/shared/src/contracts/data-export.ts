@@ -60,7 +60,7 @@ export const DATA_EXPORT_FORMAT_MANIFEST = {
     buttonLabel: 'Download selected data',
     pendingLabel: 'Preparing JSON…',
     description:
-      'Mailbox addresses and status, sender profiles and decisions, listed email details, Activity history, and product feedback.',
+      'Gmail account addresses and status, sender profiles and decisions, listed email details, Activity history, and product feedback.',
     includedInventoryIds: includedInventoryIds('json'),
     completeAccountExport: false,
   },

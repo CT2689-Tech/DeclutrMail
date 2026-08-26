@@ -54,7 +54,7 @@ export function QuietRoute() {
       />
       {mailboxes.length === 0 ? (
         <EmptyState
-          title="No mailboxes connected"
+          title="No Gmail accounts connected"
           description="Connect a Gmail account to set quiet hours for it."
         />
       ) : (

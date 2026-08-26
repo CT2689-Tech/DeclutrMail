@@ -177,8 +177,8 @@ export function UnprotectButton({
         {setPolicy.isPending ? 'Removing protection…' : 'Unprotect'}
       </Button>
       <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.4 }}>
-        Nothing moves. Automatic protection won&rsquo;t re-apply — you can protect this sender again
-        by hand.
+        Nothing moves. Automatic protection won&rsquo;t re-apply; you can protect this sender by
+        hand.
       </span>
     </span>
   );

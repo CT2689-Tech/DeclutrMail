@@ -160,7 +160,7 @@ export function PrivacyDataView({
       {/* 2 — which mailboxes the storage list applies to. */}
       <Card padding={0}>
         <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Mailboxes in DeclutrMail</h3>
+          <h3 style={cardTitleStyle}>Gmail accounts in DeclutrMail</h3>
           {mailboxes.length === 0 ? (
             <p style={mutedTextStyle}>
               No mailboxes connected — no Gmail data is being saved right now.
@@ -197,12 +197,12 @@ export function PrivacyDataView({
           <p style={mutedTextStyle}>
             {undoDays !== null ? (
               <>
-                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for{' '}
+                Archive, Later, and archived unsubscribe email can be undone from Activity for{' '}
                 <strong style={{ color: color.fg }}>{undoDays} days</strong> on your plan.
               </>
             ) : (
               <>
-                Archive, Later, and archived unsubscribe backlogs can be undone from Activity for at
+                Archive, Later, and archived unsubscribe email can be undone from Activity for at
                 least {MIN_UNDO_WINDOW_DAYS} days on any plan.
               </>
             )}{' '}
@@ -277,7 +277,7 @@ export function PrivacyDataView({
           <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
             <li style={{ ...exitRowStyle, borderTop: 'none' }}>
               <div>
-                <div style={exitTitleStyle}>Disconnect a mailbox</div>
+                <div style={exitTitleStyle}>Disconnect a Gmail account</div>
                 <div style={exitDetailStyle}>
                   Removes DeclutrMail's saved Google credential and stops sync and Gmail actions.
                   Saved Gmail and DeclutrMail data stays so reconnecting can continue its history;
@@ -391,9 +391,9 @@ function deletionTriggerDetail(
     case 'delete-indexed-data':
       return 'Deleted when you choose Disconnect & delete saved data, or when you delete your DeclutrMail account.';
     case 'delete-account':
-      return 'Retained after one mailbox’s saved data is deleted; deleted with the DeclutrMail account.';
+      return 'Retained after one Gmail account’s saved data is deleted; deleted with the DeclutrMail account.';
     case 'retention-policy':
-      return 'Retained after mailbox or account deletion only under the stated operational retention policy.';
+      return 'Retained after Gmail account or account deletion only under the stated operational retention policy.';
   }
 }
 

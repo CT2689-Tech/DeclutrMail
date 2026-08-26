@@ -123,7 +123,7 @@ export function AutopilotObservePreview() {
         {rules.isError && (
           <EmptyState
             title="Couldn't load your preset rules"
-            description="Your mailbox was not changed. Try this preview again in a moment."
+            description="Your Gmail account was not changed. Try this preview again in a moment."
           />
         )}
         {rules.data && rules.data.length === 0 && (
@@ -246,7 +246,7 @@ function previewState(
 ): RulePreviewState {
   if (preview.isPending) return { status: 'loading' };
   if (preview.isError) {
-    return { status: 'error', message: 'Preview failed. Your mailbox was not changed.' };
+    return { status: 'error', message: 'Preview failed. Your Gmail account was not changed.' };
   }
   if (preview.data?.ruleId === ruleId) return { status: 'ready', result: preview.data };
   return { status: 'loading' };

@@ -60,7 +60,8 @@ const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
     liveRole: 'alert',
   },
   target_invalid: {
-    message: 'Could not match that recovery request to the mailbox you chose. Try again below.',
+    message:
+      'Could not match that recovery request to the Gmail account you chose. Try again below.',
     tone: 'danger',
     liveRole: 'alert',
   },
@@ -70,7 +71,7 @@ const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
     liveRole: 'status',
   },
   failed: {
-    message: 'Could not reconnect Gmail. Try again from this mailbox list.',
+    message: 'Could not reconnect Gmail. Try again from this Gmail account list.',
     tone: 'danger',
     liveRole: 'alert',
   },
@@ -78,13 +79,14 @@ const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
 
 const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, ReconnectResultCopy> = {
   target_invalid: {
-    message: 'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
+    message:
+      'That Gmail recovery request is no longer available. Choose a Gmail account and try again.',
     tone: 'danger',
     liveRole: 'alert',
   },
   inbox_limit: {
     message:
-      'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
+      'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a Gmail account before trying again.',
     tone: 'warn',
     liveRole: 'status',
   },
@@ -160,7 +162,7 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
 
 /** Left-nav anchor targets — ids stamped on each SectionLabel. */
 const NAV_SECTIONS = [
-  { id: 'mailboxes', label: 'Mailboxes' },
+  { id: 'Gmail accounts', label: 'Gmail accounts' },
   { id: 'actions', label: 'Actions' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'autopilot', label: 'Autopilot' },
@@ -389,7 +391,7 @@ export function SettingsScreen({
           }
         />
 
-        <SectionLabel id="mailboxes" focusable>
+        <SectionLabel id="Gmail accounts" focusable>
           Mailboxes
         </SectionLabel>
         <MailboxesCard

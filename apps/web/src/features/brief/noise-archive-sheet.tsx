@@ -115,7 +115,7 @@ export function NoiseArchiveSheet({
             id="dm-brief-noise-sheet-title"
             style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
           >
-            Archive mail from {n} sender{n === 1 ? '' : 's'}
+            Archive email from {n} sender{n === 1 ? '' : 's'}
           </h2>
           <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}>
             This archives everything from these senders that is in your inbox now — not only
@@ -246,12 +246,12 @@ export function NoiseArchiveSheet({
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
             {confirmDisabled
               ? scopeConflict
-                ? 'Mailbox changed — close this and start again.'
+                ? 'Gmail account changed — close this and start again.'
                 : preview === 'unavailable'
                   ? 'Preview unavailable — retry before confirming.'
                   : nothingToActOn
                     ? 'Nothing from these senders is in your inbox — there is nothing to archive.'
-                    : 'Counting inbox mail — confirm unlocks after the live preview loads.'
+                    : 'Counting inbox email — confirm unlocks after the live preview loads.'
               : "One undo reverses the whole batch during your plan's Activity window."}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>

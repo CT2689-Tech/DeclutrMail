@@ -168,7 +168,7 @@ const cleanEmail: ComparisonDefinition = {
   chooseCompetitor: {
     headline: 'Choose Clean Email for breadth',
     points: [
-      'You need Outlook, Yahoo, iCloud, or another IMAP mailbox as well as Gmail.',
+      'You need Outlook, Yahoo, iCloud, or another IMAP Gmail account as well as Gmail.',
       'Smart folders, storage cleanup, sender settings, Screener, and Auto Clean belong in one suite.',
       'You want bulk subscription management and a fuller email-management app.',
     ],
@@ -193,7 +193,7 @@ const cleanEmail: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'Gmail account support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Major providers plus IMAP',
@@ -308,7 +308,7 @@ const trimbox: ComparisonDefinition = {
     headline: 'Choose DeclutrMail for a broader sender decision',
     points: [
       'You need Keep, Archive, Later, and Delete alongside supported unsubscribe flows.',
-      'You want impact previews and an activity record for reversible mailbox moves.',
+      'You want impact previews and an activity record for reversible Gmail account moves.',
       'You want pricing and plan limits published before connecting Gmail.',
     ],
   },
@@ -324,12 +324,12 @@ const trimbox: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'Gmail account support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail is documented',
         detail:
-          'Support for other mailbox providers was not clearly stated on the reviewed current product pages.',
+          'Support for other Gmail account providers was not clearly stated on the reviewed current product pages.',
         state: 'unknown',
       },
     },
@@ -454,7 +454,7 @@ const sanebox: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'Gmail account support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Broad provider support',
@@ -587,7 +587,7 @@ const leaveMeAlone: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'Gmail account support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Google, Microsoft, major providers, and IMAP',
@@ -708,15 +708,15 @@ const unrollMe: ComparisonDefinition = {
     points: [
       'You want many subscriptions collapsed into one daily digest email rather than decided one by one.',
       'Paying nothing matters more to you than limiting what a vendor reads, and you accept the market-research terms.',
-      'Your mailbox holds little you would mind a research panel deriving purchase data from.',
+      'Your Gmail account holds little you would mind a research panel deriving purchase data from.',
     ],
   },
   chooseDeclutrMail: {
-    headline: 'Choose DeclutrMail to pay in money, not mailbox access',
+    headline: 'Choose DeclutrMail to pay in money, not Gmail account access',
     points: [
       'You want full message bodies and attachments never fetched, with the stored field list published.',
       'You want the count, a sample, and the exact Gmail changes before Archive, Later, or Delete runs.',
-      'You would rather be the customer than the panel: no mailbox data is sold, shared for research, or used for advertising.',
+      'You would rather be the customer than the panel: no Gmail account data is sold, shared for research, or used for advertising.',
     ],
   },
   rows: [
@@ -731,7 +731,7 @@ const unrollMe: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'Gmail account support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail documented; other providers not stated by name',
@@ -888,7 +888,7 @@ const gmailFilters: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'Gmail account support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail and Google Workspace',
@@ -1023,11 +1023,11 @@ const gmailNative: ComparisonDefinition = {
       },
     },
     {
-      label: 'Mailbox support',
+      label: 'Gmail account support',
       declutrMail: DECLUTR.providers,
       competitor: {
         summary: 'Gmail and Google Workspace',
-        detail: 'Built into the mailbox itself; nothing to connect.',
+        detail: 'Built into the Gmail account itself; nothing to connect.',
         state: 'native',
       },
     },

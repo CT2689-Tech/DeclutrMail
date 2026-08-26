@@ -92,8 +92,8 @@ export function ApproveConfirmModal({
     >
       {coversMoreThanShown && (
         <p style={{ margin: '0 0 8px', fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
-          Showing the latest {shown} of {approxTotal != null ? `~${approxTotal}` : 'all'} pending
-          suggestions — approving covers every pending suggestion for this rule.
+          Showing {shown} of {approxTotal != null ? `~${approxTotal}` : 'all'} — approving covers
+          all of them.
         </p>
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

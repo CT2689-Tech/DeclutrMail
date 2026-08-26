@@ -378,7 +378,11 @@ describe('TriageUndoTray (D35)', () => {
     });
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(1));
 
-    expect(mailboxHeaders.slice(0, 3)).toEqual(['mailbox-a', 'mailbox-a', 'mailbox-b']);
+    expect(mailboxHeaders.slice(0, 3)).toEqual([
+      'Gmail account-a',
+      'Gmail account-a',
+      'Gmail account-b',
+    ]);
     expect(client.getQueryData(undoKeys.tray('mailbox-a'))).toBeDefined();
     expect(client.getQueryData(undoKeys.tray('mailbox-b'))).toBeDefined();
   });
@@ -423,7 +427,7 @@ describe('TriageUndoTray (D35)', () => {
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo Archive' }));
-    await waitFor(() => expect(postMailboxHeaders).toEqual(['mailbox-a']));
+    await waitFor(() => expect(postMailboxHeaders).toEqual(['Gmail account-a']));
 
     view.rerender(
       <QueryWrapper client={client}>

@@ -85,7 +85,7 @@ export const ERROR_CODES = {
     status: 500,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Something went wrong on our side. Your mail is untouched — try again in a moment.',
+    message: 'Something went wrong on our side. Your email is untouched — try again in a moment.',
   },
 
   // --- domain: mailbox scope (current-mailbox.guard, auth orchestrator) ---
@@ -417,7 +417,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "This mailbox's saved data is still being deleted. Reconnect after it finishes.",
+    message: "This Gmail account's saved data is still being deleted. Reconnect after it finishes.",
   },
 
   // --- domain codes recovered by the 2026-08-21 audit (ADR-0014) ---
@@ -564,7 +564,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Initial sync has not completed for this mailbox yet.',
+    message: 'Initial sync has not completed for this Gmail account yet.',
   },
   // not found — scoped to the current mailbox
   SENDER_NOT_FOUND: {
@@ -626,7 +626,7 @@ export const ERROR_CODES = {
     status: 400,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'Wake time must be in the future.',
+    message: 'Return time must be in the future.',
   },
   WAKE_TIME_NOT_APPLICABLE: {
     status: 400,
@@ -640,31 +640,31 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: true,
     message:
-      'Actions are queued elsewhere right now. Your mail is untouched — try again in a moment.',
+      'Actions are queued elsewhere right now. Your email is untouched — try again in a moment.',
   },
   ACTION_QUEUE_UNAVAILABLE: {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Action recovery is temporarily unavailable. Your mail is untouched.',
+    message: 'Action recovery is temporarily unavailable. Your email is untouched.',
   },
   RECOVERY_QUEUE_UNAVAILABLE: {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Recovery verification is temporarily unavailable. Your mail is untouched.',
+    message: 'Recovery verification is temporarily unavailable. Your email is untouched.',
   },
   ENQUEUE_FAILED: {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "That couldn't be queued just now. Your mail is untouched — try again in a moment.",
+    message: "That couldn't be queued just now. Your email is untouched — try again in a moment.",
   },
   RECOVERY_ENQUEUE_FAILED: {
     status: 503,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: "Recovery couldn't be queued just now. Your mail is untouched — try again.",
+    message: "Recovery couldn't be queued just now. Your email is untouched — try again.",
   },
   SERVICE_UNAVAILABLE: {
     status: 503,

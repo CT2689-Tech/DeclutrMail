@@ -433,7 +433,7 @@ describe('SettingsScreen', () => {
     });
     await waitFor(() => expect(reconnect).toBeDisabled());
     const describedBy = reconnect.getAttribute('aria-describedby');
-    expect(describedBy).toBe('mailboxes-inbox-limit-explanation');
+    expect(describedBy).toBe('Gmail accounts-inbox-limit-explanation');
     expect(document.getElementById(describedBy!)).toHaveTextContent(
       new RegExp(`your plan includes ${TIER_MANIFEST.pro.inboxLimit} connected inboxes`, 'i'),
     );
@@ -834,10 +834,10 @@ describe('SettingsScreen', () => {
 
       await waitFor(() => expect(toast).toHaveBeenCalledWith(message, tone));
       expect(screen.getByTestId(`reconnect-result-${liveRole}`)).toHaveTextContent(message);
-      expect(document.activeElement).toBe(document.getElementById('mailboxes'));
+      expect(document.activeElement).toBe(document.getElementById('Gmail accounts'));
       expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
       expect(new URLSearchParams(window.location.search).has('connect_start_result')).toBe(false);
-      expect(window.location.hash).toBe('#mailboxes');
+      expect(window.location.hash).toBe('#Gmail accounts');
       expect(toast).toHaveBeenCalledTimes(1);
     },
   );
@@ -897,10 +897,10 @@ describe('SettingsScreen', () => {
       'Gmail reconnected. Sync status is shown below.',
     );
     expect(screen.getByTestId('reconnect-result-alert')).toBeEmptyDOMElement();
-    expect(document.activeElement).toBe(document.getElementById(`mailbox-${MAILBOX_A}`));
+    expect(document.activeElement).toBe(document.getElementById(`Gmail account-${MAILBOX_A}`));
     expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
     expect(new URLSearchParams(window.location.search).has('reconnect_result')).toBe(false);
-    expect(window.location.hash).toBe('#mailboxes');
+    expect(window.location.hash).toBe('#Gmail accounts');
     // Both unrelated reads are still unresolved when the return has
     // already been acknowledged and removed from the address bar.
     expect(screen.getByText('Loading plan…')).toBeInTheDocument();
@@ -921,14 +921,16 @@ describe('SettingsScreen', () => {
     expect(document.activeElement).toBe(row);
     expect(row?.style.outline).not.toBe('none');
     expect(scrollIntoViewSpy.mock.contexts).toContain(row);
-    expect(scrollIntoViewSpy.mock.contexts).not.toContain(document.getElementById('mailboxes'));
+    expect(scrollIntoViewSpy.mock.contexts).not.toContain(
+      document.getElementById('Gmail accounts'),
+    );
 
     const remainingParams = new URLSearchParams(window.location.search);
     expect([...remainingParams.entries()]).toEqual([
       ['source', 'account'],
       ['return', '/settings/privacy'],
     ]);
-    expect(window.location.hash).toBe('#mailboxes');
+    expect(window.location.hash).toBe('#Gmail accounts');
     expect(toast).toHaveBeenCalledTimes(1);
   });
 
@@ -942,7 +944,7 @@ describe('SettingsScreen', () => {
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
     expect(document.querySelector('[data-reconnect-highlighted="true"]')).toBeNull();
-    expect(window.location.hash).toBe('#mailboxes');
+    expect(window.location.hash).toBe('#Gmail accounts');
   });
 
   it('falls back when a valid reconnect UUID has no matching mailbox row', async () => {
@@ -954,7 +956,7 @@ describe('SettingsScreen', () => {
     const section = document.getElementById('mailboxes');
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
-    expect(window.location.hash).toBe('#mailboxes');
+    expect(window.location.hash).toBe('#Gmail accounts');
   });
 
   it('rejects a malformed reconnect fragment without passing it into a DOM selector or id lookup', async () => {
@@ -964,14 +966,16 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
-    expect(getElementByIdSpy.mock.calls.some(([id]) => id.startsWith('mailbox-'))).toBe(false);
-    expect(querySelectorSpy.mock.calls.some(([selector]) => selector.includes('mailbox-'))).toBe(
+    expect(getElementByIdSpy.mock.calls.some(([id]) => id.startsWith('Gmail account-'))).toBe(
       false,
     );
+    expect(
+      querySelectorSpy.mock.calls.some(([selector]) => selector.includes('Gmail account-')),
+    ).toBe(false);
     const section = document.getElementById('mailboxes');
     expect(document.activeElement).toBe(section);
     expect(scrollIntoViewSpy.mock.contexts).toContain(section);
-    expect(window.location.hash).toBe('#mailboxes');
+    expect(window.location.hash).toBe('#Gmail accounts');
 
     getElementByIdSpy.mockRestore();
     querySelectorSpy.mockRestore();
@@ -981,7 +985,7 @@ describe('SettingsScreen', () => {
     setSettingsLocation('source=account&reconnect_result=unexpected', `#mailbox-${MAILBOX_A}`);
     renderScreen();
 
-    await waitFor(() => expect(window.location.hash).toBe('#mailboxes'));
+    await waitFor(() => expect(window.location.hash).toBe('#Gmail accounts'));
     expect(toast).not.toHaveBeenCalled();
     expect(new URLSearchParams(window.location.search).get('source')).toBe('account');
     expect(new URLSearchParams(window.location.search).has('reconnect_result')).toBe(false);

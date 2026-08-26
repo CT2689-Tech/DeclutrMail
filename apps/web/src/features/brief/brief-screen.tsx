@@ -186,7 +186,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
       <ScreenIntro
         id="brief"
         title="Daily Brief"
-        body={`A short summary of yesterday's mail. Reply first, FYI for context, Noise to clear.`}
+        body={`A short summary of yesterday's email. Reply first, FYI for context, Noise to clear.`}
         tip="Open a message in Gmail to reply or review it."
       />
       <BriefMeta brief={brief} />

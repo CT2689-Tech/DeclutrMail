@@ -14,18 +14,18 @@ const VERB_ROWS: ReadonlyArray<{
   {
     wire: 'archive',
     verb: 'Archive',
-    detail: 'Moves matching inbox mail to Gmail All Mail, where it stays searchable.',
+    detail: 'Moves matching inbox email to Gmail All Mail, where it stays searchable.',
   },
   {
     wire: 'unsubscribe',
     verb: 'Unsubscribe',
     detail:
-      'Sends or prepares a request; the sender controls the outcome and timing. Past mail moves only with a separate action.',
+      'Sends or prepares a request; the sender controls the outcome and timing. Past email moves only with a separate action.',
   },
   {
     wire: 'later',
     verb: 'Later',
-    detail: 'Moves current inbox mail to DeclutrMail/Later and requires a return time.',
+    detail: 'Moves current inbox email to DeclutrMail/Later and requires a return time.',
   },
 ];
 

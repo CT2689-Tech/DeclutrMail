@@ -245,7 +245,7 @@ describe('AccountMenu Gmail reconnect health', () => {
 
     await user.tab();
     expect(
-      screen.getByRole('button', { name: `Selected mailbox ${MAILBOX_A.email}` }),
+      screen.getByRole('button', { name: `Selected Gmail account ${MAILBOX_A.email}` }),
     ).toHaveFocus();
     await user.tab();
     expect(

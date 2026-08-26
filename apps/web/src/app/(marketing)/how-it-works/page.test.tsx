@@ -33,7 +33,7 @@ describe('/how-it-works', () => {
     // assert those rather than where the button happens to live.
     expect(copy).toContain('Delete is never recommended for you');
     expect(copy).toContain('always shows a full preview first');
-    expect(copy).toContain('does not quietly decide what happens to future mail');
+    expect(copy).toContain('does not quietly decide what happens to future email');
     // The page taught "starts in Observe … switch it to Active",
     // which described a flow the app dropped on 2026-08-23. What must
     // still hold is the automation BOUNDARY: nothing runs unless the

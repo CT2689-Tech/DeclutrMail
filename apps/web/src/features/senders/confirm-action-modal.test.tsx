@@ -289,7 +289,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     // title comes off the request's senders, not `selectedCount -
     // skipped` — those agreed only before the quota cap gave a request a
     // second reason to cover fewer senders than the selection.
-    expect(screen.getByText('Archive mail from 1 sender')).toBeInTheDocument();
+    expect(screen.getByText('Archive email from 1 sender')).toBeInTheDocument();
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
     expect(screen.getByText(/Acting on 1 of the 40 eligible senders/)).toBeInTheDocument();
     expect(screen.getByText(/The rest stay untouched/)).toBeInTheDocument();
@@ -342,7 +342,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.getByText(/Acting on 2 of the 4 eligible senders/)).toBeInTheDocument();
     expect(screen.queryByText(/4 senders you selected/)).not.toBeInTheDocument();
     // The title is the acted-on count, stated by the caller.
-    expect(screen.getByText('Archive mail from 2 senders')).toBeInTheDocument();
+    expect(screen.getByText('Archive email from 2 senders')).toBeInTheDocument();
     // And the scope line keeps the real selection total intact.
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
       '5 selected · 4 eligible · 1 skipped',
@@ -795,7 +795,7 @@ describe('ConfirmActionModal — composite notice names the acting verb', () => 
     fireEvent.click(screen.getByRole('radio', { name: chip }));
 
     expect(
-      screen.getByText(new RegExp(`\\. ${expectedVerb} only acts on mail still in the inbox\\.$`)),
+      screen.getByText(new RegExp(`\\. ${expectedVerb} only acts on email still in the inbox\\.$`)),
     ).toBeTruthy();
     expect(screen.queryByText(/Unsubscribe only acts on mail still in the inbox/)).toBeNull();
     // The primary still does real work, so confirm stays available.

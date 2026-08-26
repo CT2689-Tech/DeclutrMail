@@ -727,7 +727,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         title="How Autopilot works"
         body={
           canActivate
-            ? 'Turning a rule on shows exactly what it would do to mail already in your inbox. Confirm and it acts, then keeps acting on matching mail that arrives — or choose Watch first and it collects matches for your approval instead.'
+            ? 'Turning a rule on shows exactly what it would do to email already in your inbox. Confirm and it acts, then keeps acting on matching email that arrives — or choose Watch first and it collects matches for your approval instead.'
             : `Rules collect matching email in Observe for you to approve. Rules that act on future matches on their own are part of ${ACT_PLAN_NAME}.`
         }
       />
@@ -801,7 +801,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             {state.kind === 'empty' && (
               <EmptyState
                 title="No Autopilot rules yet"
-                description="The five preset rules appear after your mailbox finishes its first sync. Matching senders then appear here as suggestions."
+                description="The five preset rules appear after your Gmail account finishes its first sync. Matching senders then appear here as suggestions."
               />
             )}
             {state.kind === 'ready' && rules.length > 0 && (

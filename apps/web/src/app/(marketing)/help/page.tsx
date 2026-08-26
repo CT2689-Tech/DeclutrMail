@@ -56,7 +56,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'unsubscribe-flow',
     q: 'How does Unsubscribe work?',
-    a: 'Where a sender supports the one-click unsubscribe standard (Gmail’s list-unsubscribe), DeclutrMail sends the unsubscribe request for you and tracks the result. Where a sender only offers a mailto: unsubscribe address, we prepare the email and you send it yourself from Gmail — nothing is auto-sent on your behalf. The request asks the sender to stop future mail; the sender controls whether and when delivery stops. Nothing already in your inbox moves.',
+    a: 'Where a sender supports the one-click unsubscribe standard (Gmail’s list-unsubscribe), DeclutrMail sends the unsubscribe request for you and tracks the result. Where a sender only offers a mailto: unsubscribe address, we prepare the email and you send it yourself from Gmail — nothing is auto-sent on your behalf. The request asks the sender to stop future email; the sender controls whether and when delivery stops. Nothing already in your inbox moves.',
   },
   {
     id: 'bulk-unsubscribe',
@@ -88,7 +88,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'autopilot-modes',
     q: 'What is the difference between Autopilot’s Observe and Active modes?',
-    a: 'Autopilot rules are presets you turn on. Turning one on shows exactly what it would do to matching mail already in your inbox; confirm and it acts, then keeps acting on matching mail that arrives. If you would rather look first, choose Watch first and the rule collects matches for your approval without changing anything. You can switch a watching rule over later, or pause any rule at any time.',
+    a: 'Autopilot rules are presets you turn on. Turning one on shows exactly what it would do to matching email already in your inbox; confirm and it acts, then keeps acting on matching email that arrives. If you would rather look first, choose Watch first and the rule collects matches for your approval without changing anything. You can switch a watching rule over later, or pause any rule at any time.',
   },
   {
     id: 'pricing-tiers',

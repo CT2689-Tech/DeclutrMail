@@ -120,7 +120,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(inboxChip).toHaveTextContent('2');
     expect(allMailChip).toHaveTextContent('9');
     // Default reach keeps the inbox-scoped title + caption.
-    expect(screen.getByText(`Delete ${row.senderName}'s inbox mail`)).toBeInTheDocument();
+    expect(screen.getByText(`Delete ${row.senderName}'s inbox email`)).toBeInTheDocument();
     expect(screen.getByText(/currently match in Inbox/i)).toBeInTheDocument();
   });
 
@@ -173,7 +173,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
 
     rerender(<DecidePreview {...props} reach="all_mail" />);
     expect(
-      screen.getByText(`Delete ${row.senderName}'s inbox + archived mail`),
+      screen.getByText(`Delete ${row.senderName}'s inbox + archived email`),
     ).toBeInTheDocument();
     // The armed headline figure IS the all-mail count — '9' appears on
     // the chip and the headline, while '2' remains only on the inbox chip.

@@ -21,7 +21,7 @@ describe('connectMailboxStartUrl', () => {
   it('encodes the opaque reconnect target', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
 
-    expect(connectMailboxStartUrl('mailbox/id with ? &')).toBe(
+    expect(connectMailboxStartUrl('Gmail account/id with ? &')).toBe(
       'https://api.example.test/api/auth/google/connect-mailbox/start?reconnectMailboxId=mailbox%2Fid%20with%20%3F%20%26',
     );
   });
@@ -41,7 +41,7 @@ describe('connectMailboxStartUrl', () => {
   it('encodes a disconnected mailbox as a distinct reactivation target', () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test/');
 
-    expect(reactivateMailboxStartUrl('mailbox/id with ? &')).toBe(
+    expect(reactivateMailboxStartUrl('Gmail account/id with ? &')).toBe(
       'https://api.example.test/api/auth/google/connect-mailbox/start?reactivateMailboxId=mailbox%2Fid%20with%20%3F%20%26',
     );
   });

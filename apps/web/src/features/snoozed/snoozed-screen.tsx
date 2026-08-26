@@ -49,7 +49,7 @@ type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
  *     exactly what will happen before anything mutates). The restore
  *     runs in the snooze-wake worker; the row shows "Waking…" and the
  *     list polls until it drops off.
- *   - **Change wake time ▾** — D82 presets + custom date/time
+ *   - **Change return time ▾** — D82 presets + custom date/time
  *     + optional note. Later cannot be made indefinite.
  *
  * Canonical product language (D245): "Later" is both the verb and the
@@ -123,8 +123,8 @@ export function SnoozedScreen() {
       <ScreenIntro
         id="snoozed"
         title="Later"
-        body="Senders you sent to Later. Their mail sits in the DeclutrMail/Later label in Gmail — out of your inbox, one click away — and comes back at the wake time you choose."
-        tip="Wake now brings everything back immediately. Nothing is unsubscribed or deleted from here."
+        body="Senders you sent to Later. Their email sits in the DeclutrMail/Later label in Gmail — out of your inbox, one click away — and comes back at the return time you choose."
+        tip="Bring back now returns everything to your inbox immediately. Nothing is unsubscribed or deleted from here."
       />
 
       {returnIssues.length > 0 ? <LaterPageReturnAlert rows={returnIssues} /> : null}
@@ -177,10 +177,10 @@ function LaterPageReturnAlert({ rows }: { rows: SnoozedSenderRow[] }) {
       confirm the return; nothing will be deleted. Check the inbox or Gmail&apos;s DeclutrMail/Later
       label.{' '}
       {supportRequired
-        ? 'Choose Wake now once. If it still fails, use Help in Settings.'
+        ? 'Choose Bring back now once. If it still fails, use Help in Settings.'
         : reconnectRequired
-          ? 'Reconnect Gmail from the account menu, then choose Wake now.'
-          : 'DeclutrMail will keep retrying automatically, or choose Wake now to retry immediately.'}
+          ? 'Reconnect Gmail from the account menu, then choose Bring back now.'
+          : 'DeclutrMail will keep retrying automatically, or choose Bring back now to retry immediately.'}
     </div>
   );
 }
@@ -353,14 +353,14 @@ export function SnoozedRow({
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 12.5, color: color.fg, whiteSpace: 'nowrap' }}>
             {waking
-              ? 'Waking…'
+              ? 'Bringing back…'
               : row.returnStatus === 'retrying'
                 ? 'Return retrying'
                 : row.returnStatus === 'missed'
                   ? 'Return overdue'
                   : row.returnStatus === 'returning'
                     ? 'Returning now…'
-                    : `Wakes ${formatWakeTime(row.snoozedUntil, new Date(), timeZone)}`}
+                    : `Returns ${formatWakeTime(row.snoozedUntil, new Date(), timeZone)}`}
           </div>
           {returnIssue ? (
             <div style={{ fontSize: 11.5, color: color.danger }}>{returnIssue}</div>
@@ -392,14 +392,14 @@ export function SnoozedRow({
             disabled={waking || wake.isPending}
             onClick={() => setPanel(panel === 'snooze-menu' ? 'closed' : 'snooze-menu')}
           >
-            Change wake time ▾
+            Change return time ▾
           </Button>
           <Button
             tone="primary"
             disabled={waking || wake.isPending}
             onClick={() => setPanel(panel === 'confirm-wake' ? 'closed' : 'confirm-wake')}
           >
-            Wake now
+            Bring back now
           </Button>
         </div>
       </div>
@@ -438,10 +438,10 @@ function returnIssueCopy(row: SnoozedSenderRow): string | null {
   }
   if (row.returnStatus !== 'retrying') return null;
   if (row.returnFailureKind === 'reauthorize') {
-    return 'Reconnect Gmail, then choose Wake now.';
+    return 'Reconnect Gmail, then choose Bring back now.';
   }
   if (row.returnFailureKind === 'needs_attention') {
-    return 'Choose Wake now. If it fails again, use Help in Settings.';
+    return 'Choose Bring back now. If it fails again, use Help in Settings.';
   }
   return 'Return is unconfirmed; automatic retry remains active.';
 }
@@ -475,7 +475,7 @@ function WakeConfirm({
     row.laterCount === null
       ? 'Everything from this sender in the DeclutrMail/Later label moves back to your inbox'
       : row.laterCount === 0
-        ? 'No mail is currently in the Later label — this clears the wake timer'
+        ? 'No email is currently in the Later label — this clears the return time'
         : `${row.laterCount} message${row.laterCount === 1 ? '' : 's'} move${row.laterCount === 1 ? 's' : ''} from DeclutrMail/Later back to your inbox`;
   return (
     <div
@@ -492,7 +492,7 @@ function WakeConfirm({
         <MailboxActionContext />
       </div>
       <span style={{ fontSize: 12.5, color: color.fg }}>
-        {what}. {presentation.futureMail.summary} {presentation.unchanged.join(' ')} The wake timer
+        {what}. {presentation.futureMail.summary} {presentation.unchanged.join(' ')} The return time
         clears.
       </span>
       <span style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
@@ -500,13 +500,13 @@ function WakeConfirm({
           Cancel
         </Button>
         <Button tone="primary" onClick={onConfirm} disabled={pending}>
-          {pending ? 'Queuing…' : 'Wake now'}
+          {pending ? 'Queuing…' : 'Bring back now'}
         </Button>
       </span>
       {error ? (
         <span role="alert" style={{ fontSize: 12, color: color.red, width: '100%' }}>
           {error instanceof ApiError && error.status === 503
-            ? "The wake queue isn't available right now. Try again in a moment."
+            ? "The return schedule isn't available right now. Try again in a moment."
             : "Couldn't queue the wake. Try again in a moment."}
         </span>
       ) : null}
@@ -624,7 +624,7 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
           tone="default"
           onClick={onClose}
           disabled={setSnooze.isPending}
-          ariaLabel={`Cancel wake-time changes for ${row.displayName || row.email}`}
+          ariaLabel={`Cancel return-time changes for ${row.displayName || row.email}`}
         >
           Cancel
         </Button>
@@ -632,7 +632,7 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
 
       {setSnooze.isError ? (
         <span role="alert" style={{ fontSize: 12, color: color.red }}>
-          Couldn&rsquo;t update the wake time. Try again in a moment.
+          Couldn&rsquo;t update the return time. Try again in a moment.
         </span>
       ) : null}
     </div>

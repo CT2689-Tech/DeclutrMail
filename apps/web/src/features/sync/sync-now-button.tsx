@@ -139,7 +139,7 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
 
     if (movedPast(lastErrorAt, baseline.error)) {
       setWatching(false);
-      toast('Sync failed — check the mailbox connection and try again.', 'danger');
+      toast('Sync failed — check the Gmail account connection and try again.', 'danger');
       return;
     }
 

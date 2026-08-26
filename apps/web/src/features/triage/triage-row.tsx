@@ -459,7 +459,7 @@ export function TriageRow({
 
       {/* The D245 safety state, changeable in place. Deliberately its
           OWN strip rather than a sixth button in the verb toolbar: the
-          verbs decide what happens to this sender's mail, Unprotect
+          verbs decide what happens to this sender's email, Unprotect
           decides whether cleanup may reach them at all, and putting the
           two in one row is what made an earlier draft bundle them. Only
           the protection review asks for it — daily Triage keeps the
@@ -599,7 +599,7 @@ export function TriageRow({
           >
             {/* Fail closed exactly like the sheet does (action-sheet's
                 `confirmDisabled`): `inlineConfirmBlocked` is true while a
-                mail-moving verb's live count has not resolved, and `busy`
+                email-moving verb's live count has not resolved, and `busy`
                 while an action is in flight. This button ignored both, so
                 the inline path could confirm a mutation before D226's
                 mandatory preview had produced a number — the one thing the

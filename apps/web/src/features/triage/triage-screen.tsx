@@ -380,12 +380,12 @@ export function TriageScreen({
       invalidateAfterDecision(qc);
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
         'warn',
       );
     } else {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
+        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
         'warn',
       );
     }
@@ -834,11 +834,10 @@ export function TriageScreen({
                       });
                       toast(
                         getActionFailureCopy('enqueue', {
-                          action: `archive the backlog from ${row.senderName}`,
+                          action: `archive the older email from ${row.senderName}`,
                           whatChanged: 'The unsubscribe request was queued.',
-                          whatDidNotChange: 'The backlog was not archived.',
-                          nextStep:
-                            'Archive the backlog from Senders if you still want to move it.',
+                          whatDidNotChange: 'The older email was not archived.',
+                          nextStep: 'Archive it from Senders if you still want to move it.',
                         }).message,
                         'warn',
                       );
@@ -1240,7 +1239,7 @@ export function TriageScreen({
           body={
             <>
               Choose what happens for each sender: Keep, Archive, Unsubscribe, Later, or Delete.
-              You’ll see the affected mail before anything changes.{' '}
+              You’ll see the affected email before anything changes.{' '}
               <a href="/inbox-simulator" style={{ color: color.primary, fontWeight: 600 }}>
                 Practice with sample data.
               </a>

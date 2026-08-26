@@ -196,7 +196,7 @@ describe('lazy browser Sentry facade', () => {
       message: 'A non-Error value reached an exception boundary.',
     });
     expect(replayedRejection).not.toHaveProperty('payload');
-    expect(JSON.stringify(replayedRejection)).not.toContain('private mailbox content');
+    expect(JSON.stringify(replayedRejection)).not.toContain('private Gmail account content');
 
     const bridgeRemovalOrders = removeEventListenerSpy.mock.calls
       .map(([type], index) => ({
@@ -427,7 +427,7 @@ describe('lazy browser Sentry facade', () => {
       message: 'A non-Error value reached an exception boundary.',
     });
     expect(replayed).not.toHaveProperty('payload');
-    expect(JSON.stringify(replayed)).not.toContain('private mailbox content');
+    expect(JSON.stringify(replayed)).not.toContain('private Gmail account content');
   });
 
   it('warns generically once, drops failed-attempt errors, then recovers on one backoff retry', async () => {

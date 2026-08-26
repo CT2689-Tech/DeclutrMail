@@ -97,7 +97,7 @@ export function FollowupsScreen() {
       <ScreenIntro
         id="followups"
         title="Followups"
-        body="Based on your sent mail: conversations where you wrote last and haven't heard back."
+        body="Based on your sent email: conversations where you wrote last and haven't heard back."
       />
 
       <FollowupsScopeDisclosure />
@@ -557,7 +557,7 @@ function FollowupsErrorState({ onRetry }: { onRetry: () => void }) {
     >
       <RecoverableErrorState
         title="We couldn't load your follow-ups"
-        description="Your sent mail and tracked follow-ups are unchanged. Try again in a moment."
+        description="Your sent email and tracked follow-ups are unchanged. Try again in a moment."
         onRetry={onRetry}
       />
     </div>

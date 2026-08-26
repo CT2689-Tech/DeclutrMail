@@ -1545,7 +1545,8 @@ function ActivitySupportBundleDialog({
             for all matching records, not only rows currently loaded on screen.
           </p>
           <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: 12 }}>
-            Mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
+            Gmail account:{' '}
+            <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active Gmail account'}</strong>
           </p>
         </div>
 
@@ -3419,8 +3420,8 @@ function ActivityErrorState({
   const message = isClientInput
     ? 'Nothing changed. Activity could not load this filter. Use a valid outcome and valid dates with From earlier than To, or reset the filters and try again.'
     : error instanceof ApiError
-      ? 'Your mailbox and actions are unchanged. Activity could not load. Try again in a moment.'
-      : 'Your mailbox and actions are unchanged. Activity could not load right now. Try again in a moment.';
+      ? 'Your Gmail account and actions are unchanged. Activity could not load. Try again in a moment.'
+      : 'Your Gmail account and actions are unchanged. Activity could not load right now. Try again in a moment.';
   return (
     <div
       style={{

@@ -639,7 +639,7 @@ describe('ActivityScreen — populated', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
     const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
-    expect(within(dialog).getByText('active+mailbox@example.com')).toBeInTheDocument();
+    expect(within(dialog).getByText('active+Gmail account@example.com')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Manual' })).toHaveAttribute(
       'aria-pressed',
       'true',

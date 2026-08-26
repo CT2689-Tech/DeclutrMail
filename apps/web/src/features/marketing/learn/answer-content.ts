@@ -41,7 +41,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           'Which Gmail permission is requested, and which product actions require it?',
           'Does the app fetch full email contents, or only a clearly listed set of Gmail details?',
           'Are OAuth tokens encrypted, excluded from the browser, and revocable?',
-          'Can you see which email is affected and what will change before mail moves, including which effects cannot be undone?',
+          'Can you see which email is affected and what will change before email moves, including which effects cannot be undone?',
           'Can you disconnect an inbox, export your data, and delete the stored index?',
         ],
       },
@@ -49,7 +49,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'declutrmail-scope',
         title: 'What DeclutrMail asks Google for',
         paragraphs: [
-          'DeclutrMail requests gmail.modify, plus OpenID and the email identity used to connect the correct mailbox. gmail.modify is needed to change labels, archive, move messages to Trash, and support other user-approved mailbox actions. It is a sensitive capability, so treating it as “read-only” would be misleading.',
+          'DeclutrMail requests gmail.modify, plus OpenID and the email identity used to connect the correct mailbox. gmail.modify is needed to change labels, archive, move messages to Trash, and support other user-approved Gmail account actions. It is a sensitive capability, so treating it as “read-only” would be misleading.',
           'DeclutrMail uses only part of that permission. It asks Gmail for each email in a limited format and never asks for the full or raw format. The Gmail details stored are: ' +
             STORED_FIELDS +
             '. Attachments, inline images, raw MIME, and full message bodies are not fetched or stored.',
@@ -73,7 +73,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Evaluate action risk separately from data risk',
         paragraphs: [
           'An app can minimize stored data and still move the wrong messages. Look for a preview that names the sender, action, and count; a clear activity record; safe retries; and a recovery explanation for each action rather than one universal Undo promise.',
-          'In DeclutrMail, Archive, Later, and Delete have Activity Undo while their plan-window token is live. Delete also has separate Gmail Trash recovery. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched mail and do not silently become future sender rules.',
+          'In DeclutrMail, Archive, Later, and Delete have Activity Undo while their plan-window token is live. Delete also has separate Gmail Trash recovery. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched email and do not silently become future sender rules.',
         ],
       },
       {
@@ -81,14 +81,14 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Verify that you can leave cleanly',
         paragraphs: [
           'You should be able to revoke access from the app and from Google’s connected-app controls. Revocation should stop future API access immediately even if the service retains a historical activity record under its stated policy.',
-          'DeclutrMail exposes mailbox disconnection from the top-bar account menu, data export, and whole-account deletion. Disconnecting preserves the historical DeclutrMail record for reconnection; account deletion follows the published grace and undo-window schedule. After revocation, verify Google’s own permissions page no longer lists the connection.',
+          'DeclutrMail exposes Gmail account disconnection from the top-bar account menu, data export, and whole-account deletion. Disconnecting preserves the historical DeclutrMail record for reconnection; account deletion follows the published grace and undo-window schedule. After revocation, verify Google’s own permissions page no longer lists the connection.',
         ],
       },
       {
         id: 'decision',
         title: 'Make a threat-model decision, not a brand decision',
         paragraphs: [
-          'A highly sensitive mailbox used for legal, medical, or financial operations may justify avoiding third-party access even when controls are strong. A separate consumer mailbox may have a different risk tolerance. The same answer does not fit both.',
+          'A highly sensitive Gmail account used for legal, medical, or financial operations may justify avoiding third-party access even when controls are strong. A separate consumer Gmail account may have a different risk tolerance. The same answer does not fit both.',
           'The responsible answer is therefore conditional: understand the Gmail permission, stored fields, other companies that process data, exactly what the app may change, and how to leave. Connect only if that complete picture is acceptable to you.',
         ],
       },
@@ -182,7 +182,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           'Which derived aggregates are retained, and for how long?',
           'Does any feature send subjects or snippets to an external processor?',
           'Are logs, error reports, analytics, and exports barred from containing those fields?',
-          'Can the user delete the index without deleting mail in Gmail?',
+          'Can the user delete the index without deleting email in Gmail?',
         ],
       },
       {
@@ -233,7 +233,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'model',
         title: 'Undo records the inverse, not a copy of your email',
         paragraphs: [
-          'For a reversible mail-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one mailbox and expires after the plan’s configured window.',
+          'For a reversible email-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one Gmail account and expires after the plan’s configured window.',
           'Every plan currently offers Undo in Activity for thirty days. Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
         ],
       },
@@ -258,7 +258,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Delivered unsubscribe is one-way',
         paragraphs: [
           'An unsubscribe request may be sent to a standards endpoint or, for mailto, manually sent by you from Gmail. Once delivered, it has crossed into another organization’s system. There is no standard retract operation, so DeclutrMail does not present the request itself as undoable.',
-          'A confirmation can also include Archive or Delete for the old backlog. Only that secondary mail-moving effect has its own recovery path. Undoing the backlog does not resubscribe you.',
+          'A confirmation can also include Archive or Delete for the old backlog. Only that secondary email-moving effect has its own recovery path. Undoing the backlog does not resubscribe you.',
         ],
         callout: {
           title: 'Resubscribe is a new action',
@@ -313,7 +313,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     description:
       'A practical 2026 comparison of Gmail search, filters, unsubscribe, sender-first cleanup, and automation based on the job you need done.',
     intro:
-      'The best method depends on whether you are removing old mail, stopping future mail, preserving important history, or automating a stable pattern. No single bulk action is safest for every job.',
+      'The best method depends on whether you are removing old email, stopping future email, preserving important history, or automating a stable pattern. No single bulk action is safest for every job.',
     quickAnswer:
       'Use Gmail search for a precise one-off cleanup, Gmail filters for exact future routing, unsubscribe for legitimate lists you no longer want, and sender-first review when recurring senders are the real problem. Add automation only after observing its matches.',
     readingMinutes: 8,
@@ -322,7 +322,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'job-map',
         title: 'Match the tool to the job',
         paragraphs: [
-          'Start by naming the desired change. “Clean my inbox” is too broad to verify. “Remove old mail from one sender,” “stop a newsletter,” and “route future low-value updates away from Inbox” have different safest tools.',
+          'Start by naming the desired change. “Clean my inbox” is too broad to verify. “Remove old email from one sender,” “stop a newsletter,” and “route future low-value updates away from Inbox” have different safest tools.',
         ],
         bullets: [
           'One exact backlog: Gmail search plus a reviewed selection.',
@@ -350,19 +350,19 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
       },
       {
         id: 'sequence',
-        title: 'A safe sequence for a large mailbox',
+        title: 'A safe sequence for a large Gmail account',
         paragraphs: [],
         steps: [
           {
             name: 'Protect obviously important senders',
-            text: 'Identify people, account-security mail, financial records, receipts, and anything uncertain before pursuing large counts.',
+            text: 'Identify people, account-security email, financial records, receipts, and anything uncertain before pursuing large counts.',
           },
           {
             name: 'Stop future legitimate noise',
-            text: 'Unsubscribe from a small batch of recognized lists. Use spam reporting for deceptive mail rather than engaging with it.',
+            text: 'Unsubscribe from a small batch of recognized lists. Use spam reporting for deceptive email rather than engaging with it.',
           },
           {
-            name: 'Clean existing mail separately',
+            name: 'Clean existing email separately',
             text: 'Archive when searchability matters, Later for a temporary queue, and Delete only after checking the affected email and Trash recovery.',
           },
           {
@@ -380,7 +380,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Avoid shortcuts that hide what will change',
         paragraphs: [
           'Be skeptical of “delete everything,” universal undo, and category claims that cannot show their inputs. A large result count is not evidence that the selection is correct. A recommendation should remain inspectable and subordinate to your decision.',
-          'Also avoid making inbox zero the only success measure. A small Inbox can still be governed by brittle filters, while a larger mailbox with deliberate sender rules can be calmer and safer.',
+          'Also avoid making inbox zero the only success measure. A small Inbox can still be governed by brittle filters, while a larger Gmail account with deliberate sender rules can be calmer and safer.',
         ],
         callout: {
           title: 'Best means explainable',
@@ -392,7 +392,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'maintenance',
         title: 'Prefer maintenance over another annual purge',
         paragraphs: [
-          'A monthly ten-minute review of new recurring senders prevents the next backlog more effectively than another giant deletion. Check whether unsubscribed senders still write, whether filters still match the intended mail, and whether automation produced exceptions.',
+          'A monthly ten-minute review of new recurring senders prevents the next backlog more effectively than another giant deletion. Check whether unsubscribed senders still write, whether filters still match the intended email, and whether automation produced exceptions.',
           'Cleanup becomes durable when every recurring sender has an explicit reason to stay, route elsewhere, or stop.',
         ],
       },
@@ -476,7 +476,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           },
           {
             name: 'Decide the future relationship',
-            text: 'Choose Keep or Unsubscribe, or create an exact Gmail filter when you know how future mail should route.',
+            text: 'Choose Keep or Unsubscribe, or create an exact Gmail filter when you know how future email should route.',
           },
           {
             name: 'Decide the current backlog separately',
@@ -484,7 +484,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
           },
           {
             name: 'Verify exceptions in Gmail',
-            text: 'Check Activity and sample the affected messages in Gmail. Correct the sender decision or restore mail before the recovery window closes.',
+            text: 'Check Activity and sample the affected messages in Gmail. Correct the sender decision or restore email before the recovery window closes.',
           },
         ],
       },
@@ -501,7 +501,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Measure prevented recurrence, not just removed messages',
         paragraphs: [
           'Message counts describe the backlog removed today. Sender decisions and filters describe which recurrence will be prevented tomorrow. Both are useful, but they answer different questions and should not be merged into one inflated cleanup number.',
-          'A calm mailbox comes from preserving context where it matters and compressing repetition where it does not.',
+          'A calm Gmail account comes from preserving context where it matters and compressing repetition where it does not.',
         ],
       },
     ],

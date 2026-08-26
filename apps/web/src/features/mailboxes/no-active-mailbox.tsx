@@ -101,7 +101,7 @@ export function NoActiveMailboxView({
       <div style={{ width: '100%', maxWidth: 560 }}>
         <EmptyState
           icon={<span aria-hidden>📭</span>}
-          title="No active mailbox"
+          title="No active Gmail account"
           description={
             onlyDisconnected ? (
               <>
@@ -220,7 +220,7 @@ export function NoActiveMailboxView({
         </Button>
       )}
 
-      {/* Escape hatches that don't need a mailbox: account (data export +
+      {/* Escape hatches that don't need a Gmail account: account (data export +
           deletion, D216) and billing/refunds (D121) are workspace-level,
           so they stay reachable even with nothing connected. */}
       <p

@@ -87,7 +87,7 @@ export default function SecurityPage() {
         <p>
           DeclutrMail requests one Gmail scope, <code>gmail.modify</code>, plus <code>openid</code>{' '}
           and your email address to identify the connected account. The product&rsquo;s job is to
-          act on your mail at your instruction — archive, label, delete, unsubscribe — and{' '}
+          act on your email at your instruction — archive, label, delete, unsubscribe — and{' '}
           <code>gmail.modify</code> is the scope that permits those label changes.
         </p>
         <p>

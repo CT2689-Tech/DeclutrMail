@@ -161,7 +161,7 @@ export function CancelModal({
                     ? `Your ${tierLabel} features stay active until ${end}.`
                     : `Your ${tierLabel} features stay active until the end of the current billing period.`}
                 </li>
-                <li>Then your account switches to Free — completed mail actions stay in place.</li>
+                <li>Then your account switches to Free — completed email actions stay in place.</li>
               </>
             ) : (
               // A NON-BACKING record (A6): its features are not

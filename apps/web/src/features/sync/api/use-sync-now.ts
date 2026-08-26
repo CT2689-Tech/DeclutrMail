@@ -161,10 +161,10 @@ export function useSyncNow(source: Source) {
           toast(`Slow down — try again in ${err.retryAfterSec ?? 60} seconds.`, 'warn');
           break;
         case 'NO_ACTIVE_MAILBOX':
-          toast('Reconnect a mailbox to sync.', 'danger');
+          toast('Reconnect a Gmail account to sync.', 'danger');
           break;
         case 'MAILBOX_NOT_OWNED':
-          toast('That mailbox is no longer connected — switch accounts to sync.', 'danger');
+          toast('That Gmail account is no longer connected — switch accounts to sync.', 'danger');
           break;
         case 'UNKNOWN':
           toast('Sync failed — please try again.', 'danger');
@@ -215,7 +215,7 @@ export function translateSyncNowError(err: unknown): SyncNowError {
       return new SyncNowError('NO_ACTIVE_MAILBOX', 'No active mailbox.');
     }
     if (code === 'MAILBOX_NOT_OWNED') {
-      return new SyncNowError('MAILBOX_NOT_OWNED', 'Selected mailbox not in workspace.');
+      return new SyncNowError('MAILBOX_NOT_OWNED', 'Selected Gmail account not in workspace.');
     }
     if (code === 'SYNC_NOT_READY' || status === 409) {
       return new SyncNowError('SYNC_NOT_READY', 'Initial sync not complete yet.');

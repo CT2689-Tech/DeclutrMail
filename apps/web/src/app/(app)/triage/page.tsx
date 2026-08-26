@@ -79,7 +79,7 @@ function TriageExperience() {
 const CONNECT_ERROR_COPY: Record<string, string> = {
   MAILBOX_OWNED_BY_OTHER_WORKSPACE: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
   reconnect_account_mismatch:
-    'Google returned a different Gmail account. In Settings → Mailboxes, choose Reconnect next to the address you intended to restore, then select that same address at Google.',
+    'Google returned a different Gmail account. In Settings → Gmail accounts, choose Reconnect next to the address you intended to restore, then select that same address at Google.',
   reconnect_target_invalid:
     'That reconnect request is no longer valid. Try again from the reconnect banner or Settings.',
   connect_failed: 'Could not connect that Gmail account. Try again.',

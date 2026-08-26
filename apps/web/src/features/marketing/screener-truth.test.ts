@@ -125,7 +125,7 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
   // assert it FIRES before trusting any pass below.
   it('detects a banned framing (guard self-test)', () => {
     expect(isOffending('The Screener blocks new senders.')).toBe(true);
-    expect(isOffending('The Screener prevents unwanted mail from arriving.')).toBe(true);
+    expect(isOffending('The Screener prevents unwanted email from arriving.')).toBe(true);
     expect(isOffending('New senders are quarantined by the Screener.')).toBe(true);
     expect(isOffending('The Screener keeps out first-time senders.')).toBe(true);
   });
@@ -137,7 +137,7 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
     expect(
       isOffending('New senders go to the Screener. They are prevented from reaching your inbox.'),
     ).toBe(true);
-    expect(isOffending('The Screener (e.g. for newsletters) blocks mail from arriving.')).toBe(
+    expect(isOffending('The Screener (e.g. for newsletters) blocks email from arriving.')).toBe(
       true,
     );
     expect(isOffending('Wondering about the Screener? It quarantines everything.')).toBe(true);
@@ -152,7 +152,7 @@ describe('D194 — Screener is soft quarantine, never a block', () => {
   });
 
   it('still catches a real claim sitting next to the sanctioned term', () => {
-    expect(isOffending('The Screener is a soft-quarantine that blocks mail from arriving.')).toBe(
+    expect(isOffending('The Screener is a soft-quarantine that blocks email from arriving.')).toBe(
       true,
     );
   });

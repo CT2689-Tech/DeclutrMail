@@ -10,12 +10,12 @@
 
 export const GMAIL_DATA_RETENTION = {
   mailboxIndex:
-    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
+    "Until the user deletes this Gmail account's saved data or deletes their DeclutrMail account.",
   mailboxIdentity:
-    'The disconnected Gmail address and mailbox deletion status remain until the DeclutrMail account is deleted, so the user can identify and reconnect the mailbox.',
+    'The disconnected Gmail address and Gmail account deletion status remain until the DeclutrMail account is deleted, so the user can identify and reconnect the mailbox.',
   connection: 'Until the Gmail account is disconnected or the DeclutrMail account is deleted.',
   derivedMailboxData:
-    "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
+    "Until the user deletes this Gmail account's saved data or deletes their DeclutrMail account.",
   undoJournal:
     'Until the plan-based Undo window expires, followed by the operational cleanup period.',
 } as const;
@@ -211,7 +211,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     fetchedFrom: ['message.labelIds'],
     storageRefs: ['mail_messages.is_outbound'],
     derived: true,
-    purpose: 'Separate sent mail from received mail and support reply and follow-up features.',
+    purpose: 'Separate sent email from received email and support reply and follow-up features.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -221,11 +221,11 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
   {
     id: 'outbound-recipients',
     category: 'message',
-    label: 'Recipient email addresses from To and Cc on mail you sent',
+    label: 'Recipient email addresses from To and Cc on email you sent',
     fetchedFrom: ['header.To', 'header.Cc'],
     storageRefs: ['mail_messages.recipient_emails'],
     derived: false,
-    purpose: 'Attribute replies and show follow-ups for sent mail.',
+    purpose: 'Attribute replies and show follow-ups for sent email.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -311,7 +311,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
       'provider_sync_state.readiness_status',
     ],
     derived: false,
-    purpose: 'Continue updating without scanning the entire mailbox again.',
+    purpose: 'Continue updating without scanning the entire Gmail account again.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -328,7 +328,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     fetchedFrom: ['sender-identity', 'received-date', 'gmail-labels', 'read-state'],
     storageRefs: ['senders.*', 'sender_timeseries.*'],
     derived: true,
-    purpose: 'Summarize who sends mail and show observed activity facts.',
+    purpose: 'Summarize who sends email and show observed activity facts.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json', 'senders-csv'],
@@ -393,12 +393,12 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
   {
     id: 'processing-and-retry-records',
     category: 'derived',
-    label: 'Mailbox processing, delivery, retry, and webhook deduplication records',
+    label: 'Gmail account processing, delivery, retry, and webhook deduplication records',
     fetchedFrom: ['message-identifiers', 'sender-identity', 'gmail-sync-state'],
     storageRefs: ['outbox_events.*', 'dead_letter_jobs.*', 'webhook_dedup.*', 'sync_runs.*'],
     derived: true,
     purpose:
-      'Deliver background work once, recover failed jobs, avoid processing the same Gmail notification twice, and keep counts and timings for each mailbox sync so slow or failed syncs can be investigated.',
+      'Deliver background work once, recover failed jobs, avoid processing the same Gmail notification twice, and keep counts and timings for each Gmail account sync so slow or failed syncs can be investigated.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
     exportedIn: [],
@@ -425,14 +425,14 @@ export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [
   {
     id: 'mailbox-security-and-deletion-audit',
     category: 'connection',
-    label: 'Minimal mailbox security and deletion audit records',
+    label: 'Minimal Gmail account security and deletion audit records',
     fetchedFrom: ['DeclutrMail connection, security, and deletion events'],
     storageRefs: ['mailbox_data_deletion_requests.*', 'security_events.*'],
     derived: true,
     purpose:
       'Investigate security incidents and retain narrowly scoped evidence that a requested deletion ran.',
     retention:
-      'These pseudonymous security and compliance records remain after mailbox or account deletion under DeclutrMail operational retention policy; they do not contain full email contents or attachments.',
+      'These pseudonymous security and compliance records remain after Gmail account or account deletion under DeclutrMail operational retention policy; they do not contain full email contents or attachments.',
     removalTrigger: 'retention-policy',
     exportedIn: [],
     transmittedTo: ['DeclutrMail'],

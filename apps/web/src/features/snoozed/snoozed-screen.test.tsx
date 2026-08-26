@@ -198,14 +198,14 @@ describe('SnoozedScreen — wake now flow', () => {
     await screen.findByText('Daily Digest');
 
     // Step 1 — the click opens a confirm; nothing has mutated yet.
-    await user.click(screen.getByRole('button', { name: 'Wake now' }));
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
     expect(wakePosted).toBe(0);
     expect(
       screen.getByText(/12 messages move from DeclutrMail\/Later back to your inbox/i),
     ).toBeInTheDocument();
 
     // Step 2 — confirming fires the POST and flips the row to waking.
-    const confirmButtons = screen.getAllByRole('button', { name: 'Wake now' });
+    const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });
     await user.click(confirmButtons[confirmButtons.length - 1]!);
     await waitFor(() => expect(wakePosted).toBe(1));
     expect(await screen.findByText('Waking…')).toBeInTheDocument();
@@ -228,8 +228,8 @@ describe('SnoozedScreen — wake now flow', () => {
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Wake now' }));
-    const confirmButtons = screen.getAllByRole('button', { name: 'Wake now' });
+    await user.click(screen.getByRole('button', { name: 'Bring back now' }));
+    const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });
     await user.click(confirmButtons[confirmButtons.length - 1]!);
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/wake queue isn't available/i);
@@ -267,7 +267,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Quarterly Newsletter');
 
-    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
     expect(
       screen.getByRole('button', {
         name: 'Cancel wake-time changes for Quarterly Newsletter',
@@ -288,7 +288,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Change wake time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
     expect(screen.queryByRole('button', { name: /clear wake time/i })).not.toBeInTheDocument();
   });
 });

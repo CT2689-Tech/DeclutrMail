@@ -52,7 +52,7 @@ describe('MailboxReconnectBanner', () => {
     me = meWith([ACTIVE, { ...SECOND, needsReconnect: true }]);
     render(<MailboxReconnectBanner />);
 
-    const banner = screen.getByTestId('mailbox-reconnect-banner');
+    const banner = screen.getByTestId('Gmail account-reconnect-banner');
     expect(banner).toHaveTextContent('second@example.com');
     // Naming it is the point — "Reconnect Gmail" is ambiguous with two
     // mailboxes connected.
@@ -70,19 +70,19 @@ describe('MailboxReconnectBanner', () => {
   it('stays silent for the ACTIVE mailbox — SyncErrorBanner already owns it', () => {
     me = meWith([{ ...ACTIVE, needsReconnect: true }, SECOND]);
     render(<MailboxReconnectBanner />);
-    expect(screen.queryByTestId('mailbox-reconnect-banner')).toBeNull();
+    expect(screen.queryByTestId('Gmail account-reconnect-banner')).toBeNull();
   });
 
   it('stays silent for a disconnected mailbox — that is a different state', () => {
     me = meWith([ACTIVE, { ...SECOND, status: 'disconnected', needsReconnect: true }]);
     render(<MailboxReconnectBanner />);
-    expect(screen.queryByTestId('mailbox-reconnect-banner')).toBeNull();
+    expect(screen.queryByTestId('Gmail account-reconnect-banner')).toBeNull();
   });
 
   it('stays silent when the field is absent — a stale API mid rolling deploy (D245)', () => {
     me = meWith([ACTIVE, SECOND]);
     render(<MailboxReconnectBanner />);
-    expect(screen.queryByTestId('mailbox-reconnect-banner')).toBeNull();
+    expect(screen.queryByTestId('Gmail account-reconnect-banner')).toBeNull();
   });
 
   it('renders one row per broken mailbox', () => {
@@ -97,6 +97,6 @@ describe('MailboxReconnectBanner', () => {
       },
     ]);
     render(<MailboxReconnectBanner />);
-    expect(screen.getAllByTestId('mailbox-reconnect-banner')).toHaveLength(2);
+    expect(screen.getAllByTestId('Gmail account-reconnect-banner')).toHaveLength(2);
   });
 });

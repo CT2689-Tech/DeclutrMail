@@ -150,8 +150,8 @@ export function inboxScopeNoticeCopy(
   if (notice.kind === 'empty-inbox') {
     const opener = `Nothing from ${subject} is in your inbox right now.`;
     const tail = options.verbActsBeyondInbox
-      ? `${verbLabel} acts on inbox mail by default.`
-      : `${verbLabel} only acts on mail still in the inbox.`;
+      ? `${verbLabel} acts on inbox email by default.`
+      : `${verbLabel} only acts on email still in the inbox.`;
     // Only name arrivals we were actually given a number for.
     if (notice.recentArrivals === null || notice.recentArrivals === 0) {
       return `${opener} ${tail}`;

@@ -154,14 +154,16 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     currentMail: {
       scope: 'none',
       destination: 'unchanged',
-      summary: 'Existing email stays where it is unless you choose a separate backlog action.',
+      summary: 'Existing email stays where it is unless you choose a separate action for it.',
     },
     futureMail: {
       effect: 'unsubscribe-request',
       summary:
         'DeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.',
     },
-    unchanged: ['Existing email is not moved by Unsubscribe alone.'],
+    // Intentionally empty: the only fact here restated `currentMail` and
+    // rendered immediately after it in every preview.
+    unchanged: [],
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'none',
@@ -237,7 +239,10 @@ export function staticActionPreviewCopy(verb: ActionVerb): string {
   if (semantics.providerRecovery.kind !== 'none') {
     recovery.push(semantics.providerRecovery.summary);
   }
-  if (semantics.finality.kind !== 'reversible-or-changeable') {
+  // Only `provider-permanent-deletion` adds a fact beyond `activityUndo`.
+  // `delivered-request-cannot-be-recalled` restates it, and both rendered
+  // back-to-back in the same paragraph.
+  if (semantics.finality.kind === 'provider-permanent-deletion') {
     recovery.push(semantics.finality.summary);
   }
   return [
@@ -410,7 +415,9 @@ function presentAction(input: PresentActionInput): PresentedAction {
     ...(schedule.kind === 'none' ? [] : [schedule.summary]),
     activityUndo.summary,
     ...(semantics.providerRecovery.kind === 'none' ? [] : [semantics.providerRecovery.summary]),
-    ...(semantics.finality.kind === 'reversible-or-changeable' ? [] : [semantics.finality.summary]),
+    ...(semantics.finality.kind === 'provider-permanent-deletion'
+      ? [semantics.finality.summary]
+      : []),
   ];
 
   return {

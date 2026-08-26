@@ -59,7 +59,7 @@ export function GracePeriodBanner() {
           {executing
             ? 'Account deletion is in progress.'
             : immediate
-              ? 'Account deletion was requested with the undo waiver — your data deletes shortly.'
+              ? 'Account deletion was requested without the undo wait — your data deletes shortly.'
               : `Account deletion scheduled for ${formatDate(request.effectiveAt, timeZone)}.`}
         </span>
         {!executing && request.basis === 'undo-window' && (

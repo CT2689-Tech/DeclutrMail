@@ -250,7 +250,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
       const inFlightClause =
         rule.actionKind === 'unsubscribe'
           ? 'an unsubscribe already underway is not interrupted, and a delivered request cannot be recalled'
-          : 'an action already underway is not interrupted, and mail it actually moves keeps its Activity record and undo';
+          : 'an action already underway is not interrupted, and email it actually moves keeps its Activity record and undo';
       return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule starts no new work; ${inFlightClause}. The rule returns to Observe automatically and collects fresh matches for your approval.`;
     }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';

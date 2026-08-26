@@ -96,14 +96,14 @@ export function DecidePreview({
     verb === 'keep'
       ? `Keep ${name}`
       : verb === 'archive'
-        ? `Archive all inbox mail from ${name}`
+        ? `Archive all inbox email from ${name}`
         : verb === 'later'
           ? `Move ${name} to Later`
           : verb === 'unsubscribe'
             ? `Unsubscribe from ${name}`
             : activeReach === 'all_mail'
-              ? `Delete ${name}'s inbox + archived mail`
-              : `Delete ${name}'s inbox mail`;
+              ? `Delete ${name}'s inbox + archived email`
+              : `Delete ${name}'s inbox email`;
 
   const lead = presentation.previewCopy;
 
@@ -290,7 +290,7 @@ export function DecidePreview({
       {/* Engine recap — why the engine queued this sender. */}
       {row.recommendation != null && (
         <div style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 600, color: color.fgSoft }}>Why this is suggested: </span>
+          <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this: </span>
           {row.recommendation.reasoning}
         </div>
       )}
@@ -393,9 +393,8 @@ function ImpactFigure({
     <>
       <strong style={strongStyle}>{count.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
-        email{count === 1 ? '' : 's'} currently match{' '}
-        {allMailReach ? 'across inbox + archived' : 'in Inbox'}. Gmail is checked again at
-        execution, so the final moved count can change.
+        email{count === 1 ? '' : 's'} {allMailReach ? 'across inbox + archived' : 'in Inbox'} now.
+        Rechecked when it runs, so the final count can differ.
       </span>
       {scopeCopy && (
         <span role="status" style={{ ...captionStyle, flexBasis: '100%' }}>

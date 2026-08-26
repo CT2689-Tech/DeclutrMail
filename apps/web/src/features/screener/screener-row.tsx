@@ -326,7 +326,7 @@ export function ScreenerRow({
                   senders diverge from COUNT(mail_messages). */}
               <span
                 style={{ fontWeight: 600 }}
-                title="Inbound messages received from this sender and still within DeclutrMail's retention — archived mail included, not inbox-only. Mail deleted from Gmail drops out of this count. The second number is how many are in your inbox right now — mail in the archive, Spam, or Trash is received but not in the inbox, so an inbox action can find fewer matches than were received."
+                title="Inbound messages received from this sender and still within DeclutrMail's retention — archived email included, not inbox-only. Mail deleted from Gmail drops out of this count. The second number is how many are in your inbox right now — email in the archive, Spam, or Trash is received but not in the inbox, so an inbox action can find fewer matches than were received."
               >
                 Messages received:
               </span>{' '}

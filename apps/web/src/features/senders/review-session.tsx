@@ -47,7 +47,7 @@ const UNSUB: Option = { id: 'unsub', label: 'Unsubscribe', tone: 'warn' };
 
 const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
   promo: {
-    eyebrow: 'Promotional sweep · plan-based Activity Undo',
+    eyebrow: 'Promotional review · plan-based Activity Undo',
     tag: 'warn',
     headline: 'Unsubscribe these marketers?',
     // "marked read", not "opened" — Gmail exposes no open event, only the
@@ -58,7 +58,7 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
     defaultAction: 'unsub',
     options: [KEEP, LATER, UNSUB],
     ctaTone: 'warn',
-    historicToggle: 'Also archive historic mail from unsubscribed senders',
+    historicToggle: 'Also archive historic email from unsubscribed senders',
   },
   quiet: {
     eyebrow: 'Newsletter pulse · plan-based Activity Undo',
@@ -68,7 +68,7 @@ const KIND_CONFIG: Record<ReviewKind, KindConfig> = {
     defaultAction: 'keep',
     options: [KEEP, LATER, UNSUB],
     ctaTone: 'primary',
-    historicToggle: 'Also archive historic mail from unsubscribed senders',
+    historicToggle: 'Also archive historic email from unsubscribed senders',
   },
   protect: {
     eyebrow: 'Protected senders · permanent until removed',

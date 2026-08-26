@@ -43,7 +43,7 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
       sub={
         variant === 'fresh'
           ? "You'll see Google's consent screen next. Here's what it covers."
-          : 'Your account has no connected mailbox right now — reconnect to continue.'
+          : 'Your account has no connected Gmail account right now — reconnect to continue.'
       }
     >
       <ol

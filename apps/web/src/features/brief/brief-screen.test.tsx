@@ -371,7 +371,7 @@ describe('BriefScreen — pure helpers', () => {
   });
 
   it('gmailHref returns a permalink for a message id, null for empty', () => {
-    expect(gmailHref('active+mailbox@example.com', 'm-abc')).toBe(
+    expect(gmailHref('active+Gmail account@example.com', 'm-abc')).toBe(
       'https://mail.google.com/mail/?authuser=active%2Bmailbox%40example.com#all/m-abc',
     );
     expect(gmailHref('active+mailbox@example.com', undefined)).toBeNull();
