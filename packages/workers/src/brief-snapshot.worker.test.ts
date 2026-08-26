@@ -87,6 +87,11 @@ interface SeedSenderInput {
   gmailCategory?: 'primary' | 'promotions';
   wroteToCount?: number;
   verdict?: 'keep' | 'archive' | 'unsubscribe' | 'later';
+  /**
+   * `undefined` leaves the column NULL, which is the real "sender index
+   * has not run yet" state (D248) — not a shortcut for "no channel".
+   */
+  unsubscribeMethod?: 'one_click' | 'mailto' | 'none';
 }
 
 async function seedSender(db: Db, mailboxAccountId: string, input: SeedSenderInput): Promise<void> {
@@ -100,6 +105,15 @@ async function seedSender(db: Db, mailboxAccountId: string, input: SeedSenderInp
     wroteToCount: input.wroteToCount ?? 0,
     firstSeenAt: new Date('2024-01-01T00:00:00Z'),
     lastSeenAt: NOW,
+    unsubscribeMethod: input.unsubscribeMethod,
+    // senders_unsub_method_url_aligned_chk: the URL shape must match
+    // the method, and must be NULL for 'none'/unset.
+    unsubscribeUrl:
+      input.unsubscribeMethod === 'one_click'
+        ? `https://unsub.example.com/${input.senderKey.slice(0, 6)}`
+        : input.unsubscribeMethod === 'mailto'
+          ? `mailto:unsub@${input.email.split('@')[1] ?? 'example.com'}`
+          : null,
   });
   if (input.verdict) {
     await db.insert(triageDecisions).values({
@@ -155,6 +169,8 @@ const KEY_BOSS = 'a'.repeat(64);
 const KEY_BANK = 'b'.repeat(64);
 const KEY_PROMO = 'c'.repeat(64);
 const KEY_NEWS = 'd'.repeat(64);
+const KEY_LIST = 'e'.repeat(64);
+const KEY_FRESH = 'f'.repeat(64);
 
 describe('BriefSnapshotWorker', () => {
   it('D7/D19 — an unentitled tier is never processed and never reaches the LLM', async () => {
@@ -453,6 +469,126 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.briefPayload.reply.map((r) => r.senderName)).toEqual(['Boss']);
     expect(row!.briefPayload.fyi.map((r) => r.senderName)).toEqual(['Bank']);
     expect(row!.briefPayload.noise.map((r) => r.senderName).sort()).toEqual(['News', 'Promo']);
+  });
+
+  it('D63 — an unscreened sender with an unsubscribe channel is FYI, not Reply', async () => {
+    // The defect this pins: with no triage verdict, EVERY sender fell to
+    // Reply, so the section headed "what actually needs you" filled with
+    // marketing. A list you can leave is not a correspondent.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    await seedSender(db, mailboxAccountId, {
+      email: 'deals@shop.example',
+      senderKey: KEY_LIST,
+      displayName: 'Shop',
+      unsubscribeMethod: 'one_click',
+    });
+    await seedSender(db, mailboxAccountId, {
+      email: 'list@news.example',
+      senderKey: KEY_NEWS,
+      displayName: 'Newsletter',
+      unsubscribeMethod: 'mailto',
+    });
+    // No channel at all, still unscreened → stays a reply candidate.
+    await seedSender(db, mailboxAccountId, {
+      email: 'human@example.com',
+      senderKey: KEY_BOSS,
+      displayName: 'Human',
+      unsubscribeMethod: 'none',
+    });
+
+    for (const [key, subject] of [
+      [KEY_LIST, 'Sale ends tonight'],
+      [KEY_NEWS, 'Issue 42'],
+      [KEY_BOSS, 'Are you free Thursday?'],
+    ] as const) {
+      await seedMessage(db, {
+        mailboxAccountId,
+        senderKey: key,
+        subject,
+        internalDate: YESTERDAY_AT(10),
+      });
+    }
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    expect(row!.briefPayload.reply.map((r) => r.senderName)).toEqual(['Human']);
+    expect(row!.briefPayload.fyi.map((r) => r.senderName).sort()).toEqual(['Newsletter', 'Shop']);
+    // Never Noise — the engine has not judged these, and Noise is the
+    // D65 bulk-archive target.
+    expect(row!.briefPayload.noise).toEqual([]);
+  });
+
+  it('D63/D248 — a not-yet-indexed sender stays in Reply rather than being read as "no channel"', async () => {
+    // `senders.unsubscribe_method` is NULL until building_sender_index
+    // runs. Reading NULL as "no unsubscribe link" is correct here by
+    // accident; reading it as "has one" would empty Reply on the first
+    // Brief after a connect. This pins the conservative direction.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    await seedSender(db, mailboxAccountId, {
+      email: 'unindexed@example.com',
+      senderKey: KEY_FRESH,
+      displayName: 'Not Yet Indexed',
+      // unsubscribeMethod deliberately omitted → column is NULL
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_FRESH,
+      subject: 'Could be anything',
+      internalDate: YESTERDAY_AT(9),
+    });
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    expect(row!.briefPayload.reply.map((r) => r.senderName)).toEqual(['Not Yet Indexed']);
+    expect(row!.briefPayload.fyi).toEqual([]);
+  });
+
+  it('D63 — an explicit keep verdict wins over the unsubscribe channel', async () => {
+    // Plenty of real correspondents send from list infrastructure. Once
+    // the engine has said "keep", that judgment outranks the heuristic.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    await seedSender(db, mailboxAccountId, {
+      email: 'founder@startup.example',
+      senderKey: KEY_LIST,
+      displayName: 'Someone I Reply To',
+      unsubscribeMethod: 'one_click',
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_LIST,
+      subject: 'Re: our call',
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    expect(row!.briefPayload.reply.map((r) => r.senderName)).toEqual(['Someone I Reply To']);
+    expect(row!.briefPayload.fyi).toEqual([]);
   });
 
   it('Gmail importance does not override the engine section', async () => {
@@ -1009,8 +1145,11 @@ describe('BriefSnapshotWorker', () => {
       .from(briefRuns)
       .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
     expect(row!.generatedBy).toBe('template');
-    // Template narrative — single-reply, single-message phrasing.
-    expect(row!.briefPayload.narrative).toBe('1 email needs a reply.');
+    // The template no longer restates counts the section headers
+    // already carry — it returns nothing, and the Brief screen renders
+    // no narrative block. Provenance still shows via generatedBy above,
+    // which surfaces as the "Standard summary" marker.
+    expect(row!.briefPayload.narrative).toBe('');
   });
 
   it('D62 — LLM throw is caught and falls back to template (no throws contract)', async () => {

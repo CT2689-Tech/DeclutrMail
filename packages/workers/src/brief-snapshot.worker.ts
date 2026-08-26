@@ -6,6 +6,7 @@ import {
   briefRuns,
   mailMessages,
   mailboxAccounts,
+  type gmailUnsubscribeMethod,
   type schema,
   senders,
   triageDecisions,
@@ -128,6 +129,27 @@ export interface BriefSnapshotDeps {
 }
 
 /** D63 — Reply section cap (re-export local alias for clarity). */
+/** The values `senders.unsubscribe_method` can carry. */
+type UnsubscribeMethod = (typeof gmailUnsubscribeMethod.enumValues)[number];
+
+/**
+ * True when the sender publishes a working unsubscribe channel.
+ *
+ * NULL is deliberately NOT a channel and NOT "no channel": the column
+ * stays NULL until `building_sender_index` has run for that sender
+ * (D248), so NULL means "not indexed yet". Reading it as "no
+ * unsubscribe link" would misclassify every freshly-synced sender on
+ * the first Brief after a connect — which is the one Brief a new user
+ * ever looks at closely. Unindexed senders therefore keep the
+ * conservative Reply default and get re-bucketed once the index lands.
+ *
+ * `'none'` is the indexed answer for "this sender offers no channel",
+ * and is likewise not a bulk sender.
+ */
+function hasUnsubscribeChannel(method: UnsubscribeMethod | null): boolean {
+  return method === 'one_click' || method === 'mailto';
+}
+
 const REPLY_MAX = BRIEF_REPLY_MAX;
 /** D63 — FYI section cap. */
 const FYI_MAX = BRIEF_FYI_MAX;
@@ -541,6 +563,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           email: senders.email,
           gmailCategory: senders.gmailCategory,
           wroteToCount: senders.wroteToCount,
+          unsubscribeMethod: senders.unsubscribeMethod,
         })
         .from(senders)
         .where(
@@ -615,12 +638,31 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           fyiCandidates.push(item);
           break;
         case 'keep':
+          // An explicit engine decision to keep. Always a reply
+          // candidate — the engine has judged this sender and said so.
+          replyCandidates.push(item);
+          break;
         case null:
         default:
-          // No verdict OR keep verdict → reply candidate. Conservative
-          // (keep the user in the loop) per D63's "items genuinely
-          // needing human response".
-          replyCandidates.push(item);
+          // Unscreened: the engine has produced no verdict for this
+          // sender yet. D63 defines Reply as "items genuinely needing
+          // human response", and a sender that publishes a working
+          // unsubscribe channel is a list you can leave, not a
+          // correspondent waiting on you — so it does not belong there.
+          //
+          // It goes to FYI rather than Noise on purpose: Noise is the
+          // D65 bulk-archive target, and offering to archive mail the
+          // engine has never judged is a stronger claim than we have
+          // earned. FYI says "this arrived, it is not waiting on you",
+          // which is exactly what is known.
+          //
+          // Everything else stays a reply candidate, which keeps the
+          // conservative default for the senders we cannot characterize.
+          if (hasUnsubscribeChannel(identity?.unsubscribeMethod ?? null)) {
+            fyiCandidates.push(item);
+          } else {
+            replyCandidates.push(item);
+          }
           break;
       }
     }

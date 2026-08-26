@@ -246,7 +246,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
  * every Brief.
  */
 function BriefMeta({ brief }: { brief: BriefWire }) {
-  const dateLabel = formatRunDate(brief.runDateLocal);
+  const dateLabel = formatRunDate(coveredDateOf(brief.runDateLocal));
   return (
     <div
       style={{
@@ -1037,6 +1037,29 @@ function QuietInboxState() {
  * Local-date arithmetic only — no timezone conversion (the BE already
  * resolved the local-date semantic for the user).
  */
+/**
+ * The local calendar date a Brief actually covers.
+ *
+ * `run_date_local` is the date the snapshot was GENERATED; the worker
+ * reads the window `[previousDayStart, todayStart)`, so the mail in it
+ * is always the day before. Rendering `run_date_local` therefore dated
+ * every Brief one day late, every day — a Brief generated Aug 26 is
+ * headed "Aug 26" over Aug 25's mail.
+ *
+ * Arithmetic in UTC on the calendar fields only: the string is already
+ * a resolved local date, so converting it through a real timezone would
+ * reintroduce the shift this is correcting.
+ */
+export function coveredDateOf(runDateLocal: string): string {
+  const match = runDateLocal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return runDateLocal;
+  const [, yStr, mStr, dStr] = match;
+  const utc = new Date(Date.UTC(Number(yStr), Number(mStr) - 1, Number(dStr)));
+  if (!Number.isFinite(utc.getTime())) return runDateLocal;
+  utc.setUTCDate(utc.getUTCDate() - 1);
+  return utc.toISOString().slice(0, 10);
+}
+
 export function formatRunDate(runDateLocal: string): string {
   const match = runDateLocal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return runDateLocal;

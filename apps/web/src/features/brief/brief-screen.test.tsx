@@ -22,6 +22,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import {
   BriefScreen,
   domainOf,
+  coveredDateOf,
   formatRunDate,
   gmailHref,
   senderSearchHref,
@@ -199,6 +200,25 @@ describe('BriefScreen — populated', () => {
     expect(screen.getByRole('heading', { name: /noise · 1 · 4 messages/i })).toBeInTheDocument();
   });
 
+  it('dates the Brief by the day it covers, not the day it ran', async () => {
+    // Consumer-level on purpose. coveredDateOf can be correct as a pure
+    // function while the header still renders runDateLocal — that gap is
+    // exactly the bug, so asserting the helper alone would not catch it.
+    // BASE_BRIEF ran on Sun 2026-05-24 and covers Sat 2026-05-23.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => jsonOk({ data: BASE_BRIEF }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Sat, May 23')).toBeInTheDocument());
+    expect(screen.queryByText('Sun, May 24')).not.toBeInTheDocument();
+  });
+
   it('renders the narrative pre-amble when non-empty', async () => {
     installFetchStub([
       {
@@ -350,6 +370,25 @@ describe('BriefScreen — pure helpers', () => {
     // into hydrated HTML: it must not vary with the runtime locale or
     // React discards the server tree (error #418; e2e hydration-smoke).
     expect(formatRunDate('2026-05-24')).toBe('Sun, May 24');
+  });
+
+  it('coveredDateOf steps back to the day the Brief actually covers', () => {
+    // run_date_local is the GENERATION date; the window is the day
+    // before it. Rendering the raw value dated every Brief a day late.
+    expect(coveredDateOf('2026-08-26')).toBe('2026-08-25');
+    // Month boundary.
+    expect(coveredDateOf('2026-09-01')).toBe('2026-08-31');
+    // Year boundary.
+    expect(coveredDateOf('2026-01-01')).toBe('2025-12-31');
+    // Leap day — 2028 is a leap year, so Mar 1 steps back to Feb 29.
+    expect(coveredDateOf('2028-03-01')).toBe('2028-02-29');
+    // Non-leap year does not invent one.
+    expect(coveredDateOf('2027-03-01')).toBe('2027-02-28');
+  });
+
+  it('coveredDateOf passes through malformed input unchanged', () => {
+    expect(coveredDateOf('not-a-date')).toBe('not-a-date');
+    expect(coveredDateOf('')).toBe('');
   });
 
   it('formatRunDate passes through malformed input unchanged', () => {

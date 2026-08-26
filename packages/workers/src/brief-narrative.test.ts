@@ -42,41 +42,33 @@ describe('renderTemplateNarrative', () => {
     expect(renderTemplateNarrative({ reply: [], fyi: [], noise: [] })).toBe(EMPTY_BRIEF_NARRATIVE);
   });
 
-  it('singular/plural agreement on reply count', () => {
-    expect(
-      renderTemplateNarrative({
-        reply: [sampleItem()],
-        fyi: [],
-        noise: [],
-      }),
-    ).toBe('1 email needs a reply.');
-    expect(
-      renderTemplateNarrative({
-        reply: [sampleItem(), sampleItem({ senderKey: 'b'.repeat(64) })],
-        fyi: [],
-        noise: [],
-      }),
-    ).toBe('2 emails need replies.');
-  });
-
-  it('composes a comma-joined summary across all three sections', () => {
+  it('says nothing on a day that has mail — the lists already say it', () => {
+    // This replaces three tests that pinned "1 email needs a reply,
+    // 1 FYI, 3 messages you can archive." Every one of those numbers is
+    // restated verbatim by the section header rendered directly below
+    // the narrative, so the sentence added reading cost and no
+    // information. A deterministic template has no judgment to offer,
+    // and #635 re-scoped the narrative to judgment only — so the honest
+    // output is nothing.
     expect(
       renderTemplateNarrative({
         reply: [sampleItem()],
         fyi: [sampleItem({ senderKey: 'c'.repeat(64) })],
         noise: [sampleNoiseGroup()],
       }),
-    ).toBe('1 email needs a reply, 1 FYI, 3 messages you can archive.');
+    ).toBe('');
+
+    // Any single non-empty section behaves the same way.
+    expect(renderTemplateNarrative({ reply: [sampleItem()], fyi: [], noise: [] })).toBe('');
+    expect(renderTemplateNarrative({ reply: [], fyi: [sampleItem()], noise: [] })).toBe('');
+    expect(renderTemplateNarrative({ reply: [], fyi: [], noise: [sampleNoiseGroup()] })).toBe('');
   });
 
-  it('omits sections whose count is zero', () => {
-    expect(
-      renderTemplateNarrative({
-        reply: [],
-        fyi: [sampleItem()],
-        noise: [sampleNoiseGroup({ messageCount: 1 })],
-      }),
-    ).toBe('1 FYI, 1 message you can archive.');
+  it('still speaks on a genuinely empty day (D70)', () => {
+    // The one case where the template is the only thing on screen:
+    // there are no lists to read, so silence would leave a blank Brief.
+    expect(renderTemplateNarrative({ reply: [], fyi: [], noise: [] })).toBe(EMPTY_BRIEF_NARRATIVE);
+    expect(EMPTY_BRIEF_NARRATIVE.trim().length).toBeGreaterThan(0);
   });
 });
 
