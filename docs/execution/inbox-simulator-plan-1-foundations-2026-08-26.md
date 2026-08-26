@@ -307,10 +307,12 @@ describe('renderTemplate', () => {
       userManuallyArchivedCount: 0,
     });
 
-    const copy = renderTemplate('Groupon', result);
-
-    expect(copy).toContain('Groupon');
-    expect(copy.length).toBeGreaterThan(0);
+    expect(renderTemplate('Groupon', result)).toContain('Groupon');
+    // Interpolated, not coincidental: the same result under a different
+    // display name must produce that name and not the first one.
+    const other = renderTemplate('Old Navy', result);
+    expect(other).toContain('Old Navy');
+    expect(other).not.toContain('Groupon');
   });
 });
 ```
@@ -380,8 +382,11 @@ The component already accepts a `mailboxEmail` override documented "for isolated
 
 - Create: `apps/web/src/features/auth/mailbox-action-context-view.tsx`
 - Modify: `apps/web/src/features/auth/mailbox-action-context.tsx`
-- Modify: `apps/web/src/features/triage/batch-action-sheet.tsx`
-- Modify: `apps/web/src/features/autopilot/confirm-modal-frame.tsx`
+- Modify: `apps/web/src/features/triage/batch-action-sheet.tsx:6,136` (import swap only)
+- Modify: `apps/web/src/features/autopilot/confirm-modal-frame.tsx:5,152` + props signature
+- Modify: `apps/web/src/features/autopilot/activate-rule-modal.tsx` (forward the prop)
+- Modify: `apps/web/src/features/autopilot/approve-confirm-modal.tsx` (forward the prop)
+- Modify: `apps/web/src/features/autopilot/autopilot-screen.tsx:920,935` (pass `activeEmail`)
 
 **Interfaces:**
 
@@ -510,6 +515,32 @@ Expected: PASS, both cases.
 
 - [ ] **Step 5: Point the two modal components at the view**
 
+The two components are **not** symmetric here, and the difference is the whole
+task. Verified 2026-08-26:
+
+- `batch-action-sheet.tsx:136` already renders `<MailboxActionContext mailboxEmail={mailboxEmail} />`,
+  and `triage-screen.tsx:1349` already passes `mailboxEmail={activeEmail}`. This one is
+  an import swap and nothing else.
+- `confirm-modal-frame.tsx:152` renders `<MailboxActionContext />` with **no prop**, and
+  `mailboxEmail` is **not** in its props signature. It needs the prop added and threaded
+  from every consumer.
+
+The full chain to thread, in this order:
+
+1. `confirm-modal-frame.tsx` — add `mailboxEmail?: string | undefined` to the props
+   signature (beside `pendingAction`), and render
+   `<MailboxActionContextView mailboxEmail={mailboxEmail} />` at line 152.
+2. `activate-rule-modal.tsx` and `approve-confirm-modal.tsx` — these are the only two
+   consumers of `ConfirmModalFrame` (`pause-confirm-modal.tsx` does not use it, so it
+   needs no change). Add the same optional prop to each and forward it to
+   `ConfirmModalFrame`.
+3. `autopilot-screen.tsx` — the call sites at lines 920 (`<ApproveConfirmModal`) and
+   935 (`<ActivateRuleModal`). This screen already resolves the mailbox at line 168
+   (`const activeEmail = auth ? getActiveMailboxEmail(auth.me) : null`), so pass
+   `mailboxEmail={activeEmail ?? undefined}` to both. `activeEmail` is `string | null`
+   and the view takes `string | undefined` — the `?? undefined` is required, not
+   cosmetic.
+
 In `apps/web/src/features/triage/batch-action-sheet.tsx` and `apps/web/src/features/autopilot/confirm-modal-frame.tsx`, change:
 
 ```tsx
@@ -524,13 +555,17 @@ import { MailboxActionContextView } from '@/features/auth/mailbox-action-context
 
 and rename the JSX usage to `<MailboxActionContextView mailboxEmail={mailboxEmail} />`.
 
-Both components already receive `mailboxEmail` as a prop, so the app surfaces that render them must now pass the active mailbox down. Find every call site:
+App behaviour must be identical: every dialog that shows the mailbox note today keeps
+showing the same address. If a note disappears in the smoke, a link in the chain above
+was missed.
+
+Confirm you found every consumer — this exact grep is what produced the list above, and
+`--include` is omitted deliberately because this shell (zsh) errors on it when nothing
+matches:
 
 ```bash
-grep -rn "<BatchActionSheet\|<ActivateRuleModal\|<PauseConfirmModal\|<ApproveConfirmModal" apps/web/src --include=*.tsx
+grep -rln "ConfirmModalFrame" apps/web/src | grep -v "test\|stories"
 ```
-
-For each, pass `mailboxEmail={getActiveMailboxEmail(useOptionalAuth())}` following the pattern already used in `triage-screen.tsx:27` (`getActiveMailboxEmail`, `useOptionalAuth`). App behaviour must be identical — the mailbox note keeps showing the same address it shows today.
 
 - [ ] **Step 6: Verify no auth import survives in either modal path**
 
