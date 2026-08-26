@@ -175,6 +175,32 @@ describe('citedEvidencePath', () => {
     ).toBeNull();
   });
 
+  it('resolves a path wrapped in punctuation or trailed by a line number', () => {
+    // Real recorded notes cite this way — the tokenized scan has to keep
+    // finding them, and did not on the first attempt at this rewrite.
+    expect(citedEvidencePath('server-side persistence (store.ts:32 documents it)')).toBe(
+      'store.ts',
+    );
+    expect(citedEvidencePath('every leg now on disk (worker-policies.ts)')).toBe(
+      'worker-policies.ts',
+    );
+    expect(citedEvidencePath('see packages/db/src/schema/senders.ts.')).toBe(
+      'packages/db/src/schema/senders.ts',
+    );
+  });
+
+  it('stays linear on a pathological string (CodeQL: polynomial regex)', () => {
+    // The original unanchored scan restarted at every offset and
+    // re-consumed the run at each — 137 ms on 8 KB of `-`, quadratic.
+    // Rewriting the pattern to remove its internal ambiguity did NOT fix
+    // it; anchoring per token did. 256 KB well under a second is the
+    // guard, generous enough not to flake on a loaded CI runner.
+    const started = performance.now();
+    expect(citedEvidencePath('-.'.repeat(128_000))).toBeNull();
+    expect(citedEvidencePath(`${'-'.repeat(256_000)}.`)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   it('returns null when the evidence names no file', () => {
     expect(citedEvidencePath('docs/adr/ has template + 6 ADRs')).toBeNull();
     expect(citedEvidencePath('manual')).toBeNull();
