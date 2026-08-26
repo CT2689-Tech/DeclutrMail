@@ -24,6 +24,64 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-26 — I asked you to decide the cancel-modal refund line without telling you that you had already decided it
+
+**Source:** session 2026-08-26 — found while implementing the founder's answer
+(`2A`, add a refund route to the cancel modal)
+
+**Why:** the `/ct-decide` block I wrote presented this as an unconsidered gap
+— *"the modal offers no route there — no mailto, no mention"*. That framing
+was wrong. `cancel-modal.tsx` carries the decision in its docstring:
+
+> *"The guarantee is NOT mentioned here (founder, 2026-07-31). Naming a
+> refund at the moment of highest churn intent reads as an invitation — 'if I
+> see this as a term, I will go ahead and ask for a refund every time'. The
+> policy stays public on /refunds and on the Plan & billing header, so
+> nothing is hidden; this screen simply stops advertising it."*
+
+So `2A` is not filling a gap, it is **reversing a founder decision from four
+weeks ago**, and the founder answered a menu that did not say so. Later
+instruction beats earlier instruction — but only when it is knowingly later.
+**The change was NOT made**; nothing is worse in the meantime, since the
+current state is the one deliberately chosen.
+
+**How:** one word. Either "yes, reverse it" — the line goes in, shown only
+for a subscription still inside its 30-day window, pointing at the
+`support@declutrmail.com` mailto already used on `/refunds` — or "no, keep
+2026-07-31", which stays as-is and this entry records why it came up twice.
+
+**Verifies by:** either the modal carries an in-window refund route and the
+docstring records the reversal with its date, or this entry closes as
+re-affirmed.
+**Status:** Open — blocked on the founder, one word
+
+### 2026-08-26 — Noise "Done" marks are deliberately dropped on a Brief day switch
+
+**Source:** session 2026-08-26 — founder decision `4A`
+
+**Why:** archiving a sender in the Noise section shows "Archived ✓". Browsing
+to an earlier Brief and back clears those marks, because the section is keyed
+on the Brief so any change remounts it. The archive itself is server-side and
+recorded in Activity either way — only the checkmark resets.
+
+That key is a safety guard, not an accident: sender keys are a hash of the
+email address and are therefore identical across mailboxes, so without the
+remount, archiving Old Navy in one mailbox would draw "Archived ✓" next to Old
+Navy in the other mailbox's Brief — a receipt for something that did not
+happen.
+
+**Founder decision 2026-08-26: leave it.** A checkmark disappearing on a
+screen few people browse costs less than a wrong one appearing. Re-keying on
+mailbox + covered day would keep the marks across a day switch while
+preserving the cross-mailbox half of the guard, and is the change to make if
+this ever becomes a real complaint — but it is a correctness-sensitive key on
+the one surface that draws "Archived ✓", so it is not worth doing on
+speculation.
+
+**Verifies by:** N/A — a decision to keep current behaviour. Reopen only if a
+user reports it.
+**Status:** Skipped 2026-08-26 — accepted behaviour, revisit trigger above.
+
 ### 2026-08-26 — D34 needs a hand-smoke to reach Verified
 
 **Source:** session 2026-08-26 — found while executing the founder's answer on
@@ -336,7 +394,50 @@ smoke across two rapid Gmail pushes on the same mailbox.
 **Verifies by:** `pg_stat_statements` mean for
 `SELECT pg_advisory_lock($1, hashtext($2))` falls from 7.8 s to
 sub-second at comparable call volume.
-**Status:** Open
+
+**Answered 2026-08-26 — option B, "the two smaller fixes now, the lock
+narrowing after launch." On inspection BOTH smaller fixes turned out to be
+wrong as written here.** What shipped instead:
+
+- **The pool was NOT raised.** The peak figure in this entry was right (10
+  vs 37 — actually **38** across **six** consumers; this entry missed one:
+  IncrementalSync 20, LabelAction 10, AutopilotAction 5, SenderIndexSweep /
+  SnoozeWake / AccountDeletionPurge 1 each). But raising it collides with
+  the compute-tier decision taken the same day. Postgres reports
+  `max_connections = 60` on Micro, and fixed pools already claim **31**:
+  worker main `pg` 10 (postgres.js default) + lock pool 10 + outbox
+  listener 1 + the API's own pool 10. Sizing the lock pool to 38 puts the
+  total at **59 of 60** — and exhausting connections fails requests
+  outright where an over-subscribed lock pool only queues. The number is
+  now a named constant carrying this accounting, so the next reader sees
+  the budget rather than a bare `10`.
+- **`perMailboxPolicy.timeoutMs` was NOT set, and should not be.** This
+  entry read `null` as an oversight; it is documented and deliberate — the
+  initial backfill runs 50k–250k messages over an hour, and the policy is
+  shared with `InitialSyncWorker`. Worse, it would not bound the lock hold
+  at all: `BaseDeclutrWorker.withTimeout` is a bare `Promise.race` that
+  does not cancel the losing promise, so the job would fail and retry while
+  the original kept holding the lock — the detached-execution hazard
+  `MAILBOX_LOCK_TIMEOUT`'s own docstring exists to avoid.
+- **What did ship: the wait is now measured.** `reserve()` queues unbounded
+  when every connection is checked out, and it runs BEFORE `lock_timeout`
+  is set — so nothing aborts it and `pg_stat_statements` never sees it (no
+  statement ran). It was the only step in the lock path with no log line of
+  its own, which is how 26.5 h of accumulated wait read as "slow sync"
+  rather than "pool too small". Any checkout ≥ 1 s now emits
+  `mailbox_lock.pool_wait`.
+- **A stale comment was corrected.** The autopilot registration put combined
+  peak demand at "15 > 10 — an ACCEPTED overcommit", counting only the two
+  workers in front of it. The overcommit is still accepted and still not a
+  deadlock; the number was off by 23.
+
+**Still open:** whether to raise the pool at all, which is now a real
+trade-off against staying on Micro rather than a free win — and the lock
+narrowing itself, deferred to post-launch per the founder's answer.
+**Status:** Open — narrowed 2026-08-26 to (a) the pool size, pending the
+compute-tier decision, and (b) the post-launch lock narrowing. Let
+`mailbox_lock.pool_wait` accumulate first; it now measures what raising the
+pool would buy.
 
 ### 2026-08-22 — A cancelling customer is told it "isn't a refund" and given no way to ask for one
 **Source:** the no-active-mailbox reachability smoke (2026-08-22) — found while checking that entry's cancel-modal expectation

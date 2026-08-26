@@ -414,6 +414,35 @@ async function bootstrap(): Promise<void> {
    */
   const LABEL_ACTION_CONCURRENCY = 10;
   /**
+   * Size of the dedicated advisory-lock pool.
+   *
+   * NOT sized to peak demand, and that is a deliberate, budgeted choice.
+   * SIX workers take this lock, and their BullMQ concurrencies sum to
+   * 38: IncrementalSync 20, LabelAction 10, AutopilotAction 5, and
+   * SenderIndexSweep / SnoozeWake / AccountDeletionPurge at 1 each.
+   * (A comment on the autopilot registration below used to put the peak
+   * at 15 — it counted only the two workers in front of it, and missed
+   * IncrementalSync, which is both the largest consumer and the one that
+   * accumulated 26.5 h of lock wait.)
+   *
+   * The overcommit is survivable, not deadlocking: a holder's inner
+   * queries run on the MAIN pool, so every holder completes and releases
+   * and the reserve queue always drains. The cost is latency, not
+   * failure.
+   *
+   * Raising it to 38 is what the wait argues for and the CONNECTION
+   * BUDGET forbids today. Postgres reports `max_connections = 60` on the
+   * current Supabase compute tier, and the fixed pools already claim 31:
+   * this worker's main `pg` (postgres.js default 10) + this lock pool
+   * (10) + the outbox listener (1) + the API's own pool (10). At 38 the
+   * total is 59 of 60 — and exhausting connections fails requests
+   * outright, where an over-subscribed lock pool only queues. Deferred
+   * to the compute-tier decision recorded in FOUNDER-FOLLOWUPS.md
+   * (2026-08-22); `mailbox_lock.pool_wait` now measures what raising it
+   * would actually buy.
+   */
+  const LOCK_POOL_MAX = LABEL_ACTION_CONCURRENCY;
+  /**
    * DEDICATED connection pool for the per-mailbox advisory lock, sized to
    * the label-action concurrency. This is the deadlock fix: the lock
    * holder pins a connection for the whole resolve→mutate→commit (incl.
@@ -443,7 +472,7 @@ async function bootstrap(): Promise<void> {
     lockHost: safeHostPort(lockDatabaseUrl),
   });
   const lockPg = postgres(lockDatabaseUrl, {
-    max: LABEL_ACTION_CONCURRENCY,
+    max: LOCK_POOL_MAX,
     prepare: false,
   });
   // D181 audit writer. The worker is standalone (no Nest DI), so the
@@ -2037,13 +2066,16 @@ async function bootstrap(): Promise<void> {
     AUTOPILOT_ACTION_QUEUE,
     (job) => autopilotActionWorker.run(job),
     // Each sweep holds a `lockPg` advisory-lock connection for its full
-    // duration, sharing the max-10 pool with LabelActionWorker
-    // (concurrency 10). Combined peak demand is 15 > 10 — an ACCEPTED
-    // overcommit: `reserve()` queues (never fails), a lock holder's
-    // inner queries run on the separate main `pg` pool so it always
-    // completes and releases (no hold-and-wait deadlock), and both
-    // queues are event-paced, not throughput-bound. Worst case under
-    // simultaneous max load: up to 5 sweeps idle in the reserve queue.
+    // duration, sharing the lock pool with five other consumers. This
+    // comment used to put combined peak demand at 15 > 10, counting
+    // only LabelActionWorker and this worker; the real figure is 38
+    // across six workers — see `LOCK_POOL_MAX` above, which carries the
+    // accounting and the connection budget that keeps the pool at 10.
+    // The overcommit is still ACCEPTED and still not a deadlock:
+    // `reserve()` queues (never fails) and a holder's inner queries run
+    // on the separate main `pg` pool, so it always completes and
+    // releases. What changed is that the queue is now measured —
+    // `mailbox_lock.pool_wait` logs any checkout over a second.
     { connection, concurrency: 5, ...userFacingTuning },
   );
   autopilotActionBullWorker.on('error', (err) => {

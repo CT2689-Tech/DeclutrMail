@@ -19,6 +19,17 @@ import { MAILBOX_ACTION_LOCK_NS, type MailboxActionLock } from '@declutrmail/wor
 export const MAILBOX_LOCK_TIMEOUT = '45s';
 
 /**
+ * Log a lock-pool checkout that takes at least this long.
+ *
+ * A checkout from a pool with a free connection is sub-millisecond, so
+ * anything at second scale means every connection was busy and this
+ * caller queued. One second is far enough above noise to stay quiet on
+ * a healthy pool and far below the 7.8 s mean wait recorded in
+ * production, so a real contention window cannot pass unlogged.
+ */
+export const LOCK_POOL_WAIT_WARN_MS = 1_000;
+
+/**
  * Per-mailbox advisory lock for destructive actions (D226).
  *
  * `perMailboxPolicy` does NOT actually serialize per mailbox (BullMQ
@@ -51,7 +62,35 @@ export function createMailboxActionLock(lockPg: Sql): MailboxActionLock & {
 } {
   return {
     async run(mailboxAccountId, fn) {
+      // `reserve()` queues UNBOUNDED when every pooled connection is
+      // checked out, and it does so BEFORE `lock_timeout` is set below —
+      // so a wait here is bounded by nothing, aborts nothing, and lands
+      // in no server-side view (`pg_stat_statements` only sees
+      // statements that ran). It was the one step in this function with
+      // no log line of its own, which is why 26.5 h of accumulated lock
+      // wait showed up as "slow sync" and never as "pool too small".
+      //
+      // Peak demand across the six lock-taking workers is 38 against a
+      // pool of 10 (see `LOCK_POOL_MAX` in worker.ts). That overcommit
+      // is survivable rather than deadlocking — a holder's inner queries
+      // run on the separate main pool, so it always completes and
+      // releases and the queue drains — but survivable is not the same
+      // as measured. Timing it is what makes raising the pool an
+      // evidenced decision instead of a guess.
+      const reserveStarted = Date.now();
       const reserved = await lockPg.reserve();
+      const reserveWaitMs = Date.now() - reserveStarted;
+      if (reserveWaitMs >= LOCK_POOL_WAIT_WARN_MS) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'mailbox_lock.pool_wait',
+            mailboxAccountId,
+            reserveWaitMs,
+            message: 'Waited for a lock-pool connection before the advisory lock was attempted.',
+          }),
+        );
+      }
       // False until pg_advisory_lock RETURNS. The unlock (and the leak
       // diagnosis) must only run for an acquire that succeeded: a
       // `lock_timeout` abort still emits a server-side "you don't own a

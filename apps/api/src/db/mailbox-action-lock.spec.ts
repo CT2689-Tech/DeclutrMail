@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from 'postgres';
 
-import { createMailboxActionLock, MAILBOX_LOCK_TIMEOUT } from './mailbox-action-lock';
+import {
+  createMailboxActionLock,
+  LOCK_POOL_WAIT_WARN_MS,
+  MAILBOX_LOCK_TIMEOUT,
+} from './mailbox-action-lock';
 
 /**
  * The 2026-08-12 leak survived because the unlock's boolean was
@@ -14,6 +18,8 @@ import { createMailboxActionLock, MAILBOX_LOCK_TIMEOUT } from './mailbox-action-
 interface FakeBehavior {
   /** Throw on the pg_advisory_lock statement. */
   acquireError?: Error;
+  /** Milliseconds `reserve()` blocks before handing back a connection. */
+  reserveDelayMs?: number;
   /** Value the unlock statement resolves with; default true. */
   unlockReturns?: boolean;
   /** Throw on the pg_advisory_unlock statement. */
@@ -40,7 +46,10 @@ function makeFakePool(behavior: FakeBehavior) {
   };
   (reserved as unknown as { release: typeof release }).release = release;
   const pool = {
-    reserve: () => Promise.resolve(reserved),
+    reserve: () =>
+      behavior.reserveDelayMs === undefined
+        ? Promise.resolve(reserved)
+        : new Promise((resolve) => setTimeout(() => resolve(reserved), behavior.reserveDelayMs)),
   } as unknown as Sql;
   return { pool, statements, boundValues, release };
 }
@@ -131,6 +140,40 @@ describe('createMailboxActionLock', () => {
     const { pool } = makeFakePool({ unlockReturns: false });
     const lock = createMailboxActionLock(pool);
     await expect(lock.probe()).resolves.toEqual({ ok: false, unlockReturned: false });
+  });
+
+  it('logs a queued pool checkout — the step that had no log line of its own', async () => {
+    // `reserve()` queues unbounded when all connections are checked out,
+    // and it runs BEFORE `lock_timeout` is set, so nothing aborts it and
+    // `pg_stat_statements` never sees it (no statement ran). 26.5 h of
+    // accumulated wait read as "slow sync", never as "pool too small".
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { pool } = makeFakePool({ reserveDelayMs: LOCK_POOL_WAIT_WARN_MS + 20 });
+    const lock = createMailboxActionLock(pool);
+
+    await lock.run('mailbox-1', async () => 'done');
+
+    const logged = warnSpy.mock.calls.map(([line]) => JSON.parse(String(line)));
+    const waitLine = logged.find((l) => l.kind === 'mailbox_lock.pool_wait');
+    expect(waitLine).toBeDefined();
+    expect(waitLine.mailboxAccountId).toBe('mailbox-1');
+    expect(waitLine.reserveWaitMs).toBeGreaterThanOrEqual(LOCK_POOL_WAIT_WARN_MS);
+    warnSpy.mockRestore();
+  });
+
+  it('stays silent when the pool hands back a connection immediately', async () => {
+    // A healthy pool must not log on every action, or the signal is
+    // worth nothing.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { pool } = makeFakePool({});
+    const lock = createMailboxActionLock(pool);
+
+    await lock.run('mailbox-1', async () => 'done');
+
+    expect(
+      warnSpy.mock.calls.filter(([line]) => String(line).includes('mailbox_lock.pool_wait')),
+    ).toHaveLength(0);
+    warnSpy.mockRestore();
   });
 
   it('exposes a lock timeout below the smallest consumer job cap (cronPolicy 60s)', () => {
