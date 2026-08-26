@@ -1,6 +1,6 @@
 import { triageVerdict, type TriageVerdict } from '@declutrmail/db';
 
-import type { CascadeResult, CascadeRuleId } from './score-cascade.js';
+import type { CascadeResult, CascadeRuleId } from '@declutrmail/shared/triage-engine';
 
 /**
  * Reasoning (D24) — human-readable explanation of a `CascadeResult`.

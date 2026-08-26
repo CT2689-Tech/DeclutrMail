@@ -18,7 +18,8 @@
     "./observability": "./src/observability/index.ts",
     "./senders": "./src/senders/index.ts",
     "./senders/organizational-domain": "./src/senders/organizational-domain.ts",
-    "./tokens.css": "./src/styles/tokens.css"
+    "./tokens.css": "./src/styles/tokens.css",
+    "./triage-engine": "./src/triage-engine/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

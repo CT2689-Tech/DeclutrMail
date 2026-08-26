@@ -1,4 +1,4 @@
-import type { ProtectionReason, TriageVerdict } from '@declutrmail/db';
+import type { ProtectionReason, TriageVerdict } from '../contracts';
 
 /**
  * The deterministic decision engine cascade (D20, D21, D22).

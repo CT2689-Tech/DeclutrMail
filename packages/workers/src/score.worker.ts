@@ -32,7 +32,7 @@ import {
   isGovernmentDomain,
   runCascade,
   type SenderSignals,
-} from './score-cascade.js';
+} from '@declutrmail/shared/triage-engine';
 import { ValidationError } from './worker-errors.js';
 import type { WorkerContext } from './worker-context.js';
 
