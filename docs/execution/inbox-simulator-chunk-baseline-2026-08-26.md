@@ -250,45 +250,116 @@ comment says the root layout supplies a shared `QueryClient` to every
 route, but that is the generic provider, not this route pulling in the
 concrete `useMe` module and the API client.
 
-### 3e. Why: no source-level import edge, so this is a chunk-splitting effect, not an import leak
+### 3e. Why: a real import edge, not a chunk-splitting accident
 
-Grepped every `.tsx`/`.ts` file under `apps/web/src` for a value-import
-of `api/use-me` or `auth-provider`, excluding test files, and checked
-each result against `inbox-simulator-screen.tsx`'s own import graph
-(`triage/action-preview-presentation`, `triage/triage-row`,
-`triage/data`, `triage/types`, `marketing/landing/tracked-cta`,
-`marketing/landing/urls`, `@declutrmail/shared/actions`, `lib/posthog`).
-Exact command and count:
+**[Corrected 2026-08-26 fix wave.]** This section originally concluded
+there was no source-level import edge and blamed "webpack's automatic
+shared-chunk grouping." Both claims were false. The check below explains
+why the original one missed it, then shows the real chain.
+
+**What the original check actually did.** It grepped for files importing
+`api/use-me` or `auth-provider` (45 hits), then intersected that list
+against `inbox-simulator-screen.tsx`'s own **eight direct imports only**.
+`use-screener.ts` — the file that closes the chain below — is one of the
+45, but it sits **four hops** below `inbox-simulator-screen.tsx`, not one.
+A one-level intersection cannot see a four-hop edge; "checked... directly
+or transitively" asserted a transitive check that was never actually run.
+
+**The real chain**, every hop verified directly against the source file
+at the cited line:
 
 ```
-$ grep -rlnE "from '.*api/use-me'|from \"@/features/auth/api/use-me\"|from '@/features/auth/auth-provider'|from '\.\./auth-provider'|from '\./auth-provider'" apps/web/src --include="*.tsx" --include="*.ts" | grep -v "\.test\." | sort -u | wc -l
-      45
+apps/web/src/app/(marketing)/inbox-simulator/page.tsx:3
+  → features/marketing/inbox-simulator/inbox-simulator-screen.tsx:18   import { TriageRow }
+  → features/triage/triage-row.tsx:17                                  import { ProtectedActionNotice, UnprotectButton }
+  → features/triage/protected-notice.tsx:7-9                           import { useSetSenderPolicy }
+  → features/senders/api/use-sender-policy.ts:40                       import { SCREENER_QUEUE_KEY }
+  → features/screener/api/use-screener.ts:15-16                        import { ME_QUERY_KEY } / import { apiGet, apiPost }
 ```
 
-**45 files** (this includes Storybook `.stories.tsx` files, which are
-never bundled into a Next.js page chunk and so are irrelevant to
-reachability from a page — included anyway because excluding them isn't
-needed to reach the right answer, and a broader check is a stronger one).
-Printed the full 45-file list and grepped it for any path under
-`marketing/inbox-simulator`, `triage/action-preview-presentation.tsx`,
-`triage/triage-row.tsx`, `triage/data.ts`, `triage/types.ts`,
-`marketing/landing/{tracked-cta,urls}.ts(x)`, or `lib/posthog.ts` — zero
-matches. **No source file under `inbox-simulator` imports the query
-layer, directly or transitively.**
+The decisive hop is `use-sender-policy.ts:40`: it imports
+`SCREENER_QUEUE_KEY`, a plain constant re-exported (via `use-screener.ts`)
+from `query-options.ts` — not a hook, not anything screener-specific to
+the call site. Neither `use-sender-policy.ts` nor `use-screener.ts` is
+marked side-effect-free, and tree-shaking operates per MODULE: an ES
+module is evaluated in full before any one of its named bindings is
+picked out. So importing that one constant pulls `use-screener.ts`'s
+entire module body in — including its own imports of `ME_QUERY_KEY` and
+`apiGet`/`apiPost` — regardless of whether `use-sender-policy.ts` ever
+calls a screener hook.
 
-The leak is webpack's automatic shared-chunk splitting: `use-me.ts` and
-`lib/api/client.ts` are small modules used by many `(app)` routes, and
-webpack's default chunk-grouping bin-packed them into the same physical
-chunk file as `packages/shared`'s `tokens` and `Button` — modules
-`/inbox-simulator` genuinely does need (via `ActionPreviewPresentation`
-and `TriageRow`). Because `/inbox-simulator` needs two of the four
-modules in chunk `5793`, it downloads the other two as a byte-for-byte
-side effect, with zero import edge from any inbox-simulator source file
-to `auth-provider` or `use-me`. Task 4's fix (severing the
-`MailboxActionContext` → `auth-provider` edge from `BatchActionSheet` /
-`ConfirmModalFrame`) addresses import-graph leaks; it does not and
-structurally cannot address this chunk-grouping leak, because there is
-no import edge here to sever.
+Given this edge exists, chunk `5793-1b57f7a60d6cf7b6.js` (§3b) is
+genuinely reachable from `/inbox-simulator`'s own source tree. Webpack's
+chunk-splitting still decides which PHYSICAL FILE the pulled-in code ends
+up in — that part of the original mechanism description is not wrong —
+but it is not why the code is pulled in. The cause is the import chain
+above.
+
+**Two further claims from the original mechanism story are retracted,
+not merely corrected:**
+
+- _"`/inbox-simulator` genuinely needs `tokens`/`Button`, so webpack
+  bin-packed `use-me`/`client.ts` in alongside them."_ This document's own
+  §3d data contradicts it: `(marketing)/layout.tsx:21` imports `tokens`
+  for every route under the marketing group, yet of the marketing routes
+  only `/inbox-simulator` carries chunk `5793` — `/`, `/pricing` and
+  `/faq` do not. If needing `tokens` were sufficient to place a route's
+  code in chunk `5793`, all four routes would carry it. Whatever explains
+  chunk `5793`'s specific membership, "the route needs `tokens`" is not a
+  sufficient story on this document's own numbers.
+- _The "four modules in chunk 5793" figure._ No enumeration of chunk
+  `5793`'s complete module list was ever shown in this document — the
+  number was asserted, not measured. It is withdrawn rather than replaced
+  with another unmeasured count. (What §3b DID measure and still stands:
+  `use-me.ts` + `lib/api/client.ts`'s compiled code, confirmed by runtime
+  string content, are in that chunk.)
+
+Task 4's fix (severing the `MailboxActionContext` → `auth-provider` edge
+from `BatchActionSheet` / `ConfirmModalFrame`) remains correct on its own
+terms (§3c) — it is just not the edge responsible for this leak. That
+edge runs through `TriageRow`, which Task 4 never touched.
+
+### 3f. The leak is larger than §3b alone — a second chunk carries it too
+
+`static/chunks/2907-d5fe5d3918b50755.js` is also a member of the
+`/(marketing)/inbox-simulator/page` file list (Step 2). Unlike `5793`, it
+contains compiled code from `use-screener.ts` and `use-sender-policy.ts`
+**directly** — not merely a re-exported constant. Confirmed by exact
+runtime-string match against the built file:
+
+```
+$ grep -oE '\["screener","queue"\]' apps/web/.next/static/chunks/2907-d5fe5d3918b50755.js
+["screener","queue"]
+
+$ grep -oE ".{40}/api/screener/queue.{10}" apps/web/.next/static/chunks/2907-d5fe5d3918b50755.js
+Query)({...(t=async e=>(await (0,s.Vg)("/api/screener/queue",{signal:e})).data,(0,d.j)({queryKey:c,
+
+$ grep -oE ".{20}/policy.{5}" apps/web/.next/static/chunks/2907-d5fe5d3918b50755.js
+odeURIComponent(e),"/policy")
+
+$ grep -oE "/api/senders/(suggest|summary)" apps/web/.next/static/chunks/2907-d5fe5d3918b50755.js | sort -u
+/api/senders/suggest
+/api/senders/summary
+```
+
+The first match is `SCREENER_QUEUE_KEY`'s literal array
+(`['screener','queue']`, from `query-options.ts`) beside the query
+function calling `apiGet('/api/screener/queue', ...)` (the `(0,s.Vg)(...)`
+alias pattern matches `apiGet`, same as the §3b match for `use-me.ts`).
+The third is `patchSenderPolicy`'s own template literal —
+`` `/api/senders/${encodeURIComponent(id)}/policy` `` — i.e.
+`use-sender-policy.ts`'s own mutation code, not only its import of
+`use-screener.ts`, is compiled into this chunk. The fourth pair comes
+from `lib/api/senders.ts` (imported by `use-sender-policy.ts` for
+`patchSenderPolicy`), confirming that whole module rides along too.
+Chunk size, measured directly: `wc -c` reports 7059 bytes.
+
+**So the leak spans two physical chunk files**, both explained by the
+single chain in §3e: `5793` carries `use-me.ts` + `lib/api/client.ts`
+(the modules two hops from the route); `2907` carries `use-screener.ts` +
+`use-sender-policy.ts` + `lib/api/senders.ts` (one hop from the route).
+Webpack split the chain's code across two output files; both halves are
+genuinely reachable from `/inbox-simulator`'s own imports.
 
 ---
 
@@ -303,12 +374,21 @@ its 401 → Google-OAuth-redirect logic) is present in chunk
 
 This is scoped narrowly: `MailboxActionContext`/`auth-provider`'s own
 Context-and-Provider code is confirmed absent (§3c) — Task 4's fix holds.
-The leak is `use-me.ts` + `lib/api/client.ts` riding into this route's
-chunk set via webpack's shared-chunk grouping (§3e), unrelated to
+The leak is a real transitive value-import chain (§3e) — `TriageRow` →
+`ProtectedActionNotice` → `useSetSenderPolicy` → the `SCREENER_QUEUE_KEY`
+constant → `use-screener.ts` → `ME_QUERY_KEY`/`apiGet`/`apiPost` —
+spanning two chunk files, `5793` and `2907` (§3f). It is unrelated to
 `BatchActionSheet` or `ConfirmModalFrame`, neither of which is rendered
-on this route yet (that's Plan 4's job). Fixing this is out of scope for
-this task per its own instructions ("If the measurement reveals a
-problem, report it — do not fix it") and is not attempted here.
+on this route yet (that's Plan 4's job), and unrelated to webpack
+chunk-grouping heuristics — the code is pulled in by a genuine import
+edge, not bin-packed alongside it by accident. Fixing this is out of
+scope for this task per its own instructions ("If the measurement reveals
+a problem, report it — do not fix it") and is not attempted here. The
+fix shape (also not implemented here) is to extract `ME_QUERY_KEY` and
+`SCREENER_QUEUE_KEY` into key-only modules so importing a constant stops
+pulling in its owning hook module — a `sideEffects` package.json
+declaration would not address this shape (see FOUNDER-FOLLOWUPS.md's
+corrected entry for why).
 
 ---
 

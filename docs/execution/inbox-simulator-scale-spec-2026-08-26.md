@@ -3,7 +3,9 @@
 **Date:** 2026-08-26
 **Closes:** D133
 **Touches:** D226 (mandatory preview), D227 (canonical verbs), D245 (Protected), D251 + `[PACKAGING PATCH 2026-08-23]`
-**Status:** approved design, not yet planned
+**Status:** Plan 1 (foundations) executed on `feat/d133-inbox-simulator-scale`
+— see `docs/execution/inbox-simulator-plan-1-foundations-2026-08-26.md`.
+Plans 2–4 (the rest of this spec) remain approved design, not yet planned.
 
 ---
 
@@ -181,9 +183,9 @@ demo that the FAQ refutes two clicks away. Project **backlog cleared**, never fu
 
 | Step | Reuses                                                       | Auth/query clean?                          |
 | ---- | ------------------------------------------------------------ | ------------------------------------------ |
-| 1    | `DomainBatchCard`, `BatchActionSheet`, `findDomainBatches`   | ✗ — via `MailboxActionContext`, see §6     |
+| 1    | `DomainBatchCard`, `BatchActionSheet`, `findDomainBatches`   | ✓ — `MailboxActionContext` split, see §6   |
 | 2    | `ActionSheet`, `ActionPreview`                               | ✓ — pulls only `ContextualHelp` → glossary |
-| 3    | `ActivateRuleModal`, `RulePreviewPanel`, `ConfirmModalFrame` | ✗ — via `MailboxActionContext`, see §6     |
+| 3    | `ActivateRuleModal`, `RulePreviewPanel`, `ConfirmModalFrame` | ✓ — `MailboxActionContext` split, see §6   |
 | 4    | `TriageRow`, `ActionToolbar`, `ActionPreviewPresentation`    | ✓                                          |
 
 **`DemoPreviewDialog` is deleted.** It is a hand-rolled copy of `ActionSheet`, and it is
@@ -199,9 +201,12 @@ current symptom.
 Fixtures stop hardcoding `verdict: 'archive'`. They carry `SenderSignals` and derive the
 verdict through **`runCascade`**.
 
-`runCascade` (`packages/workers/src/score-cascade.ts`) is already a pure function — no DB,
-no LLM, no clock — with a single type-only import from `@declutrmail/db`. Move it to
-`packages/shared` so both the worker and the browser can call it.
+`runCascade` (`packages/shared/src/triage-engine/cascade.ts` — moved here from
+`packages/workers/src/score-cascade.ts` by Plan 1, Task 2) is already a pure function —
+no DB, no LLM, no clock. Plan 1, Task 1 mirrored its two DB-enum type imports
+(`TriageVerdict`, `ProtectionReason`) into `@declutrmail/shared/contracts` so the move
+needed no dependency on `@declutrmail/db` at all. Both the worker and the browser can
+call it.
 
 Effect: the demo can never display a recommendation the engine would not make, and an
 engine change updates the demo with no human step. This is D133's actual demand.
@@ -226,15 +231,39 @@ price correctly and lost one marketing sentence.
 `accountContext` empty, _"removing this preview's auth/query edge from the public
 route-specific chunk."_
 
-`BatchActionSheet` and `ConfirmModalFrame` both import `MailboxActionContext`, which
+`BatchActionSheet` and `ConfirmModalFrame` both imported `MailboxActionContext`, which
 imports `auth-provider`, which imports `useMe` (TanStack Query) and the API client.
-Importing them as-is drags the query layer into the public marketing chunk. Tree-shaking
-does not save this: it is per-module.
+Importing them as-is would have dragged that edge into the public marketing chunk.
+Tree-shaking does not save this: it is per-module.
 
-**Targeted refactor:** split `MailboxActionContext` into a presentational core taking
-`mailboxEmail: string | undefined`, plus a thin auth-reading wrapper for app surfaces. The
-component already carries a `mailboxEmail` override documented _"for isolated previews"_ —
-the design intent exists, the module boundary was never cut.
+**Done — Plan 1, Task 4 (commit `81954ac8`).** `MailboxActionContext` split into a
+presentational core, `MailboxActionContextView`, taking `mailboxEmail: string | undefined`
+and doing no auth reads, plus a thin auth-reading wrapper (`MailboxActionContext` itself,
+unchanged for app surfaces). `BatchActionSheet`, `ConfirmModalFrame`,
+`ActivateRuleModal`, and `ApproveConfirmModal` all now render the view directly and take
+`mailboxEmail` as a prop — none of the four imports `auth-provider` any more. The
+component already carried a `mailboxEmail` override documented _"for isolated previews"_
+before this split — the design intent existed, the module boundary was the missing piece.
+
+**What this split actually buys — restated, since the query layer already reaches this
+route by a different, uncut path (see
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` §3e/§3f and the
+corresponding `FOUNDER-FOLLOWUPS.md` entry): this split does NOT keep the query layer
+out of the public chunk — it is already there. What it verifiably does:**
+
+- `AuthProvider`, `useOptionalAuth`, and `getActiveMailboxEmail` appear in **zero** of
+  the route's 15 first-load chunks (measured, chunk-baseline doc §3c) — so rendering
+  `BatchActionSheet` and `ActivateRuleModal` on this route in Plans 2–4 does not by
+  itself add that particular edge. Without this split, doing so would have.
+- It keeps green the existing bundle-boundary guard at
+  `apps/web/src/features/marketing/inbox-simulator/inbox-simulator-screen.test.tsx:9-11`,
+  which throws if `@/features/auth/mailbox-action-context` is imported from this route.
+
+Cutting this edge was a prerequisite for Plans 2–4 to render `BatchActionSheet` and
+`ActivateRuleModal` publicly without making the ALREADY-LEAKING query layer worse. It is
+not, on its own, a fix for the leak Finding 1 found — that leak runs through `TriageRow`
+(already rendered on this route today) via `SCREENER_QUEUE_KEY`/`ME_QUERY_KEY`, a path
+this split never touched.
 
 **Verify by chunk membership in `app-build-manifest.json`, never by chunk name.**
 
