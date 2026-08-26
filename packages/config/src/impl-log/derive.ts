@@ -72,7 +72,7 @@ export type EvidenceCheck = (evidence: string) => 'no-path' | 'exists' | 'missin
  * The repo file an evidence string cites, or `null` if it cites none.
  *
  * The 🟢 audit demotes a Verified row whose cited file has vanished, so
- * everything this returns is load-bearing — and it has been wrong three
+ * everything this returns is load-bearing — and it has been wrong four
  * times:
  *
  * 1. **Alternation order.** `(?:ts|tsx)` takes the first branch that
@@ -92,6 +92,14 @@ export type EvidenceCheck = (evidence: string) => 'no-path' | 'exists' | 'missin
  *    O(n²), 137 ms on 8 KB of `-`. Rewriting the pattern to remove its
  *    internal ambiguity did NOT fix that; measuring showed the restarts
  *    were the cost, not the ambiguity.
+ *
+ * 4. **The trailing-dot trim, same shape again.** The tokenizer in (3)
+ *    stripped sentence punctuation with `/\.+$/`, which is anchored at
+ *    the END but not the START — so a long run of dots not at the end
+ *    restarts at every offset. 5.3 s on 64 KB. The timing guard written
+ *    for (3) missed it because its inputs were runs of `-`, not `.`; it
+ *    now covers six shapes, and every remaining pattern here was
+ *    measured against all six.
  *
  * So the scan is now tokenized: evidence splits on whitespace, and each
  * token is matched ANCHORED, which is linear (256 KB in under 10 ms).
@@ -114,7 +122,12 @@ export function citedEvidencePath(evidence: string): string | null {
     const run = PATH_RUN.exec(token.replace(LEADING_PUNCTUATION, ''));
     if (!run) continue;
     // A trailing `.` is sentence punctuation, never part of the path.
-    const candidate = run[0].replace(/\.+$/, '');
+    // Trimmed by hand, not by `/\.+$/`: that pattern is unanchored at the
+    // START, so on a long run of dots NOT at the end it restarts at every
+    // offset — 5.3 s on 64 KB, the second CodeQL alert on this function.
+    let end = run[0].length;
+    while (end > 0 && run[0][end - 1] === '.') end -= 1;
+    const candidate = run[0].slice(0, end);
     if (CITED_PATH.test(candidate)) return candidate;
   }
   return null;

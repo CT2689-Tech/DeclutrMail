@@ -189,15 +189,37 @@ describe('citedEvidencePath', () => {
     );
   });
 
-  it('stays linear on a pathological string (CodeQL: polynomial regex)', () => {
-    // The original unanchored scan restarted at every offset and
-    // re-consumed the run at each — 137 ms on 8 KB of `-`, quadratic.
-    // Rewriting the pattern to remove its internal ambiguity did NOT fix
-    // it; anchoring per token did. 256 KB well under a second is the
-    // guard, generous enough not to flake on a loaded CI runner.
+  it('stays linear on every pathological shape (CodeQL: polynomial regex)', () => {
+    // Two separate high-severity alerts landed on this function. The
+    // first was the unanchored scan (137 ms on 8 KB of `-`; 4.6 MINUTES
+    // on 256 KB). The second was the trailing-dot trim `/\.+$/` —
+    // anchored at the end but not the start, 5.3 s on 64 KB of `.`.
+    //
+    // The guard written for the first one MISSED the second, because its
+    // inputs were runs of `-`. The first REWRITE of this guard missed it
+    // too, and the negative control is what caught that: a leading run
+    // of dots is stripped as punctuation before the trim ever sees it,
+    // so the input never reached the quadratic line. Only dots MID-token
+    // do — `a……b` is 1332 ms at 32 KB, the other two placements 0.3 ms.
+    //
+    // Hence a table rather than one clever string: a run of each
+    // character class this function treats specially, in each position
+    // it can occupy, so a quadratic path shows up here rather than in a
+    // CodeQL annotation.
+    const N = 64_000;
+    const shapes = [
+      'a' + '.'.repeat(N) + 'b', // dots MID-token — the trailing-dot trim
+      '.'.repeat(N) + 'a', // dots leading (stripped before the trim sees them)
+      'a' + '.'.repeat(N), // dots trailing
+      'a.'.repeat(N / 2), // dot-alternating
+      '-'.repeat(N) + '.', // dashes — the original scan
+      '-.'.repeat(N / 2), // dash-alternating
+      'a/.'.repeat(N / 3), // path separators
+      ' '.repeat(N) + 'a', // whitespace, which drives the split
+    ];
     const started = performance.now();
-    expect(citedEvidencePath('-.'.repeat(128_000))).toBeNull();
-    expect(citedEvidencePath(`${'-'.repeat(256_000)}.`)).toBeNull();
+    for (const shape of shapes) expect(citedEvidencePath(shape)).toBeNull();
+    // Generous against a loaded CI runner; the real numbers are single-digit ms.
     expect(performance.now() - started).toBeLessThan(500);
   });
 
