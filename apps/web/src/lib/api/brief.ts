@@ -91,6 +91,20 @@ export interface BriefPayloadWire {
    * template ran without a pre-amble.
    */
   narrative: string;
+  /**
+   * How many Reply candidates existed BEFORE the D63 cap, and likewise
+   * for FYI. Without these the screen could only render "6 of 6" — the
+   * cap describing itself as if it were a fact about the day — and the
+   * narrative could never know a seventh urgent item had been dropped,
+   * because the worker discards it before either sees the payload.
+   *
+   * Optional: Briefs are frozen once written (D69), so rows generated
+   * before this field existed keep their shape. A missing value means
+   * "no truncation information", and the consumer falls back to showing
+   * the plain count rather than inventing one.
+   */
+  replyTotal?: number;
+  fyiTotal?: number;
 }
 
 /** One Brief row as the read service returns it. */
@@ -137,6 +151,26 @@ export interface BriefMarkOpenedResultWire {
 export async function fetchBriefToday(signal?: AbortSignal): Promise<Envelope<BriefWire, unknown>> {
   const envelope = await apiGet<BriefWire>('/api/briefs/today', { signal });
   return { ...envelope, data: { ...envelope.data, noiseSenders: toNoiseSenders(envelope.data) } };
+}
+
+/**
+ * `GET /api/briefs?from=&to=` — D61 history. Returns the frozen
+ * snapshots in the range, newest first, each with its full payload, so
+ * the screen can move between days without another round trip.
+ *
+ * Runs `toNoiseSenders` per row for the same reason `fetchBriefToday`
+ * does: an absent field must land as "nothing is actionable", never as
+ * `undefined` the archive controls then index into.
+ */
+export async function fetchBriefHistory(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<Envelope<BriefWire[], unknown>> {
+  const query = new URLSearchParams({ from, to }).toString();
+  const envelope = await apiGet<BriefWire[]>(`/api/briefs?${query}`, { signal });
+  const rows = Array.isArray(envelope.data) ? envelope.data : [];
+  return { ...envelope, data: rows.map((row) => ({ ...row, noiseSenders: toNoiseSenders(row) })) };
 }
 
 /**

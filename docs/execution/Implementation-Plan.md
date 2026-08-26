@@ -2042,7 +2042,7 @@ Brief is a Pro-tier feature (per D19). At launch, Free and Plus users
 see a "Brief preview" placeholder with upgrade CTA. Pro users get the
 full Brief experience below.
 
-### D61 — Brief delivery channel: **In-app screen + optional email digest (default off)**
+### D61 — Brief delivery channel: **In-app screen only; email digest withdrawn 2026-08-26**
 
 Primary delivery is the in-app `/brief` screen. Pro users can optionally
 enable an email digest version (Settings → Notifications → "Send me my
@@ -2110,7 +2110,7 @@ NOISE
   provider_message_ids.
 - 7-day undo per D58.
 
-### D66 — Brief schedule: **Default Mon-Fri only; weekends opt-in**
+### D66 — Brief schedule: **RETIRED 2026-08-25; the Brief runs every day**
 
 Aligns with the assumption that most Pro users (founders, prosumers)
 work weekdays. Pro users can enable weekend Briefs in Settings →
@@ -10568,3 +10568,74 @@ Two amendments, both forced by mechanisms outside D64:
 The 8am local default is unchanged, and the picker itself — the half of
 D64 that was marked shipped while the hour sat hardcoded in
 `brief-timezone.ts` — now exists.
+
+---
+
+### [REVERSAL 2026-08-26 on D61 — the email digest half]
+
+**Founder decision, 2026-08-26.** D61 named two delivery channels: the
+in-app `/brief` screen and an optional email digest. **The email digest
+is withdrawn.** D61 now covers the in-app channel only.
+
+Why this is a reversal and not a deferral. The digest was never built —
+no template, no trigger, no preference key — while D61's row sat at 🟢
+**Verified**, cited to `apps/api/src/briefs/brief.read-service.spec.ts`,
+which tests the read service and never touches email. The verification
+passed on the clause that shipped, so the log asserted a feature the
+product did not have, and the Pro tier gate sold it: *"8am daily, in-app
+or by email."* A paid upgrade screen made a claim no code could honour.
+
+The claim is removed (#636). The `brief_runs.email_sent_at` column stays
+— it is nullable, unwritten, and costs nothing — but nothing reads or
+writes it, and it must not be taken as evidence the feature is partly
+built.
+
+**If the digest is ever wanted, it is a new D-number with its own row.**
+Reviving it under D61 would rebuild the exact structure that failed:
+one decision, two clauses, one verification.
+
+**Lesson recorded separately** — a D-decision containing "and" cannot be
+verified as a unit. See MISTAKES.md 2026-08-26.
+
+---
+
+### [PATCH 2026-08-26 on D63 — where unscreened senders go]
+
+**Founder decision, 2026-08-26 (ratifying the fix in #636).**
+
+D63 defines Reply as "items genuinely needing human response". The
+implementation sent every sender with **no engine verdict** to Reply, so
+the section filled with mail nobody had assessed — on the founder's own
+Brief, five of six Reply rows were promotional, above a tax-filing
+deadline.
+
+An unscreened sender that publishes a working unsubscribe channel now
+goes to **FYI**.
+
+**FYI and not Noise, deliberately.** Noise is D65's bulk-archive target.
+Routing unjudged mail there would put it inside a one-click archive —
+offering to clear mail the engine has never assessed claims more
+confidence than the product has. FYI says only what is known: this
+arrived, and it is not waiting on you.
+
+`senders.unsubscribe_method` is NULL until the sender index has run
+(D248), so NULL is **not** "no channel" — unindexed senders keep the
+conservative Reply default and re-bucket once the index lands. An
+explicit `keep` verdict still outranks the heuristic.
+
+---
+
+### [PATCH 2026-08-26 on D62 — no figures from snippets]
+
+**Founder decision, 2026-08-26 (ratifying the constraint in #635).**
+
+The Brief narrative must never repeat a figure that appears in a Gmail
+snippet — no balances, amounts, or account numbers. A real Brief lifted
+a bank balance of $4,284.44 onto the screen.
+
+Nothing was fetched that D7 does not already allow: the snippet is
+inside the disclosed envelope. The objection is not retrieval, it is
+placement — a balance on a summary page (and in any future digest)
+should be a decision someone made, not a side effect of summarising.
+
+The constraint lives in the system prompt and is pinned by a spec test.

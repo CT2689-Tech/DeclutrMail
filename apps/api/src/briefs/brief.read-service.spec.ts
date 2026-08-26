@@ -163,6 +163,35 @@ describe('BriefReadService', () => {
       expect(brief!.briefPayload.reply[0]!.senderName).toBe('Boss');
     });
 
+    it('carries the pre-cap section totals through to the wire', async () => {
+      // projectBrief is a deliberate field allowlist — that is what
+      // keeps a stowaway snippet off the wire (D7). It also means a new
+      // payload field is silently dropped unless it is named there, and
+      // neither the worker test (which asserts the DB row) nor the
+      // screen test (which stubs the response) can see that gap. This
+      // is the join.
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25', {
+        payload: { ...SAMPLE_PAYLOAD, replyTotal: 8, fyiTotal: 5 },
+      });
+
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+
+      expect(brief!.briefPayload.replyTotal).toBe(8);
+      expect(brief!.briefPayload.fyiTotal).toBe(5);
+    });
+
+    it('omits the totals for a Brief frozen before they existed', async () => {
+      // D69 freezes each row, so payloads without the field are a real
+      // shape the projection must pass through as absent — not as 0,
+      // which the screen would read as "everything was truncated".
+      await seedBrief(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, '2026-05-25');
+
+      const brief = await service.getForDate(mailboxA.mailboxAccountId, '2026-05-25');
+
+      expect(brief!.briefPayload.replyTotal).toBeUndefined();
+      expect(brief!.briefPayload.fyiTotal).toBeUndefined();
+    });
+
     it('projects the current user rating for the frozen Brief', async () => {
       const briefId = await seedBrief(
         db,

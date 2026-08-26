@@ -21,6 +21,86 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-26 — A regex demoted seven verified decisions and blamed the missing file on them
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` — found because it rejected
+a row I was legitimately recording
+
+**Caught by:** CI (`Implementation log is derived and current` failed on
+`D65: drifted`), then read back to the cause
+
+**What happened:** the evidence check in `scripts/generate-impl-log.ts` matched
+`/([\w@./-]+\.(?:ts|tsx|sql|sh|md))/`. Regex alternation takes the FIRST
+branch that matches, so on `apps/web/src/features/brief/noise-archive.test.tsx`
+the `ts` branch matched and left the `x` behind. The truncated
+`…noise-archive.test.ts` does not exist, so the check returned `missing`, and
+`composeRow` demoted the row from 🟢 to 🔵 and wrote *"the cited evidence file
+no longer exists"* into its note — about a file sitting in the repo.
+
+The 2026-07-29 evidence audit ran this against every recorded 🟢. Seven
+decisions were marked down on it: **D31, D32, D33, D34, D36, D208, D226** —
+every one cites a `.tsx` test, every one of those tests exists. The audit also
+stripped `status: 🟢` from their fragments, so the false conclusion is now the
+recorded state and re-running the generator cannot undo it.
+
+The failure mode is the one this repo keeps meeting: a guardrail that reports
+something untrue about what is built, in the file whose whole job is to answer
+"is it built yet?".
+
+**Correct approach:** order alternation longest-first (`tsx|ts`) — or anchor
+the match at a word boundary rather than trusting branch order. More generally,
+a check that can DOWNGRADE a recorded human claim needs its own test with a
+case per file extension it accepts; this one had none.
+
+**Rule:** in any regex alternation over file extensions, put the longer
+extension first, and test every extension the pattern claims to accept.
+
+**Enforcement update:** the extension order is fixed in this branch and the
+reason is written above the function so it survives a reformat. The seven
+demoted rows are NOT restored here — re-asserting Verified on someone else's
+decisions is the founder's call, logged in FOUNDER-FOLLOWUPS 2026-08-26.
+
+## 2026-08-26 — A paywall billed for a feature the log said was verified and the code never had
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` — found by grounding a
+product backlog review against `main`, not by any test or gate
+
+**Caught by:** manual codebase audit (checking each claimed Brief capability
+against the code that would implement it)
+
+**What happened:** the Pro tier gate for the Brief read *"A daily summary of
+yesterday's email, written in plain English — 8am daily, in-app or by email."*
+There is no Brief email: no template, no trigger in
+`apps/api/src/notifications/`, and no digest key in the `emailPrefs` contract.
+The "8am" half had also gone stale the moment #635 made the hour configurable.
+
+The reason nobody noticed is the interesting part. `IMPLEMENTATION-LOG.md` has
+D61 — *"In-app screen + optional email digest (default off)"* — at 🟢
+**Verified**, cited to `brief.read-service.spec.ts`. That file tests the read
+service and never touches email. The decision had two halves, one shipped, and
+`verify-d` passed on the one that did. So the log asserted the feature existed,
+the paywall sold it, and every check was green.
+
+D65 and D66 drift the same way in the opposite direction: D65 is ⬜ Not started
+while `noise-archive-sheet.tsx` ships and its bar renders, and D66 is 🔵
+Shipped under a title describing behaviour #635 retired.
+
+**Correct approach:** a multi-clause D-decision cannot be verified as a unit.
+Either it is split so each clause has its own row and its own evidence, or the
+evidence has to demonstrate every clause. And any product-surface claim about a
+capability — especially one behind a price — should be traceable to the code
+that performs it, not to a log row.
+
+**Rule:** before writing or trusting marketing copy for a gated feature, find
+the code that performs the claim; if a D-decision has an "and" in it, verify
+each side separately or split the row.
+
+**Enforcement update:** none automated yet — `verify-d` cannot tell which
+clause an evidence file covers. Logged for the founder in FOUNDER-FOLLOWUPS
+(2026-08-26) with the D61/D65/D66 split proposal, since amending a D-body is
+the founder's call. Candidate future check: a test that asserts every
+capability named in `TierGate` copy resolves to a shipped code path.
+
 ## 2026-08-25 — A capability gate keyed on the billing read is dark whenever billing is
 
 **PR:** branch `claude/brief-billing-polish-bzpitp` (D64, D66) — caught pre-merge by the local browser smoke, after 42 green tests

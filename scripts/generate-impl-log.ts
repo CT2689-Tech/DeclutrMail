@@ -186,9 +186,23 @@ function readCurrentPr(): PrRef | null {
   return pr.state === 'CLOSED' ? null : pr;
 }
 
-/** Does the evidence cite a repo file, and does that file still exist? */
+/**
+ * Does the evidence cite a repo file, and does that file still exist?
+ *
+ * EXTENSIONS ARE ORDERED LONGEST-FIRST, and that is load-bearing.
+ * Regex alternation takes the first branch that matches, so `ts|tsx`
+ * matched `…noise-archive.test.ts` inside `…noise-archive.test.tsx`,
+ * leaving the `x` behind. The truncated path does not exist, so every
+ * 🟢 whose evidence was a `.tsx` test was read as "the cited evidence
+ * file no longer exists" and demoted to 🔵 — with that sentence written
+ * into its note, about a file sitting right there in the repo. The
+ * 2026-07-29 evidence audit did exactly that to seven decisions
+ * (D31, D32, D33, D34, D36, D208, D226); those rows are left alone
+ * here because re-asserting Verified on someone else's decision is the
+ * founder's call, not this script's.
+ */
 function evidenceFileStatus(evidence: string): 'no-path' | 'exists' | 'missing' {
-  const m = /([\w@./-]+\.(?:ts|tsx|sql|sh|md))/.exec(evidence);
+  const m = /([\w@./-]+\.(?:tsx|ts|sql|sh|md))/.exec(evidence);
   if (!m) return 'no-path';
   return existsSync(join(REPO_ROOT, m[1])) ? 'exists' : 'missing';
 }
