@@ -176,6 +176,24 @@ describe('AuthSignupOrchestrator.connect — identity resolution', () => {
     );
   });
 
+  it('passes first-touch ref into a brand-new signup insert only', async () => {
+    users.findByEmail.mockResolvedValue(null);
+    mailboxes.findByProviderEmail.mockResolvedValue(null);
+    users.insertWorkspaceAndUser.mockResolvedValue({ userId: 'u-new', workspaceId: 'w-new' });
+
+    await orchestrator.connect({ ...INPUT, signupAttributionRef: 'hn' });
+
+    expect(users.insertWorkspaceAndUser).toHaveBeenCalledWith(expect.anything(), INPUT.email, 'hn');
+  });
+
+  it('does not write ref for a returning user', async () => {
+    users.findByEmail.mockResolvedValue({ userId: 'u1', workspaceId: 'w1' });
+
+    await orchestrator.connect({ ...INPUT, signupAttributionRef: 'hn' });
+
+    expect(users.insertWorkspaceAndUser).not.toHaveBeenCalled();
+  });
+
   it('rolls back a losing bootstrap with its mailbox write and follows the provider winner', async () => {
     const bootstrapTx = { name: 'bootstrap-tx' };
     const winnerTx = { name: 'winner-tx' };

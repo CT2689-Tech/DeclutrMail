@@ -11,13 +11,16 @@ import { identifyUser } from '@/lib/posthog';
  * call is a no-op for an undecided/essential-only browser; listening for the
  * consent event lets an in-session "Accept all" choice retry immediately.
  */
-export function useAnalyticsIdentity(userId: string) {
+export function useAnalyticsIdentity(userId: string, signupRef?: string | null) {
   useEffect(() => {
-    const identify = () => void identifyUser(userId);
+    const identify = () =>
+      signupRef
+        ? void identifyUser(userId, { signup_attribution_ref: signupRef })
+        : void identifyUser(userId);
     identify();
     window.addEventListener(CONSENT_CHANGE_EVENT, identify);
     return () => window.removeEventListener(CONSENT_CHANGE_EVENT, identify);
-  }, [userId]);
+  }, [userId, signupRef]);
 }
 
 export function AnalyticsIdentityBridge({ userId }: { userId: string }) {

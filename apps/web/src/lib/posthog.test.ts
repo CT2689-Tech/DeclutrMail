@@ -135,6 +135,18 @@ describe('identifyUser() consent gate (D147)', () => {
     await identifyUser('11111111-1111-4111-8111-111111111111');
     expect(posthogMock.identify).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111');
   });
+
+  it('sets first-touch ref once on the person when known', async () => {
+    storeConsent('all');
+    await identifyUser('11111111-1111-4111-8111-111111111111', {
+      signup_attribution_ref: 'hn',
+    });
+    expect(posthogMock.identify).toHaveBeenCalledWith(
+      '11111111-1111-4111-8111-111111111111',
+      undefined,
+      { signup_attribution_ref: 'hn' },
+    );
+  });
 });
 
 describe('withdrawAnalyticsConsent() — GDPR Art. 7(3) (D147)', () => {

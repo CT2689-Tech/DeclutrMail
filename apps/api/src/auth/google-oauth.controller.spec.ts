@@ -390,6 +390,49 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
     expect(parseBillingReturnTo('/senders')).toBeUndefined();
     expect(parseBillingReturnTo(['/billing?plan=plus&cycle=monthly'])).toBeUndefined();
   });
+
+  it('stores an allowlisted ref in login state and drops junk', async () => {
+    const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
+    const jwt = makeJwtService();
+    const controller = new GoogleOAuthController(
+      oauth as unknown as GoogleOAuthService,
+      {} as AuthSignupOrchestrator,
+      makeSecurityEvents().service,
+      makeMailboxAccounts() as unknown as MailboxAccountsService,
+      jwt,
+      makeSessions().service,
+    );
+
+    const keep = { cookie: vi.fn(), redirect: vi.fn() };
+    await controller.start(signedOutRequest(), keep as unknown as Response, undefined, 'hn');
+    expect(decodeSignedState(jwt, keep.cookie.mock.calls[0]?.[1] as string)).toMatchObject({
+      mode: 'login',
+      ref: 'hn',
+    });
+
+    const fromCookie = { cookie: vi.fn(), redirect: vi.fn() };
+    await controller.start(
+      { cookies: { dm_signup_ref: 'reddit' } } as unknown as Request,
+      fromCookie as unknown as Response,
+      undefined,
+      'simulator',
+    );
+    expect(decodeSignedState(jwt, fromCookie.cookie.mock.calls[0]?.[1] as string)).toMatchObject({
+      mode: 'login',
+      ref: 'reddit',
+    });
+
+    const drop = { cookie: vi.fn(), redirect: vi.fn() };
+    await controller.start(
+      signedOutRequest(),
+      drop as unknown as Response,
+      undefined,
+      'accounts.google.com',
+    );
+    expect(decodeSignedState(jwt, drop.cookie.mock.calls[0]?.[1] as string)).not.toHaveProperty(
+      'ref',
+    );
+  });
 });
 
 describe('GoogleOAuthController.connectMailboxStart — targeted mailbox recovery', () => {
@@ -1155,12 +1198,17 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     } as unknown as Request;
   }
 
-  function loginCookie(nonce: string = NONCE, returnTo?: string): Record<string, string> {
+  function loginCookie(
+    nonce: string = NONCE,
+    returnTo?: string,
+    ref?: string,
+  ): Record<string, string> {
     return {
       oauth_state: signedState(jwt, {
         nonce,
         mode: 'login',
         ...(returnTo ? { returnTo } : {}),
+        ...(ref ? { ref } : {}),
       }),
     };
   }
@@ -1769,6 +1817,19 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
       }),
     );
     expect(sessions.lookupActiveById).not.toHaveBeenCalled();
+  });
+
+  it('forwards login-state ref into connect and ignores it for junk-free returning users still', async () => {
+    await controller.callback(
+      req({ cookies: loginCookie(NONCE, undefined, 'hn') }),
+      res as unknown as Response,
+      'code',
+      NONCE,
+    );
+
+    expect(orchestrator.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ signupAttributionRef: 'hn' }),
+    );
   });
 
   it('returns an existing user to the exact validated billing choice', async () => {

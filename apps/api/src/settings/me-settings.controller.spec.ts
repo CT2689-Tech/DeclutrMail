@@ -23,6 +23,11 @@ function makeController(preferences: Record<string, unknown> = {}) {
     findById: vi.fn().mockResolvedValue({ id: 'u1', preferences, timezone: null }),
     patchPreferences: vi.fn().mockResolvedValue(undefined),
     setTimezone: vi.fn().mockResolvedValue(undefined),
+    recordSignupHeardFrom: vi.fn().mockResolvedValue({
+      heardFrom: 'friend',
+      detail: null,
+      alreadySet: false,
+    }),
   };
   const controller = new MeSettingsController(users as unknown as UsersService);
   return { controller, users };
@@ -248,5 +253,26 @@ describe('MeSettingsController — PATCH /api/me/brief-prefs (D64)', () => {
     );
     await expect(controller.patchBriefPrefs(USER, {})).rejects.toThrow(BadRequestException);
     expect(users.patchPreferences).not.toHaveBeenCalled();
+  });
+});
+
+describe('MeSettingsController — PATCH /api/me/signup-heard-from', () => {
+  it('records a skippable self-report', async () => {
+    const { controller, users } = makeController();
+    const result = await controller.patchSignupHeardFrom(USER, { heardFrom: 'friend' });
+
+    expect(result.data).toEqual({ heardFrom: 'friend', detail: null });
+    expect(users.recordSignupHeardFrom).toHaveBeenCalledWith('u1', { heardFrom: 'friend' });
+  });
+
+  it('rejects Other without detail and extra keys', async () => {
+    const { controller, users } = makeController();
+    await expect(controller.patchSignupHeardFrom(USER, { heardFrom: 'other' })).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(
+      controller.patchSignupHeardFrom(USER, { heardFrom: 'hn', extra: true }),
+    ).rejects.toThrow(BadRequestException);
+    expect(users.recordSignupHeardFrom).not.toHaveBeenCalled();
   });
 });

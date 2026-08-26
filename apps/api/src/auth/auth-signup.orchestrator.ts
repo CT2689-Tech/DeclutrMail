@@ -5,7 +5,11 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 
-import { ERROR_CODES, type ErrorCode } from '@declutrmail/shared/contracts';
+import {
+  ERROR_CODES,
+  type ErrorCode,
+  type SignupAttributionRef,
+} from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { GmailWatchService } from '../mailboxes/gmail-watch.service.js';
@@ -76,6 +80,7 @@ export class AuthSignupOrchestrator {
     refreshToken: string;
     ipAddress: string | null;
     userAgent: string | null;
+    signupAttributionRef?: SignupAttributionRef;
   }): Promise<{
     tokens: IssuedTokens;
     csrfToken: string;
@@ -119,7 +124,7 @@ export class AuthSignupOrchestrator {
     const encrypted = await this.tokenCrypto.encrypt(input.refreshToken);
     const persisted = identity
       ? await this.persistResolvedConnect(identity, email, encrypted, false)
-      : await this.bootstrapAndPersistConnect(email, encrypted);
+      : await this.bootstrapAndPersistConnect(email, encrypted, input.signupAttributionRef);
     const { userId, workspaceId, mailboxId, isNewSignup } = persisted;
 
     // Land the user on the mailbox they just authenticated with — set
@@ -295,10 +300,13 @@ export class AuthSignupOrchestrator {
   private async bootstrapAndPersistConnect(
     email: string,
     encrypted: EnvelopeCiphertext,
+    signupAttributionRef?: SignupAttributionRef,
   ): Promise<PersistedConnect> {
     try {
       return await this.db.transaction(async (tx) => {
-        const identity = await this.users.insertWorkspaceAndUser(tx, email);
+        const identity = signupAttributionRef
+          ? await this.users.insertWorkspaceAndUser(tx, email, signupAttributionRef)
+          : await this.users.insertWorkspaceAndUser(tx, email);
         const mailbox = await this.mailboxes.upsertConnect(tx, {
           workspaceId: identity.workspaceId,
           userId: identity.userId,

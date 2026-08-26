@@ -150,3 +150,22 @@ describe('UsersService.mergeEmailPrefs', () => {
     expect(await readPrefs(db, userId)).toEqual({ emailPrefs: { reminders: false } });
   });
 });
+
+describe('UsersService signup attribution', () => {
+  it('stores first-touch ref on insert and keeps self-report set-once', async () => {
+    const db = await freshDb();
+    const svc = new UsersService(db);
+    const { userId } = await svc.insertWorkspaceAndUser(db, 'new@example.com', 'hn');
+
+    const [inserted] = await db.select().from(users).where(eq(users.id, userId));
+    expect(inserted?.signupAttributionRef).toBe('hn');
+    expect(inserted?.signupAttributionHeardFrom).toBeNull();
+
+    await svc.recordSignupHeardFrom(userId, { heardFrom: 'friend' });
+    await svc.recordSignupHeardFrom(userId, { heardFrom: 'ph' });
+
+    const [after] = await db.select().from(users).where(eq(users.id, userId));
+    expect(after?.signupAttributionHeardFrom).toBe('friend');
+    expect(after?.signupAttributionRef).toBe('hn');
+  });
+});

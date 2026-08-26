@@ -45,7 +45,11 @@ import { hasAnalyticsConsent, storeConsent } from './cookie-consent';
 type PosthogSdk = {
   init: (key: string, opts: Record<string, unknown>) => void;
   capture: (eventName: string, props?: Record<string, unknown>) => void;
-  identify: (id: string, props?: Record<string, unknown>) => void;
+  identify: (
+    id: string,
+    userPropertiesToSet?: Record<string, unknown>,
+    userPropertiesToSetOnce?: Record<string, unknown>,
+  ) => void;
   reset: () => void;
   opt_out_capturing: () => void;
   opt_in_capturing: (opts?: { captureEventName?: false }) => void;
@@ -190,11 +194,19 @@ export async function track<E extends EventName>(
  * Identify the current user. Pass the INTERNAL user UUID (from our DB),
  * never the user's Gmail address.
  */
-export async function identifyUser(internalUserUuid: string): Promise<void> {
+export async function identifyUser(
+  internalUserUuid: string,
+  setOnce?: { signup_attribution_ref?: string | null },
+): Promise<void> {
   const sdk = await loadSdk();
   if (!sdk) return;
   try {
-    sdk.identify(internalUserUuid);
+    const ref = setOnce?.signup_attribution_ref;
+    if (ref) {
+      sdk.identify(internalUserUuid, undefined, { signup_attribution_ref: ref });
+    } else {
+      sdk.identify(internalUserUuid);
+    }
   } catch {
     // Identity enrichment is best-effort.
   }

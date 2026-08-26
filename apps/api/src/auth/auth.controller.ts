@@ -63,6 +63,15 @@ export interface MeEnvelope {
    * browser never derives it (A3). `null` = unlimited tier.
    */
   cleanupResetsAt: string | null;
+  /**
+   * First-touch tracked `ref` vs skippable self-report. Never sum them.
+   * `promptNeeded` is true until they answer or skip.
+   */
+  signupAttribution: {
+    ref: string | null;
+    heardFrom: string | null;
+    promptNeeded: boolean;
+  };
 }
 
 /**
@@ -130,6 +139,11 @@ export class AuthController {
       tier: quota.tier,
       cleanupRemaining: quota.remaining,
       cleanupResetsAt: quota.resetsAt?.toISOString() ?? null,
+      signupAttribution: {
+        ref: user.signupAttributionRef,
+        heardFrom: user.signupAttributionHeardFrom,
+        promptNeeded: user.signupAttributionHeardFrom === null,
+      },
     });
   }
 

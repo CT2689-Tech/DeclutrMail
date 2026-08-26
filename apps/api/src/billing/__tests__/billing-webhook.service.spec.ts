@@ -158,6 +158,35 @@ describe('BillingWebhookService.process', () => {
     });
   });
 
+  it('snapshots the workspace owner attribution onto the first paid insert', async () => {
+    await db.insert(users).values({
+      workspaceId,
+      email: 'owner@example.com',
+      signupAttributionRef: 'hn',
+      signupAttributionHeardFrom: 'friend',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await db.insert(users).values({
+      workspaceId,
+      email: 'later-member@example.com',
+      signupAttributionRef: 'reddit',
+      signupAttributionHeardFrom: 'other',
+      signupAttributionHeardDetail: 'Newsletter',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    const fixture = paddleSubscriptionActivated({ workspaceId });
+    const event = paddle.mapWebhookEvent(fixture);
+
+    await service.process('paddle', event, fixture);
+
+    const [sub] = await db.select().from(subscriptions);
+    expect(sub).toMatchObject({
+      signupAttributionRef: 'hn',
+      signupAttributionHeardFrom: 'friend',
+      signupAttributionHeardDetail: null,
+    });
+  });
+
   it('resumes processing when a prior delivery crashed after the dedup insert', async () => {
     const fixture = paddleSubscriptionActivated({ workspaceId });
     const event = paddle.mapWebhookEvent(fixture);
