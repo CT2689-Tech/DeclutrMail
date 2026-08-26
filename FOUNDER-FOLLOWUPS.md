@@ -24,6 +24,37 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-25 — Brief schedule decisions taken in session: every day, hourly slots
+
+**Source:** session 2026-08-25 — the Brief product review (`/ct-decide`),
+founder answers to decisions 1 and 6
+
+**Why:** two amendments to the plan were made conversationally and need to
+exist somewhere a later audit will find them. Both are already implemented and
+carry plan markers (`[REVERSAL 2026-08-25 on D66]`, `[PATCH 2026-08-25 on
+D64]`); this entry is the decision trail, not an action.
+
+1. **D66 (Mon–Fri default) is retired — the Brief now generates every day.**
+   Founder: *"should we just go for every day?"* The Brief covers the previous
+   local day, so skipping Saturday meant **Friday's mail was never summarized
+   for anyone** — the heaviest weekday, structurally excluded by the default
+   schedule. The weekend opt-in D66 specifies had also been built server-side
+   and never given any UI, so no user could have turned it on.
+2. **D64's "any 30-min slot" ships as 24 hourly slots.** Generation is an
+   hourly cron; a 08:30 choice would be served at 09:00. Honouring the half
+   hour means doubling the cron rate for precision nobody has asked for.
+
+**How:** nothing to do unless you disagree. If you want the half-hour slots,
+that is a 30-minute cron and a re-tick of the D64 patch marker. If you want
+weekends back off, it is one gate — but read the reversal marker first, because
+the Friday hole is the part that is easy to re-introduce by accident.
+
+**Verifies by:** this entry existing, plus `brief_hour_changed` in PostHog
+answering whether anyone actually moves off 8am — the question that decides
+whether the picker earned its build.
+
+**Status:** Open — for your acknowledgement; no action required
+
 ### 2026-08-25 — Create the billing-verdict alert, and audit the Paddle key's other permissions
 
 **Source:** the eleven-day refund lockout (MISTAKES.md 2026-08-25); this PR

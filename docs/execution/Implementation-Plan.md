@@ -10511,3 +10511,60 @@ the grace elapsing with nothing settled — rather than the ordinary window.
 entitlement immediately. Updated in the same change.
 
 Shipped in PR #633.
+
+### [REVERSAL 2026-08-25 on D66]
+
+**D66 is retired. The Brief generates every day.** Founder-directed
+2026-08-25 ("should we just go for every day?").
+
+D66 reads: *"Brief schedule: Default Mon-Fri only; weekends opt-in"*,
+on the rationale that *"most Pro users (founders, prosumers) work
+weekdays."* The rationale is plausible and the schedule it produced was
+not, because of how the window interacts with it.
+
+**Why it had to move.** A Brief covers the previous local day. Under
+Mon–Fri, Saturday's Brief never ran — and Saturday's Brief is the one
+that covers **Friday**. So the default schedule structurally excluded
+the heaviest weekday from the product: Friday's mail was summarized by
+nothing, for every Pro user, forever. Monday's Brief covers Sunday, so
+the weekday user's Monday morning also opened on D70's "your inbox was
+quiet yesterday" most weeks. Neither effect is visible from D66's own
+text, which is why it survived this long.
+
+The weekday assumption also had no way to be acted on: the opt-in D66
+specifies — Settings → Notifications → "Generate Brief on weekends
+too" — was built end to end on the server (`briefPrefs.weekends`, a
+PATCH route, the worker gate) and never given a single line of UI. No
+user could have reached it.
+
+**What the code does now.** The weekend gate is gone from
+`BriefSnapshotWorker`; every mailbox generates on every local day, at
+the D64 hour. A day with no inbound mail still writes the D70 empty
+brief and costs no LLM call, so the added cadence is close to free.
+
+**Cost of the alternative considered.** Merging skipped days into the
+next Brief (Monday covers Fri–Sun) was rejected: it changes the D69
+frozen-snapshot span and the "yesterday's mail" copy for a gap that
+generating daily closes outright.
+
+### [PATCH 2026-08-25 on D64]
+
+**D64's "any 30-min slot" ships as hourly slots.** D64 reads:
+*"Settings has a time picker (any 30-min slot) and per-day toggles
+(default Mon-Fri)."*
+
+Two amendments, both forced by mechanisms outside D64:
+
+1. **Hourly, not half-hourly.** Brief generation is an hourly cron
+   (D203/D225). A user choosing 08:30 would be served at 09:00, so the
+   half-hour slot would be a promise the schedule cannot keep. Honouring
+   it means a 30-minute cron — double the ticks for a precision nobody
+   has asked for. The picker offers 24 hourly slots; revisit if anyone
+   asks for the half hour.
+2. **No per-day toggles.** They encoded D66's weekday default, retired
+   above. The Brief runs every day; the hour is the only remaining
+   schedule choice.
+
+The 8am local default is unchanged, and the picker itself — the half of
+D64 that was marked shipped while the hour sat hardcoded in
+`brief-timezone.ts` — now exists.

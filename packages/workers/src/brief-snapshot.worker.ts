@@ -94,11 +94,6 @@ export interface BriefSnapshotResult {
   briefsGenerated: number;
   /** Subset of `briefsGenerated` that landed an empty-section brief (D70). */
   emptyBriefs: number;
-  /**
-   * D66 — mailboxes skipped because the run date is a Saturday/Sunday
-   * and the owning user has not opted in to weekend Briefs.
-   */
-  weekendSkips: number;
   /** Wall-clock ms. */
   durationMs: number;
 }
@@ -141,8 +136,8 @@ const FYI_MAX = BRIEF_FYI_MAX;
  * BriefSnapshotWorker (D61, D62, D63, D67, D69, D70).
  *
  * Hourly cron (`cronPolicy` per D203/D225) that materializes the
- * static 8am Brief snapshot for every mailbox whose local 8am hour
- * has just passed. Idempotency key
+ * static daily Brief snapshot for every mailbox whose configured local
+ * delivery hour (D64, 8am by default) has just passed. Idempotency key
  * `BriefSnapshotWorker:${scheduledAtMinute}` plus the D69 UNIQUE on
  * `(mailbox_account_id, run_date_local)` make the worker fully
  * re-runnable: re-runs within the same local-date for the same mailbox
@@ -152,10 +147,12 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *
  * What the worker DOES:
  *   - Iterates every mailbox in `mailbox_accounts` (joined to the
- *     owning user's preferences + timezone for the D64/D66 gates).
- *   - D66 schedule: on Saturday/Sunday run dates, skips mailboxes
- *     whose user has not opted in (`preferences.briefPrefs.weekends`)
- *     — Mon–Fri is the default schedule; weekends are opt-in.
+ *     owning user's preferences + timezone for the D64 gate).
+ *   - D64 schedule: EVERY local day, at `preferences.briefPrefs.hour`
+ *     (8am default). The weekday-only schedule is retired — D66's
+ *     Mon–Fri default meant Saturday's Brief never ran, so Friday's
+ *     mail, the heaviest weekday, was the one day nothing ever
+ *     summarized (founder decision 2026-08-25).
  *   - For each mailbox, checks whether today's Brief already exists
  *     (D69 frozen-once invariant) and skips if so.
  *   - Queries yesterday's INBOUND `mail_messages` metadata.
@@ -179,10 +176,11 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *     empty.
  *
  * What the worker does NOT do (deferred):
- *   - User-configurable delivery minutes; D246 fixes generation at
- *     08:00 local and falls back to UTC for absent/invalid timezones.
- *   - D61 email digest delivery — separate worker that watches for
- *     `email_sent_at IS NULL` rows from users opted in.
+ *   - Sub-hour delivery slots. The cron ticks hourly, so an hour is the
+ *     finest slot generation can honour; D64's "any 30-min slot" would
+ *     need a 30-minute cron (FOUNDER-FOLLOWUPS 2026-08-25).
+ *   - Email delivery of the Brief. D61's digest half was never built:
+ *     no template, no trigger, no preference key exists for it.
  * Privacy (D7, D228): every read is metadata. The worker touches
  * `mail_messages.{provider_message_id, provider_thread_id, sender_key,
  * subject, internal_date, is_outbound}` — every column is allowlisted.
@@ -251,8 +249,8 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       .select({
         id: mailboxAccounts.id,
         workspaceId: mailboxAccounts.workspaceId,
-        // D66 — the owning user's preference bag; `parseBriefPrefs`
-        // extracts the weekend opt-in with a safe default (false).
+        // D64 — the owning user's preference bag; `parseBriefPrefs`
+        // extracts the delivery hour with a safe default (8am local).
         preferences: users.preferences,
         timezone: users.timezone,
       })
@@ -264,7 +262,6 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     let briefsGenerated = 0;
     let emptyBriefs = 0;
     let mailboxesFailed = 0;
-    let weekendSkips = 0;
 
     // Bounded-concurrency fan-out — serial `await` per mailbox would
     // take O(N × ms) → many minutes at 10K mailboxes. The limiter
@@ -283,19 +280,18 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     await Promise.all(
       mailboxes.map((mb) =>
         limiter(async () => {
-          const localWindow = resolveBriefLocalWindow(now, mb.timezone);
-          // The hourly cron is catch-up-safe: before local 08:00 it writes
-          // nothing; any later tick can materialize the same local day's row.
+          // D64 — the gate is the user's configured local hour (8am by
+          // default). The hourly cron is catch-up-safe: before that hour
+          // it writes nothing; any later tick can materialize the same
+          // local day's row. Lowering the hour mid-day therefore
+          // self-heals on the next tick, and raising it past the current
+          // hour cannot un-write a Brief already frozen for today.
+          const localWindow = resolveBriefLocalWindow(
+            now,
+            mb.timezone,
+            parseBriefPrefs(mb.preferences).hour,
+          );
           if (!localWindow.ready) return;
-
-          // D66 weekend gate — Mon–Fri default; Sat/Sun generate only
-          // for opted-in users. Skipping writes NO row, so an opt-in
-          // flipped later the same day self-heals on the next hourly
-          // tick (the D69 existence check finds nothing to freeze).
-          if (localWindow.weekend && !parseBriefPrefs(mb.preferences).weekends) {
-            weekendSkips += 1;
-            return;
-          }
           try {
             const generated = await this.snapshotForMailbox(
               mb.id,
@@ -343,7 +339,6 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       mailboxesFailed,
       briefsGenerated,
       emptyBriefs,
-      weekendSkips,
       durationMs: Date.now() - startedAt,
     };
   }

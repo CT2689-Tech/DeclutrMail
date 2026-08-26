@@ -66,7 +66,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     expect(result.data).toEqual({
       emailPrefs: { reminders: true, syncComplete: true, weeklyReceipt: false },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
-      briefPrefs: { weekends: false },
+      briefPrefs: { hour: 8 },
       senderViews: [],
     });
   });
@@ -75,14 +75,14 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     const { controller } = makeController({
       emailPrefs: { reminders: false },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
-      briefPrefs: { weekends: true },
+      briefPrefs: { hour: 17 },
       senderViews: [VIEW],
     });
     const result = await controller.settings(USER);
     expect(result.data).toEqual({
       emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false },
       actionSheetPrefs: { archive: true, unsubscribe: false, later: true },
-      briefPrefs: { weekends: true },
+      briefPrefs: { hour: 17 },
       senderViews: [VIEW],
     });
   });
@@ -97,7 +97,7 @@ describe('MeSettingsController — GET /api/me/settings', () => {
     expect(result.data).toEqual({
       emailPrefs: { reminders: false, syncComplete: true, weeklyReceipt: false },
       actionSheetPrefs: { archive: false, unsubscribe: false, later: false },
-      briefPrefs: { weekends: false },
+      briefPrefs: { hour: 8 },
       senderViews: [],
     });
   });
@@ -205,25 +205,45 @@ describe('MeSettingsController — PATCH /api/me/action-sheet-prefs', () => {
   });
 });
 
-describe('MeSettingsController — PATCH /api/me/brief-prefs (D66)', () => {
-  it('opts in to weekend Briefs and persists the merged bag', async () => {
+describe('MeSettingsController — PATCH /api/me/brief-prefs (D64)', () => {
+  it('sets the delivery hour and persists the bag', async () => {
     const { controller, users } = makeController({});
-    const result = await controller.patchBriefPrefs(USER, { weekends: true });
-    expect(result.data).toEqual({ briefPrefs: { weekends: true } });
+    const result = await controller.patchBriefPrefs(USER, { hour: 17 });
+    expect(result.data).toEqual({ briefPrefs: { hour: 17 } });
     expect(users.patchPreferences).toHaveBeenCalledWith('u1', {
-      briefPrefs: { weekends: true },
+      briefPrefs: { hour: 17 },
     });
   });
 
-  it('flips the opt-in back off', async () => {
-    const { controller } = makeController({ briefPrefs: { weekends: true } });
-    const result = await controller.patchBriefPrefs(USER, { weekends: false });
-    expect(result.data).toEqual({ briefPrefs: { weekends: false } });
+  it('accepts the range edges', async () => {
+    const { controller } = makeController({ briefPrefs: { hour: 8 } });
+    expect((await controller.patchBriefPrefs(USER, { hour: 0 })).data).toEqual({
+      briefPrefs: { hour: 0 },
+    });
+    expect((await controller.patchBriefPrefs(USER, { hour: 23 })).data).toEqual({
+      briefPrefs: { hour: 23 },
+    });
   });
 
-  it('400 on unknown keys and empty patches', async () => {
+  it('replaces a retired D66 weekends bag rather than merging with it', async () => {
+    // The stored bag predates the every-day schedule. The write must
+    // leave `{ hour }` alone in the key — a merge would carry the dead
+    // `weekends` flag forward forever.
+    const { controller, users } = makeController({ briefPrefs: { weekends: true } });
+    const result = await controller.patchBriefPrefs(USER, { hour: 9 });
+    expect(result.data).toEqual({ briefPrefs: { hour: 9 } });
+    expect(users.patchPreferences).toHaveBeenCalledWith('u1', { briefPrefs: { hour: 9 } });
+  });
+
+  it('400 on unknown keys, out-of-range hours, and empty patches', async () => {
     const { controller, users } = makeController();
-    await expect(controller.patchBriefPrefs(USER, { saturdays: true })).rejects.toThrow(
+    await expect(controller.patchBriefPrefs(USER, { weekends: true })).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(controller.patchBriefPrefs(USER, { hour: 24 })).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(controller.patchBriefPrefs(USER, { hour: 8.5 })).rejects.toThrow(
       BadRequestException,
     );
     await expect(controller.patchBriefPrefs(USER, {})).rejects.toThrow(BadRequestException);
