@@ -63,6 +63,22 @@ export const gmailUnsubscribeMethod = pgEnum('gmail_unsubscribe_method', [
 export const senders = pgTable(
   'senders',
   {
+    /**
+     * The handle the API hands the frontend — `/senders/:id` URLs,
+     * query keys, selection sets, the confirm modal's preview request.
+     *
+     * DERIVED, not random: every writer sets it via `deriveSenderId`
+     * from `(mailbox_account_id, sender_key)`. `defaultRandom()` stays
+     * only as the safety net for a row inserted without one.
+     *
+     * `InitialSyncWorker.buildSenderIndex` rebuilds the index with a
+     * delete + reinsert, so a random id would issue every sender a new
+     * handle on each rebuild and 404 every id an open page holds
+     * (prod 2026-08-25). Deriving it keeps identity across the churn.
+     * Nothing foreign-keys here — durable consumers join on
+     * `sender_key` — so this is a write-side convention, not a
+     * storage-shape change.
+     */
     id: uuid('id').primaryKey().defaultRandom(),
     mailboxAccountId: uuid('mailbox_account_id')
       .notNull()

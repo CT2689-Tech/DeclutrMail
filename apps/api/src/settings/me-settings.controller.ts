@@ -4,7 +4,6 @@ import {
   ActionSheetPrefsPatchSchema,
   BriefPrefsPatchSchema,
   DEFAULT_ACTION_SHEET_PREFS,
-  DEFAULT_BRIEF_PREFS,
   ok,
   parseActionSheetPrefs,
   parseBriefPrefs,
@@ -34,8 +33,8 @@ import { UsersService } from '../users/users.service.js';
  *   - PATCH /api/me/action-sheet-prefs — per-verb "skip the action
  *     sheet" toggles (D34). The action PREVIEW is never skippable
  *     (D226) — this preference only controls the wrapping sheet UI.
- *   - PATCH /api/me/brief-prefs — D66 "Generate Brief on weekends
- *     too" opt-in (Mon–Fri is the default schedule).
+ *   - PATCH /api/me/brief-prefs — D64 Brief delivery hour (8am local
+ *     by default; the Brief generates every day).
  *
  * USER-scoped (JwtGuard only, no CurrentMailboxGuard): preferences
  * roam mailboxes and must work with zero connected accounts. Email
@@ -89,11 +88,16 @@ export class MeSettingsController {
   }
 
   /**
-   * PATCH /api/me/brief-prefs (D66) — the "Generate Brief on weekends
-   * too" opt-in. Stored under `users.preferences.briefPrefs`; the
+   * PATCH /api/me/brief-prefs (D64) — the Brief's local delivery hour.
+   * Stored under `users.preferences.briefPrefs`; the
    * BriefSnapshotWorker reads the same key (via the shared
-   * `parseBriefPrefs` contract) at generation time, so a flipped toggle
+   * `parseBriefPrefs` contract) at generation time, so a changed hour
    * takes effect on the very next hourly tick.
+   *
+   * Moving the hour EARLIER can materialize today's Brief on that next
+   * tick; moving it later cannot un-write one already frozen for today
+   * (D69). Both are the intended behaviour — the setting schedules the
+   * next Brief, it does not retract the current one.
    */
   @Patch('brief-prefs')
   @UseGuards(CsrfGuard)
@@ -109,14 +113,7 @@ export class MeSettingsController {
         message: parsed.error.issues[0]?.message ?? 'Invalid brief-prefs patch.',
       });
     }
-    const current = await this.users.findById(user.userId);
-    const merged: BriefPrefs = {
-      ...DEFAULT_BRIEF_PREFS,
-      ...parseBriefPrefs(current?.preferences),
-      // Spread only the keys the patch actually set (optional keys
-      // would otherwise overwrite with `undefined`).
-      ...(parsed.data.weekends !== undefined ? { weekends: parsed.data.weekends } : {}),
-    };
+    const merged: BriefPrefs = { hour: parsed.data.hour };
     await this.users.patchPreferences(user.userId, { briefPrefs: merged });
     return ok({ briefPrefs: merged });
   }

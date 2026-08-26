@@ -50,6 +50,20 @@ export interface BriefPayload {
   fyi: BriefItem[];
   noise: BriefSenderGroup[];
   narrative: string;
+  /**
+   * How many Reply candidates existed BEFORE the D63 cap, and likewise
+   * for FYI. Without these the screen could only render "6 of 6" — the
+   * cap describing itself as if it were a fact about the day — and the
+   * narrative could never know a seventh urgent item had been dropped,
+   * because the worker discards it before either sees the payload.
+   *
+   * Optional: Briefs are frozen once written (D69), so rows generated
+   * before this field existed keep their shape. A missing value means
+   * "no truncation information", and the consumer falls back to showing
+   * the plain count rather than inventing one.
+   */
+  replyTotal?: number;
+  fyiTotal?: number;
 }
 
 /**
@@ -128,12 +142,25 @@ export const EMPTY_BRIEF_PAYLOAD: BriefPayload = {
 
 /**
  * Deterministic D62 template — used when the LLM port is unavailable,
- * returns null, or times out. Same "executive assistant" voice as the
- * Haiku prompt, just stable + body-free.
+ * returns null, or times out.
  *
- * One-sentence summary per non-empty section. The empty-day branch is
- * handled separately by `EMPTY_BRIEF_PAYLOAD` (the worker short-circuits
- * before calling either template OR LLM when there are zero messages).
+ * Returns the EMPTY STRING for any day that has mail, and that is the
+ * whole point. This used to render "6 emails need replies, 4 FYIs, 46
+ * messages you can archive" directly above section headers reading
+ * `REPLY · 6`, `FYI · 4` and `NOISE · 46 MESSAGES YESTERDAY` — every
+ * number restated, nothing added. The Haiku prompt was re-scoped in
+ * #635 to say only what the lists cannot; a deterministic template can
+ * never satisfy that, because it has no judgment to offer. So it says
+ * nothing rather than something redundant.
+ *
+ * The consumer already handles this: the Brief screen renders the
+ * narrative only when `narrative.trim().length > 0`, and the row still
+ * records `generated_by = 'template'`, which surfaces as the "Standard
+ * summary" marker. Provenance is preserved without the filler.
+ *
+ * The empty-DAY branch below is different and stays: with no mail at
+ * all there are no lists to read, so D70's calm sentence is the only
+ * thing on the screen.
  */
 export function renderTemplateNarrative(payload: {
   reply: readonly BriefItem[];
@@ -147,17 +174,7 @@ export function renderTemplateNarrative(payload: {
   if (replyCount === 0 && fyiCount === 0 && noiseCount === 0) {
     return EMPTY_BRIEF_NARRATIVE;
   }
-  const parts: string[] = [];
-  if (replyCount > 0) {
-    parts.push(`${replyCount} ${replyCount === 1 ? 'email needs a reply' : 'emails need replies'}`);
-  }
-  if (fyiCount > 0) {
-    parts.push(`${fyiCount} FYI${fyiCount === 1 ? '' : 's'}`);
-  }
-  if (noiseCount > 0) {
-    parts.push(`${noiseCount} ${noiseCount === 1 ? 'message' : 'messages'} you can archive`);
-  }
-  return `${parts.join(', ')}.`;
+  return '';
 }
 
 /**
@@ -207,5 +224,10 @@ export const briefPayloadSchema = z
     fyi: z.array(briefItemSchema).max(BRIEF_FYI_MAX),
     noise: z.array(briefSenderGroupSchema),
     narrative: z.string(),
+    // Pre-cap candidate counts. `.optional()` because the schema also
+    // validates payloads read back from rows frozen before the field
+    // existed (D69); `.strict()` above still rejects any other key.
+    replyTotal: z.number().int().nonnegative().optional(),
+    fyiTotal: z.number().int().nonnegative().optional(),
   })
   .strict();

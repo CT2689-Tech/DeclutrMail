@@ -185,3 +185,98 @@ export function inboxScopeNoticeCopy(
     `Widen the window to include ${one ? 'it' : 'them'}.`
   );
 }
+
+/**
+ * The two populations of a sender's mail, side by side: what is in the
+ * inbox now, and what the mailbox holds for them everywhere else.
+ *
+ * Both counts come from ONE `GET /api/actions/preview` response — the
+ * `inbox_only` and `all_mail` reaches of the same predicate family
+ * (`senderActionWhere`, @declutrmail/db), resolved concurrently against
+ * the same snapshot. Nothing here is derived from a second source, so
+ * the two numbers cannot drift the way the context strip's
+ * arrival-scoped figures can.
+ *
+ * Why every verb and not just Delete: the reach CHIPS are Delete-only
+ * (ADR-0028 — only Delete may act past the inbox), but "where is my
+ * mail?" is a question every preview provokes and only Delete's chips
+ * happened to answer. A Later preview reading "0 emails currently
+ * match" beside a strip reading "200 in last 90d · 6,668 received"
+ * sent the founder to Gmail to find out that all of it sits under a
+ * label (2026-08-25). Stating the split is a fact, not a widening: it
+ * does not give Later a reach it must never have — Later on 6,275
+ * archived emails would resurface every one of them at wake time.
+ */
+export interface MailLocationInput {
+  /** Un-windowed INBOX-now count (`counts.all`). `undefined` = not resolved. */
+  inboxNow: number | undefined;
+  /**
+   * Un-windowed all-mail count (`allMail.counts.all`) — everything the
+   * mailbox holds for this sender except Trash, Spam, Drafts and Chat
+   * (`ALL_MAIL_EXCLUDED_LABELS`). `undefined` against an API predating
+   * the field, which is why the copy is omitted rather than guessed.
+   */
+  allMailNow: number | undefined;
+  /**
+   * `senders.total_received` — the figure the surface already prints as
+   * "N received". Any-label, within retention, so it INCLUDES the Trash
+   * and Spam that `allMailNow` excludes; the difference is the third
+   * population and the reason the header's number is larger. `null` when
+   * the caller has not got it, and the clause is then omitted.
+   *
+   * Safe to subtract only because both sides are counts of the same
+   * `mail_messages` rows written in the same transactions — the sender
+   * upsert and the message insert are atomic on both sync paths — so the
+   * two differ by the label predicate and nothing else. ADR-0014
+   * §Neutral mandates the word "received", never "all-time".
+   */
+  receivedTotal: number | null;
+}
+
+/**
+ * One sentence placing the sender's mail, or `null` when there is
+ * nothing to place.
+ *
+ * Reads as a partition that sums to the "N received" already on screen:
+ * `0 in your inbox · 6,275 elsewhere in Gmail · 393 in Trash or Spam`.
+ * That closure is the point — the founder's report was three true
+ * numbers on one card with no visible denominator between them.
+ *
+ * "elsewhere in Gmail" and not "archived": `mail_messages` stores only
+ * CURRENT `label_ids` and has no label history, so the only provable
+ * claim is that these messages do not carry INBOX right now — never
+ * that anyone archived them. Same reason `inboxScopeNoticeCopy` refuses
+ * to say "you already archived these".
+ */
+export function mailLocationCopy(input: MailLocationInput): string | null {
+  const { inboxNow, allMailNow, receivedTotal } = input;
+  // Fail silent until BOTH reaches have resolved — half the split is
+  // not a location, it is a number with an implied denominator, which
+  // is the exact reading failure this module exists to stop.
+  if (inboxNow === undefined || allMailNow === undefined) return null;
+  if (allMailNow === 0) return null;
+  const n = (v: number) => v.toLocaleString('en-US');
+  const plural = (v: number) => (v === 1 ? 'email' : 'emails');
+  // `all_mail` is a superset of `inbox_only` by construction, and
+  // `total_received` a superset of both. Clamp anyway: a negative
+  // segment would be a nonsense number rendered with total confidence,
+  // and clamping degrades to "omitted", which is merely uninformative.
+  const elsewhere = Math.max(0, allMailNow - inboxNow);
+  const binned = receivedTotal === null ? 0 : Math.max(0, receivedTotal - allMailNow);
+  const parts = [`${n(inboxNow)} in your inbox`];
+  if (elsewhere > 0) {
+    parts.push(
+      `${n(elsewhere)} ${plural(elsewhere)} elsewhere in Gmail (archived or under a label)`,
+    );
+  }
+  // Named only when it exists. A "0 in Trash or Spam" segment is a fact
+  // nobody asked for, and printing the gap when there is none is how a
+  // reconciliation turns back into noise.
+  if (binned > 0) {
+    parts.push(`${n(binned)} in Trash or Spam`);
+  }
+  if (parts.length === 1) {
+    return `Where this email is now: ${parts[0]} — that is everything the mailbox holds for this sender.`;
+  }
+  return `Where this email is now: ${parts.join(' \u00b7 ')}.`;
+}

@@ -8,6 +8,7 @@ import {
   defaultLaterWakeAtIso,
   describeInboxScope,
   inboxScopeNoticeCopy,
+  mailLocationCopy,
   tiedWindowNoticeCopy,
   unsubscribeCapabilityBreakdown,
   UNSUBSCRIBE_CAPABILITIES,
@@ -187,6 +188,8 @@ export function ConfirmActionModal({
   compositePreviewError,
   bulkPreview,
   onRetryPreview,
+  previewSenderGone = false,
+  onRefreshSenders,
   mailboxEmail,
   cleanupQuota,
 }: {
@@ -217,6 +220,16 @@ export function ConfirmActionModal({
   bulkPreview?: BulkPreviewState | undefined;
   /** Re-run the live preview after a failed read. */
   onRetryPreview?: (() => void) | undefined;
+  /**
+   * The preview failed with `SENDER_NOT_FOUND` — this sender id no
+   * longer resolves in the active mailbox. Distinct from a transient
+   * failure because retrying the SAME id can never succeed, and a
+   * button that cannot work is worse than no button: it reads as the
+   * app being broken rather than the list being stale.
+   */
+  previewSenderGone?: boolean | undefined;
+  /** Refetch the senders list and dismiss — the only exit from `previewSenderGone`. */
+  onRefreshSenders?: (() => void) | undefined;
   /**
    * A3 — the workspace's cleanup-quota position from `useTier()`.
    * `remaining: null` = unlimited (no quota line). The SERVER stays the
@@ -459,6 +472,32 @@ export function ConfirmActionModal({
         ).toLocaleString('en-US')} archived email${
           (compositePreview?.allMail?.counts.all ?? 0) === 1 ? '' : 's'
         }.`
+      : null;
+  // Founder report 2026-08-25 — "how much is where", on every verb.
+  //
+  // The reach CHIPS stay Delete-only (ADR-0028: only Delete may act
+  // past the inbox), but the QUESTION they happened to answer is one
+  // every preview provokes. A Later preview reading "0 emails
+  // currently match" under a strip reading "200 in last 90d · 6,668
+  // received" is three true numbers that reconcile to nothing a reader
+  // can see, and the founder went to Gmail to discover the mail was
+  // under a label.
+  //
+  // Suppressed when `archivedReachHint` is up: that hint already names
+  // the same figure and adds the control, so both would print 6,275 a
+  // line apart. Single-sender only — a bulk preview carries no
+  // `allMail` block to split, and inventing one is the failure mode
+  // this whole module exists to avoid.
+  const mailLocationLine =
+    !isBulk && livePreviewReady && archivedReachHint === null
+      ? mailLocationCopy({
+          inboxNow: pickBucketCount(compositePreview?.counts, null),
+          allMailNow: compositePreview?.allMail?.counts.all,
+          // The same figure the strip above prints as "N received", so
+          // the split closes against a number already on screen instead
+          // of introducing a fourth one.
+          receivedTotal: request?.senders[0]?.totalReceived ?? null,
+        })
       : null;
   // Every window chip reads 0 when the inbox holds nothing from this
   // sender — five identical zeros no choice can change. Suppress the row
@@ -1375,8 +1414,9 @@ export function ConfirmActionModal({
                 if (livePreviewUnavailable) {
                   return (
                     <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Couldn’t load a live preview. Close and retry — no inbox email can move
-                      without one.
+                      {previewSenderGone
+                        ? 'This sender is no longer in this mailbox — the list you are looking at is out of date. Refresh to see what is there now.'
+                        : 'Couldn’t load a live preview. Close and retry — no inbox email can move without one.'}
                     </span>
                   );
                 }
@@ -1485,6 +1525,18 @@ export function ConfirmActionModal({
               <span role="status" style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
                 {inboxScopeCopy}
                 {archivedReachHint ? ` ${archivedReachHint}` : ''}
+              </span>
+            )}
+
+            {/* Where the sender's mail actually is — both counts from the
+                one composite preview, so the split cannot drift. */}
+            {mailLocationLine && (
+              <span
+                role="status"
+                data-testid="mail-location-line"
+                style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}
+              >
+                {mailLocationLine}
               </span>
             )}
 
@@ -1628,7 +1680,9 @@ export function ConfirmActionModal({
             }}
           >
             {livePreviewUnavailable
-              ? "Couldn't load the live preview — close and retry before confirming."
+              ? previewSenderGone
+                ? 'This sender is no longer in this mailbox — nothing can be previewed or moved.'
+                : "Couldn't load the live preview — close and retry before confirming."
               : livePreviewLoading
                 ? 'Loading the live preview — confirm stays locked until it is ready.'
                 : quotaCappedFrom
@@ -1640,11 +1694,18 @@ export function ConfirmActionModal({
                       : (recoveryCopy ?? '')}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {livePreviewUnavailable && onRetryPreview && (
-              <Button tone="default" onClick={onRetryPreview}>
-                Retry preview
-              </Button>
-            )}
+            {livePreviewUnavailable &&
+              (previewSenderGone
+                ? onRefreshSenders && (
+                    <Button tone="default" onClick={onRefreshSenders}>
+                      Refresh senders
+                    </Button>
+                  )
+                : onRetryPreview && (
+                    <Button tone="default" onClick={onRetryPreview}>
+                      Retry preview
+                    </Button>
+                  ))}
             <Button
               tone="default"
               onClick={onCancel}

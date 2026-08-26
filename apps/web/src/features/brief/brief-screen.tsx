@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 
 import {
@@ -25,6 +25,7 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
+import { shiftLocalDate, useBriefHistory } from './api/use-brief-history';
 import { useBriefToday } from './api/use-brief-today';
 import { useMarkBriefOpened } from './api/use-mark-brief-opened';
 import {
@@ -91,6 +92,13 @@ export function BriefScreen() {
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const query = useBriefToday();
 
+  // D61 history. `null` means "showing today"; any other value is a
+  // run_date_local the user picked. Held here rather than in BriefBody
+  // so switching days does not remount the body and lose the Noise
+  // section's Done marks for the day the user came back to.
+  const [selectedRunDate, setSelectedRunDate] = useState<string | null>(null);
+  const history = useBriefHistory(query.data?.runDateLocal ?? null);
+
   // `mailbox_id: null` keeps the historical event contract. The nullable
   // auth hook above binds Gmail links in production without making isolated
   // stories invent a mailbox; PostHog identity still attaches separately.
@@ -124,7 +132,27 @@ export function BriefScreen() {
     return <NotYetState onRefresh={() => handleBriefRefresh(query.refetch)} />;
   }
 
-  return <BriefBody brief={brief} mailboxEmail={activeMailboxEmail} />;
+  // A selected date that is not in the fetched range falls back to
+  // today rather than rendering nothing — the range can legitimately
+  // narrow (a mailbox switch resets the scoped cache and refetches).
+  const selected =
+    selectedRunDate === null
+      ? brief
+      : (history.data?.find((row) => row.runDateLocal === selectedRunDate) ?? brief);
+
+  return (
+    <BriefBody
+      brief={selected}
+      mailboxEmail={activeMailboxEmail}
+      // Only today's Brief is a "first view" worth recording. Marking a
+      // three-week-old snapshot opened because someone browsed back to
+      // it would make D61's opened_at mean something else entirely.
+      isToday={selected.id === brief.id}
+      days={history.data ?? []}
+      selectedRunDate={selectedRunDate}
+      onSelectRunDate={setSelectedRunDate}
+    />
+  );
 }
 
 /**
@@ -146,8 +174,25 @@ function handleBriefRefresh(refetch: () => Promise<unknown>): void {
  * alongside a guaranteed-present `brief` payload and the effect's
  * dependency array stays narrow.
  */
-function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: string | null }) {
-  const { reply, fyi, noise, narrative } = brief.briefPayload;
+function BriefBody({
+  brief,
+  mailboxEmail,
+  isToday,
+  days,
+  selectedRunDate,
+  onSelectRunDate,
+}: {
+  brief: BriefWire;
+  mailboxEmail: string | null;
+  /** False while a past Brief is being read — suppresses mark-opened. */
+  isToday: boolean;
+  /** Past Briefs available to switch to (D61 history). */
+  days: readonly BriefWire[];
+  selectedRunDate: string | null;
+  onSelectRunDate: (runDate: string | null) => void;
+}) {
+  const { reply, fyi, noise, narrative, replyTotal, fyiTotal } = brief.briefPayload;
+  const dateLabel = formatRunDate(coveredDateOf(brief.runDateLocal));
   const isEmpty = reply.length === 0 && fyi.length === 0 && noise.length === 0;
 
   // Below `sm` (D60 mobile treatment) the multi-column reply/FYI/noise
@@ -162,6 +207,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
   const markOpened = useMarkBriefOpened();
   const markedRef = useRef<string | null>(null);
   useEffect(() => {
+    if (!isToday) return;
     if (brief.openedAt !== null) return;
     if (markedRef.current === brief.id) return;
     markedRef.current = brief.id;
@@ -170,7 +216,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
     // identity is stable for a given queryClient and including it
     // would re-fire the mutation on every internal state transition
     // (pending/success/idle) the hook walks through.
-  }, [brief.id, brief.openedAt, markOpened]);
+  }, [brief.id, brief.openedAt, isToday, markOpened]);
 
   return (
     <div
@@ -186,10 +232,22 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
       <ScreenIntro
         id="brief"
         title="Daily Brief"
-        body={`A short summary of yesterday's email. Reply first, FYI for context, Noise to clear.`}
+        body={
+          // "Yesterday" is only true of the latest Brief. Once the day
+          // switcher reaches back, the same sentence over Saturday's
+          // mail is simply wrong, so past days name the day instead.
+          isToday
+            ? `A short summary of yesterday's email. Reply first, FYI for context, Noise to clear.`
+            : `A short summary of email from ${dateLabel}. Reply first, FYI for context, Noise to clear.`
+        }
         tip="Open a message in Gmail to reply or review it."
       />
-      <BriefMeta brief={brief} />
+      <BriefMeta
+        brief={brief}
+        days={days}
+        selectedRunDate={selectedRunDate}
+        onSelectRunDate={onSelectRunDate}
+      />
       <BriefReturnLinks />
 
       {isEmpty ? (
@@ -201,7 +259,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
             <ReplyFyiSection
               label="Reply"
               rows={reply}
-              max={6}
+              total={replyTotal}
               isMobile={isMobile}
               mailboxEmail={mailboxEmail}
             />
@@ -210,7 +268,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
             <ReplyFyiSection
               label="FYI"
               rows={fyi}
-              max={4}
+              total={fyiTotal}
               isMobile={isMobile}
               mailboxEmail={mailboxEmail}
             />
@@ -228,6 +286,7 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
               noiseSenders={brief.noiseSenders}
               isMobile={isMobile}
               mailboxEmail={mailboxEmail}
+              dayWord={isToday ? 'yesterday' : `on ${dateLabel}`}
             />
           )}
         </>
@@ -245,8 +304,26 @@ function BriefBody({ brief, mailboxEmail }: { brief: BriefWire; mailboxEmail: st
  * happy-path Haiku case is silent — surfacing it would add noise to
  * every Brief.
  */
-function BriefMeta({ brief }: { brief: BriefWire }) {
-  const dateLabel = formatRunDate(brief.runDateLocal);
+function BriefMeta({
+  brief,
+  days,
+  selectedRunDate,
+  onSelectRunDate,
+}: {
+  brief: BriefWire;
+  days: readonly BriefWire[];
+  selectedRunDate: string | null;
+  onSelectRunDate: (runDate: string | null) => void;
+}) {
+  const dateLabel = formatRunDate(coveredDateOf(brief.runDateLocal));
+  // Offer the switcher only when there is somewhere else to go. One
+  // Brief in the range means the control would be a dropdown with a
+  // single option — chrome that does nothing.
+  const hasHistory = days.length > 1;
+  const selectedDayValue =
+    selectedRunDate !== null && days.slice(1).some((row) => row.runDateLocal === selectedRunDate)
+      ? selectedRunDate
+      : '';
   return (
     <div
       style={{
@@ -258,7 +335,40 @@ function BriefMeta({ brief }: { brief: BriefWire }) {
         fontFamily: font.mono,
       }}
     >
-      <span>{dateLabel}</span>
+      {hasHistory ? (
+        <select
+          // Fall back to the latest option when the selected day is not
+          // among the past ones — the range can narrow (a mailbox switch
+          // resets the scoped cache and refetches), and a <select> whose
+          // value matches no option renders the first one while state
+          // says otherwise. The body already falls back the same way.
+          //
+          // `slice(1)` because the newest day is rendered with value ''
+          // (it is the "latest" option), so matching it by date would
+          // set a value no option carries — the same bug in reverse.
+          value={selectedDayValue}
+          onChange={(e) => onSelectRunDate(e.target.value === '' ? null : e.target.value)}
+          aria-label="Brief day"
+          style={{
+            fontFamily: font.mono,
+            fontSize: 12,
+            color: color.fg,
+            background: color.card,
+            border: `1px solid ${color.line}`,
+            borderRadius: 6,
+            padding: '3px 6px',
+          }}
+        >
+          {days.map((row, i) => (
+            <option key={row.id} value={i === 0 ? '' : row.runDateLocal}>
+              {formatRunDate(coveredDateOf(row.runDateLocal))}
+              {i === 0 ? ' — latest' : ''}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span>{dateLabel}</span>
+      )}
       {brief.generatedBy === 'template' && (
         <>
           <span aria-hidden="true">·</span>
@@ -319,6 +429,12 @@ function Narrative({ text }: { text: string }) {
         lineHeight: 1.55,
         color: color.fg,
         fontStyle: 'normal',
+        // Cap the reading measure. Without this the paragraph stretches
+        // to the 920px screen width — ~110 characters a line at 14px,
+        // against the ~65-75 the eye tracks comfortably. The card still
+        // spans the column; only the text column is bounded, so the
+        // narrative doesn't read as a wall above the lists.
+        maxWidth: '68ch',
       }}
     >
       {text}
@@ -336,13 +452,14 @@ function Narrative({ text }: { text: string }) {
 function ReplyFyiSection({
   label,
   rows,
-  max,
+  total,
   isMobile,
   mailboxEmail,
 }: {
   label: 'Reply' | 'FYI';
   rows: BriefItemWire[];
-  max: number;
+  /** Pre-cap candidate count from the payload; undefined on older rows. */
+  total?: number | undefined;
   isMobile: boolean;
   mailboxEmail: string | null;
 }) {
@@ -352,7 +469,7 @@ function ReplyFyiSection({
       aria-label={`${label} (${rows.length})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
-      <SectionHeading label={label} count={rows.length} max={max} tone={tone} />
+      <SectionHeading label={label} count={rows.length} total={total} tone={tone} />
       <ul
         style={{
           listStyle: 'none',
@@ -394,11 +511,18 @@ function NoiseSection({
   noiseSenders,
   isMobile,
   mailboxEmail,
+  dayWord,
 }: {
   groups: BriefSenderGroupWire[];
   noiseSenders: BriefNoiseSenderWire[];
   isMobile: boolean;
   mailboxEmail: string | null;
+  /**
+   * How to name the day these counts describe — "yesterday" on the
+   * latest Brief, the covered date once the day switcher reaches back.
+   * The counts are frozen (D69); only the word that anchors them moves.
+   */
+  dayWord: string;
 }) {
   const totalMessages = useMemo(() => groups.reduce((sum, g) => sum + g.messageCount, 0), [groups]);
   const targets = useMemo(() => buildNoiseTargets(groups, noiseSenders), [groups, noiseSenders]);
@@ -412,13 +536,13 @@ function NoiseSection({
       // Carries the same "yesterday" anchor the visible subline does — a
       // screen reader must not get the un-anchored number this whole
       // surface is careful to avoid.
-      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages yesterday)`}
+      aria-label={`Noise (${groups.length} senders, ${totalMessages} messages ${dayWord})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <SectionHeading
         label="Noise"
         count={groups.length}
-        subline={`${totalMessages} messages yesterday`}
+        subline={`${totalMessages} messages ${dayWord}`}
         tone="soft"
       />
       <ul
@@ -595,19 +719,28 @@ type SectionTone = 'accent' | 'muted' | 'soft';
 function SectionHeading({
   label,
   count,
-  max,
+  total,
   subline,
   tone,
 }: {
   label: string;
   count: number;
-  max?: number;
+  /**
+   * How many items existed before the D63 cap. Undefined on Briefs
+   * frozen before the worker recorded it (D69).
+   */
+  total?: number | undefined;
   subline?: string;
   tone: SectionTone;
 }) {
   const dotColor =
     tone === 'accent' ? color.primary : tone === 'muted' ? color.fgSoft : color.fgMuted;
-  const countLabel = max != null ? `${count} of ${max}` : `${count}`;
+  // "of N" only when N says something the count does not. This used to
+  // read `${count} of ${max}` against the hardcoded cap, so a full
+  // section always announced "6 of 6" — a constant dressed as a fact
+  // about the day, and silent about the items the cap actually dropped.
+  const truncated = total != null && total > count;
+  const countLabel = truncated ? `${count} of ${total}` : `${count}`;
   return (
     <h2
       style={{
@@ -1031,6 +1164,23 @@ function QuietInboxState() {
  * Local-date arithmetic only — no timezone conversion (the BE already
  * resolved the local-date semantic for the user).
  */
+/**
+ * The local calendar date a Brief actually covers.
+ *
+ * `run_date_local` is the date the snapshot was GENERATED; the worker
+ * reads the window `[previousDayStart, todayStart)`, so the mail in it
+ * is always the day before. Rendering `run_date_local` therefore dated
+ * every Brief one day late, every day — a Brief generated Aug 26 is
+ * headed "Aug 26" over Aug 25's mail.
+ *
+ * Arithmetic in UTC on the calendar fields only: the string is already
+ * a resolved local date, so converting it through a real timezone would
+ * reintroduce the shift this is correcting.
+ */
+export function coveredDateOf(runDateLocal: string): string {
+  return shiftLocalDate(runDateLocal, -1);
+}
+
 export function formatRunDate(runDateLocal: string): string {
   const match = runDateLocal.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!match) return runDateLocal;

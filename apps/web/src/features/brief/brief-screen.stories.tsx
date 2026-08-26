@@ -18,6 +18,7 @@ import { tokens } from '@declutrmail/shared';
 import type { BriefWire } from '@/lib/api/brief';
 
 import { briefKeys } from './api/query-keys';
+import { BRIEF_HISTORY_DAYS, shiftLocalDate } from './api/use-brief-history';
 import { BriefScreen } from './brief-screen';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
@@ -102,6 +103,18 @@ function makeClient(brief: BriefWire | undefined): QueryClient {
     // envelope shape so the screen receives a real BriefWire.
     client.setQueryData(briefKeys.today(), { data: brief });
   }
+  return client;
+}
+
+/**
+ * Seed the D61 history range the screen derives from the shown Brief,
+ * so the day switcher has somewhere to go. The key must match
+ * `useBriefHistory` exactly — it is computed from the anchor Brief's
+ * run date, not from the wall clock.
+ */
+function withHistory(client: QueryClient, anchor: BriefWire, rows: BriefWire[]): QueryClient {
+  const from = shiftLocalDate(anchor.runDateLocal, -(BRIEF_HISTORY_DAYS - 1));
+  client.setQueryData(briefKeys.history(from, anchor.runDateLocal), { data: rows });
   return client;
 }
 
@@ -217,4 +230,43 @@ export const NoiseAllProtected: Story<typeof BriefScreen> = {
 export const NoiseNotActionable: Story<typeof BriefScreen> = {
   render: (_args: ComponentProps<typeof BriefScreen>) =>
     frame(makeClient({ ...BASE, noiseSenders: [] })),
+};
+
+/**
+ * D61 history — the day switcher replaces the static date label once
+ * more than one Brief exists in the range. Options are labelled by the
+ * day each Brief COVERS (the day before it ran), newest first, and the
+ * latest is marked so "today" stays identifiable after browsing back.
+ *
+ * With one Brief or none the control is absent entirely: see
+ * `Populated`, where the same line renders as plain text.
+ */
+export const WithHistory: Story<typeof BriefScreen> = {
+  render: (_args: ComponentProps<typeof BriefScreen>) =>
+    frame(
+      withHistory(makeClient(BASE), BASE, [
+        BASE,
+        {
+          ...BASE,
+          id: '22222222-2222-2222-2222-222222222222',
+          runDateLocal: '2026-05-23',
+          openedAt: null,
+          briefPayload: {
+            ...BASE.briefPayload,
+            narrative: '',
+            reply: [
+              {
+                senderKey: 'sk-landlord',
+                senderName: 'Sunrise Property',
+                senderEmail: 'leases@sunrise.example',
+                subject: 'Lease renewal needs signing',
+                messageIds: ['m-land-1'],
+              },
+            ],
+            fyi: [],
+            noise: [],
+          },
+        },
+      ]),
+    ),
 };

@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -22,6 +23,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import {
   BriefScreen,
   domainOf,
+  coveredDateOf,
   formatRunDate,
   gmailHref,
   senderSearchHref,
@@ -82,6 +84,38 @@ const BASE_BRIEF: BriefWire = {
   feedbackRating: null,
   noiseSenders: [{ senderKey: 'sk-news', senderId: SENDER_ID_NEWS, isProtected: false }],
 };
+
+/** A frozen Brief from the day before BASE_BRIEF (D61 history). */
+const PAST_BRIEF: BriefWire = {
+  ...BASE_BRIEF,
+  id: '22222222-2222-2222-2222-222222222222',
+  runDateLocal: '2026-05-23',
+  openedAt: null,
+  briefPayload: {
+    ...BASE_BRIEF.briefPayload,
+    narrative: '',
+    reply: [
+      {
+        senderKey: 'sk-landlord',
+        senderName: 'Sunrise Property',
+        senderEmail: 'leases@sunrise.example',
+        subject: 'Lease renewal needs signing',
+        messageIds: ['m-land-1'],
+      },
+    ],
+    fyi: [],
+    noise: [],
+  },
+};
+
+/** Today + one earlier day, newest first — the endpoint's own order. */
+function historyHandler(rows: BriefWire[] = [BASE_BRIEF, PAST_BRIEF]) {
+  return {
+    method: 'GET' as const,
+    path: '/api/briefs',
+    respond: () => jsonOk({ data: rows }),
+  };
+}
 
 function renderScreen() {
   const client = createTestQueryClient();
@@ -193,10 +227,96 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2 of 6/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
     );
-    expect(screen.getByRole('heading', { name: /fyi · 1 of 4/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /fyi · 1$/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /noise · 1 · 4 messages/i })).toBeInTheDocument();
+  });
+
+  it('dates the Brief by the day it covers, not the day it ran', async () => {
+    // Consumer-level on purpose. coveredDateOf can be correct as a pure
+    // function while the header still renders runDateLocal — that gap is
+    // exactly the bug, so asserting the helper alone would not catch it.
+    // BASE_BRIEF ran on Sun 2026-05-24 and covers Sat 2026-05-23.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => jsonOk({ data: BASE_BRIEF }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Sat, May 23')).toBeInTheDocument());
+    expect(screen.queryByText('Sun, May 24')).not.toBeInTheDocument();
+  });
+
+  it('shows "of N" only when the cap actually dropped something', async () => {
+    // BASE_BRIEF has 2 reply rows. With replyTotal 2 nothing was
+    // dropped, so "2 of 2" would be the cap describing itself — the
+    // exact defect. With replyTotal 8, "2 of 8" is real information.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...BASE_BRIEF,
+              briefPayload: { ...BASE_BRIEF.briefPayload, replyTotal: 2, fyiTotal: 1 },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('heading', { name: /reply · 2 of 2/i })).not.toBeInTheDocument();
+  });
+
+  it('names the real total when the cap truncated the section', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...BASE_BRIEF,
+              briefPayload: { ...BASE_BRIEF.briefPayload, replyTotal: 8, fyiTotal: 5 },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /reply · 2 of 8/i })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('heading', { name: /fyi · 1 of 5/i })).toBeInTheDocument();
+  });
+
+  it('falls back to a plain count on a Brief frozen before totals existed', async () => {
+    // D69 freezes rows once written, so payloads with no replyTotal are
+    // a real shape the screen must render — not a hypothetical.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () => jsonOk({ data: BASE_BRIEF }),
+      },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+    );
   });
 
   it('renders the narrative pre-amble when non-empty', async () => {
@@ -237,7 +357,7 @@ describe('BriefScreen — populated', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2 of 6/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText(/via template/i)).not.toBeInTheDocument();
   });
@@ -336,7 +456,7 @@ describe('BriefScreen — D61 mark-opened mutation', () => {
     // Wait for the populated content so we know the effect had a
     // chance to run; then assert no POST was made.
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2 of 6/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
     );
     expect(postCount).toBe(0);
   });
@@ -350,6 +470,25 @@ describe('BriefScreen — pure helpers', () => {
     // into hydrated HTML: it must not vary with the runtime locale or
     // React discards the server tree (error #418; e2e hydration-smoke).
     expect(formatRunDate('2026-05-24')).toBe('Sun, May 24');
+  });
+
+  it('coveredDateOf steps back to the day the Brief actually covers', () => {
+    // run_date_local is the GENERATION date; the window is the day
+    // before it. Rendering the raw value dated every Brief a day late.
+    expect(coveredDateOf('2026-08-26')).toBe('2026-08-25');
+    // Month boundary.
+    expect(coveredDateOf('2026-09-01')).toBe('2026-08-31');
+    // Year boundary.
+    expect(coveredDateOf('2026-01-01')).toBe('2025-12-31');
+    // Leap day — 2028 is a leap year, so Mar 1 steps back to Feb 29.
+    expect(coveredDateOf('2028-03-01')).toBe('2028-02-29');
+    // Non-leap year does not invent one.
+    expect(coveredDateOf('2027-03-01')).toBe('2027-02-28');
+  });
+
+  it('coveredDateOf passes through malformed input unchanged', () => {
+    expect(coveredDateOf('not-a-date')).toBe('not-a-date');
+    expect(coveredDateOf('')).toBe('');
   });
 
   it('formatRunDate passes through malformed input unchanged', () => {
@@ -380,5 +519,121 @@ describe('BriefScreen — pure helpers', () => {
 
   it('senderSearchHref preserves an exact shareable sender query', () => {
     expect(senderSearchHref('Billing + Reports')).toBe('/senders?q=Billing%20%2B%20Reports');
+  });
+});
+
+describe('BriefScreen — D61 history', () => {
+  beforeEach(() => {
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      historyHandler(),
+    ]);
+  });
+
+  it('offers the days that exist and opens on the latest', async () => {
+    renderScreen();
+
+    const picker = await screen.findByLabelText('Brief day');
+    // Labels are the COVERED day, not the run date — 2026-05-24 ran over
+    // Sat the 23rd, and 2026-05-23 over Fri the 22nd.
+    expect(
+      within(picker).getByRole('option', { name: /Sat, May 23 — latest/ }),
+    ).toBeInTheDocument();
+    expect(within(picker).getByRole('option', { name: /^Fri, May 22$/ })).toBeInTheDocument();
+    // Latest is selected, and today's content is on screen.
+    expect((picker as HTMLSelectElement).value).toBe('');
+    expect(screen.getByText('Q4 plan review')).toBeInTheDocument();
+  });
+
+  it('renders the chosen day in place', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+
+    const picker = await screen.findByLabelText('Brief day');
+    await user.selectOptions(picker, '2026-05-23');
+
+    await waitFor(() =>
+      expect(screen.getByText('Lease renewal needs signing')).toBeInTheDocument(),
+    );
+    // Today's rows are gone — this is a replacement, not an append.
+    expect(screen.queryByText('Q4 plan review')).not.toBeInTheDocument();
+  });
+
+  it('does not mark a past Brief opened', async () => {
+    // opened_at is D61's first-view tracker for the day a Brief was
+    // delivered. Browsing back through history must not rewrite it.
+    const posted: string[] = [];
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      historyHandler(),
+      {
+        method: 'POST',
+        path: /\/api\/briefs\/[^/]+\/mark-opened/,
+        respond: (_req, url) => {
+          posted.push(url.pathname);
+          return jsonOk({ data: { openedAt: '2026-05-25T09:00:00Z' } });
+        },
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderScreen();
+
+    const picker = await screen.findByLabelText('Brief day');
+    await user.selectOptions(picker, '2026-05-23');
+    await waitFor(() =>
+      expect(screen.getByText('Lease renewal needs signing')).toBeInTheDocument(),
+    );
+
+    expect(posted).toEqual([]);
+  });
+
+  it('stops saying "yesterday" once the switcher reaches a past day', async () => {
+    // The intro and the Noise heading both anchored their counts to
+    // "yesterday". That is true of the latest Brief and false of every
+    // other one the day switcher can now reach.
+    const user = userEvent.setup();
+    renderScreen();
+
+    // Latest: "yesterday" is correct and stays.
+    await waitFor(() => expect(screen.getByText(/yesterday's email/i)).toBeInTheDocument());
+    expect(
+      screen.getByRole('heading', { name: /noise .*messages yesterday/i }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(await screen.findByLabelText('Brief day'), '2026-05-23');
+
+    // Past day: named, not "yesterday". PAST_BRIEF ran 2026-05-23 and
+    // covers Fri 2026-05-22.
+    await waitFor(() => expect(screen.getByText(/\bemail from Fri, May 22/i)).toBeInTheDocument());
+    expect(screen.queryByText(/yesterday's email/i)).not.toBeInTheDocument();
+  });
+
+  it('hides the switcher and still renders today when history fails', async () => {
+    // History is secondary. A range read that 500s must cost the user
+    // the switcher and nothing else.
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      { method: 'GET', path: '/api/briefs', respond: () => jsonServerError() },
+    ]);
+
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Q4 plan review')).toBeInTheDocument());
+    expect(screen.queryByLabelText('Brief day')).not.toBeInTheDocument();
+    // The plain date label takes its place.
+    expect(screen.getByText('Sat, May 23')).toBeInTheDocument();
+  });
+
+  it('hides the switcher when only one Brief exists', async () => {
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: BASE_BRIEF }) },
+      historyHandler([BASE_BRIEF]),
+    ]);
+
+    renderScreen();
+
+    await waitFor(() => expect(screen.getByText('Q4 plan review')).toBeInTheDocument());
+    expect(screen.queryByLabelText('Brief day')).not.toBeInTheDocument();
   });
 });

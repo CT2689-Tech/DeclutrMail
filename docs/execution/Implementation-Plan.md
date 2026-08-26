@@ -2042,7 +2042,7 @@ Brief is a Pro-tier feature (per D19). At launch, Free and Plus users
 see a "Brief preview" placeholder with upgrade CTA. Pro users get the
 full Brief experience below.
 
-### D61 — Brief delivery channel: **In-app screen + optional email digest (default off)**
+### D61 — Brief delivery channel: **In-app screen only; email digest withdrawn 2026-08-26**
 
 Primary delivery is the in-app `/brief` screen. Pro users can optionally
 enable an email digest version (Settings → Notifications → "Send me my
@@ -2110,7 +2110,7 @@ NOISE
   provider_message_ids.
 - 7-day undo per D58.
 
-### D66 — Brief schedule: **Default Mon-Fri only; weekends opt-in**
+### D66 — Brief schedule: **RETIRED 2026-08-25; the Brief runs every day**
 
 Aligns with the assumption that most Pro users (founders, prosumers)
 work weekdays. Pro users can enable weekend Briefs in Settings →
@@ -10511,3 +10511,131 @@ the grace elapsing with nothing settled — rather than the ordinary window.
 entitlement immediately. Updated in the same change.
 
 Shipped in PR #633.
+
+### [REVERSAL 2026-08-25 on D66]
+
+**D66 is retired. The Brief generates every day.** Founder-directed
+2026-08-25 ("should we just go for every day?").
+
+D66 reads: *"Brief schedule: Default Mon-Fri only; weekends opt-in"*,
+on the rationale that *"most Pro users (founders, prosumers) work
+weekdays."* The rationale is plausible and the schedule it produced was
+not, because of how the window interacts with it.
+
+**Why it had to move.** A Brief covers the previous local day. Under
+Mon–Fri, Saturday's Brief never ran — and Saturday's Brief is the one
+that covers **Friday**. So the default schedule structurally excluded
+the heaviest weekday from the product: Friday's mail was summarized by
+nothing, for every Pro user, forever. Monday's Brief covers Sunday, so
+the weekday user's Monday morning also opened on D70's "your inbox was
+quiet yesterday" most weeks. Neither effect is visible from D66's own
+text, which is why it survived this long.
+
+The weekday assumption also had no way to be acted on: the opt-in D66
+specifies — Settings → Notifications → "Generate Brief on weekends
+too" — was built end to end on the server (`briefPrefs.weekends`, a
+PATCH route, the worker gate) and never given a single line of UI. No
+user could have reached it.
+
+**What the code does now.** The weekend gate is gone from
+`BriefSnapshotWorker`; every mailbox generates on every local day, at
+the D64 hour. A day with no inbound mail still writes the D70 empty
+brief and costs no LLM call, so the added cadence is close to free.
+
+**Cost of the alternative considered.** Merging skipped days into the
+next Brief (Monday covers Fri–Sun) was rejected: it changes the D69
+frozen-snapshot span and the "yesterday's mail" copy for a gap that
+generating daily closes outright.
+
+### [PATCH 2026-08-25 on D64]
+
+**D64's "any 30-min slot" ships as hourly slots.** D64 reads:
+*"Settings has a time picker (any 30-min slot) and per-day toggles
+(default Mon-Fri)."*
+
+Two amendments, both forced by mechanisms outside D64:
+
+1. **Hourly, not half-hourly.** Brief generation is an hourly cron
+   (D203/D225). A user choosing 08:30 would be served at 09:00, so the
+   half-hour slot would be a promise the schedule cannot keep. Honouring
+   it means a 30-minute cron — double the ticks for a precision nobody
+   has asked for. The picker offers 24 hourly slots; revisit if anyone
+   asks for the half hour.
+2. **No per-day toggles.** They encoded D66's weekday default, retired
+   above. The Brief runs every day; the hour is the only remaining
+   schedule choice.
+
+The 8am local default is unchanged, and the picker itself — the half of
+D64 that was marked shipped while the hour sat hardcoded in
+`brief-timezone.ts` — now exists.
+
+---
+
+### [REVERSAL 2026-08-26 on D61 — the email digest half]
+
+**Founder decision, 2026-08-26.** D61 named two delivery channels: the
+in-app `/brief` screen and an optional email digest. **The email digest
+is withdrawn.** D61 now covers the in-app channel only.
+
+Why this is a reversal and not a deferral. The digest was never built —
+no template, no trigger, no preference key — while D61's row sat at 🟢
+**Verified**, cited to `apps/api/src/briefs/brief.read-service.spec.ts`,
+which tests the read service and never touches email. The verification
+passed on the clause that shipped, so the log asserted a feature the
+product did not have, and the Pro tier gate sold it: *"8am daily, in-app
+or by email."* A paid upgrade screen made a claim no code could honour.
+
+The claim is removed (#636). The `brief_runs.email_sent_at` column stays
+— it is nullable, unwritten, and costs nothing — but nothing reads or
+writes it, and it must not be taken as evidence the feature is partly
+built.
+
+**If the digest is ever wanted, it is a new D-number with its own row.**
+Reviving it under D61 would rebuild the exact structure that failed:
+one decision, two clauses, one verification.
+
+**Lesson recorded separately** — a D-decision containing "and" cannot be
+verified as a unit. See MISTAKES.md 2026-08-26.
+
+---
+
+### [PATCH 2026-08-26 on D63 — where unscreened senders go]
+
+**Founder decision, 2026-08-26 (ratifying the fix in #636).**
+
+D63 defines Reply as "items genuinely needing human response". The
+implementation sent every sender with **no engine verdict** to Reply, so
+the section filled with mail nobody had assessed — on the founder's own
+Brief, five of six Reply rows were promotional, above a tax-filing
+deadline.
+
+An unscreened sender that publishes a working unsubscribe channel now
+goes to **FYI**.
+
+**FYI and not Noise, deliberately.** Noise is D65's bulk-archive target.
+Routing unjudged mail there would put it inside a one-click archive —
+offering to clear mail the engine has never assessed claims more
+confidence than the product has. FYI says only what is known: this
+arrived, and it is not waiting on you.
+
+`senders.unsubscribe_method` is NULL until the sender index has run
+(D248), so NULL is **not** "no channel" — unindexed senders keep the
+conservative Reply default and re-bucket once the index lands. An
+explicit `keep` verdict still outranks the heuristic.
+
+---
+
+### [PATCH 2026-08-26 on D62 — no figures from snippets]
+
+**Founder decision, 2026-08-26 (ratifying the constraint in #635).**
+
+The Brief narrative must never repeat a figure that appears in a Gmail
+snippet — no balances, amounts, or account numbers. A real Brief lifted
+a bank balance of $4,284.44 onto the screen.
+
+Nothing was fetched that D7 does not already allow: the snippet is
+inside the disclosed envelope. The objection is not retrieval, it is
+placement — a balance on a summary page (and in any future digest)
+should be a decision someone made, not a side effect of summarising.
+
+The constraint lives in the system prompt and is pinned by a spec test.

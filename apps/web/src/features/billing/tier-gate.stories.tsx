@@ -59,7 +59,7 @@ function frame(tier: Me['tier']) {
           <TierGate
             capability="brief"
             title="Your Morning Brief"
-            pitch="A daily summary of yesterday's email, written in plain English — 8am daily, in-app or by email."
+            pitch="A daily summary of yesterday's email, written in plain English — in-app, at an hour you choose."
             bullets={[
               'REPLY — what actually needs you',
               'FYI — facts to know',

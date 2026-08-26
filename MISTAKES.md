@@ -21,6 +21,126 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-26 — A regex demoted seven verified decisions and blamed the missing file on them
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` — found because it rejected
+a row I was legitimately recording
+
+**Caught by:** CI (`Implementation log is derived and current` failed on
+`D65: drifted`), then read back to the cause
+
+**What happened:** the evidence check in `scripts/generate-impl-log.ts` matched
+`/([\w@./-]+\.(?:ts|tsx|sql|sh|md))/`. Regex alternation takes the FIRST
+branch that matches, so on `apps/web/src/features/brief/noise-archive.test.tsx`
+the `ts` branch matched and left the `x` behind. The truncated
+`…noise-archive.test.ts` does not exist, so the check returned `missing`, and
+`composeRow` demoted the row from 🟢 to 🔵 and wrote *"the cited evidence file
+no longer exists"* into its note — about a file sitting in the repo.
+
+The 2026-07-29 evidence audit ran this against every recorded 🟢. Seven
+decisions were marked down on it: **D31, D32, D33, D34, D36, D208, D226** —
+every one cites a `.tsx` test, every one of those tests exists. The audit also
+stripped `status: 🟢` from their fragments, so the false conclusion is now the
+recorded state and re-running the generator cannot undo it.
+
+The failure mode is the one this repo keeps meeting: a guardrail that reports
+something untrue about what is built, in the file whose whole job is to answer
+"is it built yet?".
+
+**Correct approach:** order alternation longest-first (`tsx|ts`) — or anchor
+the match at a word boundary rather than trusting branch order. More generally,
+a check that can DOWNGRADE a recorded human claim needs its own test with a
+case per file extension it accepts; this one had none.
+
+**Rule:** in any regex alternation over file extensions, put the longer
+extension first, and test every extension the pattern claims to accept.
+
+**Enforcement update:** the extension order is fixed in this branch and the
+reason is written above the function so it survives a reformat. The seven
+demoted rows are NOT restored here — re-asserting Verified on someone else's
+decisions is the founder's call, logged in FOUNDER-FOLLOWUPS 2026-08-26.
+
+## 2026-08-26 — A paywall billed for a feature the log said was verified and the code never had
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` — found by grounding a
+product backlog review against `main`, not by any test or gate
+
+**Caught by:** manual codebase audit (checking each claimed Brief capability
+against the code that would implement it)
+
+**What happened:** the Pro tier gate for the Brief read *"A daily summary of
+yesterday's email, written in plain English — 8am daily, in-app or by email."*
+There is no Brief email: no template, no trigger in
+`apps/api/src/notifications/`, and no digest key in the `emailPrefs` contract.
+The "8am" half had also gone stale the moment #635 made the hour configurable.
+
+The reason nobody noticed is the interesting part. `IMPLEMENTATION-LOG.md` has
+D61 — *"In-app screen + optional email digest (default off)"* — at 🟢
+**Verified**, cited to `brief.read-service.spec.ts`. That file tests the read
+service and never touches email. The decision had two halves, one shipped, and
+`verify-d` passed on the one that did. So the log asserted the feature existed,
+the paywall sold it, and every check was green.
+
+D65 and D66 drift the same way in the opposite direction: D65 is ⬜ Not started
+while `noise-archive-sheet.tsx` ships and its bar renders, and D66 is 🔵
+Shipped under a title describing behaviour #635 retired.
+
+**Correct approach:** a multi-clause D-decision cannot be verified as a unit.
+Either it is split so each clause has its own row and its own evidence, or the
+evidence has to demonstrate every clause. And any product-surface claim about a
+capability — especially one behind a price — should be traceable to the code
+that performs it, not to a log row.
+
+**Rule:** before writing or trusting marketing copy for a gated feature, find
+the code that performs the claim; if a D-decision has an "and" in it, verify
+each side separately or split the row.
+
+**Enforcement update:** none automated yet — `verify-d` cannot tell which
+clause an evidence file covers. Logged for the founder in FOUNDER-FOLLOWUPS
+(2026-08-26) with the D61/D65/D66 split proposal, since amending a D-body is
+the founder's call. Candidate future check: a test that asserts every
+capability named in `TierGate` copy resolves to a shipped code path.
+
+## 2026-08-25 — A capability gate keyed on the billing read is dark whenever billing is
+
+**PR:** branch `claude/brief-billing-polish-bzpitp` (D64, D66) — caught pre-merge by the local browser smoke, after 42 green tests
+
+**What happened:** the new Settings → Daily Brief card is gated on whether the
+workspace has the `brief` capability. I read the tier from the screen's
+existing `useBillingSubscription()` result (`billing.data?.tier ?? null`),
+because it was already in scope two lines above. But `GET
+/api/billing/subscription` answers **503 `BILLING_DISABLED`** until the founder
+flips `BILLING_ENABLED` — a DESIGNED state, and the current production posture.
+So `billing.data` is undefined, `tier` is null, and the gate is false for every
+workspace including Pro. The card would have shipped invisible to 100% of the
+users it exists for, on the exact deployment we run today.
+
+Every test passed — 42 of them, including the two I had just written for this
+gate — because `happyHandlers()` answers `/api/billing/subscription` with a 200
+payload. The fixture encodes billing-live as the only world. The browser smoke
+found it in one run: the card simply was not on the page, and the network log
+showed the 503 sitting right there.
+
+**Correct approach:** a FEATURE capability gate reads `useTier()`, which
+derives from `/api/auth/me` and has no billing dependency — the same source
+`TierGate` uses on every paid screen, and the reason that component keeps
+working while billing is dark. The billing subscription read answers "what is
+this workspace paying and through which provider", not "what may this
+workspace do".
+
+**Rule:** entitlement gates read `useTier()`/`hasCapability`, never a billing
+endpoint's payload. If a gate's tier can be null because a *different* service
+is turned off, the gate is wrong — a capability does not depend on the billing
+provider being reachable.
+
+**Enforcement update:** gate switched to `useTier()`; a regression test now
+stubs `/api/billing/subscription` as a 503 `BILLING_DISABLED` and asserts the
+card still renders (verified red against the old gate). Fourth entry in the
+"green tests, broken at the seam" family, and the second where a fixture that
+only models the happy service state hid a whole-feature outage — candidate for
+a CLAUDE.md §8 line: any screen reading two services needs one fixture where
+the optional one is down.
+
 ## 2026-08-21 — Brief pipeline sent Gmail metadata to Anthropic for tiers that cannot read the Brief
 
 **PR:** #621 (https://github.com/CT2689-Tech/DeclutrMail/pull/621)
@@ -3556,3 +3676,51 @@ correctly. This is the §8 pattern from the other side: the tests were green and
 faithful for the entire life of the defect, because the defect was in the rule,
 not in the code's fidelity to it. A test can only catch a mistake someone has
 already thought of.
+
+## 2026-08-25 — A surrogate primary key used as the frontend's sender handle
+
+**PR:** (pending — branch `claude/gmail-labels-retry-preview-625707`)
+**Caught by:** production — founder report, confirmed in Cloud Run logs
+**What happened:** `senders.id` was `uuid().defaultRandom()`, and
+`InitialSyncWorker.buildSenderIndex` rebuilds the index by
+`DELETE … WHERE mailbox_account_id = $1` followed by a plain `INSERT`.
+Every rebuild therefore reissued every sender id in the mailbox. On
+2026-08-25 an initial sync for `mailbox=295aa232…` committed at 08:05:17
+(`email.send.accepted email__sync-complete__…`); the founder had the
+Senders page open, loaded at 08:03. `GET /api/actions/preview?senderId=
+018db6ee…` returned **200 at 08:03:52 and 404 at 08:06:21 for the same
+sender**. Every id the page held was dangling, so the confirm modal's
+"Retry preview" button — which refetches the same `senderId` — could
+never succeed no matter how many times it was pressed. Five 404s across
+two sender ids in 30 seconds, then the founder gave up. With
+`refetchOnWindowFocus: false` the list never healed itself either; only
+a reload did.
+
+Nothing foreign-keys to `senders.id` — every durable consumer joins on
+`sender_key`, and `action_jobs` keeps `senderId` "for audit" only — so
+there was no data loss and no failing test. The rebuild's own suite was
+green throughout, because every assertion was about counts and rows, not
+about identity surviving the churn.
+
+**Correct approach:** derive the id from `(mailbox_account_id,
+sender_key)` — the pair that already uniquely identifies the row via
+`senders_account_sender_key_uniq` — so delete+reinsert regenerates the
+same id. Shipped as `deriveSenderId` in `@declutrmail/db`, applied at all
+three writers (`buildSenderIndex`, `toIdentityRow`, the incremental
+upsert). No migration: the column shape is unchanged.
+
+**Rule:** an id the API hands the frontend is a CONTRACT, not a row
+number. Before any teardown+rebuild, ask what identity the client is
+holding across it — if the answer is "a `defaultRandom()` surrogate",
+the rebuild is silently invalidating live handles.
+
+**Second rule (the retry half):** a retry control must be offered only
+where retrying can change the outcome. Branch on the error CODE, not the
+status: `SENDER_NOT_FOUND` is terminal for a given id and now renders a
+"Refresh senders" exit instead of a Retry button that loops forever.
+
+**Enforcement update:** regression test `initial-sync.worker.test.ts`
+→ "sender id — the handle survives a rebuild, so an already-open page
+never 404s" (verified red against the old code before landing), plus
+`packages/db/tests/sender-id.test.ts` pinning the derivation to a
+literal so a future change to it cannot silently reissue every handle.

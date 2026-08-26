@@ -24,6 +24,77 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-26 — Seven decisions were demoted from Verified by a regex bug, not by evidence
+
+**Source:** session 2026-08-26 — surfaced when the implementation-log gate
+rejected a row I was recording; traced to the cause rather than worked around
+
+**Why:** the log's evidence check truncated any `.tsx` path to a `.ts` one that
+does not exist (alternation order — `ts` matched before `tsx`). The
+2026-07-29 evidence audit ran it over every recorded 🟢 and marked seven
+decisions down from **Verified** to **Shipped**:
+
+**D31, D32, D33, D34, D36, D208, D226** — all triage-surface decisions, all
+cited to `.tsx` tests that are present in the repo today.
+
+Each row now carries *"Evidence audit 2026-07-29 (🟢→🔵): the cited evidence
+file no longer exists"*. That sentence is false for all seven. Worse, the audit
+also removed `status: 🟢` from their `.impl-log/` fragments, so the wrong
+answer is the recorded state — re-running the generator will not put it back.
+
+D226 is the action-lifecycle decision (sheet → preview → mutation → undo), one
+of the Section 2 guardrails. Its verification currently reads as never
+established.
+
+**How:** the regex is fixed in this branch, which stops it recurring. Restoring
+the seven is a separate call and yours to make:
+
+1. Re-add `status: 🟢` to each of `.impl-log/D{31,32,33,34,36,208,226}.md` and
+   strip the false audit sentence from their `note:` — treats the original 🟢
+   as sound and the demotion as the bug it was. Fast, and it restores a claim
+   somebody did make.
+2. Or leave them 🔵 and re-verify each with `pnpm verify-d` — slower, but the
+   verification is then something we watched happen rather than inherited.
+
+I did not pick for you: option 1 re-asserts Verified on seven decisions I have
+not checked, which is a claim about the product, not a formatting fix.
+
+**Verifies by:** the seven rows read 🟢 with no audit sentence, and
+`pnpm generate-impl-log --check --strict` is clean.
+
+**Status:** Open
+
+### 2026-08-25 — Brief schedule decisions taken in session: every day, hourly slots
+
+**Source:** session 2026-08-25 — the Brief product review (`/ct-decide`),
+founder answers to decisions 1 and 6
+
+**Why:** two amendments to the plan were made conversationally and need to
+exist somewhere a later audit will find them. Both are already implemented and
+carry plan markers (`[REVERSAL 2026-08-25 on D66]`, `[PATCH 2026-08-25 on
+D64]`); this entry is the decision trail, not an action.
+
+1. **D66 (Mon–Fri default) is retired — the Brief now generates every day.**
+   Founder: *"should we just go for every day?"* The Brief covers the previous
+   local day, so skipping Saturday meant **Friday's mail was never summarized
+   for anyone** — the heaviest weekday, structurally excluded by the default
+   schedule. The weekend opt-in D66 specifies had also been built server-side
+   and never given any UI, so no user could have turned it on.
+2. **D64's "any 30-min slot" ships as 24 hourly slots.** Generation is an
+   hourly cron; a 08:30 choice would be served at 09:00. Honouring the half
+   hour means doubling the cron rate for precision nobody has asked for.
+
+**How:** nothing to do unless you disagree. If you want the half-hour slots,
+that is a 30-minute cron and a re-tick of the D64 patch marker. If you want
+weekends back off, it is one gate — but read the reversal marker first, because
+the Friday hole is the part that is easy to re-introduce by accident.
+
+**Verifies by:** this entry existing, plus `brief_hour_changed` in PostHog
+answering whether anyone actually moves off 8am — the question that decides
+whether the picker earned its build.
+
+**Status:** Open — for your acknowledgement; no action required
+
 ### 2026-08-25 — Create the billing-verdict alert, and audit the Paddle key's other permissions
 
 **Source:** the eleven-day refund lockout (MISTAKES.md 2026-08-25); this PR
@@ -84,6 +155,49 @@ to a human, and this needs a failure mode nobody has seen yet.
 
 **Status:** Open
 
+### 2026-08-25 — The ADR index stops at 0007; 32 ADRs are unlisted
+
+**Source:** session — writing ADR-0039
+**Why:** `docs/adr/README.md` §"Authoring an ADR" step 4 says "Add the
+row to the index above." The index lists 0000–0007. The directory holds
+0001–0039. So 32 ADRs — including every one from the last several months
+(brand grouping, action reach, senders wire model, the Data API roles) —
+are invisible to anyone who reads the index instead of the directory,
+and the documented process has silently not been followed 32 times.
+Same shape as the three "automated" guardrails found to be no-ops on
+2026-07-28: a written procedure that reads as maintained and is not.
+ADR-0039 deliberately did NOT add a lone row after 0007 — a row numbered
+0039 sitting directly under 0007 asserts that 0008–0038 do not exist,
+which is a worse lie than the omission.
+**How:** either backfill the 32 rows (mechanical — title, status and
+"Related D-decisions" are all in each file's frontmatter, so it can be
+generated) and keep the step, or delete step 4 and the index and let the
+directory listing be the index. Backfill is one `chore/` PR; the agent
+can do it on request. Deferred here because it is tidying, not launch
+work.
+**Verifies by:** `ls docs/adr/*.md | wc -l` matches the index row count,
+or the index and step 4 are both gone.
+**Status:** Open
+
+
+### 2026-08-25 — Reconnect the Sentry connector for agent sessions
+
+**Source:** session — investigating the prod "Retry preview" 404s
+**Why:** the frontend already reports this class to Sentry
+(`captureFeatureException(err, { surface: 'senders', reason:
+'composite_preview' })` in `senders-screen.tsx`), so the 08:05–08:06
+preview failures are sitting in Sentry right now. The connector answered
+`The user's connection to this connector was invalidated. The user needs
+to reconnect it.`, so the investigation had to go through
+`gcloud logging read` against Cloud Run instead — which works, but only
+surfaces status codes, not the captured exception, its breadcrumbs, or
+how many other users hit the same thing.
+**How:** reconnect Sentry in claude.ai → Settings → Connectors (the
+`plugin:sentry` / `sentry` MCP servers both need it). A non-interactive
+agent session cannot run the OAuth flow.
+**Verifies by:** `find_organizations()` returns the org instead of the
+invalidated-connection error.
+**Status:** Open
 ### 2026-08-24 — Turn on point-in-time recovery before the first paying customer
 
 **Source:** session 2026-08-24 (Supabase production review), founder decision
@@ -2015,6 +2129,65 @@ the shipped design; a fresh session reading them finds no contradiction with
 **Status:** Open
 
 ## Done
+
+### 2026-08-26 — D61 is marked Verified for an email digest that was never built
+
+**Source:** session 2026-08-26 — Brief backlog review, grounded against `main`
+at `1104608`
+
+**Why:** `IMPLEMENTATION-LOG.md` carries
+
+```
+| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |
+```
+
+🟢 means `pnpm verify-d` passed. The email half does not exist:
+
+- no Brief email template or trigger — `apps/api/src/notifications/` has only
+  `sync-ready-email.trigger.ts` and `sync-failed-email.trigger.ts`
+- no digest key in `emailPrefs` — the contract carries `reminders`,
+  `syncComplete`, `weeklyReceipt` and nothing else
+- the cited evidence file, `brief.read-service.spec.ts`, tests the read
+  service and never touches email
+
+So the verification passed on the half that shipped, and the row now reads as
+though the whole decision did. Until this session the Pro paywall also sold it
+— *"8am daily, in-app or by email"* — which is a billed claim for a feature
+that cannot run. That copy is fixed in this branch; the log row is not, because
+amending a D-body is your call, not an agent's (CLAUDE.md §3).
+
+This is the second row in the same area that disagrees with the code. **D65**
+(*"Noise bulk archive: per-sender checkboxes always visible"*) is logged ⬜ Not
+started while `noise-archive-sheet.tsx`, `noise-archive-bar.stories.tsx` and
+`use-noise-archive.ts` all ship and the "Archive 38 senders" bar renders on
+`/brief`. And **D66** is now 🔵 Shipped under a title describing the
+weekday-only behaviour #635 retired. Three rows, one feature — worth a sweep
+(`/ct-class`) rather than three spot fixes.
+
+**How:** decide which of these you want, then amend the plan:
+
+1. Split D61 into the shipped in-app half and an unbuilt email half (a new
+   D-number), or demote the row to 🔵 and re-scope the D-body to in-app only.
+2. Decide whether the Brief email digest is still wanted at all. If it is, it
+   needs its own D and a ticket; if not, D61's body should stop describing it.
+3. Flip D65 to reflect what shipped, and correct D66's title so the log stops
+   asserting retired behaviour.
+
+**Verifies by:** `IMPLEMENTATION-LOG.md` rows for D61/D65/D66 match the code,
+and no product surface claims email delivery until something sends one.
+
+**Status:** Done 2026-08-26 — founder answered all three on 2026-08-26.
+
+**Resolution.** The email digest is **withdrawn**, not deferred: D61 now
+covers the in-app channel only, and a digest — if ever wanted — is a new
+D-number with its own row rather than a second clause on this one. D65 is
+recorded 🟢 against the noise-archive tests that were always there; its
+shipping PR is not recoverable (the file’s first-add commit is a
+1,746-file history import), so nothing was guessed. D66’s title now says
+RETIRED instead of describing the weekday-only behaviour #635 deleted.
+Plan markers: [REVERSAL 2026-08-26 on D61], [PATCH 2026-08-26 on D63],
+[PATCH 2026-08-26 on D62].
+
 
 ### 2026-07-28 — Resolve the two paused subscriptions on the founder workspace
 **Source:** launch audit B7 / PR #417 investigation

@@ -1,4 +1,5 @@
 import {
+  deriveSenderId,
   mailboxAccounts,
   mailMessages,
   providerSyncState,
@@ -272,6 +273,48 @@ describe('IncrementalSyncWorker', () => {
    * Codex review of PR #471 caught this: without the guard, a systemic
    * refusal would permanently drop live mail AND report a clean run.
    */
+  it('sender id — the incremental writer derives the SAME id the rebuild will', async () => {
+    // Cross-writer agreement, not decoration. `senders.id` is the handle
+    // the frontend holds, and `InitialSyncWorker.buildSenderIndex`
+    // rebuilds the index by delete + reinsert. If THIS writer minted a
+    // different id — a `defaultRandom()` one, or a differently-derived
+    // one — every sender it created would still be reissued a new handle
+    // by the next rebuild, and the 2026-08-25 404s would come straight
+    // back for exactly the senders that arrived since the last sync.
+    //
+    // Pinning both writers to `deriveSenderId` is what makes them agree;
+    // asserting the formula here (rather than just "the id is stable")
+    // is what makes a future divergence fail in the diverging writer's
+    // own suite.
+    const meta = makeMetadata(
+      'm-derive',
+      'thread-derive',
+      'derive@example.com',
+      ['INBOX'],
+      Date.UTC(2026, 5, 2),
+    );
+    const records: GmailHistoryRecord[] = [
+      { kind: 'added', messageId: 'm-derive', threadId: 'thread-derive', labelIds: ['INBOX'] },
+    ];
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records, historyId: '1500' } }],
+      new Map([['m-derive', meta]]),
+    );
+
+    await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    const [row] = await db
+      .select({ id: senders.id, senderKey: senders.senderKey })
+      .from(senders)
+      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+    expect(row).toBeDefined();
+    expect(row!.id).toBe(deriveSenderId(mailboxAccountId, row!.senderKey));
+  });
+
   it('does not advance the history cursor when most new messages are unreadable', async () => {
     const ids = Array.from({ length: 12 }, (_, i) => `m-${String(i).padStart(3, '0')}`);
     const records: GmailHistoryRecord[] = ids.map((id) => ({

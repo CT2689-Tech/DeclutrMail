@@ -1,6 +1,7 @@
 import {
   actionJobs,
   automationRules,
+  deriveSenderId,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   mailMessages,
@@ -527,6 +528,41 @@ describe('InitialSyncWorker', () => {
     const after = await db.select().from(senders);
     expect(after.length).toBe(3);
     expect(after.every((s) => s.totalReceived === 4)).toBe(true);
+  });
+
+  it('sender id — the handle survives a rebuild, so an already-open page never 404s', async () => {
+    // Prod 2026-08-25. `senders.id` is what the frontend holds:
+    // `/senders/:id` URLs, TanStack query keys, selection sets, and the
+    // `senderId` an open confirm modal sends to
+    // `GET /api/actions/preview`. `buildSenderIndex` rebuilds via
+    // delete + reinsert, so a `defaultRandom()` id reissued every
+    // handle on every rebuild — an initial sync that committed at
+    // 08:05:17 turned a preview that returned 200 at 08:03:52 into a
+    // 404 at 08:06:21 for the SAME sender, and the modal's "Retry
+    // preview" button refetched the same dead id forever.
+    const client = new FakeGmailClient(makeMessages(12, 3));
+    const worker = new InitialSyncWorker({ db, gmailAccess: accessFor(client) });
+
+    await worker.processJob({ mailboxAccountId }, CTX);
+
+    const before = await db.select().from(senders);
+    expect(before.length).toBe(3);
+    const handles = new Map(before.map((s) => [s.senderKey, s.id]));
+
+    // Re-run: every message is already stored, so the fetch loop is a
+    // no-op and `buildSenderIndex` performs the delete + reinsert.
+    await resetToQueued(db, mailboxAccountId);
+    await worker.processJob({ mailboxAccountId }, CTX);
+
+    const after = await db.select().from(senders);
+    expect(after.length).toBe(3);
+    for (const row of after) {
+      expect(row.id).toBe(handles.get(row.senderKey));
+      // Pin the FORMULA, not just the stability: the incremental
+      // writer's suite makes this same assertion, so the two writers
+      // cannot drift apart without one of them going red.
+      expect(row.id).toBe(deriveSenderId(mailboxAccountId, row.senderKey));
+    }
   });
 
   it('outbound exclusion — SENT messages land in mail_messages but never index a sender', async () => {

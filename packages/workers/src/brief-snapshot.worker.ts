@@ -12,6 +12,7 @@ import {
   users,
   workspaces,
 } from '@declutrmail/db';
+import { type StoredUnsubscribeMethod, unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 import { parseBriefPrefs } from '@declutrmail/shared/contracts';
 import { hasCapability, TIER_IDS } from '@declutrmail/shared/entitlements';
 
@@ -94,11 +95,6 @@ export interface BriefSnapshotResult {
   briefsGenerated: number;
   /** Subset of `briefsGenerated` that landed an empty-section brief (D70). */
   emptyBriefs: number;
-  /**
-   * D66 — mailboxes skipped because the run date is a Saturday/Sunday
-   * and the owning user has not opted in to weekend Briefs.
-   */
-  weekendSkips: number;
   /** Wall-clock ms. */
   durationMs: number;
 }
@@ -133,6 +129,28 @@ export interface BriefSnapshotDeps {
 }
 
 /** D63 — Reply section cap (re-export local alias for clarity). */
+/**
+ * True when the sender publishes a working unsubscribe channel of any
+ * kind — one-click or mailto.
+ *
+ * Delegates to `unsubscribeCapabilityOf`, the sanctioned D248 reader,
+ * rather than testing the column directly. That module exists because
+ * NULL and `'none'` are different facts — NULL means the sender index
+ * has not looked yet, `'none'` means it looked and found nothing — and
+ * every surface that collapses them asserts we checked when we did not.
+ * Both resolve to `unknown` here, so an unindexed sender keeps the
+ * conservative Reply default and re-buckets once the index lands.
+ *
+ * Not `isExecutableUnsubscribe`: that is one-click only, because it
+ * answers "can DeclutrMail send this for the user". The question here
+ * is different — "is this a list the user could leave", which a mailto
+ * sender also is.
+ */
+function hasUnsubscribeChannel(method: StoredUnsubscribeMethod | undefined): boolean {
+  const capability = unsubscribeCapabilityOf(method);
+  return capability === 'one_click' || capability === 'mailto';
+}
+
 const REPLY_MAX = BRIEF_REPLY_MAX;
 /** D63 — FYI section cap. */
 const FYI_MAX = BRIEF_FYI_MAX;
@@ -141,8 +159,8 @@ const FYI_MAX = BRIEF_FYI_MAX;
  * BriefSnapshotWorker (D61, D62, D63, D67, D69, D70).
  *
  * Hourly cron (`cronPolicy` per D203/D225) that materializes the
- * static 8am Brief snapshot for every mailbox whose local 8am hour
- * has just passed. Idempotency key
+ * static daily Brief snapshot for every mailbox whose configured local
+ * delivery hour (D64, 8am by default) has just passed. Idempotency key
  * `BriefSnapshotWorker:${scheduledAtMinute}` plus the D69 UNIQUE on
  * `(mailbox_account_id, run_date_local)` make the worker fully
  * re-runnable: re-runs within the same local-date for the same mailbox
@@ -152,10 +170,12 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *
  * What the worker DOES:
  *   - Iterates every mailbox in `mailbox_accounts` (joined to the
- *     owning user's preferences + timezone for the D64/D66 gates).
- *   - D66 schedule: on Saturday/Sunday run dates, skips mailboxes
- *     whose user has not opted in (`preferences.briefPrefs.weekends`)
- *     — Mon–Fri is the default schedule; weekends are opt-in.
+ *     owning user's preferences + timezone for the D64 gate).
+ *   - D64 schedule: EVERY local day, at `preferences.briefPrefs.hour`
+ *     (8am default). The weekday-only schedule is retired — D66's
+ *     Mon–Fri default meant Saturday's Brief never ran, so Friday's
+ *     mail, the heaviest weekday, was the one day nothing ever
+ *     summarized (founder decision 2026-08-25).
  *   - For each mailbox, checks whether today's Brief already exists
  *     (D69 frozen-once invariant) and skips if so.
  *   - Queries yesterday's INBOUND `mail_messages` metadata.
@@ -179,10 +199,11 @@ const FYI_MAX = BRIEF_FYI_MAX;
  *     empty.
  *
  * What the worker does NOT do (deferred):
- *   - User-configurable delivery minutes; D246 fixes generation at
- *     08:00 local and falls back to UTC for absent/invalid timezones.
- *   - D61 email digest delivery — separate worker that watches for
- *     `email_sent_at IS NULL` rows from users opted in.
+ *   - Sub-hour delivery slots. The cron ticks hourly, so an hour is the
+ *     finest slot generation can honour; D64's "any 30-min slot" would
+ *     need a 30-minute cron (FOUNDER-FOLLOWUPS 2026-08-25).
+ *   - Email delivery of the Brief. D61's digest half was never built:
+ *     no template, no trigger, no preference key exists for it.
  * Privacy (D7, D228): every read is metadata. The worker touches
  * `mail_messages.{provider_message_id, provider_thread_id, sender_key,
  * subject, internal_date, is_outbound}` — every column is allowlisted.
@@ -251,8 +272,8 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       .select({
         id: mailboxAccounts.id,
         workspaceId: mailboxAccounts.workspaceId,
-        // D66 — the owning user's preference bag; `parseBriefPrefs`
-        // extracts the weekend opt-in with a safe default (false).
+        // D64 — the owning user's preference bag; `parseBriefPrefs`
+        // extracts the delivery hour with a safe default (8am local).
         preferences: users.preferences,
         timezone: users.timezone,
       })
@@ -264,7 +285,6 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     let briefsGenerated = 0;
     let emptyBriefs = 0;
     let mailboxesFailed = 0;
-    let weekendSkips = 0;
 
     // Bounded-concurrency fan-out — serial `await` per mailbox would
     // take O(N × ms) → many minutes at 10K mailboxes. The limiter
@@ -283,19 +303,18 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     await Promise.all(
       mailboxes.map((mb) =>
         limiter(async () => {
-          const localWindow = resolveBriefLocalWindow(now, mb.timezone);
-          // The hourly cron is catch-up-safe: before local 08:00 it writes
-          // nothing; any later tick can materialize the same local day's row.
+          // D64 — the gate is the user's configured local hour (8am by
+          // default). The hourly cron is catch-up-safe: before that hour
+          // it writes nothing; any later tick can materialize the same
+          // local day's row. Lowering the hour mid-day therefore
+          // self-heals on the next tick, and raising it past the current
+          // hour cannot un-write a Brief already frozen for today.
+          const localWindow = resolveBriefLocalWindow(
+            now,
+            mb.timezone,
+            parseBriefPrefs(mb.preferences).hour,
+          );
           if (!localWindow.ready) return;
-
-          // D66 weekend gate — Mon–Fri default; Sat/Sun generate only
-          // for opted-in users. Skipping writes NO row, so an opt-in
-          // flipped later the same day self-heals on the next hourly
-          // tick (the D69 existence check finds nothing to freeze).
-          if (localWindow.weekend && !parseBriefPrefs(mb.preferences).weekends) {
-            weekendSkips += 1;
-            return;
-          }
           try {
             const generated = await this.snapshotForMailbox(
               mb.id,
@@ -343,7 +362,6 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
       mailboxesFailed,
       briefsGenerated,
       emptyBriefs,
-      weekendSkips,
       durationMs: Date.now() - startedAt,
     };
   }
@@ -447,6 +465,13 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
         replyCount: payload.reply.length,
         fyiCount: payload.fyi.length,
         noiseGroupCount: payload.noise.length,
+        // Pre-cap totals alongside the post-cap counts. `replyCount` is
+        // structurally capped at 6, so on its own it can never answer
+        // "how often does the D63 cap actually bite" — the question that
+        // decides whether 6 and 4 are the right constants. Without these
+        // the answer needs a JSONB scan of brief_runs.
+        replyTotal: payload.replyTotal,
+        fyiTotal: payload.fyiTotal,
       }),
     );
 
@@ -546,6 +571,7 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           email: senders.email,
           gmailCategory: senders.gmailCategory,
           wroteToCount: senders.wroteToCount,
+          unsubscribeMethod: senders.unsubscribeMethod,
         })
         .from(senders)
         .where(
@@ -578,6 +604,17 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     // input downstream.
     const replyCandidates: BriefItem[] = [];
     const fyiCandidates: BriefItem[] = [];
+    /**
+     * FYI items the ENGINE chose (`later`), as opposed to the ones the
+     * unsubscribe heuristic routed here. D63 caps FYI at 4, and before
+     * the heuristic existed every candidate was an engine decision, so
+     * the cap only ever chose between peers. Now an unscreened
+     * promotion with a starred message outranks an engine `later` on
+     * observed priority alone and pushes it off the Brief. An engine
+     * verdict is a decision about the sender; the heuristic is a guess
+     * about the sender. The decision wins.
+     */
+    const engineFyiKeys = new Set<string>();
     const noise: BriefSenderGroup[] = [];
     const snippetBySenderKey = new Map<string, string>();
 
@@ -617,15 +654,35 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           });
           break;
         case 'later':
+          engineFyiKeys.add(bucket.senderKey);
           fyiCandidates.push(item);
           break;
         case 'keep':
+          // An explicit engine decision to keep. Always a reply
+          // candidate — the engine has judged this sender and said so.
+          replyCandidates.push(item);
+          break;
         case null:
         default:
-          // No verdict OR keep verdict → reply candidate. Conservative
-          // (keep the user in the loop) per D63's "items genuinely
-          // needing human response".
-          replyCandidates.push(item);
+          // Unscreened: the engine has produced no verdict for this
+          // sender yet. D63 defines Reply as "items genuinely needing
+          // human response", and a sender that publishes a working
+          // unsubscribe channel is a list you can leave, not a
+          // correspondent waiting on you — so it does not belong there.
+          //
+          // It goes to FYI rather than Noise on purpose: Noise is the
+          // D65 bulk-archive target, and offering to archive mail the
+          // engine has never judged is a stronger claim than we have
+          // earned. FYI says "this arrived, it is not waiting on you",
+          // which is exactly what is known.
+          //
+          // Everything else stays a reply candidate, which keeps the
+          // conservative default for the senders we cannot characterize.
+          if (hasUnsubscribeChannel(identity?.unsubscribeMethod)) {
+            fyiCandidates.push(item);
+          } else {
+            replyCandidates.push(item);
+          }
           break;
       }
     }
@@ -635,7 +692,14 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     // items survive the cap. Manual safety state never changes Brief
     // categorization or priority.
     const reply = sortObservedPriority(replyCandidates, priorityBySenderKey).slice(0, REPLY_MAX);
-    const fyi = sortObservedPriority(fyiCandidates, priorityBySenderKey).slice(0, FYI_MAX);
+    // Engine `later` verdicts take the FYI slots first; the unsubscribe
+    // heuristic fills what is left. Within each group observed priority
+    // still decides, so this only changes who survives the cap — never
+    // the order among peers.
+    const fyi = sortEngineFirst(
+      sortObservedPriority(fyiCandidates, priorityBySenderKey),
+      engineFyiKeys,
+    ).slice(0, FYI_MAX);
 
     // D62 — narrative composition. The LLM path is preferred when wired
     // and successful; on any failure (null return, timeout, throw) the
@@ -651,7 +715,18 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
     });
 
     return {
-      payload: { reply, fyi, noise, narrative },
+      payload: {
+        reply,
+        fyi,
+        noise,
+        narrative,
+        // Pre-cap counts, so the screen can say "6 of 8" instead of
+        // "6 of 6" — the cap restating itself as a fact about the day.
+        // Captured here because the slice above is where the dropped
+        // items stop existing; nothing downstream can recover them.
+        replyTotal: replyCandidates.length,
+        fyiTotal: fyiCandidates.length,
+      },
       generatedBy,
     };
   }
@@ -690,9 +765,24 @@ export class BriefSnapshotWorker extends BaseDeclutrWorker<
           if (trimmed.length > 0) {
             return { narrative: trimmed, generatedBy: 'llm_haiku' };
           }
-          // LLM returned an empty/whitespace-only string — treat as
-          // failure and fall through. Empty narrative would be a worse
-          // UX than the template summary.
+          // LLM returned an empty/whitespace-only string. Still a
+          // failure, but the fall-through is no longer a recovery: the
+          // template returns '' on any day with mail, so this branch now
+          // produces exactly the empty narrative it used to avoid.
+          //
+          // That makes the signal load-bearing. Without it a mailbox
+          // whose adapter returns empty every run is byte-identical to
+          // one where no LLM was ever wired — same empty narrative, same
+          // `generated_by: 'template'`, same screen. Its siblings below
+          // each emit; this one used to be the only silent failure mode.
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              kind: 'brief.llm_empty',
+              worker: this.workerName,
+              mailboxAccountId: input.mailboxAccountId,
+            }),
+          );
         }
         if (raced.kind === 'timeout') {
           console.warn(
@@ -782,6 +872,24 @@ function buildNarrativeInput(input: {
  * Stable-sort a capped section by observed importance. Equal-scored
  * items retain arrival order because modern JS sort is stable.
  */
+/**
+ * Stable partition: engine-chosen items first, heuristic ones after,
+ * each keeping the order it arrived in.
+ *
+ * `Array#sort` is stable in every runtime this ships on (ES2019), so
+ * feeding it an already-priority-sorted list preserves that order
+ * inside each group — which is why this runs AFTER the priority sort
+ * rather than folding into it.
+ */
+function sortEngineFirst<T extends { senderKey: string }>(
+  items: T[],
+  engineKeys: ReadonlySet<string>,
+): T[] {
+  return [...items].sort(
+    (a, b) => Number(engineKeys.has(b.senderKey)) - Number(engineKeys.has(a.senderKey)),
+  );
+}
+
 function sortObservedPriority<T extends { senderKey: string }>(
   items: T[],
   priorityBySenderKey: ReadonlyMap<string, number>,

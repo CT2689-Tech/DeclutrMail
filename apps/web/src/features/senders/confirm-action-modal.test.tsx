@@ -1323,3 +1323,195 @@ describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () =>
     );
   });
 });
+
+/**
+ * Founder report 2026-08-25. A Later preview on `ealerts.bankofamerica.com`
+ * read "0 emails currently match" under a strip reading "200 in last 90d ·
+ * 6,668 received", and the only way to find out where the mail actually
+ * was, was to open Gmail.
+ *
+ * `mailLocationCopy` has its own suite in @declutrmail/shared. These cover
+ * the JOIN — which verbs get the line, which suppress it, and what it is
+ * handed — because a green producer suite and a mocked consumer can both
+ * pass while the wiring between them is wrong (CLAUDE.md §8).
+ */
+describe('ConfirmActionModal — where the sender’s mail actually is', () => {
+  /** Coherent counts: received ⊇ all-mail ⊇ inbox. */
+  const coherent: CompositeActionPreviewResult = {
+    ...livePreview,
+    counts: { ...buckets, all: 4 },
+    allMail: { counts: { ...allMailBuckets, all: 977 }, recentMessages: subjects },
+  };
+  const coherentSender = makeSender({ totalReceived: 1000 });
+
+  it('partitions the mail on Later, summing to the "received" figure on the strip', () => {
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Later', senders: [coherentSender] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={coherent}
+      />,
+    );
+    // 4 in inbox + 973 elsewhere + 23 binned = 1,000 received.
+    expect(screen.getByTestId('mail-location-line')).toHaveTextContent(
+      'Where this email is now: 4 in your inbox · 973 emails elsewhere in Gmail ' +
+        '(archived or under a label) · 23 in Trash or Spam.',
+    );
+  });
+
+  it('says it on Archive too — the question is not Delete-specific', () => {
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Archive', senders: [coherentSender] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={coherent}
+      />,
+    );
+    expect(screen.getByTestId('mail-location-line')).toBeInTheDocument();
+  });
+
+  it('stays silent against an API with no all-mail block (deploy skew)', () => {
+    // `livePreview.allMail` is null. Half a split is a number with an
+    // implied denominator — worse than no line at all.
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.queryByTestId('mail-location-line')).not.toBeInTheDocument();
+  });
+
+  it('yields to Delete’s reach hint rather than printing the same figure twice', () => {
+    // ADR-0028 gives Delete chips that already name the archived count
+    // and offer the control. Two lines, one number, a line apart.
+    const emptyInbox: CompositeActionPreviewResult = {
+      ...coherent,
+      counts: { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+    };
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders: [coherentSender] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={emptyInbox}
+      />,
+    );
+    expect(screen.getByText(/Switch to "Inbox \+ archived"/)).toBeInTheDocument();
+    expect(screen.queryByTestId('mail-location-line')).not.toBeInTheDocument();
+  });
+
+  it('stays silent on a bulk sheet, which has no per-sender all-mail set to split', () => {
+    const second = makeSender({ id: 'sender-2', displayName: 'Beta Digest', email: 'b@beta.com' });
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Archive', senders: [coherentSender, second] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{
+          data: {
+            senders: [
+              {
+                senderId: coherentSender.id,
+                name: coherentSender.name,
+                counts: buckets,
+                protected: false,
+              },
+              { senderId: second.id, name: second.name, counts: buckets, protected: false },
+            ],
+            totals: buckets,
+            protectedCount: 0,
+          },
+          loading: false,
+          error: false,
+        }}
+      />,
+    );
+    expect(screen.queryByTestId('mail-location-line')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Prod 2026-08-25: an initial sync reissued every `senders.id`, so the
+ * preview 404'd for ids the open page still held and "Retry preview"
+ * refetched the same dead id forever. The id churn is fixed at the
+ * source (`deriveSenderId`); this is the other half — a retry control
+ * must only appear where retrying can change the outcome.
+ */
+describe('ConfirmActionModal — a preview failure that retrying cannot fix', () => {
+  it('offers a way out instead of a retry that provably loops', () => {
+    const onRetryPreview = vi.fn();
+    const onRefreshSenders = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreviewError={true}
+        previewSenderGone={true}
+        onRetryPreview={onRetryPreview}
+        onRefreshSenders={onRefreshSenders}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: 'Retry preview' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh senders' }));
+    expect(onRefreshSenders).toHaveBeenCalledTimes(1);
+    expect(onRetryPreview).not.toHaveBeenCalled();
+  });
+
+  it('names the stale list as the cause, not a generic load failure', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreviewError={true}
+        previewSenderGone={true}
+        onRefreshSenders={() => {}}
+      />,
+    );
+    // Both surfaces carry it: the inline panel explains the cause, the
+    // footer states the consequence beside the locked confirm.
+    expect(screen.getAllByText(/no longer in this mailbox/)).toHaveLength(2);
+    expect(screen.getByText(/the list you are looking at is out of date/)).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn’t load a live preview/)).not.toBeInTheDocument();
+  });
+
+  it('still offers Retry preview for a failure that MIGHT clear on its own', () => {
+    // The mutual exclusion matters in both directions: a transient
+    // network failure keeps the retry it can actually recover from.
+    const onRetryPreview = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreviewError={true}
+        onRetryPreview={onRetryPreview}
+        onRefreshSenders={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Refresh senders' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry preview' }));
+    expect(onRetryPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps confirm locked in the gone state — nothing can be moved', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Later')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreviewError={true}
+        previewSenderGone={true}
+        onRefreshSenders={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Later/ })).toBeDisabled();
+  });
+});

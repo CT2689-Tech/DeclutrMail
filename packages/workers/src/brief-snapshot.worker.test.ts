@@ -56,6 +56,7 @@ async function seedMailbox(
   email = 'owner@example.com',
   timezone: string | null = null,
   tier: TierId = minimumTierForCapability('brief'),
+  preferences: Record<string, unknown> | null = null,
 ): Promise<{ workspaceId: string; mailboxAccountId: string }> {
   const [ws] = await db
     .insert(workspaces)
@@ -65,7 +66,7 @@ async function seedMailbox(
     });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email, timezone })
+    .values({ workspaceId: ws!.id, email, timezone, ...(preferences ? { preferences } : {}) })
     .returning({ id: users.id });
   const [mb] = await db
     .insert(mailboxAccounts)
@@ -86,6 +87,11 @@ interface SeedSenderInput {
   gmailCategory?: 'primary' | 'promotions';
   wroteToCount?: number;
   verdict?: 'keep' | 'archive' | 'unsubscribe' | 'later';
+  /**
+   * `undefined` leaves the column NULL, which is the real "sender index
+   * has not run yet" state (D248) — not a shortcut for "no channel".
+   */
+  unsubscribeMethod?: 'one_click' | 'mailto' | 'none';
 }
 
 async function seedSender(db: Db, mailboxAccountId: string, input: SeedSenderInput): Promise<void> {
@@ -99,6 +105,15 @@ async function seedSender(db: Db, mailboxAccountId: string, input: SeedSenderInp
     wroteToCount: input.wroteToCount ?? 0,
     firstSeenAt: new Date('2024-01-01T00:00:00Z'),
     lastSeenAt: NOW,
+    unsubscribeMethod: input.unsubscribeMethod,
+    // senders_unsub_method_url_aligned_chk: the URL shape must match
+    // the method, and must be NULL for 'none'/unset.
+    unsubscribeUrl:
+      input.unsubscribeMethod === 'one_click'
+        ? `https://unsub.example.com/${input.senderKey.slice(0, 6)}`
+        : input.unsubscribeMethod === 'mailto'
+          ? `mailto:unsub@${input.email.split('@')[1] ?? 'example.com'}`
+          : null,
   });
   if (input.verdict) {
     await db.insert(triageDecisions).values({
@@ -154,6 +169,8 @@ const KEY_BOSS = 'a'.repeat(64);
 const KEY_BANK = 'b'.repeat(64);
 const KEY_PROMO = 'c'.repeat(64);
 const KEY_NEWS = 'd'.repeat(64);
+const KEY_LIST = 'e'.repeat(64);
+const KEY_FRESH = 'f'.repeat(64);
 
 describe('BriefSnapshotWorker', () => {
   it('D7/D19 — an unentitled tier is never processed and never reaches the LLM', async () => {
@@ -300,18 +317,63 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.briefPayload.reply[0]!.subject).toBe('Inside local yesterday');
   });
 
-  it('D66 — applies the weekend preference using the mailbox local date', async () => {
+  it('D64 — generates on a Saturday, so Friday mail is never skipped', async () => {
     const db = await freshDb();
-    await seedMailbox(db, 'friday@example.com', 'America/Los_Angeles');
+    await seedMailbox(db, 'saturday@example.com', 'America/Los_Angeles');
 
-    // UTC Saturday, but still Friday after 08:00 in Los Angeles.
+    // 08:00 Saturday in Los Angeles — the run date is a LOCAL weekend
+    // day, covering Friday's mail. Under the retired D66 weekday
+    // schedule this mailbox was skipped and Friday was summarized by
+    // nothing, ever.
     const worker = new BriefSnapshotWorker({
       db: db as never,
-      now: () => new Date('2026-05-30T01:00:00Z'),
+      now: () => new Date('2026-05-30T15:00:00Z'),
     });
-    const result = await worker.processJob({ scheduledAtMinute: '2026-05-30T01:00' }, FAKE_CTX);
+    const result = await worker.processJob({ scheduledAtMinute: '2026-05-30T15:00' }, FAKE_CTX);
 
-    expect(result.weekendSkips).toBe(0);
+    expect(result.briefsGenerated).toBe(1);
+    const [row] = await db.select({ runDateLocal: briefRuns.runDateLocal }).from(briefRuns);
+    expect(row!.runDateLocal).toBe('2026-05-30');
+  });
+
+  it('D64 — waits for the configured delivery hour instead of 08:00', async () => {
+    const db = await freshDb();
+    await seedMailbox(db, 'evening@example.com', 'America/Los_Angeles', undefined, {
+      briefPrefs: { hour: 17 },
+    });
+
+    // 08:00 local: past the default gate, before this user's.
+    const morning = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T15:00:00Z'),
+    });
+    const early = await morning.processJob({ scheduledAtMinute: '2026-05-25T15:00' }, FAKE_CTX);
+    expect(early.briefsGenerated).toBe(0);
+
+    // 17:00 the same local day — the same run date now materializes.
+    const evening = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-26T00:00:00Z'),
+    });
+    const late = await evening.processJob({ scheduledAtMinute: '2026-05-26T00:00' }, FAKE_CTX);
+    expect(late.briefsGenerated).toBe(1);
+
+    const [row] = await db.select({ runDateLocal: briefRuns.runDateLocal }).from(briefRuns);
+    expect(row!.runDateLocal).toBe('2026-05-25');
+  });
+
+  it('D64 — a malformed stored hour falls back to 8am rather than stalling', async () => {
+    const db = await freshDb();
+    await seedMailbox(db, 'bad-pref@example.com', 'America/Los_Angeles', undefined, {
+      briefPrefs: { hour: 25 },
+    });
+
+    const worker = new BriefSnapshotWorker({
+      db: db as never,
+      now: () => new Date('2026-05-25T15:00:00Z'),
+    });
+    const result = await worker.processJob({ scheduledAtMinute: '2026-05-25T15:00' }, FAKE_CTX);
+
     expect(result.briefsGenerated).toBe(1);
   });
 
@@ -409,6 +471,183 @@ describe('BriefSnapshotWorker', () => {
     expect(row!.briefPayload.noise.map((r) => r.senderName).sort()).toEqual(['News', 'Promo']);
   });
 
+  it('D63 — an unscreened sender with an unsubscribe channel is FYI, not Reply', async () => {
+    // The defect this pins: with no triage verdict, EVERY sender fell to
+    // Reply, so the section headed "what actually needs you" filled with
+    // marketing. A list you can leave is not a correspondent.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    await seedSender(db, mailboxAccountId, {
+      email: 'deals@shop.example',
+      senderKey: KEY_LIST,
+      displayName: 'Shop',
+      unsubscribeMethod: 'one_click',
+    });
+    await seedSender(db, mailboxAccountId, {
+      email: 'list@news.example',
+      senderKey: KEY_NEWS,
+      displayName: 'Newsletter',
+      unsubscribeMethod: 'mailto',
+    });
+    // No channel at all, still unscreened → stays a reply candidate.
+    await seedSender(db, mailboxAccountId, {
+      email: 'human@example.com',
+      senderKey: KEY_BOSS,
+      displayName: 'Human',
+      unsubscribeMethod: 'none',
+    });
+
+    for (const [key, subject] of [
+      [KEY_LIST, 'Sale ends tonight'],
+      [KEY_NEWS, 'Issue 42'],
+      [KEY_BOSS, 'Are you free Thursday?'],
+    ] as const) {
+      await seedMessage(db, {
+        mailboxAccountId,
+        senderKey: key,
+        subject,
+        internalDate: YESTERDAY_AT(10),
+      });
+    }
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    expect(row!.briefPayload.reply.map((r) => r.senderName)).toEqual(['Human']);
+    expect(row!.briefPayload.fyi.map((r) => r.senderName).sort()).toEqual(['Newsletter', 'Shop']);
+    // Never Noise — the engine has not judged these, and Noise is the
+    // D65 bulk-archive target.
+    expect(row!.briefPayload.noise).toEqual([]);
+  });
+
+  it('D63/D248 — a not-yet-indexed sender stays in Reply rather than being read as "no channel"', async () => {
+    // `senders.unsubscribe_method` is NULL until building_sender_index
+    // runs. Reading NULL as "no unsubscribe link" is correct here by
+    // accident; reading it as "has one" would empty Reply on the first
+    // Brief after a connect. This pins the conservative direction.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    await seedSender(db, mailboxAccountId, {
+      email: 'unindexed@example.com',
+      senderKey: KEY_FRESH,
+      displayName: 'Not Yet Indexed',
+      // unsubscribeMethod deliberately omitted → column is NULL
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_FRESH,
+      subject: 'Could be anything',
+      internalDate: YESTERDAY_AT(9),
+    });
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    expect(row!.briefPayload.reply.map((r) => r.senderName)).toEqual(['Not Yet Indexed']);
+    expect(row!.briefPayload.fyi).toEqual([]);
+  });
+
+  it('D63 — an engine `later` verdict outranks a heuristic FYI item in the cap', async () => {
+    // Before the unsubscribe heuristic, every FYI candidate was an
+    // engine decision and the cap only chose between peers. Now an
+    // unscreened promotion carrying a STARRED message scores higher on
+    // observed priority than a plain engine `later` — and would push a
+    // real decision off the Brief. Provenance has to win the cap.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    // 4 engine `later` senders — exactly the FYI cap — all low priority.
+    const engineKeys = [KEY_BANK, KEY_BOSS, KEY_NEWS, KEY_FRESH];
+    for (const [i, key] of engineKeys.entries()) {
+      await seedSender(db, mailboxAccountId, {
+        email: `later${i}@example.com`,
+        senderKey: key,
+        displayName: `Engine ${i}`,
+        verdict: 'later',
+      });
+      await seedMessage(db, {
+        mailboxAccountId,
+        senderKey: key,
+        subject: `Engine later ${i}`,
+        internalDate: YESTERDAY_AT(9),
+      });
+    }
+
+    // One unscreened bulk sender that outscores all of them.
+    await seedSender(db, mailboxAccountId, {
+      email: 'loud@shop.example',
+      senderKey: KEY_LIST,
+      displayName: 'Loud Shop',
+      unsubscribeMethod: 'one_click',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_LIST,
+      subject: 'Starred and important, but still a shop',
+      internalDate: YESTERDAY_AT(10),
+      labelIds: ['INBOX', 'IMPORTANT', 'STARRED'],
+    });
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    const names = row!.briefPayload.fyi.map((r) => r.senderName);
+    expect(names).toHaveLength(4);
+    expect(names).not.toContain('Loud Shop');
+    expect(names.every((n) => n.startsWith('Engine'))).toBe(true);
+    // It was a candidate — the total still counts it.
+    expect(row!.briefPayload.fyiTotal).toBe(5);
+  });
+
+  it('D63 — an explicit keep verdict wins over the unsubscribe channel', async () => {
+    // Plenty of real correspondents send from list infrastructure. Once
+    // the engine has said "keep", that judgment outranks the heuristic.
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+
+    await seedSender(db, mailboxAccountId, {
+      email: 'founder@startup.example',
+      senderKey: KEY_LIST,
+      displayName: 'Someone I Reply To',
+      unsubscribeMethod: 'one_click',
+      verdict: 'keep',
+    });
+    await seedMessage(db, {
+      mailboxAccountId,
+      senderKey: KEY_LIST,
+      subject: 'Re: our call',
+      internalDate: YESTERDAY_AT(10),
+    });
+
+    const worker = new BriefSnapshotWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ scheduledAtMinute: briefSnapshotScheduledAtMinute(NOW) }, FAKE_CTX);
+
+    const [row] = await db
+      .select({ briefPayload: briefRuns.briefPayload })
+      .from(briefRuns)
+      .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
+
+    expect(row!.briefPayload.reply.map((r) => r.senderName)).toEqual(['Someone I Reply To']);
+    expect(row!.briefPayload.fyi).toEqual([]);
+  });
+
   it('Gmail importance does not override the engine section', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);
@@ -470,6 +709,10 @@ describe('BriefSnapshotWorker', () => {
       .from(briefRuns)
       .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
     expect(row!.briefPayload.reply).toHaveLength(6);
+    // The cap dropped 2 of the 8 candidates. Without this the payload
+    // would carry no trace of them, and the screen could only render
+    // "6 of 6" — a constant describing itself as a fact about the day.
+    expect(row!.briefPayload.replyTotal).toBe(8);
     expect(
       row!.briefPayload.reply
         .slice(0, 2)
@@ -963,8 +1206,11 @@ describe('BriefSnapshotWorker', () => {
       .from(briefRuns)
       .where(eq(briefRuns.mailboxAccountId, mailboxAccountId));
     expect(row!.generatedBy).toBe('template');
-    // Template narrative — single-reply, single-message phrasing.
-    expect(row!.briefPayload.narrative).toBe('1 email needs a reply.');
+    // The template no longer restates counts the section headers
+    // already carry — it returns nothing, and the Brief screen renders
+    // no narrative block. Provenance still shows via generatedBy above,
+    // which surfaces as the "Standard summary" marker.
+    expect(row!.briefPayload.narrative).toBe('');
   });
 
   it('D62 — LLM throw is caught and falls back to template (no throws contract)', async () => {

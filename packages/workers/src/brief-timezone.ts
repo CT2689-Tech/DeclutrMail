@@ -1,4 +1,4 @@
-const BRIEF_LOCAL_HOUR = 8;
+import { BRIEF_DEFAULT_HOUR } from '@declutrmail/shared/contracts';
 
 interface LocalDateParts {
   year: number;
@@ -15,17 +15,26 @@ export interface BriefLocalWindow {
   previousDayStart: Date;
   todayStart: Date;
   ready: boolean;
-  weekend: boolean;
 }
 
 /**
  * Resolve one mailbox's D64 generation gate and previous-local-day window.
- * Invalid or absent zones deliberately fall back to UTC so one bad preference
- * cannot stop the global cron pass.
+ *
+ * `deliveryHour` is the user's configured local hour (0-23,
+ * `preferences.briefPrefs.hour`). Invalid or absent zones deliberately
+ * fall back to UTC, and an out-of-range hour falls back to the 8am
+ * default, so one bad preference cannot stop the global cron pass —
+ * an unclamped 25 would gate `ready` false forever and stall that
+ * mailbox's Brief in silence.
+ *
+ * There is no weekday gate: the Brief generates every local day (D66
+ * retired 2026-08-25, founder). A day with no inbound mail still
+ * writes the D70 empty brief, which costs no LLM call.
  */
 export function resolveBriefLocalWindow(
   now: Date,
   candidateTimeZone: string | null,
+  deliveryHour: number,
 ): BriefLocalWindow {
   const timeZone = validTimeZoneOrUtc(candidateTimeZone);
   const local = partsInTimeZone(now, timeZone);
@@ -37,9 +46,14 @@ export function resolveBriefLocalWindow(
     runDateLocal,
     previousDayStart: localMidnightToInstant(previousLocalDate, timeZone),
     todayStart: localMidnightToInstant(local, timeZone),
-    ready: local.hour >= BRIEF_LOCAL_HOUR,
-    weekend: isWeekend(local),
+    ready: local.hour >= validDeliveryHourOrDefault(deliveryHour),
   };
+}
+
+/** Clamp a stored hour to a usable gate; anything else means 8am. */
+function validDeliveryHourOrDefault(candidate: number): number {
+  if (!Number.isInteger(candidate) || candidate < 0 || candidate > 23) return BRIEF_DEFAULT_HOUR;
+  return candidate;
 }
 
 export function validTimeZoneOrUtc(candidate: string | null | undefined): string {
@@ -130,9 +144,4 @@ function isoDate(date: Pick<LocalDateParts, 'year' | 'month' | 'day'>): string {
   return `${date.year.toString().padStart(4, '0')}-${date.month
     .toString()
     .padStart(2, '0')}-${date.day.toString().padStart(2, '0')}`;
-}
-
-function isWeekend(date: Pick<LocalDateParts, 'year' | 'month' | 'day'>): boolean {
-  const day = new Date(Date.UTC(date.year, date.month - 1, date.day)).getUTCDay();
-  return day === 0 || day === 6;
 }

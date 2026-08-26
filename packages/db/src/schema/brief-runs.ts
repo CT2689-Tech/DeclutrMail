@@ -127,6 +127,20 @@ export interface BriefPayload {
    * 'template').
    */
   narrative: string;
+  /**
+   * How many Reply candidates existed BEFORE the D63 cap, and likewise
+   * for FYI. Without these the screen could only render "6 of 6" — the
+   * cap describing itself as if it were a fact about the day — and the
+   * narrative could never know a seventh urgent item had been dropped,
+   * because the worker discards it before either sees the payload.
+   *
+   * Optional: Briefs are frozen once written (D69), so rows generated
+   * before this field existed keep their shape. A missing value means
+   * "no truncation information", and the consumer falls back to showing
+   * the plain count rather than inventing one.
+   */
+  replyTotal?: number;
+  fyiTotal?: number;
 }
 
 export const briefRuns = pgTable(

@@ -5,10 +5,12 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Button, Card, ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import type { ToastTone } from '@declutrmail/shared';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
+import { useTier } from '@/features/auth/api/use-tier';
 import { AccountDeletionSection } from '@/features/account-deletion/account-deletion-section';
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import {
@@ -23,11 +25,13 @@ import { track } from '@/lib/posthog';
 import {
   useMeSettings,
   useUpdateActionSheetPrefs,
+  useUpdateBriefPrefs,
   useUpdateEmailPrefs,
 } from '../api/use-me-settings';
 import { useMailboxesHealth, type MailboxHealth } from '../api/use-mailbox-health';
 import { VerbTourDialog } from '@/features/tour/verb-tour';
 import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-sheet-prefs-card';
+import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
 import { VerbTourCard } from './verb-tour-card';
@@ -182,6 +186,7 @@ export function SettingsScreen({
   const settings = useMeSettings();
   const updateSheetPrefs = useUpdateActionSheetPrefs('settings');
   const updateEmailPrefs = useUpdateEmailPrefs();
+  const updateBriefPrefs = useUpdateBriefPrefs();
   const billing = useBillingSubscription();
   const queriedHealthById = useMailboxesHealth(me.mailboxes);
   const healthById = Object.fromEntries(
@@ -290,8 +295,32 @@ export function SettingsScreen({
       ? { kind: 'error', onRetry: () => void settings.refetch() }
       : { kind: 'ready', prefs: settings.data.emailPrefs };
 
+  const briefPrefsState: BriefPrefsCardState = settings.isPending
+    ? { kind: 'loading' }
+    : settings.isError
+      ? { kind: 'error', onRetry: () => void settings.refetch() }
+      : // The read is typed, not runtime-validated, so an API that
+        // predates this key returns a payload TypeScript still accepts.
+        // Falling back to the server's own default keeps Settings —
+        // including account deletion and data export — reachable;
+        // reading `.hour` off an absent slice would throw and take the
+        // whole screen with it (the 2026-07-09 whole-screen class).
+        { kind: 'ready', prefs: settings.data.briefPrefs ?? DEFAULT_BRIEF_PREFS };
+
   const tier = billing.data?.tier ?? null;
   const manifestTier = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier] : null;
+  // The card configures a Brief this workspace only receives on an
+  // entitled tier. Under-tier settings would be a control with no
+  // effect; /brief already carries the upgrade path, so nothing is
+  // hidden from someone who wants the feature.
+  //
+  // Keyed on `useTier()` (i.e. `/api/auth/me`), NOT the billing read
+  // above: `GET /api/billing/subscription` 503s BILLING_DISABLED while
+  // billing is dark, which is the CURRENT production posture. Reading
+  // the tier from there hid this card from every entitled workspace and
+  // rendered clean in tests, whose fixture always answers that call 200.
+  const { tier: entitledTier } = useTier();
+  const briefUnlocked = hasCapability(entitledTier, 'brief');
 
   function connectMailbox(reconnectMailboxId?: string) {
     startMailboxConnect(reconnectMailboxId);
@@ -428,6 +457,16 @@ export function SettingsScreen({
             );
           }}
         />
+
+        {briefUnlocked && (
+          <BriefPrefsCard
+            state={briefPrefsState}
+            timezone={me.user.timezone}
+            pending={updateBriefPrefs.isPending}
+            saveFailed={updateBriefPrefs.isError}
+            onChange={(hour) => updateBriefPrefs.mutate({ hour })}
+          />
+        )}
 
         <SectionLabel id="autopilot">Autopilot</SectionLabel>
         <LinkCard
