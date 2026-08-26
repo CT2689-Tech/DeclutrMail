@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-246 decisions — ⬜ Not started 74 · 🔵 Shipped 114 · 🟢 Verified 55 · 🟡 In progress 1 · 🚫 Retired 2
+246 decisions — ⬜ Not started 73 · 🔵 Shipped 114 · 🟢 Verified 56 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -109,12 +109,12 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D58 | Undo affordance: **Inline "Undo" when in window; greyed "Undo expired" tooltip when out | 🟢 | #33 | apps/api/src/undo/undo.service.spec.ts |  |
 | D59 | Stats header: **Minimalist single-line summary | ⬜ |  |  |  |
 | D60 | Mobile Activity: **Vertical card list + bottom-sheet filter drawer | 🔵 | #303 |  |  |
-| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |  |
+| D61 | Brief delivery channel: **In-app screen only; email digest withdrawn 2026-08-26 | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts | Scope reduced 2026-08-26 — the optional email digest is withdrawn, so this row covers the in-app channel only. The 🟢 was previously asserted over BOTH clauses on evidence that only ever tested the read service; a Brief email was never built. See [REVERSAL 2026-08-26 on D61] in the plan. A digest, if ever wanted, is a new D-number. |
 | D62 | Brief AI: **Haiku LLM with deterministic template fallback | 🟢 | #77 | packages/workers/src/brief-snapshot.worker.test.ts D62 cases (LLM happy/null/throw/timeout/empty/whitespace) + apps/api/src/adapters/brief-llm-anthropic.adapter.spec.ts |  |
 | D63 | Brief categories: **3 sections (Reply / FYI / Noise) | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D63 cases (3 sections + caps) |  |
 | D64 | Brief timing: **Default 8am local; user-configurable | 🔵 | #194 |  |  |
-| D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | ⬜ |  |  |  |
-| D66 | Brief schedule: **Default Mon-Fri only; weekends opt-in | 🔵 | #635 |  |  |
+| D65 | Noise bulk archive: **Per-sender checkboxes always visible, default-all checked | 🟢 |  | apps/web/src/features/brief/noise-archive.test.tsx ("checks every actionable Noise sender by default (D65)" + preview-before-mutation order per D226) | Was ⬜ Not started while the feature shipped — the per-sender checkboxes, the archive sheet and the "Archive N senders" bar all render on /brief. No merged PR carried a Closes D65 trailer, so the derivation had nothing to find, and the shipping PR is not recoverable from git (the file's first-add commit c80a21b is a 1,746-file history import, not a feature merge). Recorded here rather than guessing a number. |
+| D66 | Brief schedule: **RETIRED 2026-08-25; the Brief runs every day | 🔵 | #635 |  | RETIRED, not delivered. #635 removed the weekday-only schedule; the Brief now generates every local day. The row's 🔵 marks that work landing, and the title says what actually happened — it previously read "Default Mon-Fri only; weekends opt-in", describing behaviour the same PR deleted. See [REVERSAL 2026-08-25 on D66] in the plan. |
 | D67 | **SUPERSEDED by D245: Brief priority uses observed facts | 🟢 | #102 | packages/workers/src/brief-snapshot.worker.test.ts D67 — VIP elevation to Reply |  |
 | D68 | Free/Plus tier preview: **Placeholder + upgrade CTA | 🔵 | #219 |  |  |
 | D69 | Brief snapshot behavior: **Static 8am snapshot, no recomputation | 🟢 | #74 | apps/api/src/briefs/brief.read-service.spec.ts |  |

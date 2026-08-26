@@ -24,54 +24,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-26 — D61 is marked Verified for an email digest that was never built
-
-**Source:** session 2026-08-26 — Brief backlog review, grounded against `main`
-at `1104608`
-
-**Why:** `IMPLEMENTATION-LOG.md` carries
-
-```
-| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |
-```
-
-🟢 means `pnpm verify-d` passed. The email half does not exist:
-
-- no Brief email template or trigger — `apps/api/src/notifications/` has only
-  `sync-ready-email.trigger.ts` and `sync-failed-email.trigger.ts`
-- no digest key in `emailPrefs` — the contract carries `reminders`,
-  `syncComplete`, `weeklyReceipt` and nothing else
-- the cited evidence file, `brief.read-service.spec.ts`, tests the read
-  service and never touches email
-
-So the verification passed on the half that shipped, and the row now reads as
-though the whole decision did. Until this session the Pro paywall also sold it
-— *"8am daily, in-app or by email"* — which is a billed claim for a feature
-that cannot run. That copy is fixed in this branch; the log row is not, because
-amending a D-body is your call, not an agent's (CLAUDE.md §3).
-
-This is the second row in the same area that disagrees with the code. **D65**
-(*"Noise bulk archive: per-sender checkboxes always visible"*) is logged ⬜ Not
-started while `noise-archive-sheet.tsx`, `noise-archive-bar.stories.tsx` and
-`use-noise-archive.ts` all ship and the "Archive 38 senders" bar renders on
-`/brief`. And **D66** is now 🔵 Shipped under a title describing the
-weekday-only behaviour #635 retired. Three rows, one feature — worth a sweep
-(`/ct-class`) rather than three spot fixes.
-
-**How:** decide which of these you want, then amend the plan:
-
-1. Split D61 into the shipped in-app half and an unbuilt email half (a new
-   D-number), or demote the row to 🔵 and re-scope the D-body to in-app only.
-2. Decide whether the Brief email digest is still wanted at all. If it is, it
-   needs its own D and a ticket; if not, D61's body should stop describing it.
-3. Flip D65 to reflect what shipped, and correct D66's title so the log stops
-   asserting retired behaviour.
-
-**Verifies by:** `IMPLEMENTATION-LOG.md` rows for D61/D65/D66 match the code,
-and no product surface claims email delivery until something sends one.
-
-**Status:** Open
-
 ### 2026-08-25 — Brief schedule decisions taken in session: every day, hourly slots
 
 **Source:** session 2026-08-25 — the Brief product review (`/ct-decide`),
@@ -2137,6 +2089,65 @@ the shipped design; a fresh session reading them finds no contradiction with
 **Status:** Open
 
 ## Done
+
+### 2026-08-26 — D61 is marked Verified for an email digest that was never built
+
+**Source:** session 2026-08-26 — Brief backlog review, grounded against `main`
+at `1104608`
+
+**Why:** `IMPLEMENTATION-LOG.md` carries
+
+```
+| D61 | Brief delivery channel: **In-app screen + optional email digest (default off) | 🟢 | #102 | apps/api/src/briefs/brief.read-service.spec.ts |
+```
+
+🟢 means `pnpm verify-d` passed. The email half does not exist:
+
+- no Brief email template or trigger — `apps/api/src/notifications/` has only
+  `sync-ready-email.trigger.ts` and `sync-failed-email.trigger.ts`
+- no digest key in `emailPrefs` — the contract carries `reminders`,
+  `syncComplete`, `weeklyReceipt` and nothing else
+- the cited evidence file, `brief.read-service.spec.ts`, tests the read
+  service and never touches email
+
+So the verification passed on the half that shipped, and the row now reads as
+though the whole decision did. Until this session the Pro paywall also sold it
+— *"8am daily, in-app or by email"* — which is a billed claim for a feature
+that cannot run. That copy is fixed in this branch; the log row is not, because
+amending a D-body is your call, not an agent's (CLAUDE.md §3).
+
+This is the second row in the same area that disagrees with the code. **D65**
+(*"Noise bulk archive: per-sender checkboxes always visible"*) is logged ⬜ Not
+started while `noise-archive-sheet.tsx`, `noise-archive-bar.stories.tsx` and
+`use-noise-archive.ts` all ship and the "Archive 38 senders" bar renders on
+`/brief`. And **D66** is now 🔵 Shipped under a title describing the
+weekday-only behaviour #635 retired. Three rows, one feature — worth a sweep
+(`/ct-class`) rather than three spot fixes.
+
+**How:** decide which of these you want, then amend the plan:
+
+1. Split D61 into the shipped in-app half and an unbuilt email half (a new
+   D-number), or demote the row to 🔵 and re-scope the D-body to in-app only.
+2. Decide whether the Brief email digest is still wanted at all. If it is, it
+   needs its own D and a ticket; if not, D61's body should stop describing it.
+3. Flip D65 to reflect what shipped, and correct D66's title so the log stops
+   asserting retired behaviour.
+
+**Verifies by:** `IMPLEMENTATION-LOG.md` rows for D61/D65/D66 match the code,
+and no product surface claims email delivery until something sends one.
+
+**Status:** Done 2026-08-26 — founder answered all three on 2026-08-26.
+
+**Resolution.** The email digest is **withdrawn**, not deferred: D61 now
+covers the in-app channel only, and a digest — if ever wanted — is a new
+D-number with its own row rather than a second clause on this one. D65 is
+recorded 🟢 against the noise-archive tests that were always there; its
+shipping PR is not recoverable (the file’s first-add commit is a
+1,746-file history import), so nothing was guessed. D66’s title now says
+RETIRED instead of describing the weekday-only behaviour #635 deleted.
+Plan markers: [REVERSAL 2026-08-26 on D61], [PATCH 2026-08-26 on D63],
+[PATCH 2026-08-26 on D62].
+
 
 ### 2026-07-28 — Resolve the two paused subscriptions on the founder workspace
 **Source:** launch audit B7 / PR #417 investigation
