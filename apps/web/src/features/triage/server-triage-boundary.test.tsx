@@ -8,7 +8,6 @@ vi.mock('@sentry/nextjs', () => ({
 }));
 
 import { makeQueryClient } from '@/lib/query-client';
-import { shouldPrefetchTriage } from './api/query-options';
 import { useTriageQueue, useTriageStats } from './api/use-triage-queue';
 import { useTodaySummary } from './api/use-triage-queue';
 import { useMeSettings } from '@/features/settings/api/use-me-settings';
@@ -96,14 +95,6 @@ describe('ServerTriageBoundary', () => {
     });
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('prefetches only for an authed mailbox that has the triage capability', () => {
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'pro' })).toBe(true);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'free' })).toBe(true);
-    expect(shouldPrefetchTriage({ activeMailboxId: null, tier: 'pro' })).toBe(false);
-    expect(shouldPrefetchTriage(null)).toBe(false);
-    expect(shouldPrefetchTriage({ activeMailboxId: 'mailbox-1', tier: 'not-a-tier' })).toBe(false);
   });
 
   it('does not fetch mailbox data when the route is not eligible', async () => {

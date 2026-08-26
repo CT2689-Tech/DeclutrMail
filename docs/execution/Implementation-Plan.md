@@ -10770,3 +10770,67 @@ own security review, and at this volume a script does not.
 of what someone bought (D126 price lock), and a comp must not mint one.
 
 Runbook: `docs/runbooks/complimentary-grants.md`. Rule record: ADR-0040.
+---
+
+---
+
+### D259 — A route's server render is one request per surface
+
+**Status:** Allocated 2026-08-26 in PR #641. Awaiting founder ratification
+— the plan is locked and this entry was opened by an agent, so it needs the
+founder's yes before it counts as a decision rather than a proposal.
+
+**Why this is not D200 or D201.** Both are 🟢: D200 fixed the server/client
+state boundary, D201 fixed NestJS module + guard layering. Neither says
+anything about how MANY requests a route's server render is allowed to
+make, so a surface could satisfy both while fanning out. PR #641 first
+claimed `Closes D200, D201` — closing two decisions that shipped in #29 and
+#37 — which is the mis-tag D247 already taught this repo to catch.
+
+**The state this changes.** The Triage server render issued four requests:
+`/queue`, `/stats`, `/today-summary`, `/me/settings`. `/today-summary`
+needs the exact D30-clamped queue to compute its decision count and noise
+share, so it re-ran the same four-statement queue projection a second time,
+behind a second `JwtGuard` + `CurrentMailboxGuard` pass. Separately, every
+authenticated route awaited `/api/auth/me` **serially** before it was
+allowed to start its own prefetch, and `CurrentMailboxGuard` itself spent
+three statements — `listByWorkspace()` (two, including every disconnected
+mailbox and its latest deletion request) plus `UsersService.findById()` for
+one JSON key — on every mailbox-scoped endpoint.
+
+**Decision.** Three parts.
+
+1. **One transport per surface.** A route that mounts several reads
+   together gets one bootstrap endpoint whose read service SHARES the
+   expensive projection between them, rather than N endpoints that each
+   re-derive it. The bootstrap is a transport shape, not client state: the
+   boundary writes the individual query keys and removes the bootstrap key
+   before dehydrating, so the client reads the same keys it always did.
+
+2. **Prefetch eligibility is a cheap local check, not a round trip.**
+   Presence of a non-empty `dm_access` cookie is the gate. This is
+   explicitly NOT authentication — every prefetched request still runs
+   `JwtGuard` and the mailbox guard, and an invalid cookie simply yields a
+   designed 4xx that `settleServerQueries` already leaves absent so the
+   client query recovers. The trade is deliberate: everyone saves one
+   serial round trip; a signed-out-but-stale-cookie or no-mailbox user pays
+   a handful of 4xx that were already a designed state.
+
+3. **A guard reads exactly what it decides with.** Guard-facing resolution
+   is one narrow indexed SELECT, and its result is a discriminated union —
+   not `{ id } | null` — because the guard answers `NO_ACTIVE_MAILBOX` and
+   `MAILBOX_NOT_OWNED` and the FE renders a DIFFERENT screen for each.
+   Collapsing them let the mere presence of a stale `X-Active-Mailbox-Id`
+   header decide the code, so disconnecting the last mailbox in another tab
+   answered "that isn't yours" instead of the reconnect gate.
+
+**`last_used_at` is presence telemetry, not an event log.** One page render
+fans out into many API calls carrying the same jti; writing the timestamp
+on each produced one dead tuple per request for no extra information. It is
+coalesced to one write per session per five minutes, per process. The
+revocation SELECT is NOT coalesced and still runs on every single request —
+that is the line this decision does not cross.
+
+**Rejected: a speculative index.** The narrow lookup is covered by existing
+mailbox keys. Any further index waits for production `EXPLAIN` evidence,
+per the same discipline D235 applies to partitioning.

@@ -38,7 +38,7 @@ describe('CurrentMailboxGuard (D155 + D205)', () => {
   });
 
   it('throws NO_ACTIVE_MAILBOX when no active mailboxes exist', async () => {
-    mailboxes.resolveActiveForRequest.mockResolvedValue(null);
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'none-active' });
     const req = makeReq({ user: PRINCIPAL });
     await expect(guard.canActivate(makeCtx(req))).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'NO_ACTIVE_MAILBOX' }),
@@ -46,7 +46,7 @@ describe('CurrentMailboxGuard (D155 + D205)', () => {
   });
 
   it('uses single active mailbox when no preference set', async () => {
-    mailboxes.resolveActiveForRequest.mockResolvedValue({ id: 'm1' });
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'resolved', id: 'm1' });
     const req = makeReq({ user: PRINCIPAL });
     const ok = await guard.canActivate(makeCtx(req));
     expect(ok).toBe(true);
@@ -57,7 +57,7 @@ describe('CurrentMailboxGuard (D155 + D205)', () => {
     // Regression: this used to throw 409 SELECT_MAILBOX while /me resolved
     // first-active, producing a rendered-but-409ing dashboard (founder
     // break-test 2026-05-28). Guard now agrees with /me: first active wins.
-    mailboxes.resolveActiveForRequest.mockResolvedValue({ id: 'm1' });
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'resolved', id: 'm1' });
     const req = makeReq({ user: PRINCIPAL });
     const ok = await guard.canActivate(makeCtx(req));
     expect(ok).toBe(true);
@@ -65,14 +65,14 @@ describe('CurrentMailboxGuard (D155 + D205)', () => {
   });
 
   it('honours user preference activeMailboxId', async () => {
-    mailboxes.resolveActiveForRequest.mockResolvedValue({ id: 'm2' });
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'resolved', id: 'm2' });
     const req = makeReq({ user: PRINCIPAL });
     await guard.canActivate(makeCtx(req));
     expect(req.mailbox).toEqual({ id: 'm2' });
   });
 
   it('honours X-Active-Mailbox-Id header override', async () => {
-    mailboxes.resolveActiveForRequest.mockResolvedValue({ id: 'm2' });
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'resolved', id: 'm2' });
     const req = makeReq({ user: PRINCIPAL, headerValue: 'm2' });
     await guard.canActivate(makeCtx(req));
     expect(req.mailbox).toEqual({ id: 'm2' });
@@ -84,15 +84,28 @@ describe('CurrentMailboxGuard (D155 + D205)', () => {
   });
 
   it('rejects header pointing at unowned mailbox', async () => {
-    mailboxes.resolveActiveForRequest.mockResolvedValue(null);
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'not-owned' });
     const req = makeReq({ user: PRINCIPAL, headerValue: 'm-other' });
     await expect(guard.canActivate(makeCtx(req))).rejects.toMatchObject({
       response: expect.objectContaining({ code: 'MAILBOX_NOT_OWNED' }),
     });
   });
 
+  it('reports NO_ACTIVE_MAILBOX for a stale header when nothing is active', async () => {
+    // Disconnecting the last mailbox in another tab leaves this tab's
+    // cached `X-Active-Mailbox-Id` on the next request. The user needs the
+    // reconnect gate; answering MAILBOX_NOT_OWNED sends them to the wrong
+    // screen. Collapsing both service outcomes to `null` made the header's
+    // mere PRESENCE decide the code, which is why this is asserted here.
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'none-active' });
+    const req = makeReq({ user: PRINCIPAL, headerValue: 'm-stale' });
+    await expect(guard.canActivate(makeCtx(req))).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'NO_ACTIVE_MAILBOX' }),
+    });
+  });
+
   it('falls back to single active when preference points at disconnected mailbox', async () => {
-    mailboxes.resolveActiveForRequest.mockResolvedValue({ id: 'm1' });
+    mailboxes.resolveActiveForRequest.mockResolvedValue({ kind: 'resolved', id: 'm1' });
     const req = makeReq({ user: PRINCIPAL });
     await guard.canActivate(makeCtx(req));
     expect(req.mailbox).toEqual({ id: 'm1' });

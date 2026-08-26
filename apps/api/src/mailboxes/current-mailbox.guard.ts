@@ -73,13 +73,17 @@ export class CurrentMailboxGuard implements CanActivate {
       userId: principal.userId,
       ...(requestedMailboxId === undefined ? {} : { requestedMailboxId }),
     });
-    if (resolved === null) {
-      if (requestedMailboxId !== undefined) {
-        throw new ConflictException({
-          code: 'MAILBOX_NOT_OWNED' satisfies ErrorCode,
-          message: 'Selected mailbox is not connected to your workspace.',
-        });
-      }
+    // Both 409s are DESIGNED states with different recovery screens, so the
+    // two must not collapse into one. A stale header sent by a tab whose
+    // last mailbox was disconnected elsewhere resolves `none-active`, not
+    // `not-owned`: the user needs the reconnect gate, not "that isn't yours".
+    if (resolved.kind === 'not-owned') {
+      throw new ConflictException({
+        code: 'MAILBOX_NOT_OWNED' satisfies ErrorCode,
+        message: 'Selected mailbox is not connected to your workspace.',
+      });
+    }
+    if (resolved.kind === 'none-active') {
       throw new ConflictException({
         code: 'NO_ACTIVE_MAILBOX' satisfies ErrorCode,
         message: 'No active Gmail account is connected. Connect one to continue.',
@@ -89,7 +93,7 @@ export class CurrentMailboxGuard implements CanActivate {
     // Preference unset/stale resolves the first active mailbox by
     // connection order, matching GET /api/auth/me. The service keeps
     // preference + fallback resolution inside this one narrow read.
-    req.mailbox = resolved;
+    req.mailbox = { id: resolved.id };
     return true;
   }
 }

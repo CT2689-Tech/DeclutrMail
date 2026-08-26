@@ -40,6 +40,14 @@ export interface MailboxSummary {
   dataDeletion: MailboxDataDeletionView | null;
 }
 
+/**
+ * Outcome of `resolveActiveForRequest`. Three states, not two: the guard
+ * maps `not-owned` and `none-active` to different error codes, and the FE
+ * renders a different screen for each.
+ */
+export type ResolvedRequestMailbox =
+  { kind: 'resolved'; id: string } | { kind: 'not-owned' } | { kind: 'none-active' };
+
 /** Canonical persisted identity for Gmail's case-insensitive address space. */
 export function canonicalizeGmailProviderAccountId(email: string): string {
   return email.trim().toLowerCase();
@@ -126,24 +134,41 @@ export class MailboxAccountsService {
    * no user row is needed. Without one, a left join reads the preference and
    * orders it first; `created_at` preserves `listByWorkspace()`'s historical
    * first-active fallback when the preference is absent or stale.
+   *
+   * The result is a discriminated union rather than `{ id } | null` because
+   * the guard answers with two DIFFERENT error codes and the FE renders two
+   * DIFFERENT screens for them: `NO_ACTIVE_MAILBOX` is the reconnect gate,
+   * `MAILBOX_NOT_OWNED` is a stale selection. Collapsing both to `null` made
+   * a disconnect in another tab — whose still-cached header is on the next
+   * request — report "not yours" for a workspace that simply has no mailbox
+   * left, which is the founder break-test of 2026-05-28 in a new costume.
+   *
+   * The `none-active` probe runs ONLY when the requested id missed, so the
+   * hot path stays at exactly one indexed lookup.
    */
   async resolveActiveForRequest(input: {
     workspaceId: string;
     userId: string;
     requestedMailboxId?: string;
-  }): Promise<{ id: string } | null> {
+  }): Promise<ResolvedRequestMailbox> {
     const activeScope = and(
       eq(mailboxAccounts.workspaceId, input.workspaceId),
       eq(mailboxAccounts.status, 'active'),
     );
 
     if (input.requestedMailboxId !== undefined) {
-      const [row] = await this.db
+      const [requested] = await this.db
         .select({ id: mailboxAccounts.id })
         .from(mailboxAccounts)
         .where(and(activeScope, eq(mailboxAccounts.id, input.requestedMailboxId)))
         .limit(1);
-      return row ?? null;
+      if (requested) return { kind: 'resolved', id: requested.id };
+      const [anyActive] = await this.db
+        .select({ id: mailboxAccounts.id })
+        .from(mailboxAccounts)
+        .where(activeScope)
+        .limit(1);
+      return anyActive ? { kind: 'not-owned' } : { kind: 'none-active' };
     }
 
     const [row] = await this.db
@@ -156,7 +181,7 @@ export class MailboxAccountsService {
         mailboxAccounts.createdAt,
       )
       .limit(1);
-    return row ?? null;
+    return row ? { kind: 'resolved', id: row.id } : { kind: 'none-active' };
   }
 
   /** Find a single mailbox by id + workspace (ownership scope). */
