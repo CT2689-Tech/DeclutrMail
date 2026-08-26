@@ -87,7 +87,7 @@ evidence and is not forced to 90 days.
 
 - **Standardise everything on 30 days.** Rejected: it discards two-thirds
   of the signal the cascade is tuned on and would require re-tuning every
-  threshold in `score-cascade.ts`.
+  threshold in `packages/shared/src/triage-engine/cascade.ts`.
 - **Keep both windows, label them clearly.** The cheapest option, and
   honest — the labels already existed. Rejected because it leaves the
   reader holding two windows in their head on the product's trust wedge,

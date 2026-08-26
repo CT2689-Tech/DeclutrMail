@@ -1,5 +1,10 @@
 # Inbox Simulator — Plan 1: Foundations
 
+> **Status: executed.** Plan 1 ran on `feat/d133-inbox-simulator-scale`,
+> commit range `101bc6dd..HEAD`. All five tasks landed; checkboxes below
+> are ticked to match. Plans 2–4 of `inbox-simulator-scale-spec-2026-08-26.md`
+> remain unplanned.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the triage cascade callable from the browser and stop app-surface modals dragging the auth/query layer into the public marketing chunk — the two prerequisites for everything else in `inbox-simulator-scale-spec-2026-08-26.md`.
@@ -34,7 +39,7 @@
 - Consumes: nothing.
 - Produces: `TriageVerdict = 'keep' | 'archive' | 'unsubscribe' | 'later'` and `ProtectionReason = 'user_defined' | 'replied' | 'starred' | 'gmail_important'`, both exported from `@declutrmail/shared/contracts`. Task 2 imports both.
 
-- [ ] **Step 1: Write the failing guard**
+- [x] **Step 1: Write the failing guard**
 
 Append to `apps/api/src/senders/senders.types.ts`, directly below the existing `_GMAIL_CATEGORY_SHARED_EXTENDS_API` constant:
 
@@ -71,12 +76,12 @@ const _PROTECTION_REASON_SHARED_EXTENDS_DB: SharedProtectionReason extends DbPro
   : false = true;
 ```
 
-- [ ] **Step 2: Run typecheck to verify it fails**
+- [x] **Step 2: Run typecheck to verify it fails**
 
 Run: `pnpm --filter @declutrmail/api exec tsc --noEmit`
 Expected: FAIL — `Module '"@declutrmail/shared/contracts"' has no exported member 'TriageVerdict'`.
 
-- [ ] **Step 3: Write the mirror**
+- [x] **Step 3: Write the mirror**
 
 Create `packages/shared/src/contracts/triage-enums.ts`:
 
@@ -112,12 +117,12 @@ Add to `packages/shared/src/contracts/index.ts`, beside the existing `GmailCateg
 export type { TriageVerdict, ProtectionReason } from './triage-enums';
 ```
 
-- [ ] **Step 4: Run typecheck to verify it passes**
+- [x] **Step 4: Run typecheck to verify it passes**
 
 Run: `pnpm --filter @declutrmail/api exec tsc --noEmit && pnpm --filter @declutrmail/shared exec tsc --noEmit`
 Expected: PASS, both.
 
-- [ ] **Step 5: Negative control — prove the guard bites**
+- [x] **Step 5: Negative control — prove the guard bites**
 
 Temporarily add a bogus member to the mirror:
 
@@ -130,7 +135,7 @@ Expected: FAIL on `_TRIAGE_VERDICT_SHARED_EXTENDS_DB` — `Type 'false' is not a
 
 **Then remove `| 'screen'` and re-run to confirm PASS.** A guard you never watched fail has verified nothing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/shared/src/contracts/triage-enums.ts packages/shared/src/contracts/index.ts apps/api/src/senders/senders.types.ts
@@ -154,7 +159,7 @@ git commit -m "refactor(shared): mirror triage enums for the browser cascade (D1
 - Consumes: `TriageVerdict`, `ProtectionReason` from Task 1.
 - Produces: `runCascade(signals: SenderSignals): CascadeResult`, plus the types `SenderSignals`, `CascadeResult`, `CascadePhase`, `CascadeRuleId`, `UnsubscribeChannel`, and `MIN_BATCH_RUN`-unrelated helpers already exported by the file — all from `@declutrmail/shared/triage-engine`. Plan 3 builds fixtures against `SenderSignals` and asserts against `CascadeResult.verdict`.
 
-- [ ] **Step 1: Move both files with history preserved**
+- [x] **Step 1: Move both files with history preserved**
 
 ```bash
 mkdir -p packages/shared/src/triage-engine
@@ -162,7 +167,7 @@ git mv packages/workers/src/score-cascade.ts packages/shared/src/triage-engine/c
 git mv packages/workers/src/score-cascade.test.ts packages/shared/src/triage-engine/cascade.test.ts
 ```
 
-- [ ] **Step 2: Retarget the type import**
+- [x] **Step 2: Retarget the type import**
 
 In `packages/shared/src/triage-engine/cascade.ts`, replace line 1:
 
@@ -180,7 +185,7 @@ import type { ProtectionReason, TriageVerdict } from '../contracts';
 
 In `packages/shared/src/triage-engine/cascade.test.ts`, change the import from `'./score-cascade.js'` to `'./cascade.js'`.
 
-- [ ] **Step 3: Create the module entry point**
+- [x] **Step 3: Create the module entry point**
 
 Create `packages/shared/src/triage-engine/index.ts`:
 
@@ -212,7 +217,7 @@ Re-export the file's **complete** surface as it stands today: `runCascade`,
 of these onward to `apps/api`, so dropping one silently breaks a consumer this
 plan never looks at.
 
-- [ ] **Step 4: Add the subpath export**
+- [x] **Step 4: Add the subpath export**
 
 In `packages/shared/package.json`, add to `exports`, keeping the keys alphabetical:
 
@@ -220,7 +225,7 @@ In `packages/shared/package.json`, add to `exports`, keeping the keys alphabetic
 "./triage-engine": "./src/triage-engine/index.ts",
 ```
 
-- [ ] **Step 5: Update the workers call sites**
+- [x] **Step 5: Update the workers call sites**
 
 `packages/workers/src/reasoning.ts` line 3:
 
@@ -232,29 +237,29 @@ import type { CascadeResult, CascadeRuleId } from '@declutrmail/shared/triage-en
 
 `packages/workers/src/index.ts` lines 173 and 180 — same specifier change. These are re-exports; keep them, because `apps/api` consumes the cascade through the workers barrel and this plan does not change that surface.
 
-- [ ] **Step 6: Run the moved suite — this is the negative control**
+- [x] **Step 6: Run the moved suite — this is the negative control**
 
 Run: `pnpm --filter @declutrmail/shared exec vitest run src/triage-engine/cascade.test.ts --no-file-parallelism`
 Expected: PASS, every case, unchanged.
 
 This suite covered every D21 branch before the move. It is the whole safety net for this task: a move that changed behavior breaks it. If any case fails, the move is wrong — do not edit the test to match.
 
-- [ ] **Step 7: Typecheck every affected package**
+- [x] **Step 7: Typecheck every affected package**
 
 Run: `pnpm --filter @declutrmail/shared exec tsc --noEmit && pnpm --filter @declutrmail/workers exec tsc --noEmit && pnpm --filter @declutrmail/api exec tsc --noEmit`
 Expected: PASS, all three.
 
-- [ ] **Step 8: Confirm shared stayed zero-server-dep**
+- [x] **Step 8: Confirm shared stayed zero-server-dep**
 
 Run: `grep -rn "@declutrmail/db\|drizzle-orm\|from 'postgres'" packages/shared/src/`
 Expected: no output. Any hit means a server dependency leaked into shared and the move must be corrected, not the grep.
 
-- [ ] **Step 9: Run the workers suite for regressions**
+- [x] **Step 9: Run the workers suite for regressions**
 
 Run: `pnpm --filter @declutrmail/workers exec vitest run --no-file-parallelism`
 Expected: PASS. Note this suite is large; allow several minutes.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add packages/shared packages/workers
@@ -279,7 +284,7 @@ The fixtures currently hardcode reasoning copy that is itself template output. D
 - Consumes: `CascadeResult` from Task 2.
 - Produces: `renderTemplate(displayName: string, result: CascadeResult): string` and `VERDICT_LABEL`, exported from `@declutrmail/shared/triage-engine`. Plan 3 uses `renderTemplate` to derive each fixture's `reasoning` field.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `packages/shared/src/triage-engine/template.test.ts`:
 
@@ -317,12 +322,12 @@ describe('renderTemplate', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm --filter @declutrmail/shared exec vitest run src/triage-engine/template.test.ts --no-file-parallelism`
 Expected: FAIL — `renderTemplate` is not exported from `./index`.
 
-- [ ] **Step 3: Move the renderer**
+- [x] **Step 3: Move the renderer**
 
 Cut `VERDICT_LABEL` (line ~67) and `renderTemplate` (line ~83) out of `packages/workers/src/reasoning.ts` verbatim into a new `packages/shared/src/triage-engine/template.ts`, with this header:
 
@@ -353,17 +358,17 @@ In `packages/workers/src/reasoning.ts`, replace the deleted declarations with a 
 export { renderTemplate, VERDICT_LABEL } from '@declutrmail/shared/triage-engine';
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pnpm --filter @declutrmail/shared exec vitest run src/triage-engine --no-file-parallelism`
 Expected: PASS, both files.
 
-- [ ] **Step 5: Confirm no workers regression**
+- [x] **Step 5: Confirm no workers regression**
 
 Run: `pnpm --filter @declutrmail/workers exec vitest run --no-file-parallelism && pnpm --filter @declutrmail/workers exec tsc --noEmit`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/shared packages/workers
@@ -393,7 +398,7 @@ The component already accepts a `mailboxEmail` override documented "for isolated
 - Consumes: nothing from earlier tasks.
 - Produces: `MailboxActionContextView({ mailboxEmail }: { mailboxEmail?: string | undefined })` — presentational, zero auth imports — from `@/features/auth/mailbox-action-context-view`. `MailboxActionContext` keeps its current name, props and behaviour for app surfaces. Plan 4 renders `BatchActionSheet` and `ActivateRuleModal` on the public route relying on this split.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `apps/web/src/features/auth/mailbox-action-context-view.test.tsx`:
 
@@ -418,12 +423,12 @@ describe('MailboxActionContextView', () => {
 
 The first case is the point: it mounts with **no** `AuthProvider` in the tree. Today's component would throw or return null via `useOptionalAuth`.
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pnpm --filter @declutrmail/web exec vitest run src/features/auth/mailbox-action-context-view.test.tsx --no-file-parallelism`
 Expected: FAIL — cannot resolve `./mailbox-action-context-view`.
 
-- [ ] **Step 3: Extract the presentational core**
+- [x] **Step 3: Extract the presentational core**
 
 Open `apps/web/src/features/auth/mailbox-action-context.tsx` and read its current render body. Move that body verbatim into a new `apps/web/src/features/auth/mailbox-action-context-view.tsx`:
 
@@ -508,12 +513,12 @@ mailbox from `AuthProvider`, otherwise nothing renders. Two details worth copyin
 exactly — `getActiveMailboxEmail` takes `auth.me`, not `auth`, and it can return
 `null`, which the view treats the same as `undefined`.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pnpm --filter @declutrmail/web exec vitest run src/features/auth/mailbox-action-context-view.test.tsx --no-file-parallelism`
 Expected: PASS, both cases.
 
-- [ ] **Step 5: Point the two modal components at the view**
+- [x] **Step 5: Point the two modal components at the view**
 
 The two components are **not** symmetric here, and the difference is the whole
 task. Verified 2026-08-26:
@@ -567,7 +572,7 @@ matches:
 grep -rln "ConfirmModalFrame" apps/web/src | grep -v "test\|stories"
 ```
 
-- [ ] **Step 6: Verify no auth import survives in either modal path**
+- [x] **Step 6: Verify no auth import survives in either modal path**
 
 Run:
 
@@ -577,12 +582,12 @@ grep -rn "auth-provider\|mailbox-action-context'" apps/web/src/features/triage/b
 
 Expected: no output.
 
-- [ ] **Step 7: Run the affected suites**
+- [x] **Step 7: Run the affected suites**
 
 Run: `pnpm --filter @declutrmail/web exec vitest run src/features/triage src/features/autopilot src/features/auth --no-file-parallelism`
 Expected: PASS. Any test that mounted these modals inside an auth provider should still pass; if one fails because the mailbox note went missing, a call site in Step 5 was missed.
 
-- [ ] **Step 8: Typecheck and commit**
+- [x] **Step 8: Typecheck and commit**
 
 ```bash
 pnpm --filter @declutrmail/web exec tsc --noEmit
@@ -605,18 +610,24 @@ Chunk names lie. The only evidence is module membership in the build manifest. T
 - Consumes: Task 4's split.
 - Produces: a recorded baseline of the modules in the `/inbox-simulator` first-load chunk set. Plan 4's final task re-runs this check and diffs against it.
 
-- [ ] **Step 1: Build the web app**
+- [x] **Step 1: Build the web app**
 
 Run: `pnpm --filter @declutrmail/web build`
 Expected: build succeeds.
 
-- [ ] **Step 2: Extract the route's module list**
+- [x] **Step 2: Extract the route's module list**
+
+**Corrected 2026-08-26** (see `docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md`
+§ Step 2): `app-build-manifest.json` has two keys containing the substring
+`inbox-simulator` (the page and its OG-image route), and a bare `next(...)` match on the
+substring is not guaranteed to pick the page — it picked the OG-image route when this was
+first run. Filter on `k.endswith('/page')` as well:
 
 ```bash
 python3 - <<'PY'
 import json, pathlib
 m = json.loads(pathlib.Path('apps/web/.next/app-build-manifest.json').read_text())
-key = next(k for k in m['pages'] if 'inbox-simulator' in k)
+key = next(k for k in m['pages'] if 'inbox-simulator' in k and k.endswith('/page'))
 files = m['pages'][key]
 print(key)
 for f in sorted(files):
@@ -624,21 +635,31 @@ for f in sorted(files):
 PY
 ```
 
-- [ ] **Step 3: Confirm the query layer is absent**
+- [x] **Step 3: Confirm the query layer is absent**
+
+**Corrected 2026-08-26** (see the same baseline doc, § Step 3): this literal command
+produces a false PASS. `react-query` (the npm package name) never appears in compiled
+output — it is stripped before this point — and every `useMe` hit is minified React's own
+`useMemo`/`useMemoCache`, not the app's `useMe` hook, whose identifier does not survive
+minification. Search for `useMe`'s runtime string signature instead, recursively (not just
+the top-level glob):
 
 ```bash
-grep -l "react-query\|useMe" apps/web/.next/static/chunks/*.js 2>/dev/null | head
+grep -rl "/api/auth/me" apps/web/.next/static/chunks/
+grep -rl "/api/me/timezone" apps/web/.next/static/chunks/
 ```
 
-Cross-reference any hit against the file list from Step 2. A `react-query` match in a chunk that is **not** in the `/inbox-simulator` list is fine — that is the app shell. A match in a chunk that **is** in the list means the split failed and Task 4 must be corrected.
+Cross-reference any hit against the file list from Step 2. A hit in a chunk that is
+**not** in the `/inbox-simulator` list is fine — that is the app shell. A hit in a chunk
+that **is** in the list means the split failed and Task 4 must be corrected.
 
-- [ ] **Step 4: Record the baseline**
+- [x] **Step 4: Record the baseline**
 
 Write the Step 2 output and the Step 3 verdict into `docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md`, with the commit SHA it was measured at (`git rev-parse --short HEAD`).
 
 State the numbers you measured. Do not estimate or round a figure you did not observe.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md
@@ -649,11 +670,11 @@ git commit -m "docs(web): record the simulator chunk baseline (D133)"
 
 ## Done when
 
-- [ ] `runCascade` and `renderTemplate` import cleanly from `@declutrmail/shared/triage-engine` with no server dependency.
-- [ ] The moved cascade suite passes unchanged — no test was edited to accommodate the move.
-- [ ] The enum drift guard was watched failing, then passing.
-- [ ] `BatchActionSheet` and `ConfirmModalFrame` contain no path to `auth-provider`.
-- [ ] Web, workers, shared and api all typecheck.
-- [ ] The chunk baseline is recorded with a real measurement.
+- [x] `runCascade` and `renderTemplate` import cleanly from `@declutrmail/shared/triage-engine` with no server dependency.
+- [x] The moved cascade suite passes unchanged — no test was edited to accommodate the move.
+- [x] The enum drift guard was watched failing, then passing.
+- [x] `BatchActionSheet` and `ConfirmModalFrame` contain no path to `auth-provider`.
+- [x] Web, workers, shared and api all typecheck.
+- [x] The chunk baseline is recorded with a real measurement.
 
 **No user-visible change ships in this plan.** That is intended: it is the prerequisite for Plans 2–4, and every step is verifiable without a running product.

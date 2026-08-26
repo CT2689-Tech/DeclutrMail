@@ -4,7 +4,7 @@
  *
  * Reads docs/eval/sender-classification-eval-set.csv (your manually-labeled
  * truth set), constructs `SenderSignals` for each row, runs the existing
- * cascade in packages/workers/src/score-cascade.ts, maps cascade verdict +
+ * cascade in packages/shared/src/triage-engine/cascade.ts, maps cascade verdict +
  * ruleId to a bucket (people / cleanup / engaged / watching), and prints a
  * mismatch report.
  *
@@ -19,7 +19,7 @@
  * Why this is a script, not a unit test: the eval set is real-user data the
  * tests can't see (gitignored by default). The script is the human-loop
  * tuning tool; once the cascade is tuned, the unit tests in
- * packages/workers/src/score-cascade.test.ts pin the behavior.
+ * packages/shared/src/triage-engine/cascade.test.ts pin the behavior.
  */
 
 import { readFileSync } from 'node:fs';
@@ -291,7 +291,7 @@ function main(): number {
     `✗ FAIL — cascade matches labels at ${accuracyPct}% (target ${TARGET_ACCURACY_PCT}%).`,
   );
   console.log(`  Inspect mismatches above. Either revise labels (if your label was wrong)`);
-  console.log(`  OR edit thresholds in packages/workers/src/score-cascade.ts and re-run.`);
+  console.log(`  OR edit thresholds in packages/shared/src/triage-engine/cascade.ts and re-run.`);
   return 1;
 }
 

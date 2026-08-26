@@ -69,7 +69,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
 | D19 | Pricing/tier structure (resolves gaps #8 + #9) | 🔵 | #193 |  |  |
 | D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🟢 | #32 | packages/workers/src/reasoning.test.ts — VERDICT_LABEL exhaustiveness |  |
-| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32 | packages/workers/src/score-cascade.test.ts |  |
+| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32 | packages/shared/src/triage-engine/cascade.test.ts |  |
 | D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
 | D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
