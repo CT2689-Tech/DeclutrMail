@@ -105,7 +105,7 @@ describe('landing page — D134', () => {
     expect(receipt?.textContent).toContain('existing email only');
     expect(
       screen.getByRole('img', {
-        name: /412 messages leave Inbox, remain searchable in All Mail, affect existing mail only/i,
+        name: /412 messages leave Inbox, remain searchable in All Mail, affect existing email only/i,
       }),
     ).toBeInTheDocument();
   });

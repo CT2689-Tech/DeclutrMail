@@ -621,7 +621,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     renderDelete(emptyInbox, 71);
     expect(
       screen.getByText(
-        /Nothing from this sender is in your inbox right now — though 71 arrived in the last 90 days\. Delete only acts on mail still in the inbox\./,
+        /Nothing from this sender is in your inbox right now — though 71 arrived in the last 90 days\. Delete only acts on email still in the inbox\./,
       ),
     ).toBeTruthy();
     // No claim about the mail's history or fate — we store only current labels.
@@ -1072,7 +1072,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     expect(screen.getAllByText('700').length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
     // The un-windowed chip stops claiming "inbox" once the reach is wider.
-    expect(screen.getByRole('radio', { name: /All email/ })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /All mail/ })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: /All inbox/ })).toBeNull();
     // The exclusions + the per-placement undo promise are stated where
     // the choice is made — and the promise is the CONDITIONAL one the
@@ -1138,10 +1138,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // to "All mail", so the user gets 977, not a silently-shaved 700.
     fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.queryByText(/is in your inbox right now/)).toBeNull();
-    expect(screen.getByRole('radio', { name: /All email/ })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
+    expect(screen.getByRole('radio', { name: /All mail/ })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
   });

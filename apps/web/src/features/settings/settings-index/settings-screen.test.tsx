@@ -803,14 +803,14 @@ describe('SettingsScreen', () => {
     {
       result: 'target_invalid',
       message:
-        'That Gmail recovery request is no longer available. Choose a mailbox and try again.',
+        'That Gmail recovery request is no longer available. Choose a Gmail account and try again.',
       tone: 'danger',
       liveRole: 'alert',
     },
     {
       result: 'inbox_limit',
       message:
-        'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
+        'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a Gmail account before trying again.',
       tone: 'warn',
       liveRole: 'status',
     },
@@ -835,7 +835,7 @@ describe('SettingsScreen', () => {
 
       await waitFor(() => expect(toast).toHaveBeenCalledWith(message, tone));
       expect(screen.getByTestId(`reconnect-result-${liveRole}`)).toHaveTextContent(message);
-      expect(document.activeElement).toBe(document.getElementById('Gmail accounts'));
+      expect(document.activeElement).toBe(document.getElementById('mailboxes'));
       expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
       expect(new URLSearchParams(window.location.search).has('connect_start_result')).toBe(false);
       expect(window.location.hash).toBe('#mailboxes');
@@ -865,7 +865,7 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(alertRegion).toHaveTextContent(
-        'Could not reconnect Gmail. Try again from this mailbox list.',
+        'Could not reconnect Gmail. Try again from this Gmail account list.',
       ),
     );
     expect(statusRegion).toBeEmptyDOMElement();
@@ -898,7 +898,7 @@ describe('SettingsScreen', () => {
       'Gmail reconnected. Sync status is shown below.',
     );
     expect(screen.getByTestId('reconnect-result-alert')).toBeEmptyDOMElement();
-    expect(document.activeElement).toBe(document.getElementById(`Gmail account-${MAILBOX_A}`));
+    expect(document.activeElement).toBe(document.getElementById(`mailbox-${MAILBOX_A}`));
     expect(new URLSearchParams(window.location.search).get('source')).toBe('oauth');
     expect(new URLSearchParams(window.location.search).has('reconnect_result')).toBe(false);
     expect(window.location.hash).toBe('#mailboxes');
@@ -922,9 +922,7 @@ describe('SettingsScreen', () => {
     expect(document.activeElement).toBe(row);
     expect(row?.style.outline).not.toBe('none');
     expect(scrollIntoViewSpy.mock.contexts).toContain(row);
-    expect(scrollIntoViewSpy.mock.contexts).not.toContain(
-      document.getElementById('Gmail accounts'),
-    );
+    expect(scrollIntoViewSpy.mock.contexts).not.toContain(document.getElementById('mailboxes'));
 
     const remainingParams = new URLSearchParams(window.location.search);
     expect([...remainingParams.entries()]).toEqual([
@@ -967,9 +965,7 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
-    expect(getElementByIdSpy.mock.calls.some(([id]) => id.startsWith('Gmail account-'))).toBe(
-      false,
-    );
+    expect(getElementByIdSpy.mock.calls.some(([id]) => id.startsWith('mailbox-'))).toBe(false);
     expect(
       querySelectorSpy.mock.calls.some(([selector]) => selector.includes('Gmail account-')),
     ).toBe(false);

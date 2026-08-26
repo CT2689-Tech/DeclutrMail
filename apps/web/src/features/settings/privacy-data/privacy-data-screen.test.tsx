@@ -90,7 +90,7 @@ describe('PrivacyDataView', () => {
       screen.getByText(/Disconnect & delete one Gmail account's saved data/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/other mailboxes.*disconnected Gmail address.*remain/i),
+      screen.getByText(/other Gmail accounts.*disconnected Gmail address.*remain/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/Delete account and data/i)).toBeInTheDocument();
   });
@@ -126,7 +126,7 @@ describe('PrivacyDataView', () => {
     const { container } = renderView();
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
 
-    expect(text).toContain('Mailbox addresses and status');
+    expect(text).toContain('Gmail account addresses and status');
     expect(text).toContain('sender profiles and decisions');
     expect(text).toContain('Activity history');
     expect(text).toContain('App preferences and billing records are not included');

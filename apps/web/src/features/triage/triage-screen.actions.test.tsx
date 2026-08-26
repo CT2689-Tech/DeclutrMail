@@ -740,10 +740,10 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
         getActionFailureCopy('enqueue', {
-          action: `archive the backlog from ${LINKEDIN.senderName}`,
+          action: `archive the older email from ${LINKEDIN.senderName}`,
           whatChanged: 'The unsubscribe request was queued.',
-          whatDidNotChange: 'The backlog was not archived.',
-          nextStep: 'Archive the backlog from Senders if you still want to move it.',
+          whatDidNotChange: 'The older email was not archived.',
+          nextStep: 'Archive it from Senders if you still want to move it.',
         }).message,
         'warn',
       ),
@@ -942,7 +942,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${LINKEDIN.senderName}'s unsubscribe request failed. Archive remains available for current mail.`,
+        `${LINKEDIN.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
         'warn',
       ),
     );
@@ -960,7 +960,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${LINKEDIN.senderName}'s unsubscribe result is unconfirmed. Watch for future mail.`,
+        `${LINKEDIN.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
         'warn',
       ),
     );

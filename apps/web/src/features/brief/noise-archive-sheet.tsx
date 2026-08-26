@@ -157,8 +157,8 @@ export function NoiseArchiveSheet({
               <>
                 <NumericDisplay variant="stat" value={total!.toLocaleString('en-US')} />
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  email{total === 1 ? '' : 's'} currently match in Inbox. Gmail is checked again at
-                  execution, so the final moved count can change.
+                  email{total === 1 ? '' : 's'} in Inbox now. Rechecked when it runs, so the final
+                  count can differ.
                 </span>
               </>
             )}

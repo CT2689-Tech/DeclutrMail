@@ -143,7 +143,7 @@ describe('InboxSimulatorScreen', () => {
     render(<InboxSimulatorScreen />);
 
     expect(
-      screen.getByRole('heading', { name: 'Clear the inbox without losing the mail.' }),
+      screen.getByRole('heading', { name: 'Clear the inbox without losing the email.' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Groupon')).toBeInTheDocument();
     expect(screen.queryByText('LinkedIn')).not.toBeInTheDocument();

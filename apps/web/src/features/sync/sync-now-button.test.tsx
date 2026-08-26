@@ -157,7 +157,7 @@ describe('SyncNowButton completion watch', () => {
       }),
     );
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      'Sync failed — check the mailbox connection and try again.',
+      'Sync failed — check the Gmail account connection and try again.',
       'danger',
     );
     expect(

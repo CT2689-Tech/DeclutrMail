@@ -232,7 +232,7 @@ describe('SnoozedScreen — wake now flow', () => {
     const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });
     await user.click(confirmButtons[confirmButtons.length - 1]!);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/wake queue isn't available/i);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/return schedule isn't available/i);
   });
 });
 
@@ -270,7 +270,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
     expect(
       screen.getByRole('button', {
-        name: 'Cancel wake-time changes for Quarterly Newsletter',
+        name: 'Cancel return-time changes for Quarterly Newsletter',
       }),
     ).toHaveTextContent('Cancel');
     await user.type(screen.getByPlaceholderText('Note (optional)'), 'travel');
