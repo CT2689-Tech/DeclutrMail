@@ -60,6 +60,10 @@ export function pageLoadSurface(pathname: string | null): WebVitalEvent['surface
   if (normalized === '/blog' || normalized.startsWith('/blog/')) return 'blog';
   if (normalized === '/how-to' || normalized.startsWith('/how-to/')) return 'how_to';
   if (normalized.startsWith('/vs/')) return 'comparison';
+  // Round-ups are comparison surfaces too: same renderer family, same
+  // buying intent, and the metric is only useful if `/compare`, `/vs/*`
+  // and `/alternatives/*` roll up together.
+  if (normalized.startsWith('/alternatives/')) return 'comparison';
   return 'other';
 }
 
