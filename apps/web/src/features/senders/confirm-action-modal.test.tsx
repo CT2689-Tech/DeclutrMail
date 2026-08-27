@@ -1515,3 +1515,188 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
     expect(screen.getByRole('button', { name: /Later/ })).toBeDisabled();
   });
 });
+
+// Founder screenshot review 2026-08-27. Every finding below was visible
+// on the live D226 preview and every one of them passed CI: the facts
+// were individually true, so nothing asserted on what the ASSEMBLED
+// screen claimed. These tests assert the assembly.
+describe('ConfirmActionModal — composite preview tells one story (D226, D245)', () => {
+  function renderComposite(backlog: 'Archive them' | 'Delete them' = 'Archive them') {
+    const view = render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        cleanupQuota={{ remaining: 49, resetsAt: '2026-09-01T00:00:00.000Z' }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: backlog }));
+    return view;
+  }
+
+  // The server charges two units for an unsubscribe carrying a backlog
+  // action (`includesBacklogAction ? 2 : 1`), and the modal's own chip
+  // row said so — while the footer eight lines below said "Uses 1".
+  // A Free user with one action left read a preview promising it fits.
+  it('counts the backlog action in the quota the footer states', () => {
+    const { container } = renderComposite();
+    expect(container.textContent).toContain('Uses 2 of your 49 cleanup actions left this month');
+    expect(container.textContent).not.toContain('Uses 1 of your 49');
+  });
+
+  // Archive's `unchanged` facts are true standalone and false beside an
+  // unsubscribe. Rendered verbatim, the screen ended "…sends a supported
+  // one-click unsubscribe request. Also: … The sender is not unsubscribed."
+  it('never claims the sender is not unsubscribed on an Unsubscribe preview', () => {
+    const { container } = renderComposite();
+    expect(container.textContent).not.toContain('The sender is not unsubscribed');
+  });
+
+  // Same class: the secondary's future-mail fact contradicts the primary's.
+  it('never claims future email is unchanged when the primary unsubscribes', () => {
+    const { container } = renderComposite();
+    expect(container.textContent).not.toContain('Future email is unchanged');
+  });
+
+  // "unless you choose a separate action for it" is stale the moment a
+  // backlog verb is picked — they already chose one.
+  it('drops the "unless you choose a separate action" hedge once a backlog verb is picked', () => {
+    const { container } = renderComposite();
+    expect(container.textContent).not.toContain('unless you choose a separate action');
+  });
+
+  it('keeps the hedge when the backlog is left alone', () => {
+    const { container } = render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(container.textContent).toContain('Existing email stays where it is');
+  });
+});
+
+describe('ConfirmActionModal — each fact is stated once (D226)', () => {
+  function occurrences(haystack: string, needle: string): number {
+    return haystack.split(needle).length - 1;
+  }
+
+  // Screenshot 1: the two-sentence lead under the title reappeared
+  // verbatim inside the match card, because the unsub-alone branch
+  // re-rendered `currentMail.summary` + the channel summary that the
+  // lead paragraph had already assembled.
+  it('states the unsubscribe effect once, not twice', () => {
+    const { container } = render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(occurrences(container.textContent ?? '', 'Existing email stays where it is')).toBe(1);
+  });
+
+  // `recoveryFacts` emitted BOTH `activityUndo.summary` and
+  // `finality.summary` for Unsubscribe — two spellings of one fact —
+  // and the footer then printed the whole block again. Three prints of
+  // "cannot be undone" on one screen. `staticActionPreviewCopy` already
+  // skips finality for exactly this reason; this asserts the parity.
+  it('states unsubscribe finality once per screen', () => {
+    const { container } = render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        cleanupQuota={{ remaining: 49, resetsAt: null }}
+      />,
+    );
+    const text = container.textContent ?? '';
+    // One spelling survives — `activityUndo`'s. `finality` restated it
+    // ("After delivery, the unsubscribe request cannot be recalled.")
+    // and both used to render, back to back, twice over.
+    expect(occurrences(text, 'cannot be undone')).toBe(1);
+    expect(occurrences(text, 'cannot be recalled')).toBe(0);
+  });
+
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    'states the %s undo route once per screen',
+    (verb) => {
+      const { container } = render(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          compositePreview={livePreview}
+          cleanupQuota={{ remaining: 49, resetsAt: null }}
+        />,
+      );
+      // Delete deliberately says "DeclutrMail Undo is available from
+      // Activity…" so the next sentence can contrast Gmail Trash
+      // recovery; Archive and Later say "Undo from Activity…".
+      expect(occurrences(container.textContent ?? '', 'from Activity')).toBe(1);
+    },
+  );
+
+  // One number, one phrasing. Archive alone said "currently match for
+  // Archive."; the composite said "currently match Archive action."
+  it('phrases the match count the same way alone and as a backlog action', () => {
+    const alone = render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(alone.container.textContent).toContain('currently match for Archive');
+    alone.unmount();
+
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+    expect(screen.getByText(/currently match for Archive/)).toBeInTheDocument();
+  });
+});
+
+describe('ConfirmActionModal — the sample panel covers only mail that moves (D226)', () => {
+  // "Show what currently matches (5 of 4)" rendered on an Unsubscribe
+  // with the backlog left alone — inviting inspection of mail the
+  // action will not touch.
+  it('hides the current-match sample when the backlog is left alone', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: /Show what currently matches/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Check these in Gmail first/ })).toBeNull();
+  });
+
+  it('shows it again once a backlog verb is picked', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+        mailboxEmail="chintan.a.thakkar@gmail.com"
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+    expect(screen.getByRole('button', { name: /Show what currently matches/ })).toBeInTheDocument();
+  });
+});

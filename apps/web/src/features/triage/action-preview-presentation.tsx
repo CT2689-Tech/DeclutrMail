@@ -67,6 +67,9 @@ export function ActionPreviewPresentation({
     planUndoDeadline: null,
     wakeAt: actionVerb === 'later' ? wakeAt : null,
     unsubscribeChannel: actionVerb === 'unsubscribe' ? row.unsubscribeMethod : null,
+    // Absolute times render in the reader's own clock: every one of
+    // these surfaces is opened by a click, never server-rendered.
+    timeZone: 'viewer',
     secondaryAction:
       actionVerb === 'unsubscribe' && archiveHistoric ? { verb: 'archive', liveCount } : null,
   });

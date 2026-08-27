@@ -162,5 +162,8 @@ function autopilotPresentation(rule: AutopilotRuleDto) {
     planUndoDeadline: null,
     wakeAt: rule.actionKind === 'later' ? defaultLaterWakeAtIso() : null,
     unsubscribeChannel: rule.actionKind === 'unsubscribe' ? null : null,
+    // Absolute times render in the reader's own clock: every one of
+    // these surfaces is opened by a click, never server-rendered.
+    timeZone: 'viewer',
   });
 }

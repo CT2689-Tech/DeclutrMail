@@ -78,6 +78,9 @@ export function BatchActionSheet({
     planUndoDeadline: null,
     wakeAt: verb === 'Later' ? wakeAt : null,
     unsubscribeChannel: null,
+    // Absolute times render in the reader's own clock: every one of
+    // these surfaces is opened by a click, never server-rendered.
+    timeZone: 'viewer',
   });
   const title =
     verb === 'Archive'

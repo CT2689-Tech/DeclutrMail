@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import {
   buildActionPresentation,
+  composeRecoveryFacts,
   countUnsubscribeCapabilities,
   defaultLaterWakeAtIso,
   describeInboxScope,
@@ -286,6 +287,8 @@ export function ConfirmActionModal({
   // choose between two mutually-exclusive fates for the same mail.
   const showSecondaryRow = isUnsubVerb;
   const hasSecondaryAction = showSecondaryRow && secondaryVerb !== null;
+  /** Unsubscribe with the backlog left alone — nothing in Gmail moves. */
+  const unsubscribeMovesNothing = isUnsubVerb && !hasSecondaryAction;
 
   // For Archive/Delete primary the time-window applies to the primary
   // verb itself. For Unsubscribe with a non-null secondary, the
@@ -528,12 +531,28 @@ export function ConfirmActionModal({
   // modal verb counts (Keep never opens this modal). Bulk needs one
   // unit per ACTIONABLE (non-protected) sender — the same set the
   // server will charge.
+  //
+  // A backlog verb is a SECOND unit per sender. `recordUnsubIntent`
+  // preflights `includesBacklogAction ? 2 : 1` and consumes one for the
+  // intent row; the paired Archive/Delete then enqueues as its own
+  // action and consumes the other (actions.service.ts). This constant
+  // was hardcoded `1`, so an Unsubscribe + Archive preview promised a
+  // Free user with one action left that it fit — and the 402 landed
+  // AFTER the unsubscribe request had already gone out, which cannot be
+  // undone (founder screenshot 2026-08-27).
+  //
+  // A no-channel Unsubscribe consumes nothing (`method !== 'none'`
+  // guards the assert), so it must not claim a unit either.
   const quotaRemaining = cleanupQuota?.remaining ?? null;
-  const unitsNeeded = isBulk
-    ? bulkPreview?.data
-      ? bulkPreview.data.senders.filter((s) => !s.protected).length
-      : (request?.senders.length ?? 0)
-    : 1;
+  const unitsPerSender =
+    (isUnsubVerb && unsubscribeChannel === 'none' ? 0 : 1) + (hasSecondaryAction ? 1 : 0);
+  const unitsNeeded =
+    unitsPerSender *
+    (isBulk
+      ? bulkPreview?.data
+        ? bulkPreview.data.senders.filter((s) => !s.protected).length
+        : (request?.senders.length ?? 0)
+      : 1);
   // Set when `requestAction` already trimmed this request to what the
   // allowance covers. The senders here ARE the ones that will run, so the
   // preview above is truthful as-is; all this changes is the copy, which
@@ -662,6 +681,9 @@ export function ConfirmActionModal({
     planUndoDeadline: null,
     wakeAt: isLaterVerb ? wakeAt : null,
     unsubscribeChannel,
+    // Absolute times render in the reader's own clock: every one of
+    // these surfaces is opened by a click, never server-rendered.
+    timeZone: 'viewer',
     secondaryAction:
       secondaryVerb === null ? null : { verb: secondaryVerb, liveCount: compositeCount ?? null },
   });
@@ -679,8 +701,14 @@ export function ConfirmActionModal({
   // cast, not a narrowing, so TypeScript never saw the object reach
   // `join` and the modal shipped "Also: [object Object]" on every
   // composite (live, 2026-08-21).
-  const lead = [actionEffectCopy(presentation.primary), actionEffectCopy(presentation.secondary)]
-    .filter((copy) => copy !== null)
+  // `effectCopy` is assembled in `@declutrmail/shared/actions`, which is
+  // also where composite suppression lives. This used to be a local
+  // re-assembly from the raw semantics fields, so the shared builder
+  // could drop a contradicted fact from `previewCopy` while the lead the
+  // reader saw kept printing it (founder screenshot 2026-08-27).
+  const lead = [presentation.primary, presentation.secondary]
+    .filter((action): action is PresentedAction => action !== null)
+    .map((action) => action.effectCopy)
     .join(' Also: ');
 
   const numberStyle: CSSProperties = {
@@ -707,7 +735,7 @@ export function ConfirmActionModal({
     return `${primaryPart} + ${secondaryPart}`;
   })();
 
-  const recoveryCopy = recoveryFacts(presentation.primary, presentation.secondary).join(' ');
+  const recoveryCopy = composeRecoveryFacts(presentation.primary, presentation.secondary).join(' ');
 
   // Subjects for the "Show what currently matches" panel (spec v1.3 — recent
   // beats oldest for 3-sec sender recognition). Single-sender single-
@@ -1391,275 +1419,275 @@ export function ConfirmActionModal({
               </div>
               {isUnsubVerb && (
                 <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-                  Archiving or deleting older email is a second cleanup action on Free.
+                  Archiving or deleting past email uses a second cleanup action.
                 </span>
               )}
             </div>
           )}
 
-          {/* Current-match summary + subject sample (spec v1.2 Decision 15). */}
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-              padding: '12px 14px',
-              background: color.paper,
-              border: `1px solid ${color.line}`,
-              borderRadius: 9,
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-              {(() => {
-                if (livePreviewUnavailable) {
-                  return (
-                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      {previewSenderGone
-                        ? 'This sender is no longer in this mailbox — the list you are looking at is out of date. Refresh to see what is there now.'
-                        : 'Couldn’t load a live preview. Close and retry — no inbox email can move without one.'}
-                    </span>
-                  );
-                }
-                if (livePreviewLoading) {
-                  return (
-                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Loading the live preview… Confirm unlocks when it is ready.
-                    </span>
-                  );
-                }
-                // Headline figure resolution order:
-                //   1. composite per-bucket count (the one count source)
-                //   2. fallback qualitative copy while it resolves
-                if (compositeCount !== undefined) {
-                  if (primaryActsOnInbox) {
-                    return (
-                      <>
-                        <strong style={numberStyle}>
-                          {compositeCount.toLocaleString('en-US')}
-                        </strong>
-                        <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                          email{compositeCount === 1 ? '' : 's'} currently match
-                          {activeReach === 'all_mail' ? ' across inbox + archived' : ''}
-                          {showWindowQualifier
-                            ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
-                            : ''}
-                          {isDeleteVerb
-                            ? ' for Trash.'
-                            : isLaterVerb
-                              ? ' for Later.'
-                              : ' for Archive.'}
-                        </span>
-                      </>
-                    );
-                  }
-                  if (hasSecondaryAction) {
-                    return (
-                      <>
-                        <strong style={numberStyle}>
-                          {compositeCount.toLocaleString('en-US')}
-                        </strong>
-                        <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                          email{compositeCount === 1 ? '' : 's'} currently match{' '}
-                          {secondaryVerb === 'delete' ? 'Trash' : 'Archive'} action
-                          {showWindowQualifier
-                            ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
-                            : ''}
-                          .
-                        </span>
-                      </>
-                    );
-                  }
-                }
-                if (previewLoading) {
-                  return (
-                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      Checking how much mail from {subject} is in your inbox…
-                    </span>
-                  );
-                }
-                if (isUnsubVerb && !hasSecondaryAction) {
-                  const channel = presentation.primary.unsubscribeChannel;
-                  return (
-                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      {presentation.primary.currentMail.summary}{' '}
-                      {channel.kind === 'not-applicable'
-                        ? presentation.primary.futureMail.summary
-                        : channel.summary}
-                    </span>
-                  );
-                }
-                if (isLaterVerb) {
-                  return (
-                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                      {presentation.primary.currentMail.summary}{' '}
-                      {presentation.primary.schedule.kind === 'scheduled'
-                        ? presentation.primary.schedule.summary
-                        : presentation.primary.schedule.kind === 'required'
-                          ? presentation.primary.schedule.summary
-                          : null}
-                    </span>
-                  );
-                }
-                if (historic != null) {
-                  return (
-                    <>
-                      <strong style={numberStyle}>{historic.toLocaleString('en-US')}</strong>
-                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                        email{historic === 1 ? '' : 's'} received from {subject} in total.
-                      </span>
-                    </>
-                  );
-                }
-                return (
-                  <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                    Only email in your inbox.
-                  </span>
-                );
-              })()}
-            </div>
+          {/* Current-match summary + subject sample (spec v1.2 Decision 15).
 
-            {/* Why a true count can still read as a contradiction — see
+              Hidden entirely for an Unsubscribe with the backlog left
+              alone: that action moves no mail, so a panel counting what
+              "currently matches" — and offering a Gmail search and a
+              subject sample over it — invites the reader to inspect mail
+              nothing is going to touch. It shipped reading "Show what
+              currently matches (5 of 17)" under an action whose own lead
+              said existing email stays where it is (founder screenshot
+              2026-08-27). */}
+          {!unsubscribeMovesNothing && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 6,
+                padding: '12px 14px',
+                background: color.paper,
+                border: `1px solid ${color.line}`,
+                borderRadius: 9,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                {(() => {
+                  if (livePreviewUnavailable) {
+                    return (
+                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                        {previewSenderGone
+                          ? 'This sender is no longer in this mailbox — the list you are looking at is out of date. Refresh to see what is there now.'
+                          : 'Couldn’t load a live preview. Close and retry — no inbox email can move without one.'}
+                      </span>
+                    );
+                  }
+                  if (livePreviewLoading) {
+                    return (
+                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                        Loading the live preview… Confirm unlocks when it is ready.
+                      </span>
+                    );
+                  }
+                  // Headline figure resolution order:
+                  //   1. composite per-bucket count (the one count source)
+                  //   2. fallback qualitative copy while it resolves
+                  if (compositeCount !== undefined) {
+                    if (primaryActsOnInbox) {
+                      return (
+                        <>
+                          <strong style={numberStyle}>
+                            {compositeCount.toLocaleString('en-US')}
+                          </strong>
+                          <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                            email{compositeCount === 1 ? '' : 's'} currently match
+                            {activeReach === 'all_mail' ? ' across inbox + archived' : ''}
+                            {showWindowQualifier
+                              ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
+                              : ''}
+                            {isDeleteVerb
+                              ? ' for Trash.'
+                              : isLaterVerb
+                                ? ' for Later.'
+                                : ' for Archive.'}
+                          </span>
+                        </>
+                      );
+                    }
+                    if (hasSecondaryAction) {
+                      return (
+                        <>
+                          <strong style={numberStyle}>
+                            {compositeCount.toLocaleString('en-US')}
+                          </strong>
+                          <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                            email{compositeCount === 1 ? '' : 's'} currently match for{' '}
+                            {secondaryVerb === 'delete' ? 'Trash' : 'Archive'}
+                            {showWindowQualifier
+                              ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
+                              : ''}
+                            .
+                          </span>
+                        </>
+                      );
+                    }
+                  }
+                  if (previewLoading) {
+                    return (
+                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                        Checking how much mail from {subject} is in your inbox…
+                      </span>
+                    );
+                  }
+                  if (isLaterVerb) {
+                    return (
+                      <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                        {presentation.primary.currentMail.summary}{' '}
+                        {presentation.primary.schedule.kind === 'scheduled'
+                          ? presentation.primary.schedule.summary
+                          : presentation.primary.schedule.kind === 'required'
+                            ? presentation.primary.schedule.summary
+                            : null}
+                      </span>
+                    );
+                  }
+                  if (historic != null) {
+                    return (
+                      <>
+                        <strong style={numberStyle}>{historic.toLocaleString('en-US')}</strong>
+                        <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                          email{historic === 1 ? '' : 's'} received from {subject} in total.
+                        </span>
+                      </>
+                    );
+                  }
+                  return (
+                    <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                      Only email in your inbox.
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {/* Why a true count can still read as a contradiction — see
                 `describeInboxScope`. Rendered as a status so a screen
                 reader hears the reconciliation, not just the bare 0. */}
-            {inboxScopeCopy && (
-              <span role="status" style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
-                {inboxScopeCopy}
-                {archivedReachHint ? ` ${archivedReachHint}` : ''}
-              </span>
-            )}
+              {inboxScopeCopy && (
+                <span role="status" style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
+                  {inboxScopeCopy}
+                  {archivedReachHint ? ` ${archivedReachHint}` : ''}
+                </span>
+              )}
 
-            {/* Where the sender's mail actually is — both counts from the
+              {/* Where the sender's mail actually is — both counts from the
                 one composite preview, so the split cannot drift. */}
-            {mailLocationLine && (
-              <span
-                role="status"
-                data-testid="mail-location-line"
-                style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}
-              >
-                {mailLocationLine}
-              </span>
-            )}
+              {mailLocationLine && (
+                <span
+                  role="status"
+                  data-testid="mail-location-line"
+                  style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}
+                >
+                  {mailLocationLine}
+                </span>
+              )}
 
-            {livePreviewReady && (
-              <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
-                Rechecked when it runs, so the final count can differ from this preview.
-              </span>
-            )}
+              {livePreviewReady && (
+                <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+                  Rechecked when it runs, so the final count can differ from this preview.
+                </span>
+              )}
 
-            {/* D — let the reader verify the real set in Gmail BEFORE
+              {/* D — let the reader verify the real set in Gmail BEFORE
                 confirming. Single-sender only: a bulk sheet has no one
                 `from:` to search. The copy says "roughly" on purpose —
                 Gmail's `older_than:` is day-granular and resolves live,
                 so its result count can differ from the preview's exact
                 `internal_date` filter. Never claim the two match. */}
-            {verifyInGmailUrl && (
-              <a
-                href={verifyInGmailUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  alignSelf: 'flex-start',
-                  fontFamily: font.mono,
-                  fontSize: 11,
-                  letterSpacing: '0.04em',
-                  color: color.fgSoft,
-                  fontWeight: 600,
-                  textDecoration: 'none',
-                }}
-                title="Opens a Gmail search roughly matching this preview. Gmail filters by whole days and searches live, so its count can differ slightly."
-              >
-                Check these in Gmail first ↗
-              </a>
-            )}
+              {verifyInGmailUrl && (
+                <a
+                  href={verifyInGmailUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    alignSelf: 'flex-start',
+                    fontFamily: font.mono,
+                    fontSize: 11,
+                    letterSpacing: '0.04em',
+                    color: color.fgSoft,
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                  title="Opens a Gmail search roughly matching this preview. Gmail filters by whole days and searches live, so its count can differ slightly."
+                >
+                  Check these in Gmail first ↗
+                </a>
+              )}
 
-            {/* Current matches (5 of N) ▾ — privacy-safe subjects panel.
+              {/* Current matches (5 of N) ▾ — privacy-safe subjects panel.
                 Only shown for single-sender flows where the "subjects pool"
                 stub is meaningful; bulk flows would need a per-sender
                 drilldown that lands separately. */}
-            {senders.length === 1 && (compositeCount ?? 0) > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowSubjects((v) => !v)}
-                aria-expanded={showSubjects}
-                style={{
-                  alignSelf: 'flex-start',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  fontFamily: font.mono,
-                  fontSize: 11,
-                  color: color.fgMuted,
-                  letterSpacing: '0.04em',
-                }}
-              >
-                {showSubjects
-                  ? 'Hide current matches ▴'
-                  : `Show what currently matches (${subjectsPreview.length.toLocaleString('en-US')} of ${(compositeCount ?? 0).toLocaleString('en-US')}) ▾`}
-              </button>
-            )}
-            {showSubjects && subjectsPreview.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                  padding: '8px 10px',
-                  background: color.card,
-                  border: `1px solid ${color.line}`,
-                  borderRadius: 6,
-                  marginTop: 4,
-                }}
-              >
-                {/* Date first: on a windowed action this sample is the 5
-                    most recent WITHIN the bucket, and the date is how the
-                    reader checks it respects the window they picked. */}
-                {subjectsPreview.map((s, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: 'flex',
-                      gap: 8,
-                      alignItems: 'baseline',
-                      fontFamily: font.mono,
-                      fontSize: 11.5,
-                      color: color.fgSoft,
-                    }}
-                  >
-                    <span style={{ width: 18, color: color.fgMuted }}>
-                      {String(i + 1).padStart(2, '0')}
-                    </span>
-                    {s.date !== null && (
-                      <time
-                        dateTime={s.date}
-                        style={{
-                          color: color.fgMuted,
-                          flex: '0 0 auto',
-                          fontVariantNumeric: 'tabular-nums',
-                        }}
-                      >
-                        {shortDate(s.date)}
-                      </time>
-                    )}
-                    <span style={{ color: color.fg, minWidth: 0 }}>{s.subject}</span>
-                  </div>
-                ))}
-                <div
+              {senders.length === 1 && (compositeCount ?? 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowSubjects((v) => !v)}
+                  aria-expanded={showSubjects}
                   style={{
-                    marginTop: 6,
-                    paddingTop: 6,
-                    borderTop: `1px dashed ${color.line}`,
+                    alignSelf: 'flex-start',
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
                     fontFamily: font.mono,
-                    fontSize: 10.5,
+                    fontSize: 11,
                     color: color.fgMuted,
                     letterSpacing: '0.04em',
                   }}
                 >
-                  Subjects only · we never fetch or store full email contents
+                  {showSubjects
+                    ? 'Hide current matches ▴'
+                    : `Show what currently matches (${subjectsPreview.length.toLocaleString('en-US')} of ${(compositeCount ?? 0).toLocaleString('en-US')}) ▾`}
+                </button>
+              )}
+              {showSubjects && subjectsPreview.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    padding: '8px 10px',
+                    background: color.card,
+                    border: `1px solid ${color.line}`,
+                    borderRadius: 6,
+                    marginTop: 4,
+                  }}
+                >
+                  {/* Date first: on a windowed action this sample is the 5
+                    most recent WITHIN the bucket, and the date is how the
+                    reader checks it respects the window they picked. */}
+                  {subjectsPreview.map((s, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex',
+                        gap: 8,
+                        alignItems: 'baseline',
+                        fontFamily: font.mono,
+                        fontSize: 11.5,
+                        color: color.fgSoft,
+                      }}
+                    >
+                      <span style={{ width: 18, color: color.fgMuted }}>
+                        {String(i + 1).padStart(2, '0')}
+                      </span>
+                      {s.date !== null && (
+                        <time
+                          dateTime={s.date}
+                          style={{
+                            color: color.fgMuted,
+                            flex: '0 0 auto',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {shortDate(s.date)}
+                        </time>
+                      )}
+                      <span style={{ color: color.fg, minWidth: 0 }}>{s.subject}</span>
+                    </div>
+                  ))}
+                  <div
+                    style={{
+                      marginTop: 6,
+                      paddingTop: 6,
+                      borderTop: `1px dashed ${color.line}`,
+                      fontFamily: font.mono,
+                      fontSize: 10.5,
+                      color: color.fgMuted,
+                      letterSpacing: '0.04em',
+                    }}
+                  >
+                    Subjects only · we never fetch or store full email contents
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div
@@ -1690,8 +1718,8 @@ export function ConfirmActionModal({
                   : quotaShort
                     ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
                     : quotaRemaining !== null
-                      ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.${recoveryCopy ? ` ${recoveryCopy}` : ''}`
-                      : (recoveryCopy ?? '')}
+                      ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
+                      : ''}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {livePreviewUnavailable &&
@@ -1745,34 +1773,6 @@ export function ConfirmActionModal({
       </div>
     </>
   );
-}
-
-function actionEffectCopy(action: PresentedAction | null): string | null {
-  if (action === null) return null;
-  const future =
-    action.unsubscribeChannel.kind === 'not-applicable'
-      ? action.futureMail.summary
-      : action.unsubscribeChannel.summary;
-  return [
-    action.currentMail.summary,
-    future,
-    ...action.unchanged,
-    ...(action.schedule.kind === 'none' ? [] : [action.schedule.summary]),
-  ].join(' ');
-}
-
-function recoveryFacts(primary: PresentedAction, secondary: PresentedAction | null): string[] {
-  return [
-    ...new Set(
-      [primary, secondary]
-        .filter((action): action is PresentedAction => action !== null)
-        .flatMap((action) => [
-          action.activityUndo.summary,
-          ...(action.providerRecovery.kind === 'none' ? [] : [action.providerRecovery.summary]),
-          ...(action.finality.kind === 'reversible-or-changeable' ? [] : [action.finality.summary]),
-        ]),
-    ),
-  ];
 }
 
 /**

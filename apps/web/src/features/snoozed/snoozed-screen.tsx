@@ -470,6 +470,9 @@ function WakeConfirm({
     planUndoDeadline: null,
     wakeAt: null,
     unsubscribeChannel: null,
+    // Absolute times render in the reader's own clock: every one of
+    // these surfaces is opened by a click, never server-rendered.
+    timeZone: 'viewer',
   }).primary;
   const what =
     row.laterCount === null
