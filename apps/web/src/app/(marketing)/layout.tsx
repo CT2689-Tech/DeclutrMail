@@ -27,6 +27,7 @@ import { PublicRouteTracker } from '@/features/marketing/public-route-tracker';
 import { PublicFooter, PublicHeader } from '@/features/marketing/public-shell/public-shell';
 import { SignupRefCapture } from '@/features/marketing/signup-ref-capture';
 import { ThemeScript } from '@/features/theme/theme-script';
+import { softwareApplicationDescription } from './site-json-ld-description';
 import '@/features/marketing/public-shell/public-shell.css';
 
 const { color, font } = tokens;
@@ -114,8 +115,7 @@ const SITE_JSON_LD = {
       // recovery into "Activity undo" — the shorthand that reads as
       // universal undo. This is the description an answer engine quotes,
       // so it carries the limits with the claim.
-      description:
-        'Gmail cleanup that previews every action before it runs — the current matching count, an available sample, and the exact Gmail changes — then takes one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. Archive and Later are reversible from Activity for the plan’s undo window; a delivered unsubscribe request cannot be recalled.',
+      description: softwareApplicationDescription,
       applicationCategory: 'UtilitiesApplication',
       operatingSystem: 'Web',
       offers: tierOffers(),

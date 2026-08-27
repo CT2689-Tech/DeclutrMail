@@ -1,3 +1,4 @@
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import type { LearnArticle } from './types';
 
 export const BLOG_SLUGS = [
@@ -255,7 +256,10 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         paragraphs: [
           'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after the cleanup action. DeclutrMail must remember the exact Gmail label changes for that mailbox so a retry does not repeat or compound them.',
           'DeclutrMail stores Gmail message IDs and label changes rather than a duplicate email body. Activity shows Undo while recovery is available. Triage also shows recent actions, but Activity remains the dependable place to review results and start recovery.',
-          'The deadline should be visible. Every plan offers Undo for thirty days. Gmail Trash can end recovery earlier if the user empties it or permanently deletes an email.',
+          (UNIFORM_UNDO_WINDOW_DAYS === null
+            ? 'The deadline should be visible. Every plan offers Undo, though the exact window depends on which plan.'
+            : `The deadline should be visible. Every plan offers Undo for ${UNIFORM_UNDO_WINDOW_DAYS} days.`) +
+            ' Gmail Trash can end recovery earlier if the user empties it or permanently deletes an email.',
         ],
       },
       {
@@ -285,7 +289,10 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         id: 'trust',
         title: 'Trust comes from specific claims',
         paragraphs: [
-          '“Recoverable for thirty days from Activity,” “restorable from Gmail Trash for up to thirty days,” and “cannot be undone after delivery” are less elegant than one universal promise. They are also useful when something goes wrong.',
+          (UNIFORM_UNDO_WINDOW_DAYS === null
+            ? '“Recoverable for the plan’s window from Activity,”'
+            : `“Recoverable for ${UNIFORM_UNDO_WINDOW_DAYS} days from Activity,”`) +
+            ' “restorable from Gmail Trash for up to thirty days,” and “cannot be undone after delivery” are less elegant than one universal promise. They are also useful when something goes wrong.',
           'The standard for a cleanup product should be that every action names the affected email and gives an honest recovery statement, including when recovery is unavailable. Reversibility then becomes a real product property instead of a marketing adjective.',
         ],
       },

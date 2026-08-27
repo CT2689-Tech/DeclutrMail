@@ -46,7 +46,18 @@ describe('D245 action semantics', () => {
       kind: 'gmail-trash',
       approximateDays: 30,
     });
-    expect(staticActionPreviewCopy('delete')).toContain('DeclutrMail Undo');
+    // D245 Critical fix: `staticActionPreviewCopy` used to read
+    // `activityUndo.summary` raw, so it kept shipping "DeclutrMail Undo
+    // is available from Activity during your plan's Undo window" — the
+    // hedge — on every live public route rendering ACTION_REGISTRY
+    // descriptions, even after the ladder went uniform. It must now
+    // derive through `activityUndoSummary` exactly like the live-preview
+    // path does, and state the window instead of hedging.
+    expect(UNIFORM_UNDO_WINDOW_DAYS).not.toBeNull();
+    expect(staticActionPreviewCopy('delete')).not.toContain("plan's Undo window");
+    expect(staticActionPreviewCopy('delete')).toContain(
+      `Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`,
+    );
     expect(staticActionPreviewCopy('delete')).toContain('Gmail Trash recovery is separate');
   });
 

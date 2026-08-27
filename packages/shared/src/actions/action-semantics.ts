@@ -236,7 +236,16 @@ export function getActionSemantics<Verb extends ActionVerb>(
 /** Static preview facts; live previews prepend scope/count and append deadlines. */
 export function staticActionPreviewCopy(verb: ActionVerb): string {
   const semantics = ACTION_SEMANTICS[verb];
-  const recovery = [semantics.activityUndo.summary];
+  // D245 fix: this static path was reading `activityUndo.summary` raw,
+  // which meant it never got the "state the window instead of hedging"
+  // derivation `presentationActivityUndo` already applies below. No
+  // specific action is behind static copy, so there is no deadline to
+  // pass — only the uniform-window derivation applies.
+  const activityUndoSummaryText =
+    semantics.activityUndo.kind === 'none'
+      ? semantics.activityUndo.summary
+      : activityUndoSummary(UNIFORM_UNDO_WINDOW_DAYS, null, semantics.activityUndo.summary);
+  const recovery = [activityUndoSummaryText];
   if (semantics.providerRecovery.kind !== 'none') {
     recovery.push(semantics.providerRecovery.summary);
   }
