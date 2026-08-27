@@ -461,13 +461,13 @@ describe('D226 Later says when the whole pile comes back at once', () => {
       unsubscribeChannel: null,
     }).primary;
 
-  it('names the timing once the reach crosses the threshold', () => {
+  it('names the shared return time once the reach crosses the threshold', () => {
     const p = later(1_718);
-    expect(p.bulkReturnNotice).toBe('They all return together, not spread out.');
+    expect(p.bulkReturnNotice).toBe('All of them share that one return time.');
     // In the shared copy too, so any surface rendering it inherits the
     // sentence without wiring a prop of its own.
-    expect(p.effectCopy).toContain('They all return together, not spread out.');
-    expect(p.previewCopy).toContain('They all return together, not spread out.');
+    expect(p.effectCopy).toContain('All of them share that one return time.');
+    expect(p.previewCopy).toContain('All of them share that one return time.');
   });
 
   // The count is stated once, in the headline, under its own "rechecked
@@ -478,14 +478,26 @@ describe('D226 Later says when the whole pile comes back at once', () => {
     expect(p.bulkReturnNotice).not.toMatch(/\d/);
   });
 
+  // The wake pipeline cannot promise the mail lands all at once:
+  // `batchModify` chunks at 1,000 ids into sequential requests and the
+  // mirror updates only after the whole call, so a failure on a later
+  // chunk leaves the earlier one already restored and the rest arriving
+  // after a backoff. The guarantee is the SCHEDULE — one
+  // `snoozed_until` per sender — so the copy claims that and nothing more.
+  it('never promises the mail arrives all at once', () => {
+    const notice = later(1_718).bulkReturnNotice ?? '';
+    expect(notice).not.toMatch(/together|at once|simultaneous|all in one/i);
+    expect(notice).toContain('return time');
+  });
+
   it('stays quiet below the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD - 1).bulkReturnNotice).toBeNull();
-    expect(later(17).effectCopy).not.toContain('return together');
+    expect(later(17).effectCopy).not.toContain('share that one return time');
   });
 
   it('fires exactly at the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD).bulkReturnNotice).toBe(
-      'They all return together, not spread out.',
+      'All of them share that one return time.',
     );
   });
 
