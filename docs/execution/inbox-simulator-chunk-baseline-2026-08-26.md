@@ -451,3 +451,72 @@ Note: chunk filenames are content-hashed and will change between builds
 (e.g. `5793-1b57f7a60d6cf7b6.js` is specific to this commit's build
 output). Re-derive the target filename each time via the `/api/auth/me`
 search in step 3 rather than hard-coding this baseline's hash.
+
+---
+
+## Final measurement — Plan 4 Task 5 (2026-08-27)
+
+**Purpose.** Plan 4's Global Constraints require re-running this
+measurement after every task; this is the measurement after the final
+task (Task 5 — step 4/completion screen/storage v4). No import was added
+that touches Gmail/query-layer code — Task 5 only adds
+`@declutrmail/shared/copy` constants and local React state/effects — so
+this re-run mainly confirms nothing regressed.
+
+**Measured at commit:** `58704031` (parent of this task's commits; working
+tree had only this task's uncommitted `inbox-simulator-screen.{tsx,test.tsx}`
+changes at measurement time). Branch: `feat/d133-simulator-arc`.
+
+Command (task's own verification script, run against a fresh
+`pnpm --filter @declutrmail/web build`):
+
+```python
+import json, pathlib
+m = json.loads(pathlib.Path('apps/web/.next/app-build-manifest.json').read_text())
+key = [k for k in m['pages'] if 'inbox-simulator' in k and k.endswith('/page')][0]
+files = m['pages'][key]
+marks = ['/api/auth/me','/api/screener/queue','patchSenderPolicy','/api/me/timezone','AuthProvider','useOptionalAuth','/api/senders/']
+hits=[]
+for f in files:
+    p = pathlib.Path('apps/web/.next')/f
+    if not p.exists(): continue
+    t=p.read_text(errors='ignore'); got=[s for s in marks if s in t]
+    if got: hits.append((f,got))
+print(f"chunks: {len(files)}"); print("CLEAN" if not hits else f"REGRESSION: {hits}")
+```
+
+Actual output:
+
+```
+chunks: 12
+CLEAN
+```
+
+**File list (12 files — same count as the Tasks 1+2 measurement in
+`progress.md`):**
+
+```
+static/chunks/1238-f64d3e6b20402caf.js
+static/chunks/2974-d85b8f97977c22b5.js
+static/chunks/3820-60dc250bc710839d.js
+static/chunks/3987-9b846d7704cbd170.js
+static/chunks/4685-c7f569a547fbc9fb.js
+static/chunks/4891-031bc8d52b961494.js
+static/chunks/8261-edbb440e18588b22.js
+static/chunks/app/(marketing)/inbox-simulator/page-f5f8b3d64ffb6419.js
+static/chunks/fd74c2f4-96d974ee2cc492e0.js
+static/chunks/main-app-1efdf74b4bf671db.js
+static/chunks/webpack-e700e2b2d1df02e4.js
+static/css/d3c51ebaef36a7dd.css
+```
+
+**Verdict: CLEAN.** Zero of the seven marker strings (including the two
+`/api/auth/me` / `/api/screener/queue` markers this document's own §3b/§3f
+identified as the historical leak) appear in any of the route's 12
+chunks. Route size from the build's own route table:
+`/inbox-simulator  10.8 kB  153 kB First Load JS` (shared-by-all baseline
+unchanged at 107 kB) — the route grew from Plan 4's earlier tasks (real
+`ActionSheet`/`BatchActionSheet`/`ActivateRuleModal` render trees replacing
+the deleted `DemoPreviewDialog`), not from any newly-leaked module; no
+new import in Task 5 touches Gmail, TanStack Query, or the authenticated
+API client.
