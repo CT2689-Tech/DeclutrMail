@@ -314,6 +314,78 @@ describe('InboxSimulatorScreen', () => {
     expect(within(dialog).getByRole('button', { name: /^Later/ })).toBeEnabled();
   });
 
+  /** Archives the amazon.com batch (step 1) then unsubscribes LinkedIn
+   *  (step 2) — the exact journey the "confirms the amazon.com batch…"
+   *  test above already exercises — to land on step 3, the rule step. */
+  function reachRuleStep() {
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
+        name: /^Archive all/,
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+        name: /^Unsubscribe/,
+      }),
+    );
+  }
+
+  it('offers both turning the rule on and watching first, and names Plus', () => {
+    render(<InboxSimulatorScreen />);
+    reachRuleStep();
+    expect(
+      screen.getByRole('heading', { name: 'A one-time decision does not repeat itself.' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+
+    // Real ActivateRuleModal copy — "Turn on and run it" is the actual
+    // confirmLabel for an entitled enable (activate-rule-modal.tsx),
+    // not the brief's illustrative "Turn it on".
+    expect(screen.getByRole('button', { name: /Turn on and run it/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Watch first/i })).toBeInTheDocument();
+    expect(screen.getByText(/\bPlus\b/)).toBeInTheDocument();
+  });
+
+  it('draws the rule preview from the senders step 1 just archived, and states Protected is skipped', () => {
+    render(<InboxSimulatorScreen />);
+    reachRuleStep();
+    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+
+    const amazonBatch = findDomainBatches(TRIAGE_QUEUE).find((b) => b.domain === 'amazon.com')!;
+    for (const row of amazonBatch.eligibleRows) {
+      expect(screen.getByText(row.senderName)).toBeInTheDocument();
+    }
+    expect(screen.getByText(/Protected.*(are|is) always skipped/i)).toBeInTheDocument();
+  });
+
+  it('turning the rule on advances the guide to step 4', () => {
+    render(<InboxSimulatorScreen />);
+    reachRuleStep();
+    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Turn on and run it/i }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Archive and Unsubscribe never remove a message.' }),
+    ).toBeInTheDocument();
+  });
+
+  it('watching first is also a complete decision for the step, not a dead end', () => {
+    render(<InboxSimulatorScreen />);
+    reachRuleStep();
+    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Watch first/i }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
+  });
+
   // D133 Plan 4: unreachable until Task 4 lands the Autopilot rule step.
   // `DemoCompletion` (where this plan-comparison strip lives) only
   // renders once every guided step is complete, and step 3 (the rule
