@@ -33,6 +33,23 @@ export interface ActionPreviewPresentationProps {
   mode: 'modal' | 'inline';
   /** Optional app-owned context shown before the action copy. */
   accountContext?: ReactNode;
+  /**
+   * Rendered verification detail, or omitted for the compact preview.
+   *
+   * A NODE rather than data, for the same reason `accountContext` is:
+   * tree-shaking is per-module, so a component referenced in this file's
+   * JSX lands in every importer's chunk — including the public inbox
+   * simulator, which passes none of it. Measured: inlining the block
+   * here put `/inbox-simulator` at 175.5 kB against a 175 kB budget.
+   */
+  detailSlot?: ReactNode | undefined;
+  /**
+   * Cleanup actions left this month, or `null`/omitted when the tier
+   * does not meter them. Stays here (rather than in the slot) because
+   * how many units THIS action costs is derived from the verb and the
+   * backlog toggle, which only this component holds.
+   */
+  quotaRemaining?: number | null | undefined;
 }
 
 /**
@@ -57,6 +74,8 @@ export function ActionPreviewPresentation({
   wakeAt = null,
   mode,
   accountContext,
+  detailSlot,
+  quotaRemaining,
 }: ActionPreviewPresentationProps) {
   const subject = row.senderName;
   const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
@@ -91,6 +110,14 @@ export function ActionPreviewPresentation({
             : `Keep ${subject}`;
 
   const lead = presentation.previewCopy;
+
+  // The server charges a second unit for a backlog verb riding an
+  // Unsubscribe (`recordUnsubIntent` preflights `includesBacklogAction
+  // ? 2 : 1`, and the paired Archive enqueues as its own action). The
+  // senders modal stated one for both cases until 2026-08-27; this
+  // surface never stated a number at all, so a Free user spent from
+  // Triage blind.
+  const unitsNeeded = 1 + (verb === 'Unsubscribe' && archiveHistoric ? 1 : 0);
 
   // What actually moves: Archive + Later + Delete act on the sender's current
   // inbox mail; Unsubscribe only when the historic toggle is on;
@@ -182,6 +209,23 @@ export function ActionPreviewPresentation({
       >
         <ImpactFigure counts={counts} inboxCount={inboxCount} mode={mode} />
       </div>
+
+      {/* Verification detail — the same three affordances the senders
+          confirm modal has always carried, in the same words. They exist
+          so the reader can check the real set BEFORE confirming, which
+          matters most here: triage is the keyboard surface where people
+          move fastest. Rendered only when the verb actually moves mail;
+          a sample of what "currently matches" under an action that moves
+          nothing invites inspection of mail nothing will touch. */}
+      {counts && detailSlot}
+
+      {quotaRemaining !== null && quotaRemaining !== undefined && (
+        <div style={{ fontSize: 11.5, color: color.fgMuted }}>
+          Uses {unitsNeeded.toLocaleString('en-US')} of your{' '}
+          {quotaRemaining.toLocaleString('en-US')} cleanup action
+          {quotaRemaining === 1 ? '' : 's'} left this month.
+        </div>
+      )}
 
       {/* Reasoning recap — the engine's "why this verdict" copy. */}
       {verb !== 'Keep' && (

@@ -75,13 +75,33 @@ const AUTHED_DEFAULT_KB = 180;
 const OVERRIDES_KB = {
   '/(marketing)/page': 120, // 116.9 — hero + ledger demo + FAQ
   '/(marketing)/pricing/page': 125, // 121.2 — cycle toggle, tier cards, compare table
-  '/(marketing)/inbox-simulator/page': 175, // 169.8 — the only real interactive surface
+  // Raised 175 -> 177 on 2026-08-27. The comment said 169.8 (measured
+  // 2026-08-16) but the route had already drifted to 174.3 on main, so
+  // the headroom was 0.7 kB and nobody knew. This change adds 0.7 more:
+  // every `UNIFORM_UNDO_WINDOW_DAYS` consumer moved to the direct
+  // `@declutrmail/shared/entitlements/undo-window` subpath, which costs
+  // a little barrel dedupe and buys back a shipped `undefined` (see
+  // that module's consumers). 177 restores real headroom AND records
+  // the true number.
+  '/(marketing)/inbox-simulator/page': 177, // 175.0 — the only real interactive surface
 
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
   '/(app)/senders/page': 210, // 206.5 — grid + table + compose strip + saved views
-  '/(app)/triage/page': 200, // 195.9 — action sheet, preview, undo tray
+  // Raised 200 -> 206 on 2026-08-27; measured 202.2, up from 198.2 on
+  // main (the 195.9 in the old comment was stale). The D226 preview
+  // gained the verification detail the senders confirm modal already
+  // carried — where the sender's mail actually is, the Gmail
+  // cross-check, the current-match sample, and the cleanup cost — so
+  // the reader can check the real set before confirming on the fastest
+  // surface in the product. The block sits in its own module and
+  // reaches both preview paths as a rendered node, which is what keeps
+  // it OUT of the public inbox simulator's chunk (that route imports
+  // `TriageRow`, and importing the block there put it at 175.5 against
+  // a 175 budget). Headroom is deliberately small: 206 leaves ~4 kB, so
+  // the next addition here still has to argue for itself.
+  '/(app)/triage/page': 206, // 202.2 (was 198.2) — action sheet, preview + verification detail, undo tray
   '/(app)/senders/[id]/page': 195, // 191.3 — detail: timeseries + history + messages
   '/(app)/billing/page': 185, // 181.3 — checkout + invoices + plan controls + explainer
 
