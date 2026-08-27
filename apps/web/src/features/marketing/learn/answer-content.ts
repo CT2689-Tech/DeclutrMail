@@ -1,4 +1,5 @@
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import type { LearnArticle } from './types';
 
 export const ANSWER_SLUGS = [
@@ -73,7 +74,10 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Evaluate action risk separately from data risk',
         paragraphs: [
           'An app can minimize stored data and still move the wrong messages. Look for a preview that names the sender, action, and count; a clear activity record; safe retries; and a recovery explanation for each action rather than one universal Undo promise.',
-          'In DeclutrMail, Archive, Later, and Delete have Activity Undo while their plan-window token is live. Delete also has separate Gmail Trash recovery. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched email and do not silently become future sender rules.',
+          (UNIFORM_UNDO_WINDOW_DAYS === null
+            ? 'In DeclutrMail, Archive, Later, and Delete have Activity Undo while their plan-window token is live.'
+            : `In DeclutrMail, Archive, Later, and Delete have Activity Undo for ${UNIFORM_UNDO_WINDOW_DAYS} days while the token is live.`) +
+            ' Delete also has separate Gmail Trash recovery. A delivered unsubscribe request is one-way. Manual Archive, Later, and Delete affect current matched email and do not silently become future sender rules.',
         ],
       },
       {
@@ -226,15 +230,24 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     intro:
       'There is no honest universal undo for email cleanup. Some actions are reversible label changes, some rely on Gmail Trash, some are standing settings you can change again, and some leave the system entirely.',
     quickAnswer:
-      'Archive, Later, and Delete expose Activity Undo while the plan-window token is active. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Keep can be changed as a policy. A delivered unsubscribe request cannot be recalled.',
+      (UNIFORM_UNDO_WINDOW_DAYS === null
+        ? 'Archive, Later, and Delete expose Activity Undo while the plan-window token is active.'
+        : `Archive, Later, and Delete expose a ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`) +
+      ' Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Keep can be changed as a policy. A delivered unsubscribe request cannot be recalled.',
     readingMinutes: 7,
     sections: [
       {
         id: 'model',
         title: 'Undo records the inverse, not a copy of your email',
         paragraphs: [
-          'For a reversible email-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one mailbox and expires after the plan’s configured window.',
-          'Every plan currently offers Undo in Activity for thirty days. Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
+          'For a reversible email-moving action, DeclutrMail records the Gmail message identifiers and the label change needed to reverse the action. It does not copy the message body into an undo store. The token is a capability tied to one mailbox and expires after ' +
+            (UNIFORM_UNDO_WINDOW_DAYS === null
+              ? 'the plan’s configured window.'
+              : `${UNIFORM_UNDO_WINDOW_DAYS} days.`),
+          (UNIFORM_UNDO_WINDOW_DAYS === null
+            ? 'Every plan currently offers Undo in Activity, though the exact window depends on which plan.'
+            : `Every plan currently offers Undo in Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`) +
+            ' Gmail’s own retention rules can still impose an outside limit, especially for Trash.',
         ],
       },
       {

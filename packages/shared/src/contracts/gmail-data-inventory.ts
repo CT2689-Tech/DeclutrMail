@@ -8,6 +8,8 @@
  * than maintained as separate prose lists.
  */
 
+import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements';
+
 export const GMAIL_DATA_RETENTION = {
   mailboxIndex:
     "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
@@ -17,7 +19,9 @@ export const GMAIL_DATA_RETENTION = {
   derivedMailboxData:
     "Until the user deletes this mailbox's saved data or deletes their DeclutrMail account.",
   undoJournal:
-    'Until the plan-based Undo window expires, followed by the operational cleanup period.',
+    UNIFORM_UNDO_WINDOW_DAYS === null
+      ? 'Until the plan-based Undo window expires, followed by the operational cleanup period.'
+      : `Until the ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window expires, followed by the operational cleanup period.`,
 } as const;
 
 export type GmailDataCategory = 'connection' | 'message' | 'derived';

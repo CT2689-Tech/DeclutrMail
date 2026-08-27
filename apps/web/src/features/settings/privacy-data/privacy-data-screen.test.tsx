@@ -18,6 +18,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import type { Me } from '@/features/auth/api/use-me';
 import { PrivacyDataView } from './privacy-data-screen';
 
@@ -107,9 +108,23 @@ describe('PrivacyDataView', () => {
     // Tier unknown → the FLOOR across the ladder, derived. Never a
     // tier-specific promise, and never a split that no longer exists.
     expect(screen.getByText(/at least 30 days on any plan/i)).toBeInTheDocument();
+    // The Delete clause hedges on a DIFFERENT axis than the sentence above:
+    // not "is this user's tier known" (it isn't, here) but "does the ladder
+    // itself diverge". The ladder is currently uniform, so this must state
+    // the number even while `undoDays` is null.
     expect(
-      screen.getByText(/Delete also uses your plan's Activity Undo window/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/Delete also uses your plan's Activity Undo window/i),
+    ).not.toBeInTheDocument();
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(
+        screen.getByText(
+          new RegExp(
+            `Delete also uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window`,
+            'i',
+          ),
+        ),
+      ).toBeInTheDocument();
+    }
     expect(screen.getByText(/Gmail Trash recovery is separate/i)).toBeInTheDocument();
   });
 

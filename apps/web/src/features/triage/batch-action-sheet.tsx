@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
@@ -257,7 +258,9 @@ export function BatchActionSheet({
                 : preview === 'unavailable'
                   ? 'Preview unavailable — close and retry.'
                   : 'Counting inbox email — confirm unlocks after the live preview loads.'
-              : "One undo reverses the whole batch during your plan's Activity window."}
+              : UNIFORM_UNDO_WINDOW_DAYS === null
+                ? "One undo reverses the whole batch during your plan's Activity window."
+                : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {preview === 'unavailable' && onRetryPreview && (

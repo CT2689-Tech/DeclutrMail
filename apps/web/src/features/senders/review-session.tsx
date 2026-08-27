@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Avatar, Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { type DecisionId, type ReviewKind, type Sender } from './data';
 import { formatReadRatePct } from './fact-language';
 
@@ -442,8 +443,10 @@ export function ReviewSession({
             letterSpacing: '0.04em',
           }}
         >
-          Archive, Later, and Delete use your plan&apos;s Activity Undo window · Activity logs every
-          change
+          {UNIFORM_UNDO_WINDOW_DAYS === null
+            ? "Archive, Later, and Delete use your plan's Activity Undo window"
+            : `Archive, Later, and Delete use the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window`}{' '}
+          · Activity logs every change
         </span>
         <Button tone="ghost" onClick={onCancel}>
           Cancel

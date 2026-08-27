@@ -13,7 +13,7 @@
  * `llms.txt` and the `text/markdown` alternate on `/pricing`.
  */
 
-import { type PricePoint } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS, type PricePoint } from '@declutrmail/shared/entitlements';
 
 import {
   CAPABILITY_LABELS,
@@ -27,6 +27,13 @@ import {
   pricingTiers,
 } from '@/features/marketing/pricing/pricing-model';
 import { siteUrl } from '@/features/marketing/landing/urls';
+
+/** D245: derived so this machine-readable doc can't hedge a uniform ladder. */
+function activityUndoWindowClause(): string {
+  return UNIFORM_UNDO_WINDOW_DAYS === null
+    ? "for the plan's undo window"
+    : `for the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window`;
+}
 
 /** "$9/mo · ₹749/mo in India" — both real manifest amounts, never an FX rate. */
 function priceLine(point: PricePoint, per: string): string {
@@ -136,7 +143,7 @@ behaviours a user chooses between, not two products and not two plans.
   number can change if the mailbox changed in between.
 - Manual actions affect current matched mail. They do not create future-mail
   rules; that is what Autopilot presets are for.
-- Archive and Later can be reversed from Activity for the plan's undo window.
+- Archive and Later can be reversed from Activity ${activityUndoWindowClause()}.
 - Delete carries an Activity token for up to 30 days while Gmail retains
   Trash. Emptying Trash ends recovery sooner.
 - A delivered unsubscribe request cannot be recalled.

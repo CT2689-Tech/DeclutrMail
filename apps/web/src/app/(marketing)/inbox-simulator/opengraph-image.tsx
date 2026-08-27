@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { ogMarkDataUri } from '@/features/marketing/og/brand-mark';
 import { ogFonts } from '@/features/marketing/og/fonts';
 
@@ -30,6 +31,16 @@ export const alt =
   'DeclutrMail inbox simulator — an action preview showing the exact email count and Gmail changes before approval, using made-up data.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
+
+/**
+ * Pulled out of the JSX below so this line is a plain, importable string
+ * instead of text buried inside an `ImageResponse` tree (D245). Same
+ * derive-or-hedge shape as every other undo-window site.
+ */
+export const undoWindowCaption =
+  UNIFORM_UNDO_WINDOW_DAYS === null
+    ? "Undo from Activity during your plan's Undo window."
+    : `Undo from Activity during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window.`;
 
 const INK = '#0E1413';
 const PAPER = '#FAFAF7';
@@ -188,7 +199,7 @@ export default async function InboxSimulatorOpenGraphImage() {
           }}
         >
           <span>Removes the Inbox label. Nothing is deleted.</span>
-          <span>Undo from Activity during your plan’s Undo window.</span>
+          <span>{undoWindowCaption}</span>
         </div>
       </div>
 

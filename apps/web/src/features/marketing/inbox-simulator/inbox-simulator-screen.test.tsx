@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
@@ -10,6 +10,9 @@ vi.mock('@/features/auth/mailbox-action-context', () => {
   throw new Error('The public inbox simulator imported authenticated mailbox context.');
 });
 
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+
+import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE } from '@/features/triage/data';
 import { InboxSimulatorScreen } from './inbox-simulator-screen';
 
@@ -172,10 +175,36 @@ describe('InboxSimulatorScreen', () => {
     });
   });
 
+  it('names every capability Plus adds over Free in the plan-comparison strip', () => {
+    render(<InboxSimulatorScreen />);
+
+    // Reach the completion block, which is where the plan strip lives.
+    fireEvent.click(screen.getByRole('button', { name: /Archive \(A\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Unsubscribe' }));
+    fireEvent.click(screen.getByRole('button', { name: /Keep \(K\)/ }));
+    expect(screen.getByText('Guided demo complete')).toBeInTheDocument();
+
+    const free = new Set(TIER_MANIFEST.free.capabilities);
+    const added = TIER_MANIFEST.plus.capabilities.filter((c) => !free.has(c));
+    const labels = [...new Set(added.map((c) => CAPABILITY_LABELS[c].split('—')[0]!.trim()))];
+
+    expect(labels.length).toBeGreaterThan(0);
+    // Scoped to the strip itself, not `screen` at large: `ACTION_SAFETY_SUMMARY`
+    // (rendered unconditionally in the "Before anything changes" section)
+    // already contains the word "Autopilot", so an unscoped `screen.getByText`
+    // would pass even if the Plus column never mentioned Autopilot at all.
+    const strip = screen.getByLabelText('How the plans extend Triage');
+    for (const label of labels) {
+      expect(within(strip).getByText(new RegExp(label))).toBeInTheDocument();
+    }
+  });
+
   it('tracks the simulator OAuth exit through the shared public CTA event', () => {
     render(<InboxSimulatorScreen />);
 
-    fireEvent.click(screen.getByRole('link', { name: /^Connect Gmail/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^Review my Gmail senders/ }));
 
     expect(track).toHaveBeenCalledWith('landing_cta_clicked', {
       cta: 'connect_gmail',
@@ -200,5 +229,11 @@ describe('InboxSimulatorScreen', () => {
     const noChannel = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod === 'none');
     expect(noChannel).toBeDefined();
     expect(screen.getByText(noChannel!.senderName)).toBeInTheDocument();
+  });
+
+  it('uses one label for the connect action', () => {
+    render(<InboxSimulatorScreen />);
+    expect(screen.queryByText(/^Connect Gmail/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Review my Gmail senders/).length).toBeGreaterThan(0);
   });
 });

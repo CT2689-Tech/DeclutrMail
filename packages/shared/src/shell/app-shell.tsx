@@ -5,19 +5,25 @@ import { PRIVACY_STORAGE_ITEMS } from '../copy/privacy';
 import { color, font } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
 import { UNDO_TRAY_INSET_VAR } from '../components/undo-tray/undo-tray';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements';
 import { Sidebar } from './sidebar';
 
-const TRUST_CLAIMS = [
+export const TRUST_CLAIMS = [
   // D227 K/A/U/L/D — Delete IS a verb. The prior "Nothing deleted"
   // claim was a flat lie once ADR-0019 landed Delete. Per CLAUDE.md
   // §2.1, the canonical claim is the storage allowlist, not the
   // mutation surface. Archive/Later/Delete share the plan Activity Undo
   // window; Delete also has Gmail's separate Trash-retention fallback.
+  // The sentence below has TWO "30 days": the Activity window (ours —
+  // derived from UNIFORM_UNDO_WINDOW_DAYS) and Gmail's Trash retention
+  // (Google's, not ours — stays a literal; do not derive it).
   {
     label: 'Undo windows',
     destination: 'activity',
     title:
-      "Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. Delivered unsubscribe requests can't be recalled.",
+      UNIFORM_UNDO_WINDOW_DAYS === null
+        ? "Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. Delivered unsubscribe requests can't be recalled."
+        : `Archive, Later, and Delete can be undone from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days. Gmail Trash recovery is separate and normally lasts up to 30 days. Delivered unsubscribe requests can't be recalled.`,
   },
   {
     label: 'Stored Gmail data',

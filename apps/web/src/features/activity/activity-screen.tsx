@@ -26,6 +26,7 @@ import {
   useIsAtMost,
 } from '@declutrmail/shared';
 import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
@@ -67,6 +68,17 @@ import {
 } from './activity-route-filters';
 
 const { color, font, shadow } = tokens;
+
+/**
+ * D245: same derive-or-hedge shape as every other undo-window site.
+ * Pulled out of the JSX below so it is a plain importable string the
+ * regression guard can read without rendering this screen.
+ */
+export const activityUndoRecoveryHelp =
+  (UNIFORM_UNDO_WINDOW_DAYS === null
+    ? "Activity Undo uses your DeclutrMail plan's window for Archive, Later, and Delete."
+    : `Activity Undo uses a ${UNIFORM_UNDO_WINDOW_DAYS}-day window for Archive, Later, and Delete.`) +
+  ' Gmail Trash recovery is a separate fallback for Delete and normally lasts up to 30 days. A delivered unsubscribe request cannot be recalled; only an associated archive may have Activity Undo.';
 
 /**
  * Activity screen (D55-D60 + B-track power-options).
@@ -322,10 +334,7 @@ export function ActivityScreen() {
       />
 
       <ContextualHelp question="Which Undo or recovery option applies?">
-        Activity Undo uses your DeclutrMail plan&apos;s window for Archive, Later, and Delete. Gmail
-        Trash recovery is a separate fallback for Delete and normally lasts up to 30 days. A
-        delivered unsubscribe request cannot be recalled; only an associated archive may have
-        Activity Undo.
+        {activityUndoRecoveryHelp}
       </ContextualHelp>
 
       <WeeklyReviewCard

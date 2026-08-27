@@ -1,3 +1,4 @@
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import type { LearnArticle } from './types';
 
 export const HOW_TO_SLUGS = [
@@ -124,7 +125,13 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         ],
         callout: {
           title: 'Each action has its own Undo rules',
-          body: 'Archive, Later, and Delete can be reversed from Activity while their undo window is open (its length depends on your plan). Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
+          // The parenthetical is deleted, not reworded, when the ladder
+          // is uniform: there is no plan-dependency left to describe. A
+          // divergent ladder restores it, because it would then be true.
+          body:
+            'Archive, Later, and Delete can be reversed from Activity while their undo window is open' +
+            (UNIFORM_UNDO_WINDOW_DAYS === null ? ' (its length depends on your plan)' : '') +
+            '. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Once an unsubscribe request is delivered, that request is one-way.',
           tone: 'truth',
         },
       },

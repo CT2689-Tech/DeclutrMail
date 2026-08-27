@@ -1,4 +1,5 @@
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import type { FaqEntry } from './types';
 
 export const FAQ_ENTRIES: readonly FaqEntry[] = [
@@ -67,7 +68,12 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'undo',
     question: 'Can every DeclutrMail action be undone?',
     answer:
-      'No. Archive, Later, and Delete expose Activity Undo while their undo window is open (its length depends on your plan). Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Keep and Protected are sender settings you can change again. A delivered unsubscribe request cannot be recalled.',
+      // The parenthetical is deleted, not reworded, when the ladder is
+      // uniform: there is no plan-dependency left to describe. A
+      // divergent ladder restores it, because it would then be true.
+      'No. Archive, Later, and Delete expose Activity Undo while their undo window is open' +
+      (UNIFORM_UNDO_WINDOW_DAYS === null ? ' (its length depends on your plan)' : '') +
+      '. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Keep and Protected are sender settings you can change again. A delivered unsubscribe request cannot be recalled.',
     link: {
       href: '/answers/how-undo-works-for-gmail-cleanup',
       label: 'See every recovery path',

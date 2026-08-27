@@ -1,5 +1,6 @@
 import type { ActionJobStatus } from '../contracts/action-job-status';
 import type { ActionVerb } from '../contracts/verb-constants';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements/undo-window';
 import type { UnsubscribeCapability } from './unsubscribe-capability';
 
 export type CurrentMailScope = 'none' | 'matching-current-inbox' | 'matching-archived';
@@ -235,7 +236,16 @@ export function getActionSemantics<Verb extends ActionVerb>(
 /** Static preview facts; live previews prepend scope/count and append deadlines. */
 export function staticActionPreviewCopy(verb: ActionVerb): string {
   const semantics = ACTION_SEMANTICS[verb];
-  const recovery = [semantics.activityUndo.summary];
+  // D245 fix: this static path was reading `activityUndo.summary` raw,
+  // which meant it never got the "state the window instead of hedging"
+  // derivation `presentationActivityUndo` already applies below. No
+  // specific action is behind static copy, so there is no deadline to
+  // pass — only the uniform-window derivation applies.
+  const activityUndoSummaryText =
+    semantics.activityUndo.kind === 'none'
+      ? semantics.activityUndo.summary
+      : activityUndoSummary(UNIFORM_UNDO_WINDOW_DAYS, null, semantics.activityUndo.summary);
+  const recovery = [activityUndoSummaryText];
   if (semantics.providerRecovery.kind !== 'none') {
     recovery.push(semantics.providerRecovery.summary);
   }
@@ -478,11 +488,36 @@ function presentationActivityUndo(
   return {
     kind: 'plan-window',
     deadline,
-    summary:
-      deadline === null
-        ? semantics.activityUndo.summary
-        : `Undo from Activity until ${formatIsoUtc(deadline)}.`,
+    summary: activityUndoSummary(
+      UNIFORM_UNDO_WINDOW_DAYS,
+      deadline,
+      semantics.activityUndo.summary,
+    ),
   };
+}
+
+/**
+ * Chooses the Activity Undo summary line for an action that supports it.
+ * Pure and parameterized on the window (rather than reading
+ * `UNIFORM_UNDO_WINDOW_DAYS` itself) so the divergent-ladder fallback can
+ * be driven directly in tests without editing `pricing.config.ts`.
+ */
+export function activityUndoSummary(
+  uniformWindowDays: number | null,
+  deadline: string | null,
+  planDependentFallback: string,
+): string {
+  // A real deadline always wins — it is the exact answer for THIS action.
+  if (deadline !== null) {
+    return `Undo from Activity until ${formatIsoUtc(deadline)}.`;
+  }
+  // No deadline yet (every preview, before the mutation runs). While the
+  // ladder is uniform we can still state the window instead of hedging.
+  if (uniformWindowDays !== null) {
+    return `Undo from Activity for ${uniformWindowDays} days.`;
+  }
+  // Ladder has diverged; the plan-dependent wording is the honest one.
+  return planDependentFallback;
 }
 
 /** Stable display copy until surfaces provide mailbox-timezone formatting. */

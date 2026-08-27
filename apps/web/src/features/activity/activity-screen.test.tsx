@@ -23,9 +23,11 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import {
   absoluteTime,
+  activityUndoRecoveryHelp,
   ActivityScreen,
   formatExpiry,
   relativeTime,
@@ -732,6 +734,28 @@ describe('ActivityScreen — populated', () => {
 
     expect(await screen.findByText('Which Undo or recovery option applies?')).toBeInTheDocument();
     expect(screen.getByText(/Gmail Trash recovery is a separate fallback/i)).toBeInTheDocument();
+
+    // D245 fix-wave: states the window instead of hedging with "your
+    // DeclutrMail plan's window" once the ladder is uniform. Asserted
+    // against the rendered DOM (not just the exported constant) so a
+    // regression that stops wiring `activityUndoRecoveryHelp` into the
+    // JSX — not just one that reintroduces the hedge text itself — is
+    // also caught here.
+    expect(screen.queryByText(/DeclutrMail plan's window/)).not.toBeInTheDocument();
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(
+        screen.getByText(new RegExp(`a ${UNIFORM_UNDO_WINDOW_DAYS}-day window`)),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it('exports the same Activity Undo help text it renders', () => {
+    // Guards against the two halves drifting: a hand-edit to the JSX that
+    // doesn't touch the exported constant, or vice versa.
+    expect(activityUndoRecoveryHelp).not.toMatch(/plan(?:'s)?\s+(?:activity\s+)?window/i);
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(activityUndoRecoveryHelp).toContain(`a ${UNIFORM_UNDO_WINDOW_DAYS}-day window`);
+    }
   });
 
   it('renders the D59 stats line with verb counts', async () => {

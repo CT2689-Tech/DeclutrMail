@@ -1,5 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+
 import { ANSWER_ARTICLES, ANSWER_SLUGS } from './answer-content';
 import { ArticlePage } from './article-page';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
@@ -163,6 +166,28 @@ describe('public learning content registry', () => {
     expect(copy).toMatch(/Gmail(?:’s)? (?:short )?(?:generated )?preview snippet/i);
     expect(copy).toMatch(/does store Gmail preview snippets/i);
     expect(copy).toMatch(/Daily Brief.{0,140}Anthropic/i);
+  });
+
+  it('states the undo-window truth on the FAQ answer instead of a false plan-dependency claim (D245)', () => {
+    const entry = FAQ_ENTRIES.find((candidate) => candidate.id === 'undo')!;
+    expect(entry.answer).not.toContain('its length depends on your plan');
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(entry.answer).toContain('while their undo window is open. Delete also has');
+    }
+    // Gmail's own Trash retention is a separate fact and stays literal.
+    expect(entry.answer).toContain('separate Gmail Trash recovery for up to about 30 days');
+  });
+
+  it('states the undo-window truth on the how-to callout instead of a false plan-dependency claim (D245)', () => {
+    const callout = HOW_TO_ARTICLES['clean-gmail-by-sender'].sections.find(
+      (section) => section.id === 'action-boundaries',
+    )!.callout!;
+    expect(callout.body).not.toContain('its length depends on your plan');
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(callout.body).toContain('while their undo window is open. Delete also has');
+    }
+    // Gmail's own Trash retention is a separate fact and stays literal.
+    expect(callout.body).toContain('separate Gmail Trash recovery for up to about 30 days');
   });
 });
 

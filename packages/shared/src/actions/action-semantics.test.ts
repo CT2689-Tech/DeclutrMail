@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { ACTION_VERBS } from '../contracts/verb-constants';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements/undo-window';
 import {
   ACTION_SEMANTICS,
   actionHasRecovery,
+  activityUndoSummary,
   buildActionPresentation,
   buildActionReceiptResult,
   staticActionPreviewCopy,
@@ -44,7 +46,18 @@ describe('D245 action semantics', () => {
       kind: 'gmail-trash',
       approximateDays: 30,
     });
-    expect(staticActionPreviewCopy('delete')).toContain('DeclutrMail Undo');
+    // D245 Critical fix: `staticActionPreviewCopy` used to read
+    // `activityUndo.summary` raw, so it kept shipping "DeclutrMail Undo
+    // is available from Activity during your plan's Undo window" — the
+    // hedge — on every live public route rendering ACTION_REGISTRY
+    // descriptions, even after the ladder went uniform. It must now
+    // derive through `activityUndoSummary` exactly like the live-preview
+    // path does, and state the window instead of hedging.
+    expect(UNIFORM_UNDO_WINDOW_DAYS).not.toBeNull();
+    expect(staticActionPreviewCopy('delete')).not.toContain("plan's Undo window");
+    expect(staticActionPreviewCopy('delete')).toContain(
+      `Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`,
+    );
     expect(staticActionPreviewCopy('delete')).toContain('Gmail Trash recovery is separate');
   });
 
@@ -102,6 +115,12 @@ describe('D245 action semantics', () => {
     });
     expect(unknownCount.totalLiveCount).toBeNull();
     expect(unknownCount.primary.facts.some((fact) => fact.includes('matching email'))).toBe(false);
+
+    // D245 review: with no deadline yet, the current uniform ladder means
+    // the preview states the window instead of hedging with "your plan's
+    // Undo window". Derived, not pinned — see UNIFORM_UNDO_WINDOW_DAYS.
+    expect(UNIFORM_UNDO_WINDOW_DAYS).not.toBeNull();
+    expect(unknownCount.primary.activityUndo.summary).toContain(String(UNIFORM_UNDO_WINDOW_DAYS));
   });
 
   it('rejects invented counts and invalid presentation dates', () => {
@@ -167,6 +186,37 @@ describe('D245 action semantics', () => {
     });
     expect(receipt.providerRecovery.kind).toBe('gmail-trash');
     expect(receipt.finality.kind).toBe('provider-permanent-deletion');
+  });
+
+  describe('activityUndoSummary', () => {
+    // D245 review finding: the divergent-ladder fallback was previously
+    // reachable only by hand-editing pricing.config.ts. Parameterizing on
+    // the window (instead of reading UNIFORM_UNDO_WINDOW_DAYS internally)
+    // lets all three paths be driven directly, permanently, here.
+    const planDependentFallback = "Undo from Activity during your plan's Undo window.";
+
+    it('states the exact deadline when one is known, even if the ladder has diverged', () => {
+      const deadline = '2026-07-21T16:00:00.000Z';
+      expect(activityUndoSummary(30, deadline, planDependentFallback)).toBe(
+        'Undo from Activity until Jul 21, 2026 at 4:00 PM UTC.',
+      );
+      expect(activityUndoSummary(null, deadline, planDependentFallback)).toBe(
+        'Undo from Activity until Jul 21, 2026 at 4:00 PM UTC.',
+      );
+    });
+
+    it('states the window when no deadline exists and the ladder is uniform', () => {
+      expect(activityUndoSummary(30, null, planDependentFallback)).toBe(
+        'Undo from Activity for 30 days.',
+      );
+      expect(activityUndoSummary(14, null, planDependentFallback)).toBe(
+        'Undo from Activity for 14 days.',
+      );
+    });
+
+    it('falls back to the plan-dependent wording when no deadline exists and the ladder has diverged', () => {
+      expect(activityUndoSummary(null, null, planDependentFallback)).toBe(planDependentFallback);
+    });
   });
 });
 

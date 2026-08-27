@@ -6,7 +6,7 @@
  * claim stays `unknown`; it is never completed from memory or a review site.
  */
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST, UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 /**
  * Freshness is per comparison, because verification is per comparison:
@@ -90,6 +90,18 @@ const proMonthly = usd(TIER_MANIFEST.pro.prices.monthly);
 const proAnnual = usd(TIER_MANIFEST.pro.prices.annual);
 const foundingAnnual = TIER_MANIFEST.pro.promo ? usd(TIER_MANIFEST.pro.promo.annual) : null;
 
+// This sentence carries TWO numbers: the Activity Undo window (ours —
+// derived from UNIFORM_UNDO_WINDOW_DAYS, hedged only while the ladder
+// diverges) and Gmail Trash's own retention (Google's, always literal).
+// Lifted out of `DECLUTR` (rather than a ternary inline in the `as const`
+// object below) so the object's const assertion never has to reason about
+// a computed value.
+const recoveryDetail =
+  (UNIFORM_UNDO_WINDOW_DAYS === null
+    ? 'Archive, Later, and Delete use the plan Activity Undo window.'
+    : `Archive, Later, and Delete use the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`) +
+  ' Delete also has separate Gmail Trash recovery, normally up to 30 days. Unsubscribe is not a reversible DeclutrMail action.';
+
 const DECLUTR = {
   focus: {
     summary: 'A guided sender-by-sender cleanup',
@@ -128,8 +140,7 @@ const DECLUTR = {
   },
   recovery: {
     summary: 'Recorded in Activity when recovery is available',
-    detail:
-      'Archive, Later, and Delete use the plan Activity Undo window. Delete also has separate Gmail Trash recovery, normally up to 30 days. Unsubscribe is not a reversible DeclutrMail action.',
+    detail: recoveryDetail,
     state: 'limited',
   },
   data: {
@@ -873,7 +884,9 @@ const gmailFilters: ComparisonDefinition = {
     points: [
       'You need Gmail’s noisy senders surfaced and ranked before you know which rules to write.',
       'You want plain-language sender outcomes and an impact preview rather than filter plumbing.',
-      'You value a cleanup history and a plan-based recovery window for Gmail label changes.',
+      UNIFORM_UNDO_WINDOW_DAYS === null
+        ? 'You value a cleanup history and a plan-based recovery window for Gmail label changes.'
+        : `You value a cleanup history and a ${UNIFORM_UNDO_WINDOW_DAYS}-day recovery window for Gmail label changes.`,
     ],
   },
   rows: [
