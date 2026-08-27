@@ -535,10 +535,98 @@ git commit -m "fix(marketing): derive the simulator plan strip from the manifest
 
 ---
 
+---
+
+### Task 6: The three sites the sweep found last
+
+**Files:**
+
+- Modify: `apps/web/src/features/senders/review-session.tsx:445`
+- Modify: `apps/web/src/features/marketing/comparison/comparison-data.ts:132`
+- Modify: `apps/web/src/features/brief/noise-archive-sheet.tsx:255`
+
+**Interfaces:**
+
+- Consumes: `UNIFORM_UNDO_WINDOW_DAYS` from Task 1.
+- Produces: nothing new.
+
+**Why this task exists is the point of it.** The plan opened claiming nine sites. Task 2
+found a tenth, missed because the sweep matched a literal apostrophe and JSX escapes it.
+Task 3's corrected sweep then found these three. The inventory was 9; the truth is 13.
+
+Two of these are not ternaries at all — they are plain strings that no amount of
+"fix the fallback branch" reasoning reaches:
+
+- `review-session.tsx:445` — JSX body text, escaped apostrophe.
+- `comparison-data.ts:132` — a **public marketing** claim in the competitor comparison
+  data, phrased "the plan Activity Undo window". This one is a promise to prospects,
+  so it under-sells in the place it costs most.
+- `noise-archive-sheet.tsx:255` — the same batch sentence as
+  `batch-action-sheet.tsx:262`, but on the other side of a ternary that is about
+  something else entirely, so it was never converted.
+
+**Do not assume this is the last of them.** Run the corrected sweep again at the end and
+justify every remaining hit. Every previous "complete" claim on this plan has been wrong
+by at least one site.
+
+- [ ] **Step 1: Write the failing tests**
+
+Each site needs an assertion that would fail against the current string. Follow the
+pattern the earlier tasks settled on, and heed the trap Task 3 documented: in
+`renderToStaticMarkup` output the apostrophe arrives as `&#x27;`, so a `not.toContain`
+written with a literal apostrophe silently passes. Assert on text that actually
+discriminates, and prove it does by watching it fail first.
+
+Find each site's existing test file before writing (`ls` the feature directory). If a
+site has no test file at all, say so in your report and assert via the nearest surface
+that renders it rather than creating a new harness.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run each with `pnpm --filter @declutrmail/web exec vitest run <path> --no-file-parallelism`.
+Expected: FAIL, each for the right reason — the hedge is present.
+
+- [ ] **Step 3: Convert all three**
+
+Same shape as every other site: `UNIFORM_UNDO_WINDOW_DAYS === null ? <existing hedge> : <derived string>`.
+
+`comparison-data.ts:132` contains BOTH numbers — the Activity window (ours, derive it)
+and Gmail Trash's "normally up to 30 days" (Google's, leave literal). If that file is a
+plain data module without React, the ternary still works; it is just a string expression.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Expected: PASS.
+
+- [ ] **Step 5: Sweep again, and justify every hit**
+
+```bash
+grep -rnE "your plan(&apos;|&#39;|&#x27;|')s|plan-based Undo|plan Activity Undo|the plan Activity|plan(&apos;|&#39;|&#x27;|')s Activity" packages/shared/src apps/web/src | grep -v "\.test\." | grep -vi "pricing|tier-card|compare-table"
+```
+
+Note this pattern adds `the plan Activity` — `comparison-data.ts` used that phrasing and
+the earlier pattern would not have caught it either.
+
+Expected: only divergent-ladder fallback branches and comments. **Name every hit and say
+why it stays.** An unexplained hit is a site you missed, and this plan has produced two
+false cleans already.
+
+- [ ] **Step 6: Run the full web suite**
+
+Run: `pnpm --filter @declutrmail/web exec vitest run --no-file-parallelism`
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/web/src/features/senders apps/web/src/features/marketing apps/web/src/features/brief
+git commit -m "fix(copy): state the undo window on the last three surfaces (D245)"
+```
+
 ## Done when
 
 - [ ] `UNIFORM_UNDO_WINDOW_DAYS` derives from the manifest and was watched going `null` under a deliberately divergent ladder, then restored.
-- [ ] All nine sites state the window; the sweep in Task 3 Step 5 returns only justified divergent-ladder fallbacks.
+- [ ] All **thirteen** sites state the window — the inventory opened at nine and grew twice under corrected sweeps. Task 6 Step 5's sweep returns only justified divergent-ladder fallbacks and comments, each named.
 - [ ] No literal `30` was introduced for the Activity Undo window anywhere. Gmail Trash's separate 30 stays literal and is commented as Google's, not ours.
 - [ ] The simulator uses one connect label.
 - [ ] The plan strip names Screener and Quiet hours, and was looked at in a browser at desktop and 375px.
