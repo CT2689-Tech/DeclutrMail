@@ -9,9 +9,11 @@ import {
   Button,
   Eyebrow,
   TIER_MANIFEST,
+  tokens,
   type TierId,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
@@ -23,10 +25,18 @@ import { BatchActionSheet } from '@/features/triage/batch-action-sheet';
 import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
 import type { SheetableVerb } from '@/features/triage/store';
+import { ActivateRuleModal } from '@/features/autopilot/activate-rule-modal';
 import { oauthStartUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
-import { buildSyntheticBulkPreview, syntheticInboxCount } from './synthetic-preview';
+import {
+  buildSyntheticBulkPreview,
+  buildSyntheticRulePreview,
+  syntheticInboxCount,
+  SYNTHETIC_RULE,
+} from './synthetic-preview';
+
+const { color } = tokens;
 
 // The FULL fixture queue on purpose (was slice(0,7)): the last two
 // rows are the demo's most instructive states — a reply-protected
@@ -177,21 +187,24 @@ function scenarioKey(scenario: GuidedScenario): string {
 /**
  * Whether this guided step's decision has been recorded. A batch is
  * complete only once every ELIGIBLE member has its own decision — the
- * same predicate the batch confirm itself fans out to.
- *
- * The rule step always reads incomplete: nothing can record one yet
- * (Plan 4 Task 4 wires `ActivateRuleModal`'s confirm). That is honest
- * for this branch's current scope, not a stub — no interaction claims
- * to finish it.
+ * same predicate the batch confirm itself fans out to. The rule step has
+ * no row at all, so its completion travels as its own `ruleDecided` flag
+ * rather than through `decidedIds` — set once `ActivateRuleModal`
+ * confirms either path (turn on and run it, or watch first; both are a
+ * real decision, not just the acting one).
  */
-function isScenarioComplete(scenario: GuidedScenario, decidedIds: ReadonlySet<string>): boolean {
+function isScenarioComplete(
+  scenario: GuidedScenario,
+  decidedIds: ReadonlySet<string>,
+  ruleDecided: boolean,
+): boolean {
   switch (scenario.kind) {
     case 'row':
       return decidedIds.has(scenario.row.id);
     case 'batch':
       return requireDemoBatch(scenario.domain).eligibleRows.every((row) => decidedIds.has(row.id));
     case 'rule':
-      return false;
+      return ruleDecided;
   }
 }
 
@@ -309,9 +322,11 @@ function parseLegacyState(stored: string): StoredDemoState | null {
   }
 }
 
-function hasCompletedGuide(decisions: readonly DemoDecision[]): boolean {
+function hasCompletedGuide(decisions: readonly DemoDecision[], ruleDecided: boolean): boolean {
   const decidedIds = new Set(decisions.map((decision) => decision.rowId));
-  return GUIDED_SCENARIOS.every((scenario) => isScenarioComplete(scenario, decidedIds));
+  return GUIDED_SCENARIOS.every((scenario) =>
+    isScenarioComplete(scenario, decidedIds, ruleDecided),
+  );
 }
 
 /** The row to auto-expand next, or `null` when the current step is not a
@@ -319,12 +334,15 @@ function hasCompletedGuide(decisions: readonly DemoDecision[]): boolean {
 function firstUndecidedRow(
   mode: DemoMode,
   decisions: readonly DemoDecision[],
+  ruleDecided: boolean,
 ): TriageDecisionRow | null {
   const decidedIds = new Set(decisions.map((decision) => decision.rowId));
   if (mode === 'explore') {
     return DEMO_ROWS.find((row) => !decidedIds.has(row.id)) ?? null;
   }
-  const current = GUIDED_SCENARIOS.find((scenario) => !isScenarioComplete(scenario, decidedIds));
+  const current = GUIDED_SCENARIOS.find(
+    (scenario) => !isScenarioComplete(scenario, decidedIds, ruleDecided),
+  );
   return current?.kind === 'row' ? current.row : null;
 }
 
@@ -386,6 +404,11 @@ export function InboxSimulatorScreen() {
     verb: BatchVerb;
     wakeAt: string | null;
   } | null>(null);
+  const [pendingRule, setPendingRule] = useState(false);
+  // Not persisted (storage stays v3 here — Plan 4 Task 5 owns the v4
+  // bump that adds a rule decision to the stored shape), so a reload
+  // resets the rule step like every other unrestored ephemeral state.
+  const [ruleActivated, setRuleActivated] = useState<'active' | 'observe' | null>(null);
   const [dismissedDomains, setDismissedDomains] = useState<readonly string[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const guidedCompletionTracked = useRef(false);
@@ -403,8 +426,11 @@ export function InboxSimulatorScreen() {
       if (restored) {
         setDecisions(restored.decisions);
         setMode(restored.mode);
-        setExpandedId(firstUndecidedRow(restored.mode, restored.decisions)?.id ?? null);
-        guidedCompletionTracked.current = hasCompletedGuide(restored.decisions);
+        // The rule step never restores as decided (see the `ruleActivated`
+        // state note above) — `false` here matches that state's initial
+        // value, not a claim that step 3 is actually undone.
+        setExpandedId(firstUndecidedRow(restored.mode, restored.decisions, false)?.id ?? null);
+        guidedCompletionTracked.current = hasCompletedGuide(restored.decisions, false);
       }
       if (legacyStored) localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
@@ -427,8 +453,9 @@ export function InboxSimulatorScreen() {
     () => new Set(decisions.map((decision) => decision.rowId)),
     [decisions],
   );
+  const ruleDecided = ruleActivated != null;
   const currentGuideIndex = GUIDED_SCENARIOS.findIndex(
-    (scenario) => !isScenarioComplete(scenario, decidedIds),
+    (scenario) => !isScenarioComplete(scenario, decidedIds, ruleDecided),
   );
   const currentScenario =
     currentGuideIndex === -1 ? null : (GUIDED_SCENARIOS[currentGuideIndex] ?? null);
@@ -463,10 +490,17 @@ export function InboxSimulatorScreen() {
   const guidedDecisions = decisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
 
   /** Fire the completion event once, the first time the guide's every
-   *  step is done — shared by the single-row and batch confirm paths so
-   *  the "have we completed?" check cannot drift between them. */
-  const maybeTrackGuideCompletion = (nextDecisions: DemoDecision[]) => {
-    if (guidedCompletionTracked.current || !hasCompletedGuide(nextDecisions)) return;
+   *  step is done — shared by the single-row, batch, and rule confirm
+   *  paths so the "have we completed?" check cannot drift between them.
+   *  `ruleDecidedNow` defaults to the current render's `ruleDecided`;
+   *  `confirmRule` overrides it with the fresh value, since its own
+   *  `setRuleActivated` call has not yet re-rendered when this runs. */
+  const maybeTrackGuideCompletion = (
+    nextDecisions: DemoDecision[],
+    ruleDecidedNow = ruleDecided,
+  ) => {
+    if (guidedCompletionTracked.current || !hasCompletedGuide(nextDecisions, ruleDecidedNow))
+      return;
     guidedCompletionTracked.current = true;
     const guidedOutcome = nextDecisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
     void track('demo_completed', {
@@ -510,7 +544,7 @@ export function InboxSimulatorScreen() {
       },
     ];
     setDecisions(nextDecisions);
-    setExpandedId(firstUndecidedRow(mode, nextDecisions)?.id ?? null);
+    setExpandedId(firstUndecidedRow(mode, nextDecisions, ruleDecided)?.id ?? null);
     setPending(null);
 
     void track('demo_decision_confirmed', {
@@ -569,7 +603,7 @@ export function InboxSimulatorScreen() {
     }));
     const nextDecisions = [...decisions, ...newDecisions];
     setDecisions(nextDecisions);
-    setExpandedId(firstUndecidedRow(mode, nextDecisions)?.id ?? null);
+    setExpandedId(firstUndecidedRow(mode, nextDecisions, ruleDecided)?.id ?? null);
     setPendingBatch(null);
 
     void track('demo_decision_confirmed', {
@@ -583,6 +617,22 @@ export function InboxSimulatorScreen() {
   const confirmBatch = () => {
     if (!pendingBatch) return;
     recordBatchDecision(pendingBatch.batch, pendingBatch.verb);
+  };
+
+  /**
+   * The rule step's decision — recorded on EITHER path
+   * `ActivateRuleModal` offers. Turning the rule on and watching first
+   * are both real, complete decisions (D226's mandatory preview already
+   * gated both identically), so either one advances the guide; this is
+   * the offer the step ends on, not a limitation. `true` is passed
+   * explicitly wherever this function needs "is the step done now" —
+   * `ruleActivated` itself has not re-rendered yet at this point.
+   */
+  const confirmRule = (activationMode: 'active' | 'observe') => {
+    setRuleActivated(activationMode);
+    setPendingRule(false);
+    setExpandedId(firstUndecidedRow(mode, decisions, true)?.id ?? null);
+    maybeTrackGuideCompletion(decisions, true);
   };
 
   const chooseAction = (row: TriageDecisionRow, verb: ActionVerb) => {
@@ -616,6 +666,8 @@ export function InboxSimulatorScreen() {
     setMode('guided');
     setPending(null);
     setPendingBatch(null);
+    setPendingRule(false);
+    setRuleActivated(null);
     setDismissedDomains([]);
     setExpandedId(GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null);
     try {
@@ -628,7 +680,7 @@ export function InboxSimulatorScreen() {
   const changeMode = (nextMode: DemoMode) => {
     setMode(nextMode);
     setPending(null);
-    setExpandedId(firstUndecidedRow(nextMode, decisions)?.id ?? null);
+    setExpandedId(firstUndecidedRow(nextMode, decisions, ruleDecided)?.id ?? null);
   };
 
   return (
@@ -662,6 +714,7 @@ export function InboxSimulatorScreen() {
               scenario={currentScenario}
               currentIndex={currentGuideIndex}
               decidedIds={decidedIds}
+              ruleDecided={ruleDecided}
             />
           ) : null}
 
@@ -696,6 +749,8 @@ export function InboxSimulatorScreen() {
               onVerb={(verb) => chooseBatchAction(currentBatch, verb)}
               onDismiss={() => setDismissedDomains((prev) => [...prev, currentBatch.domain])}
             />
+          ) : mode === 'guided' && currentScenario?.kind === 'rule' ? (
+            <RuleStepCard onPreview={() => setPendingRule(true)} />
           ) : mode === 'explore' && rows.length === 0 ? (
             <ExploreCompletion decisions={decisions} onReset={reset} />
           ) : (
@@ -810,6 +865,29 @@ export function InboxSimulatorScreen() {
           onConfirm={confirmBatch}
         />
       ) : null}
+
+      {/* D226 mandatory preview for the Autopilot rule step. No
+          `mailboxEmail` — the demo has no account. The preview is always
+          `status: 'ready'` (built locally, nothing to fail or retry), so
+          `onRetryPreview` is unreachable in this demo. Autopilot is Plus,
+          not Pro (moved 2026-08-23) — `RuleStepCard` names the tier. */}
+      {pendingRule ? (
+        <ActivateRuleModal
+          rule={SYNTHETIC_RULE}
+          intent="enable"
+          canRunUnattended
+          pendingCount={0}
+          pendingApproximate={false}
+          preview={buildSyntheticRulePreview()}
+          undoWindowDays={MIN_UNDO_WINDOW_DAYS}
+          onRetryPreview={() => undefined}
+          onWatchFirst={() => confirmRule('observe')}
+          isActivating={false}
+          error={null}
+          onCancel={() => setPendingRule(false)}
+          onConfirm={() => confirmRule('active')}
+        />
+      ) : null}
     </div>
   );
 }
@@ -818,10 +896,12 @@ function GuidedScenarioPanel({
   scenario,
   currentIndex,
   decidedIds,
+  ruleDecided,
 }: {
   scenario: GuidedScenario;
   currentIndex: number;
   decidedIds: ReadonlySet<string>;
+  ruleDecided: boolean;
 }) {
   return (
     <section className="dm-simulator-guide" aria-labelledby="dm-simulator-guide-title">
@@ -837,7 +917,7 @@ function GuidedScenarioPanel({
       </div>
       <ol className="dm-simulator-guide-progress" aria-label="Guided demo progress">
         {GUIDED_SCENARIOS.map((item, index) => {
-          const completed = isScenarioComplete(item, decidedIds);
+          const completed = isScenarioComplete(item, decidedIds, ruleDecided);
           const current = index === currentIndex;
           return (
             <li
@@ -852,6 +932,43 @@ function GuidedScenarioPanel({
         })}
       </ol>
     </section>
+  );
+}
+
+/**
+ * Step 3's queue-area entry point — a lightweight offer to preview the
+ * Autopilot rule the guide's decisions so far would create, mirroring
+ * `DomainBatchCard`'s own role for step 1 (a card that OPENS the
+ * D226-mandatory preview, rather than being the preview itself).
+ *
+ * Names the tier explicitly: Autopilot moved to Plus (not Pro) on
+ * 2026-08-23, and a demo that gets this wrong contradicts the pricing
+ * page it is trying to sell.
+ */
+function RuleStepCard({ onPreview }: { onPreview: () => void }) {
+  return (
+    <div
+      style={{
+        background: color.card,
+        border: `1px dashed ${color.primaryBorder}`,
+        borderRadius: 10,
+        padding: '14px 16px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+      }}
+    >
+      <Eyebrow tone="primary">Autopilot · Plus</Eyebrow>
+      <p style={{ margin: 0, fontSize: 13, color: color.fgSoft, lineHeight: 1.5 }}>
+        Turn this into a standing rule: the senders you just archived, archived automatically as
+        more mail like them arrives — after you preview exactly what it would do right now.
+      </p>
+      <div>
+        <Button tone="primary" onClick={onPreview}>
+          Preview the Autopilot rule
+        </Button>
+      </div>
+    </div>
   );
 }
 
