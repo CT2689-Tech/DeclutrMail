@@ -3873,3 +3873,51 @@ signal to write that test rather than a caveat to publish.
 real screen and asserts every confirm surface Triage can spend from
 states the cost. Both joins independently negative-controlled: removing
 either wiring reddens exactly its own case.
+
+## 2026-08-27 — Four drafts of one sentence, three of them false
+
+**PR:** #660 (final), via #657 → #658 → #659
+
+**Caught by:** Codex stop-time review, four consecutive passes
+
+**What happened:** a single preview sentence about what a large Later
+does took four attempts, and each rejected draft failed the same way —
+it asserted something nobody had verified:
+
+1. *"All 1,718 arrive back together."* — a definite count for an event
+   weeks away, when the headline one line above already disclaims that
+   number and an Activity undo can change it.
+2. *"They all return together, not spread out."* — an atomicity promise
+   the wake pipeline cannot make: `batchModify` chunks at 1,000 ids into
+   sequential requests, so a failure on the second chunk leaves the first
+   restored and the rest arriving after a backoff.
+3. *"All of them share that one return time."* — pointed at the exact
+   minute in the line above it, which is itself a floor: the wake sweep
+   runs every 15 minutes, a failed wake stays due for the next sweep, and
+   a due timer on a disconnected mailbox lies dormant until reconnect.
+
+The fourth reads *"All of them share that one return."*, beside a
+schedule line that now says *"Returns to Inbox **from** …"*.
+
+Every rejected draft was written the same way: I reasoned about what the
+system probably does and wrote copy to match, instead of opening the
+component that does it. Reading `snooze-wake.worker.ts`,
+`snooze-wake.queue.ts` and `GmailClientService.batchModify` took about
+four minutes total and answered all three questions at once. Two of the
+three defects the same day — a bypassable quota preview and a prop no
+call site passed — have the identical root.
+
+**Correct approach:** before a user-facing sentence claims anything about
+what the product WILL do, name the component that guarantees it and read
+that component. If no single component guarantees it, the sentence is
+wrong however good it sounds.
+
+**Rule:** copy about future behaviour is a claim about an executor. Go
+read the executor. "It obviously works like X" is the sound of an
+unverified assertion.
+
+**Enforcement update:** two assertions on the notice — it must contain no
+digits, and must not contain `together` / `at once` / `simultaneous` —
+plus one pinning the schedule line to the `from` floor. All three
+negative-controlled. The deeper guard is the rule above, which no test
+can express.

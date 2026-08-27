@@ -36,9 +36,13 @@ export function ReceiptStrip({
   const canUndo = undo.state === 'available' || undo.state === 'unknown';
   const countCopy = receiptCountCopy(receipt);
   const statusCopy = receiptStatusCopy(receipt);
+  // Same floor as the preview's schedule line (`presentationSchedule`):
+  // the wake sweep runs every 15 minutes and a due timer on a
+  // disconnected mailbox lies dormant until reconnect, so this moment is
+  // when the return becomes due — not when it lands.
   const wakeCopy =
     receipt.wake.kind === 'scheduled'
-      ? `Returns to Inbox ${formatDateTime(receipt.wake.at)}.`
+      ? `Returns to Inbox from ${formatDateTime(receipt.wake.at)}.`
       : null;
   const providerCopy =
     receipt.providerRecovery.kind === 'gmail-trash' ? receipt.providerRecovery.summary : null;

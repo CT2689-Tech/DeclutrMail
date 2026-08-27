@@ -428,12 +428,17 @@ export function actionHasRecovery(verb: ActionVerb): boolean {
  * first already back in the Inbox and the remainder landing after a
  * BullMQ backoff. Spread out, exactly.
  *
- * What IS guaranteed is the SCHEDULE, not the delivery:
- * `sender_policies.snoozed_until` is one timestamp per sender, so every
- * message carrying the Later label shares one return time. That is the
- * fact the reader needs — the pile has a single date, it does not
- * trickle back over days — and it stays true however many requests the
+ * What IS guaranteed is that there is ONE scheduled return for the
+ * sender: `sender_policies.snoozed_until` is a single timestamp, so every
+ * message carrying the Later label waits on the same wake. That is the
+ * fact the reader needs — the pile comes back in one go rather than
+ * trickling over days — and it stays true however many requests the
  * restore takes.
+ *
+ * It says "that one return", not "that one return time". The earlier
+ * wording pointed at the exact minute in the line above it, which is a
+ * floor rather than a delivery time (see `presentationSchedule`), so it
+ * lent precision to a number that does not have it.
  */
 export const LATER_BULK_RETURN_NOTICE_THRESHOLD = 200;
 
@@ -681,7 +686,7 @@ function presentAction(input: PresentActionInput): PresentedAction {
     schedule.kind === 'scheduled' &&
     input.liveCount !== null &&
     input.liveCount >= LATER_BULK_RETURN_NOTICE_THRESHOLD
-      ? 'All of them share that one return time.'
+      ? 'All of them share that one return.'
       : null;
   const effectFacts = [
     currentMail.summary,
@@ -747,7 +752,15 @@ function presentationSchedule(
   return {
     kind: 'scheduled',
     wakeAt,
-    summary: `Returns to Inbox ${formatPresentationDateTime(wakeAt, timeZone)}.`,
+    // "from", not a bare timestamp: the wake is a FLOOR, not a delivery
+    // time. `SnoozeWakeWorker` runs on a 15-minute sweep that picks up
+    // `snoozed_until <= now()`, a due row that fails "stays due and is
+    // retried on the next sweep", and a due timer on a disconnected
+    // mailbox lies dormant until reconnect. So the mail returns at or
+    // after this moment — normally within the sweep window, arbitrarily
+    // later if the mailbox needs reconnecting. Naming an exact minute
+    // promised a precision the pipeline never offered.
+    summary: `Returns to Inbox from ${formatPresentationDateTime(wakeAt, timeZone)}.`,
   };
 }
 
