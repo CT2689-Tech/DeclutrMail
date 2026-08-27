@@ -12,6 +12,7 @@ import {
 } from './action-preview-detail';
 import type { TriageDecisionRow } from './data';
 import { ProtectedActionNotice } from './protected-notice';
+import { UnprotectButton } from './unprotect-button';
 import type { SheetableVerb } from './store';
 
 const { color, font } = tokens;
@@ -384,8 +385,9 @@ export function ActionSheet({
             <ProtectedActionNotice
               row={row}
               verb={verb}
-              surface="triage-preview"
-              onUnprotected={onCancel}
+              unprotectSlot={
+                <UnprotectButton row={row} surface="triage-preview" onUnprotected={onCancel} />
+              }
             />
           </div>
         )}

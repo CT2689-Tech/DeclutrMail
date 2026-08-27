@@ -22,7 +22,7 @@ vi.mock('@/lib/posthog', () => ({ track: h.track }));
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 import { TRIAGE_QUEUE } from './data';
-import { UnprotectButton } from './protected-notice';
+import { UnprotectButton } from './unprotect-button';
 
 function protectedRow() {
   const row = TRIAGE_QUEUE.find((r) => r.protectionReason !== null);
