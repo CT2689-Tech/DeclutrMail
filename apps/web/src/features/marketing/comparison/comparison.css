@@ -253,8 +253,98 @@
  * without it, a dimension name scrolls out of view and every cell in
  * the row loses the thing it is a value OF.
  */
-.dm-compare-matrix {
-  min-width: 1180px;
+/*
+ * Base width matches the sibling quick-scan table deliberately.
+ *
+ * At 1180px unconditionally, the a11y gate's mobile lane measured the
+ * document at 569px against a 375px viewport and failed
+ * `expectNoViewportOverflow` — even though the wrap clips correctly
+ * (337px client, 1180px scroll) and no element escapes it. The sibling
+ * table at 820px has never tripped it, so the safe move is to inherit
+ * that width at phone sizes and widen only where there is room.
+ *
+ * Nine columns at 375px is not a real reading experience anyway; the
+ * horizontal scroll carries it, and the wider grid is a desktop
+ * affordance.
+ */
+@media (min-width: 900px) {
+  .dm-compare-matrix {
+    min-width: 1180px;
+  }
+}
+
+/*
+ * Below 900px the matrix STACKS instead of scrolling.
+ *
+ * Nine columns cannot be read at 375px, and forcing them into a scroll
+ * container made the document itself measure 569px against a 375px
+ * viewport — `expectNoViewportOverflow` in the a11y gate's mobile lane
+ * caught it. The wrap clipped correctly (337px client, 1180px scroll)
+ * and nothing escaped it, so the fix is not more clipping: it is to
+ * stop rendering a nine-column grid at phone width at all.
+ *
+ * Each row becomes a labelled block. The header row is hidden and every
+ * cell carries its column name via `data-col`, so a value is never
+ * orphaned from the tool it describes — the failure mode a naive
+ * `display: block` table has. Content is unchanged, so nothing is
+ * hidden from crawlers or assistive tech.
+ */
+@media (max-width: 899px) {
+  .dm-compare-matrix,
+  .dm-compare-matrix thead,
+  .dm-compare-matrix tbody,
+  .dm-compare-matrix tr,
+  .dm-compare-matrix th,
+  .dm-compare-matrix td {
+    display: block;
+    min-width: 0;
+    width: auto;
+  }
+
+  .dm-compare-matrix thead {
+    display: none;
+  }
+
+  .dm-compare-matrix tr {
+    padding: 4px 0 12px;
+    border-top: 1px solid var(--mkt-line-soft);
+  }
+
+  .dm-compare-matrix tbody th {
+    border-right: 0;
+    padding-bottom: 6px;
+    font-size: 16px;
+  }
+
+  .dm-compare-matrix td {
+    display: grid;
+    grid-template-columns: minmax(0, 8.5rem) minmax(0, 1fr);
+    gap: 4px 12px;
+    align-items: baseline;
+    padding: 6px 16px;
+    border-top: 0;
+  }
+
+  .dm-compare-matrix td::before {
+    content: attr(data-col);
+    font-family: var(--dm-font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--mkt-ink-muted);
+  }
+
+  /* The state chip and summary share the value column. */
+  .dm-compare-matrix td .dm-compare-state,
+  .dm-compare-matrix td strong,
+  .dm-compare-matrix td > span[aria-hidden='true'] {
+    grid-column: 2;
+  }
+
+  .dm-compare-matrix td strong {
+    margin-top: 2px;
+  }
 }
 
 .dm-compare-matrix th,

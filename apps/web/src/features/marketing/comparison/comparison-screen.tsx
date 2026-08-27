@@ -26,6 +26,15 @@ const COMPARISON_COUNT_WORD =
     COMPARISONS.length
   ] ?? String(COMPARISONS.length);
 
+/**
+ * Slug → display name, for the matrix's stacked mobile layout: below
+ * 900px the header row is hidden and each cell carries its own column
+ * name, so a value is never orphaned from the tool it describes.
+ */
+const COMPARISON_NAME_BY_SLUG: Readonly<Record<string, string>> = Object.fromEntries(
+  COMPARISONS.map((comparison) => [comparison.slug, comparison.name]),
+);
+
 const STATE_LABEL: Readonly<Record<EvidenceState, string>> = {
   supported: 'Published',
   limited: 'Limited',
@@ -302,7 +311,7 @@ function MatrixSection() {
             {ROUNDUP_DIMENSIONS.map((dimension) => (
               <tr key={dimension.label}>
                 <th scope="row">{dimension.label}</th>
-                <td>
+                <td data-col="DeclutrMail">
                   <span
                     className={`dm-compare-state dm-compare-state-${dimension.declutrMail.state}`}
                   >
@@ -311,7 +320,7 @@ function MatrixSection() {
                   <strong>{dimension.declutrMail.summary}</strong>
                 </td>
                 {dimension.competitors.map(([slug, cell]) => (
-                  <td key={slug}>
+                  <td key={slug} data-col={COMPARISON_NAME_BY_SLUG[slug]}>
                     {cell ? (
                       <>
                         <span className={`dm-compare-state dm-compare-state-${cell.state}`}>
