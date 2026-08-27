@@ -9,6 +9,7 @@ import {
   buildActionPresentation,
   buildActionReceiptResult,
   composeRecoveryFacts,
+  LATER_BULK_RETURN_NOTICE_THRESHOLD,
   staticActionPreviewCopy,
 } from './action-semantics';
 import type { ActionStatusSnapshot } from './action-semantics';
@@ -442,5 +443,61 @@ describe('D245 absolute times render in one clock per surface', () => {
   it('actually moves the wall clock when the viewer is not on UTC', () => {
     if (runtimeZone === 'UTC' || runtimeZone === 'Etc/UTC') return;
     expect(later('viewer').schedule.summary).not.toBe(later('utc').schedule.summary);
+  });
+});
+
+// Founder decision 2026-08-27 (option 3B). Later is the only mail-moving
+// verb with no way to narrow its reach, and the only one that hands the
+// whole pile back at once on a date chosen while it was out of sight. The
+// preview stated the count and the return date in separate sentences and
+// left the reader to join them.
+describe('D226 Later says when the whole pile comes back at once', () => {
+  const later = (liveCount: number | null, wakeAt: string | null = '2026-09-03T08:01:00.000Z') =>
+    buildActionPresentation({
+      verb: 'later',
+      liveCount,
+      planUndoDeadline: null,
+      wakeAt,
+      unsubscribeChannel: null,
+    }).primary;
+
+  it('names the returning volume once the reach crosses the threshold', () => {
+    const p = later(1_718);
+    expect(p.bulkReturnNotice).toBe('All 1,718 arrive back together.');
+    // In the shared copy too, so any surface rendering it inherits the
+    // sentence without wiring a prop of its own.
+    expect(p.effectCopy).toContain('All 1,718 arrive back together.');
+    expect(p.previewCopy).toContain('All 1,718 arrive back together.');
+  });
+
+  it('stays quiet below the threshold', () => {
+    expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD - 1).bulkReturnNotice).toBeNull();
+    expect(later(17).effectCopy).not.toContain('arrive back together');
+  });
+
+  it('fires exactly at the threshold', () => {
+    expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD).bulkReturnNotice).toBe(
+      `All ${LATER_BULK_RETURN_NOTICE_THRESHOLD} arrive back together.`,
+    );
+  });
+
+  it('says nothing when no return time is set yet', () => {
+    // Nothing has been scheduled, so there is no "together" to warn about.
+    expect(later(1_718, null).bulkReturnNotice).toBeNull();
+  });
+
+  it('says nothing when the count is unknown', () => {
+    expect(later(null).bulkReturnNotice).toBeNull();
+  });
+
+  it.each(['archive', 'delete'] as const)('never fires for %s, which does not return', (verb) => {
+    const p = buildActionPresentation({
+      verb,
+      liveCount: 5_000,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: null,
+    }).primary;
+    expect(p.bulkReturnNotice).toBeNull();
   });
 });
