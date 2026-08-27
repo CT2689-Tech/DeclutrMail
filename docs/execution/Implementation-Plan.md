@@ -10639,3 +10639,198 @@ placement — a balance on a summary page (and in any future digest)
 should be a decision someone made, not a side effect of summarising.
 
 The constraint lives in the system prompt and is pinned by a spec test.
+
+---
+
+### D258 — Signup attribution survives the Google hop
+
+**Status:** Allocated 2026-08-26 in PR #640. Awaiting founder ratification
+— the plan is locked and this entry was opened by an agent, so it needs the
+founder's yes before it counts as a decision rather than a proposal.
+
+**Why this is not D159.** D159 is 🟢 and is the OBSERVABILITY STACK —
+Sentry + PostHog, shipped in #34. "Which channel did this signup come
+from" is a product decision about what the database records, not a
+telemetry vendor choice. PR #640 first claimed `Closes D159`, which would
+have filed a new feature under a decision that shipped long ago and
+overwritten its citation. This is the same mis-tag class as D247.
+
+**The state this changes.** Google OAuth is a third-party hop. Read the
+post-callback `Referer` and every signup is `accounts.google.com`. Let a
+later `?ref=simulator` overwrite an earlier `?ref=hn` and Hacker News reads
+as the demo. Neither error is visible in the number it corrupts.
+
+**Decision.** Two signals, on separate columns, NEVER SUMMED.
+
+1. **Tracked `ref`** — an allowlisted query param (`hn`, `ph`, `reddit`,
+   `simulator`, `x`, `linkedin`), captured set-once into a first-party
+   cookie shared across `.declutrmail.com` so the API recovers it at OAuth
+   start, carried through OAuth `state`, and written on NEW-USER INSERT
+   ONLY. Junk drops to NULL rather than being stored. A channel is never
+   inferred from `Referer`.
+
+2. **Self-report** — "How did you first hear about us?", skippable, its own
+   column, `other` carrying 1–200 characters of free text and every other
+   choice forbidding it. Set-once: a second PATCH returns the stored value.
+
+**Postgres `users` is the source of truth for HOW MANY.** PostHog explains
+consent-gated journeys via a set-once person property; it does not redefine
+the count. Both columns snapshot onto the first paid `subscriptions` insert
+— insert-only, excluded from the conflict update — so revenue is not
+optimized only for signups, and a later self-report does not rewrite a paid
+snapshot.
+
+**The `ref` is attached at CLICK TIME, never in a server-rendered href.**
+The capture cookie is set by middleware on the SAME response that renders
+the page, so a function that reads it while building a CTA href emits a
+bare URL on the server and `?ref=…` on hydration — a mismatch on the
+primary CTA of the busiest public routes, on the very first visit. Anchor
+CTAs are stamped by a click listener and imperative navigations wrap the
+URL themselves. `oauthStartUrl()` stays free of it, pinned by a spec test.
+
+**The self-report waits for the consent banner.** Both cards are fixed at
+`bottom: 16`, `calc(100vw - 32px)` wide, capped at 400px, anchored to
+opposite sides — the same rectangle below an 832px viewport, with consent
+on top. Consent is the required ask and goes first.
+
+**Privacy (D7, D228).** Channel slugs and optional visitor-typed text. Not
+Gmail data: no bodies, attachments, or non-allowlisted headers.
+### D260 — Complimentary tier is a floor, granted by email
+
+**Status:** Founder-ratified 2026-08-26 (options menu: grant table, named
+on the Billing screen, optional expiry defaulting to never, script-only
+admin surface). Adds a non-billing route onto Plus and Pro; changes
+nothing about what anything costs.
+
+**The need.** Advisors, friends, beta cohorts, and anyone handed an
+account before they are a customer. Prelaunch this is the only way a real
+person reaches a paid tier at all.
+
+**Why not just write the tier.** `workspaces.tier` is the single column
+every gate reads, so `UPDATE workspaces SET tier = 'pro'` looks like the
+whole answer. It works, and then it stops working with no event to notice
+it by. Two paths recompute that column —
+`BillingWebhookService.recomputeWorkspaceTier` on any billing event, and
+the 6-hourly reconciliation sweep — and both derive it from the
+`subscriptions` table alone, falling back to `'free'`. The sweep's
+`WHERE EXISTS` spares a workspace with no subscription rows, which is
+exactly why a hand-set tier appears durable; the first checkout the
+comped person opens, including one they abandon, creates a row and the
+next recompute drops them to Free. Verified against the dev DB: identical
+state, the old recompute returns `free`, the floored one returns `pro`.
+
+Same shape as the capability-guard defect in CLAUDE.md §2.6 — one side of
+a pair taught a rule, the other not, agreeing in every test and drifting
+in production.
+
+**Decision.** Complimentary tier lives in `entitlement_grants` (email,
+tier, reason, granted_by, expires_at, revoked_at) and resolves as a
+FLOOR:
+
+```
+workspaces.tier = max_rank(granting subscriptions, live grant, 'free')
+```
+
+1. **A grant raises; it never replaces.** Comped Pro who later buys Plus
+   stays Pro. A comp that expires drops to whatever the paid subscription
+   grants, and to Free only if there is none. An overwrite-style grant
+   gets that second case wrong in the direction that takes away something
+   the customer pays for.
+
+2. **All three tier-writing paths apply the floor** — the webhook
+   recompute, the sweep, and signup's `insertWorkspaceAndUser`. Signup is
+   included because grants are keyed on EMAIL and can be written before
+   the person exists; a comped invitee spending their whole first session
+   on Free limits, becoming Pro six hours later, is a broken first run.
+
+3. **The tier stays written to `workspaces.tier`.** A resolver-only grant
+   was rejected: several readers query the column in raw SQL without
+   `EntitlementsService`, including the Autopilot demotion cron, which
+   has no request and no principal. It would strip a comped Pro's rules
+   on its next pass.
+
+**Expiry is optional and defaults to never.** A friend gets a permanent
+comp; a cohort gets a date. Expired and revoked rows are kept — the trail
+of who was comped, why, and when it ended is why this is a table rather
+than an env var.
+
+**Named on the Billing screen.** "Pro · Complimentary", plus the end date
+when the grant has one, and what follows it. The screen already refused
+to invent a price for an unbacked paid tier; it now says why the reader
+was never charged instead of leaving them to guess. The note renders only
+once the resolved tier has caught up to the grant — otherwise the card
+would read "Free" above "Pro is complimentary on this account".
+
+**Admin surface is a script**, `pnpm grant-tier` (list / grant / revoke),
+gated behind an explicit `--prod` flag and a typed confirmation. No admin
+API route: a privileged write path granting paid entitlement needs its
+own security review, and at this volume a script does not.
+
+`founding_member` is deliberately NOT floored — that flag is a property
+of what someone bought (D126 price lock), and a comp must not mint one.
+
+Runbook: `docs/runbooks/complimentary-grants.md`. Rule record: ADR-0040.
+---
+
+---
+
+### D259 — A route's server render is one request per surface
+
+**Status:** Allocated 2026-08-26 in PR #641. Awaiting founder ratification
+— the plan is locked and this entry was opened by an agent, so it needs the
+founder's yes before it counts as a decision rather than a proposal.
+
+**Why this is not D200 or D201.** Both are 🟢: D200 fixed the server/client
+state boundary, D201 fixed NestJS module + guard layering. Neither says
+anything about how MANY requests a route's server render is allowed to
+make, so a surface could satisfy both while fanning out. PR #641 first
+claimed `Closes D200, D201` — closing two decisions that shipped in #29 and
+#37 — which is the mis-tag D247 already taught this repo to catch.
+
+**The state this changes.** The Triage server render issued four requests:
+`/queue`, `/stats`, `/today-summary`, `/me/settings`. `/today-summary`
+needs the exact D30-clamped queue to compute its decision count and noise
+share, so it re-ran the same four-statement queue projection a second time,
+behind a second `JwtGuard` + `CurrentMailboxGuard` pass. Separately, every
+authenticated route awaited `/api/auth/me` **serially** before it was
+allowed to start its own prefetch, and `CurrentMailboxGuard` itself spent
+three statements — `listByWorkspace()` (two, including every disconnected
+mailbox and its latest deletion request) plus `UsersService.findById()` for
+one JSON key — on every mailbox-scoped endpoint.
+
+**Decision.** Three parts.
+
+1. **One transport per surface.** A route that mounts several reads
+   together gets one bootstrap endpoint whose read service SHARES the
+   expensive projection between them, rather than N endpoints that each
+   re-derive it. The bootstrap is a transport shape, not client state: the
+   boundary writes the individual query keys and removes the bootstrap key
+   before dehydrating, so the client reads the same keys it always did.
+
+2. **Prefetch eligibility is a cheap local check, not a round trip.**
+   Presence of a non-empty `dm_access` cookie is the gate. This is
+   explicitly NOT authentication — every prefetched request still runs
+   `JwtGuard` and the mailbox guard, and an invalid cookie simply yields a
+   designed 4xx that `settleServerQueries` already leaves absent so the
+   client query recovers. The trade is deliberate: everyone saves one
+   serial round trip; a signed-out-but-stale-cookie or no-mailbox user pays
+   a handful of 4xx that were already a designed state.
+
+3. **A guard reads exactly what it decides with.** Guard-facing resolution
+   is one narrow indexed SELECT, and its result is a discriminated union —
+   not `{ id } | null` — because the guard answers `NO_ACTIVE_MAILBOX` and
+   `MAILBOX_NOT_OWNED` and the FE renders a DIFFERENT screen for each.
+   Collapsing them let the mere presence of a stale `X-Active-Mailbox-Id`
+   header decide the code, so disconnecting the last mailbox in another tab
+   answered "that isn't yours" instead of the reconnect gate.
+
+**`last_used_at` is presence telemetry, not an event log.** One page render
+fans out into many API calls carrying the same jti; writing the timestamp
+on each produced one dead tuple per request for no extra information. It is
+coalesced to one write per session per five minutes, per process. The
+revocation SELECT is NOT coalesced and still runs on every single request —
+that is the line this decision does not cross.
+
+**Rejected: a speculative index.** The narrow lookup is covered by existing
+mailbox keys. Any further index waits for production `EXPLAIN` evidence,
+per the same discipline D235 applies to partitioning.

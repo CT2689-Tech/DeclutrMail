@@ -1,6 +1,7 @@
 import {
   automationRules,
   billingCustomers,
+  entitlementGrants,
   mailboxAccounts,
   ruleMatchLog,
   subscriptionEvents,
@@ -156,6 +157,79 @@ describe('BillingWebhookService.process', () => {
       providerCustomerId: 'ctm_01paddle000001',
       region: 'international',
     });
+  });
+
+  it('snapshots the workspace owner attribution onto the first paid insert', async () => {
+    await db.insert(users).values({
+      workspaceId,
+      email: 'owner@example.com',
+      signupAttributionRef: 'hn',
+      signupAttributionHeardFrom: 'friend',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    await db.insert(users).values({
+      workspaceId,
+      email: 'later-member@example.com',
+      signupAttributionRef: 'reddit',
+      signupAttributionHeardFrom: 'other',
+      signupAttributionHeardDetail: 'Newsletter',
+      createdAt: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    const fixture = paddleSubscriptionActivated({ workspaceId });
+    const event = paddle.mapWebhookEvent(fixture);
+
+    await service.process('paddle', event, fixture);
+
+    const [sub] = await db.select().from(subscriptions);
+    expect(sub).toMatchObject({
+      signupAttributionRef: 'hn',
+      signupAttributionHeardFrom: 'friend',
+      signupAttributionHeardDetail: null,
+    });
+  });
+
+  // ── Complimentary grants (entitlement_grants) ──────────────────────
+  //
+  // recomputeWorkspaceTier is the TS half of the pair the sweep mirrors
+  // in SQL. Before the grant floor it derived the tier from
+  // `subscriptions` alone, so ANY billing event on a comped workspace
+  // — including one granting a LOWER paid tier — overwrote the comp.
+
+  it('a live Pro comp survives a webhook that grants only Plus', async () => {
+    await db.insert(users).values({ workspaceId, email: 'comped@example.test' });
+    await db.insert(entitlementGrants).values({
+      email: 'comped@example.test',
+      tier: 'pro',
+      reason: 'advisor',
+      grantedBy: 'founder',
+    });
+
+    const fixture = paddleSubscriptionActivated({ workspaceId });
+    await service.process('paddle', paddle.mapWebhookEvent(fixture), fixture);
+
+    // The subscription is real and says Plus...
+    const [sub] = await db.select().from(subscriptions);
+    expect(sub!.tier).toBe('plus');
+    // ...but the comp floors the workspace at Pro.
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('pro');
+  });
+
+  it('a comp never mints founding_member — that is a property of what was bought', async () => {
+    await db.insert(users).values({ workspaceId, email: 'comped2@example.test' });
+    await db.insert(entitlementGrants).values({
+      email: 'comped2@example.test',
+      tier: 'pro',
+      reason: 'advisor',
+      grantedBy: 'founder',
+    });
+
+    const fixture = paddleSubscriptionActivated({ workspaceId });
+    await service.process('paddle', paddle.mapWebhookEvent(fixture), fixture);
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('pro');
+    expect(ws!.foundingMember).toBe(false);
   });
 
   it('resumes processing when a prior delivery crashed after the dedup insert', async () => {

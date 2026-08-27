@@ -25,6 +25,7 @@
     "check:lighthouse": "pnpm --filter @declutrmail/web exec lhci autorun --config=./lighthouserc.cjs",
     "verify-d": "tsx scripts/verify-d.ts",
     "generate-impl-log": "tsx scripts/generate-impl-log.ts",
+    "grant-tier": "tsx scripts/grant-tier.ts",
     "check-changelog": "tsx scripts/check-changelog.ts",
     "status": "tsx scripts/status.ts",
     "db:migrate": "./scripts/db-migrate.sh",

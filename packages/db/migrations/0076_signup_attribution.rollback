@@ -1,0 +1,17 @@
+-- Rollback for 0076_signup_attribution.sql
+
+ALTER TABLE "subscriptions"
+  DROP CONSTRAINT "subscriptions_signup_attribution_heard_detail_chk",
+  DROP CONSTRAINT "subscriptions_signup_attribution_heard_from_chk",
+  DROP CONSTRAINT "subscriptions_signup_attribution_ref_chk",
+  DROP COLUMN "signup_attribution_heard_detail",
+  DROP COLUMN "signup_attribution_heard_from",
+  DROP COLUMN "signup_attribution_ref";
+--> statement-breakpoint
+ALTER TABLE "users"
+  DROP CONSTRAINT "users_signup_attribution_heard_detail_chk",
+  DROP CONSTRAINT "users_signup_attribution_heard_from_chk",
+  DROP CONSTRAINT "users_signup_attribution_ref_chk",
+  DROP COLUMN "signup_attribution_heard_detail",
+  DROP COLUMN "signup_attribution_heard_from",
+  DROP COLUMN "signup_attribution_ref";

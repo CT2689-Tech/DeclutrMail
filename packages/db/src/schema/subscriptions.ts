@@ -107,6 +107,14 @@ export const subscriptions = pgTable(
     /** D126 — on the founding-member price lock (`pro_annual_founding`). */
     foundingMember: boolean('founding_member').notNull().default(false),
     /**
+     * Snapshot of the workspace owner's signup attribution at first paid
+     * insert. Set-once — later self-report on `users` does not rewrite
+     * historical revenue. Not Gmail data.
+     */
+    signupAttributionRef: text('signup_attribution_ref'),
+    signupAttributionHeardFrom: text('signup_attribution_heard_from'),
+    signupAttributionHeardDetail: text('signup_attribution_heard_detail'),
+    /**
      * D120 paid-plan downgrade scheduled for the current period end.
      * Paddle swaps its catalog item immediately, so these server-owned
      * fields keep the old entitlement authoritative until renewal.
@@ -146,6 +154,18 @@ export const subscriptions = pgTable(
     scheduledChangeCompleteCheck: check(
       'subscriptions_scheduled_change_complete_check',
       sql`(${table.scheduledChangeState} IS NULL AND ${table.scheduledTier} IS NULL AND ${table.scheduledBillingCycle} IS NULL AND ${table.scheduledProviderPriceId} IS NULL AND ${table.scheduledChangeAt} IS NULL AND ${table.scheduledChangeRequestedAt} IS NULL) OR (${table.scheduledChangeState} IS NOT NULL AND ${table.scheduledTier} IS NOT NULL AND ${table.scheduledBillingCycle} IS NOT NULL AND ${table.scheduledProviderPriceId} IS NOT NULL AND ${table.scheduledChangeAt} IS NOT NULL AND ${table.scheduledChangeRequestedAt} IS NOT NULL)`,
+    ),
+    signupAttributionRefCheck: check(
+      'subscriptions_signup_attribution_ref_chk',
+      sql`${table.signupAttributionRef} IS NULL OR ${table.signupAttributionRef} IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin')`,
+    ),
+    signupAttributionHeardFromCheck: check(
+      'subscriptions_signup_attribution_heard_from_chk',
+      sql`${table.signupAttributionHeardFrom} IS NULL OR ${table.signupAttributionHeardFrom} IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin', 'friend', 'other', 'skipped')`,
+    ),
+    signupAttributionHeardDetailCheck: check(
+      'subscriptions_signup_attribution_heard_detail_chk',
+      sql`(${table.signupAttributionHeardDetail} IS NULL AND ${table.signupAttributionHeardFrom} IS DISTINCT FROM 'other') OR (${table.signupAttributionHeardFrom} = 'other' AND ${table.signupAttributionHeardDetail} IS NOT NULL AND char_length(${table.signupAttributionHeardDetail}) BETWEEN 1 AND 200)`,
     ),
   }),
 );

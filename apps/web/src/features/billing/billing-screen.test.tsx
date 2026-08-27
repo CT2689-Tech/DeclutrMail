@@ -64,6 +64,7 @@ import { BillingScreen } from './billing-screen';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 
 const FREE_BODY: BillingSubscription = {
+  complimentary: null,
   tier: 'free',
   foundingMember: false,
   subscription: null,
@@ -77,6 +78,7 @@ const FREE_BODY: BillingSubscription = {
  * itself.
  */
 const PAUSED_BODY: BillingSubscription = {
+  complimentary: null,
   tier: 'free',
   foundingMember: false,
   pendingCheckout: null,
@@ -119,6 +121,7 @@ const PAUSED_BODY: BillingSubscription = {
  * went uncovered until a founder hit it by hand.
  */
 const REFUND_SETTLING_BODY: BillingSubscription = {
+  complimentary: null,
   tier: 'free',
   foundingMember: false,
   pendingCheckout: null,
@@ -150,6 +153,7 @@ const SUB: NonNullable<BillingSubscription['subscription']> = {
 };
 
 const PRO_SUB: BillingSubscription = {
+  complimentary: null,
   tier: 'pro',
   foundingMember: false,
   subscription: SUB,
@@ -157,6 +161,7 @@ const PRO_SUB: BillingSubscription = {
 };
 
 const PLUS_SUB: BillingSubscription = {
+  complimentary: null,
   tier: 'plus',
   foundingMember: false,
   pendingCheckout: null,
@@ -1746,6 +1751,7 @@ describe('BillingScreen — paid subscriber', () => {
           ...PRO_SUB,
           foundingMember: true,
           pendingCheckout: null,
+          complimentary: null,
           subscription: { ...SUB, cycle: 'annual', foundingMember: true },
         },
       }),
@@ -1893,6 +1899,7 @@ describe('BillingScreen — paid subscriber', () => {
               tier: 'plus',
               foundingMember: false,
               pendingCheckout: null,
+              complimentary: null,
               subscription: { ...SUB, provider: 'razorpay', tier: 'plus', cycle: 'annual' },
             },
           }),
@@ -2067,6 +2074,7 @@ describe('BillingScreen — paid subscriber', () => {
               tier: 'plus',
               foundingMember: false,
               pendingCheckout: null,
+              complimentary: null,
               subscription: { ...SUB, provider: 'razorpay', tier: 'plus' },
             },
           }),
@@ -2777,6 +2785,7 @@ describe('BillingScreen — paid subscriber', () => {
       tier: 'free',
       foundingMember: false,
       pendingCheckout: null,
+      complimentary: null,
       subscription: { ...SUB, tier: 'plus', status: 'paused' },
     };
     installFetchStub([
@@ -2845,6 +2854,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           tier: 'pro',
           foundingMember: false,
           pendingCheckout: null,
+          complimentary: null,
           subscription: { ...SUB, tier: 'plus', status: 'paused' },
         },
       }),
@@ -2888,7 +2898,13 @@ describe('BillingScreen — one billing story (A6)', () => {
     mockCleanupRemaining = null;
     stubSubscription(() =>
       jsonOk({
-        data: { tier: 'pro', foundingMember: false, subscription: null, pendingCheckout: null },
+        data: {
+          tier: 'pro',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: null,
+        },
       }),
     );
     renderScreen();
@@ -2904,6 +2920,58 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(screen.getByRole('button', { name: 'Upgrade to Plus' })).toBeInTheDocument();
   });
 
+  it('a COMPED Pro says so on the card, with no price and no cancel control', async () => {
+    // The other half of the test above. Same shape on the wire — paid
+    // tier, no subscription — but the screen now knows WHY, and the
+    // generic "Included with your account" would leave the reader
+    // guessing why they were never charged.
+    mockTier = 'pro';
+    mockCleanupRemaining = null;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'pro',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: { tier: 'pro', expiresAt: null },
+        },
+      }),
+    );
+    renderScreen();
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(within(card).getByText('Pro')).toBeInTheDocument();
+    expect(within(card).getByText('Complimentary')).toBeInTheDocument();
+    expect(within(card).getByTestId('complimentary-note')).toHaveTextContent(
+      'Pro is complimentary on this account',
+    );
+    // No subscription exists, so nothing here may offer to manage one.
+    expect(within(card).queryByRole('button', { name: 'Cancel subscription' })).toBeNull();
+    expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
+  });
+
+  it('a DATED comp names its end date and what happens after', async () => {
+    mockTier = 'plus';
+    mockCleanupRemaining = null;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'plus',
+          foundingMember: false,
+          subscription: null,
+          pendingCheckout: null,
+          complimentary: { tier: 'plus', expiresAt: '2026-12-31T23:59:59.000Z' },
+        },
+      }),
+    );
+    renderScreen();
+
+    const note = await screen.findByTestId('complimentary-note');
+    expect(note).toHaveTextContent('through Dec 31, 2026');
+    expect(note).toHaveTextContent('reverts to your paid subscription');
+  });
+
   it('a non-backing past_due row surfaces its dunning warning and locks new checkouts', async () => {
     mockTier = 'pro';
     stubSubscription(() =>
@@ -2912,6 +2980,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           tier: 'pro',
           foundingMember: false,
           pendingCheckout: null,
+          complimentary: null,
           subscription: { ...SUB, tier: 'plus', status: 'past_due' },
         },
       }),
@@ -2947,6 +3016,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           tier: 'free',
           foundingMember: false,
           pendingCheckout: null,
+          complimentary: null,
           subscription: { ...SUB, status: 'canceled', currentPeriodEnd: null },
         },
       }),
@@ -3038,6 +3108,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
 
   it('a never-subscribed free workspace gets no invoice section and no payment-method card', async () => {
     stubBillingReads({
+      complimentary: null,
       tier: 'free',
       foundingMember: false,
       subscription: null,
@@ -3051,6 +3122,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
 
   it('free-but-PREVIOUSLY-paid keeps invoices reachable — the tax need outlives the subscription', async () => {
     stubBillingReads({
+      complimentary: null,
       tier: 'free',
       foundingMember: false,
       pendingCheckout: null,
@@ -3074,6 +3146,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     // (cancelAtPeriodEnd wins), but the failing card still needs fixing
     // until the period actually ends (gate network 2026-08-16).
     stubBillingReads({
+      complimentary: null,
       tier: 'pro',
       foundingMember: false,
       pendingCheckout: null,

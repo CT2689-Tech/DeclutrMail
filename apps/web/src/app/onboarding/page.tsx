@@ -21,6 +21,7 @@ import { StepFirstSenderReview, StepPresetPick } from '@/features/onboarding/ste
 import { StepPromise } from '@/features/onboarding/step-promise';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
+import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { useMe } from '@/features/auth/api/use-me';
 import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
 import { useSetActiveMailbox } from '@/features/mailboxes/api/use-set-active-mailbox';
@@ -156,7 +157,7 @@ function FreshFlow({ returnTo }: { returnTo: string | null }) {
 function AuthedFlow({ returnTo }: { returnTo: string | null }) {
   const router = useRouter();
   const { me } = useAuth();
-  useAnalyticsIdentity(me.user.id);
+  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
   const state = useOnboardingState();
   const complete = useCompleteOnboarding();
 
@@ -236,83 +237,96 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
     </button>
   );
 
-  switch (step.kind) {
-    case 'loading':
-      return <FlowSkeleton label="Loading your onboarding…" />;
-    case 'error':
-      return (
-        <FlowError
-          message={
-            step.error instanceof ApiError
-              ? `We couldn't load your onboarding state (${step.error.status}).`
-              : "We couldn't load your onboarding state."
-          }
-          onRetry={step.retry}
-        />
-      );
-    case 'done':
-      return <FlowSkeleton label="Opening your senders…" />;
-    case 'connect':
-      // Authed but no active mailbox (aborted OAuth / all disconnected).
-      return <StepConnect variant="reconnect" />;
-    case 'sync-gate': {
-      // First-run strict gate (D6): no escape hatch — there is nothing
-      // to return to. Ready flips the derivation to step 4 on its own.
-      const status = sync.data ?? {
-        readiness_status: 'queued' as const,
-        current_stage: 'queued' as const,
-        progress_pct: 0,
-        is_ready_for_triage: false,
-      };
-      // Pass the SAME id the status query is scoped to. Without it the
-      // retry would resolve "active" server-side, which can differ from
-      // this cached `me.activeMailboxId` (another tab switched, a
-      // disconnect auto-selected another) — the button would then act
-      // on a mailbox other than the one this gate is describing.
-      return <SyncGate status={status} mailboxId={activeMailboxId} />;
+  const stepView = (() => {
+    switch (step.kind) {
+      case 'loading':
+        return <FlowSkeleton label="Loading your onboarding…" />;
+      case 'error':
+        return (
+          <FlowError
+            message={
+              step.error instanceof ApiError
+                ? `We couldn't load your onboarding state (${step.error.status}).`
+                : "We couldn't load your onboarding state."
+            }
+            onRetry={step.retry}
+          />
+        );
+      case 'done':
+        return <FlowSkeleton label="Opening your senders…" />;
+      case 'connect':
+        // Authed but no active mailbox (aborted OAuth / all disconnected).
+        return <StepConnect variant="reconnect" />;
+      case 'sync-gate': {
+        // First-run strict gate (D6): no escape hatch — there is nothing
+        // to return to. Ready flips the derivation to step 4 on its own.
+        const status = sync.data ?? {
+          readiness_status: 'queued' as const,
+          current_stage: 'queued' as const,
+          progress_pct: 0,
+          is_ready_for_triage: false,
+        };
+        // Pass the SAME id the status query is scoped to. Without it the
+        // retry would resolve "active" server-side, which can differ from
+        // this cached `me.activeMailboxId` (another tab switched, a
+        // disconnect auto-selected another) — the button would then act
+        // on a mailbox other than the one this gate is describing.
+        return <SyncGate status={status} mailboxId={activeMailboxId} />;
+      }
+      case 'preset-pick':
+        return hasCapability(me.tier, 'autopilot') ? (
+          <StepPresetPick
+            presets={state.data?.presets ?? []}
+            initialGoal={state.data?.goal ?? null}
+            onSubmitted={() => void state.refetch()}
+            corner={skipCorner}
+          />
+        ) : (
+          <StepFirstSenderReview
+            initialGoal={state.data?.goal ?? null}
+            onSubmitted={() => void state.refetch()}
+            corner={skipCorner}
+          />
+        );
+      case 'first-triage': {
+        // `protect_important` is not a cleanup goal — nothing it asks for
+        // moves mail — so its step 5 is the D245 protection review rather
+        // than a first triage run. Same endpoint, same pin, same
+        // completion rule; a different screen because it answers a
+        // different question.
+        const goal = state.data?.goal ?? 'reduce_newsletters';
+        // Step 5 needs the skip corner MORE than the steps above it, not
+        // less: it is the last step, and its error and loading panels
+        // have no other control. Dropping it stranded anyone whose
+        // step-5 read kept failing (D106).
+        return goal === 'protect_important' ? (
+          <StepProtectionReview
+            onComplete={() => finish({ skipped: false })}
+            completing={complete.isPending}
+            corner={skipCorner}
+          />
+        ) : (
+          <StepFirstTriage
+            onComplete={() => finish({ skipped: false })}
+            completing={complete.isPending}
+            goal={goal}
+            corner={skipCorner}
+          />
+        );
+      }
+      default: {
+        const _never: never = step;
+        return _never;
+      }
     }
-    case 'preset-pick':
-      return hasCapability(me.tier, 'autopilot') ? (
-        <StepPresetPick
-          presets={state.data?.presets ?? []}
-          initialGoal={state.data?.goal ?? null}
-          onSubmitted={() => void state.refetch()}
-          corner={skipCorner}
-        />
-      ) : (
-        <StepFirstSenderReview
-          initialGoal={state.data?.goal ?? null}
-          onSubmitted={() => void state.refetch()}
-          corner={skipCorner}
-        />
-      );
-    case 'first-triage': {
-      // `protect_important` is not a cleanup goal — nothing it asks for
-      // moves mail — so its step 5 is the D245 protection review rather
-      // than a first triage run. Same endpoint, same pin, same
-      // completion rule; a different screen because it answers a
-      // different question.
-      const goal = state.data?.goal ?? 'reduce_newsletters';
-      // Step 5 needs the skip corner MORE than the steps above it, not
-      // less: it is the last step, and its error and loading panels
-      // have no other control. Dropping it stranded anyone whose
-      // step-5 read kept failing (D106).
-      return goal === 'protect_important' ? (
-        <StepProtectionReview
-          onComplete={() => finish({ skipped: false })}
-          completing={complete.isPending}
-          corner={skipCorner}
-        />
-      ) : (
-        <StepFirstTriage
-          onComplete={() => finish({ skipped: false })}
-          completing={complete.isPending}
-          goal={goal}
-          corner={skipCorner}
-        />
-      );
-    }
-  }
+  })();
+
+  return (
+    <>
+      <HeardFromPrompt />
+      {stepView}
+    </>
+  );
 }
 
 /* ── Secondary-connect gate (D116) — behavior unchanged ────────────── */
@@ -326,7 +340,7 @@ function SecondaryConnectGate({
 }) {
   const router = useRouter();
   const { me } = useAuth();
-  useAnalyticsIdentity(me.user.id);
+  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
   const setActive = useSetActiveMailbox();
   const exitPath = isTargetedReconnect ? reconnectSettingsResultPath(mailboxId) : '/senders';
 

@@ -10,6 +10,7 @@ import {
   parseEmailPrefs,
   parseSenderViews,
   SenderViewsPutSchema,
+  SignupHeardFromPatchSchema,
   TimeZonePatchSchema,
   type ActionSheetPrefs,
   type BriefPrefs,
@@ -171,5 +172,27 @@ export class MeSettingsController {
     }
     await this.users.patchPreferences(user.userId, { senderViews: parsed.data.views });
     return ok({ senderViews: parsed.data.views });
+  }
+
+  /**
+   * PATCH /api/me/signup-heard-from — skippable self-report. Set-once.
+   * Does not overwrite tracked `signup_attribution_ref`.
+   */
+  @Patch('signup-heard-from')
+  @UseGuards(CsrfGuard)
+  @RateLimit('default')
+  async patchSignupHeardFrom(
+    @CurrentUser() user: SessionPrincipal,
+    @Body() body: unknown,
+  ): Promise<Envelope<{ heardFrom: string; detail: string | null }>> {
+    const parsed = SignupHeardFromPatchSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'INVALID_REQUEST',
+        message: parsed.error.issues[0]?.message ?? 'Invalid signup-heard-from patch.',
+      });
+    }
+    const stored = await this.users.recordSignupHeardFrom(user.userId, parsed.data);
+    return ok({ heardFrom: stored.heardFrom, detail: stored.detail });
   }
 }

@@ -1,5 +1,14 @@
 import { sql } from 'drizzle-orm';
-import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  check,
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 
 import { citext } from './_custom-types';
 import { billingRegion } from './billing-customers';
@@ -61,6 +70,20 @@ export const users = pgTable(
      * Settings → Account. Null until first detected.
      */
     billingRegion: billingRegion('billing_region'),
+    /**
+     * First-touch tracked channel from `?ref=` (marketing runbook Phase B).
+     * Set-once at signup insert. Allowlist lives in
+     * `@declutrmail/shared/contracts` `SIGNUP_ATTRIBUTION_REFS`. Not Gmail data.
+     */
+    signupAttributionRef: text('signup_attribution_ref'),
+    /**
+     * Self-reported "How did you first hear about us?" — separate from
+     * tracked `ref`. The two disagree on purpose. `skipped` means they
+     * dismissed the prompt; do not ask again.
+     */
+    signupAttributionHeardFrom: text('signup_attribution_heard_from'),
+    /** Free-text only when heard_from = 'other'. */
+    signupAttributionHeardDetail: text('signup_attribution_heard_detail'),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' })
       .notNull()
       .default(sql`now()`),
@@ -71,6 +94,18 @@ export const users = pgTable(
   (table) => ({
     emailIdx: uniqueIndex('users_email_uniq').on(table.email),
     workspaceIdx: index('users_workspace_id_idx').on(table.workspaceId),
+    signupAttributionRefCheck: check(
+      'users_signup_attribution_ref_chk',
+      sql`${table.signupAttributionRef} IS NULL OR ${table.signupAttributionRef} IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin')`,
+    ),
+    signupAttributionHeardFromCheck: check(
+      'users_signup_attribution_heard_from_chk',
+      sql`${table.signupAttributionHeardFrom} IS NULL OR ${table.signupAttributionHeardFrom} IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin', 'friend', 'other', 'skipped')`,
+    ),
+    signupAttributionHeardDetailCheck: check(
+      'users_signup_attribution_heard_detail_chk',
+      sql`(${table.signupAttributionHeardDetail} IS NULL AND ${table.signupAttributionHeardFrom} IS DISTINCT FROM 'other') OR (${table.signupAttributionHeardFrom} = 'other' AND ${table.signupAttributionHeardDetail} IS NOT NULL AND char_length(${table.signupAttributionHeardDetail}) BETWEEN 1 AND 200)`,
+    ),
   }),
 );
 

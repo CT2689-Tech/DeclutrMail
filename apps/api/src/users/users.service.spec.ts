@@ -1,6 +1,6 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { users, workspaces } from '@declutrmail/db';
+import { entitlementGrants, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { describe, expect, it } from 'vitest';
 
@@ -148,5 +148,95 @@ describe('UsersService.mergeEmailPrefs', () => {
     await svc.mergeEmailPrefs(userId, { reminders: false });
 
     expect(await readPrefs(db, userId)).toEqual({ emailPrefs: { reminders: false } });
+  });
+});
+
+describe('UsersService signup attribution', () => {
+  it('stores first-touch ref on insert and keeps self-report set-once', async () => {
+    const db = await freshDb();
+    const svc = new UsersService(db);
+    const { userId } = await svc.insertWorkspaceAndUser(db, 'new@example.com', 'hn');
+
+    const [inserted] = await db.select().from(users).where(eq(users.id, userId));
+    expect(inserted?.signupAttributionRef).toBe('hn');
+    expect(inserted?.signupAttributionHeardFrom).toBeNull();
+
+    await svc.recordSignupHeardFrom(userId, { heardFrom: 'friend' });
+    await svc.recordSignupHeardFrom(userId, { heardFrom: 'ph' });
+
+    const [after] = await db.select().from(users).where(eq(users.id, userId));
+    expect(after?.signupAttributionHeardFrom).toBe('friend');
+    expect(after?.signupAttributionRef).toBe('hn');
+  });
+});
+
+/**
+ * Signup applies a comp AT BOOTSTRAP.
+ *
+ * This is the half of the grant mechanism no runtime smoke can reach —
+ * it needs a real Google OAuth grant. It matters because a grant is
+ * keyed on EMAIL precisely so it can be written before the person
+ * exists: without this, a comped invitee lands on Free, hits Free
+ * limits during onboarding, and only becomes Pro up to six hours later
+ * when the reconciliation sweep notices.
+ */
+describe('UsersService.insertWorkspaceAndUser — complimentary grants', () => {
+  it('opens the workspace at the granted tier', async () => {
+    const db = await freshDb();
+    await db.insert(entitlementGrants).values({
+      email: 'invited@example.test',
+      tier: 'pro',
+      reason: 'advisor',
+      grantedBy: 'founder',
+    });
+
+    const service = new UsersService(db);
+    const { workspaceId } = await service.insertWorkspaceAndUser(db, 'invited@example.test');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('pro');
+  });
+
+  it('ignores an expired or revoked grant — Free, as if it were not there', async () => {
+    const db = await freshDb();
+    await db.insert(entitlementGrants).values([
+      {
+        email: 'lapsed@example.test',
+        tier: 'pro',
+        reason: 'beta cohort',
+        grantedBy: 'founder',
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      },
+      {
+        email: 'pulled@example.test',
+        tier: 'pro',
+        reason: 'advisor',
+        grantedBy: 'founder',
+        revokedAt: new Date(),
+      },
+    ]);
+
+    const service = new UsersService(db);
+    for (const email of ['lapsed@example.test', 'pulled@example.test', 'nobody@example.test']) {
+      const { workspaceId } = await service.insertWorkspaceAndUser(db, email);
+      const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(ws!.tier, email).toBe('free');
+    }
+  });
+
+  it('matches the grant case-insensitively — citext, like users.email', async () => {
+    const db = await freshDb();
+    await db.insert(entitlementGrants).values({
+      email: 'Mixed.Case@Example.Test',
+      tier: 'plus',
+      reason: 'advisor',
+      grantedBy: 'founder',
+    });
+
+    const service = new UsersService(db);
+    const { workspaceId } = await service.insertWorkspaceAndUser(db, 'mixed.case@example.test');
+
+    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(ws!.tier).toBe('plus');
   });
 });

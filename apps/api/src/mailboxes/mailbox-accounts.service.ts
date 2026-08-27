@@ -1,7 +1,7 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
-import { mailboxAccounts, mailboxDataDeletionRequests, ruleMatchLog } from '@declutrmail/db';
+import { mailboxAccounts, mailboxDataDeletionRequests, ruleMatchLog, users } from '@declutrmail/db';
 import type { MailboxAccount } from '@declutrmail/db';
 import {
   ERROR_CODES,
@@ -39,6 +39,14 @@ export interface MailboxSummary {
   indexedDataState: MailboxIndexedDataState;
   dataDeletion: MailboxDataDeletionView | null;
 }
+
+/**
+ * Outcome of `resolveActiveForRequest`. Three states, not two: the guard
+ * maps `not-owned` and `none-active` to different error codes, and the FE
+ * renders a different screen for each.
+ */
+export type ResolvedRequestMailbox =
+  { kind: 'resolved'; id: string } | { kind: 'not-owned' } | { kind: 'none-active' };
 
 /** Canonical persisted identity for Gmail's case-insensitive address space. */
 export function canonicalizeGmailProviderAccountId(email: string): string {
@@ -109,6 +117,71 @@ export class MailboxAccountsService {
       }
     }
     return rows.map((row) => toMailboxSummary(row, latestByMailbox.get(row.id) ?? null));
+  }
+
+  /**
+   * Resolve the active mailbox needed by `CurrentMailboxGuard` in one
+   * narrow SELECT.
+   *
+   * Do not replace this with `listByWorkspace()`. That presentation read
+   * also loads disconnected mailboxes and each mailbox's latest indexed-
+   * data deletion request, so it executes two statements and returns fields
+   * the guard discards. The old guard then issued a third statement through
+   * `UsersService.findById()` just to read `preferences.activeMailboxId`.
+   * Every mailbox-scoped endpoint paid that fan-out independently.
+   *
+   * With an explicit header, ownership + active status are predicates and
+   * no user row is needed. Without one, a left join reads the preference and
+   * orders it first; `created_at` preserves `listByWorkspace()`'s historical
+   * first-active fallback when the preference is absent or stale.
+   *
+   * The result is a discriminated union rather than `{ id } | null` because
+   * the guard answers with two DIFFERENT error codes and the FE renders two
+   * DIFFERENT screens for them: `NO_ACTIVE_MAILBOX` is the reconnect gate,
+   * `MAILBOX_NOT_OWNED` is a stale selection. Collapsing both to `null` made
+   * a disconnect in another tab — whose still-cached header is on the next
+   * request — report "not yours" for a workspace that simply has no mailbox
+   * left, which is the founder break-test of 2026-05-28 in a new costume.
+   *
+   * The `none-active` probe runs ONLY when the requested id missed, so the
+   * hot path stays at exactly one indexed lookup.
+   */
+  async resolveActiveForRequest(input: {
+    workspaceId: string;
+    userId: string;
+    requestedMailboxId?: string;
+  }): Promise<ResolvedRequestMailbox> {
+    const activeScope = and(
+      eq(mailboxAccounts.workspaceId, input.workspaceId),
+      eq(mailboxAccounts.status, 'active'),
+    );
+
+    if (input.requestedMailboxId !== undefined) {
+      const [requested] = await this.db
+        .select({ id: mailboxAccounts.id })
+        .from(mailboxAccounts)
+        .where(and(activeScope, eq(mailboxAccounts.id, input.requestedMailboxId)))
+        .limit(1);
+      if (requested) return { kind: 'resolved', id: requested.id };
+      const [anyActive] = await this.db
+        .select({ id: mailboxAccounts.id })
+        .from(mailboxAccounts)
+        .where(activeScope)
+        .limit(1);
+      return anyActive ? { kind: 'not-owned' } : { kind: 'none-active' };
+    }
+
+    const [row] = await this.db
+      .select({ id: mailboxAccounts.id })
+      .from(mailboxAccounts)
+      .leftJoin(users, and(eq(users.id, input.userId), eq(users.workspaceId, input.workspaceId)))
+      .where(activeScope)
+      .orderBy(
+        sql`CASE WHEN ${mailboxAccounts.id}::text = COALESCE(${users.preferences}->>'activeMailboxId', '') THEN 0 ELSE 1 END`,
+        mailboxAccounts.createdAt,
+      )
+      .limit(1);
+    return row ? { kind: 'resolved', id: row.id } : { kind: 'none-active' };
   }
 
   /** Find a single mailbox by id + workspace (ownership scope). */

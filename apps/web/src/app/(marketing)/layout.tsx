@@ -25,6 +25,7 @@ import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { PublicRouteTracker } from '@/features/marketing/public-route-tracker';
 import { PublicFooter, PublicHeader } from '@/features/marketing/public-shell/public-shell';
+import { SignupRefCapture } from '@/features/marketing/signup-ref-capture';
 import { ThemeScript } from '@/features/theme/theme-script';
 import '@/features/marketing/public-shell/public-shell.css';
 
@@ -160,6 +161,7 @@ function MarketingShell({ children }: { children: ReactNode }) {
       }}
     >
       <JsonLd data={SITE_JSON_LD} />
+      <SignupRefCapture />
       <PublicRouteTracker />
       <PublicHeader />
       <main id="main-content">{children}</main>

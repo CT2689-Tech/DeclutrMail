@@ -1,9 +1,9 @@
 /**
  * Route-level Suspense fallback for Senders (audit 2026-08-21).
  *
- * `page.tsx` awaits `getServerMe` and THEN the senders prefetch (up to
- * the 2s hydration deadline), so the RSC response for this route is
- * gated on two sequential API round trips. With no `loading.tsx` the
+ * `page.tsx` starts the senders prefetch as soon as it sees an access
+ * cookie (up to the 2s hydration deadline), so the RSC response still
+ * waits for the sender reads. With no `loading.tsx` the
  * App Router has no boundary to show in the meantime: tapping Senders
  * from inside the app left the PREVIOUS screen on display, unchanged,
  * for that whole window — on mobile, long enough to read as a dead tap

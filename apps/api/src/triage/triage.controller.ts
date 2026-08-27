@@ -126,6 +126,35 @@ export class TriageController {
   }
 
   /**
+   * Server-render bootstrap for the Triage route. One HTTP request means
+   * one JwtGuard + CurrentMailboxGuard pass, and the read service reuses
+   * the queue projection required by the Today strip.
+   */
+  @Get('bootstrap')
+  @RateLimit('triage-load')
+  async bootstrap(@CurrentMailbox() mailbox: { id: string }): Promise<
+    Envelope<{
+      queue: TriageQueueRow[];
+      stats: TriageSessionStats;
+      todaySummary: TodaySummary;
+    }>
+  > {
+    const data = await this.reads.getBootstrap({
+      mailboxAccountId: mailbox.id,
+      limit: TriageController.QUEUE_HARD_MAX,
+    });
+    const marks = await this.brandMarksFor(data.queue.map((row) => row.senderDomain));
+    return ok({
+      queue: data.queue.map((row) => ({
+        ...row,
+        brandMark: marks.has(row.senderDomain),
+      })),
+      stats: data.stats,
+      todaySummary: data.todaySummary,
+    });
+  }
+
+  /**
    * Batched brand-mark availability for one queue page (ADR-0034),
    * mirroring `SendersController.brandMarksFor`.
    *

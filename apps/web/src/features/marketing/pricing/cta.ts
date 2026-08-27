@@ -21,13 +21,10 @@
 
 import { apiGet } from '@/lib/api/client';
 import { billingIntentPath, type BillingIntent } from '@/features/billing/billing-intent';
+import { oauthStartUrl } from '@/features/marketing/landing/urls';
+import { withSignupRef } from '@/features/marketing/signup-ref';
 
-export function oauthStartUrl(returnTo?: string): string {
-  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-  const base = `${apiBase}/api/auth/google/start`;
-  if (!returnTo) return base;
-  return `${base}?${new URLSearchParams({ returnTo }).toString()}`;
-}
+export { oauthStartUrl };
 
 async function hasSession(): Promise<boolean> {
   try {
@@ -47,7 +44,10 @@ export async function navigateToCheckout(
     push(destination);
     return;
   }
-  window.location.assign(oauthStartUrl(destination));
+  // Attached HERE, not inside `oauthStartUrl`: this runs only in a click
+  // handler, so there is no server render for the cookie read to disagree
+  // with. `SignupRefCapture` covers the anchor CTAs the same way.
+  window.location.assign(withSignupRef(oauthStartUrl(destination)));
 }
 
 export async function navigateToFreeApp(push: (path: string) => void): Promise<void> {
@@ -55,5 +55,5 @@ export async function navigateToFreeApp(push: (path: string) => void): Promise<v
     push('/senders');
     return;
   }
-  window.location.assign(oauthStartUrl());
+  window.location.assign(withSignupRef(oauthStartUrl()));
 }

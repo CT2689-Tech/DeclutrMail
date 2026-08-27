@@ -35,6 +35,7 @@ import { useChangePlan } from './api/use-change-plan';
 import { useReconcileCheckout } from './api/use-reconcile-checkout';
 import {
   backingStatusNote,
+  complimentaryNote,
   currentPlanPriceLabel,
   deriveBillingViewState,
   emptyPlanView,
@@ -1140,6 +1141,7 @@ function CurrentPlanCard({
   // headline currency is a fact, not a guess; with NO backing record a
   // paid tier makes no price claim at all — nobody is charged one.
   const note = backingStatusNote(backing);
+  const compNote = complimentaryNote(plan);
   const priceLabel = currentPlanPriceLabel(plan);
   // "Next renewal <date>" claims THIS plan, at THIS price, renews then.
   // With a scheduled change that is false: on Pro annual with a
@@ -1189,6 +1191,16 @@ function CurrentPlanCard({
           <span style={{ fontSize: 13, color: color.fgMuted }}>· Next renewal {renewal}</span>
         ) : null}
       </div>
+
+      {compNote ? (
+        <p
+          role="status"
+          data-testid="complimentary-note"
+          style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fgMuted }}
+        >
+          {compNote}
+        </p>
+      ) : null}
 
       {plan.entitlementTier === 'free' &&
       (plan.nonBacking === null || cleanupRemaining !== null) ? (

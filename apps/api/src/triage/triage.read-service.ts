@@ -247,6 +247,13 @@ export interface TriageSessionStats {
   tier: 'free' | 'plus' | 'pro';
 }
 
+/** Route-level read model before the controller adds global icon availability. */
+export interface TriageBootstrapFacts {
+  queue: TriageQueueFacts[];
+  stats: TriageSessionStats;
+  todaySummary: TodaySummary;
+}
+
 /**
  * D30 — "not seen by user in last 7 days". A sender the user has
  * DECIDED on (a K/A/U/L/D `activity_log` row whose undo has not been
@@ -966,6 +973,35 @@ export class TriageReadService {
   }
 
   /**
+   * One route bootstrap for the three Triage reads mounted together.
+   *
+   * `getTodaySummary()` needs the exact D30-clamped queue to compute its
+   * decision count and noise share. Fetching `/queue` and `/today-summary`
+   * separately therefore executed the same four-statement queue projection
+   * twice, behind two independent auth/mailbox guard passes. Share that
+   * promise here while stats and the Today aggregates run concurrently.
+   */
+  async getBootstrap(input: {
+    mailboxAccountId: string;
+    limit: number;
+    now?: Date;
+  }): Promise<TriageBootstrapFacts> {
+    const queuePromise = this.listQueue({
+      mailboxAccountId: input.mailboxAccountId,
+      limit: input.limit,
+    });
+    const [queue, stats, todaySummary] = await Promise.all([
+      queuePromise,
+      this.getSessionStats({
+        mailboxAccountId: input.mailboxAccountId,
+        ...(input.now === undefined ? {} : { now: input.now }),
+      }),
+      this.getTodaySummaryFromQueue(input, queuePromise),
+    ]);
+    return { queue, stats, todaySummary };
+  }
+
+  /**
    * D214 — aggregate the "Today" strip. Four cheap reads:
    *
    *   1. Today's inbound volume + distinct senders (`mail_messages`,
@@ -980,12 +1016,22 @@ export class TriageReadService {
    * D7 / D228: counts over metadata only.
    */
   async getTodaySummary(input: { mailboxAccountId: string; now?: Date }): Promise<TodaySummary> {
+    return this.getTodaySummaryFromQueue(
+      input,
+      this.listQueue({ mailboxAccountId: input.mailboxAccountId, limit: 12 }),
+    );
+  }
+
+  private async getTodaySummaryFromQueue(
+    input: { mailboxAccountId: string; now?: Date },
+    queuePromise: Promise<TriageQueueFacts[]>,
+  ): Promise<TodaySummary> {
     const now = input.now ?? new Date();
     const todayStartUtc = new Date(
       Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
     );
 
-    const [received] = await this.db
+    const receivedPromise = this.db
       .select({
         total: count(),
         senders: sql<number>`COUNT(DISTINCT ${mailMessages.senderKey})`,
@@ -999,7 +1045,7 @@ export class TriageReadService {
         ),
       );
 
-    const [autopilot] = await this.db
+    const autopilotPromise = this.db
       .select({
         handled: sql<number>`COALESCE(SUM(${activityLog.affectedCount}), 0)`,
       })
@@ -1013,12 +1059,13 @@ export class TriageReadService {
       );
 
     // The queue the user will see — same clamp, ordering, and decided-
-    // sender exclusion as GET /api/triage/queue. `last90dMessages` is
-    // already aggregated per row, so the noise share reuses it.
-    const queueRows = await this.listQueue({
-      mailboxAccountId: input.mailboxAccountId,
-      limit: 12,
-    });
+    // sender exclusion as GET /api/triage/queue. In the bootstrap path
+    // this is the SAME promise used for the queue payload, not a repeat.
+    const [[received], [autopilot], queueRows] = await Promise.all([
+      receivedPromise,
+      autopilotPromise,
+      queuePromise,
+    ]);
     const queuedNoise = queueRows
       .filter((r) => r.verdict !== 'keep')
       .reduce((sum, r) => sum + r.last90dMessages, 0);

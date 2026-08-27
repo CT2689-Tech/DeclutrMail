@@ -46,18 +46,23 @@
 // `subscription_events` insert.
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
   pendingCheckouts,
   billingCustomers,
   subscriptionEvents,
   subscriptions,
+  users,
   workspaces,
 } from '@declutrmail/db';
 import { TIER_RANK } from '@declutrmail/shared/entitlements';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { AutopilotReadService } from '../autopilot/autopilot.read-service.js';
+import {
+  applyGrantFloor,
+  liveGrantTierForWorkspace,
+} from '../common/entitlements/entitlement-grants.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type {
   NormalizedBillingEvent,
@@ -740,6 +745,17 @@ export class BillingWebhookService {
           }
         }
 
+        const [owner] = await tx
+          .select({
+            signupAttributionRef: users.signupAttributionRef,
+            signupAttributionHeardFrom: users.signupAttributionHeardFrom,
+            signupAttributionHeardDetail: users.signupAttributionHeardDetail,
+          })
+          .from(users)
+          .where(eq(users.workspaceId, workspaceId))
+          .orderBy(asc(users.createdAt), asc(users.id))
+          .limit(1);
+
         await tx
           .insert(subscriptions)
           .values({
@@ -756,6 +772,9 @@ export class BillingWebhookService {
             entitlementEndsAt: nextEntitlementEndsAt,
             pauseUntil: sub.pauseUntil ? new Date(sub.pauseUntil) : null,
             foundingMember: founding,
+            signupAttributionRef: owner?.signupAttributionRef ?? null,
+            signupAttributionHeardFrom: owner?.signupAttributionHeardFrom ?? null,
+            signupAttributionHeardDetail: owner?.signupAttributionHeardDetail ?? null,
           })
           .onConflictDoUpdate({
             target: [subscriptions.provider, subscriptions.providerSubscriptionId],
@@ -1357,11 +1376,14 @@ export class BillingWebhookService {
     return null;
   }
 
-  /** Recompute `workspaces.tier` + `founding_member` from all sub rows. */
+  /**
+   * Recompute `workspaces.tier` + `founding_member` from all sub rows,
+   * floored by any live complimentary grant.
+   */
   // NOTE: the worker's billing reconciliation sweep
   // (apps/api/src/worker.ts, sweepBillingReconciliation) mirrors this
   // logic in SQL — same statuses, same deadline predicate, same
-  // max-rank rule. Change one, change both.
+  // max-rank rule, same grant floor. Change one, change both.
   private async recomputeWorkspaceTier(
     tx: Pick<DrizzleDb, 'select' | 'update'>,
     workspaceId: string,
@@ -1381,12 +1403,24 @@ export class BillingWebhookService {
         ),
       );
 
-    let tier: (typeof granting)[number]['tier'] = 'free';
+    let billingTier: (typeof granting)[number]['tier'] = 'free';
     let founding = false;
     for (const row of granting) {
-      if (TIER_RANK[row.tier] > TIER_RANK[tier]) tier = row.tier;
+      if (TIER_RANK[row.tier] > TIER_RANK[billingTier]) billingTier = row.tier;
       if (row.foundingMember) founding = true;
     }
+
+    // The comp FLOOR. Without it this recompute is exactly what makes a
+    // hand-set complimentary tier evaporate: the first subscription row
+    // a comped workspace ever gets — an abandoned checkout is enough —
+    // brings it here, and `billingTier` is 'free'. Floored, a comp
+    // survives every billing event, and a paid tier above the comp
+    // still wins (see common/entitlements/entitlement-grants.ts).
+    //
+    // `founding_member` is deliberately NOT floored: that flag is a
+    // property of what someone bought (D126 first-250 pricing lock), so
+    // a comp must not mint one.
+    const tier = applyGrantFloor(billingTier, await liveGrantTierForWorkspace(tx, workspaceId));
 
     await tx
       .update(workspaces)

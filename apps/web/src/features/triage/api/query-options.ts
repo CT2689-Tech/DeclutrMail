@@ -1,20 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
-import { hasCapability, TIER_IDS, type TierId } from '@declutrmail/shared/entitlements';
 
 import type { TriageDecisionRow, TriageSessionStats } from '@/features/triage/data';
 import type { TodaySummary } from './use-triage-queue';
-
-function isTierId(value: string): value is TierId {
-  return (TIER_IDS as readonly string[]).includes(value);
-}
-
-export function shouldPrefetchTriage(
-  me: { activeMailboxId: string | null; tier: string } | null,
-): boolean {
-  if (me === null || me.activeMailboxId === null) return false;
-  if (!isTierId(me.tier)) return false;
-  return hasCapability(me.tier, 'triage');
-}
 
 export const TRIAGE_QUEUE_KEY = ['triage', 'queue'] as const;
 export const TRIAGE_STATS_KEY = ['triage', 'stats'] as const;

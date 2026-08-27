@@ -11,6 +11,7 @@ import {
 import { GracePeriodBanner } from '@/features/account-deletion/grace-period-banner';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
+import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { useTier } from '@/features/auth/api/use-tier';
 import { PlanChip } from '@/features/billing/pro-chip';
@@ -30,6 +31,10 @@ import { SyncNowAnimationStyle, SyncNowButton } from '@/features/sync/sync-now-b
 import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { ProductUndoTray } from '@/features/triage/triage-undo-tray';
 import { isFeatureEnabled } from '@/lib/flags';
+
+function shellRoute(id: string): string {
+  return id === 'snoozed' ? '/later' : `/${id}`;
+}
 
 /**
  * Authed app chrome. Wires the routing-agnostic AppShell to the
@@ -145,7 +150,7 @@ function AppChrome({ children }: { children: ReactNode }) {
     return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, refreshServerScope);
   }, [router]);
   const { me } = useAuth();
-  useAnalyticsIdentity(me.user.id);
+  useAnalyticsIdentity(me.user.id, me.signupAttribution?.ref);
   // D245: `snoozed` remains the internal capability/nav key, while
   // `/later` is the canonical user-facing route.
   const routeSegment = pathname.split('/')[1] || 'senders';
@@ -227,6 +232,7 @@ function AppChrome({ children }: { children: ReactNode }) {
   if (!hasActiveMailbox && !userScopedRoute) {
     return (
       <>
+        <HeardFromPrompt />
         <GracePeriodBanner />
         <NoActiveMailbox />
         <ToastHost />
@@ -236,6 +242,7 @@ function AppChrome({ children }: { children: ReactNode }) {
 
   return (
     <>
+      <HeardFromPrompt />
       <SyncNowAnimationStyle />
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
         <GracePeriodBanner />
@@ -255,7 +262,8 @@ function AppChrome({ children }: { children: ReactNode }) {
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
-            onNavigate={(id) => router.push(id === 'snoozed' ? '/later' : `/${id}`)}
+            onNavigate={(id) => router.push(shellRoute(id))}
+            onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
             counts={{
               ...tierChips,
               ...(sendersCount === undefined ? {} : { senders: sendersCount }),

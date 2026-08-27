@@ -183,6 +183,24 @@ export type {
 export { WaitlistJoinRequestSchema } from './waitlist';
 export type { WaitlistJoinRequest, WaitlistJoinResult } from './waitlist';
 
+// First-touch signup attribution (marketing runbook Phase B) — query
+// param `ref` allowlist + skippable self-report patch. Tracked and
+// self-reported signals are never summed.
+export {
+  parseSignupAttributionRef,
+  resolveFirstTouchRef,
+  SIGNUP_ATTRIBUTION_REFS,
+  SIGNUP_HEARD_DETAIL_MAX,
+  SIGNUP_HEARD_FROM_VALUES,
+  SIGNUP_REF_COOKIE,
+  SignupHeardFromPatchSchema,
+} from './signup-attribution';
+export type {
+  SignupAttributionRef,
+  SignupHeardFrom,
+  SignupHeardFromPatch,
+} from './signup-attribution';
+
 // D117/D118 billing transport — Zod schemas for /api/billing/* shared
 // between the NestJS billing module and the FE billing screen.
 export {

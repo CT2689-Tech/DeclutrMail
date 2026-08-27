@@ -52,6 +52,7 @@ function meFixture(tier: Me['tier'], cleanupRemaining: number | null): Me {
 }
 
 const FREE_BODY: BillingSubscription = {
+  complimentary: null,
   tier: 'free',
   foundingMember: false,
   subscription: null,
@@ -59,6 +60,7 @@ const FREE_BODY: BillingSubscription = {
 };
 
 const PRO_SUB: BillingSubscription = {
+  complimentary: null,
   tier: 'pro',
   foundingMember: false,
   pendingCheckout: null,
@@ -242,6 +244,7 @@ export const FoundingMember: Story<typeof BillingScreen> = {
         ...PRO_SUB,
         foundingMember: true,
         pendingCheckout: null,
+        complimentary: null,
         subscription: PRO_SUB.subscription
           ? { ...PRO_SUB.subscription, cycle: 'annual', foundingMember: true }
           : null,
@@ -330,6 +333,7 @@ export const Paused: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(meFixture('free', 0), {
+        complimentary: null,
         tier: 'free',
         foundingMember: false,
         pendingCheckout: null,
@@ -352,6 +356,7 @@ export const PausedRazorpay: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(meFixture('free', 0), {
+        complimentary: null,
         tier: 'free',
         foundingMember: false,
         pendingCheckout: null,
@@ -377,6 +382,7 @@ export const ProEntitlementPausedPlusRow: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(meFixture('pro', null), {
+        complimentary: null,
         tier: 'pro',
         foundingMember: false,
         pendingCheckout: null,
@@ -399,6 +405,7 @@ export const ProWithoutSubscription: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(meFixture('pro', null), {
+        complimentary: null,
         tier: 'pro',
         foundingMember: false,
         pendingCheckout: null,
@@ -413,6 +420,7 @@ export const NonBackingPastDue: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(meFixture('pro', null), {
+        complimentary: null,
         tier: 'pro',
         foundingMember: false,
         pendingCheckout: null,
@@ -429,6 +437,7 @@ export const SubscriptionEnded: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(meFixture('free', 0), {
+        complimentary: null,
         tier: 'free',
         foundingMember: false,
         pendingCheckout: null,
@@ -464,6 +473,7 @@ export const PlusSubscriber: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(meFixture('plus', null), {
+        complimentary: null,
         tier: 'plus',
         foundingMember: false,
         pendingCheckout: null,

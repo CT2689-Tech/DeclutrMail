@@ -11,6 +11,7 @@ export * from './brand-domain-aliases';
 export * from './cron-runs';
 export * from './dead-letter-jobs';
 export * from './domain-icons';
+export * from './entitlement-grants';
 export * from './followup-tracker';
 export * from './mail-messages';
 export * from './mailbox-accounts';
