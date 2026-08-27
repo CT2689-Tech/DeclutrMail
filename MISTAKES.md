@@ -3829,3 +3829,47 @@ route chunks for `undefined` appearing inside rendered copy), which
 belongs with `check-web-bundle-budget.mjs` since that script already
 inspects `.next`. Logged as a founder follow-up rather than half-built
 here.
+
+## 2026-08-27 — Shipped a prop the call site never passed
+
+**PR:** #653 (fix), introduced by #652
+
+**Caught by:** Codex stop-time review, second pass
+
+**What happened:** #652 added `quotaRemaining` to `BatchActionSheet` so a
+domain batch would state its cleanup cost, with three tests covering the
+line, the shortfall warning, and the unmetered tier. All passed. The
+production call site in `triage-screen.tsx` never passed the prop, so the
+batch sheet still stated nothing. The tests passed the value directly and
+so could not tell.
+
+CLAUDE.md §8 already names this exactly — "tests that assert on the
+producer and tests that mock the consumer can both be green while the
+join between them is broken" — and I quoted that sentence in the PR body
+of the change that had the defect.
+
+The tell was in the PR body too. Of the three quota joins that change
+touched, the two I smoked by hand were wired correctly, and the one I
+wrote off as unreachable ("a batch card needs three consecutive queue
+rows sharing a domain and the dev mailbox has none") is the one that
+shipped broken. The unsmoked surface is not a coverage gap to note in
+passing; it is the surface most likely to be wrong, because nothing but
+the smoke was ever going to look at the join.
+
+Reaching it in a test cost about fifteen minutes: render `TriageScreen`
+with three same-domain rows and read the real sheet. I had judged that
+too expensive against manufacturing rows in a live mailbox, which was the
+wrong comparison — a component test is not a live mailbox.
+
+**Correct approach:** when a prop is added for a surface you cannot
+exercise end to end, the test must render the surface's real parent, not
+the component with the prop handed to it.
+
+**Rule:** a new prop is not delivered until something renders the real
+call site. Test the join, and treat "I could not smoke this one" as the
+signal to write that test rather than a caveat to publish.
+
+**Enforcement update:** `triage-screen.quota-wiring.test.tsx` renders the
+real screen and asserts every confirm surface Triage can spend from
+states the cost. Both joins independently negative-controlled: removing
+either wiring reddens exactly its own case.
