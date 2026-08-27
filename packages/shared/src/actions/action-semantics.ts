@@ -476,24 +476,39 @@ function presentationActivityUndo(
   if (semantics.activityUndo.kind === 'none') {
     return { kind: 'none', deadline: null, summary: semantics.activityUndo.summary };
   }
+  return {
+    kind: 'plan-window',
+    deadline,
+    summary: activityUndoSummary(
+      UNIFORM_UNDO_WINDOW_DAYS,
+      deadline,
+      semantics.activityUndo.summary,
+    ),
+  };
+}
+
+/**
+ * Chooses the Activity Undo summary line for an action that supports it.
+ * Pure and parameterized on the window (rather than reading
+ * `UNIFORM_UNDO_WINDOW_DAYS` itself) so the divergent-ladder fallback can
+ * be driven directly in tests without editing `pricing.config.ts`.
+ */
+export function activityUndoSummary(
+  uniformWindowDays: number | null,
+  deadline: string | null,
+  planDependentFallback: string,
+): string {
   // A real deadline always wins — it is the exact answer for THIS action.
   if (deadline !== null) {
-    return {
-      kind: 'plan-window',
-      deadline,
-      summary: `Undo from Activity until ${formatIsoUtc(deadline)}.`,
-    };
+    return `Undo from Activity until ${formatIsoUtc(deadline)}.`;
   }
   // No deadline yet (every preview, before the mutation runs). While the
   // ladder is uniform we can still state the window instead of hedging.
-  if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-    return {
-      kind: 'plan-window',
-      deadline: null,
-      summary: `Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`,
-    };
+  if (uniformWindowDays !== null) {
+    return `Undo from Activity for ${uniformWindowDays} days.`;
   }
-  return { kind: 'plan-window', deadline: null, summary: semantics.activityUndo.summary };
+  // Ladder has diverged; the plan-dependent wording is the honest one.
+  return planDependentFallback;
 }
 
 /** Stable display copy until surfaces provide mailbox-timezone formatting. */
