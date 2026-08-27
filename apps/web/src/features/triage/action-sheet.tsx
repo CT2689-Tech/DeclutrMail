@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { ContextualHelp } from '@/features/help/contextual-help';
@@ -12,7 +12,6 @@ import {
 } from './action-preview-detail';
 import type { TriageDecisionRow } from './data';
 import { ProtectedActionNotice } from './protected-notice';
-import { UnprotectButton } from './unprotect-button';
 import type { SheetableVerb } from './store';
 
 const { color, font } = tokens;
@@ -50,6 +49,7 @@ export function ActionSheet({
   inboxCount,
   wakeAt = null,
   mailboxEmail,
+  unprotectSlot,
   onCancel,
   onConfirm,
   onRetryPreview,
@@ -65,6 +65,15 @@ export function ActionSheet({
   wakeAt?: string | null;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
+  /**
+   * The Unprotect control, constructed by the caller (see
+   * `unprotect-button.tsx`). This sheet stays pure presentation and never
+   * imports the sender-policy mutation or the API client behind it, so a
+   * route that opens the sheet on a Protected row — the public inbox
+   * simulator does — never pulls the authenticated client into its chunk.
+   * `undefined` renders the protection notice without a live control.
+   */
+  unprotectSlot?: ReactNode;
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
   onRetryPreview?: (() => void) | undefined;
@@ -382,13 +391,7 @@ export function ActionSheet({
                 mid-flow while the pending action survived in the store.
                 Cancelling deliberately leaves the user somewhere they
                 chose. */}
-            <ProtectedActionNotice
-              row={row}
-              verb={verb}
-              unprotectSlot={
-                <UnprotectButton row={row} surface="triage-preview" onUnprotected={onCancel} />
-              }
-            />
+            <ProtectedActionNotice row={row} verb={verb} unprotectSlot={unprotectSlot} />
           </div>
         )}
 
