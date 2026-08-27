@@ -6,6 +6,8 @@
  * linking users to a long generic FAQ.
  */
 
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+
 export const GLOSSARY_TERMS = {
   sender: {
     term: 'Sender',
@@ -55,7 +57,9 @@ export const GLOSSARY_TERMS = {
   activityUndo: {
     term: 'Activity Undo',
     definition:
-      'DeclutrMail’s plan-based window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control.',
+      UNIFORM_UNDO_WINDOW_DAYS === null
+        ? "DeclutrMail's plan-based window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control."
+        : `DeclutrMail's ${UNIFORM_UNDO_WINDOW_DAYS}-day window for reversing an eligible Archive, Later, or Delete action. Activity shows the deadline and any available Undo control.`,
   },
   gmailTrashRecovery: {
     term: 'Gmail Trash recovery',

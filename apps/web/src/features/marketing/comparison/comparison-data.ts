@@ -884,7 +884,9 @@ const gmailFilters: ComparisonDefinition = {
     points: [
       'You need Gmail’s noisy senders surfaced and ranked before you know which rules to write.',
       'You want plain-language sender outcomes and an impact preview rather than filter plumbing.',
-      'You value a cleanup history and a plan-based recovery window for Gmail label changes.',
+      UNIFORM_UNDO_WINDOW_DAYS === null
+        ? 'You value a cleanup history and a plan-based recovery window for Gmail label changes.'
+        : `You value a cleanup history and a ${UNIFORM_UNDO_WINDOW_DAYS}-day recovery window for Gmail label changes.`,
     ],
   },
   rows: [

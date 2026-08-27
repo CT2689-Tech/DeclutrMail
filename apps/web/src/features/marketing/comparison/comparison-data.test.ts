@@ -122,6 +122,20 @@ describe('comparison data', () => {
     );
   });
 
+  it('states the recovery window on the Gmail-filters "choose DeclutrMail" bullet instead of hedging (D245)', () => {
+    const points = comparisonBySlug('gmail-filters')!.chooseDeclutrMail.points;
+    expect(points.some((point) => point.includes('plan-based recovery window'))).toBe(false);
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(
+        points.some((point) =>
+          point.includes(
+            `a ${UNIFORM_UNDO_WINDOW_DAYS}-day recovery window for Gmail label changes`,
+          ),
+        ),
+      ).toBe(true);
+    }
+  });
+
   it('keeps the Unroll.Me funding and enforcement claims tied to their own sources', () => {
     const unrollMe = comparisonBySlug('unroll-me')!;
     const hosts = unrollMe.sources.map((source) => new URL(source.url).hostname);

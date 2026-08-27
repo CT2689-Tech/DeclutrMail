@@ -10,7 +10,11 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
+import {
+  TIER_MANIFEST,
+  UNIFORM_UNDO_WINDOW_DAYS,
+  type TierDefinition,
+} from '@declutrmail/shared/entitlements';
 
 import {
   CAPABILITY_LABELS,
@@ -89,6 +93,19 @@ describe('/pricing.md — machine-readable pricing', () => {
     expect(markdown).toContain('never fetches or stores full email contents');
     // The universal-undo shorthand this repo bans everywhere else.
     expect(markdown).not.toMatch(/every action (?:is|remains) (?:undoable|reversible)/i);
+  });
+
+  it('states the Activity Undo window for Archive and Later instead of hedging (D245)', async () => {
+    const markdown = await body();
+
+    expect(markdown).not.toContain("for the plan's undo window");
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(markdown).toContain(
+        `Archive and Later can be reversed from Activity for the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`,
+      );
+    }
+    // Gmail's own Trash retention is a separate fact and stays literal.
+    expect(markdown).toContain('Delete carries an Activity token for up to 30 days');
   });
 
   it('quotes no money figure the manifest cannot produce', async () => {
