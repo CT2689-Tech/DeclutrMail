@@ -687,3 +687,66 @@ describe('ActionSheet — Later return-time picker', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 });
+
+// Codex stop-time review, 2026-08-27: the quota line added in #651 was
+// bundled inside `previewDetail`, which `triage-screen.tsx` returns as
+// `undefined` until the composite preview resolves. Unsubscribe with the
+// backlog left alone is the ONE verb whose confirm does not wait for that
+// preview (`requiresLivePreview`), so the cost was absent at exactly the
+// moment it could be spent. The allowance comes from `auth.me`, not from
+// the preview, so it never had a reason to wait.
+describe('ActionSheet — the cleanup cost is stated whenever it can be spent', () => {
+  it.each(['loading', 'unavailable'] as const)(
+    'states the cost on an Unsubscribe whose preview is %s and whose confirm is armed',
+    (inboxCount) => {
+      render(
+        <ActionSheet
+          open={true}
+          verb="Unsubscribe"
+          row={row}
+          inboxCount={inboxCount}
+          quotaRemaining={34}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+        />,
+      );
+      // The bypass: this confirm is armed without a resolved preview.
+      expect(screen.getByRole('button', { name: /^Unsubscribe/ })).toBeEnabled();
+      expect(
+        screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('still states the cost once the preview resolves', () => {
+    render(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={12}
+        quotaRemaining={34}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText(/Uses 1 of your 34 cleanup actions left this month/),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing on a tier that does not meter cleanup actions', () => {
+    render(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={12}
+        quotaRemaining={null}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/cleanup action/)).toBeNull();
+  });
+});

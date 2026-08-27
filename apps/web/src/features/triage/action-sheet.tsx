@@ -53,6 +53,7 @@ export function ActionSheet({
   onConfirm,
   onRetryPreview,
   detail,
+  quotaRemaining,
 }: {
   open: boolean;
   /** Sheetable verbs only — Keep is never previewed. */
@@ -68,6 +69,19 @@ export function ActionSheet({
   onRetryPreview?: (() => void) | undefined;
   /** Verification detail for the D226 preview (parity with senders). */
   detail?: ActionPreviewDetail | undefined;
+  /**
+   * Cleanup actions left this month; `null` when the tier does not meter
+   * them.
+   *
+   * Its OWN prop, not a field on `detail`. It was a field, and
+   * `triage-screen.tsx` returns `detail` as `undefined` until the
+   * composite preview resolves — while Unsubscribe with the backlog left
+   * alone is the one verb whose confirm does NOT wait for that preview
+   * (`requiresLivePreview` below). So the cost went missing at exactly
+   * the moment it could be spent. The allowance comes from `auth.me` and
+   * never had a reason to wait on a preview at all.
+   */
+  quotaRemaining?: number | null | undefined;
 }) {
   // Unsubscribe defaults to leaving the backlog alone. It is a separate
   // Gmail mutation and a second cleanup unit on Free, so it must be an
@@ -233,7 +247,7 @@ export function ActionSheet({
             wakeAt={selectedWakeAt}
             mode="modal"
             mailboxEmail={mailboxEmail}
-            quotaRemaining={detail?.quotaRemaining}
+            quotaRemaining={quotaRemaining}
             detailSlot={
               detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? (
                 <ActionPreviewDetailBlock detail={detail} />

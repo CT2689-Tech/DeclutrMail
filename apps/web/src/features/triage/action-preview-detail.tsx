@@ -46,13 +46,6 @@ export interface ActionPreviewDetail {
   };
   /** Gmail search mirroring this preview's scope; approximate by construction. */
   verifyInGmailUrl?: string;
-  /**
-   * Cleanup actions left this month, or `null` when the tier does not
-   * meter them. How many THIS action costs is derived below from the
-   * verb and the backlog toggle rather than passed in, so the rule lives
-   * in one place and cannot drift from the senders modal's copy of it.
-   */
-  quotaRemaining?: number | null;
 }
 
 /**

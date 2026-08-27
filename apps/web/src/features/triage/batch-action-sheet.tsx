@@ -36,6 +36,7 @@ export function BatchActionSheet({
   onCancel,
   onConfirm,
   onRetryPreview,
+  quotaRemaining,
 }: {
   open: boolean;
   verb: BatchVerb;
@@ -49,6 +50,16 @@ export function BatchActionSheet({
   onCancel: () => void;
   onConfirm: () => void;
   onRetryPreview?: (() => void) | undefined;
+  /**
+   * Cleanup actions left this month; `null` on an unmetered tier.
+   *
+   * A domain batch is the largest spend reachable from Triage — one
+   * action per eligible sender — and stated no cost at all. Its own
+   * `onError` in `triage-screen.tsx` catches 402 FREE_CAP_REACHED, so
+   * the cap was known to be reachable from here; the preview simply
+   * never said so before the click (Codex stop-time review 2026-08-27).
+   */
+  quotaRemaining?: number | null | undefined;
 }) {
   const wakeAtInvalid = verb === 'Later' && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
   const confirmDisabled = preview === 'loading' || preview === 'unavailable' || wakeAtInvalid;
@@ -72,6 +83,14 @@ export function BatchActionSheet({
   if (!open || !batch) return null;
 
   const eligible = batch.eligibleRows;
+  // One cleanup action per ACTIONABLE sender — the same set the server
+  // charges (`enqueueBulk` receives exactly these ids).
+  const unitsNeeded = eligible.length;
+  const quotaShort = quotaRemaining != null && unitsNeeded > quotaRemaining;
+  const quotaLine =
+    quotaRemaining == null
+      ? ''
+      : `Uses ${unitsNeeded.toLocaleString('en-US')} of your ${quotaRemaining.toLocaleString('en-US')} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`;
   const presentation = buildActionPresentation({
     verb: verb === 'Archive' ? 'archive' : 'later',
     liveCount: typeof preview === 'object' ? preview.totals.all : null,
@@ -254,16 +273,26 @@ export function BatchActionSheet({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          <span
+            style={{
+              fontSize: 11.5,
+              color: quotaShort ? color.amber : color.fgMuted,
+              fontWeight: quotaShort ? 600 : 400,
+            }}
+          >
             {confirmDisabled
               ? wakeAtInvalid
                 ? 'Choose a future return time before confirming Later.'
                 : preview === 'unavailable'
                   ? 'Preview unavailable — close and retry.'
                   : 'Counting inbox email — confirm unlocks after the live preview loads.'
-              : UNIFORM_UNDO_WINDOW_DAYS === null
-                ? "One undo reverses the whole batch during your plan's Activity window."
-                : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`}
+              : quotaShort
+                ? `This needs ${unitsNeeded.toLocaleString('en-US')} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining!.toLocaleString('en-US')} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
+                : `${quotaLine}${quotaLine === '' ? '' : ' '}${
+                    UNIFORM_UNDO_WINDOW_DAYS === null
+                      ? "One undo reverses the whole batch during your plan's Activity window."
+                      : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`
+                  }`}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {preview === 'unavailable' && onRetryPreview && (

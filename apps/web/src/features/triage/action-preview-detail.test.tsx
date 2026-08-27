@@ -22,8 +22,10 @@ const detail: ActionPreviewDetail = {
     total: 17,
   },
   verifyInGmailUrl: 'https://mail.google.com/mail/u/0/#search/from%3Ax',
-  quotaRemaining: 34,
 };
+
+/** The allowance travels separately — see `ActionSheet.quotaRemaining`. */
+const QUOTA_REMAINING = 34;
 
 /**
  * Renders the preview the way both real call sites do — the caller builds
@@ -37,6 +39,7 @@ function renderPreview(
     archiveHistoric?: boolean;
     mode?: 'modal' | 'inline';
     detail?: ActionPreviewDetail | undefined;
+    quotaRemaining?: number | null;
   } = {},
 ) {
   const verb = over.verb ?? 'Archive';
@@ -49,7 +52,7 @@ function renderPreview(
       archiveHistoric={archiveHistoric}
       inboxCount={17}
       mode={over.mode ?? 'modal'}
-      quotaRemaining={supplied?.quotaRemaining}
+      quotaRemaining={'quotaRemaining' in over ? over.quotaRemaining : QUOTA_REMAINING}
       detailSlot={
         supplied !== undefined && actionMovesMail(verb, archiveHistoric) ? (
           <ActionPreviewDetailBlock detail={supplied} />
@@ -109,7 +112,7 @@ describe('ActionPreviewPresentation — verification detail (D226 parity)', () =
   });
 
   it('says nothing about quota on a tier that does not meter it', () => {
-    renderPreview({ detail: { ...detail, quotaRemaining: null } });
+    renderPreview({ quotaRemaining: null });
     expect(screen.queryByText(/cleanup action/)).toBeNull();
   });
 
@@ -117,7 +120,9 @@ describe('ActionPreviewPresentation — verification detail (D226 parity)', () =
   // that is what keeps this component importable by the public inbox
   // simulator without its detail code landing in the public chunk.
   it('renders exactly as before when no detail is supplied', () => {
-    renderPreview({ detail: undefined });
+    // What the public inbox simulator passes: neither the detail block
+    // nor an allowance, since it has no mailbox and spends nothing.
+    renderPreview({ detail: undefined, quotaRemaining: null });
     expect(screen.queryByTestId('mail-location-line')).toBeNull();
     expect(screen.queryByRole('link', { name: /Check these in Gmail/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Show what currently matches/ })).toBeNull();
