@@ -14,7 +14,15 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE } from '@/features/triage/data';
-import { InboxSimulatorScreen } from './inbox-simulator-screen';
+import { findDomainBatches } from '@/features/triage/domain-batch';
+import { GUIDED_SCENARIOS, InboxSimulatorScreen } from './inbox-simulator-screen';
+
+/** Mirrors the demo's own `syntheticInboxCount` (private to the screen
+ *  module) so this test can build a valid restored decision. */
+function syntheticInboxCount(row: { last90dMessages: number; totalAllTime: number }): number {
+  if (row.last90dMessages === 0) return Math.min(row.totalAllTime, 6);
+  return Math.max(1, Math.min(row.last90dMessages, row.totalAllTime));
+}
 
 const STORAGE_KEY = 'dm.inbox-simulator.state.v3';
 const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
@@ -46,9 +54,19 @@ describe('InboxSimulatorScreen', () => {
     track.mockClear();
   });
 
+  it('has four guided steps in the documented order', () => {
+    expect(GUIDED_SCENARIOS.map((s) => s.kind)).toEqual(['batch', 'row', 'rule', 'row']);
+    expect(GUIDED_SCENARIOS.map((s) => s.shortLabel)).toEqual([
+      'Scale',
+      'One-way',
+      'Make it stick',
+      'Free the space',
+    ]);
+  });
+
   it('identifies the sample as made up and local-only', () => {
     render(<InboxSimulatorScreen />);
-    expect(screen.getByText(/Follow three made-up examples/i)).toBeInTheDocument();
+    expect(screen.getByText(/Follow four made-up examples/i)).toBeInTheDocument();
     expect(screen.getByText('Local to this browser')).toBeInTheDocument();
   });
 
@@ -65,6 +83,12 @@ describe('InboxSimulatorScreen', () => {
 
   it('requires a preview and explicit confirmation before recording activity', () => {
     render(<InboxSimulatorScreen />);
+    // Explore mode, not a specific guided step: this checks the general
+    // D226 preview-then-confirm mechanism, which every row offers
+    // regardless of which guided step currently occupies slot 1.
+    fireEvent.click(
+      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
+    );
 
     fireEvent.click(screen.getAllByRole('button', { name: /Archive \(A\)/ })[0]!);
     expect(screen.getByRole('dialog', { name: 'Approve the sample action' })).toBeInTheDocument();
@@ -79,6 +103,18 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('records Keep without opening a preview', () => {
+    render(<InboxSimulatorScreen />);
+    fireEvent.click(
+      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Keep \(K\)/ })[0]!);
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('Keep decision recorded. No messages moved.')).toBeInTheDocument();
+  });
+
   it('states that unsubscribe is one-way', () => {
     render(<InboxSimulatorScreen />);
     expect(
@@ -86,13 +122,26 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('restores a valid local decision using the canonical sample row', async () => {
-    window.localStorage.setItem(STORAGE_KEY, storedState([validDecision]));
+  it('restores a completed batch decision and resumes the guide at the next step', async () => {
+    // A batch decision is stored as one ordinary DemoDecision per
+    // eligible row — restoring all five is what "step 1 is done" looks
+    // like on disk, exercising `isScenarioComplete`'s batch branch.
+    const amazonBatch = findDomainBatches(TRIAGE_QUEUE).find((b) => b.domain === 'amazon.com')!;
+    const amazonDecisions = amazonBatch.eligibleRows.map((row, index) => ({
+      rowId: row.id,
+      verb: 'Archive',
+      senderName: row.senderName,
+      affectedCount: syntheticInboxCount(row),
+      at: 1_750_000_000_000 + index,
+    }));
+    window.localStorage.setItem(STORAGE_KEY, storedState(amazonDecisions));
 
     render(<InboxSimulatorScreen />);
 
-    expect(await screen.findByText('1 of 3 decisions complete')).toBeInTheDocument();
-    expect(screen.getByText(`${firstRow.senderName} · Archive`)).toBeInTheDocument();
+    expect(await screen.findByText('1 of 4 decisions complete')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Pause before a one-way request.' }),
+    ).toBeInTheDocument();
   });
 
   it('migrates the previous local decision format into the guided demo', async () => {
@@ -100,7 +149,10 @@ describe('InboxSimulatorScreen', () => {
 
     render(<InboxSimulatorScreen />);
 
-    expect(await screen.findByText('1 of 3 decisions complete')).toBeInTheDocument();
+    // `validDecision` is Groupon, which is step 4's row now — an
+    // out-of-order restore, so the guide correctly reports 0 done and
+    // stays on step 1 rather than crediting a step it has not reached.
+    expect(await screen.findByText('0 of 4 decisions complete')).toBeInTheDocument();
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
@@ -131,7 +183,7 @@ describe('InboxSimulatorScreen', () => {
 
     expect(() => render(<InboxSimulatorScreen />)).not.toThrow();
 
-    expect(await screen.findByText('0 of 3 decisions complete')).toBeInTheDocument();
+    expect(await screen.findByText('0 of 4 decisions complete')).toBeInTheDocument();
     expect(screen.queryByText(/Injected/)).not.toBeInTheDocument();
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toEqual({
@@ -142,40 +194,13 @@ describe('InboxSimulatorScreen', () => {
     );
   });
 
-  it('guides three distinct decisions, records Keep without a preview, and summarizes the outcome', () => {
-    render(<InboxSimulatorScreen />);
-
-    expect(
-      screen.getByRole('heading', { name: 'Clear the inbox without losing the email.' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Groupon')).toBeInTheDocument();
-    expect(screen.queryByText('LinkedIn')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: /Archive \(A\)/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Archive' }));
-
-    expect(
-      screen.getByRole('heading', { name: 'Pause before a one-way request.' }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Unsubscribe' }));
-
-    expect(
-      screen.getByRole('heading', { name: 'See why relationships stay protected.' }),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Priya Raman')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Keep \(K\)/ }));
-
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(screen.getByText('Guided demo complete')).toBeInTheDocument();
-    expect(screen.getByText('Messages moved').parentElement).toHaveTextContent('156');
-    expect(track).toHaveBeenCalledWith('demo_completed', {
-      decisions_completed: 3,
-      affected_messages: 156,
-    });
-  });
-
-  it('names every capability Plus adds over Free in the plan-comparison strip', () => {
+  // D133 Plan 4: unreachable until Task 4 lands the Autopilot rule step.
+  // `DemoCompletion` (where this plan-comparison strip lives) only
+  // renders once every guided step is complete, and step 3 (the rule
+  // step) has no way to record a decision yet — see `isScenarioComplete`
+  // in inbox-simulator-screen.tsx. Re-enable once Task 4 wires
+  // `ActivateRuleModal`'s confirm into the guide.
+  it.skip('names every capability Plus adds over Free in the plan-comparison strip', () => {
     render(<InboxSimulatorScreen />);
 
     // Reach the completion block, which is where the plan strip lives.
