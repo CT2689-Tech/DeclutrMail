@@ -216,7 +216,11 @@ describe('InboxSimulatorScreen', () => {
     // The slice(0,7) → full-queue change is JUSTIFIED by these rows; a
     // fixture reorder must not silently drop the demo's point.
     render(<InboxSimulatorScreen />);
-    fireEvent.click(screen.getByRole('button', { name: 'Explore all 9 senders' }));
+    // Derived, not pinned: the fixture count is expected to grow, and a
+    // literal here would fail for the wrong reason every time it does.
+    fireEvent.click(
+      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
+    );
 
     // Protected sender: present, and its protection is the D245
     // replies signal — never a read-rate claim (§2.6 guardrail).
