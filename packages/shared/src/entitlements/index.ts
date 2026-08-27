@@ -17,6 +17,7 @@ export {
   tierById,
   undoWindowDaysFor,
 } from './resolve';
+export { UNIFORM_UNDO_WINDOW_DAYS } from './undo-window';
 export { CAPABILITIES, PROMO_IDS, TIER_IDS, TIER_RANK } from './types';
 export type {
   Capability,

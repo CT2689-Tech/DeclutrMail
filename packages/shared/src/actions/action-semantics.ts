@@ -1,5 +1,6 @@
 import type { ActionJobStatus } from '../contracts/action-job-status';
 import type { ActionVerb } from '../contracts/verb-constants';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements/undo-window';
 import type { UnsubscribeCapability } from './unsubscribe-capability';
 
 export type CurrentMailScope = 'none' | 'matching-current-inbox' | 'matching-archived';
@@ -475,14 +476,24 @@ function presentationActivityUndo(
   if (semantics.activityUndo.kind === 'none') {
     return { kind: 'none', deadline: null, summary: semantics.activityUndo.summary };
   }
-  return {
-    kind: 'plan-window',
-    deadline,
-    summary:
-      deadline === null
-        ? semantics.activityUndo.summary
-        : `Undo from Activity until ${formatIsoUtc(deadline)}.`,
-  };
+  // A real deadline always wins — it is the exact answer for THIS action.
+  if (deadline !== null) {
+    return {
+      kind: 'plan-window',
+      deadline,
+      summary: `Undo from Activity until ${formatIsoUtc(deadline)}.`,
+    };
+  }
+  // No deadline yet (every preview, before the mutation runs). While the
+  // ladder is uniform we can still state the window instead of hedging.
+  if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+    return {
+      kind: 'plan-window',
+      deadline: null,
+      summary: `Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`,
+    };
+  }
+  return { kind: 'plan-window', deadline: null, summary: semantics.activityUndo.summary };
 }
 
 /** Stable display copy until surfaces provide mailbox-timezone formatting. */
