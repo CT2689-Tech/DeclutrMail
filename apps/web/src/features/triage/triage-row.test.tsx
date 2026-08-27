@@ -23,6 +23,7 @@ import { render, screen, within } from '@testing-library/react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
+import { UnprotectButton } from './unprotect-button';
 import { recommendedVerb } from './types';
 
 function rowById(id: string): TriageDecisionRow {
@@ -111,7 +112,14 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
 
   it('shows the same badge at 375px as on desktop — the narrow layout reflows, it does not drop information', () => {
     setViewportWidth(375);
-    const row = rowById('t-shipping'); // confidence 0.95 → recommended
+    // LinkedIn, not Shipping (D133): Shipping's real cascade signals now
+    // land on Later, which `confidenceBand` always maps to `null` (an
+    // abstention has no band to show) — see
+    // packages/shared/src/copy/engine-confidence.ts. LinkedIn is
+    // unsubscribe at 0.89, comfortably above the 0.85 floor, so it still
+    // exercises the same "verdict pill carries a band at every width"
+    // invariant this test is actually about.
+    const row = rowById('t-linkedin'); // confidence 0.89 → recommended
     renderRow(row);
     // The verdict pill carries the recommendation at every width:
     // "Unsubscribe · strong".
@@ -287,7 +295,10 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
 
   it('still renders a real measured zero for a sender that IS never opened', () => {
     // Two-sided: suppressing unknown must not suppress a true 0%.
-    const row = rowById('t-groupon'); // readRate 0 over 156 messages
+    // Old Navy, not Groupon (D133): Groupon's real cascade signals now
+    // carry a genuine 30% read rate (see data.ts's own comment on why),
+    // so it stopped being a 0%-read example. Old Navy still is one.
+    const row = rowById('t-oldnavy'); // readRate 0 over 144 messages
     expect(row.readRate).toBe(0);
     renderRow(row, { expanded: true });
 
@@ -301,7 +312,8 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
   // twin of the "Never" the Senders surface carried. A sender read for
   // years reads as never opened after one quiet quarter.
   it('never makes a lifetime claim from the 90-day window', () => {
-    const row = rowById('t-groupon'); // readRate 0 over 156 messages
+    // Old Navy, not Groupon — see the comment two tests up (D133).
+    const row = rowById('t-oldnavy'); // readRate 0 over 144 messages
     const { container } = renderRow(row);
     expect(container.textContent).not.toContain('Never opened');
     expect(container.textContent).toContain('None marked read in 90d');
@@ -373,6 +385,9 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
           onToggleExpand={() => {}}
           onAction={() => {}}
           inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+          // Mirrors what triage-queue.tsx constructs for a daily-Triage
+          // row (offerUnprotect unset — surface is the inline preview).
+          unprotectSlot={<UnprotectButton row={row} surface="triage-preview" />}
         />
       </QueryWrapper>,
     );
@@ -417,6 +432,7 @@ describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
     row: ReturnType<typeof rowById>,
     opts: { offerUnprotect?: boolean; inline?: boolean } = {},
   ) {
+    const offerUnprotect = opts.offerUnprotect ?? true;
     return render(
       <QueryWrapper client={createTestQueryClient()}>
         <TriageRow
@@ -424,7 +440,16 @@ describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
           expanded={false}
           onToggleExpand={() => {}}
           onAction={() => {}}
-          offerUnprotect={opts.offerUnprotect ?? true}
+          offerUnprotect={offerUnprotect}
+          // Mirrors what triage-queue.tsx constructs per row: the same
+          // control, surfaced under whichever `surface` the active
+          // position (row strip vs inline notice) needs.
+          unprotectSlot={
+            <UnprotectButton
+              row={row}
+              surface={offerUnprotect ? 'onboarding-review' : 'triage-preview'}
+            />
+          }
           inlinePreview={
             opts.inline ? { verb: 'Archive', archiveHistoric: false, inboxCount: 2 } : null
           }
@@ -451,11 +476,12 @@ describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
   });
 
   it('never stacks two Unprotect buttons when the strip and an inline preview are both live', () => {
-    // `showUnprotect={!offerUnprotect}` on the inline notice exists for
-    // exactly this: with D34's remember-preference set, a protected row
-    // on the review renders BOTH the strip and the inline preview. Two
-    // identical buttons with two overlapping sentences on one card was
-    // the bug; this pins the suppression in both directions.
+    // `unprotectSlot={offerUnprotect ? undefined : unprotectSlot}` on the
+    // inline notice (triage-row.tsx) exists for exactly this: with D34's
+    // remember-preference set, a protected row on the review renders BOTH
+    // the strip and the inline preview. Two identical buttons with two
+    // overlapping sentences on one card was the bug; this pins the
+    // suppression in both directions.
     renderStrip(rowById('t-sarah'), { inline: true });
     expect(screen.getAllByRole('button', { name: /^Unprotect$/i })).toHaveLength(1);
     // The notice itself still renders — only its duplicate control is

@@ -12,6 +12,7 @@ import type { TriageDecisionRow } from './data';
 import { planQueueItems, type DomainBatch } from './domain-batch';
 import { DomainBatchCard, type BatchVerb } from './domain-batch-card';
 import { TriageRow } from './triage-row';
+import { UnprotectButton } from './unprotect-button';
 import { useTriageStore } from './store';
 import type { ActionVerb } from './types';
 
@@ -181,6 +182,20 @@ export function TriageQueue({
                 busy={busyRowIds.has(row.id)}
                 hero={heroRowId === row.id}
                 offerUnprotect={offerUnprotect}
+                // Constructed here (not inside TriageRow) so the row
+                // component never imports UnprotectButton — and with it
+                // the sender-policy mutation and the API client it calls
+                // — directly. `surface` names which control this ends up
+                // rendering as: the D245 review's row strip when
+                // `offerUnprotect`, else the inline preview's notice.
+                unprotectSlot={
+                  row.protectionReason == null ? undefined : (
+                    <UnprotectButton
+                      row={row}
+                      surface={offerUnprotect ? 'onboarding-review' : 'triage-preview'}
+                    />
+                  )
+                }
                 onToggleExpand={() => toggleExpandedRow(row.id)}
                 onAction={(verb) => onAction(verb, row)}
                 inlinePreview={inlinePreview}

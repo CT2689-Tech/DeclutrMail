@@ -1,8 +1,9 @@
 // Storybook CSF3 stories for the Protected-action notice (D245, D226).
 //
 // Real `Meta` / `StoryObj` types — the local `Partial<…>` shim erased
-// required-prop checking, which is how the (required) `surface` prop
-// could be missing from every story without a squeak from tsc.
+// required-prop checking, which is how a required prop (`surface`, on
+// `UnprotectButton` below) could be missing from every story without a
+// squeak from tsc.
 //
 // What these variants exist to show is a CLAIM, not a layout: acting on
 // a Protected sender leaves the protection intact, so every future bulk
@@ -22,7 +23,8 @@ import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from './data';
-import { ProtectedActionNotice, UnprotectButton } from './protected-notice';
+import { ProtectedActionNotice } from './protected-notice';
+import { UnprotectButton } from './unprotect-button';
 
 const { color } = tokens;
 
@@ -68,8 +70,14 @@ function protectedRow(reason: NonNullable<TriageDecisionRow['protectionReason']>
  * shield survives it, and the user is told.
  */
 export const OnArchive: Story = {
-  args: { row: protectedRow('starred'), verb: 'Archive', surface: 'triage-preview' },
-  render: (args) => frame(<ProtectedActionNotice {...args} />),
+  args: { row: protectedRow('starred'), verb: 'Archive' },
+  render: (args) =>
+    frame(
+      <ProtectedActionNotice
+        {...args}
+        unprotectSlot={<UnprotectButton row={args.row} surface="triage-preview" />}
+      />,
+    ),
 };
 
 /**
@@ -79,8 +87,14 @@ export const OnArchive: Story = {
  * above it named it.
  */
 export const OnDelete: Story = {
-  args: { row: protectedRow('gmail-important'), verb: 'Delete', surface: 'triage-preview' },
-  render: (args) => frame(<ProtectedActionNotice {...args} />),
+  args: { row: protectedRow('gmail-important'), verb: 'Delete' },
+  render: (args) =>
+    frame(
+      <ProtectedActionNotice
+        {...args}
+        unprotectSlot={<UnprotectButton row={args.row} surface="triage-preview" />}
+      />,
+    ),
 };
 
 /**
@@ -89,8 +103,14 @@ export const OnDelete: Story = {
  * *whatever still arrives*.
  */
 export const OnUnsubscribe: Story = {
-  args: { row: protectedRow('replied'), verb: 'Unsubscribe', surface: 'triage-preview' },
-  render: (args) => frame(<ProtectedActionNotice {...args} />),
+  args: { row: protectedRow('replied'), verb: 'Unsubscribe' },
+  render: (args) =>
+    frame(
+      <ProtectedActionNotice
+        {...args}
+        unprotectSlot={<UnprotectButton row={args.row} surface="triage-preview" />}
+      />,
+    ),
 };
 
 /**
@@ -98,8 +118,14 @@ export const OnUnsubscribe: Story = {
  * notice states the standing consequence alone.
  */
 export const WithoutAVerb: Story = {
-  args: { row: protectedRow('manual'), verb: null, surface: 'triage-preview' },
-  render: (args) => frame(<ProtectedActionNotice {...args} />),
+  args: { row: protectedRow('manual'), verb: null },
+  render: (args) =>
+    frame(
+      <ProtectedActionNotice
+        {...args}
+        unprotectSlot={<UnprotectButton row={args.row} surface="triage-preview" />}
+      />,
+    ),
 };
 
 /**
@@ -110,7 +136,6 @@ export const UnprotectedRowRendersNothing: Story = {
   args: {
     row: TRIAGE_QUEUE.find((r) => r.protectionReason === null)!,
     verb: 'Archive',
-    surface: 'triage-preview',
   },
   render: (args) =>
     frame(

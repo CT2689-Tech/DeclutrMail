@@ -14,7 +14,7 @@ import type { ReactNode } from 'react';
 import { ActionPreviewPresentation, type PreviewCount } from './action-preview-presentation';
 import { ActionToolbar } from './action-toolbar';
 import { canArchive, canLater, type TriageDecisionRow } from './data';
-import { ProtectedActionNotice, UnprotectButton } from './protected-notice';
+import { ProtectedActionNotice } from './protected-notice';
 import { VERB_SHORTCUT, verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
 import { TriageRowExpanded } from './triage-row-expanded';
 import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
@@ -145,6 +145,7 @@ export function TriageRow({
   busy = false,
   hero = false,
   offerUnprotect = false,
+  unprotectSlot,
   onToggleExpand,
   onAction,
   inlinePreview,
@@ -176,6 +177,19 @@ export function TriageRow({
    * belongs to.
    */
   offerUnprotect?: boolean;
+  /**
+   * The Unprotect control for a Protected row, constructed by the
+   * caller (see `unprotect-button.tsx`) and rendered in the D245 row
+   * strip below (`offerUnprotect`) or forwarded to the inline preview's
+   * `ProtectedActionNotice`. This component never imports
+   * `UnprotectButton` itself — that import drags in the sender-policy
+   * mutation hook and the authenticated API client it calls.
+   * Authenticated surfaces that pass `offerUnprotect` also construct
+   * and pass this slot (see `triage-queue.tsx`); the public simulator
+   * intentionally leaves it `undefined`, removing this row's auth/query
+   * edge from the public route-specific chunk.
+   */
+  unprotectSlot?: ReactNode;
   onToggleExpand: () => void;
   onAction: (verb: ActionVerb) => void;
   /**
@@ -511,7 +525,7 @@ export function TriageRow({
           </span>
           {/* The strip only renders on the D245 review (`offerUnprotect`),
               so this surface is the review, not daily Triage. */}
-          <UnprotectButton row={row} surface="onboarding-review" />
+          {unprotectSlot}
         </div>
       )}
 
@@ -601,12 +615,11 @@ export function TriageRow({
               <ProtectedActionNotice
                 row={row}
                 verb={inlinePreview.verb === 'Keep' ? null : inlinePreview.verb}
-                surface="triage-preview"
-                // The D245 review's row strip already renders one; without
-                // this, a protected row with D34's remember-preference set
-                // stacks two identical Unprotect buttons and two
-                // overlapping sentences on the same card.
-                showUnprotect={!offerUnprotect}
+                // The D245 review's row strip already renders `unprotectSlot`
+                // above; without this, a protected row with D34's
+                // remember-preference set stacks two identical Unprotect
+                // buttons and two overlapping sentences on the same card.
+                unprotectSlot={offerUnprotect ? undefined : unprotectSlot}
               />
             </div>
           )}
