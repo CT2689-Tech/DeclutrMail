@@ -37,8 +37,8 @@ import {
   type SenderPolicyResultDto,
 } from '@/lib/api/senders';
 import { activityKeys } from '@/features/activity/api/query-keys';
-import { SCREENER_QUEUE_KEY } from '@/features/screener/api/use-screener';
-import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/use-triage-queue';
+import { SCREENER_QUEUE_KEY } from '@/features/screener/api/query-keys';
+import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/query-keys';
 import { track } from '@/lib/posthog';
 import { sendersKeys } from './query-keys';
 

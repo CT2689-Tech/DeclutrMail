@@ -1,6 +1,9 @@
 import { queryOptions } from '@tanstack/react-query';
 
 import type { ScreenerQueueRow } from '../data';
+import { SCREENER_QUEUE_KEY } from './query-keys';
+
+export { SCREENER_QUEUE_KEY };
 
 /**
  * Shared parent prefix. TanStack matches by prefix, so invalidating this
@@ -9,7 +12,6 @@ import type { ScreenerQueueRow } from '../data';
  * and the list disagree until the count's next poll.
  */
 export const SCREENER_ALL_KEY = ['screener'] as const;
-export const SCREENER_QUEUE_KEY = ['screener', 'queue'] as const;
 export const SCREENER_COUNT_KEY = ['screener', 'count'] as const;
 export const SCREENER_COUNT_POLL_MS = 60_000;
 

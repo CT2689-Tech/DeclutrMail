@@ -2,8 +2,10 @@ import { queryOptions } from '@tanstack/react-query';
 
 import type { TriageDecisionRow, TriageSessionStats } from '@/features/triage/data';
 import type { TodaySummary } from './use-triage-queue';
+import { TRIAGE_QUEUE_KEY } from './query-keys';
 
-export const TRIAGE_QUEUE_KEY = ['triage', 'queue'] as const;
+export { TRIAGE_QUEUE_KEY };
+
 export const TRIAGE_STATS_KEY = ['triage', 'stats'] as const;
 export const TODAY_SUMMARY_KEY = ['triage', 'today-summary'] as const;
 
