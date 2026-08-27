@@ -1,3 +1,33 @@
+> ## ⛔ FROZEN — historical record, not a source of truth
+>
+> **Founder decision 2026-08-27.** This document records how DeclutrMail V2
+> was reasoned about. It is **not authoritative about how anything currently
+> behaves**, and it is **not a gate on new work**.
+>
+> **For current behavior, read these instead:**
+>
+> | Question | Authority |
+> |---|---|
+> | What does a tier include? | `packages/shared/src/entitlements/pricing.config.ts` |
+> | What Gmail data do we touch? | `packages/shared/src/contracts/gmail-data-inventory.ts` |
+> | What is invariant? | the test suites that run in CI |
+> | Why is a rule the way it is? | `docs/adr/` |
+> | What is allowed? | `CLAUDE.md` §2 |
+>
+> **Do not cite a D-number to justify or block Tier 2 work** (content, copy,
+> IA, pages, structure — see `CLAUDE.md` §2.0). Adding a page needs no
+> decision number.
+>
+> **Known-stale by construction.** 235 decisions, 33 inline patches, 3
+> reversal markers. Decisions have been superseded with no marker written at
+> all (D77, D83), and enumerations have been outgrown without amendment
+> (D132 names five how-to pages; six ship). A reader following the documented
+> procedure correctly still lands on stale text. That is why this is frozen
+> rather than maintained.
+>
+> Append nothing here. New rules go to `docs/adr/`; new observations go to
+> `LEARNINGS.md` or `FOUNDER-FOLLOWUPS.md`.
+
 # DeclutrMail V2 — Drive Docs Audit
 
 ## Context
@@ -3491,8 +3521,12 @@ Discoverable, functional, all major pages have nav presence.
 - Tier 3 + Tier 4 drafted by Claude SEO agent; user reviews and
   publishes in waves over first 8 weeks post-launch.
 - Tier 5 ships as empty shells at launch; populated organically.
-- Claude SEO agent maintains content quarterly (refresh dates, update
-  comparisons, etc.).
+- Claude SEO agent reviews content quarterly (re-read sources, update
+  comparisons, etc.). **Superseded 2026-08-27:** "refresh dates" as a
+  calendar chore contradicts `learn/types.ts` — `updatedAt` is a public
+  freshness claim and must track the last substantive edit, never the
+  date of the review that found nothing to change. Re-read the sources;
+  bump the date only if the text changed.
 
 ### D133 — Inbox Simulator: **Claude Code React build with real engine**
 

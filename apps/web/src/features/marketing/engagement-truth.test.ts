@@ -34,12 +34,7 @@
 import { describe, expect, it } from 'vitest';
 import { GMAIL_DERIVED_DATA_INVENTORY, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 
-import { ANSWER_ARTICLES } from './learn/answer-content';
-import { BLOG_ARTICLES } from './learn/blog-content';
-import { CHANGELOG_ENTRIES } from './learn/changelog-content';
-import { FAQ_ENTRIES } from './learn/faq-content';
-import { HOW_TO_ARTICLES } from './learn/how-to-content';
-import { COMPARISONS } from './comparison/comparison-data';
+import { MARKETING_CONTENT_ENTRIES } from './content-registry';
 
 /** Every string reachable from a content structure, in order. */
 function collectStrings(node: unknown, out: string[] = []): string[] {
@@ -117,12 +112,10 @@ function isOffending(text: string): boolean {
 }
 
 const SURFACES: ReadonlyArray<readonly [string, unknown]> = [
-  ['answers', ANSWER_ARTICLES],
-  ['blog', BLOG_ARTICLES],
-  ['how-to', HOW_TO_ARTICLES],
-  ['changelog', CHANGELOG_ENTRIES],
-  ['faq', FAQ_ENTRIES],
-  ['comparisons', COMPARISONS],
+  // Content modules come from the shared registry (2026-08-27) — see the
+  // note in `content-registry.ts`. A hand-synced list here meant a new
+  // content module was scanned by none of the three truth-gates.
+  ...MARKETING_CONTENT_ENTRIES,
   ['privacy storage list', PRIVACY_STORAGE_ITEMS],
   ['derived data inventory', GMAIL_DERIVED_DATA_INVENTORY],
 ];

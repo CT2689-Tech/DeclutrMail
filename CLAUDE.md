@@ -70,6 +70,35 @@ The D-decisions in the plan ARE pre-written success criteria. Use them.
 These cannot be violated. Hooks and subagents enforce them; if a hook
 fires, **do not bypass — fix the underlying issue.**
 
+### 2.0 Two tiers — what stops work, and what does not
+
+Founder decision 2026-08-27. The rules below are **Tier 1**: unsafe,
+expensive to reverse, or legally exposed. Everything not named here is
+**Tier 2** — ship it, do not ask.
+
+**Tier 1 — stop and ask.** Body/attachment storage and the header
+allowlist (§2.1), Gmail OAuth scopes, token encryption, webhook auth
+(§2.5), billing and payment state, account deletion and undo windows,
+destructive Gmail actions without preview (§2.3), security headers /
+CORS / CSP, production migrations, and category prediction (§2.4).
+
+**Tier 1b — truth.** Do not publish a claim about the product or a third
+party without a source that a reader can open. Scope an observed fact to
+what was checked and when ("in messages checked 2026-08-26…"), never as
+a universal. Prefer `unknown` over converting absence of evidence into a
+"no". This is about accuracy, not permission: it costs minutes, and a
+wrong public claim costs a refund thread or a regulator.
+
+**Tier 2 — ship it.** Marketing content, information architecture, new
+pages and routes, copy, comparisons, page count, section structure,
+word counts, formats, internal linking, metadata. No D-number, no plan
+citation, no permission. Match existing conventions and move.
+
+Why this exists: an audit on 2026-08-26 found that essentially nothing
+blocking content work was a D-decision or an ADR. It was narrow tests,
+stale docs, and hooks. The D-plan was never the constraint, so removing
+plan ceremony from Tier 2 costs nothing and returns the time.
+
 ### 2.1 Privacy — no body storage (D7, D228)
 
 DeclutrMail **never** fetches or stores:
@@ -184,21 +213,25 @@ Enforced by `webhook-security-auditor` subagent.
 
 When instructions conflict, follow this order:
 
-1. **Security/privacy hard rules in this CLAUDE.md** (Section 2)
-2. **Latest D-decision in the plan** — including inline patches and reversal markers
-3. **ADRs in `docs/adr/`** (architectural decisions outside the D-plan)
+1. **Tier 1 + Tier 1b rules in this CLAUDE.md** (Section 2)
+2. **Executable truth** — manifests and tests that run: `pricing.config.ts`,
+   `gmail-data-inventory.ts`, the entitlements suite, the marketing
+   truth-gates. Code that enforces itself beats prose that describes it.
+3. **ADRs in `docs/adr/`** (rules that constrain how code gets written)
 4. **Current codebase conventions** (existing patterns in the same module)
-5. **Agent judgment** (last resort)
+5. **Agent judgment**
+6. **The Implementation Plan** — historical record, not a gate. See §4.
 
-**Conflict resolution rule.** If this CLAUDE.md conflicts with a
-D-decision, **stop and flag as plan-drift** — do not silently choose one.
-Plan-drift means either:
+**The plan moved to last on purpose** (2026-08-27). It is 235 decisions
+with 33 patches and 3 reversal markers, and this file already documents
+that a reader following the procedure correctly still lands on stale
+text. Treat a D-body as evidence of intent at a point in time, never as
+current behavior.
 
-- A new D-decision invalidated a CLAUDE.md guardrail → CLAUDE.md needs update
-- CLAUDE.md captured a more recent decision the plan hasn't caught up to → plan needs update
-
-Either way, the conflict is the founder's call. Surface it; don't resolve
-it autonomously.
+**Conflict resolution rule.** For **Tier 1 / Tier 1b**, a conflict is the
+founder's call — surface it, do not resolve it autonomously. For
+**Tier 2**, there is nothing to resolve: pick the option that serves the
+user, match local convention, and note the choice in the PR body.
 
 **Patch awareness.** Many D-decisions have inline patches (e.g., D29's
 "K/A/U/S" is reverbed to "K/A/U/L" by D227). When reading a D-body,
@@ -228,7 +261,23 @@ implementing the stale body.
 
 ## 4. Plan navigation
 
-The plan is the source of truth. Read it directly when in doubt.
+**The plan is a historical record, not a source of truth** (founder
+decision 2026-08-27). It documents how the product was reasoned about,
+which is genuinely useful for understanding *why* something is the way
+it is. It is not authoritative about how anything currently behaves.
+
+For current behavior, in order: the manifests (`pricing.config.ts`,
+`gmail-data-inventory.ts`), the tests that run in CI, the ADRs, then the
+shipped code.
+
+**You do not need to read the plan before doing Tier 2 work.** Adding a
+page, rewriting copy, changing the IA, or growing a content cluster
+needs no D-number and no plan citation. If a plan section enumerates a
+list the repo has already outgrown — D132 names five how-to pages and
+six ship today — that is the plan being old, not drift to escalate.
+
+Read it when you want the reasoning behind a Tier 1 rule, or when the
+founder asks what was decided and when.
 
 **Plan locations** (in priority order):
 
@@ -607,13 +656,22 @@ PR-type-specific additions:
 
 ## 9. What to do if unsure
 
-In priority order:
+**First ask which tier this is (§2.0).** If it is Tier 2 — content, copy,
+IA, pages, structure — you are not unsure about permission, only about
+craft. Pick the option that serves the user, match local convention, and
+ship it.
 
-1. **Search the plan** for the relevant D-number (`rg "D### " <plan path>`).
-2. **Re-read this CLAUDE.md** — guardrails answer most "is this allowed?" questions.
+For everything else, in priority order:
+
+1. **Check the manifests and tests** — `pricing.config.ts`,
+   `gmail-data-inventory.ts`, the entitlements and truth-gate suites.
+   Executable truth answers most "what does it actually do?" questions.
+2. **Re-read this CLAUDE.md §2** — the Tier 1 list answers most
+   "is this allowed?" questions.
 3. **Run the relevant gate agent** locally for a second opinion.
 4. **State your assumption explicitly** and proceed if low-stakes.
-5. **Flag as a new D-candidate** if high-stakes and not covered. Do NOT block.
+5. **Flag it in `FOUNDER-FOLLOWUPS.md`** if high-stakes and not covered.
+   Do NOT block, and do NOT invent a D-number.
 
 ### Stop conditions (override "do not block")
 
@@ -632,9 +690,16 @@ Stop and surface to the founder when any change touches:
 - **Destructive Gmail actions** without complete preview + undo wiring (D226, D207)
 - **Webhook authentication** (Pub/Sub OIDC, Stripe signatures) (D229)
 - **Security headers / CORS / CSP** configuration
-- **Changes that appear to contradict a hard guardrail** (Section 2)
+- **Changes that appear to contradict a Tier 1 guardrail** (Section 2)
+- **A public claim you cannot source** (Tier 1b) — about the product, a
+  competitor, or a third-party sender. Publishing "brand X does not
+  support unsubscribe" from two observed messages is the shape to catch.
 
 For these, **flag blocked and ask the founder.** Do not assume.
+
+**Nothing else on this page is a stop condition.** Marketing content, new
+pages, copy rewrites, IA changes and comparison pages are Tier 2: ship
+them. If you catch yourself about to ask permission for a page, don't.
 
 ---
 

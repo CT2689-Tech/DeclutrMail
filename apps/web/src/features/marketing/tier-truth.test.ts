@@ -36,11 +36,7 @@ import {
 import { ACTION_SAFETY_SUMMARY } from '@declutrmail/shared/copy';
 
 import { TIER_JOBS } from './pricing/pricing-model';
-import { ANSWER_ARTICLES } from './learn/answer-content';
-import { BLOG_ARTICLES } from './learn/blog-content';
-import { FAQ_ENTRIES } from './learn/faq-content';
-import { HOW_TO_ARTICLES } from './learn/how-to-content';
-import { COMPARISONS } from './comparison/comparison-data';
+import { MARKETING_CONTENT_CORPUS } from './content-registry';
 
 /** Every string reachable from a content structure, in order. */
 function collectStrings(node: unknown, out: string[] = []): string[] {
@@ -70,11 +66,13 @@ const CORPUS: readonly string[] = [
   // this file, scoped to the learn/comparison modules, could not see.
   ACTION_SAFETY_SUMMARY,
   ...Object.values(TIER_JOBS),
-  ...collectStrings(ANSWER_ARTICLES),
-  ...collectStrings(BLOG_ARTICLES),
-  ...collectStrings(FAQ_ENTRIES),
-  ...collectStrings(HOW_TO_ARTICLES),
-  ...collectStrings(COMPARISONS),
+  // Content modules come from the shared registry (2026-08-27). Naming
+  // them by hand here — and again in `screener-truth` and
+  // `engagement-truth` — meant a new module was scanned by none of the
+  // three, with each gate's coverage floor sized to the corpus that
+  // already existed, so nothing could detect the gap. Exactly the
+  // blind-guard shape this file's own header warns about.
+  ...MARKETING_CONTENT_CORPUS.flatMap((collection) => collectStrings(collection)),
 ];
 
 /**

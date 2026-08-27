@@ -22,12 +22,7 @@
 import { describe, expect, it } from 'vitest';
 import { GMAIL_DERIVED_DATA_INVENTORY, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 
-import { ANSWER_ARTICLES } from './learn/answer-content';
-import { BLOG_ARTICLES } from './learn/blog-content';
-import { CHANGELOG_ENTRIES } from './learn/changelog-content';
-import { FAQ_ENTRIES } from './learn/faq-content';
-import { HOW_TO_ARTICLES } from './learn/how-to-content';
-import { COMPARISONS } from './comparison/comparison-data';
+import { MARKETING_CONTENT_ENTRIES } from './content-registry';
 
 /** Every string reachable from a content structure, in order. */
 function collectStrings(node: unknown, out: string[] = []): string[] {
@@ -105,12 +100,11 @@ const SANCTIONED_PHRASES: readonly { pattern: RegExp; replacement: string }[] = 
 ];
 
 const SURFACES: ReadonlyArray<readonly [string, unknown]> = [
-  ['answers', ANSWER_ARTICLES],
-  ['blog', BLOG_ARTICLES],
-  ['how-to', HOW_TO_ARTICLES],
-  ['changelog', CHANGELOG_ENTRIES],
-  ['faq', FAQ_ENTRIES],
-  ['comparisons', COMPARISONS],
+  // Content modules come from the shared registry (2026-08-27). This list
+  // used to name each module by hand, in three separate gate files, so a
+  // new content module was invisible to all three while every assertion
+  // stayed green. Add a module to `content-registry.ts` once instead.
+  ...MARKETING_CONTENT_ENTRIES,
   // The generated public storage list, rendered by PrivacyBadge on
   // /privacy, /security and the product story.
   ['privacy storage list', PRIVACY_STORAGE_ITEMS],
