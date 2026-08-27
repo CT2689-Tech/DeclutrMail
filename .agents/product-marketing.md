@@ -22,10 +22,11 @@ that begin in Observe and must be explicitly enabled.
 **Product type:** Self-serve consumer/prosumer SaaS. Gmail remains the reader and composer;
 DeclutrMail is a companion control surface.
 
-**Business model:** Free includes 50 cleanup actions per month for one inbox and a seven-day undo
-window. Plus is $9/month or $90/year and removes the cleanup meter. Pro is $19/month or $190/year,
-supports three inboxes, adds the automation set, and extends the undo window to 30 days. Founding
-Pro is $129/year for the first 250 eligible paid subscriptions. D251 approves moving Screener from
+**Business model:** Free includes 50 cleanup actions per month for one inbox. The Activity undo
+window is 30 days on **every** tier — see `packages/shared/src/entitlements/pricing.config.ts`,
+which is the authority; do not restate it from memory. Plus is $9/month or $90/year and removes the
+cleanup meter. Pro is $19/month or $190/year, supports three inboxes and adds the automation set.
+Founding Pro is $129/year for the first 250 eligible paid subscriptions. D251 approves moving Screener from
 Pro to Plus, but public copy must not promise that packaging until the capability and all gates are
 deployed together.
 
@@ -64,11 +65,11 @@ what moves and a recovery path for reversible actions.
 These are segmentation hypotheses, not demographic characters. Do not present them as validated
 personas until each has at least five independent first-party data points.
 
-| Segment                | Trigger and job                                                                                 | Main anxiety                                                                   | Best initial message                                                             | Likely plan                                                |
-| ---------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Backlog owner          | A storage warning or years of accumulated mail creates urgency; wants a large, safe first pass  | Accidentally deleting receipts, account records, or personal mail              | Clear years of Gmail clutter with the scope visible first                        | Free to prove value; Plus to finish and review new senders |
-| Control-first skeptic  | Has avoided cleanup tools because inbox access and opaque bulk actions feel worse than the mess | What the product reads, what will move, and whether a mistake can be recovered | Exact preview, `Full bodies fetched: 0`, Activity record, scoped undo            | Free or Plus                                               |
-| Multi-inbox maintainer | Personal, work, and an older/project Gmail account all accumulate recurring noise               | Separate accounts, inconsistent rules, missed mail, and opaque automation      | One deliberate workflow across up to three Gmail inboxes; rules begin in Observe | Pro                                                        |
+| Segment                | Trigger and job                                                                                 | Main anxiety                                                                   | Best initial message                                                                            | Likely plan                                                |
+| ---------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Backlog owner          | A storage warning or years of accumulated mail creates urgency; wants a large, safe first pass  | Accidentally deleting receipts, account records, or personal mail              | Clear years of Gmail clutter with the scope visible first                                       | Free to prove value; Plus to finish and review new senders |
+| Control-first skeptic  | Has avoided cleanup tools because inbox access and opaque bulk actions feel worse than the mess | What the product reads, what will move, and whether a mistake can be recovered | Exact preview, **"We never fetch or store full email contents."**, Activity record, scoped undo | Free or Plus                                               |
+| Multi-inbox maintainer | Personal, work, and an older/project Gmail account all accumulate recurring noise               | Separate accounts, inconsistent rules, missed mail, and opaque automation      | One deliberate workflow across up to three Gmail inboxes; rules begin in Observe                | Pro                                                        |
 
 ## Problems & Pain Points
 
@@ -131,9 +132,9 @@ claims before every comparison-page release.
 **Key differentiators:**
 
 - A live current-scope preview before manual Archive, Later, or Delete moves mail.
-- An Activity record of final outcomes with seven-day undo on Free/Plus and 30-day undo on Pro for
+- An Activity record of final outcomes with a 30-day undo window on every tier for
   manual Archive, Later, and Delete.
-- The locked, schema-backed privacy claim: `Full bodies fetched: 0`.
+- The locked, schema-backed privacy claim: **"We never fetch or store full email contents."**
 - Explicit Keep, Archive, Unsubscribe, Later, and Delete decisions in Gmail terms.
 - Pro rules begin in Observe and require an explicit enable step before acting on future matches.
 - Up to three separate Gmail inboxes on Pro without replacing Gmail.
@@ -152,7 +153,7 @@ using Gmail as the source of truth.
 | Objection                                          | Response                                                                                                                                                                                                                                                                                      |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Why pay when Gmail can unsubscribe or bulk-delete? | Use Gmail for native unsubscribe and known searches. Use DeclutrMail when the hard part is discovering sender patterns, seeing the scope of a manual move, recording the outcome, and recovering reversible actions over days instead of seconds.                                             |
-| Why should I grant inbox access?                   | Show the exact field boundary before OAuth. The locked public badge is `Full bodies fetched: 0`; full/raw bodies and attachments are not fetched. Be equally explicit that subject and Gmail's short preview snippet are stored where the product contract says so.                           |
+| Why should I grant inbox access?                   | Show the exact field boundary before OAuth. The locked public badge is **"We never fetch or store full email contents."**; full/raw bodies and attachments are not fetched. Be equally explicit that subject and Gmail's short preview snippet are stored where the product contract says so. |
 | Could this delete something important?             | The user sees the current count, an available sample, and the planned Gmail change before manual Archive, Later, or Delete. Those actions have Activity undo while the plan window is open; Delete also has a separate Gmail Trash recovery path. Never imply unsubscribe can be recalled.    |
 | Does one Archive decision create a future rule?    | No. Manual actions cover matching inbox mail at the moment they run. Future-mail handling is a separate Pro Autopilot feature whose preset rules begin in Observe and must be enabled.                                                                                                        |
 | Why keep paying after the backlog is gone?         | Plus earns renewal only if Screener becomes a useful recurring new-sender review habit after D251. Pro earns renewal through approved future-mail rules, multi-inbox control, Brief, and the longer undo window. If cohorts do not use those standing jobs, copy cannot repair the packaging. |
@@ -235,7 +236,7 @@ claims, and product proof adjacent to the claim it supports.
 
 **Product-backed proof:**
 
-- `Full bodies fetched: 0` from the shared schema-backed privacy contract.
+- **"We never fetch or store full email contents."** from the shared schema-backed privacy contract.
 - 50 cleanup actions per month on Free.
 - Seven-day Activity undo for manual Archive, Later, and Delete on Free/Plus; 30 days on Pro.
 - Up to three Gmail inboxes on Pro.
@@ -251,13 +252,13 @@ Never fabricate them or turn founder/mailbox data into customer proof.
 
 **Value themes:**
 
-| Theme            | Proof                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------ |
-| Progress         | Sender-sized decisions and visible matching counts                                   |
-| Control          | Manual-move preview, explicit approval, Observe-before-Active rules                  |
-| Recovery         | Activity undo for reversible actions and a separate Gmail Trash recovery explanation |
-| Privacy boundary | `Full bodies fetched: 0` plus the exact stored-field inventory                       |
-| Continuity       | Gmail remains the reader, composer, and final mailbox source of truth                |
+| Theme            | Proof                                                                                    |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| Progress         | Sender-sized decisions and visible matching counts                                       |
+| Control          | Manual-move preview, explicit approval, Observe-before-Active rules                      |
+| Recovery         | Activity undo for reversible actions and a separate Gmail Trash recovery explanation     |
+| Privacy boundary | **"We never fetch or store full email contents."** plus the exact stored-field inventory |
+| Continuity       | Gmail remains the reader, composer, and final mailbox source of truth                    |
 
 ## Goals
 

@@ -80,11 +80,40 @@ describe('public learning content registry', () => {
     }
   });
 
-  it('backs every native Gmail guide with current Google primary documentation', () => {
+  it('backs every how-to guide with a primary source a reader can open', () => {
+    // Widened from `support.google.com`-only on 2026-08-27, following the
+    // hostname-allowlist precedent already used for comparison sources
+    // (`comparison/comparison-data.test.ts`). The old rule made a guide
+    // about a third-party sender unshippable: its only honest citation is
+    // that sender's own help page, and a Google-only list rejected it —
+    // which pushed the brand-specific claims onto the page UNSOURCED,
+    // under a heading that says "Primary sources". A narrower rule that
+    // forces unbacked claims is worse than a wider rule that permits
+    // first-party ones.
+    //
+    // The invariant is unchanged and is what actually matters: every
+    // source must be HTTPS and must be the PRIMARY party for the claim —
+    // Google for native Gmail behaviour, the sender for its own email
+    // settings. Never a review site, a blog, or a competitor.
+    const allowedHosts = new Set([
+      // Native Gmail behaviour — the primary party for anything the
+      // Gmail UI itself does.
+      'support.google.com',
+      // Senders documenting their own email settings. Add a host here
+      // only when a guide cites that sender's OWN help or preference
+      // documentation.
+      'help.linkedin.com',
+      'support.tiktok.com',
+      'help.uber.com',
+      'www.temu.com',
+    ]);
+
     for (const article of HOW_TO) {
       expect(article.sources?.length, article.path).toBeGreaterThan(0);
       for (const source of article.sources ?? []) {
-        expect(source.href, article.path).toMatch(/^https:\/\/support\.google\.com\//);
+        const url = new URL(source.href);
+        expect(url.protocol, `${article.path} ${source.href}`).toBe('https:');
+        expect(allowedHosts.has(url.hostname), `${article.path} ${source.href}`).toBe(true);
       }
     }
   });
