@@ -16,13 +16,7 @@ import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE } from '@/features/triage/data';
 import { findDomainBatches } from '@/features/triage/domain-batch';
 import { GUIDED_SCENARIOS, InboxSimulatorScreen } from './inbox-simulator-screen';
-
-/** Mirrors the demo's own `syntheticInboxCount` (private to the screen
- *  module) so this test can build a valid restored decision. */
-function syntheticInboxCount(row: { last90dMessages: number; totalAllTime: number }): number {
-  if (row.last90dMessages === 0) return Math.min(row.totalAllTime, 6);
-  return Math.max(1, Math.min(row.last90dMessages, row.totalAllTime));
-}
+import { syntheticInboxCount } from './synthetic-preview';
 
 const STORAGE_KEY = 'dm.inbox-simulator.state.v3';
 const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
@@ -192,6 +186,47 @@ describe('InboxSimulatorScreen', () => {
         decisions: [],
       }),
     );
+  });
+
+  it('offers the amazon.com batch, excluding the protected sender from the count', () => {
+    render(<InboxSimulatorScreen />);
+    expect(screen.getByText(/6 senders from amazon\.com/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Archive all 5/i })).toBeInTheDocument();
+  });
+
+  it('confirms the amazon.com batch through the mandatory preview, then continues into the one-way step', () => {
+    render(<InboxSimulatorScreen />);
+
+    expect(
+      screen.getByRole('heading', { name: 'One decision covers thousands of messages.' }),
+    ).toBeInTheDocument();
+
+    // The engine visibly disagreeing with itself, and the visitor
+    // overruling all of it with one verb (D226-mandatory preview first).
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+    const sheet = screen.getByRole('dialog', { name: 'amazon.com' });
+    expect(within(sheet).getByText(/Archive all inbox email from 5 senders/i)).toBeInTheDocument();
+    // Protection shown, not claimed: the sixth sender is named as skipped,
+    // never silently folded into the aggregated total (D245).
+    expect(within(sheet).getByText(/1 protected sender will be skipped/i)).toBeInTheDocument();
+
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive all/ }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();
+
+    // Step 2 — the existing one-way / Unsubscribe lesson, unchanged.
+    expect(
+      screen.getByRole('heading', { name: 'Pause before a one-way request.' }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Unsubscribe' }));
+
+    // Step 3 exists and is reachable; nothing can complete it yet — the
+    // Autopilot rule preview is Plan 4 Task 4, not this change.
+    expect(
+      screen.getByRole('heading', { name: 'A one-time decision does not repeat itself.' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('2 of 4 decisions complete')).toBeInTheDocument();
   });
 
   // D133 Plan 4: unreachable until Task 4 lands the Autopilot rule step.
