@@ -33,7 +33,7 @@ describe('DomainBatchCard — count reads the eligible set (D245)', () => {
     expect(batch).toBeDefined();
     render(<DomainBatchCard batch={batch!} onVerb={() => {}} onDismiss={() => {}} />);
     expect(screen.getByText(/3 senders from amazon\.com — decide together\?/)).toBeInTheDocument();
-    expect(screen.getByText(/1 protected sender stay untouched/)).toBeInTheDocument();
+    expect(screen.getByText(/1 protected sender stays untouched/)).toBeInTheDocument();
   });
 
   it('a run left with one actionable sender yields no card to render', () => {
