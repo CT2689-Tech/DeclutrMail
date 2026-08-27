@@ -386,6 +386,30 @@ export function actionHasRecovery(verb: ActionVerb): boolean {
   );
 }
 
+/**
+ * Inbox depth at which a Later preview says the returning mail arrives
+ * together.
+ *
+ * Later is the only mail-moving verb with no way to narrow its reach — it
+ * takes every inbox message from the sender — and it is also the only one
+ * that hands all of it back at once, on a date chosen when the pile was
+ * out of sight. The preview already states the count and the return date
+ * in separate sentences; at scale the reader has to join them to see what
+ * is coming.
+ *
+ * 200 is anchored on the reference mailbox, not chosen for roundness:
+ * 6,781 senders hold inbox mail, p95 is 28 and p99 is 152, so 200 sits
+ * just above the 99th percentile and fires for 53 senders (0.8%). A
+ * notice that fires on the median is noise; one that fires for the six
+ * senders above 1,000 is decoration.
+ *
+ * Founder decision 2026-08-27 (option 3B) — a beat before confirming,
+ * deliberately NOT a gate: Later returns the mail on a date the user
+ * picked and Activity can reverse it, so friction here would tax the one
+ * mail-moving verb that undoes itself.
+ */
+export const LATER_BULK_RETURN_NOTICE_THRESHOLD = 200;
+
 /** D245 default Later preset used by every producer unless the user picks another time. */
 export const DEFAULT_LATER_WAKE_DAYS = 7;
 
@@ -473,6 +497,14 @@ export interface PresentedAction {
   /** Ordered, presentation-ready facts used to assemble `previewCopy`. */
   readonly facts: readonly string[];
   readonly previewCopy: string;
+  /**
+   * Set only for a scheduled Later whose reach crosses
+   * {@link LATER_BULK_RETURN_NOTICE_THRESHOLD} — the sentence naming that
+   * all of it comes back at once. Surfaces may style it; it is ALSO part
+   * of `effectCopy`/`previewCopy`, so a surface that renders either gets
+   * it with no wiring of its own.
+   */
+  readonly bulkReturnNotice: string | null;
   /**
    * `previewCopy` WITHOUT the recovery sentences — what the action does,
    * for surfaces that render recovery in their own slot (the senders
@@ -612,11 +644,24 @@ function presentAction(input: PresentActionInput): PresentedAction {
   // No count: `liveCount` is a presented field in its own right and every
   // surface using `effectCopy` renders the figure itself, so including it
   // here would print the number twice.
+  // Deliberately in the SHARED builder rather than in each sheet: four
+  // surfaces can confirm a Later, and every one of them renders either
+  // `previewCopy` or `effectCopy`, so folding the sentence in here reaches
+  // all four with no call site left to forget (2026-08-27 — a prop added
+  // to one sheet and never passed by its screen shipped exactly that way).
+  const bulkReturnNotice =
+    input.verb === 'later' &&
+    schedule.kind === 'scheduled' &&
+    input.liveCount !== null &&
+    input.liveCount >= LATER_BULK_RETURN_NOTICE_THRESHOLD
+      ? `All ${input.liveCount.toLocaleString('en-US')} arrive back together.`
+      : null;
   const effectFacts = [
     currentMail.summary,
     ...(presentedFutureMail === null ? [] : [presentedFutureMail]),
     ...presentedUnchanged.map((fact) => fact.summary),
     ...(schedule.kind === 'none' ? [] : [schedule.summary]),
+    ...(bulkReturnNotice === null ? [] : [bulkReturnNotice]),
   ];
   const facts = [
     ...(countSummary === null ? [] : [countSummary]),
@@ -641,6 +686,7 @@ function presentAction(input: PresentActionInput): PresentedAction {
     unsubscribeChannel,
     providerRecovery: semantics.providerRecovery,
     finality: semantics.finality,
+    bulkReturnNotice,
     facts,
     previewCopy: facts.join(' '),
     effectCopy: effectFacts.join(' '),
