@@ -369,6 +369,70 @@
   font-weight: 550;
 }
 
+/* Alternatives round-up: the subject's own facts, under the hero. */
+.dm-alt-subject-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 32px;
+  margin: 22px 0 0;
+}
+
+.dm-alt-subject-facts div {
+  min-width: 0;
+}
+
+.dm-alt-subject-facts dt {
+  font-family: var(--dm-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mkt-ink-muted);
+}
+
+.dm-alt-subject-facts dd {
+  margin: 4px 0 0;
+  max-width: 34ch;
+  color: var(--mkt-ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Alternatives round-up: the per-tool "what it is for" bullets. */
+.dm-alt-points {
+  margin: 0 0 18px;
+  padding-left: 18px;
+  color: var(--mkt-ink-soft);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.dm-alt-points li + li {
+  margin-top: 6px;
+}
+
+.dm-alt-stay {
+  max-width: 68ch;
+  color: var(--mkt-ink-soft);
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.dm-alt-stay ul {
+  margin: 14px 0 0;
+  padding-left: 20px;
+}
+
+.dm-alt-stay li + li {
+  margin-top: 8px;
+}
+
+.dm-alt-stay a {
+  color: var(--mkt-ink);
+  text-decoration-color: var(--mkt-accent-border);
+  text-underline-offset: 4px;
+}
+
 .dm-compare-matrix-lede {
   max-width: 62ch;
   margin: 0 0 22px;

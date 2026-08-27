@@ -5,6 +5,8 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   COMPARISONS,
   COMPARISONS_VERIFIED_FLOOR_ISO,
+  ALTERNATIVES_SLUGS,
+  alternativesFor,
   comparisonBySlug,
   comparisonVerifiedLabel,
   ROUNDUP_DIMENSIONS,
@@ -122,6 +124,75 @@ describe('comparison data', () => {
     expect(history?.competitor.detail).toMatch(/alleged/i);
     expect(history?.declutrMail.detail).toMatch(/absence of a record/i);
     expect(JSON.stringify(unrollMe)).not.toMatch(/\bsteals?\b|\bspyware\b|\bscam\b/i);
+  });
+});
+
+describe('alternatives round-ups stay honest', () => {
+  it('publishes a page for every real product and none for Gmail itself', () => {
+    // "Gmail alternatives" is a search for a different mail provider,
+    // not for a cleanup tool. Ranking for it would win an intent this
+    // product cannot serve.
+    expect([...ALTERNATIVES_SLUGS].sort()).toEqual([
+      'clean-email',
+      'leave-me-alone',
+      'sanebox',
+      'trimbox',
+      'unroll-me',
+    ]);
+    expect(alternativesFor('gmail')).toBeUndefined();
+    expect(alternativesFor('gmail-filters')).toBeUndefined();
+    expect(alternativesFor('not-a-tool')).toBeUndefined();
+  });
+
+  it('never places DeclutrMail first among the alternatives', () => {
+    // The failure this guards is the one every competing round-up
+    // commits: publish "honest alternatives", rank yourself number one.
+    // Order here follows COMPARISONS, so DeclutrMail is not even in the
+    // list — it gets its own clearly-labelled section instead.
+    for (const slug of ALTERNATIVES_SLUGS) {
+      const page = alternativesFor(slug);
+      expect(page, slug).toBeDefined();
+      const names = page!.alternatives.map((alternative) => alternative.name);
+      expect(names, slug).not.toContain('DeclutrMail');
+      expect(names[0], `${slug} leads with a competitor, not the subject`).not.toBe(
+        page!.subject.name,
+      );
+    }
+  });
+
+  it('never lists the subject as an alternative to itself', () => {
+    for (const slug of ALTERNATIVES_SLUGS) {
+      const page = alternativesFor(slug)!;
+      expect(
+        page.alternatives.map((a) => a.slug),
+        slug,
+      ).not.toContain(page.slug);
+      expect(page.alternatives.length, slug).toBe(COMPARISONS.length - 1);
+    }
+  });
+
+  it('reuses the comparison copy rather than writing new claims', () => {
+    // Identity again: an alternatives entry must be the same words the
+    // /vs page publishes with its sources. Anything else is an unsourced
+    // claim about a third party.
+    for (const slug of ALTERNATIVES_SLUGS) {
+      const page = alternativesFor(slug)!;
+      for (const alternative of page.alternatives) {
+        const source = comparisonBySlug(alternative.slug)!;
+        expect(alternative.headline).toBe(source.chooseCompetitor.headline);
+        expect(alternative.points).toBe(source.chooseCompetitor.points);
+        expect(alternative.primaryUnit).toBe(source.primaryUnit);
+      }
+    }
+  });
+
+  it('claims the oldest verification date on the page, never the freshest', () => {
+    for (const slug of ALTERNATIVES_SLUGS) {
+      const page = alternativesFor(slug)!;
+      const shown = [page.subject, ...COMPARISONS].map((c) => c.verifiedIso);
+      expect(page.verifiedIso, slug).toBe(shown.reduce((a, b) => (b < a ? b : a)));
+      expect(page.verifiedIso, slug).toBe(COMPARISONS_VERIFIED_FLOOR_ISO);
+    }
   });
 });
 

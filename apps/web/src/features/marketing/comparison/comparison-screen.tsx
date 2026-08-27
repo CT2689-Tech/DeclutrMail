@@ -55,7 +55,7 @@ function EvidenceCell({ cell }: { cell: ComparisonCell }) {
   );
 }
 
-function VerificationStamp({ iso }: { iso: string }) {
+export function VerificationStamp({ iso }: { iso: string }) {
   return (
     <p className="dm-compare-verified">
       <span aria-hidden="true">●</span> {comparisonVerifiedLabel(iso)} · Official primary sources
@@ -64,7 +64,7 @@ function VerificationStamp({ iso }: { iso: string }) {
   );
 }
 
-function MethodNote() {
+export function MethodNote() {
   return (
     <aside className="dm-compare-method" aria-labelledby="comparison-method-title">
       <p className="dm-mkt-eyebrow">How we compare</p>
@@ -79,7 +79,7 @@ function MethodNote() {
   );
 }
 
-function FinalCta({ competitorName }: { competitorName?: string }) {
+export function FinalCta({ competitorName }: { competitorName?: string }) {
   return (
     <section className="dm-compare-final" aria-labelledby="comparison-final-title">
       <p className="dm-mkt-eyebrow">Try the workflow</p>
