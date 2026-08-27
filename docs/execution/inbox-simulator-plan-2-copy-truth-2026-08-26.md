@@ -623,10 +623,108 @@ git add apps/web/src/features/senders apps/web/src/features/marketing apps/web/s
 git commit -m "fix(copy): state the undo window on the last three surfaces (D245)"
 ```
 
+---
+
+### Task 7: The public copy, and a guard so this stops recurring
+
+**Files:**
+
+- Modify: `apps/web/src/app/(marketing)/inbox-simulator/opengraph-image.tsx:191`
+- Modify: `apps/web/src/features/help/glossary-content.ts:58`
+- Modify: `apps/web/src/features/marketing/comparison/comparison-data.ts:887`
+- Modify: `apps/web/src/features/marketing/learn/faq-content.ts:70`
+- Modify: `apps/web/src/features/marketing/learn/how-to-content.ts:127`
+- Modify: `apps/web/src/app/(marketing)/pricing.md/route.ts:139`
+- Create: a guard test (see Step 4)
+
+**Interfaces:** consumes `UNIFORM_UNDO_WINDOW_DAYS`. Produces nothing new.
+
+**These six are the most public copy in the product**, and two of them are no longer
+hedges — they are false:
+
+| Site                      | Current text                                                               | Why it matters                                                                                                                         |
+| ------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `faq-content.ts:70`       | "...while their undo window is open **(its length depends on your plan)**" | Public FAQ stating something untrue. It does not depend on your plan.                                                                  |
+| `how-to-content.ts:127`   | same phrasing                                                              | Public how-to, same falsehood                                                                                                          |
+| `opengraph-image.tsx:191` | "Undo from Activity during your plan’s Undo window."                       | The **social preview card** for the demo. Uses a curly U+2019 — a third apostrophe spelling, which is why three prior sweeps missed it |
+| `glossary-content.ts:58`  | "DeclutrMail’s **plan-based** window..."                                   | Help glossary                                                                                                                          |
+| `comparison-data.ts:887`  | "a **plan-based** recovery window"                                         | Competitor comparison — a claim aimed at prospects                                                                                     |
+| `pricing.md/route.ts:139` | "for **the plan's** undo window"                                           | The machine-readable pricing doc answer engines read                                                                                   |
+
+**Fix the "(its length depends on your plan)" parentheticals by deleting the claim**,
+not by rewording it — while the ladder is uniform there is no dependency to describe.
+Under a divergent ladder the fallback branch restores it.
+
+- [ ] **Step 1: Write the failing tests for the six sites**
+
+Each of these lives in a content module or a route, so most are assertable by importing
+the exported value directly rather than rendering. Prefer that — it is simpler and less
+fragile than a render assertion.
+
+`opengraph-image.tsx` returns an `ImageResponse` and is awkward to assert on. If you
+cannot assert it cleanly, say so and rely on the Step 4 guard to cover it, rather than
+inventing a heavy harness.
+
+Watch each assertion fail before you make it pass.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Expected: FAIL, each because the hedge (or the false parenthetical) is present.
+
+- [ ] **Step 3: Convert all six**
+
+Same shape as everywhere else. `faq-content.ts` and `how-to-content.ts` also contain
+Gmail Trash's separate "30 days" — that stays literal.
+
+- [ ] **Step 4: Build the guard — this is the durable half of the task**
+
+Three sweeps have each claimed completeness and each been wrong, because a regex over
+source text has to anticipate every apostrophe spelling (`'`, `&apos;`, `&#39;`,
+`&#x27;`, `’`) and every phrasing ("your plan's", "the plan", "plan-based", "depends on
+your plan"). That is not a pattern problem; it is the wrong instrument.
+
+Write a test that asserts on **exported copy values**, not source text: import the copy
+modules and assert that no exported string contains a hedge phrase. Because the
+divergent-ladder fallbacks only activate when `UNIFORM_UNDO_WINDOW_DAYS === null`, the
+values exported today are the derived ones — so a correct implementation passes, and any
+newly-added hedge fails, whatever apostrophe it uses.
+
+Normalise all apostrophe forms to one before matching, so the guard cannot be defeated by
+the same trick three times.
+
+Skip the whole guard when `UNIFORM_UNDO_WINDOW_DAYS === null`, since the hedges are then
+correct — and say so in a comment.
+
+- [ ] **Step 5: Test the guard's BLIND CASE first**
+
+This repo has shipped a guard that passed while verifying nothing. Before trusting this
+one:
+
+1. Temporarily reintroduce a hedge into one converted string. **The guard must fail.**
+2. Temporarily narrow the guard's module list to nothing. **It must fail, or at minimum
+   not silently pass** — a guard over an empty input set is vacuously green and certifies
+   nothing. If it passes on an empty list, add an assertion that the list is non-empty.
+3. Restore both, confirm green.
+
+Report all three observations with actual output. A guard whose blind case you did not
+test is not a guard.
+
+- [ ] **Step 6: Full suites and a final sweep**
+
+Run the full `web` and `shared` suites. Then run the widest sweep you can construct, and
+justify every remaining hit.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add apps/web packages/shared
+git commit -m "fix(copy): correct the public undo claims and guard against regression (D245)"
+```
+
 ## Done when
 
 - [ ] `UNIFORM_UNDO_WINDOW_DAYS` derives from the manifest and was watched going `null` under a deliberately divergent ladder, then restored.
-- [ ] All **thirteen** sites state the window — the inventory opened at nine and grew twice under corrected sweeps. Task 6 Step 5's sweep returns only justified divergent-ladder fallbacks and comments, each named.
+- [ ] All **nineteen** sites state the window — the inventory opened at nine and grew three times under successively wider sweeps. The Task 4 guard, not a regex, is what makes the count stop moving — the inventory opened at nine and grew twice under corrected sweeps. Task 6 Step 5's sweep returns only justified divergent-ladder fallbacks and comments, each named.
 - [ ] No literal `30` was introduced for the Activity Undo window anywhere. Gmail Trash's separate 30 stays literal and is commented as Google's, not ours.
 - [ ] The simulator uses one connect label.
 - [ ] The plan strip names Screener and Quiet hours, and was looked at in a browser at desktop and 375px.
