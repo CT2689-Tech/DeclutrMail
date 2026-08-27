@@ -23,6 +23,7 @@ import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './data';
 import { resetTriageStore, useTriageStore, type RememberableVerb } from './store';
+import { UnprotectButton } from './unprotect-button';
 
 beforeEach(() => {
   resetTriageStore();
@@ -379,7 +380,9 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
   function renderSheet(row: (typeof TRIAGE_QUEUE)[number]) {
     // The notice carries the Unprotect control, which is a real
     // mutation — so the sheet now needs a query client, the same way it
-    // has one in the app (mounted at the root layout).
+    // has one in the app (mounted at the root layout). `unprotectSlot`
+    // is caller-constructed (mirrors `triage-screen.tsx`), so the sheet
+    // itself never imports `UnprotectButton`.
     return render(
       <QueryWrapper client={createTestQueryClient()}>
         <ActionSheet
@@ -387,6 +390,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
           verb="Archive"
           row={row}
           inboxCount={12}
+          unprotectSlot={<UnprotectButton row={row} surface="triage-preview" />}
           onCancel={() => {}}
           onConfirm={() => {}}
         />
@@ -452,6 +456,9 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
           verb="Archive"
           row={protectedRow}
           inboxCount={12}
+          unprotectSlot={
+            <UnprotectButton row={protectedRow} surface="triage-preview" onUnprotected={onCancel} />
+          }
           onCancel={onCancel}
           onConfirm={() => {}}
         />
@@ -484,6 +491,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
           verb="Unsubscribe"
           row={protectedRow}
           inboxCount={12}
+          unprotectSlot={<UnprotectButton row={protectedRow} surface="triage-preview" />}
           onCancel={() => {}}
           onConfirm={() => {}}
         />

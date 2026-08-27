@@ -85,13 +85,15 @@ describe('InboxSimulatorScreen', () => {
     );
 
     fireEvent.click(screen.getAllByRole('button', { name: /Archive \(A\)/ })[0]!);
-    expect(screen.getByRole('dialog', { name: 'Approve the sample action' })).toBeInTheDocument();
-    expect(screen.getByText(/Preview · made-up inbox/i)).toBeInTheDocument();
+    // The real ActionSheet (D133 Task 3) — not a hand-rolled copy — so
+    // the dialog's own name is the sender, and its eyebrow names the verb.
+    const dialog = screen.getByRole('dialog', { name: firstRow.senderName });
+    expect(within(dialog).getByText(/Preview · Archive/i)).toBeInTheDocument();
     expect(
       screen.getByText('What actually happened').parentElement?.parentElement,
     ).not.toHaveTextContent(/moved out of Inbox into All Mail/);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Archive' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Archive/ }));
     expect(
       screen.getByText(/sample messages moved out of Inbox into All Mail/i),
     ).toBeInTheDocument();
@@ -219,7 +221,11 @@ describe('InboxSimulatorScreen', () => {
       screen.getByRole('heading', { name: 'Pause before a one-way request.' }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Unsubscribe' }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+        name: /^Unsubscribe/,
+      }),
+    );
 
     // Step 3 exists and is reachable; nothing can complete it yet — the
     // Autopilot rule preview is Plan 4 Task 4, not this change.
@@ -227,6 +233,85 @@ describe('InboxSimulatorScreen', () => {
       screen.getByRole('heading', { name: 'A one-time decision does not repeat itself.' }),
     ).toBeInTheDocument();
     expect(screen.getByText('2 of 4 decisions complete')).toBeInTheDocument();
+  });
+
+  it('offers the historic-archive option on Unsubscribe, off by default', () => {
+    render(<InboxSimulatorScreen />);
+    fireEvent.click(
+      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
+    );
+    const unsubscribableRow = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod !== 'none')!;
+    const header = screen.getByRole('button', {
+      name: new RegExp(`^${unsubscribableRow.senderName} — (expand|collapse) triage detail$`),
+    });
+    fireEvent.click(
+      within(header.parentElement!).getByRole('button', { name: /Unsubscribe \(U\)/ }),
+    );
+
+    const toggle = screen.getByRole('checkbox', {
+      name: /Also archive the .* already in the inbox/i,
+    });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('reflects a ticked historic-archive toggle in the recorded outcome, and the count survives persistence', async () => {
+    // The toggle turns Unsubscribe into a mail-moving decision too — the
+    // affected count is no longer always 0 for that verb, which is
+    // exactly the assumption `parseStoredDecisions` used to hard-code.
+    // A wrong fix here doesn't fail loudly: it silently rejects the
+    // WHOLE stored snapshot on the next reload (one malformed entry
+    // rejects everything, by design), so this both checks the outcome
+    // text and proves persistence still accepts it.
+    render(<InboxSimulatorScreen />);
+    fireEvent.click(
+      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
+    );
+    const unsubscribableRow = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod !== 'none')!;
+    const header = screen.getByRole('button', {
+      name: new RegExp(`^${unsubscribableRow.senderName} — (expand|collapse) triage detail$`),
+    });
+    fireEvent.click(
+      within(header.parentElement!).getByRole('button', { name: /Unsubscribe \(U\)/ }),
+    );
+
+    const toggle = screen.getByRole('checkbox', {
+      name: /Also archive the .* already in the inbox/i,
+    });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+
+    const dialog = screen.getByRole('dialog', { name: unsubscribableRow.senderName });
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Unsubscribe/ }));
+
+    const expectedCount = syntheticInboxCount(unsubscribableRow);
+    expect(
+      screen.getByText(new RegExp(`${expectedCount} sample messages already in the inbox`, 'i')),
+    ).toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!).decisions).toContainEqual(
+        expect.objectContaining({
+          rowId: unsubscribableRow.id,
+          verb: 'Unsubscribe',
+          affectedCount: expectedCount,
+        }),
+      ),
+    );
+  });
+
+  it('defaults a future Later return time so the real sheet never blocks confirmation', () => {
+    // `ActionSheet` (unlike the old hand-rolled dialog) disables Later's
+    // confirm until a future return time resolves — a per-row Later
+    // decision needs the same default the batch path already sets via
+    // `defaultLaterWakeAtIso`, or swapping in the real sheet would quietly
+    // strand a previously-clickable verb.
+    render(<InboxSimulatorScreen />);
+    fireEvent.click(
+      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
+    );
+    fireEvent.click(screen.getAllByRole('button', { name: /Later \(L\)/ })[0]!);
+    const dialog = screen.getByRole('dialog', { name: firstRow.senderName });
+    expect(within(dialog).getByRole('button', { name: /^Later/ })).toBeEnabled();
   });
 
   // D133 Plan 4: unreachable until Task 4 lands the Autopilot rule step.

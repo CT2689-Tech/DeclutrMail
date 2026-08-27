@@ -43,6 +43,7 @@ import { invalidateAfterDecision } from './api/invalidate';
 import { TRIAGE_QUEUE_KEY } from './api/query-options';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
 import { ActionSheet, type ConfirmDetails } from './action-sheet';
+import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
 import { BatchActionSheet } from './batch-action-sheet';
 import {
@@ -1402,6 +1403,27 @@ export function TriageScreen({
         inboxCount={previewInboxCount}
         wakeAt={pendingAction?.wakeAt ?? null}
         mailboxEmail={activeEmail}
+        // Constructed here (not inside ActionSheet) so the sheet never
+        // imports UnprotectButton — and with it the sender-policy
+        // mutation and the API client it calls — directly. Mirrors
+        // TriageRow's own `unprotectSlot` (`triage-queue.tsx`), which
+        // keeps the same import out of the D34 inline-preview path.
+        unprotectSlot={
+          pendingRow == null || pendingRow.protectionReason == null ? undefined : (
+            // Closing on success is load-bearing, not tidiness: the
+            // Unprotect invalidates the triage queue, the refetch drops
+            // this sender from the D245 review, and `pendingRow`
+            // resolves to null — which would unmount the modal
+            // mid-flow while the pending action survived in the store.
+            // Cancelling deliberately leaves the user somewhere they
+            // chose.
+            <UnprotectButton
+              row={pendingRow}
+              surface="triage-preview"
+              onUnprotected={clearPending}
+            />
+          )
+        }
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
         onRetryPreview={() => void compositePreview.refetch()}

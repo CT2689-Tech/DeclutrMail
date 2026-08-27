@@ -10,19 +10,19 @@ import {
   Eyebrow,
   TIER_MANIFEST,
   type TierId,
-  useFocusTrap,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
-import { ActionPreviewPresentation } from '@/features/triage/action-preview-presentation';
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import { findDomainBatches, type DomainBatch } from '@/features/triage/domain-batch';
 import { DomainBatchCard, type BatchVerb } from '@/features/triage/domain-batch-card';
+import { ActionSheet, type ConfirmDetails } from '@/features/triage/action-sheet';
 import { BatchActionSheet } from '@/features/triage/batch-action-sheet';
 import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
+import type { SheetableVerb } from '@/features/triage/store';
 import { oauthStartUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
@@ -54,7 +54,9 @@ interface DemoDecision {
 
 interface PendingDecision {
   row: TriageDecisionRow;
-  verb: ActionVerb;
+  verb: SheetableVerb;
+  /** Exact Later return time carried into the sheet; null for other verbs. */
+  wakeAt: string | null;
 }
 
 interface StoredDemoState {
@@ -234,11 +236,19 @@ function parseStoredDecisions(parsed: unknown): DemoDecision[] | null {
     ) {
       return null;
     }
-    const expectedCount =
+    // Unsubscribe's affected count is 0 UNLESS the visitor also ticked
+    // the historic-archive toggle (D226 — Task 3 `ActionSheet` swap), in
+    // which case it matches the same live count Archive/Later/Delete
+    // use. Both are the only two legitimate values for that verb; a
+    // single hard-coded expectation would reject an honest entry (and
+    // one malformed entry rejects the whole snapshot below).
+    const expectedCounts: readonly number[] =
       record.verb === 'Archive' || record.verb === 'Later' || record.verb === 'Delete'
-        ? syntheticInboxCount(row)
-        : 0;
-    if (record.affectedCount !== expectedCount) return null;
+        ? [syntheticInboxCount(row)]
+        : record.verb === 'Unsubscribe'
+          ? [0, syntheticInboxCount(row)]
+          : [0];
+    if (!expectedCounts.includes(record.affectedCount)) return null;
 
     if (
       typeof record.at !== 'number' ||
@@ -255,7 +265,10 @@ function parseStoredDecisions(parsed: unknown): DemoDecision[] | null {
       rowId: row.id,
       verb: record.verb,
       senderName: row.senderName,
-      affectedCount: expectedCount,
+      // Already validated against `expectedCounts` above — one of two
+      // legitimate values for Unsubscribe, the one legitimate value for
+      // everything else — so the incoming value itself is the sanitized one.
+      affectedCount: record.affectedCount,
       at: record.at,
     });
   }
@@ -324,7 +337,11 @@ function decisionSummary(decision: DemoDecision): string {
     case 'Later':
       return `${decision.affectedCount} sample messages moved to DeclutrMail/Later.`;
     case 'Unsubscribe':
-      return 'Sample unsubscribe request recorded. A delivered request cannot be recalled.';
+      // The historic-archive toggle (D226) is the only way Unsubscribe's
+      // own affectedCount is ever nonzero — see `recordDecision`.
+      return decision.affectedCount > 0
+        ? `Sample unsubscribe request recorded — it can't be recalled. ${decision.affectedCount} sample messages already in the inbox were also archived.`
+        : 'Sample unsubscribe request recorded. A delivered request cannot be recalled.';
     case 'Delete':
       return `${decision.affectedCount} sample messages moved to Gmail Trash.`;
   }
@@ -461,15 +478,23 @@ export function InboxSimulatorScreen() {
     });
   };
 
-  const recordDecision = (row: TriageDecisionRow, verb: ActionVerb) => {
+  const recordDecision = (row: TriageDecisionRow, verb: ActionVerb, archiveHistoric = false) => {
     if (decisionLock.current === row.id || decidedIds.has(row.id)) return;
     decisionLock.current = row.id;
     queueMicrotask(() => {
       if (decisionLock.current === row.id) decisionLock.current = null;
     });
 
+    // Archive/Later/Delete always move inbox mail. Unsubscribe only does
+    // when the visitor also ticked the sheet's historic-archive toggle
+    // (D226) — mirrors `ActionSheet`'s own `requiresLivePreview` gate.
     const affectedCount =
-      verb === 'Archive' || verb === 'Later' || verb === 'Delete' ? syntheticInboxCount(row) : 0;
+      verb === 'Archive' ||
+      verb === 'Later' ||
+      verb === 'Delete' ||
+      (verb === 'Unsubscribe' && archiveHistoric)
+        ? syntheticInboxCount(row)
+        : 0;
     const at = Math.max(
       Date.now(),
       decisions.reduce((next, decision) => Math.max(next, decision.at + 1), 0),
@@ -496,9 +521,9 @@ export function InboxSimulatorScreen() {
     maybeTrackGuideCompletion(nextDecisions);
   };
 
-  const confirm = () => {
+  const confirm = (details: ConfirmDetails) => {
     if (!pending) return;
-    recordDecision(pending.row, pending.verb);
+    recordDecision(pending.row, pending.verb, details.archiveHistoric);
   };
 
   /**
@@ -568,7 +593,10 @@ export function InboxSimulatorScreen() {
       recordDecision(row, verb);
       return;
     }
-    setPending({ row, verb });
+    // Later mirrors the batch path's own default (`chooseBatchAction`):
+    // without a future return time, the real `ActionSheet` disables
+    // confirm outright rather than silently no-op-ing.
+    setPending({ row, verb, wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null });
     void track('demo_preview_opened', {
       verb: verb.toLowerCase() as Lowercase<ActionVerb>,
       decision_index: decisions.length + 1,
@@ -759,13 +787,17 @@ export function InboxSimulatorScreen() {
         <p>{OAUTH_SCOPE_DISCLOSURE}</p>
       </section>
 
-      {pending ? (
-        <DemoPreviewDialog
-          pending={pending}
-          onCancel={() => setPending(null)}
-          onConfirm={confirm}
-        />
-      ) : null}
+      {/* D226 mandatory preview — the product's own sheet, not a copy.
+          No `mailboxEmail`: the demo has no account. */}
+      <ActionSheet
+        open={pending != null}
+        verb={pending?.verb ?? 'Archive'}
+        row={pending?.row ?? null}
+        inboxCount={pending ? syntheticInboxCount(pending.row) : 0}
+        wakeAt={pending?.wakeAt ?? null}
+        onCancel={() => setPending(null)}
+        onConfirm={confirm}
+      />
 
       {pendingBatch ? (
         <BatchActionSheet
@@ -944,84 +976,6 @@ function ExploreCompletion({
         </Button>
       </div>
       <p className="dm-simulator-oauth-note">{OAUTH_SCOPE_DISCLOSURE}</p>
-    </div>
-  );
-}
-
-function DemoPreviewDialog({
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  pending: PendingDecision;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const dialogRef = useFocusTrap<HTMLDivElement>(true);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      onCancel();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onCancel]);
-
-  return (
-    <div className="dm-simulator-dialog-layer">
-      <button
-        type="button"
-        className="dm-simulator-dialog-scrim"
-        aria-label="Cancel preview"
-        onClick={onCancel}
-      />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-simulator-dialog-title"
-        className="dm-simulator-dialog"
-      >
-        <div className="dm-simulator-dialog-head">
-          <Eyebrow
-            tone={pending.verb === 'Unsubscribe' || pending.verb === 'Delete' ? 'amber' : 'primary'}
-          >
-            Preview · made-up inbox
-          </Eyebrow>
-          <h2 id="dm-simulator-dialog-title">Approve the sample action</h2>
-        </div>
-        <ActionPreviewPresentation
-          verb={pending.verb}
-          row={pending.row}
-          archiveHistoric={false}
-          inboxCount={syntheticInboxCount(pending.row)}
-          mode="modal"
-        />
-        <p className="dm-simulator-dialog-note">
-          {pending.verb === 'Unsubscribe'
-            ? 'This demo records the outcome locally. In the product, a delivered unsubscribe request cannot be recalled.'
-            : 'This demo changes only local sample state. A real action waits for server confirmation before Activity shows success.'}
-        </p>
-        <div className="dm-simulator-dialog-actions">
-          <Button tone="default" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            tone={
-              pending.verb === 'Delete'
-                ? 'danger'
-                : pending.verb === 'Unsubscribe'
-                  ? 'warn'
-                  : 'primary'
-            }
-            onClick={onConfirm}
-          >
-            Confirm sample {pending.verb}
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
