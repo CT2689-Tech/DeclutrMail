@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-249 decisions — ⬜ Not started 72 · 🔵 Shipped 112 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
+249 decisions — ⬜ Not started 71 · 🔵 Shipped 113 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -193,7 +193,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D142 | Comparison tone: **Balanced (acknowledge competitor strengths) | ⬜ |  |  |  |
 | D143 | Comparison feature rows: **10-row table | ⬜ |  |  |  |
 | D144 | Honest "Choose competitor if..." callouts | ⬜ |  |  |  |
-| D145 | `/compare` index page | ⬜ |  |  |  |
+| D145 | `/compare` index page | 🔵 | #645 |  |  |
 | D146 | Privacy + Terms generation: **Claude-drafted from CASA/methodology + lawyer review at user-threshold | 🔵 | #199 |  |  |
 | D147 | Cookie consent banner: **Minimal (essential always-on + optional analytics) | 🔵 | #282 |  |  |
 | D148 | Localization: **English only + DPDP Act compliance clause | 🔵 | #291 |  |  |
