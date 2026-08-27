@@ -1,6 +1,6 @@
 'use client';
 
-import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 import {
   ActionPreviewPresentation,
   type ActionPreviewPresentationProps,
@@ -26,7 +26,7 @@ export function ActionPreview({
   return (
     <ActionPreviewPresentation
       {...presentationProps}
-      accountContext={<MailboxActionContext mailboxEmail={mailboxEmail} />}
+      accountContext={<MailboxActionContextView mailboxEmail={mailboxEmail} />}
     />
   );
 }
