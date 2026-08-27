@@ -3786,3 +3786,46 @@ hold — including the empty one.
 clearing the field — the real path into the dead end", which mounts with
 a default, clears, and asserts the input is still there and still takes a
 new time. Negative-controlled.
+
+## 2026-08-27 — A shipped `undefined` no test could see
+
+**PR:** #651 (fix), introduced by #646
+
+**Caught by:** reading the rendered sheet in a browser during an
+unrelated smoke
+
+**What happened:** the mandatory D226 preview on the triage action sheet
+rendered `Reversible for the undefined-day undo window from Activity.`
+to real users. `UNIFORM_UNDO_WINDOW_DAYS` resolves to `undefined` in the
+browser bundle for any client module that imports it as the ONLY binding
+from `@declutrmail/shared/entitlements` — Next's `optimizePackageImports`
+covers that subpath, and for this re-exported const its rewrite yields an
+uninitialised binding. Importing any sibling name alongside it makes the
+value appear, which is the sole reason `privacy-data-screen.tsx` was
+correct. `undefined === null` is false, so the derive-or-hedge ladder
+fell through to the branch that interpolates the number.
+
+The important part is not the bug, it is that **the test suite could not
+have caught it and neither could a new test in the same style.** Node
+resolves the old import to `30` through both the barrel and the direct
+path. Every unit test passed, at every layer, while the bundle was wrong.
+The defect exists only in the bundled client graph, so the only instrument
+that can see it is a rendered page.
+
+**Correct approach:** import the value from a real module path
+(`@declutrmail/shared/entitlements/undo-window`, added to the exports
+map), uniformly — including files that were never broken. A rule of the
+form "safe unless it is the only named import from that barrel" is one
+nobody will remember, and the failure is silent.
+
+**Rule:** a value that reaches the user only after a bundler has rewritten
+its import is not verified by any test that runs in Node. Read the
+rendered surface, or you have verified the source and not the product.
+
+**Enforcement update:** none added yet, deliberately — a vitest assertion
+would pass against the broken build and would read as coverage. The
+guard that would actually work is a build-output check (grep the
+route chunks for `undefined` appearing inside rendered copy), which
+belongs with `check-web-bundle-budget.mjs` since that script already
+inspects `.next`. Logged as a founder follow-up rather than half-built
+here.

@@ -4781,3 +4781,19 @@ this requires GitHub Advanced Security; for public repos it's free.
 **Verifies by:** Next PR's CodeQL check ends ✅ instead of ❌, and
 findings (if any) show up under the Security tab.
 **Status:** Skipped 2026-05-19 — private repo; GitHub Advanced Security is paid. CodeQL workflow removed in PR #7 to eliminate the noise. Revisit if repo goes public or Advanced Security is purchased.
+
+### 2026-08-27 — Guard against bundler-only copy defects
+**Source:** PR #651 / MISTAKES.md 2026-08-27
+**Why:** a literal `undefined` shipped inside D226 preview copy and no
+test in the repo could have caught it — the value is correct in Node and
+wrong only after Next's `optimizePackageImports` rewrite. Today the only
+instrument that sees this class is a human opening the page.
+**How:** extend `scripts/check-web-bundle-budget.mjs` (it already reads
+`.next` after a build) with a second pass that greps each route's chunks
+for `undefined` / `NaN` / `[object Object]` appearing inside string
+literals that also contain rendered prose, and fails the build. Test its
+BLIND case first per the UI-truth rule: starve its input and require a
+non-zero exit, or it will report ✓ having checked nothing.
+**Verifies by:** reverting the #651 import change makes the new check
+fail; restoring it passes.
+**Status:** Open
