@@ -12,18 +12,21 @@ import {
   type TierId,
   useFocusTrap,
 } from '@declutrmail/shared';
-import { ACTION_REGISTRY } from '@declutrmail/shared/actions';
+import { ACTION_REGISTRY, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 import { ActionPreviewPresentation } from '@/features/triage/action-preview-presentation';
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import { findDomainBatches, type DomainBatch } from '@/features/triage/domain-batch';
+import { DomainBatchCard, type BatchVerb } from '@/features/triage/domain-batch-card';
+import { BatchActionSheet } from '@/features/triage/batch-action-sheet';
 import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
 import { oauthStartUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
+import { buildSyntheticBulkPreview, syntheticInboxCount } from './synthetic-preview';
 
 // The FULL fixture queue on purpose (was slice(0,7)): the last two
 // rows are the demo's most instructive states — a reply-protected
@@ -188,11 +191,6 @@ function isScenarioComplete(scenario: GuidedScenario, decidedIds: ReadonlySet<st
     case 'rule':
       return false;
   }
-}
-
-function syntheticInboxCount(row: TriageDecisionRow): number {
-  if (row.last90dMessages === 0) return Math.min(row.totalAllTime, 6);
-  return Math.max(1, Math.min(row.last90dMessages, row.totalAllTime));
 }
 
 function isActionVerb(value: unknown): value is ActionVerb {
@@ -366,6 +364,12 @@ export function InboxSimulatorScreen() {
     GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null,
   );
   const [pending, setPending] = useState<PendingDecision | null>(null);
+  const [pendingBatch, setPendingBatch] = useState<{
+    batch: DomainBatch;
+    verb: BatchVerb;
+    wakeAt: string | null;
+  } | null>(null);
+  const [dismissedDomains, setDismissedDomains] = useState<readonly string[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const guidedCompletionTracked = useRef(false);
   const decisionLock = useRef<string | null>(null);
@@ -420,13 +424,42 @@ export function InboxSimulatorScreen() {
   // reading that matches what the screen actually shows.
   const completedGuideCount =
     currentGuideIndex === -1 ? GUIDED_SCENARIOS.length : currentGuideIndex;
+  const currentBatch =
+    currentScenario?.kind === 'batch'
+      ? (findDomainBatches(DEMO_ROWS, dismissedDomains).find(
+          (batch) => batch.domain === currentScenario.domain,
+        ) ?? null)
+      : null;
+  // Dismissing the batch card falls back to its full member run rendered
+  // one row at a time — the same fallback `planQueueItems` uses when a
+  // domain is dismissed — rather than leaving the step with nothing to do.
+  const dismissedBatchRows =
+    currentScenario?.kind === 'batch' && currentBatch === null
+      ? requireDemoBatch(currentScenario.domain).rows.filter((row) => !decidedIds.has(row.id))
+      : null;
   const rows =
     mode === 'guided'
       ? currentScenario?.kind === 'row'
         ? [currentScenario.row]
-        : []
+        : (dismissedBatchRows ?? [])
       : DEMO_ROWS.filter((row) => !decidedIds.has(row.id));
   const guidedDecisions = decisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
+
+  /** Fire the completion event once, the first time the guide's every
+   *  step is done — shared by the single-row and batch confirm paths so
+   *  the "have we completed?" check cannot drift between them. */
+  const maybeTrackGuideCompletion = (nextDecisions: DemoDecision[]) => {
+    if (guidedCompletionTracked.current || !hasCompletedGuide(nextDecisions)) return;
+    guidedCompletionTracked.current = true;
+    const guidedOutcome = nextDecisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
+    void track('demo_completed', {
+      decisions_completed: guidedOutcome.length,
+      affected_messages: guidedOutcome.reduce(
+        (total, decision) => total + decision.affectedCount,
+        0,
+      ),
+    });
+  };
 
   const recordDecision = (row: TriageDecisionRow, verb: ActionVerb) => {
     if (decisionLock.current === row.id || decidedIds.has(row.id)) return;
@@ -460,22 +493,71 @@ export function InboxSimulatorScreen() {
       decision_index: decisions.length + 1,
       affected_messages: affectedCount,
     });
-    if (!guidedCompletionTracked.current && hasCompletedGuide(nextDecisions)) {
-      guidedCompletionTracked.current = true;
-      const guidedOutcome = nextDecisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
-      void track('demo_completed', {
-        decisions_completed: guidedOutcome.length,
-        affected_messages: guidedOutcome.reduce(
-          (total, decision) => total + decision.affectedCount,
-          0,
-        ),
-      });
-    }
+    maybeTrackGuideCompletion(nextDecisions);
   };
 
   const confirm = () => {
     if (!pending) return;
     recordDecision(pending.row, pending.verb);
+  };
+
+  /**
+   * A domain-batch card asked for a verb — open the D226-mandatory
+   * preview. `wakeAt` mirrors how the real product's Later batches pick
+   * one (`defaultLaterWakeAtIso`) so the sheet is never handed an
+   * unusable `null` for the one verb that needs it.
+   */
+  const chooseBatchAction = (batch: DomainBatch, verb: BatchVerb) => {
+    setPendingBatch({ batch, verb, wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null });
+    void track('demo_preview_opened', {
+      verb: verb.toLowerCase() as Lowercase<BatchVerb>,
+      decision_index: decisions.length + 1,
+    });
+  };
+
+  /**
+   * Batch confirm — one `DemoDecision` per ELIGIBLE row, appended in a
+   * single state update (looping `recordDecision` would read the same
+   * stale `decisions` closure on every iteration and lose all but the
+   * last). Protected rows never enter `eligible`, matching the sheet's
+   * own totals (D245).
+   */
+  const recordBatchDecision = (batch: DomainBatch, verb: BatchVerb) => {
+    const lockKey = `batch:${batch.domain}`;
+    const eligible = batch.eligibleRows.filter((row) => !decidedIds.has(row.id));
+    if (decisionLock.current === lockKey || eligible.length === 0) return;
+    decisionLock.current = lockKey;
+    queueMicrotask(() => {
+      if (decisionLock.current === lockKey) decisionLock.current = null;
+    });
+
+    let at = Math.max(
+      Date.now(),
+      decisions.reduce((next, decision) => Math.max(next, decision.at + 1), 0),
+    );
+    const newDecisions: DemoDecision[] = eligible.map((row) => ({
+      rowId: row.id,
+      senderName: row.senderName,
+      verb,
+      affectedCount: syntheticInboxCount(row),
+      at: at++,
+    }));
+    const nextDecisions = [...decisions, ...newDecisions];
+    setDecisions(nextDecisions);
+    setExpandedId(firstUndecidedRow(mode, nextDecisions)?.id ?? null);
+    setPendingBatch(null);
+
+    void track('demo_decision_confirmed', {
+      verb: verb.toLowerCase() as Lowercase<BatchVerb>,
+      decision_index: decisions.length + 1,
+      affected_messages: newDecisions.reduce((sum, decision) => sum + decision.affectedCount, 0),
+    });
+    maybeTrackGuideCompletion(nextDecisions);
+  };
+
+  const confirmBatch = () => {
+    if (!pendingBatch) return;
+    recordBatchDecision(pendingBatch.batch, pendingBatch.verb);
   };
 
   const chooseAction = (row: TriageDecisionRow, verb: ActionVerb) => {
@@ -505,6 +587,8 @@ export function InboxSimulatorScreen() {
     setDecisions([]);
     setMode('guided');
     setPending(null);
+    setPendingBatch(null);
+    setDismissedDomains([]);
     setExpandedId(GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null);
     try {
       localStorage.removeItem(STORAGE_KEY);
@@ -576,6 +660,13 @@ export function InboxSimulatorScreen() {
               decisions={guidedDecisions}
               onExplore={() => changeMode('explore')}
               onReset={reset}
+            />
+          ) : mode === 'guided' && currentScenario?.kind === 'batch' && currentBatch ? (
+            <DomainBatchCard
+              batch={currentBatch}
+              busy={pendingBatch != null}
+              onVerb={(verb) => chooseBatchAction(currentBatch, verb)}
+              onDismiss={() => setDismissedDomains((prev) => [...prev, currentBatch.domain])}
             />
           ) : mode === 'explore' && rows.length === 0 ? (
             <ExploreCompletion decisions={decisions} onReset={reset} />
@@ -673,6 +764,18 @@ export function InboxSimulatorScreen() {
           pending={pending}
           onCancel={() => setPending(null)}
           onConfirm={confirm}
+        />
+      ) : null}
+
+      {pendingBatch ? (
+        <BatchActionSheet
+          open
+          verb={pendingBatch.verb}
+          batch={pendingBatch.batch}
+          preview={buildSyntheticBulkPreview(pendingBatch.batch)}
+          wakeAt={pendingBatch.wakeAt}
+          onCancel={() => setPendingBatch(null)}
+          onConfirm={confirmBatch}
         />
       ) : null}
     </div>
