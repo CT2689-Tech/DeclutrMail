@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { ToastHost } from '@declutrmail/shared';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import {
   installFetchStub,
@@ -261,6 +262,33 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(within(dialog).getByText(/before anything changes/i)).toBeInTheDocument();
     // The whole point: the click that opens a preview must not mutate.
     expect(enqueued).toHaveLength(0);
+  });
+
+  it('states the undo window on the confirm footer instead of hedging (D245)', async () => {
+    installFetchStub([briefHandler(), bulkPreviewHandler(), enqueueHandler()]);
+    renderScreen();
+
+    const dialog = await openPreview();
+    // The footer sentence is gated on the SAME `confirmDisabled` the CTA
+    // is, so wait for the live preview the same way every other test in
+    // this file does — otherwise this races the loading state, where
+    // neither the hedge nor the derived text is on screen yet.
+    const confirm = await within(dialog).findByRole('button', { name: /^Archive/ });
+    await waitFor(() => expect(confirm).toBeEnabled());
+
+    expect(
+      within(dialog).queryByText(/reverses the whole batch during your plan's Activity window/i),
+    ).not.toBeInTheDocument();
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(
+        within(dialog).getByText(
+          new RegExp(
+            `reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window`,
+            'i',
+          ),
+        ),
+      ).toBeInTheDocument();
+    }
   });
 
   it('keeps confirm disabled until a live count has landed', async () => {

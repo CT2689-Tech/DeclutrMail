@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, NumericDisplay, tokens, useFocusTrap } from '@declutrmail/shared';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
@@ -252,7 +253,9 @@ export function NoiseArchiveSheet({
                   : nothingToActOn
                     ? 'Nothing from these senders is in your inbox — there is nothing to archive.'
                     : 'Counting inbox email — confirm unlocks after the live preview loads.'
-              : "One undo reverses the whole batch during your plan's Activity window."}
+              : UNIFORM_UNDO_WINDOW_DAYS === null
+                ? "One undo reverses the whole batch during your plan's Activity window."
+                : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {preview === 'unavailable' && (

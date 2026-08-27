@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST, UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import {
   COMPARISONS,
@@ -102,6 +102,23 @@ describe('comparison data', () => {
     expect(comparisonVerifiedLabel('2026-07-11')).toBe('Last verified July 2026');
     expect(comparisonVerifiedLabel(comparisonBySlug('unroll-me')!.verifiedIso)).toBe(
       'Last verified August 2026',
+    );
+  });
+
+  it('states the Activity Undo window on the recovery row instead of hedging, and keeps Gmail Trash literal (D245)', () => {
+    const recovery = comparisonBySlug('clean-email')!.rows.find(
+      (row) => row.label === 'Preview and recovery',
+    )!.declutrMail;
+    expect(recovery.detail).not.toContain('use the plan Activity Undo window');
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(recovery.detail).toContain(
+        `Archive, Later, and Delete use the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`,
+      );
+    }
+    // Gmail's own retention number is a separate fact and stays a literal
+    // regardless of what the ladder does to ours.
+    expect(recovery.detail).toContain(
+      'Delete also has separate Gmail Trash recovery, normally up to 30 days.',
     );
   });
 
