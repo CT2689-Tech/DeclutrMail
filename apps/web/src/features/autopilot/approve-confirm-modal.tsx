@@ -33,6 +33,7 @@ export function ApproveConfirmModal({
   kind,
   pendingTotal,
   pendingApproximate,
+  mailboxEmail,
   isApproving,
   error,
   onCancel,
@@ -51,6 +52,8 @@ export function ApproveConfirmModal({
   pendingTotal: number | null;
   /** True when the pending buffer hit the BE's 50-row page cap. */
   pendingApproximate: boolean;
+  /** The active mailbox to show in the note; omitted renders nothing. */
+  mailboxEmail?: string | undefined;
   isApproving: boolean;
   error: string | null;
   onCancel: () => void;
@@ -85,6 +88,7 @@ export function ApproveConfirmModal({
       confirmLabel={confirmLabel}
       confirmBusyLabel="Approving…"
       canConfirm={shown > 0}
+      mailboxEmail={mailboxEmail}
       isBusy={isApproving}
       error={error}
       onCancel={onCancel}

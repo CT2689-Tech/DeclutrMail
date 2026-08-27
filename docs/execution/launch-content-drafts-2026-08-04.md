@@ -22,7 +22,7 @@ reddit skill's context bank still says `.ai`; that guidance is stale, use `.com`
   inboxes you gave up on._ Subhead names Plus for the "rules find it" clause.
 - Preview: exact current count + samples + the precise Gmail changes before anything moves;
   re-checked at execution.
-- Privacy: **"Full bodies fetched: 0"** + the published list of stored Gmail fields, generated
+- Privacy: **"We never fetch or store full email contents."** + the published list of stored Gmail fields, generated
   from the typed registry the fetch code uses (contract-tested). Stored fields include sender,
   subject, the short snippet Gmail already shows in the inbox list ("Gmail Preview"), dates,
   labels, read state. Never: full bodies, HTML, attachments, inline images, raw MIME, headers
@@ -76,7 +76,7 @@ DeclutrMail is my attempt at a third option, built around one architectural
 rule: the backend cannot fetch message bodies. The Gmail adapter requests an
 allowlisted envelope — From, Subject, To, Cc, List-Unsubscribe headers,
 labels, dates, and the short snippet Gmail already shows in your inbox list.
-The trust badge reads "Full bodies fetched: 0", and the published list of
+The trust badge reads "We never fetch or store full email contents.", and the published list of
 stored fields is generated from the same typed registry the fetch code uses,
 with contract tests, so the marketing page can't quietly drift from the code.
 
@@ -153,7 +153,7 @@ long, not twelve thousand.
 Second, a constraint I refused to break: the backend cannot fetch message
 bodies. Not "we don't look" — the Gmail adapter is only able to request an
 allowlisted set of fields (sender, subject, the short snippet Gmail already
-shows you, dates, labels). The trust badge says "Full bodies fetched: 0",
+shows you, dates, labels). The trust badge says "We never fetch or store full email contents.",
 and the published list of stored fields is generated from the same registry
 the fetching code uses, so the claim is checkable rather than vibes.
 
@@ -215,7 +215,7 @@ marks it one-way instead of pretending.
 ```
 4/ The privacy claim is falsifiable, not vibes.
 
-The badge reads "Full bodies fetched: 0", and the published list of Gmail
+The badge reads "We never fetch or store full email contents.", and the published list of Gmail
 fields we store is generated from the same typed registry the fetch code
 uses. The page can't drift from the code without tests failing.
 ```
@@ -469,7 +469,7 @@ rather than another pitch:
 Before anything moves, it shows the exact count, samples, and the precise
 Gmail changes — and keeps a per-sender ledger with an undo window for
 Archive, Later, and Delete. And it never fetches message bodies: the trust
-badge reads "Full bodies fetched: 0", with the list of stored Gmail fields
+badge reads "We never fetch or store full email contents.", with the list of stored Gmail fields
 published and generated from the code that does the fetching.
 
 It's prelaunch with zero users, so I have no traction numbers to show you —
@@ -499,7 +499,7 @@ Before anything moves, DeclutrMail shows the exact count, samples, and the
 precise Gmail changes, and every outcome lands in a per-sender activity
 ledger with an undo window for Archive, Later, and Delete (7 days; 30 on
 Pro). It never fetches message bodies or attachments — the trust badge
-reads "Full bodies fetched: 0", with a published list of stored Gmail
+reads "We never fetch or store full email contents.", with a published list of stored Gmail
 fields generated from the code. Free covers the full manual workflow for
 50 senders a month. On Plus ($9/mo), rules find matching mail for your
 approval and a Screener collects new senders for batch review; on Pro

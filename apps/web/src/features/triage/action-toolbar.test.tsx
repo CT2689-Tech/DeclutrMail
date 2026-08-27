@@ -258,7 +258,7 @@ describe('ActionToolbar — D31 recommended-verb highlight threshold', () => {
     });
 
     // The regression the founder reported (screenshot 2026-08-20). 0.74
-    // is the ceiling `score-cascade.ts` can reach for Archive when the
+    // is the ceiling `packages/shared/src/triage-engine/cascade.ts` can reach for Archive when the
     // user has never manually archived the sender — i.e. what almost
     // every real Archive row scores. Under the old flat 0.85 gate this
     // rendered flat, so the queue's first card was permanently the one

@@ -5,7 +5,7 @@ Phase 1 of the Variant D bucketing re-design (per session 2026-05-26).
 ## What this is
 
 A labeled dataset of 165 senders from the local development DB, used to evaluate
-how well the existing `runCascade` decision engine (`packages/workers/src/score-cascade.ts`)
+how well the existing `runCascade` decision engine (`packages/shared/src/triage-engine/cascade.ts`)
 maps to the **4 user-intent buckets** the Variant D Senders surface displays:
 
 | Bucket | What it means |
@@ -92,7 +92,7 @@ The script will:
 1. Run `score-eval.ts` → see mismatches
 2. Look at the senders the cascade got wrong + the rule that fired
 3. Decide whether your label was wrong (revise CSV) OR the rule threshold is wrong
-4. If rule wrong: edit `packages/workers/src/score-cascade.ts` thresholds
+4. If rule wrong: edit `packages/shared/src/triage-engine/cascade.ts` thresholds
 5. Re-run `score-eval.ts` until accuracy is "good enough" (target: ≥85% match on labeled rows)
 6. Land the cascade changes in a `fix/dXX-cascade-tune-from-eval-set` PR
 

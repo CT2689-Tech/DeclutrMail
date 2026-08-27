@@ -24,6 +24,95 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-26 — The public /inbox-simulator route ships the authenticated API client and useMe to anonymous visitors
+
+**Source:** session 2026-08-26 — Task 5 of the D133 inbox-simulator-scale
+plan (chunk baseline measurement), independently re-verified by a second
+session the same day.
+
+**Why:** `apps/web/src/features/auth/api/use-me.ts` (the `useMe` TanStack
+Query hook — its `/api/auth/me` fetch, `ME_QUERY_KEY`, retry/refetch
+policy) and `apps/web/src/lib/api/client.ts` (the full authenticated API
+client — CSRF header injection, 401 → `/api/auth/google/start` redirect,
+`apiGet`/`apiPost`/`apiPatch`/`apiPut`/`apiDelete`) are both compiled into
+a chunk that ships to `/inbox-simulator`, a public, unauthenticated
+marketing route. Proved via `app-build-manifest.json` route membership,
+not chunk names — chunk names establish nothing on their own; only
+appearing in a route's manifest file list does. Full measurement in
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md`.
+
+This is not caused by `BatchActionSheet` or `ConfirmModalFrame` (the pair
+D133's Task 4 split away from `auth-provider`) — neither is rendered on
+this route yet, that lands in a later plan.
+
+**[Corrected 2026-08-26 fix wave — the paragraph below replaces an
+earlier version of this entry that claimed no import edge exists and
+blamed "webpack's automatic shared-chunk grouping." Both claims were
+false; a follow-up review walked the import graph past the one level the
+original check stopped at and found a real chain. See
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` §3e/§3f for
+the full correction and how the original check missed it.]**
+
+It IS caused by a real, source-level, value-import chain reaching from
+the route's own render tree down to `use-me.ts` and the API client, every
+hop verified against the source file at the cited line:
+
+```
+inbox-simulator-screen.tsx:18  → TriageRow
+triage-row.tsx:17              → ProtectedActionNotice, UnprotectButton
+protected-notice.tsx:7-9       → useSetSenderPolicy
+use-sender-policy.ts:40        → SCREENER_QUEUE_KEY (a constant, not a hook)
+use-screener.ts:15-16          → ME_QUERY_KEY, apiGet, apiPost
+```
+
+The decisive hop is the constant import at `use-sender-policy.ts:40`:
+`SCREENER_QUEUE_KEY` is a plain re-exported array literal, not a hook.
+Neither `use-sender-policy.ts` nor `use-screener.ts` is marked
+side-effect-free, and tree-shaking operates per MODULE — an ES module is
+evaluated in full before any one of its bindings is picked — so importing
+that one constant pulls `use-screener.ts`'s entire body in, including its
+own imports of `ME_QUERY_KEY` and the API client, regardless of whether
+the importer ever calls a screener hook.
+
+The leak spans two physical chunk files, both members of the route's
+manifest list: `5793` carries `use-me.ts` + `lib/api/client.ts` (as
+before); `2907` separately carries `use-screener.ts` +
+`use-sender-policy.ts` + `lib/api/senders.ts` directly — confirmed by the
+literal runtime strings `["screener","queue"]`, `/api/screener/queue`,
+and `patchSenderPolicy`'s own `` `/api/senders/${id}/policy` `` template,
+all present in `2907`. Both files are explained by the one chain above;
+webpack split it into two output files, but the code in both is genuinely
+reachable from the route's own imports. 17 of 83 routes in the manifest
+carry chunk `5793`; exactly one — `/(marketing)/inbox-simulator/page` —
+is public.
+
+**How:** the fix is a source-level cut, not a bundler configuration
+change. `SCREENER_QUEUE_KEY` and `ME_QUERY_KEY` (and likely
+`TRIAGE_QUEUE_KEY`, imported the same way at `use-sender-policy.ts:41`)
+need to move into key-only modules that do not import their owning hook
+file, so a consumer that wants only the query key — as
+`use-sender-policy.ts` does, purely for cache invalidation — no longer
+drags in the hook, `apiGet`/`apiPost`, or `ME_QUERY_KEY`. A `sideEffects`
+package.json declaration does NOT apply here and is withdrawn as a
+prescription: `apps/web/package.json` has no `sideEffects` field, and
+`packages/shared`'s existing `sideEffects: ["**/*.css"]` addresses an
+unrelated leak shape (an eager helper import dragging a whole first-load
+file — see `LEARNINGS.md`, "Barrel imports leak into first load") that
+does not describe this one. Verify any fix the same way this baseline
+was produced — `app-build-manifest.json` route membership, never chunk
+names. No fix is implemented here; naming the fix shape is this session's
+job, implementing and verifying it is a separate decision for whoever
+picks up Plan 2–4.
+
+**Verifies by:** re-run the reproduction commands in
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` — neither
+the chunk containing the `/api/auth/me` and `/api/me/timezone` string
+literals, nor the chunk containing `/api/screener/queue` and
+`/api/senders/*`, should appear in the `/(marketing)/inbox-simulator/page`
+file list.
+
+**Status:** Open
+
 ### 2026-08-26 — Two different migrations are both numbered 0076
 
 **Source:** session — found while smoking this PR against a throwaway database

@@ -2,7 +2,7 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 
 const { color, font } = tokens;
 
@@ -29,6 +29,7 @@ export function ConfirmModalFrame({
   canConfirm,
   secondaryAction,
   pendingAction,
+  mailboxEmail,
   isBusy,
   error,
   onCancel,
@@ -63,6 +64,8 @@ export function ConfirmModalFrame({
    * one claiming to run.
    */
   pendingAction?: 'primary' | 'secondary' | undefined;
+  /** The active mailbox to show in the note; omitted renders nothing. */
+  mailboxEmail?: string | undefined;
   isBusy: boolean;
   error: string | null;
   onCancel: () => void;
@@ -149,7 +152,7 @@ export function ConfirmModalFrame({
         </div>
 
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <MailboxActionContext />
+          <MailboxActionContextView mailboxEmail={mailboxEmail} />
           {children}
           {error != null && (
             <div

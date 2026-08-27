@@ -47,7 +47,7 @@ asserts nothing about the product, so there is nothing in it that can be wrong o
 to a cold reader.
 
 **Privacy moves down to the trust strip, where it already lives in better form.** The locked
-`PrivacyBadge` carries `Full bodies fetched: 0`, the plain-language lead (_"We never fetch or store
+`PrivacyBadge` carries **"We never fetch or store full email contents."**, the plain-language lead (_"We never fetch or store
 message bodies. This list is generated from the Gmail fields DeclutrMail actually stores"_), and
 both generated lists. That is more honest and more complete than any four-word paraphrase above the
 fold. Per the copywriting hierarchy, an objection is answered after desire is created, not before
@@ -143,7 +143,7 @@ Two independent problems:
 
 `never the full message` is plain, is accurate against the registry, and the word _full_ concedes
 the snippet rather than papering over it — which is the honest form of the claim and the one that
-survives a reader who opens the storage list. The locked `Full bodies fetched: 0` badge and its
+survives a reader who opens the storage list. The locked **"We never fetch or store full email contents."** badge and its
 generated field inventory continue to carry the precise version in the trust strip; the kicker
 must never be a lossy paraphrase of them. §14's caveat ("never let `metadata only` stand alone")
 correctly identified the risk but kept the term; retiring it resolves the risk at the source.
@@ -232,7 +232,7 @@ by a file in the repo, not by judgement.
 | T2  | **A delivered unsubscribe request cannot be recalled.** Blanket phrases like "every action is reversible" are false.                                                                                    | `action-safety.ts` header comment + `ACTION_SAFETY_SUMMARY`                                |
 | T3  | Screener is **soft quarantine** — new senders still arrive in the Gmail inbox; Screener collects them for review. Never claim it blocks or prevents arrival.                                            | D194 forbidden framings; D72                                                               |
 | T4  | Future-mail automation is **Autopilot, Pro-only**. Free and Plus are existing-mail-only.                                                                                                                | `pricing.config.ts` `PRO_CAPABILITIES`; hero demo card already states "Existing mail only" |
-| T5  | Privacy copy is the locked badge string **"Full bodies fetched: 0"**. Never "never reads your email" or any forward-looking absolute.                                                                   | CLAUDE.md §2.1; `packages/shared/src/copy/privacy.ts`                                      |
+| T5  | Privacy copy is the locked badge string **"We never fetch or store full email contents."** Never "never reads your email" or any forward-looking absolute.                                              | CLAUDE.md §2.1; `packages/shared/src/copy/privacy.ts`                                      |
 | T6  | D209 forbidden words include **`clean` as a verb on user data**, plus: AI magic, supercharged, nuke, destroy, blast, obliterate, `smart` standalone, `intelligent` standalone, `AI-powered` standalone. | D209; ADR-0011                                                                             |
 | T7  | Delete's Gmail Trash fallback is a **separate** recovery, normally up to 30 days, and can end sooner if Trash is emptied. Do not merge it with the Activity undo window.                                | `DELETE_RECOVERY_CLAIM`                                                                    |
 
@@ -504,11 +504,11 @@ before implementation.
 These are behavioral segments, not invented demographic characters. Each remains **low
 confidence** until at least five independent first-party data points support it.
 
-| Segment                    | Trigger                                                                         | Job                                                                     | Main anxiety                                                                     | Best lead                                                              | Plan path                                                             |
-| -------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| **Backlog owner**          | Storage warning, thousands of unread messages, or years of neglected mail       | Make a large, visible first dent without losing something important     | Bulk delete is too coarse; the useful mail is mixed in                           | Clear thousands by sender; see the scope of manual moves first         | Free proves value → Plus finishes the backlog and reviews new senders |
-| **Control-first skeptic**  | Has postponed cleanup or rejected another tool because inbox access feels risky | Understand what is read, what will move, and how recovery works         | Opaque OAuth access, hidden rules, and false “everything is reversible” promises | `Full bodies fetched: 0` + exact preview + Activity record             | Free/Plus                                                             |
-| **Multi-inbox maintainer** | Personal, work, and an old/project Gmail account all accumulate recurring noise | Apply one deliberate method without merging accounts or replacing Gmail | Inconsistent rules, switching accounts, opaque automation                        | Approved rules and one Activity model across up to three Gmail inboxes | Pro                                                                   |
+| Segment                    | Trigger                                                                         | Job                                                                     | Main anxiety                                                                     | Best lead                                                                            | Plan path                                                             |
+| -------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------- |
+| **Backlog owner**          | Storage warning, thousands of unread messages, or years of neglected mail       | Make a large, visible first dent without losing something important     | Bulk delete is too coarse; the useful mail is mixed in                           | Clear thousands by sender; see the scope of manual moves first                       | Free proves value → Plus finishes the backlog and reviews new senders |
+| **Control-first skeptic**  | Has postponed cleanup or rejected another tool because inbox access feels risky | Understand what is read, what will move, and how recovery works         | Opaque OAuth access, hidden rules, and false “everything is reversible” promises | **"We never fetch or store full email contents."** + exact preview + Activity record | Free/Plus                                                             |
+| **Multi-inbox maintainer** | Personal, work, and an old/project Gmail account all accumulate recurring noise | Apply one deliberate method without merging accounts or replacing Gmail | Inconsistent rules, switching accounts, opaque automation                        | Approved rules and one Activity model across up to three Gmail inboxes               | Pro                                                                   |
 
 ### Anti-personas to say “not for you” to
 
@@ -548,7 +548,7 @@ Every public surface should draw from the hierarchy in this order:
 | **Mechanism**          | Review recurring mail by sender instead of message by message                                      |
 | **Differentiator**     | See the current scope and planned Gmail change before a manual bulk move                           |
 | **Recovery**           | Find the outcome in Activity; undo manual Archive, Later, and Delete while the plan window is open |
-| **Privacy proof**      | `Full bodies fetched: 0`                                                                           |
+| **Privacy proof**      | **"We never fetch or store full email contents."**                                                 |
 | **Recurring Plus job** | Review new senders in one queue before they disappear into the backlog; they still arrive in Gmail |
 | **Recurring Pro job**  | Observe and enable preset rules for future matches across up to three Gmail inboxes                |
 | **Emotional payoff**   | Progress without the blind leap—and no mystery about what happened                                 |
@@ -606,7 +606,7 @@ of the integration step. If this creates expectation mismatch in usability testi
 
 **Hero proof row:**
 
-- Render the locked `Full bodies fetched: 0` badge unchanged.
+- Render the locked **"We never fetch or store full email contents."** badge unchanged.
 - `30-day money-back guarantee on paid plans`.
 - `Gmail stays your inbox`.
 - The demo uses synthetic mail and needs no mailbox access.
@@ -985,7 +985,7 @@ better evidence, calmer interaction, and no surprise after the click.
 ### Product proof available before customer proof
 
 1. **Synthetic interactive demo:** visitors can experience the preview and receipt without OAuth.
-2. **Exact privacy boundary:** the shared `Full bodies fetched: 0` badge and field inventory.
+2. **Exact privacy boundary:** the shared **"We never fetch or store full email contents."** badge and field inventory.
 3. **Concrete action proof:** current count, sample, Gmail label change, final Activity outcome.
 4. **Transparent limits:** existing mail versus future rules; one-way unsubscribe; separate Trash
    recovery; Screener still allows Gmail delivery.
@@ -1324,15 +1324,15 @@ constants.
 
 These are intentionally excluded from the rewrite even though they sit beside changed content:
 
-| Keep                                                                                          | Reason                                                                                     |
-| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `Full bodies fetched: 0` and the complete PrivacyBadge field inventory                        | Locked, specific, and stronger than vague privacy adjectives                               |
-| Canonical verbs `Keep · Archive · Unsubscribe · Later · Delete` and their current definitions | They accurately describe the feature set; Unsubscribe remains a first-class sender outcome |
-| `Continue with Google` on the actual OAuth entry                                              | It accurately names the external action; value-led CTA is used before this step            |
-| Gmail as the place to read, reply, search content, inspect threads, and verify mailbox state  | Core companion positioning                                                                 |
-| Prices, quotas, inbox limits, refund terms, and undo windows                                  | Continue rendering from the manifest and approved policy; this project does not reprice    |
-| Legal pages and the core privacy/security disclosures                                         | Factual and compliance-bearing                                                             |
-| Keyword-bearing how-to and answer page titles/URLs                                            | Preserve search intent; only conversion blocks change                                      |
-| Manual/current-mail versus Pro/future-rule separation                                         | Non-negotiable product truth                                                               |
-| Delivered unsubscribe is one-way and existing mail stays put                                  | Non-negotiable product truth                                                               |
-| Delete's Activity undo versus separate Gmail Trash recovery                                   | Non-negotiable product truth                                                               |
+| Keep                                                                                             | Reason                                                                                     |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| **"We never fetch or store full email contents."** and the complete PrivacyBadge field inventory | Locked, specific, and stronger than vague privacy adjectives                               |
+| Canonical verbs `Keep · Archive · Unsubscribe · Later · Delete` and their current definitions    | They accurately describe the feature set; Unsubscribe remains a first-class sender outcome |
+| `Continue with Google` on the actual OAuth entry                                                 | It accurately names the external action; value-led CTA is used before this step            |
+| Gmail as the place to read, reply, search content, inspect threads, and verify mailbox state     | Core companion positioning                                                                 |
+| Prices, quotas, inbox limits, refund terms, and undo windows                                     | Continue rendering from the manifest and approved policy; this project does not reprice    |
+| Legal pages and the core privacy/security disclosures                                            | Factual and compliance-bearing                                                             |
+| Keyword-bearing how-to and answer page titles/URLs                                               | Preserve search intent; only conversion blocks change                                      |
+| Manual/current-mail versus Pro/future-rule separation                                            | Non-negotiable product truth                                                               |
+| Delivered unsubscribe is one-way and existing mail stays put                                     | Non-negotiable product truth                                                               |
+| Delete's Activity undo versus separate Gmail Trash recovery                                      | Non-negotiable product truth                                                               |

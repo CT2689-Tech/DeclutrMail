@@ -705,5 +705,36 @@ const _GMAIL_CATEGORY_API_EXTENDS_SHARED: GmailCategory extends SharedGmailCateg
 const _GMAIL_CATEGORY_SHARED_EXTENDS_API: SharedGmailCategory extends GmailCategory ? true : false =
   true;
 
+/**
+ * Cross-package contract — the DB-derived triage enums must stay equal
+ * to the shared zero-server-dep mirrors the browser-side cascade reads
+ * (`@declutrmail/shared/triage-engine`). Failing-compile is preferable
+ * to a demo that renders a verdict the engine cannot produce.
+ */
+import type { triageVerdict, protectionReason } from '@declutrmail/db';
+import type {
+  TriageVerdict as SharedTriageVerdict,
+  ProtectionReason as SharedProtectionReason,
+} from '@declutrmail/shared/contracts';
+
+type DbTriageVerdict = (typeof triageVerdict)['enumValues'][number];
+type DbProtectionReason = (typeof protectionReason)['enumValues'][number];
+
+const _TRIAGE_VERDICT_DB_EXTENDS_SHARED: DbTriageVerdict extends SharedTriageVerdict
+  ? true
+  : false = true;
+
+const _TRIAGE_VERDICT_SHARED_EXTENDS_DB: SharedTriageVerdict extends DbTriageVerdict
+  ? true
+  : false = true;
+
+const _PROTECTION_REASON_DB_EXTENDS_SHARED: DbProtectionReason extends SharedProtectionReason
+  ? true
+  : false = true;
+
+const _PROTECTION_REASON_SHARED_EXTENDS_DB: SharedProtectionReason extends DbProtectionReason
+  ? true
+  : false = true;
+
 /** A sender detail as the read service produces it — see `SenderFacts`. */
 export type SenderDetailFacts = Omit<SenderDetail, 'brandMark'>;

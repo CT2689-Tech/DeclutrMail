@@ -20,6 +20,51 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-26 — "No import edge" needs a transitive check, and one constant drags its whole module
+
+**Context:** Plan 1 of the inbox-simulator rebuild (D133) split
+`MailboxActionContext` so two app modals stop importing `auth-provider`, then
+measured whether the public `/inbox-simulator` route's chunks were free of the
+authenticated query layer. The measurement returned FAIL and attributed it to
+webpack shared-chunk bin-packing, "no source import edge."
+
+**Finding:** There was an import edge — five hops of plain value imports, live at
+merge-base:
+
+```
+inbox-simulator-screen.tsx:18 → TriageRow
+  → triage-row.tsx:17         → ProtectedActionNotice
+  → protected-notice.tsx:7    → useSetSenderPolicy
+  → use-sender-policy.ts:40   → SCREENER_QUEUE_KEY
+  → use-screener.ts:15-16     → ME_QUERY_KEY, apiGet, apiPost
+```
+
+The decisive hop imports `SCREENER_QUEUE_KEY` — a plain array constant — and
+that alone pulls the entire hook module, `apiGet`/`apiPost` included, because
+tree-shaking is per MODULE, not per binding. So the public no-signup marketing
+demo ships the authenticated API client to anonymous visitors.
+
+The method that missed it is the reusable lesson: it grepped the 45 files
+importing `use-me`/`auth-provider`, then intersected that set against the
+screen's **eight direct imports**. `use-screener.ts` is in the 45 but four hops
+away, so a one-level check could not find it. The word written down was
+"transitively"; the work done was one level.
+
+Two second-order costs followed. The wrong mechanism prescribed a wrong fix — a
+`sideEffects` declaration, which targets nothing here (`apps/web` has no such
+field) — and it under-reported the leak, missing that chunk `2907` carries
+`/api/screener/queue` and `/api/senders/*` too.
+
+**Rule (provisional):** "No import edge" is a claim about a transitive closure,
+so it needs a transitive check — walk the graph or say plainly that you checked
+one level. And treat a constant exported from a hook module as a hook import,
+because the bundler does: put shared query keys in key-only modules.
+
+**Distillation trigger:** promote to CLAUDE.md §2 if a third first-load leak
+traces to module-granularity — this is the second (see the barrel/`sideEffects`
+episode). The general form is already known; what recurs is trusting an
+inference where a measurement was cheap.
+
 ## 2026-08-25 — A typed-but-unvalidated read boundary lets one new contract key white-screen a whole route
 
 **Context:** adding `briefPrefs.hour` to `GET /api/me/settings` and rendering

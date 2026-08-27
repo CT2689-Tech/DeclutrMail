@@ -41,7 +41,7 @@ import type { AutopilotActionKind, AutopilotPresetKey, TriageVerdict } from '@de
  * D222: no category prediction. Matchers reference engine signals
  * (verdict + confidence + age + read rate + last seen + total
  * messages) — never an ML-predicted category. The engine's verdict is
- * computed by the deterministic cascade in `score-cascade.ts`.
+ * computed by the deterministic cascade in `packages/shared/src/triage-engine/cascade.ts`.
  *
  * D7 / D228: every signal a matcher reads is metadata. No body
  * content, no attachments, no non-allowlisted headers.
