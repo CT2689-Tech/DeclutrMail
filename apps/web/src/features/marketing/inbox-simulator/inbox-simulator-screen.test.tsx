@@ -175,7 +175,7 @@ describe('InboxSimulatorScreen', () => {
   it('tracks the simulator OAuth exit through the shared public CTA event', () => {
     render(<InboxSimulatorScreen />);
 
-    fireEvent.click(screen.getByRole('link', { name: /^Connect Gmail/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^Review my Gmail senders/ }));
 
     expect(track).toHaveBeenCalledWith('landing_cta_clicked', {
       cta: 'connect_gmail',
@@ -200,5 +200,11 @@ describe('InboxSimulatorScreen', () => {
     const noChannel = TRIAGE_QUEUE.find((row) => row.unsubscribeMethod === 'none');
     expect(noChannel).toBeDefined();
     expect(screen.getByText(noChannel!.senderName)).toBeInTheDocument();
+  });
+
+  it('uses one label for the connect action', () => {
+    render(<InboxSimulatorScreen />);
+    expect(screen.queryByText(/^Connect Gmail/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Review my Gmail senders/).length).toBeGreaterThan(0);
   });
 });

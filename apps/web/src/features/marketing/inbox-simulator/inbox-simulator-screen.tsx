@@ -531,7 +531,7 @@ export function InboxSimulatorScreen() {
             cta="connect_gmail"
             placement="demo"
           >
-            Connect Gmail →
+            Review my Gmail senders →
           </TrackedCta>
           <a href="/methodology">See privacy and control details</a>
         </div>
