@@ -35,6 +35,15 @@ const INTENDED_VERDICTS: Readonly<Record<string, string>> = {
   't-sarah': 'keep',
   't-priya': 'keep',
   't-shipping': 'later',
+  // The amazon.com run (Plan 3 Task 2) — all six achieve their intended
+  // verdict from freely-chosen, internally-consistent signals (no
+  // existing display data to reconcile against, unlike the nine above).
+  't-amazon-main': 'archive',
+  't-amazon-primevideo': 'archive',
+  't-amazon-advertising': 'unsubscribe',
+  't-amazon-orders': 'later',
+  't-amazon-photos': 'archive',
+  't-amazon-security': 'keep',
 };
 
 describe('triage fixtures — engine-derived', () => {

@@ -25,6 +25,7 @@ import {
   TRIAGE_SESSION_STATS_QUIET,
   type TriageScreenState,
 } from './data';
+import { findDomainBatches } from './domain-batch';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 
@@ -47,15 +48,31 @@ function renderState(state: TriageScreenState): string {
 }
 
 describe('TriageScreen — populated queue', () => {
-  it('renders every fixture row by sender name', () => {
+  it('renders every fixture row by sender name, or via its batch card', () => {
     const html = renderState({
       kind: 'ready',
       rows: [...TRIAGE_QUEUE],
       stats: TRIAGE_SESSION_STATS,
     });
+    // D133: the amazon.com run is >= MIN_BATCH_RUN, so `TriageQueue`
+    // (allowBatching defaults true, matching `journey: 'daily'`) folds
+    // it into one `DomainBatchCard`. This is a static render — there is
+    // no click to expand it — so a batched sender's name is not a
+    // literal substring; the card's own collapsed summary names the
+    // domain and both counts instead of each sender.
+    const batches = findDomainBatches(TRIAGE_QUEUE);
+    const batchedIds = new Set(batches.flatMap((b) => b.rows.map((r) => r.id)));
     for (const row of TRIAGE_QUEUE) {
+      if (batchedIds.has(row.id)) continue;
       expect(html).toContain(row.senderName);
     }
+    for (const batch of batches) {
+      expect(html).toContain(`${batch.eligibleRows.length} senders from ${batch.domain}`);
+    }
+    // Coverage floor: this exemption must not silently swallow the
+    // whole queue if `findDomainBatches` ever regressed to over-matching.
+    expect(batchedIds.size).toBeGreaterThan(0);
+    expect(batchedIds.size).toBeLessThan(TRIAGE_QUEUE.length);
   });
 
   it('surfaces the queue length in the header copy', () => {

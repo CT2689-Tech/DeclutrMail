@@ -258,10 +258,11 @@ function buildFixtureRow(seed: TriageFixtureSeed): TriageDecisionRow {
 }
 
 /**
- * Nine seeds, run through the real D21/D24 engine (`buildFixtureRow`) so
- * `verdict`, `confidence` and `reasoning` are DERIVED, never
- * hand-written (D133). A later change (Plan 3 Task 2) appends six more
- * — a contiguous `amazon.com` run for Plan 4's domain-batch card.
+ * Fifteen seeds, run through the real D21/D24 engine (`buildFixtureRow`)
+ * so `verdict`, `confidence` and `reasoning` are DERIVED, never
+ * hand-written (D133). The first nine are the original fixture set; the
+ * last six are a contiguous `amazon.com` run added for Plan 4's
+ * domain-batch card (see the block comment above `t-amazon-main`).
  *
  * D133 RESOLVED (2026-08-26). Five of the original nine fixtures were
  * hand-written to a verdict the real cascade did NOT produce from their
@@ -288,13 +289,14 @@ function buildFixtureRow(seed: TriageFixtureSeed): TriageDecisionRow {
  *     no guided copy to keep in sync. django-users and Sarah already
  *     matched.
  *
- * Distribution (this nine): 3 Keep (2 protected + Substack) · 1 Archive
- * (Groupon) · 4 Unsubscribe · 1 Later.
+ * Distribution: 4 Keep (2 protected + Substack + amazon-security) · 4
+ * Archive (Groupon + the amazon.com run) · 5 Unsubscribe · 2 Later.
  *
- * Ordering is otherwise unchanged: "highest impact first". A future
- * addition stays APPENDED, never impact-sorted, because sibling tests
- * pin rows by index (`TRIAGE_QUEUE[0]`/`[1]` in action-sheet +
- * screen-actions tests).
+ * Ordering is otherwise unchanged: "highest impact first" among the
+ * original nine, then the amazon.com run appended. New rows are
+ * APPENDED (not impact-sorted) because sibling tests pin rows by index
+ * (`TRIAGE_QUEUE[0]`/`[1]` in action-sheet + screen-actions tests) and
+ * `findDomainBatches` needs the six amazon.com seeds contiguous.
  * Fixtures are static so Storybook variants stay byte-stable.
  */
 export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
@@ -694,6 +696,269 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
       monthlyVolume: 0,
       spikeRatio: 0,
       unsubscribeChannel: 'none', // ← mirrors `unsubscribeMethod`, FROZEN
+      isGovDomain: false,
+      userManuallyArchivedCount: 0,
+    },
+  },
+
+  // ══ amazon.com — six contiguous senders for Plan 4's domain-batch
+  // card (D133). `findDomainBatches` needs ≥3 consecutive same-domain
+  // rows with `protectionReason === null`; six with one Protected
+  // leaves five eligible, well past the threshold. The five deliberately
+  // carry THREE different verdicts (archive / unsubscribe / later) —
+  // that mismatch is the point, not an oversight: it is what lets
+  // Plan 4 show one composite decision covering senders the engine
+  // itself disagrees about. Do not "tidy" the run into a single verdict.
+  // All six use `gmailCategory: 'updates'` except Advertising
+  // (Promotions) — realistic per-sender-address Gmail categorization,
+  // and it happens to be what makes Advertising the Unsubscribe outlier
+  // (see `cascade.ts`'s Phase C category boost).
+
+  // ── Amazon.com — bulk of the volume; Archive ─────────────────────
+  {
+    id: 't-amazon-main',
+    senderId: 'sid-amazon-main',
+    senderKey: 'sk_amazon_main',
+    senderName: 'Amazon.com',
+    senderEmail: 'auto-confirm@amazon.com',
+    senderDomain: 'amazon.com',
+    brandMark: false,
+    gmailCategory: 'updates',
+    unsubscribeMethod: 'one_click',
+    signals: [
+      'Read rate: 35% over the last 90 days',
+      'Volume: 62 messages/month (4-week trailing average)',
+      'You have manually archived messages from this sender before',
+    ],
+    protectionReason: null,
+    monthlyVolume: 62,
+    last90dMessages: 186,
+    readRate: 0.35,
+    lastDays: 0,
+    totalAllTime: 1800,
+    unreadInboxCount: 120,
+    cascadeSignals: {
+      isProtected: false,
+      hasWrittenTo: false,
+      gmailCategory: 'updates',
+      starredInLastYear: false,
+      readRate90d: 0.35,
+      firstSeenMonthsAgo: 40,
+      firstSeenDaysAgo: 1200,
+      lastSeenDaysAgo: 0,
+      totalMessages: 1800,
+      monthlyVolume: 62,
+      spikeRatio: 1,
+      unsubscribeChannel: 'one_click',
+      isGovDomain: false,
+      userManuallyArchivedCount: 4,
+    },
+  },
+
+  // ── Amazon Prime Video — Archive ──────────────────────────────────
+  {
+    id: 't-amazon-primevideo',
+    senderId: 'sid-amazon-primevideo',
+    senderKey: 'sk_amazon_primevideo',
+    senderName: 'Amazon Prime Video',
+    senderEmail: 'primevideo@amazon.com',
+    senderDomain: 'amazon.com',
+    brandMark: false,
+    gmailCategory: 'updates',
+    unsubscribeMethod: 'one_click',
+    signals: [
+      'Read rate: 25% over the last 90 days',
+      'Volume: 30 messages/month',
+      'You have manually archived messages from this sender before',
+    ],
+    protectionReason: null,
+    monthlyVolume: 30,
+    last90dMessages: 90,
+    readRate: 0.25,
+    lastDays: 1,
+    totalAllTime: 400,
+    unreadInboxCount: 55,
+    cascadeSignals: {
+      isProtected: false,
+      hasWrittenTo: false,
+      gmailCategory: 'updates',
+      starredInLastYear: false,
+      readRate90d: 0.25,
+      firstSeenMonthsAgo: 20,
+      firstSeenDaysAgo: 700,
+      lastSeenDaysAgo: 1,
+      totalMessages: 400,
+      monthlyVolume: 30,
+      spikeRatio: 1,
+      unsubscribeChannel: 'one_click',
+      isGovDomain: false,
+      userManuallyArchivedCount: 3,
+    },
+  },
+
+  // ── Amazon Advertising — the disagreement: Unsubscribe ────────────
+  // Promotions category (not Updates, like its five siblings) is what
+  // tips this one into the unsubscribe-score category boost.
+  {
+    id: 't-amazon-advertising',
+    senderId: 'sid-amazon-advertising',
+    senderKey: 'sk_amazon_advertising',
+    senderName: 'Amazon Advertising',
+    senderEmail: 'advertising@amazon.com',
+    senderDomain: 'amazon.com',
+    brandMark: false,
+    gmailCategory: 'promotions',
+    unsubscribeMethod: 'one_click',
+    signals: [
+      'Read rate: 2% over the last 90 days',
+      'Volume: 18 messages/month',
+      "Volume spike: 3× the sender's usual cadence",
+    ],
+    protectionReason: null,
+    monthlyVolume: 18,
+    last90dMessages: 54,
+    readRate: 0.02,
+    lastDays: 0,
+    totalAllTime: 90,
+    unreadInboxCount: 53,
+    cascadeSignals: {
+      isProtected: false,
+      hasWrittenTo: false,
+      gmailCategory: 'promotions',
+      starredInLastYear: false,
+      readRate90d: 0.02,
+      firstSeenMonthsAgo: 8,
+      firstSeenDaysAgo: 250,
+      lastSeenDaysAgo: 0,
+      totalMessages: 90,
+      monthlyVolume: 18,
+      spikeRatio: 3,
+      unsubscribeChannel: 'one_click',
+      isGovDomain: false,
+      userManuallyArchivedCount: 0,
+    },
+  },
+
+  // ── Amazon Orders — the second disagreement: Later ────────────────
+  // A brand-new sender address (Amazon periodically splits notification
+  // senders) — too new to judge, Phase B's `insufficient_signal` rule.
+  {
+    id: 't-amazon-orders',
+    senderId: 'sid-amazon-orders',
+    senderKey: 'sk_amazon_orders',
+    senderName: 'Amazon Orders',
+    senderEmail: 'order-update@amazon.com',
+    senderDomain: 'amazon.com',
+    brandMark: false,
+    gmailCategory: 'updates',
+    unsubscribeMethod: 'none',
+    signals: ['First seen 4 days ago', 'Volume: 2 messages so far — not enough to judge yet'],
+    protectionReason: null,
+    monthlyVolume: 2,
+    last90dMessages: 2,
+    readRate: 0,
+    lastDays: 0,
+    totalAllTime: 2,
+    unreadInboxCount: 2,
+    cascadeSignals: {
+      isProtected: false,
+      hasWrittenTo: false,
+      gmailCategory: 'updates',
+      starredInLastYear: false,
+      readRate90d: 0,
+      firstSeenMonthsAgo: 0,
+      firstSeenDaysAgo: 4, // < 7 — Phase B insufficient_signal
+      lastSeenDaysAgo: 0,
+      totalMessages: 2, // < 3 — Phase B insufficient_signal (either alone suffices)
+      monthlyVolume: 2,
+      spikeRatio: 0,
+      unsubscribeChannel: 'none',
+      isGovDomain: false,
+      userManuallyArchivedCount: 0,
+    },
+  },
+
+  // ── Amazon Photos — Archive ────────────────────────────────────────
+  {
+    id: 't-amazon-photos',
+    senderId: 'sid-amazon-photos',
+    senderKey: 'sk_amazon_photos',
+    senderName: 'Amazon Photos',
+    senderEmail: 'photos@amazon.com',
+    senderDomain: 'amazon.com',
+    brandMark: false,
+    gmailCategory: 'updates',
+    unsubscribeMethod: 'one_click',
+    signals: [
+      'Read rate: 30% over the last 90 days',
+      'Volume: 30 messages/month',
+      'You have manually archived messages from this sender before',
+    ],
+    protectionReason: null,
+    monthlyVolume: 30,
+    last90dMessages: 90,
+    readRate: 0.3,
+    lastDays: 2,
+    totalAllTime: 120,
+    unreadInboxCount: 60,
+    cascadeSignals: {
+      isProtected: false,
+      hasWrittenTo: false,
+      gmailCategory: 'updates',
+      starredInLastYear: false,
+      readRate90d: 0.3,
+      firstSeenMonthsAgo: 15,
+      firstSeenDaysAgo: 500,
+      lastSeenDaysAgo: 2,
+      totalMessages: 120,
+      monthlyVolume: 30,
+      spikeRatio: 1,
+      unsubscribeChannel: 'one_click',
+      isGovDomain: false,
+      userManuallyArchivedCount: 3,
+    },
+  },
+
+  // ── Amazon Account Security — the skipped one: Keep (Protected) ───
+  // Gmail-important-derived protection — an honest reason for a
+  // security-notification sender, and a different D245 protect rule
+  // than t-priya's replied-derived one.
+  {
+    id: 't-amazon-security',
+    senderId: 'sid-amazon-security',
+    senderKey: 'sk_amazon_security',
+    senderName: 'Amazon Account Security',
+    senderEmail: 'account-security@amazon.com',
+    senderDomain: 'amazon.com',
+    brandMark: false,
+    gmailCategory: 'updates',
+    unsubscribeMethod: 'none',
+    signals: [
+      "Protected — Gmail marked several of this sender's messages important this year",
+      'Read rate: 90% over the last 90 days',
+      'Volume: 1 message/month',
+    ],
+    protectionReason: 'gmail-important',
+    monthlyVolume: 1,
+    last90dMessages: 3,
+    readRate: 0.9,
+    lastDays: 10,
+    totalAllTime: 40,
+    unreadInboxCount: 2,
+    cascadeSignals: {
+      isProtected: true,
+      protectionReason: 'gmail_important',
+      hasWrittenTo: false,
+      gmailCategory: 'updates',
+      starredInLastYear: false,
+      readRate90d: 0.9,
+      firstSeenMonthsAgo: 40,
+      firstSeenDaysAgo: 1200,
+      lastSeenDaysAgo: 10,
+      totalMessages: 40,
+      monthlyVolume: 1,
+      spikeRatio: 0,
+      unsubscribeChannel: 'none',
       isGovDomain: false,
       userManuallyArchivedCount: 0,
     },
