@@ -111,7 +111,14 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
 
   it('shows the same badge at 375px as on desktop — the narrow layout reflows, it does not drop information', () => {
     setViewportWidth(375);
-    const row = rowById('t-shipping'); // confidence 0.95 → recommended
+    // LinkedIn, not Shipping (D133): Shipping's real cascade signals now
+    // land on Later, which `confidenceBand` always maps to `null` (an
+    // abstention has no band to show) — see
+    // packages/shared/src/copy/engine-confidence.ts. LinkedIn is
+    // unsubscribe at 0.89, comfortably above the 0.85 floor, so it still
+    // exercises the same "verdict pill carries a band at every width"
+    // invariant this test is actually about.
+    const row = rowById('t-linkedin'); // confidence 0.89 → recommended
     renderRow(row);
     // The verdict pill carries the recommendation at every width:
     // "Unsubscribe · strong".
@@ -287,7 +294,10 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
 
   it('still renders a real measured zero for a sender that IS never opened', () => {
     // Two-sided: suppressing unknown must not suppress a true 0%.
-    const row = rowById('t-groupon'); // readRate 0 over 156 messages
+    // Old Navy, not Groupon (D133): Groupon's real cascade signals now
+    // carry a genuine 30% read rate (see data.ts's own comment on why),
+    // so it stopped being a 0%-read example. Old Navy still is one.
+    const row = rowById('t-oldnavy'); // readRate 0 over 144 messages
     expect(row.readRate).toBe(0);
     renderRow(row, { expanded: true });
 
@@ -301,7 +311,8 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
   // twin of the "Never" the Senders surface carried. A sender read for
   // years reads as never opened after one quiet quarter.
   it('never makes a lifetime claim from the 90-day window', () => {
-    const row = rowById('t-groupon'); // readRate 0 over 156 messages
+    // Old Navy, not Groupon — see the comment two tests up (D133).
+    const row = rowById('t-oldnavy'); // readRate 0 over 144 messages
     const { container } = renderRow(row);
     expect(container.textContent).not.toContain('Never opened');
     expect(container.textContent).toContain('None marked read in 90d');
