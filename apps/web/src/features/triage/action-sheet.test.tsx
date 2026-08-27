@@ -17,6 +17,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 import { ActionSheet } from './action-sheet';
@@ -169,6 +170,31 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     expect(html).toContain('Activity Undo');
     expect(html).toContain('up to 30 days');
     expect(html).not.toContain('Show this in the row next time');
+  });
+
+  it('states the undo window on a Delete sheet instead of hedging', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Delete"
+        row={row}
+        inboxCount={2}
+        mailboxEmail="active@gmail.com"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    // Scoped to the footer's own clause. Two things would otherwise make
+    // this pass whether or not the footer is fixed: `renderToStaticMarkup`
+    // escapes the apostrophe to `&#x27;`, so a literal-apostrophe
+    // `toContain("your plan's window")` never matches either version; and
+    // "30 days" already appears twice elsewhere on this sheet regardless
+    // of this footer — the mandatory preview's own (already-derived, per
+    // Task 1) "Undo from Activity for 30 days.", and Gmail's unrelated
+    // "up to 30 days" retention clause two sentences later.
+    expect(html).not.toContain('Activity Undo uses your plan');
+    if (UNIFORM_UNDO_WINDOW_DAYS === null) return;
+    expect(html).toContain(`Activity Undo uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day window`);
   });
 });
 

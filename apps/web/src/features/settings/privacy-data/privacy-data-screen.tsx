@@ -18,7 +18,11 @@ import {
   ScreenIntro,
   tokens,
 } from '@declutrmail/shared';
-import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import {
+  MIN_UNDO_WINDOW_DAYS,
+  TIER_MANIFEST,
+  UNIFORM_UNDO_WINDOW_DAYS,
+} from '@declutrmail/shared/entitlements';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
@@ -206,9 +210,12 @@ export function PrivacyDataView({
                 least {MIN_UNDO_WINDOW_DAYS} days on any plan.
               </>
             )}{' '}
-            Delete also uses your plan&apos;s Activity Undo window. Gmail Trash recovery is separate
-            and normally lasts up to 30 days; a delivered unsubscribe request cannot be recalled.
-            Account deletion waits for open Activity undo windows unless you explicitly waive them.
+            {UNIFORM_UNDO_WINDOW_DAYS === null
+              ? "Delete also uses your plan's Activity Undo window."
+              : `Delete also uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`}{' '}
+            Gmail Trash recovery is separate and normally lasts up to 30 days; a delivered
+            unsubscribe request cannot be recalled. Account deletion waits for open Activity undo
+            windows unless you explicitly waive them.
           </p>
         </div>
       </Card>

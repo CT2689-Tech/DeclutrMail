@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import type { TriageDecisionRow } from './data';
@@ -386,11 +387,17 @@ export function ActionSheet({
                     : 'Counting inbox email — confirm unlocks after the live preview loads.'
               : verb === 'Unsubscribe'
                 ? effectiveArchiveHistoric
-                  ? "The unsubscribe itself can't be undone — the archived email uses your plan's Activity undo window."
+                  ? UNIFORM_UNDO_WINDOW_DAYS === null
+                    ? "The unsubscribe itself can't be undone — the archived email uses your plan's Activity undo window."
+                    : `The unsubscribe itself can't be undone — the archived email uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity undo window.`
                   : "The unsubscribe request can't be undone. Existing inbox email stays put."
                 : verb === 'Delete'
-                  ? "Moves matching inbox email to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days."
-                  : "Reversible for your plan's undo window from Activity."}
+                  ? UNIFORM_UNDO_WINDOW_DAYS === null
+                    ? "Moves matching inbox email to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days."
+                    : `Moves matching inbox email to Gmail Trash. Activity Undo uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day window; Gmail normally keeps Trash for up to 30 days.`
+                  : UNIFORM_UNDO_WINDOW_DAYS === null
+                    ? "Reversible for your plan's undo window from Activity."
+                    : `Reversible for the ${UNIFORM_UNDO_WINDOW_DAYS}-day undo window from Activity.`}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {previewUnavailable && onRetryPreview && (
