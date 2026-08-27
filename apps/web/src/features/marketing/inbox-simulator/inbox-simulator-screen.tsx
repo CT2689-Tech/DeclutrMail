@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   ACTION_SAFETY_SUMMARY,
+  MANUAL_ACTION_SCOPE_CLAIM,
   OAUTH_SCOPE_DISCLOSURE,
   Button,
   Eyebrow,
@@ -17,6 +18,7 @@ import { ActionPreviewPresentation } from '@/features/triage/action-preview-pres
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
+import { findDomainBatches, type DomainBatch } from '@/features/triage/domain-batch';
 import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
 import { oauthStartUrl, siteUrl } from '@/features/marketing/landing/urls';
@@ -58,29 +60,64 @@ interface StoredDemoState {
   decisions: DemoDecision[];
 }
 
-interface GuidedScenario {
-  row: TriageDecisionRow;
-  shortLabel: string;
-  title: string;
-  body: string;
-  prompt: string;
-}
-
 function requireDemoRow(rowId: string): TriageDecisionRow {
   const row = DEMO_ROW_BY_ID.get(rowId);
   if (!row) throw new Error(`Missing inbox simulator fixture: ${rowId}`);
   return row;
 }
 
-const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
+/**
+ * Every batch the demo fixtures form, resolved once at module load —
+ * `DEMO_ROWS` is a constant array, so this is the same run
+ * `findDomainBatches` would return on every render, computed once.
+ */
+const DEMO_DOMAIN_BATCHES: readonly DomainBatch[] = findDomainBatches(DEMO_ROWS);
+
+function requireDemoBatch(domain: string): DomainBatch {
+  const batch = DEMO_DOMAIN_BATCHES.find((candidate) => candidate.domain === domain);
+  if (!batch) throw new Error(`Missing inbox simulator batch: ${domain}`);
+  return batch;
+}
+
+interface ScenarioBase {
+  shortLabel: string;
+  title: string;
+  body: string;
+  prompt: string;
+}
+/** One sender, one decision — the original demo shape. */
+interface RowScenario extends ScenarioBase {
+  kind: 'row';
+  row: TriageDecisionRow;
+}
+/** A whole domain decided at once — proves the scale claim. */
+interface BatchScenario extends ScenarioBase {
+  kind: 'batch';
+  domain: string;
+}
+/** No row at all: an Autopilot rule preview. */
+interface RuleScenario extends ScenarioBase {
+  kind: 'rule';
+}
+export type GuidedScenario = RowScenario | BatchScenario | RuleScenario;
+
+/** The Amazon batch's own facts, derived rather than retyped — a fixture
+ *  edit (another sender, a changed verdict) keeps this copy honest. */
+const amazonBatch = requireDemoBatch('amazon.com');
+const amazonMessageTotal = amazonBatch.eligibleRows.reduce((sum, row) => sum + row.totalAllTime, 0);
+const amazonVerdictCount = new Set(amazonBatch.eligibleRows.map((row) => row.verdict)).size;
+
+export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
   {
-    row: requireDemoRow('t-groupon'),
-    shortLabel: 'Reversible',
-    title: 'Clear the inbox without losing the email.',
-    body: "Archive moves this sender's existing inbox email to All Mail. It stays searchable and can be undone from Activity.",
-    prompt: 'Try Archive — the highlighted decision.',
+    kind: 'batch',
+    domain: amazonBatch.domain,
+    shortLabel: 'Scale',
+    title: 'One decision covers thousands of messages.',
+    body: `This inbox has ${amazonBatch.rows.length} senders from ${amazonBatch.domain}, holding ${amazonMessageTotal.toLocaleString('en-US')} messages between them. The engine does not even agree with itself — ${amazonVerdictCount} different recommendations across the group — and one decision below covers all of it.`,
+    prompt: 'Try Archive all — it covers every eligible sender at once.',
   },
   {
+    kind: 'row',
     row: requireDemoRow('t-linkedin'),
     shortLabel: 'One-way',
     title: 'Pause before a one-way request.',
@@ -88,17 +125,70 @@ const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     prompt: 'Try Unsubscribe — then inspect the warning.',
   },
   {
-    row: requireDemoRow('t-priya'),
-    shortLabel: 'Protected',
-    title: 'See why relationships stay protected.',
-    body: 'Replies keep this sender out of bulk and automatic cleanup. Keep records your decision without moving any email.',
-    prompt: 'Try Keep — no preview is needed because no email moves.',
+    kind: 'rule',
+    shortLabel: 'Make it stick',
+    title: 'A one-time decision does not repeat itself.',
+    body: MANUAL_ACTION_SCOPE_CLAIM,
+    prompt: 'See the Autopilot rule this decision would create.',
+  },
+  {
+    kind: 'row',
+    row: requireDemoRow('t-groupon'),
+    shortLabel: 'Free the space',
+    title: 'Archive and Unsubscribe never remove a message.',
+    body: 'Everything archived or unsubscribed so far is still in this account — just out of the inbox. Delete is the one action that actually removes mail, and it still goes through Gmail Trash first.',
+    prompt: 'Try Delete — the one action that actually clears space.',
   },
 ] as const;
 
-const GUIDED_ROW_IDS: ReadonlySet<string> = new Set(
-  GUIDED_SCENARIOS.map((scenario) => scenario.row.id),
-);
+/** The scenario's own row ids — for a batch, every ELIGIBLE member (a
+ *  batch decision is recorded as one `DemoDecision` per eligible row, so
+ *  these are exactly the ids `chooseBatchAction`'s confirm produces). */
+function guidedScenarioRowIds(scenario: GuidedScenario): readonly string[] {
+  switch (scenario.kind) {
+    case 'row':
+      return [scenario.row.id];
+    case 'batch':
+      return requireDemoBatch(scenario.domain).eligibleRows.map((row) => row.id);
+    case 'rule':
+      return [];
+  }
+}
+
+const GUIDED_ROW_IDS: ReadonlySet<string> = new Set(GUIDED_SCENARIOS.flatMap(guidedScenarioRowIds));
+
+/** A stable React key across scenario kinds — a batch has no `row.id`. */
+function scenarioKey(scenario: GuidedScenario): string {
+  switch (scenario.kind) {
+    case 'row':
+      return scenario.row.id;
+    case 'batch':
+      return `batch:${scenario.domain}`;
+    case 'rule':
+      return 'rule';
+  }
+}
+
+/**
+ * Whether this guided step's decision has been recorded. A batch is
+ * complete only once every ELIGIBLE member has its own decision — the
+ * same predicate the batch confirm itself fans out to.
+ *
+ * The rule step always reads incomplete: nothing can record one yet
+ * (Plan 4 Task 4 wires `ActivateRuleModal`'s confirm). That is honest
+ * for this branch's current scope, not a stub — no interaction claims
+ * to finish it.
+ */
+function isScenarioComplete(scenario: GuidedScenario, decidedIds: ReadonlySet<string>): boolean {
+  switch (scenario.kind) {
+    case 'row':
+      return decidedIds.has(scenario.row.id);
+    case 'batch':
+      return requireDemoBatch(scenario.domain).eligibleRows.every((row) => decidedIds.has(row.id));
+    case 'rule':
+      return false;
+  }
+}
 
 function syntheticInboxCount(row: TriageDecisionRow): number {
   if (row.last90dMessages === 0) return Math.min(row.totalAllTime, 6);
@@ -210,17 +300,21 @@ function parseLegacyState(stored: string): StoredDemoState | null {
 
 function hasCompletedGuide(decisions: readonly DemoDecision[]): boolean {
   const decidedIds = new Set(decisions.map((decision) => decision.rowId));
-  return GUIDED_SCENARIOS.every((scenario) => decidedIds.has(scenario.row.id));
+  return GUIDED_SCENARIOS.every((scenario) => isScenarioComplete(scenario, decidedIds));
 }
 
+/** The row to auto-expand next, or `null` when the current step is not a
+ *  single row (a batch card and the rule preview manage their own focus). */
 function firstUndecidedRow(
   mode: DemoMode,
   decisions: readonly DemoDecision[],
 ): TriageDecisionRow | null {
   const decidedIds = new Set(decisions.map((decision) => decision.rowId));
-  const candidates =
-    mode === 'guided' ? GUIDED_SCENARIOS.map((scenario) => scenario.row) : DEMO_ROWS;
-  return candidates.find((row) => !decidedIds.has(row.id)) ?? null;
+  if (mode === 'explore') {
+    return DEMO_ROWS.find((row) => !decidedIds.has(row.id)) ?? null;
+  }
+  const current = GUIDED_SCENARIOS.find((scenario) => !isScenarioComplete(scenario, decidedIds));
+  return current?.kind === 'row' ? current.row : null;
 }
 
 function decisionSummary(decision: DemoDecision): string {
@@ -268,7 +362,9 @@ function capabilitiesAddedBy(tier: TierId, previous: TierId): readonly string[] 
 export function InboxSimulatorScreen() {
   const [decisions, setDecisions] = useState<DemoDecision[]>([]);
   const [mode, setMode] = useState<DemoMode>('guided');
-  const [expandedId, setExpandedId] = useState<string | null>(GUIDED_SCENARIOS[0]?.row.id ?? null);
+  const [expandedId, setExpandedId] = useState<string | null>(
+    GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null,
+  );
   const [pending, setPending] = useState<PendingDecision | null>(null);
   const [hydrated, setHydrated] = useState(false);
   const guidedCompletionTracked = useRef(false);
@@ -311,13 +407,22 @@ export function InboxSimulatorScreen() {
     [decisions],
   );
   const currentGuideIndex = GUIDED_SCENARIOS.findIndex(
-    (scenario) => !decidedIds.has(scenario.row.id),
+    (scenario) => !isScenarioComplete(scenario, decidedIds),
   );
   const currentScenario =
     currentGuideIndex === -1 ? null : (GUIDED_SCENARIOS[currentGuideIndex] ?? null);
+  // How many guided steps are done, counting only a consecutive run from
+  // the start — the guide can only ever be walked in order, so this and
+  // "count every individually-complete scenario" agree on every state
+  // this UI can reach. They diverge only for a hand-crafted localStorage
+  // payload that marks a LATER step done while an earlier one is not;
+  // treating that as "0 done, currently on step 1" (not "1 of 4") is the
+  // reading that matches what the screen actually shows.
+  const completedGuideCount =
+    currentGuideIndex === -1 ? GUIDED_SCENARIOS.length : currentGuideIndex;
   const rows =
     mode === 'guided'
-      ? currentScenario
+      ? currentScenario?.kind === 'row'
         ? [currentScenario.row]
         : []
       : DEMO_ROWS.filter((row) => !decidedIds.has(row.id));
@@ -400,7 +505,7 @@ export function InboxSimulatorScreen() {
     setDecisions([]);
     setMode('guided');
     setPending(null);
-    setExpandedId(GUIDED_SCENARIOS[0]?.row.id ?? null);
+    setExpandedId(GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -418,9 +523,9 @@ export function InboxSimulatorScreen() {
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
         <Eyebrow tone="primary">Interactive demo · No sign-in</Eyebrow>
-        <h1>Make three inbox decisions before you connect Gmail.</h1>
+        <h1>Make four inbox decisions before you connect Gmail.</h1>
         <p>
-          Follow three made-up examples, then explore freely. Nothing is uploaded or touches Gmail,
+          Follow four made-up examples, then explore freely. Nothing is uploaded or touches Gmail,
           and the sample suggestions are not an analysis of your mail.
         </p>
         <div className="dm-simulator-trust">
@@ -453,7 +558,7 @@ export function InboxSimulatorScreen() {
               <span>{mode === 'guided' ? 'Guided sender review' : 'Explore sample Triage'}</span>
               <strong>
                 {mode === 'guided'
-                  ? `${guidedDecisions.length} of ${GUIDED_SCENARIOS.length} decisions complete`
+                  ? `${completedGuideCount} of ${GUIDED_SCENARIOS.length} decisions complete`
                   : `${rows.length} decision${rows.length === 1 ? '' : 's'} remaining`}
               </strong>
             </div>
@@ -597,11 +702,11 @@ function GuidedScenarioPanel({
       </div>
       <ol className="dm-simulator-guide-progress" aria-label="Guided demo progress">
         {GUIDED_SCENARIOS.map((item, index) => {
-          const completed = decidedIds.has(item.row.id);
+          const completed = isScenarioComplete(item, decidedIds);
           const current = index === currentIndex;
           return (
             <li
-              key={item.row.id}
+              key={scenarioKey(item)}
               data-state={completed ? 'complete' : current ? 'current' : 'upcoming'}
               aria-current={current ? 'step' : undefined}
             >
