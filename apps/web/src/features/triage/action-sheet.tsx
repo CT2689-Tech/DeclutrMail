@@ -2,9 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { ActionPreview, type PreviewCount } from './action-preview';
+import {
+  ActionPreviewDetailBlock,
+  actionMovesMail,
+  type ActionPreviewDetail,
+} from './action-preview-detail';
 import type { TriageDecisionRow } from './data';
 import { ProtectedActionNotice } from './protected-notice';
 import type { SheetableVerb } from './store';
@@ -47,6 +52,7 @@ export function ActionSheet({
   onCancel,
   onConfirm,
   onRetryPreview,
+  detail,
 }: {
   open: boolean;
   /** Sheetable verbs only — Keep is never previewed. */
@@ -60,6 +66,8 @@ export function ActionSheet({
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
   onRetryPreview?: (() => void) | undefined;
+  /** Verification detail for the D226 preview (parity with senders). */
+  detail?: ActionPreviewDetail | undefined;
 }) {
   // Unsubscribe defaults to leaving the backlog alone. It is a separate
   // Gmail mutation and a second cleanup unit on Free, so it must be an
@@ -225,6 +233,12 @@ export function ActionSheet({
             wakeAt={selectedWakeAt}
             mode="modal"
             mailboxEmail={mailboxEmail}
+            quotaRemaining={detail?.quotaRemaining}
+            detailSlot={
+              detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? (
+                <ActionPreviewDetailBlock detail={detail} />
+              ) : undefined
+            }
           />
 
           <ContextualHelp question="Why do I review this before confirming?">

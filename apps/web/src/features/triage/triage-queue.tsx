@@ -3,6 +3,11 @@
 import { tokens } from '@declutrmail/shared';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { PreviewCount } from './action-preview';
+import {
+  ActionPreviewDetailBlock,
+  actionMovesMail,
+  type ActionPreviewDetail,
+} from './action-preview-detail';
 import type { TriageDecisionRow } from './data';
 import { planQueueItems, type DomainBatch } from './domain-batch';
 import { DomainBatchCard, type BatchVerb } from './domain-batch-card';
@@ -41,6 +46,7 @@ export function TriageQueue({
   onAction,
   busyRowIds = NO_BUSY_ROWS,
   previewInboxCount = 'loading',
+  previewDetail,
   allowBatching = true,
   offerUnprotect = false,
   onBatchVerb,
@@ -59,6 +65,8 @@ export function TriageQueue({
   busyRowIds?: ReadonlySet<string>;
   /** Live inbox count for the inline preview's impact figure (D226). */
   previewInboxCount?: PreviewCount;
+  /** D226 verification detail, shared with the sheet path. */
+  previewDetail?: ActionPreviewDetail | undefined;
   /** Disable multi-sender shortcuts for finite guided sessions. */
   allowBatching?: boolean;
   /** Show a direct Unprotect control on Protected rows (D245 review). */
@@ -152,6 +160,14 @@ export function TriageQueue({
                   archiveHistoric: false,
                   inboxCount: previewInboxCount,
                   wakeAt: pendingAction.wakeAt,
+                  quotaRemaining: previewDetail?.quotaRemaining,
+                  // Built here rather than inside `TriageRow`: the public
+                  // inbox simulator imports that module, so an import of
+                  // the detail block there lands in its route chunk.
+                  detailSlot:
+                    previewDetail !== undefined && actionMovesMail(pendingAction.verb, false) ? (
+                      <ActionPreviewDetailBlock detail={previewDetail} />
+                    ) : undefined,
                 }
               : null;
           return (

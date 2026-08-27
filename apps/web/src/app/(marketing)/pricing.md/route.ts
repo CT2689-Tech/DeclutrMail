@@ -13,7 +13,8 @@
  * `llms.txt` and the `text/markdown` alternate on `/pricing`.
  */
 
-import { UNIFORM_UNDO_WINDOW_DAYS, type PricePoint } from '@declutrmail/shared/entitlements';
+import { type PricePoint } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
   CAPABILITY_LABELS,

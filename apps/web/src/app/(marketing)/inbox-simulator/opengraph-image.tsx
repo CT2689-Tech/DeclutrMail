@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { ogMarkDataUri } from '@/features/marketing/og/brand-mark';
 import { ogFonts } from '@/features/marketing/og/fonts';
 

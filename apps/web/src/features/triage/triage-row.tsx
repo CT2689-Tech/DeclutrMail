@@ -186,6 +186,16 @@ export function TriageRow({
   inlinePreview?: {
     verb: ActionVerb;
     archiveHistoric: boolean;
+    /**
+     * Rendered D226 verification detail, built by `triage-queue.tsx`.
+     *
+     * A NODE, and built one level up, because the public inbox simulator
+     * imports THIS module: importing the detail block here put its code
+     * in the simulator's route chunk and pushed it over budget. Same
+     * reason `inlinePreviewAccountContext` is a node rather than a flag.
+     */
+    detailSlot?: ReactNode | undefined;
+    quotaRemaining?: number | null | undefined;
     inboxCount: PreviewCount;
     wakeAt?: string | null;
   } | null;
@@ -573,6 +583,8 @@ export function TriageRow({
             wakeAt={inlinePreview.wakeAt ?? null}
             mode="inline"
             accountContext={inlinePreviewAccountContext}
+            quotaRemaining={inlinePreview.quotaRemaining}
+            detailSlot={inlinePreview.detailSlot}
           />
           {/* Protected acknowledgement (D245/D42) — the inline half of
                   the same statement the sheet makes. D226 lets the sheet

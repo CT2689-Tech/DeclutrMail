@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 

@@ -25,6 +25,10 @@ import { captureFeatureException } from '@/lib/sentry';
 // (same precedent as `sendersKeys` above).
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { mailLocationCopy } from '@declutrmail/shared/actions';
+import { GmailOpenLinkService } from '@/lib/gmail/open-link';
+import { shortDate } from '@/features/senders/data';
+import type { ActionPreviewDetail } from './action-preview-detail';
 // D34 — the settings feature owns the persisted skip-sheet preference
 // (users.preferences.actionSheetPrefs); triage hydrates from it and
 // writes through when the sheet's "remember this" toggle confirms.
@@ -424,6 +428,62 @@ export function TriageScreen({
     : compositePreview.isFetching || compositePreview.data == null
       ? 'loading'
       : compositePreview.data.counts.all;
+  /**
+   * Verification detail for the D226 preview — parity with the senders
+   * confirm modal (founder review 2026-08-27).
+   *
+   * Every value here comes from `compositePreview`, which this screen
+   * ALREADY fetches and then discarded everything but `counts.all` from.
+   * So the richer preview costs no extra request; the data was on the
+   * client and simply never rendered.
+   */
+  const previewDetail: ActionPreviewDetail | undefined = (() => {
+    const data = compositePreview.data;
+    if (data == null || pendingRow == null) return undefined;
+    // Triage acts on every inbox message from the sender, so the Gmail
+    // search mirrors that: no window, inbox only. Approximate by
+    // construction — see `buildActionScopeSearchLink`.
+    const gmailScopeSearch = activeEmail
+      ? GmailOpenLinkService.buildActionScopeSearchLink({
+          mailboxEmail: activeEmail,
+          from: pendingRow.senderEmail,
+          olderThanDays: null,
+          inboxOnly: true,
+        })
+      : null;
+    const sampleRows = (data.recentMessages?.all ?? [])
+      .slice(0, 5)
+      // Never advertise more rows than the count above it — the senders
+      // panel once read "5 of 3" for exactly this reason.
+      .slice(0, Math.min(5, data.counts.all))
+      .map((message) => ({
+        subject: message.subject,
+        // Formatted HERE: the presentation component stays free of date
+        // math so the public inbox simulator can keep importing it
+        // without a local-calendar render.
+        date: message.date === null ? null : shortDate(message.date),
+      }));
+    // Rendered HERE, not in the presentation component, so that module
+    // never imports `inbox-scope` and drags it into the public inbox
+    // simulator's chunk. Omitted entirely unless both reaches resolved —
+    // half a split is a number with an implied denominator, not a location.
+    const mailLocationLine = mailLocationCopy({
+      inboxNow: data.counts.all,
+      allMailNow: data.allMail?.counts.all,
+      // Triage rows do not carry `senders.total_received`; null omits the
+      // third clause rather than guessing a number.
+      receivedTotal: null,
+    });
+    return {
+      ...(mailLocationLine === null ? {} : { mailLocationLine }),
+      ...(sampleRows.length > 0
+        ? { matchSample: { rows: sampleRows, total: data.counts.all } }
+        : {}),
+      ...(gmailScopeSearch === null ? {} : { verifyInGmailUrl: gmailScopeSearch }),
+      quotaRemaining: auth?.me.cleanupRemaining ?? null,
+    };
+  })();
+
   const trackedPreviews = useRef(new Set<string>());
   /** Same-tick dispatch latch — see dispatchAction. */
   const dispatchLatchRef = useRef(false);
@@ -1319,6 +1379,7 @@ export function TriageScreen({
           onAction={onRowActionWithInlineConfirm}
           busyRowIds={busyRowIds}
           previewInboxCount={previewInboxCount}
+          previewDetail={previewDetail}
           allowBatching={journey === 'daily'}
           offerUnprotect={offerUnprotect}
           onBatchVerb={onBatchVerb}
@@ -1337,6 +1398,7 @@ export function TriageScreen({
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
         onRetryPreview={() => void compositePreview.refetch()}
+        detail={previewDetail}
       />
 
       {/* Batch sheet — the D226 preview for a domain-batch decision. */}

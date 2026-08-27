@@ -8,7 +8,7 @@
 // plain sibling file has no such restriction, and it lets the D245
 // regression guard read the resolved value without rendering the layout.
 
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 /**
  * D245: same derive-or-hedge shape as every other undo-window site.

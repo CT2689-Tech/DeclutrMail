@@ -1,5 +1,5 @@
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { LearnArticle } from './types';
 
 export const ANSWER_SLUGS = [
