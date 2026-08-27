@@ -9,6 +9,7 @@ import {
   Button,
   Eyebrow,
   TIER_MANIFEST,
+  type Capability,
   tokens,
   type TierId,
 } from '@declutrmail/shared';
@@ -17,7 +18,7 @@ import { CASA_VERIFICATION_APPROVED_ON, DELETE_RECOVERY_CLAIM } from '@declutrma
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
-import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
+import { CAPABILITY_LABELS, PRICING_TIER_ORDER } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import { findDomainBatches, type DomainBatch } from '@/features/triage/domain-batch';
 import { DomainBatchCard, type BatchVerb } from '@/features/triage/domain-batch-card';
@@ -400,6 +401,22 @@ function isActivityUndoable(decision: DemoDecision): boolean {
  * capability without a label is a compile error, and it is deduplicated
  * because `autopilot` and `autopilot-active` deliberately share one label.
  */
+/**
+ * The name of the cheapest tier that grants `capability`, read from the
+ * manifest rather than written down.
+ *
+ * Step 3 shows an Autopilot rule, and Autopilot is a paid capability — a
+ * visitor who is not told that meets the paywall later, having been sold
+ * on it here. Naming the tier by hand is how the plan strip came to omit
+ * Screener: Autopilot itself moved Pro -> Plus on 2026-08-23 and every
+ * hand-written mention had to be found. Derived, this follows the next
+ * move on its own.
+ */
+function tierGranting(capability: Capability): string {
+  const tier = PRICING_TIER_ORDER.find((id) => TIER_MANIFEST[id].capabilities.includes(capability));
+  return tier ? TIER_MANIFEST[tier].name : '';
+}
+
 function capabilitiesAddedBy(tier: TierId, previous: TierId): readonly string[] {
   const had = new Set(TIER_MANIFEST[previous].capabilities);
   return [
@@ -1028,7 +1045,7 @@ function RuleStepCard({ onPreview }: { onPreview: () => void }) {
         gap: 10,
       }}
     >
-      <Eyebrow tone="primary">Autopilot · Plus</Eyebrow>
+      <Eyebrow tone="primary">Autopilot · {tierGranting('autopilot')}</Eyebrow>
       <p style={{ margin: 0, fontSize: 13, color: color.fgSoft, lineHeight: 1.5 }}>
         Turn this into a standing rule: the senders you just archived, archived automatically as
         more mail like them arrives — after you preview exactly what it would do right now.

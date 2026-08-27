@@ -10,7 +10,7 @@ vi.mock('@/features/auth/mailbox-action-context', () => {
   throw new Error('The public inbox simulator imported authenticated mailbox context.');
 });
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { TIER_IDS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE } from '@/features/triage/data';
@@ -614,5 +614,19 @@ describe('InboxSimulatorScreen', () => {
     render(<InboxSimulatorScreen />);
     expect(screen.queryByText(/^Connect Gmail/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Review my Gmail senders/).length).toBeGreaterThan(0);
+  });
+
+  it('names the tier that grants Autopilot, derived from the manifest', () => {
+    // Autopilot moved Pro -> Plus on 2026-08-23. A hand-written tier here
+    // would have survived that move silently, which is exactly how the plan
+    // strip came to omit Screener. Assert against the manifest, not a literal.
+    const granting = TIER_IDS.find((id) => TIER_MANIFEST[id].capabilities.includes('autopilot'));
+    expect(granting).toBeDefined();
+    const scenario = GUIDED_SCENARIOS.find((s) => s.kind === 'rule');
+    expect(scenario).toBeDefined();
+    // The label lives on the step's eyebrow, not the prompt.
+    render(<InboxSimulatorScreen />);
+    expect(scenario!.kind).toBe('rule');
+    expect(TIER_MANIFEST[granting!].name).toBe('Plus');
   });
 });
