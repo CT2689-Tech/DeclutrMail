@@ -2077,11 +2077,24 @@ differ from this preview") and the return happens weeks later, after an
 Activity undo or any other action can change what is left. The count was
 the one part of the sentence that could go wrong; the timing was the part
 worth saying.
+**Second pass, same sentence:** the replacement — "They all return
+together, not spread out." — was also wrong, and wrong in a way that
+looked like the fix. Having removed an unknowable number I asserted an
+unknowable behaviour instead. `batchModify` chunks at 1,000 ids into
+sequential requests and the local mirror updates only after the whole
+call, so a wake above 1,000 messages that fails on its second chunk
+leaves the first already restored and the rest arriving after a backoff.
+Spread out, at exactly the volume the sentence exists for. I had reasoned
+about the wake pipeline instead of reading it — twice in one session,
+after a day whose other two defects were both "asserted without
+checking the executor".
 **Rule (provisional):** a figure is only as true as the moment it
-describes. Before putting a number in a sentence, check what tense the
-sentence is in — if it describes a future event, it needs the same hedge
-the present-tense one carries, or the number should not be there. Say the
-part that does not drift.
+describes, and a behaviour is only as true as the code path that
+delivers it. Before a preview sentence claims anything about the future,
+name the component that guarantees it and go read that component. Here
+the schedule is guaranteed (`sender_policies.snoozed_until` is one
+timestamp per sender) and the delivery is not, so the copy claims the
+schedule: "All of them share that one return time."
 **Distillation trigger:** promote to CLAUDE.md §2 if a third preview
 number is found asserting something the surface cannot know — it would
 join null→0, page-count-as-total and unknown→"Ready" in the UI-truth

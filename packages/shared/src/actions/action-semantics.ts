@@ -408,16 +408,32 @@ export function actionHasRecovery(verb: ActionVerb): boolean {
  * picked and Activity can reverse it, so friction here would tax the one
  * mail-moving verb that undoes itself.
  *
- * The sentence carries NO count, and that is the whole design. The first
- * draft read "All 1,718 arrive back together." — a definite quantity,
- * asserted at confirm time, about an event weeks away. The preview one
- * line above already disclaims that very number ("Rechecked when it runs,
- * so the final count can differ from this preview"), and between the move
- * and the wake date an Activity undo or any other action changes what is
- * left to come back. So the figure was the one falsifiable part of a
- * sentence whose true content is the timing. The count stays where it is
- * honest — in the headline, under its own disclaimer — and this line says
- * only what does not drift.
+ * The sentence says only what the system actually guarantees, which took
+ * two corrections to arrive at.
+ *
+ * It carries NO count. The first draft read "All 1,718 arrive back
+ * together." — a definite quantity, asserted at confirm time, about an
+ * event weeks away. The preview one line above already disclaims that
+ * very number ("Rechecked when it runs, so the final count can differ
+ * from this preview"), and between the move and the wake date an Activity
+ * undo or any other action changes what is left to come back.
+ *
+ * It also makes NO claim that the mail arrives all at once. The second
+ * draft read "They all return together, not spread out.", which the wake
+ * pipeline cannot promise: `GmailClientService.batchModify` chunks at
+ * 1,000 ids into SEQUENTIAL requests through the rate limiter, and
+ * `SnoozeWakeWorker.wakeSender` updates the local mirror only after the
+ * whole call returns. So on a wake above 1,000 messages — precisely the
+ * size this notice exists for — a failure on the second chunk leaves the
+ * first already back in the Inbox and the remainder landing after a
+ * BullMQ backoff. Spread out, exactly.
+ *
+ * What IS guaranteed is the SCHEDULE, not the delivery:
+ * `sender_policies.snoozed_until` is one timestamp per sender, so every
+ * message carrying the Later label shares one return time. That is the
+ * fact the reader needs — the pile has a single date, it does not
+ * trickle back over days — and it stays true however many requests the
+ * restore takes.
  */
 export const LATER_BULK_RETURN_NOTICE_THRESHOLD = 200;
 
@@ -665,7 +681,7 @@ function presentAction(input: PresentActionInput): PresentedAction {
     schedule.kind === 'scheduled' &&
     input.liveCount !== null &&
     input.liveCount >= LATER_BULK_RETURN_NOTICE_THRESHOLD
-      ? 'They all return together, not spread out.'
+      ? 'All of them share that one return time.'
       : null;
   const effectFacts = [
     currentMail.summary,
