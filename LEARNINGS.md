@@ -2010,3 +2010,57 @@ trusting a green run.
 evidence") if a third vacuous copy assertion is found — this is the
 second, after the windowed-count test that seeded every row with the same
 timestamp.
+
+## 2026-08-27 — "Every marketing page throws a hydration error" was the dev cache, and the gate that should have said so covered zero public routes
+
+**Context:** A report that every `(marketing)` route threw "Hydration
+failed because the server rendered text didn't match the client",
+confirmed on `/compare` and `/pricing`, believed to pre-date the open
+comparison-matrix branch and therefore to live in the shared marketing
+shell.
+
+**Finding:** There is no such mismatch. Nine public routes across every
+public renderer produce ZERO console errors — in `next dev` AND in a
+`next build && next start` production build, under `de-DE`/`en-GB`/
+`en-IN` locales, `Asia/Kolkata`/`Europe/Berlin` zones, dark scheme, and
+fresh first-visit contexts (no cookies, no localStorage). The open
+branch's diff, applied onto a healthy server, is clean too.
+
+Three things made the report look solid, and each is worth keeping:
+
+1. **The dev server under test was a different worktree.** `:3000` and
+   `:3002` are two OTHER worktrees' stacks, not the main checkout —
+   `lsof -a -p <pid> -d cwd -Fn` names the tree in one line. `:3002` (the
+   comparison-matrix worktree) was serving 500s from a corrupt `.next`:
+   `ENOENT … .next/server/pages/_document`. A skewed dev cache serves
+   server HTML from one build and client chunks from another, which
+   presents as a text mismatch on EVERY page of a shared layout — the
+   exact shape of "it must be in the shell".
+2. **`git stash` does not undo a branch.** The comparison work is
+   committed, so stashing removed only an uncommitted CSS edit and left
+   the branch's code in place. "Stashed it and still saw the bug" is
+   therefore not evidence the bug pre-dates the branch.
+3. **The preview pane's `read_console_messages` returns before hydration
+   settles.** Read immediately after `navigate` it reported "No console
+   logs" against a build carrying a DELIBERATE mismatch; a read ~3s later
+   showed it. Playwright reports the error count inline on the
+   navigation, so it does not have this window.
+
+The real gap: `hydration-smoke.spec.ts` covered fifteen AUTHENTICATED
+routes and not one `(marketing)` route, so the surface whose LCP/INP
+ranking depends on this had no hydration coverage at all — which is why
+answering a yes/no question needed a hand-built detector.
+
+**Rule (provisional):** before debugging a "reproduces everywhere" UI
+report, confirm WHICH process serves the port (`lsof -d cwd`) and that
+its `.next` is healthy; an every-page mismatch with no code path to
+explain it is a build-cache skew until proven otherwise. And prove the
+detector on an injected fault BEFORE trusting a clean read — dev reports
+the mismatch through `console.error`, production only as an uncaught
+`Minified React error #418`, so a listener on one of the two is blind in
+the other mode.
+
+**Distillation trigger:** promote to CLAUDE.md §8 if a third "green gate,
+wrong surface" coverage gap is found — this is the second after
+`a11y-public.spec.ts`, which existed for exactly the same reason (the
+authed lane covered five screens and the public surface none).
