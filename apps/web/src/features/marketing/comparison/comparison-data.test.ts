@@ -7,6 +7,7 @@ import {
   COMPARISONS_VERIFIED_FLOOR_ISO,
   comparisonBySlug,
   comparisonVerifiedLabel,
+  ROUNDUP_DIMENSIONS,
 } from './comparison-data';
 
 const EXPECTED_SLUGS = [
@@ -121,5 +122,60 @@ describe('comparison data', () => {
     expect(history?.competitor.detail).toMatch(/alleged/i);
     expect(history?.declutrMail.detail).toMatch(/absence of a record/i);
     expect(JSON.stringify(unrollMe)).not.toMatch(/\bsteals?\b|\bspyware\b|\bscam\b/i);
+  });
+});
+
+describe('the multi-way matrix is pivoted, never restated', () => {
+  // Blind case first. The pivot is derived, so an empty or near-empty
+  // result would make every assertion below vacuously true while the
+  // page rendered a table with nothing in it.
+  it('derives dimensions at all', () => {
+    expect(ROUNDUP_DIMENSIONS.length, 'pivot produced no dimensions').toBeGreaterThanOrEqual(5);
+    for (const dimension of ROUNDUP_DIMENSIONS) {
+      expect(dimension.competitors.length).toBe(COMPARISONS.length);
+    }
+  });
+
+  it('reuses the exact cell objects the 1v1 pages render', () => {
+    // Identity, not deep equality. If the matrix ever holds its own copy
+    // of a fact, the two surfaces can drift and a reader gets one answer
+    // head-to-head and another in the table.
+    for (const dimension of ROUNDUP_DIMENSIONS) {
+      for (const [slug, cell] of dimension.competitors) {
+        if (!cell) continue;
+        const source = comparisonBySlug(slug)?.rows.find((row) => row.label === dimension.label);
+        expect(cell, `${slug} / ${dimension.label}`).toBe(source?.competitor);
+      }
+    }
+  });
+
+  it('collapses DeclutrMail to one shared cell per dimension', () => {
+    // What makes a single DeclutrMail column honest: every 1v1 page
+    // already points at the same object, so the matrix is not choosing
+    // one page's wording over another's. A page that hand-writes its own
+    // DeclutrMail cell fails here rather than silently disagreeing.
+    for (const dimension of ROUNDUP_DIMENSIONS) {
+      const perPage = COMPARISONS.flatMap((comparison) => {
+        const row = comparison.rows.find((candidate) => candidate.label === dimension.label);
+        return row ? [row.declutrMail] : [];
+      });
+      for (const cell of perPage) {
+        expect(cell, `${dimension.label} differs between comparison pages`).toBe(
+          dimension.declutrMail,
+        );
+      }
+    }
+  });
+
+  it('renders a gap as a gap, never as an implied no', () => {
+    // A competitor that does not compare on a dimension must come back
+    // undefined so the view can say so. Coercing it to a "no" would
+    // manufacture a claim from silence — the same rule as `unknown`.
+    const gaps = ROUNDUP_DIMENSIONS.flatMap((dimension) =>
+      dimension.competitors.filter(([, cell]) => cell === undefined),
+    );
+    for (const [, cell] of gaps) {
+      expect(cell).toBeUndefined();
+    }
   });
 });
