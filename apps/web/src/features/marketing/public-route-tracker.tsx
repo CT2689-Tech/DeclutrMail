@@ -23,6 +23,9 @@ export function publicPageForPath(pathname: string | null): PublicPage | null {
   if (pathname === '/methodology') return 'methodology';
   if (pathname === '/compare') return 'compare';
   if (pathname.startsWith('/vs/')) return 'comparison';
+  // Round-ups sit in the comparison family: same intent, same renderer
+  // lineage, and splitting them out would make the funnel unreadable.
+  if (pathname.startsWith('/alternatives/')) return 'comparison';
   // The cluster hub belongs to its cluster's family, as `/blog` does below.
   if (pathname === '/how-to' || pathname.startsWith('/how-to/')) return 'how_to';
   if (pathname === '/answers' || pathname.startsWith('/answers/')) return 'answer';

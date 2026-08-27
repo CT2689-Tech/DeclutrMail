@@ -1150,6 +1150,91 @@ export function comparisonBySlug(slug: string): ComparisonDefinition | undefined
 }
 
 /**
+ * Tools people search for ALTERNATIVES to.
+ *
+ * Excludes `gmail` and `gmail-filters` deliberately. "Gmail
+ * alternatives" is a different search entirely — someone looking to
+ * leave Gmail as a mail provider, not to add a cleanup tool to it.
+ * Publishing that page would rank for an intent this product cannot
+ * serve, which is worse than not ranking at all.
+ */
+export const ALTERNATIVES_SLUGS = [
+  'clean-email',
+  'unroll-me',
+  'sanebox',
+  'leave-me-alone',
+  'trimbox',
+] as const satisfies readonly ComparisonSlug[];
+
+export type AlternativesSlug = (typeof ALTERNATIVES_SLUGS)[number];
+
+/** One rival on an alternatives page — the tool, and what it is for. */
+export interface AlternativeEntry {
+  readonly slug: ComparisonSlug;
+  readonly name: string;
+  readonly category: string;
+  readonly primaryUnit: string;
+  readonly providerScope: string;
+  readonly publicEntryPoint: string;
+  /** Why someone would pick THIS one, in its own comparison's words. */
+  readonly headline: string;
+  readonly points: readonly string[];
+}
+
+export interface AlternativesPage {
+  readonly slug: AlternativesSlug;
+  readonly subject: ComparisonDefinition;
+  /** Every other tool we have source-backed facts for. */
+  readonly alternatives: readonly AlternativeEntry[];
+  /** The oldest verification date across everything shown. */
+  readonly verifiedIso: string;
+}
+
+/**
+ * An "X alternatives" page, assembled from the 1v1 pages.
+ *
+ * WHAT MAKES THIS HONEST. The obvious version of this page ranks the
+ * publisher first — that is what the roundups currently winning these
+ * queries do, including one that titles itself an honest comparison and
+ * then places its own product at number one. This page does not rank at
+ * all. It lists what each alternative is FOR, using that tool's own
+ * `chooseCompetitor` copy, and keeps a "when to stay" section for the
+ * subject so the page is useful to a reader who should not switch.
+ *
+ * DeclutrMail appears as one entry among several, not as the answer.
+ *
+ * Every fact is a reference into an existing `ComparisonDefinition`, so
+ * nothing here can drift from `/vs/<slug>` and nothing new needs
+ * sourcing. `verifiedIso` is the OLDEST date among the pages shown,
+ * matching the rule `/compare` already follows: a page covering several
+ * sources is only as fresh as its weakest.
+ */
+export function alternativesFor(slug: string): AlternativesPage | undefined {
+  const subject = COMPARISONS.find((comparison) => comparison.slug === slug);
+  if (!subject || !ALTERNATIVES_SLUGS.includes(slug as AlternativesSlug)) return undefined;
+
+  const alternatives = COMPARISONS.filter((comparison) => comparison.slug !== subject.slug).map(
+    (comparison) => ({
+      slug: comparison.slug,
+      name: comparison.name,
+      category: comparison.category,
+      primaryUnit: comparison.primaryUnit,
+      providerScope: comparison.providerScope,
+      publicEntryPoint: comparison.publicEntryPoint,
+      headline: comparison.chooseCompetitor.headline,
+      points: comparison.chooseCompetitor.points,
+    }),
+  );
+
+  const verifiedIso = [subject, ...COMPARISONS].reduce(
+    (oldest, comparison) => (comparison.verifiedIso < oldest ? comparison.verifiedIso : oldest),
+    subject.verifiedIso,
+  );
+
+  return { slug: subject.slug as AlternativesSlug, subject, alternatives, verifiedIso };
+}
+
+/**
  * One dimension of the multi-way matrix on `/compare`: DeclutrMail's cell
  * once, and each competitor's cell beside it.
  */

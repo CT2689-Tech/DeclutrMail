@@ -7,6 +7,8 @@
 import type { MetadataRoute } from 'next';
 
 import {
+  ALTERNATIVES_SLUGS,
+  alternativesFor,
   COMPARISONS,
   COMPARISONS_VERIFIED_FLOOR_ISO,
 } from '@/features/marketing/comparison/comparison-data';
@@ -27,6 +29,7 @@ export const MARKETING_PATHS = [
   '/beta',
   '/compare',
   ...COMPARISONS.map((comparison) => `/vs/${comparison.slug}` as const),
+  ...ALTERNATIVES_SLUGS.map((slug) => `/alternatives/${slug}` as const),
   '/how-to',
   ...HOW_TO_SLUGS.map((slug) => `/how-to/${slug}` as const),
   '/answers',
@@ -67,6 +70,12 @@ function oldest(dates: readonly string[]): string {
  */
 const LAST_MODIFIED = new Map<string, string>([
   ...COMPARISONS.map((comparison) => [`/vs/${comparison.slug}`, comparison.verifiedIso] as const),
+  // An alternatives page shows every tool at once, so like `/compare` it
+  // is only as fresh as the oldest page it draws from — `alternativesFor`
+  // already computes that floor.
+  ...ALTERNATIVES_SLUGS.map(
+    (slug) => [`/alternatives/${slug}`, alternativesFor(slug)?.verifiedIso ?? ''] as const,
+  ).filter(([, iso]) => iso !== ''),
   ...HOW_TO_SLUGS.map((slug) => [`/how-to/${slug}`, HOW_TO_ARTICLES[slug].updatedAt] as const),
   ...ANSWER_SLUGS.map((slug) => [`/answers/${slug}`, ANSWER_ARTICLES[slug].updatedAt] as const),
   ...BLOG_SLUGS.map((slug) => [`/blog/${slug}`, BLOG_ARTICLES[slug].updatedAt] as const),

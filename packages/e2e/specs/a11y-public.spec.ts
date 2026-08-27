@@ -37,6 +37,9 @@ import { expectNoBlockingAxeViolations, expectNoViewportOverflow } from '../help
  *   inbox-sim      the only genuinely interactive public surface
  *   compare        comparison INDEX renderer
  *   vs/*           comparison DETAIL renderer (table-heavy)
+ *   alternatives/* round-up renderer — its own component, and the one
+ *                  whose card grid and definition lists nothing else
+ *                  on this list would exercise
  *   how-to/*       LearnArticle renderer, shared with /answers/*
  *   security       LegalPageLayout renderer, shared with the other 5
  *   privacy        the longest legal page — TOC + 12 sections
@@ -50,6 +53,7 @@ const PUBLIC_ROUTES = [
   '/inbox-simulator',
   '/compare',
   '/vs/unroll-me',
+  '/alternatives/clean-email',
   '/how-to/clean-gmail-by-sender',
   '/security',
   '/privacy',

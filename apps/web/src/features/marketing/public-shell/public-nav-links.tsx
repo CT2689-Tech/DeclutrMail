@@ -35,7 +35,9 @@ export function isPublicNavLinkActive(pathname: string, href: string): boolean {
     return pathname === href || pathname === '/demo';
   }
   if (href === '/compare') {
-    return pathname === href || pathname.startsWith('/vs/');
+    return (
+      pathname === href || pathname.startsWith('/vs/') || pathname.startsWith('/alternatives/')
+    );
   }
   return pathname === href;
 }
