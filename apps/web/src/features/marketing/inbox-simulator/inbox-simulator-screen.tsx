@@ -8,12 +8,14 @@ import {
   Button,
   Eyebrow,
   TIER_MANIFEST,
+  type TierId,
   useFocusTrap,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY } from '@declutrmail/shared/actions';
 
 import { ActionPreviewPresentation } from '@/features/triage/action-preview-presentation';
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
+import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
@@ -238,6 +240,29 @@ function decisionSummary(decision: DemoDecision): string {
 
 function isActivityUndoable(decision: DemoDecision): boolean {
   return decision.verb === 'Archive' || decision.verb === 'Later' || decision.verb === 'Delete';
+}
+
+/**
+ * What each paid tier ADDS over the one below it, in the manifest's own
+ * words. Hand-written before (2026-08-26): the Plus line said "Rules keep
+ * it clean for you", which named Autopilot and silently omitted Screener
+ * and Quiet hours — both Plus since the 2026-08-23 packaging patch. A
+ * plan-comparison strip that a packaging change does not reach is a strip
+ * that goes quietly wrong.
+ *
+ * `CAPABILITY_LABELS` is a total `Record<Capability, string>`, so a new
+ * capability without a label is a compile error, and it is deduplicated
+ * because `autopilot` and `autopilot-active` deliberately share one label.
+ */
+function capabilitiesAddedBy(tier: TierId, previous: TierId): readonly string[] {
+  const had = new Set(TIER_MANIFEST[previous].capabilities);
+  return [
+    ...new Set(
+      TIER_MANIFEST[tier].capabilities
+        .filter((c) => !had.has(c))
+        .map((c) => CAPABILITY_LABELS[c].split('—')[0]!.trim()),
+    ),
+  ];
 }
 
 export function InboxSimulatorScreen() {
@@ -647,6 +672,8 @@ function DemoCompletion({
   onExplore: () => void;
   onReset: () => void;
 }) {
+  const plusAdds = capabilitiesAddedBy('plus', 'free');
+  const proAdds = capabilitiesAddedBy('pro', 'plus');
   return (
     <div className="dm-simulator-complete">
       <Eyebrow tone="primary">Guided demo complete</Eyebrow>
@@ -663,11 +690,11 @@ function DemoCompletion({
         </span>
         <span>
           <strong>Plus</strong>
-          Rules keep it clean for you
+          {plusAdds.join(' · ')}
         </span>
         <span>
           <strong>Pro</strong>
-          Brief and Follow-ups
+          {proAdds.join(' · ')}
         </span>
       </div>
       <div className="dm-simulator-complete-actions">
