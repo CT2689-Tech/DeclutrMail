@@ -20,16 +20,28 @@
 
 ## The nine sites
 
-| #   | File                                                              | Current phrasing                           | Task                 |
-| --- | ----------------------------------------------------------------- | ------------------------------------------ | -------------------- |
-| 1-4 | `packages/shared/src/actions/action-semantics.ts:115,142,192,214` | "during your plan's Undo window"           | 1 (one function)     |
-| 5   | `packages/shared/src/shell/app-shell.tsx:20`                      | "use your plan's Activity Undo window"     | 2                    |
-| 6   | `packages/shared/src/contracts/gmail-data-inventory.ts:20`        | "Until the plan-based Undo window expires" | 2 — **see the flag** |
-| 7   | `apps/web/src/features/triage/batch-action-sheet.tsx:260`         | "during your plan's Activity window"       | 3                    |
-| 8   | `apps/web/src/features/triage/action-sheet.tsx:389`               | "uses your plan's Activity undo window"    | 3                    |
-| 9   | `apps/web/src/features/triage/action-sheet.tsx:392`               | "Activity Undo uses your plan's window"    | 3                    |
+| #   | File                                                                      | Current phrasing                                         | Task                        |
+| --- | ------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------- |
+| 1-4 | `packages/shared/src/actions/action-semantics.ts:115,142,192,214`         | "during your plan's Undo window"                         | 1 (one function)            |
+| 5   | `packages/shared/src/shell/app-shell.tsx:20`                              | "use your plan's Activity Undo window"                   | 2                           |
+| 6   | `packages/shared/src/contracts/gmail-data-inventory.ts:20`                | "Until the plan-based Undo window expires"               | 2 — **see the flag**        |
+| 7   | `apps/web/src/features/triage/batch-action-sheet.tsx:260`                 | "during your plan's Activity window"                     | 3                           |
+| 8   | `apps/web/src/features/triage/action-sheet.tsx:389`                       | "uses your plan's Activity undo window"                  | 3                           |
+| 9   | `apps/web/src/features/triage/action-sheet.tsx:392`                       | "Activity Undo uses your plan's window"                  | 3                           |
+| 10  | `apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx:209` | "Delete also uses your plan&apos;s Activity Undo window" | 3 — **found during Task 2** |
 
 Already correct, and the precedent to follow: `apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx:206` renders `{MIN_UNDO_WINDOW_DAYS}`.
+
+> **Site 10 was missed by this plan's own inventory sweep, and the reason matters.**
+> The sweep searched for `your plan's` with a literal apostrophe. In JSX that apostrophe
+> is escaped — the source reads `your plan&apos;s Activity Undo window` — so a grep for
+> the unescaped form returned a false clean. Any sweep over JSX copy must match the
+> escaped spelling too. Task 3 Step 5's pattern is corrected accordingly; the original
+> would have certified this plan complete with a stale site still shipping.
+>
+> The surrounding block at `:200-207` is already correct — it renders `{undoDays}` when
+> the window is known and `{MIN_UNDO_WINDOW_DAYS}` otherwise. Only the Delete sentence
+> hedges, so this is a one-sentence fix inside an otherwise-good block.
 
 > **FOUNDER FLAG — site 6.** `gmail-data-inventory.ts` is the D245 Gmail-data lifecycle registry and generates the public storage list. CLAUDE.md §9 lists "privacy / data retention behavior (retention windows)" as a stop condition. This change is **copy-only**: the retention window is 30 days before and after, and the edit makes the registry _more_ precise. No behavior, schema, or retention period changes. Raised here rather than at merge. If the founder would rather this one site move to its own change, drop it from Task 2 and leave it stale — the other eight still stand on their own.
 
@@ -294,6 +306,8 @@ git commit -m "fix(copy): derive the undo window in shell and retention copy (D2
 
 - Modify: `apps/web/src/features/triage/batch-action-sheet.tsx:260`
 - Modify: `apps/web/src/features/triage/action-sheet.tsx:389,392`
+- Modify: `apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx:209` (site 10)
+- Modify: `apps/web/src/features/settings/privacy-data/privacy-data-screen.test.tsx:111` — asserts the site-10 hedge verbatim, so it fails until updated. Keep the replacement derived from `UNIFORM_UNDO_WINDOW_DAYS`; leave line 109's separate `MIN_UNDO_WINDOW_DAYS` assertion alone.
 
 **Interfaces:**
 
@@ -352,8 +366,12 @@ Expected: PASS.
 - [ ] **Step 5: Sweep for anything missed**
 
 ```bash
-grep -rn "your plan's\|plan-based Undo\|plan Activity Undo\|plan's Activity" packages/shared/src apps/web/src | grep -v "\.test\." | grep -vi "pricing\|tier-card\|compare-table"
+grep -rnE "your plan(&apos;|&#39;|')s|plan-based Undo|plan Activity Undo|plan(&apos;|&#39;|')s Activity" packages/shared/src apps/web/src | grep -v "\.test\." | grep -vi "pricing\|tier-card\|compare-table"
 ```
+
+The `&apos;` / `&#39;` alternatives are not decoration. The original pattern matched only
+a literal apostrophe and so returned a false clean while site 10 shipped the hedge in
+escaped form. A sweep that cannot see the escaped spelling certifies nothing.
 
 Expected: only the divergent-ladder fallback branches you deliberately kept. Name each remaining hit in your report and say why it stays. A hit you cannot justify is a site you missed.
 
