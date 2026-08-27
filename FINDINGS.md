@@ -43,6 +43,155 @@ the point.
 
 ## Inbox (untriaged)
 
+- **2026-08-26** · `SendersCounterReconciliationWorker` — **a 24h cron actually fires on every deploy (4.1×/day), and its slowest pass is inside 1.75× of a hard timeout whose failure is silent.**
+  Found while chasing a slow-query trend that turned out not to exist (see REFUTED
+  below). Two facts survived the refutation. **(1) The cadence is not the designed
+  one.** `SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS = 24h`
+  (`packages/workers/src/senders-counter-reconciliation.queue.ts:31`), but
+  `apps/api/src/worker.ts:1339` enqueues a tick at worker **boot** with a fresh
+  `scheduledAtMinute()`, and `deploy-cloud-run.yml` redeploys on every push to main.
+  The D225 `(worker, minute)` idempotency key therefore never collapses these — each
+  deploy is a different minute. Measured: **323 calls since `stats_since=2026-06-09`
+  = 4.1/day against a designed 1/day**, and 13 calls in one 34h window that contained
+  7 merges. Harmless today; it means any "nightly" cron in this codebase silently
+  becomes per-deploy, and a deploy also SIGTERMs the old worker mid-pass while the new
+  one starts another, so the overlapping passes are the ones most likely to block each
+  other. **(2) The headroom on the timeout is thinner than it looks.**
+  `cronPolicy.timeoutMs = 60_000` with `maxAttempts: 3`
+  (`packages/workers/src/worker-policies.ts:83-89`). Steady-state cost measured live
+  against prod is **6.0-7.1 s**, but `pg_stat_statements` records
+  `max_exec_time = 34,237 ms` and `stddev = 5,829 ms` — so the worst observed pass is
+  **1.75×** off the ceiling, not 10×. Nothing is timing out today. What makes it worth
+  filing is the consequence if it ever does: since #625 moved `reconcileSenderTimeseries`
+  off the push path onto this sweep, three failed attempts leave `wrote_to_count`
+  (auto-Protect, D245) and `read_count` (auto-Unsubscribe) **stale with no user-visible
+  signal and no alert** — the BLIND-GUARD shape again. The underlying ~6-7 s for a
+  fully-cached 179k-row seq scan is Supabase Micro shared-vCPU starvation (~250× a
+  cached scan), which is a flat property of the instance, not a regression. Related
+  signal worth a look in the same pass: `senders` shows `n_tup_upd = 9,967,323` against
+  **11,433 live rows — 872 updates per row** — and `autovacuum_count = 4,275`, versus 17
+  for `mail_messages`. On a pre-launch DB with 4 mailboxes that is a lot of write
+  amplification. Proposed **P3**. Source: prod-sweep 2026-08-26.
+
+- **2026-08-25** · `apps/api` EmailService — **the loudest chronic ERROR in prod is intentional, and it is camouflage for the ones that are not.**
+  `declutrmail-api` has logged `RESEND_API_KEY is not set — transactional email is
+DISABLED (fail-closed)` at ERROR level **139 times since 2026-07-26**, still firing.
+  Nothing is broken: `deploy-cloud-run.yml:292` binds `RESEND_API_KEY` to the
+  **worker only**, on purpose, because the worker is the sender — the API fail-closes
+  and announces it. So this is expected configuration announcing itself as an error,
+  once per boot, forever. The cost is not the log line, it is what it does to every
+  other chronic error: it is the top standing ERROR cluster in the fleet, so any
+  reviewer who learns to skim past it has been trained to skim past exactly the shape
+  that hid the eight-day Paddle outage. Drop it to `warn`, or log it once at boot and
+  not per-call. (The prod-sweep routine now uses this line deliberately as its 2d
+  self-test fixture — a known-present cluster that proves the recurrence query still
+  matches — so if it is silenced, update that assertion in the same change.)
+  Proposed **P3**. Source: prod-sweep 2026-08-25.
+
+- **2026-08-25** · billing reconciliation — **the prod Paddle key is missing `adjustment.read`; the refund gate has been stuck 8 days and the cancel has never been sent.**
+  `paddle.api_read.failed adjustments sub=sub_01kzt82fegvpt8w1rnqbsz3mtg status=403`
+  has fired **1,230 times**, every ~10 min, from `2026-08-17T02:33:10Z` to
+  `2026-08-25T06:29:36Z` — still firing. Log retention reaches back to Jun 8, so
+  08-17 is a real start, not a retention floor. Only `adjustments` fails and only
+  with 403 (every other Paddle read succeeds), so the key is valid and the scope is
+  missing. `GET /adjustments` is the sole answer to "did the refund settle"
+  (`apps/api/src/billing/paddle.adapter.ts:713`); on 403 the adapter returns `null`,
+  the caller reads `facts = null` and `continue`s, so the row never settles and the
+  banner's promise to "switch this back on automatically" cannot come true.
+  **The money half:** `verdict_enforced` has fired **0 times in 30 days** — the
+  outbound cancel is gated behind the same unreadable-facts check
+  (`apps/api/src/billing/billing-reconciliation.service.ts:720`), so we never told
+  Paddle to cancel. If that subscription was not cancelled by hand in the dashboard,
+  the refunded customer is re-billed at renewal. Verified directly against prod logs.
+  **Why nobody knew:** no billing alert policy exists (prod policies are API-not-ready,
+  BullMQ limit, mailbox-lock leak, destructive-infra-op, API-unavailable), and the
+  verdict line logs below ERROR, so a permanently-failing revenue gate reads as
+  routine chatter. This is the BLIND-GUARD class again — and
+  `billing-reconciliation.service.ts:693` _already carries a comment_ saying "A null
+  here is a READ FAILURE, not 'nothing settled'", then logs it with no counter, no
+  alert and no attempt cap. D253 specifies "a row that exhausts its attempts is
+  logged for support rather than retried silently"; that cap was never implemented —
+  it retries silently 144x/day. Proposed **P0**. Source: prod-sweep 2026-08-25
+  (surfaced by the "Unexpected waiting state" session; independently verified here).
+  **UPDATE 2026-08-26 (prod-sweep) — the read half cleared; the money half is NOT
+  confirmed, and the detection half is untouched. Do not close this.** Prod DB shows
+  `reconciliation.refund_settled` at `2026-08-25T07:08:41.376Z`, followed 406 ms later
+  by `subscription.updated`, and `subscriptions.status` is now `canceled`. Two
+  independent refuters traced the deployed code. Both agree the **read gate cleared**:
+  `projectRefundSettlement` (`billing-reconciliation.service.ts:793`) is the sole
+  non-test emitter of that event and sits strictly downstream of the `facts === null`
+  guard at `:693`, which `continue`s unconditionally; `paddle.adapter.ts:749-753`
+  returns `null` on any 403. So `GET /adjustments` succeeded — the missing
+  `adjustment.read` scope was granted between the last 403 (`06:29:36Z`) and
+  `07:08:41Z`. No code change explains it: the only billing commit since 08-24 is
+  dbb57790 (#633), authored 70 minutes _after_ the events, and it leaves
+  `billing-reconciliation.service.ts` byte-identical. The event ORDER
+  (`refund_settled` before `subscription.updated`) rules out a hand-cancel in the
+  Paddle dashboard. The 8-day read outage is over and the entitlement was released.
+  **What is NOT proven — and what this sweep nearly got wrong:** `subscriptions.status
+= 'canceled'` is written by `applyRefundSettlement` (`billing-webhook.service.ts`) in
+  a purely local transaction with **no outbound provider call**, so the DB row is not
+  evidence Paddle was told to cancel. One refuter argues the reachability chain implies
+  it (`cancelSubscription` throws on `!res.ok`, so reaching `:793` means the cancel
+  succeeded _or_ was skipped by the `if (!provider.cancelAtPeriodEnd)` guard as
+  already-scheduled); the other argues that "or" is exactly the gap, and that with
+  `current_period_end = 2026-09-12` the single remaining collection opportunity is
+  **17 days out and still in the future**. Cloud Run logs were unreadable this run
+  (expired gcloud credential), so `verdict_enforced` was inferred, never observed.
+  **Action:** check `scheduled_change` on `sub_01kzt82fegvpt8w1rnqbsz3mtg` in the
+  Paddle dashboard before 2026-09-12. **The detection half is unchanged:** there is
+  still no durable per-row attempt cap (D253) — `consecutiveErrors` is method-local and
+  re-initialised every pass, so `DRIFT_SWEEP_TRIP_AFTER` is a within-pass breaker only —
+  and the follow-up to run `scripts/setup-billing-verdict-alert.sh` is still
+  **Status: Open**. The next read failure reproduces the same silent 8-day outage.
+  Downgraded **P0 → P1** (money half watched, not closed). Source: prod-sweep 2026-08-26.
+
+- **2026-08-25** · `infra-snapshot` workflow — **the daily infra-drift monitor has been red for 12 consecutive runs and nothing noticed.**
+  Every scheduled run since 2026-08-13 has failed at the same step. `Run snapshot`
+  succeeds, then `Check out the snapshot branch` (`actions/checkout@v7`,
+  `ref: infra-snapshots`) exits 1 because that branch no longer exists —
+  `gh api repos/CT2689-Tech/DeclutrMail/branches/infra-snapshots` returns 404. The
+  `Publish when the snapshot has drifted` step is therefore `skipped` on every run,
+  and because both the branch commit and the `$GITHUB_STEP_SUMMARY` drift diff live
+  _inside_ that skipped step — and there is no `actions/upload-artifact` anywhere in
+  the file — the snapshot JSON is written to `RUNNER_TEMP` and discarded. Zero drift
+  signal for twelve days. This is not redundant coverage: of the five scheduled
+  workflows, `cron-stale-watchdog` / `sync-stuck-watchdog` / `vendor-limits-watchdog`
+  cover cron liveness, stuck syncs and vendor quota; none reads Cloud Run revisions,
+  Secret Manager versions, runtime-SA IAM bindings, the Atlas head, or GH secret
+  names. `launch-preflight.sh` overlaps partially but is referenced by no workflow —
+  it is manual-only. **This is a regression after a closed fix:** MISTAKES.md records
+  this same defect fixed 2026-08-10 by pushing an empty orphan `infra-snapshots`
+  branch; runs on 08-10/08-11/08-12 were green, then the branch was deleted and the
+  failure returned. The 08-10→08-12 snapshot history went with it —
+  `docs/infra-snapshots/` on main holds only `2026-07-26.json`. Both refuters failed
+  to break this and each independently corrected the streak upward from my initial
+  count of 8. Fix is small: have the step bootstrap the branch when absent rather
+  than hard-fail, so a deleted data branch degrades instead of silently killing the
+  monitor. Proposed **P1**. Source: prod-sweep 2026-08-25.
+
+- **2026-08-25** · `packages/workers/src/lapse-reengagement.worker.ts:120` — **a raw JS `Date` bound into a `sql` fragment makes the lapse re-engagement sweep throw for every candidate, while the cron reports success.**
+  Sentry `DECLUTRMAIL-WEB-1A` (new 2026-08-23, 4 events, `environment: production`,
+  `kind: lapse_reengagement.user_failed`) bottoms out in `PostgresJsPreparedQuery`.
+  `notDecidedRecently` builds `AND al.occurred_at >= ${now}::timestamptz -
+make_interval(...)` where `now` is a `Date`. Under `postgres-js` that always throws
+  — the repo already knows this pitfall, and **line 258 of this same file** does it
+  correctly with `${bandOldestLastSeen.toISOString()}::timestamptz`. I verified both
+  lines on `origin/main`; the file contradicts itself, so this is a defect and not a
+  design. A refuter reproduced the throw against a real Postgres with the production
+  driver stack. Tests miss it because the harness (`packages/db/src/testing/fresh-db.ts`)
+  uses PGlite, which serializes `Date` fine. Introduced by #531, still byte-identical
+  on current main. The failure is swallowed by the per-candidate `catch`, so
+  `processJob` returns success and the job never retries or dead-letters — a silent
+  100% functional outage wearing a green cron. **User impact today is zero**, for an
+  unrelated reason: `BUSINESS_POSTAL_ADDRESS` is `[]` on main, so `EmailSendWorker`
+  refuses every `COMMERCIAL_KINDS` job with `skipped_no_postal_address` anyway. That
+  gate is what makes this P2 rather than P1 — but it also means the bug will surface
+  the moment the postal address lands, and the green cron will still be hiding it.
+  Verdict PLAUSIBLE (split refuters: the dissent was about severity and assumed a
+  transient DB blip, which the reproduction disproved; neither refuter disputed the
+  mechanism). Proposed **P2**. Source: prod-sweep 2026-08-25.
+
 - **2026-08-07** · `/onboarding` step 5 — **confirmed live, on a real first-run.**
   Founder onboarded a beta user end to end and step 5 pinned five
   senders that ALL have single-digit lifetime email counts, after the user had

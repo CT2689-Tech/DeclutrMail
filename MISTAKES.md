@@ -3787,6 +3787,251 @@ clearing the field — the real path into the dead end", which mounts with
 a default, clears, and asserts the input is still there and still takes a
 new time. Negative-controlled.
 
+## 2026-08-23 — ARCH-DRIFT: both sync workers hold a Postgres transaction open across a Gmail HTTP round-trip
+
+**PR:** N/A (post-merge audit) — `git log 0d67a074..HEAD`; the label-sync call was wired into the transaction by the mig-0064 sweeper-label work in this window
+**Caught by:** architecture-drift-oracle (scheduled task) — flagged [BLOCKING] by the `packages/workers` replay and independently as [WARNING] by the `packages/db` replay; both blocking claims re-verified by hand against source
+**What happened:** `syncMailboxLabels(tx, mailboxAccountId, client)` receives an already-open transaction and its first statement is `await client.listLabels()` — a Gmail API call — before any DB work (`packages/workers/src/mailbox-label-sync.ts:55`). Both callers do this inside an open transaction: `packages/workers/src/incremental-sync.worker.ts:1034` (tx opened at `:1028`) and `packages/workers/src/initial-sync.worker.ts:1151` (tx opened at `:1009`). Every multiplier is real and was verified: `GmailClientService.get()` awaits `this.limiter.acquire()` before `fetch` (`apps/api/src/gmail/gmail-client.service.ts:459-460`); `RateLimiter.acquire` is a genuine sleeping loop that blocks until the oldest event ages out of the 60s window (`packages/workers/src/rate-limiter.ts:46-53`); the incremental queue runs `concurrency: 20` (`apps/api/src/worker.ts:722`); and `perMailboxPolicy.timeoutMs` is `null` (`packages/workers/src/worker-policies.ts:70`), so there is no job wall clock either. The transaction holds row locks on `senders` / `sender_timeseries` / `sender_policies` for the duration of a Gmail quota wait + OAuth refresh + HTTP timeout. The incremental post-pass runs whenever `events.length > 0` (`incremental-sync.worker.ts:585`), i.e. on every event-bearing Pub/Sub push, so this is the hot path, not an edge case.
+
+**Blast radius, stated precisely:** the worker's main pool is `postgres(requireEnv('DATABASE_URL'), { prepare: false })` at `apps/api/src/worker.ts:386` with **no `max`**, so it takes the postgres.js default of 10. Twenty concurrent incremental jobs therefore cannot hold twenty open transactions — the pool caps at ten. The failure mode is pool exhaustion rather than a wide lock fan-out: ten connections sit idle-in-transaction across an external round-trip while the remaining jobs block acquiring a connection, and because `const db = drizzle(pg, ...)` (`:387`) is the single handle passed to every worker queue, the other queues starve behind the same Gmail call. (An earlier draft of this entry said "up to 20 pooled connections can sit idle-in-transaction" — that was wrong, and the correction narrows the count while widening who is affected.)
+**Correct approach:** fetch the label list BEFORE opening the transaction and pass the resolved rows into `syncMailboxLabels`, so the transaction contains only DB statements. The ordering constraint the code documents (labels before the counter reconcile, so the read-rate numerator excludes sweeper-labelled mail) is fully preserved by hoisting the fetch — it does not require the fetch to be inside the tx.
+**Rule:** No network I/O inside an open database transaction — resolve every external value before `db.transaction(...)` opens and pass it in.
+**Enforcement update:** none yet — no gate covers this. `architecture-guardian` found it only on a full-diff replay, and the two callers passed every PR gate. Candidate: a lint/hook rule flagging `await client.` / `fetch(` lexically inside a `db.transaction(async (tx) =>` body, plus an `idle_in_transaction_session_timeout` on the worker connection as the runtime backstop.
+
+## 2026-08-23 — ARCH-DRIFT: auto-protect signal redefined from "replied" to "wrote to" with no D-patch, ADR, or CLAUDE.md amendment
+
+**PR:** N/A (post-merge audit) — `git log 0d67a074..HEAD`; migration `0063_wrote_to_attribution.sql` and commit `cd690ab0` (cites `(D245, D7)`, but D245's text was never amended)
+**Caught by:** architecture-drift-oracle (scheduled task) — [BLOCKING] from the `packages/workers` replay; re-verified by hand
+**What happened:** CLAUDE.md §2.6 (`CLAUDE.md:158`) states automatic protection is limited to "at least three replies, a message starred in the past year, or at least three Gmail-important messages in the past year". The merged rule is now "at least three outbound messages **addressed** to the sender (To/Cc) AND at least one inbound message" — `packages/workers/src/automatic-protection.ts:106` reads `WHEN s.wrote_to_count >= 3 AND sig.sender_key IS NOT NULL THEN 'replied'`. Sibling rename at `packages/workers/src/score-cascade.ts:178,315` (`hasReplied` → `hasWrittenTo`). Verified absent: zero occurrences of `wrote_to`/`wroteTo` in `docs/execution/Implementation-Plan.md`, zero `PATCH on D245` or `PATCH on D21` markers, zero ADRs in `docs/adr/` mentioning the redefinition. This is load-bearing — Protected is the sole visible safety state (D245) and excludes senders from bulk and automatic mail-changing actions, so redefining its trigger changes the reach of destructive verbs.
+**In the change's favour, and why this is a documentation defect rather than a code defect:** the old `replied_count` was genuinely wrong — `0063_wrote_to_attribution.sql:4-5` records that it "counted every outbound message in a thread the sender appeared in. No predicate tied the outbound message to the sender it was credited to." Gmail exposes no causal reply signal (F010), so "replied" was never computable. The user-facing copy was corrected honestly rather than left lying: `packages/shared/src/copy/protection.ts:111` renders "you wrote to them at least 3 times", not "you replied". The code is arguably MORE correct than CLAUDE.md — but §2.6 is a Section 2 guardrail, and per CLAUDE.md §3 a CLAUDE.md/plan conflict is plan-drift and the founder's call, not the agent's.
+**Correct approach:** ship the semantic change together with its paperwork — an inline `[FOUNDER PATCH]` on D245/D21 (or an ADR) and the matching CLAUDE.md §2.6 edit, in the same change that alters the predicate. The neighbouring 0.85→0.72 Archive threshold change in this same window did exactly that (`Implementation-Plan.md:2620`, FOUNDER PATCH 2026-08-20) and is the contrast that shows this was an omission, not a house convention.
+**Rule:** Changing the meaning of a Section 2 guardrail requires the D-patch/ADR and the CLAUDE.md edit in the same PR — a corrected copy string is not ratification.
+**Enforcement update:** none — needs the founder. Recorded as plan-drift per CLAUDE.md §3.
+
+**The decision is narrower than "amend or revert."** Reverting to the literal §2.6 wording is not available: Gmail exposes no causal reply signal (F010), and the column §2.6's "three replies" described (`replied_count`) counted every outbound message in a thread the sender merely appeared in, with no predicate tying the message to that sender (`0063_wrote_to_attribution.sql:4-5`). There is no implementation of "three replies" to go back to. So the live options are (a) ratify the shipped two-way rule (>=3 addressed outbound AND >=1 inbound) by patching D245/D21 and rewriting §2.6 to match, or (b) keep the wrote-to signal but choose a different threshold or add a second condition — both of which still require the §2.6 rewrite. What must not happen is §2.6 continuing to describe a signal the product cannot compute.
+
+## 2026-08-23 — ARCH-DRIFT: pattern — 2 blocking findings this week — gate enforcement may be insufficient
+
+**PR:** N/A (post-merge audit)
+**Caught by:** architecture-drift-oracle (scheduled task), 2026-08-23 sweep over `0d67a074..HEAD` (76 commits, 747 files)
+**What happened:** two [BLOCKING] findings landed in one week, both structural and both invisible to every PR gate: a Gmail round-trip inside an open transaction across both sync workers, and an unratified redefinition of a Section 2 safety guardrail. Thirteen [WARNING] findings accompanied them: ten derived from the replays (twelve raw, less one folded into the transaction blocking entry and one pair merged), and three process defects found while validating this oracle's own checks and writing this record. Neither blocking finding is the kind a structural gate can see — the first is a runtime/lifetime property (what is awaited between BEGIN and COMMIT), the second is a documentation-vs-code divergence that no test can assert because both sides are internally consistent. This matches CLAUDE.md §8 "Flow & state completeness": green typecheck + tests + gates ≠ production ready.
+**Additionally, two guardrails were found to be structurally incapable of firing** — see the separate FOUNDER-FOLLOWUPS entries: `require-preview-before-mutation.sh` has zero `exit 1` paths (it warns to stderr and returns success), and this oracle's own Check B/Check D commands were written so they could only ever report clean.
+**Correct approach:** treat "the gate is green" as evidence about structure only. Lifetime/ordering properties (I/O inside a transaction) and ratification properties (code vs guardrail text) need their own checks.
+**Rule:** When a defect class cannot be seen by any existing gate, the fix is a new check — not a louder agent prompt.
+**Enforcement update:** three candidate checks named in the individual entries (transaction-body I/O lint, `idle_in_transaction_session_timeout`, blind-case test for every guard). All are founder-scoped; none applied by this read-only oracle.
+
+## 2026-08-25 — The prod-sweep oracle filters Cloud Run on `severity>=ERROR`, and NO app log in this fleet has that severity
+**PR:** none — defect is in the scheduled task `~/.claude/scheduled-tasks/declutrmail-prod-sweep/SKILL.md` (Source 2)
+**Caught by:** the founder, comparing this sweep's "CLEAN" Cloud Run result against a
+concurrent session that found a live P0
+**What happened:** The 2026-08-25 prod sweep reported `Cloud Run FETCHED(1 ERROR)` and
+found nothing wrong in the fleet. In the same window, `paddle.api_read.failed
+adjustments status=403` was firing every 10 minutes — 1,230 times over 8 days, a stuck
+refund gate with real money attached. The sweep's Source 2 query filters
+`severity>=ERROR`. Nest writes the string `ERROR` into the **message text** with ANSI
+colour codes, but Cloud Run never parses that into the entry's structured `severity`
+field, so every application log lands at `severity=DEFAULT` (`null`). Measured:
+`severity>=ERROR AND NOT httpRequest.status>0` returns **0 rows in 48h for
+declutrmail-api and 0 for declutrmail-worker**. The one "ERROR" the sweep did find was
+a Cloud Run-generated `httpRequest` entry (a 504), not an app log. The filter can
+therefore never surface a single application error, and it fails silently — an empty
+result is indistinguishable from a healthy fleet. The task file's own opening rule
+("a source that fails to answer looks exactly like a source with nothing to report")
+describes this exact failure, and the routine committed it anyway, because the
+liveness probe it *does* run only asks for "any log line at any severity" — which
+passes trivially while the ERROR filter is starved.
+**Correct approach:** Never filter a log source on a severity field without first
+proving that field is populated. The Source 2 query must drop `severity>=ERROR` in
+favour of a text predicate that matches how this fleet actually logs, e.g.
+`(severity>=ERROR OR "ERROR [" OR ".failed" OR "api_read.failed")`, and the sweep's
+known-shape signal list (currently `worker.failed`, `dead-letter`, `lock`, `OOM`,
+`Container terminated`) must include the revenue and provider paths — at minimum
+`api_read.failed`, `verdict_unreadable`, `webhook`, `billing`.
+**Rule:** Before trusting a filtered log query, run it with the filter removed and
+compare counts — a filter that returns 0 where the unfiltered query returns hundreds
+is blind, not clean.
+**Enforcement update:** APPLIED 2026-08-25 to the scheduled task's SKILL.md at the
+founder's instruction. Source 2 was restructured into 2a blind-filter control
+(mandatory, both counts reported), 2b text-matched error read, 2c recurrence
+clustering over a 14d window, and 2d a self-test that asserts a known-present
+cluster still matches. Chronicity became a Stage-2 ranking term and its own report
+block; Stage 1 dedup gained a "still-firing chronic is never just a repeat"
+exception. The 2c pipeline was validated against prod before landing — four earlier
+drafts of it silently hid the very defect it exists to find (ANSI stripped after
+`tr` had already eaten the ESC byte; the Nest per-message wall-clock left in, which
+scattered 1,075 identical errors into 1,075 one-off clusters; the time normaliser
+applied to the whole row, destroying the timestamp the span is measured from; and
+`--limit` truncation silently clipping the window). The validated version puts the
+billing outage at row 1 and surfaced a second chronic cluster the old query missed.
+
+**Second round, same session, same class:** Codex stop-time review caught that the
+new collection code reproduced the very defect it was written to fix — every read
+ended `2>/dev/null` with the exit status dropped, so an expired credential, revoked
+role or project typo produced an empty result indistinguishable from a healthy
+fleet, and 2d (the guard added to catch a broken 2c) was *vacuously satisfied* by a
+failed read because its assertion was phrased negatively. Demonstrated against a
+bogus project id before fixing. Fixed with a `glog`/`glog_count` wrapper that writes
+to a file, checks the exit status, and returns a `VOID` sentinel; a positive control
+that must return >=1 row; and 2d re-phrased as a positive assertion. Two further
+bugs surfaced in the wrapper itself during testing and were fixed: `glog | wc -l`
+reports `wc`'s status so `|| FLAG=VOID` never fired, and a flag set inside `$( )`
+dies with the subshell — so the doc now says to trust the `VOID` sentinel, never the
+flag. Both the blind case (must be loud) and the happy path (must return real data)
+are now verified by test, in that order.
+**Rule:** A guard's assertion must be positive — "the known signal is present" — never
+"no problem was detected". A negative assertion is satisfied by its own input failing.
+
+**Third round, same session, same class:** Codex caught that round two announced the
+failure without acting on it. Every guarded read printed `UNREACHABLE` and then **fell
+through** — `2>&1` demonstrated the 2c block printing "Cloud Run = UNREACHABLE", then
+`rows=0`, then "(no clusters)", and **exiting 0**. The words "Do NOT continue into the
+cluster report" were a comment, not control flow, so a failed read still produced a
+clean-looking report and a success exit status. Fixed with an `unreachable()` helper
+that prints the reason and `exit 1`s, wired into all eight call sites (positive
+control, 2a x2, 2b, 5xx, 2c, pattern loop, 2d). Also pinned `SCRATCH` to
+`state/scratch` instead of `$TMPDIR`, because TMPDIR differs per process on macOS and
+would have put the sourced library and its data files in different directories across
+blocks. Both paths re-verified after the fix: failure now exits 1 without reaching the
+report, and the happy path exits 0 with no hard-stop misfiring.
+**Rule:** An error branch that only prints is not handling — it is narration. If a
+failure means the result is void, the branch must stop the block (non-zero exit), not
+describe the problem and carry on.
+
+**Fourth round, same session, same class:** Codex caught that `unreachable()`'s
+`exit 1` stops only the current fresh-shell block. The *run* is a sequence of separate
+Bash calls, so a Source 2 abort in one block leaves nothing behind — the run proceeds
+through Sources 3-6 and can still reach Reporting and write `CLEAN`, and Close-out can
+still persist `status: "ok"`. A per-block exit cannot bind a run-scoped verdict. Fixed
+with a durable ledger: Preflight truncates `$STATE/scratch/unreachable.log`;
+`unreachable()` appends `timestamp / source / reason` **before** exiting; Reporting
+opens with a gate that reads the ledger and forces `DEGRADED` when non-empty; Close-out
+derives `status` from the same file instead of from recollection. Verified across four
+separate shells: failure in block 2 still forced `DEGRADED` in block 3 and
+`status=partial` in block 4, and a clean run left the ledger empty with `status=ok` and
+no false positive.
+**Rule:** A stop that must survive past the current process needs a durable record, not
+a return code. If the decision is made in one process and enforced in another, write it
+down where the enforcing step is required to read it.
+
+**Fifth round, same session, same class:** Codex caught that the round-four ledger was
+durable but its *path* was not. Close-out read `LEDGER="$STATE/scratch/unreachable.log"`
+in a fresh shell where `$STATE` is unset, so the path collapsed to
+`/scratch/unreachable.log`, which does not exist — and `[ -s ]` on a missing file is
+false, so a run with a NON-EMPTY ledger wrote `status: "ok"`. Demonstrated: seeded one
+ledger line, ran the Close-out block verbatim, got `status: ok` and an empty `ranAt`
+(`$NOW` was gone too). Six post-Preflight references to `$STATE`/`$NOW` had the same
+hole, including the pg_stat rotation and the monthly cost snapshot, which would have
+written to `/pgstat-latest.json` and `/cost-YYYY-MM.json`. Fixed by having Preflight
+persist the whole run context (`STATE`, `SCRATCH`, `LEDGER`, `NOW`, `SINCE`,
+`WINDOW_H`) to `run-env.sh`, appending the Source 2 helpers to that same file so there
+is exactly one thing to source, and starting every later block with one absolute
+source line that contains no variables of its own. Verified across four fresh shells
+in both directions: non-empty ledger now yields `partial` with a real `ranAt`, clean
+run still yields `ok` with no false positive.
+**Rule:** A durable record is only as durable as the path used to find it. When state
+must cross a process boundary, the *locator* has to survive too — resolve it from an
+absolute constant, never from a variable set in the process that is already gone.
+
+**Sixth round, same session, same class:** Codex caught that a *missing* `run-env.sh`
+still failed open. Sourcing a nonexistent file is non-fatal in bash — it prints "No
+such file or directory", returns non-zero, and **execution continues** — so Close-out
+ran with `LEDGER` unset, `[ -s "" ]` was false, and it wrote `status: "ok"` with an
+empty `ranAt`, exiting 0. A Source 2 block behaved worse: `glog_count: command not
+found`, `PC` empty, the `case` never matched `VOID`, and it printed "reads OK: PC="
+and exited 0. Fixed by making the source line self-guarding —
+`: "${LEDGER:?FATAL: run context missing}"` after the source, plus a
+`HELPERS_READY` marker appended at the end of the helper heredoc and asserted the same
+way in the seven blocks that call `glog`/`unreachable` (deliberately NOT in the 2.0
+block, which creates them — the first attempt added it there and produced a
+chicken-and-egg that demanded the helpers before defining them). Verified as a matrix:
+missing context, missing context in a read block, and context-without-helpers all now
+abort non-zero with a FATAL line and no success output; the fully-present case still
+exits 0.
+**Note on the measurement:** the first run of this matrix reported `exit: 0` for the
+failing cases and nearly passed them as fixed. That reading was wrong — `$?` was being
+taken after a `| sed`, so it reported sed's status, not bash's. The same pipe-masking
+bug fixed inside the routine had reappeared in the test harness written to verify it.
+**Rule:** Sourcing a file is not loading it. Assert on something the file defines
+(`${VAR:?}`) rather than trusting the `.` succeeded — and measure a command's exit
+status before it enters a pipeline, never after.
+
+**Seventh round, same session, same class:** Codex caught that the round-six guard
+asserted the context *existed*, not that it was **this run's** context or a **complete**
+one. Two holes, both demonstrated. (a) STALE: yesterday's `run-env.sh` still on disk
+with `Preflight` never run today passed every guard — the block then ran with
+`WINDOW_H=999` and stamped `ranAt` with yesterday's timestamp, against a ledger whose
+contents belonged to a different run. (b) TRUNCATED: an interrupted write leaving only
+the first three lines set `LEDGER` (line 3) but not `NOW`/`WINDOW_H`, so the guard
+passed and the run proceeded with `--freshness="h"` and `"ranAt": ""`. Fixed by
+stamping `RUN_EPOCH` and writing `CONTEXT_READY=1` as the **last** line of the context
+heredoc — mirroring the `HELPERS_READY` trick, so a partial write is detectable by
+construction — and upgrading all 14 guards to assert `CONTEXT_READY` plus a 6-hour
+freshness bound on `RUN_EPOCH`. Matrix re-verified: missing, truncated, stale, and
+helpers-absent all abort non-zero with a FATAL line; the fully-valid case still exits 0
+with real values.
+**Rule:** An existence check is not a validity check. State crossing a process boundary
+must prove three things, not one: that it is **present**, that it is **complete** (a
+terminal marker written last, so truncation is visible), and that it is **current** (a
+timestamp the reader bounds). Any of the three missing is a fail-open.
+
+**Eighth round, same session, same class:** Codex caught two holes the fail-closed work
+had left. (a) FALSE-CLEAN: `unreachable()` hardcoded the string `Source 2 (Cloud Run)`
+and was the *only* writer to the ledger, so Sources 1 and 3-6 had no way to record.
+That is not theoretical — on this very run Sentry was `UNREACHABLE(no local
+SENTRY_AUTH_TOKEN)`, and under the new machinery the ledger would still have been
+empty, Reporting would have permitted `CLEAN`, and Close-out would have written
+`status: "ok"` over a run that read five sources out of six. Fixed with a
+source-agnostic `mark_unreachable <source> <reason>` defined in the **Preflight
+context** rather than the Source 2 helper block — Sentry is Source 1 and runs before
+those helpers exist — with `unreachable()` reduced to a Source 2 shorthand that
+delegates and aborts. (b) SKIPPED RETRY WINDOW: Preflight derives `SINCE` from
+`.ranAt`, but Close-out wrote `"ranAt": "$NOW"` unconditionally, so a partial run
+advanced the boundary past exactly the period its failed source never read — losing it
+permanently. The documented `advanceWindow: false` was prose that no code consulted.
+Fixed by making `ranAt` the *read boundary* (held at `$SINCE` when partial, advanced to
+`$NOW` only when ok) and adding a separate `completedAt` for when the run happened.
+Verified: Sentry-unreachable now yields DEGRADED with the boundary held; a healthy run
+advances it; two sources can occupy the ledger at once and the verdict counts both.
+**Rule:** A source that cannot record cannot fail the verdict — every source needs a
+path into the ledger, not just the one that happened to be hardened first. And never
+let a timestamp serve as both "when we ran" and "how far we have read": a failed run
+that stamps progress it did not make destroys the retry it was supposed to trigger. Third recorded instance of the
+BLIND-GUARD class (see the UI-truth-bug memory: "starve its input, require exit 1") —
+this one turned the guard on the monitoring routine itself. Distillation candidate.
+
+## 2026-08-26 — The prod-sweep read a locally-written DB row as provider testimony and nearly closed a P0 on it
+**PR:** none (scheduled task, no code change)
+**Caught by:** prod-sweep's own Stage 3 adversarial refuters (2 of 4 dissented)
+**What happened:** Chasing the 2026-08-25 Paddle P0 with Cloud Run logs unreadable,
+the sweep found `subscriptions.status='canceled'` plus a `reconciliation.refund_settled`
+event in the prod DB and drafted the finding as **RESOLVED — the cancel was enforced**.
+Two refuters independently established that `subscriptions.status='canceled'` is written
+by `applyRefundSettlement` (`apps/api/src/billing/billing-webhook.service.ts`) in a
+purely local transaction with **no outbound provider call**, and that
+`reconciliation.refund_settled` is a *synthetic internal* event minted by our own
+reconciler (`providerEventId: recon-refund-settled:<provider>:<sub>`), not a Paddle
+delivery. Neither artifact is provider testimony. The read half genuinely had cleared —
+that part survived both refuters — but "we told Paddle to cancel" did not follow from
+the evidence, and the customer's single remaining collection opportunity
+(`current_period_end = 2026-09-12`) is still in the future. Closing it would have
+retired a live money risk on a row our own code wrote.
+**Correct approach:** When a source goes dark, do not promote the nearest available
+source to answer the same question. Ask what that source can *structurally* testify to.
+A row our own writer sets is evidence about our writer, never about the third party —
+the only proof an outbound call happened is the call's own record (the provider's
+dashboard, or a log line from the call site). Where the dark source is the only one that
+could confirm the claim, report the claim as unverified and name what would confirm it.
+**Rule:** A DB row written by our own code can never be evidence that an external
+provider was told anything — cite the provider's record or mark it UNVERIFIED.
+**Enforcement update:** This is the UI-truth / assert-what-you-don't-know class in its
+ops form, and it is the second consecutive run in which the sweep's own reasoning, not
+the product, produced the defect (see 2026-08-25 above, the blind `severity>=ERROR`
+filter). Both times the failure was a source that answered confidently about something
+it could not see. Candidate for the task's SKILL.md: when a source is `UNREACHABLE`,
+findings that depend on it may be reported only as `PLAUSIBLE`/`UNVERIFIED`, never as
+confirmed or resolved — the substitute-source path needs the same "prove the filter can
+match" discipline that 2a already imposes on Cloud Run.
+
 ## 2026-08-27 — A shipped `undefined` no test could see
 
 **PR:** #651 (fix), introduced by #646
