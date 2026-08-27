@@ -85,7 +85,7 @@ describe('D245 action semantics', () => {
     expect(presentation.primary.schedule).toEqual({
       kind: 'scheduled',
       wakeAt: '2026-07-21T16:00:00.000Z',
-      summary: 'Returns to Inbox Jul 21, 2026 at 4:00 PM UTC.',
+      summary: 'Returns to Inbox from Jul 21, 2026 at 4:00 PM UTC.',
     });
     expect(presentation.primary.activityUndo).toMatchObject({
       kind: 'plan-window',
@@ -408,7 +408,7 @@ describe('D245 absolute times render in one clock per surface', () => {
   };
 
   it('defaults to UTC so server-rendered and static copy stay deterministic', () => {
-    expect(later('utc').schedule.summary).toBe('Returns to Inbox Sep 3, 2026 at 8:01 AM UTC.');
+    expect(later('utc').schedule.summary).toBe('Returns to Inbox from Sep 3, 2026 at 8:01 AM UTC.');
   });
 
   // Asserted against the runtime's OWN zone rather than a hardcoded
@@ -423,7 +423,7 @@ describe('D245 absolute times render in one clock per surface', () => {
     // two clocks and left the reader to do the offset arithmetic.
     const summary = later('viewer').schedule.summary;
     expect(summary).toMatch(
-      /^Returns to Inbox \w{3} \d{1,2}, \d{4} at \d{1,2}:\d{2} (AM|PM) \S+\.$/,
+      /^Returns to Inbox from \w{3} \d{1,2}, \d{4} at \d{1,2}:\d{2} (AM|PM) \S+\.$/,
     );
     const expectedHour = new Intl.DateTimeFormat('en-US', {
       hour: 'numeric',
@@ -463,11 +463,11 @@ describe('D226 Later says when the whole pile comes back at once', () => {
 
   it('names the shared return time once the reach crosses the threshold', () => {
     const p = later(1_718);
-    expect(p.bulkReturnNotice).toBe('All of them share that one return time.');
+    expect(p.bulkReturnNotice).toBe('All of them share that one return.');
     // In the shared copy too, so any surface rendering it inherits the
     // sentence without wiring a prop of its own.
-    expect(p.effectCopy).toContain('All of them share that one return time.');
-    expect(p.previewCopy).toContain('All of them share that one return time.');
+    expect(p.effectCopy).toContain('All of them share that one return.');
+    expect(p.previewCopy).toContain('All of them share that one return.');
   });
 
   // The count is stated once, in the headline, under its own "rechecked
@@ -484,20 +484,30 @@ describe('D226 Later says when the whole pile comes back at once', () => {
   // chunk leaves the earlier one already restored and the rest arriving
   // after a backoff. The guarantee is the SCHEDULE — one
   // `snoozed_until` per sender — so the copy claims that and nothing more.
+  // The wake is a floor: a 15-minute sweep picks up due timers, a failed
+  // one stays due for the next sweep, and a due timer on a disconnected
+  // mailbox lies dormant until reconnect. Naming a bare minute promised
+  // a precision the pipeline never offered.
+  it('states the return time as a floor, not a delivery moment', () => {
+    const p = later(1_718);
+    if (p.schedule.kind !== 'scheduled') throw new Error('expected a scheduled Later');
+    expect(p.schedule.summary).toMatch(/^Returns to Inbox from /);
+  });
+
   it('never promises the mail arrives all at once', () => {
     const notice = later(1_718).bulkReturnNotice ?? '';
     expect(notice).not.toMatch(/together|at once|simultaneous|all in one/i);
-    expect(notice).toContain('return time');
+    expect(notice).toContain('one return');
   });
 
   it('stays quiet below the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD - 1).bulkReturnNotice).toBeNull();
-    expect(later(17).effectCopy).not.toContain('share that one return time');
+    expect(later(17).effectCopy).not.toContain('share that one return');
   });
 
   it('fires exactly at the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD).bulkReturnNotice).toBe(
-      'All of them share that one return time.',
+      'All of them share that one return.',
     );
   });
 
