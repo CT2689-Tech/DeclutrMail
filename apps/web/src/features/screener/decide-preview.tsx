@@ -90,6 +90,9 @@ export function DecidePreview({
     planUndoDeadline: null,
     wakeAt: verb === 'later' ? (wakeAt ?? null) : null,
     unsubscribeChannel: verb === 'unsubscribe' ? row.unsubscribeMethod : null,
+    // Absolute times render in the reader's own clock: every one of
+    // these surfaces is opened by a click, never server-rendered.
+    timeZone: 'viewer',
   });
 
   const title =

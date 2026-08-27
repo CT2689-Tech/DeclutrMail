@@ -43,6 +43,29 @@ export type ActionFinality =
       readonly summary: string;
     };
 
+/**
+ * The scope-limit claims an action can make about what it does NOT do.
+ *
+ * Keyed rather than free text because these facts are only true RELATIVE
+ * to the action being described. Archive truthfully says "The sender is
+ * not unsubscribed."; rendered verbatim under an Unsubscribe primary the
+ * same sentence is a lie. A composite preview has to be able to ask
+ * "does the primary contradict this claim?", and it cannot ask that of a
+ * string (founder screenshot review 2026-08-27 — it shipped, and every
+ * fact in it was individually true).
+ */
+export type UnchangedClaim =
+  | 'nothing-deleted'
+  | 'not-unsubscribed'
+  | 'not-subscribed-or-unsubscribed'
+  | 'labels-unchanged'
+  | 'not-protected';
+
+export interface UnchangedFact {
+  readonly claim: UnchangedClaim;
+  readonly summary: string;
+}
+
 export interface ActionSemantics {
   readonly verb: ActionVerb;
   readonly label: string;
@@ -50,12 +73,19 @@ export interface ActionSemantics {
     readonly scope: CurrentMailScope;
     readonly destination: CurrentMailDestination;
     readonly summary: string;
+    /**
+     * Used instead of `summary` when this action is previewed WITH a
+     * secondary action. Unsubscribe's standalone summary hedges ("unless
+     * you choose a separate action for it"); once the reader has chosen
+     * one, that clause is stale and reads as an unanswered condition.
+     */
+    readonly compositeSummary?: string;
   };
   readonly futureMail: {
     readonly effect: FutureMailEffect;
     readonly summary: string;
   };
-  readonly unchanged: readonly string[];
+  readonly unchanged: readonly UnchangedFact[];
   readonly schedule: ActionScheduleRequirement;
   readonly activityUndo: ActivityUndoSemantics;
   readonly providerRecovery: ProviderRecoverySemantics;
@@ -85,9 +115,37 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     },
     futureMail: {
       effect: 'remember-keep',
-      summary: 'DeclutrMail remembers Keep as your decision for this sender.',
+      // Names the ONE consequence Keep actually has. The previous line —
+      // "DeclutrMail remembers Keep as your decision for this sender." —
+      // stated a memory without a consequence, and a reader reasonably
+      // heard "this sender is safe now".
+      //
+      // What Keep really writes (traced live on the dev mailbox
+      // 2026-08-27): an `activity_log` row with `affected_count = 0`,
+      // which is what drops the sender out of the Triage queue, and
+      // `sender_policies.policy_type='keep'`, which NO reader anywhere
+      // filters on. It does NOT rewrite `triage_decisions.verdict` —
+      // that row still read `verdict='unsubscribe'` immediately after a
+      // Keep — so even the verdict-gated Autopilot presets keep matching.
+      summary:
+        'This sender stops coming up in Triage. Future email arrives exactly as it does now.',
     },
-    unchanged: ['Gmail labels and delivery settings are unchanged.'],
+    unchanged: [
+      { claim: 'labels-unchanged', summary: 'Gmail labels and delivery settings are unchanged.' },
+      {
+        claim: 'not-protected',
+        // Verified against the executors, not assumed:
+        // `autopilot-apply.worker.ts` reduces its candidate set with
+        // `signalRows.filter((s) => !s.signals.isProtected)` and nothing
+        // else, `autopilot-action.worker.ts` shields on `isProtected`
+        // alone, and the Brief's noise group does the same
+        // (`brief.read-service.ts`). Since Keep leaves the triage verdict
+        // untouched, no preset is gated out either. Protect is the only
+        // state that stops them — D245's "Protected is the sole visible
+        // safety state".
+        summary: 'Keep is not Protect — Autopilot rules can still act on this sender.',
+      },
+    ],
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'none',
@@ -109,7 +167,10 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       summary: 'Matching email currently in Inbox moves out of Inbox and stays in Gmail.',
     },
     futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
-    unchanged: ['Nothing is deleted.', 'The sender is not unsubscribed.'],
+    unchanged: [
+      { claim: 'nothing-deleted', summary: 'Nothing is deleted.' },
+      { claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.' },
+    ],
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'plan-window',
@@ -131,7 +192,10 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       summary: 'Matching email currently in Inbox moves to the DeclutrMail/Later label.',
     },
     futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
-    unchanged: ['Nothing is deleted.', 'The sender is not unsubscribed.'],
+    unchanged: [
+      { claim: 'nothing-deleted', summary: 'Nothing is deleted.' },
+      { claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.' },
+    ],
     schedule: {
       kind: 'required',
       parameter: 'wakeAt',
@@ -156,6 +220,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       scope: 'none',
       destination: 'unchanged',
       summary: 'Existing email stays where it is unless you choose a separate action for it.',
+      compositeSummary: 'Unsubscribing on its own moves no existing email.',
     },
     futureMail: {
       effect: 'unsubscribe-request',
@@ -186,7 +251,13 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       summary: 'Matching archived email returns to Inbox.',
     },
     futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
-    unchanged: ['Nothing is deleted.', 'The sender is not subscribed or unsubscribed.'],
+    unchanged: [
+      { claim: 'nothing-deleted', summary: 'Nothing is deleted.' },
+      {
+        claim: 'not-subscribed-or-unsubscribed',
+        summary: 'The sender is not subscribed or unsubscribed.',
+      },
+    ],
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'plan-window',
@@ -208,7 +279,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       summary: 'Matching email currently in Inbox moves to Gmail Trash.',
     },
     futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
-    unchanged: ['The sender is not unsubscribed.'],
+    unchanged: [{ claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.' }],
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'plan-window',
@@ -258,9 +329,52 @@ export function staticActionPreviewCopy(verb: ActionVerb): string {
   return [
     semantics.currentMail.summary,
     semantics.futureMail.summary,
-    ...semantics.unchanged,
+    ...semantics.unchanged.map((fact) => fact.summary),
     ...recovery,
   ].join(' ');
+}
+
+/**
+ * The recovery/finality sentences a confirm surface should show, in order.
+ *
+ * Two rules the surfaces kept getting wrong independently:
+ *
+ *  1. **Say each fact once.** `finality` restates `activityUndo` for every
+ *     kind except `provider-permanent-deletion`, where it adds Gmail's
+ *     retention. The senders modal emitted both, so an Unsubscribe preview
+ *     read "A delivered unsubscribe request cannot be undone. After
+ *     delivery, the unsubscribe request cannot be recalled." — one fact,
+ *     two spellings, and then the footer printed the pair again.
+ *  2. **Say which action each fact belongs to.** A composite put "cannot
+ *     be undone" (unsubscribe) next to "Undo from Activity" (archive) with
+ *     nothing tying either sentence to its verb, so the block read as a
+ *     contradiction. Labels appear ONLY when there are two actions —
+ *     labelling a single action is noise.
+ */
+export function composeRecoveryFacts(
+  primary: PresentedAction,
+  secondary: PresentedAction | null,
+): readonly string[] {
+  const factsFor = (action: PresentedAction): readonly string[] => [
+    action.activityUndo.summary,
+    ...(action.providerRecovery.kind === 'none' ? [] : [action.providerRecovery.summary]),
+    // Only `provider-permanent-deletion` carries a fact `activityUndo`
+    // does not already state. Mirrors `staticActionPreviewCopy`.
+    ...(action.finality.kind === 'provider-permanent-deletion' ? [action.finality.summary] : []),
+  ];
+
+  if (secondary === null) {
+    return [...new Set(factsFor(primary))];
+  }
+  const primaryFacts = factsFor(primary);
+  const secondaryFacts = factsFor(secondary).filter((fact) => !primaryFacts.includes(fact));
+  if (secondaryFacts.length === 0) {
+    return [...new Set(primaryFacts)];
+  }
+  return [
+    `${primary.label} — ${primaryFacts.join(' ')}`,
+    `${secondary.label} — ${secondaryFacts.join(' ')}`,
+  ];
 }
 
 export function actionHasRecovery(verb: ActionVerb): boolean {
@@ -306,7 +420,22 @@ export interface ActionPresentationInput {
   readonly wakeAt: string | null;
   readonly unsubscribeChannel: UnsubscribeChannel | null;
   readonly secondaryAction?: SecondaryActionPresentationInput | null;
+  /**
+   * Which clock absolute times are printed in.
+   *
+   * `'utc'` (the default) keeps every existing caller and any
+   * server-rendered path deterministic. `'viewer'` renders in the
+   * reader's own zone and is what interactive confirm surfaces pass:
+   * the Later sheet's `<input type="datetime-local">` is inherently
+   * local, so a UTC summary beside it showed the same instant twice in
+   * two clocks — "Returns to Inbox Sep 3, 2026 at 8:01 AM UTC" above a
+   * picker reading "09/03/2026, 01:01 AM" (founder screenshot
+   * 2026-08-27). Same defect on the Undo deadline.
+   */
+  readonly timeZone?: PresentationTimeZone;
 }
+
+export type PresentationTimeZone = 'utc' | 'viewer';
 
 export type ActionPresentationSchedule =
   | { readonly kind: 'none'; readonly wakeAt: null }
@@ -344,6 +473,17 @@ export interface PresentedAction {
   /** Ordered, presentation-ready facts used to assemble `previewCopy`. */
   readonly facts: readonly string[];
   readonly previewCopy: string;
+  /**
+   * `previewCopy` WITHOUT the recovery sentences — what the action does,
+   * for surfaces that render recovery in their own slot (the senders
+   * modal's ⏱ callout).
+   *
+   * It exists because that modal used to hand-assemble the same list
+   * from the raw `currentMail` / `futureMail` / `unchanged` fields, which
+   * meant composite suppression applied to `previewCopy` and silently
+   * did not apply to the lead paragraph the reader actually saw.
+   */
+  readonly effectCopy: string;
 }
 
 export interface ActionPresentation {
@@ -369,6 +509,8 @@ export function buildActionPresentation(input: ActionPresentationInput): ActionP
     planUndoDeadline: input.planUndoDeadline,
     wakeAt: input.wakeAt,
     unsubscribeChannel: input.unsubscribeChannel,
+    timeZone: input.timeZone ?? 'utc',
+    hasSecondary: input.secondaryAction != null,
   });
   const secondary = input.secondaryAction
     ? presentAction({
@@ -377,6 +519,8 @@ export function buildActionPresentation(input: ActionPresentationInput): ActionP
         planUndoDeadline: input.planUndoDeadline,
         wakeAt: input.wakeAt,
         unsubscribeChannel: input.unsubscribeChannel,
+        timeZone: input.timeZone ?? 'utc',
+        composedUnder: ACTION_SEMANTICS[input.verb],
       })
     : null;
 
@@ -401,6 +545,46 @@ interface PresentActionInput {
   readonly planUndoDeadline: string | null;
   readonly wakeAt: string | null;
   readonly unsubscribeChannel: UnsubscribeChannel | null;
+  /**
+   * Set only when this action is the SECONDARY half of a composite. The
+   * primary's semantics decide which of this action's standalone facts
+   * survive — see {@link secondaryFactsUnder}.
+   */
+  readonly timeZone: PresentationTimeZone;
+  readonly composedUnder?: ActionSemantics | null;
+  /**
+   * Set only on the PRIMARY of a composite, so its standalone hedge can
+   * give way to `currentMail.compositeSummary`.
+   */
+  readonly hasSecondary?: boolean;
+}
+
+/**
+ * Which of a secondary action's scope-limit claims survive beside a
+ * given primary.
+ *
+ * Two rules, both learned from one shipped screen:
+ *
+ *  1. The primary owns the future-mail story. Archive's "Future email is
+ *     unchanged." rendered one sentence after "DeclutrMail sends a
+ *     supported one-click unsubscribe request." — a flat contradiction.
+ *     When the primary and secondary disagree the secondary is wrong;
+ *     when they agree the line is noise. Dropped either way.
+ *  2. A claim the primary contradicts is dropped. Archive's
+ *     `not-unsubscribed` is true alone and false under an unsubscribe.
+ */
+function secondaryFactsUnder(
+  secondary: ActionSemantics,
+  primary: ActionSemantics,
+): { readonly futureMail: string | null; readonly unchanged: readonly UnchangedFact[] } {
+  const primaryUnsubscribes = primary.futureMail.effect === 'unsubscribe-request';
+  return {
+    futureMail: null,
+    unchanged: secondary.unchanged.filter((fact) => {
+      if (!primaryUnsubscribes) return true;
+      return fact.claim !== 'not-unsubscribed' && fact.claim !== 'not-subscribed-or-unsubscribed';
+    }),
+  };
 }
 
 function presentAction(input: PresentActionInput): PresentedAction {
@@ -410,19 +594,33 @@ function presentAction(input: PresentActionInput): PresentedAction {
   const semantics = ACTION_SEMANTICS[input.verb];
   const countSummary =
     input.liveCount === null ? null : presentationCountSummary(input.verb, input.liveCount);
-  const schedule = presentationSchedule(semantics, input.wakeAt);
-  const activityUndo = presentationActivityUndo(semantics, input.planUndoDeadline);
+  const schedule = presentationSchedule(semantics, input.wakeAt, input.timeZone);
+  const activityUndo = presentationActivityUndo(semantics, input.planUndoDeadline, input.timeZone);
   const unsubscribeChannel = presentationUnsubscribeChannel(input.verb, input.unsubscribeChannel);
+  const composedUnder = input.composedUnder ?? null;
+  const currentMail =
+    input.hasSecondary === true && semantics.currentMail.compositeSummary !== undefined
+      ? { ...semantics.currentMail, summary: semantics.currentMail.compositeSummary }
+      : semantics.currentMail;
+  const surviving = composedUnder === null ? null : secondaryFactsUnder(semantics, composedUnder);
   const futureMailSummary =
     unsubscribeChannel.kind === 'not-applicable'
       ? semantics.futureMail.summary
       : unsubscribeChannel.summary;
+  const presentedFutureMail = surviving === null ? futureMailSummary : surviving.futureMail;
+  const presentedUnchanged = surviving === null ? semantics.unchanged : surviving.unchanged;
+  // No count: `liveCount` is a presented field in its own right and every
+  // surface using `effectCopy` renders the figure itself, so including it
+  // here would print the number twice.
+  const effectFacts = [
+    currentMail.summary,
+    ...(presentedFutureMail === null ? [] : [presentedFutureMail]),
+    ...presentedUnchanged.map((fact) => fact.summary),
+    ...(schedule.kind === 'none' ? [] : [schedule.summary]),
+  ];
   const facts = [
     ...(countSummary === null ? [] : [countSummary]),
-    semantics.currentMail.summary,
-    futureMailSummary,
-    ...semantics.unchanged,
-    ...(schedule.kind === 'none' ? [] : [schedule.summary]),
+    ...effectFacts,
     activityUndo.summary,
     ...(semantics.providerRecovery.kind === 'none' ? [] : [semantics.providerRecovery.summary]),
     ...(semantics.finality.kind === 'provider-permanent-deletion'
@@ -435,9 +633,9 @@ function presentAction(input: PresentActionInput): PresentedAction {
     label: semantics.label,
     resultLabel: semantics.resultLabel,
     liveCount: input.liveCount,
-    currentMail: semantics.currentMail,
+    currentMail,
     futureMail: semantics.futureMail,
-    unchanged: semantics.unchanged,
+    unchanged: presentedUnchanged.map((fact) => fact.summary),
     schedule,
     activityUndo,
     unsubscribeChannel,
@@ -445,6 +643,7 @@ function presentAction(input: PresentActionInput): PresentedAction {
     finality: semantics.finality,
     facts,
     previewCopy: facts.join(' '),
+    effectCopy: effectFacts.join(' '),
   };
 }
 
@@ -464,6 +663,7 @@ function presentationCountSummary(verb: ActionVerb, count: number): string | nul
 function presentationSchedule(
   semantics: ActionSemantics,
   wakeAt: string | null,
+  timeZone: PresentationTimeZone,
 ): ActionPresentationSchedule {
   if (semantics.schedule.kind === 'none') {
     return { kind: 'none', wakeAt: null };
@@ -474,13 +674,14 @@ function presentationSchedule(
   return {
     kind: 'scheduled',
     wakeAt,
-    summary: `Returns to Inbox ${formatIsoUtc(wakeAt)}.`,
+    summary: `Returns to Inbox ${formatPresentationDateTime(wakeAt, timeZone)}.`,
   };
 }
 
 function presentationActivityUndo(
   semantics: ActionSemantics,
   deadline: string | null,
+  timeZone: PresentationTimeZone,
 ): ActionPresentationActivityUndo {
   if (semantics.activityUndo.kind === 'none') {
     return { kind: 'none', deadline: null, summary: semantics.activityUndo.summary };
@@ -492,6 +693,7 @@ function presentationActivityUndo(
       UNIFORM_UNDO_WINDOW_DAYS,
       deadline,
       semantics.activityUndo.summary,
+      timeZone,
     ),
   };
 }
@@ -506,10 +708,17 @@ export function activityUndoSummary(
   uniformWindowDays: number | null,
   deadline: string | null,
   planDependentFallback: string,
+  /**
+   * Which clock an absolute deadline prints in. Defaults to `'utc'` so
+   * `staticActionPreviewCopy` and every existing caller are unchanged;
+   * interactive previews pass `'viewer'` so this line and the Later
+   * sheet's own `datetime-local` picker read the same wall clock.
+   */
+  timeZone: PresentationTimeZone = 'utc',
 ): string {
   // A real deadline always wins — it is the exact answer for THIS action.
   if (deadline !== null) {
-    return `Undo from Activity until ${formatIsoUtc(deadline)}.`;
+    return `Undo from Activity until ${formatPresentationDateTime(deadline, timeZone)}.`;
   }
   // No deadline yet (every preview, before the mutation runs). While the
   // ladder is uniform we can still state the window instead of hedging.
@@ -521,6 +730,33 @@ export function activityUndoSummary(
 }
 
 /** Stable display copy until surfaces provide mailbox-timezone formatting. */
+/**
+ * Renders an instant for a preview.
+ *
+ * `'viewer'` uses the runtime's own zone and appends its short name, so
+ * the sentence and a `datetime-local` picker beside it read the same
+ * wall clock. Only interactive client surfaces ask for it — everything
+ * server-rendered or static stays on `'utc'`, which is deterministic.
+ */
+function formatPresentationDateTime(value: string, timeZone: PresentationTimeZone): string {
+  if (timeZone === 'utc') return formatIsoUtc(value);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new RangeError('Action presentation dates must be valid ISO date-time strings.');
+  }
+  const parts = new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZoneName: 'short',
+  }).format(date);
+  // "Sep 3, 2026 at 1:01 AM PDT" — Intl gives "Sep 3, 2026, 1:01 AM PDT".
+  return parts.replace(/,\s(?=\d{1,2}:\d{2}\s)/, ' at ');
+}
+
 function formatIsoUtc(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {

@@ -8,6 +8,7 @@ import {
   activityUndoSummary,
   buildActionPresentation,
   buildActionReceiptResult,
+  composeRecoveryFacts,
   staticActionPreviewCopy,
 } from './action-semantics';
 import type { ActionStatusSnapshot } from './action-semantics';
@@ -236,3 +237,210 @@ function actionSnapshot(): ActionStatusSnapshot {
     errorCode: null,
   };
 }
+
+// Founder screenshot review 2026-08-27. Every fact in the shipped
+// composite preview was true on its own; the paragraph they formed was
+// not. These assert the ASSEMBLY, which is what a reader sees, and they
+// live here rather than in one surface's test so all seven confirm
+// surfaces inherit them.
+describe('D245 composite presentation states one coherent story', () => {
+  const composite = () =>
+    buildActionPresentation({
+      verb: 'unsubscribe',
+      liveCount: 0,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: 'one_click',
+      secondaryAction: { verb: 'archive', liveCount: 17 },
+    });
+
+  it('drops a secondary claim the primary contradicts', () => {
+    // Archive alone truthfully says it. Under an unsubscribe it is false.
+    expect(ACTION_SEMANTICS.archive.unchanged.map((f) => f.claim)).toContain('not-unsubscribed');
+    expect(composite().previewCopy).not.toContain('The sender is not unsubscribed');
+    expect(composite().secondary?.unchanged).not.toContain('The sender is not unsubscribed.');
+  });
+
+  it('lets the primary own the future-mail story', () => {
+    const copy = composite().previewCopy;
+    expect(copy).toContain('one-click');
+    expect(copy).not.toContain('Future email is unchanged');
+  });
+
+  it('drops the standalone hedge once a secondary is present', () => {
+    expect(composite().primary.currentMail.summary).toBe(
+      'Unsubscribing on its own moves no existing email.',
+    );
+    expect(composite().previewCopy).not.toContain('unless you choose a separate action');
+  });
+
+  it('keeps the hedge when the action stands alone', () => {
+    const alone = buildActionPresentation({
+      verb: 'unsubscribe',
+      liveCount: 0,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: 'one_click',
+    });
+    expect(alone.primary.currentMail.summary).toContain('unless you choose a separate action');
+  });
+
+  it('keeps a secondary claim the primary does not contradict', () => {
+    // Later does not unsubscribe, so Archive's other claim must survive.
+    const laterThenArchive = buildActionPresentation({
+      verb: 'archive',
+      liveCount: 3,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: null,
+    });
+    expect(laterThenArchive.previewCopy).toContain('Nothing is deleted.');
+    expect(laterThenArchive.previewCopy).toContain('The sender is not unsubscribed.');
+  });
+
+  it('excludes the count from effectCopy and keeps it in previewCopy', () => {
+    const archive = buildActionPresentation({
+      verb: 'archive',
+      liveCount: 17,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: null,
+    });
+    expect(archive.primary.previewCopy).toContain('17');
+    expect(archive.primary.effectCopy).not.toContain('17');
+    expect(archive.primary.effectCopy).not.toContain('Undo from Activity');
+  });
+});
+
+describe('D245 recovery copy states each fact once and says whose it is', () => {
+  const present = (verb: Parameters<typeof buildActionPresentation>[0]['verb']) =>
+    buildActionPresentation({
+      verb,
+      liveCount: 1,
+      planUndoDeadline: null,
+      wakeAt: verb === 'later' ? '2026-09-03T08:01:00.000Z' : null,
+      unsubscribeChannel: verb === 'unsubscribe' ? 'one_click' : null,
+    }).primary;
+
+  it('never restates activityUndo as finality', () => {
+    // `delivered-request-cannot-be-recalled` is a second spelling of
+    // "cannot be undone" — the senders modal used to print both.
+    const facts = composeRecoveryFacts(present('unsubscribe'), null);
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).toBe('A delivered unsubscribe request cannot be undone.');
+  });
+
+  it('keeps every genuinely distinct Delete fact', () => {
+    const facts = composeRecoveryFacts(present('delete'), null);
+    expect(facts).toHaveLength(3);
+    expect(facts.join(' ')).toContain('Gmail Trash recovery is separate');
+    expect(facts.join(' ')).toContain('permanently deletes');
+  });
+
+  it('labels each half of a composite so neither sentence floats free', () => {
+    const composite = buildActionPresentation({
+      verb: 'unsubscribe',
+      liveCount: 0,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: 'one_click',
+      secondaryAction: { verb: 'archive', liveCount: 17 },
+    });
+    const facts = composeRecoveryFacts(composite.primary, composite.secondary);
+    expect(facts).toHaveLength(2);
+    expect(facts[0]).toMatch(/^Unsubscribe — /);
+    expect(facts[1]).toMatch(/^Archive — /);
+  });
+
+  it('does not label when both halves share the same recovery route', () => {
+    const composite = buildActionPresentation({
+      verb: 'archive',
+      liveCount: 4,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: null,
+      secondaryAction: { verb: 'archive', liveCount: 4 },
+    });
+    const facts = composeRecoveryFacts(composite.primary, composite.secondary);
+    expect(facts).toHaveLength(1);
+    expect(facts[0]).not.toContain('—');
+  });
+});
+
+describe('D245 Keep states the consequence it actually has', () => {
+  it('names the Triage effect rather than promising a memory', () => {
+    expect(ACTION_SEMANTICS.keep.futureMail.summary).toContain('stops coming up in Triage');
+  });
+
+  // Verified against the executors AND live on the dev mailbox: Autopilot
+  // filters `isProtected` and nothing else, and a Keep action leaves
+  // `triage_decisions.verdict` alone — so no preset is gated out either.
+  it('says plainly that Keep is not Protect', () => {
+    const claims = ACTION_SEMANTICS.keep.unchanged;
+    expect(claims.map((f) => f.claim)).toContain('not-protected');
+    expect(claims.find((f) => f.claim === 'not-protected')?.summary).toContain('not Protect');
+  });
+
+  it('moves no mail and needs no undo route', () => {
+    expect(ACTION_SEMANTICS.keep.currentMail.scope).toBe('none');
+    expect(ACTION_SEMANTICS.keep.activityUndo.kind).toBe('none');
+  });
+});
+
+describe('D245 absolute times render in one clock per surface', () => {
+  const later = (timeZone: 'utc' | 'viewer') => {
+    const primary = buildActionPresentation({
+      verb: 'later',
+      liveCount: 1,
+      planUndoDeadline: '2026-07-15T17:30:00.000Z',
+      wakeAt: '2026-09-03T08:01:00.000Z',
+      unsubscribeChannel: null,
+      timeZone,
+    }).primary;
+    // A wakeAt was supplied, so this is the `scheduled` arm; narrowing
+    // here keeps every assertion below on the union member that has a
+    // summary.
+    if (primary.schedule.kind !== 'scheduled') {
+      throw new Error(`expected a scheduled Later, got ${primary.schedule.kind}`);
+    }
+    return { schedule: primary.schedule, activityUndo: primary.activityUndo };
+  };
+
+  it('defaults to UTC so server-rendered and static copy stay deterministic', () => {
+    expect(later('utc').schedule.summary).toBe('Returns to Inbox Sep 3, 2026 at 8:01 AM UTC.');
+  });
+
+  // Asserted against the runtime's OWN zone rather than a hardcoded
+  // offset: this suite runs in PDT on the founder's laptop and in UTC on
+  // CI, and an assertion that simply banned "UTC" passed locally and
+  // went red in CI for a correct implementation.
+  const runtimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  it('renders the viewer clock when a surface asks for it', () => {
+    // The Later sheet's own `<input type="datetime-local">` is local by
+    // construction, so a UTC sentence beside it printed one instant in
+    // two clocks and left the reader to do the offset arithmetic.
+    const summary = later('viewer').schedule.summary;
+    expect(summary).toMatch(
+      /^Returns to Inbox \w{3} \d{1,2}, \d{4} at \d{1,2}:\d{2} (AM|PM) \S+\.$/,
+    );
+    const expectedHour = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hour12: true,
+      timeZone: runtimeZone,
+    }).format(new Date('2026-09-03T08:01:00.000Z'));
+    expect(summary).toContain(expectedHour.replace(/\s?(AM|PM)$/, ''));
+  });
+
+  it('applies the same clock to the Undo deadline', () => {
+    expect(later('utc').activityUndo.summary).toContain('UTC.');
+    expect(later('viewer').activityUndo.summary).toMatch(
+      /^Undo from Activity until \w{3} \d{1,2}, \d{4} at \d{1,2}:\d{2} (AM|PM) \S+\.$/,
+    );
+  });
+
+  it('actually moves the wall clock when the viewer is not on UTC', () => {
+    if (runtimeZone === 'UTC' || runtimeZone === 'Etc/UTC') return;
+    expect(later('viewer').schedule.summary).not.toBe(later('utc').schedule.summary);
+  });
+});

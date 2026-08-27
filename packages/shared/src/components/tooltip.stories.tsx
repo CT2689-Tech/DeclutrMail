@@ -7,6 +7,7 @@
 // stories (`numeric-display.stories.tsx`) so it typechecks in this
 // package without the Storybook framework types.
 
+import { ACTION_SEMANTICS } from '../actions/action-semantics';
 import { Button } from './button';
 import { Tooltip } from './tooltip';
 import { tokens } from '../tokens/tokens';
@@ -86,18 +87,23 @@ export const BelowTheTrigger: Story = {
 export const InARow: Story = {
   render: () => (
     <div style={{ display: 'flex', gap: 8, padding: '60px 40px', fontFamily: font.sans }}>
-      {[
-        ['Keep', 'DeclutrMail remembers Keep as your decision for this sender.'],
-        ['Later', 'Matching email currently in Inbox moves to the DeclutrMail/Later label.'],
-      ].map(([label, effect]) => (
-        <Tooltip key={label} content={effect}>
-          {({ describedBy }) => (
-            <Button tone="default" ariaDescribedBy={describedBy}>
-              {label}
-            </Button>
-          )}
-        </Tooltip>
-      ))}
+      {/* Derived from the canonical registry, never transcribed. The Keep
+          line here was a hand-copied duplicate and went stale the moment
+          D245 rewrote it (2026-08-27). */}
+      {(['keep', 'later'] as const)
+        .map(
+          (verb) =>
+            [ACTION_SEMANTICS[verb].label, ACTION_SEMANTICS[verb].futureMail.summary] as const,
+        )
+        .map(([label, effect]) => (
+          <Tooltip key={label} content={effect}>
+            {({ describedBy }) => (
+              <Button tone="default" ariaDescribedBy={describedBy}>
+                {label}
+              </Button>
+            )}
+          </Tooltip>
+        ))}
       <span style={{ alignSelf: 'center', fontSize: 12, color: color.fgMuted }}>
         Hover or Tab through them.
       </span>

@@ -24,6 +24,7 @@ export {
   actionHasRecovery,
   buildActionPresentation,
   buildActionReceiptResult,
+  composeRecoveryFacts,
   defaultLaterWakeAtIso,
   getActionSemantics,
   staticActionPreviewCopy,
