@@ -13,6 +13,7 @@ import {
   type TierId,
 } from '@declutrmail/shared';
 import { ACTION_REGISTRY, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { CASA_VERIFICATION_APPROVED_ON, DELETE_RECOVERY_CLAIM } from '@declutrmail/shared/copy';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
@@ -48,11 +49,18 @@ const DEMO_ROWS = TRIAGE_QUEUE;
 const DEMO_ROW_BY_ID = new Map(DEMO_ROWS.map((row) => [row.id, row] as const));
 const DEMO_VERBS: ReadonlySet<string> = new Set(VERB_ORDER);
 const DEMO_DECISION_KEYS = new Set(['rowId', 'verb', 'senderName', 'affectedCount', 'at']);
-const DEMO_STATE_KEYS = new Set(['version', 'mode', 'decisions']);
-const STORAGE_KEY = 'dm.inbox-simulator.state.v3';
+// v4 (Plan 4 Task 5) adds `ruleDecision` — the rule step (kind: 'rule') has
+// no row, so its outcome is not a `DemoDecision` and needs its own top-level
+// field. The key-count check below rejects any pre-v4 payload on shape
+// alone, before the `version` field is even inspected.
+const DEMO_STATE_KEYS = new Set(['version', 'mode', 'decisions', 'ruleDecision']);
+const STORAGE_KEY = 'dm.inbox-simulator.state.v4';
 const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
 
 type DemoMode = 'guided' | 'explore';
+/** Mirrors the rule step's `ruleActivated` state — `null` until the visitor
+ *  confirms either `ActivateRuleModal` path (see `confirmRule`). */
+type RuleDecision = 'active' | 'observe' | null;
 
 interface DemoDecision {
   rowId: string;
@@ -70,9 +78,10 @@ interface PendingDecision {
 }
 
 interface StoredDemoState {
-  version: 3;
+  version: 4;
   mode: DemoMode;
   decisions: DemoDecision[];
+  ruleDecision: RuleDecision;
 }
 
 function requireDemoRow(rowId: string): TriageDecisionRow {
@@ -150,8 +159,11 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     kind: 'row',
     row: requireDemoRow('t-groupon'),
     shortLabel: 'Free the space',
-    title: 'Archive and Unsubscribe never remove a message.',
-    body: 'Everything archived or unsubscribed so far is still in this account — just out of the inbox. Delete is the one action that actually removes mail, and it still goes through Gmail Trash first.',
+    title: 'Archiving freed no storage.',
+    // Only the lead clause is hand-written; the recovery model itself is
+    // the canonical claim, imported rather than retyped (D245-adjacent —
+    // the same "one truth, many surfaces" reasoning as the storage list).
+    body: `Everything archived or unsubscribed so far only left the inbox — none of it freed storage. ${DELETE_RECOVERY_CLAIM}`,
     prompt: 'Try Delete — the one action that actually clears space.',
   },
 ] as const;
@@ -302,21 +314,28 @@ function parseStoredState(stored: string): StoredDemoState | null {
   if (
     keys.length !== DEMO_STATE_KEYS.size ||
     keys.some((key) => !DEMO_STATE_KEYS.has(key)) ||
-    record.version !== 3 ||
-    (record.mode !== 'guided' && record.mode !== 'explore')
+    record.version !== 4 ||
+    (record.mode !== 'guided' && record.mode !== 'explore') ||
+    (record.ruleDecision !== 'active' &&
+      record.ruleDecision !== 'observe' &&
+      record.ruleDecision !== null)
   ) {
     return null;
   }
 
   const decisions = parseStoredDecisions(record.decisions);
   if (decisions === null) return null;
-  return { version: 3, mode: record.mode, decisions };
+  return { version: 4, mode: record.mode, decisions, ruleDecision: record.ruleDecision };
 }
 
 function parseLegacyState(stored: string): StoredDemoState | null {
   try {
     const decisions = parseStoredDecisions(JSON.parse(stored));
-    return decisions === null ? null : { version: 3, mode: 'guided', decisions };
+    // The v2 format predates the rule step entirely, so there is nothing to
+    // migrate it from — `null` is the only honest value here.
+    return decisions === null
+      ? null
+      : { version: 4, mode: 'guided', decisions, ruleDecision: null };
   } catch {
     return null;
   }
@@ -405,12 +424,22 @@ export function InboxSimulatorScreen() {
     wakeAt: string | null;
   } | null>(null);
   const [pendingRule, setPendingRule] = useState(false);
-  // Not persisted (storage stays v3 here — Plan 4 Task 5 owns the v4
-  // bump that adds a rule decision to the stored shape), so a reload
-  // resets the rule step like every other unrestored ephemeral state.
-  const [ruleActivated, setRuleActivated] = useState<'active' | 'observe' | null>(null);
+  // Persisted since the v4 bump (Plan 4 Task 5) — see `StoredDemoState`.
+  // Restored below by the hydration effect, so a reload after step 3
+  // resumes at step 4 rather than replaying an already-decided rule step.
+  const [ruleActivated, setRuleActivated] = useState<RuleDecision>(null);
   const [dismissedDomains, setDismissedDomains] = useState<readonly string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  // Measured elapsed time (never a hardcoded figure). `startedAt` is
+  // stamped by an effect the first time ANY decision exists — not during
+  // render, so server and first-paint HTML never have to guess a value
+  // that depends on wall-clock time. `completedAt` is stamped inside
+  // `maybeTrackGuideCompletion`, the same one-way latch that already
+  // guards the `demo_completed` analytics event, so both share one
+  // "first time only" rule. Neither is persisted — see the `StoredDemoState`
+  // comment; a reload restarts the clock like every other ephemeral state.
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [completedAt, setCompletedAt] = useState<number | null>(null);
   const guidedCompletionTracked = useRef(false);
   const decisionLock = useRef<string | null>(null);
 
@@ -426,11 +455,15 @@ export function InboxSimulatorScreen() {
       if (restored) {
         setDecisions(restored.decisions);
         setMode(restored.mode);
-        // The rule step never restores as decided (see the `ruleActivated`
-        // state note above) — `false` here matches that state's initial
-        // value, not a claim that step 3 is actually undone.
-        setExpandedId(firstUndecidedRow(restored.mode, restored.decisions, false)?.id ?? null);
-        guidedCompletionTracked.current = hasCompletedGuide(restored.decisions, false);
+        setRuleActivated(restored.ruleDecision);
+        const ruleDecidedRestored = restored.ruleDecision != null;
+        setExpandedId(
+          firstUndecidedRow(restored.mode, restored.decisions, ruleDecidedRestored)?.id ?? null,
+        );
+        guidedCompletionTracked.current = hasCompletedGuide(
+          restored.decisions,
+          ruleDecidedRestored,
+        );
       }
       if (legacyStored) localStorage.removeItem(LEGACY_STORAGE_KEY);
     } catch {
@@ -442,12 +475,24 @@ export function InboxSimulatorScreen() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      const stored: StoredDemoState = { version: 3, mode, decisions };
+      const stored: StoredDemoState = { version: 4, mode, decisions, ruleDecision: ruleActivated };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
     } catch {
       // Private browsing and quota errors leave the current session usable.
     }
-  }, [decisions, hydrated, mode]);
+  }, [decisions, hydrated, mode, ruleActivated]);
+
+  // Stamps the demo's start the first time any decision exists — restored
+  // ones on hydration count too, since there is nothing to time an
+  // already-in-progress session from except "now". Runs once per session
+  // (guarded on `startedAt`), in an effect rather than during render, so
+  // this can never diverge between the server-rendered HTML and the first
+  // client paint (D206-adjacent hydration safety).
+  useEffect(() => {
+    if (startedAt === null && (decisions.length > 0 || ruleActivated != null)) {
+      setStartedAt(Date.now());
+    }
+  }, [decisions.length, ruleActivated, startedAt]);
 
   const decidedIds = useMemo(
     () => new Set(decisions.map((decision) => decision.rowId)),
@@ -471,7 +516,18 @@ export function InboxSimulatorScreen() {
   const currentBatch =
     currentScenario?.kind === 'batch'
       ? (findDomainBatches(DEMO_ROWS, dismissedDomains).find(
-          (batch) => batch.domain === currentScenario.domain,
+          (batch) =>
+            batch.domain === currentScenario.domain &&
+            // `dismissedDomains` is never persisted (Task 5's storage v4
+            // only carries `decisions`/`mode`/`ruleDecision`), so a reload
+            // after "Decide one by one" forgets the dismissal while
+            // keeping whatever rows got individually decided first. Without
+            // this check the aggregate card would reappear quoting the
+            // ORIGINAL sender/message counts — including a sender that is
+            // already archived — which is exactly the stale-preview defect
+            // D226 exists to prevent. Once any member has its own decision,
+            // treat the batch as left, the same as an explicit dismissal.
+            !batch.rows.some((row) => decidedIds.has(row.id)),
         ) ?? null)
       : null;
   // Dismissing the batch card falls back to its full member run rendered
@@ -488,13 +544,23 @@ export function InboxSimulatorScreen() {
         : (dismissedBatchRows ?? [])
       : DEMO_ROWS.filter((row) => !decidedIds.has(row.id));
   const guidedDecisions = decisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
+  // `null` unless BOTH timestamps exist — see the `completedAt` note above:
+  // a session restored already-complete from storage never re-enters
+  // `maybeTrackGuideCompletion`, so it never gets a `completedAt`, and the
+  // completion screen correctly shows no elapsed figure rather than a
+  // reload-time artifact.
+  const elapsedMs =
+    startedAt !== null && completedAt !== null ? Math.max(0, completedAt - startedAt) : null;
 
   /** Fire the completion event once, the first time the guide's every
    *  step is done — shared by the single-row, batch, and rule confirm
    *  paths so the "have we completed?" check cannot drift between them.
    *  `ruleDecidedNow` defaults to the current render's `ruleDecided`;
    *  `confirmRule` overrides it with the fresh value, since its own
-   *  `setRuleActivated` call has not yet re-rendered when this runs. */
+   *  `setRuleActivated` call has not yet re-rendered when this runs.
+   *  Also stamps `completedAt` — measured here, in the same event-handler
+   *  pass that already computes "is the guide done now", never during
+   *  render (see the `startedAt` effect above for why that matters). */
   const maybeTrackGuideCompletion = (
     nextDecisions: DemoDecision[],
     ruleDecidedNow = ruleDecided,
@@ -502,6 +568,7 @@ export function InboxSimulatorScreen() {
     if (guidedCompletionTracked.current || !hasCompletedGuide(nextDecisions, ruleDecidedNow))
       return;
     guidedCompletionTracked.current = true;
+    setCompletedAt(Date.now());
     const guidedOutcome = nextDecisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
     void track('demo_completed', {
       decisions_completed: guidedOutcome.length,
@@ -669,6 +736,8 @@ export function InboxSimulatorScreen() {
     setPendingRule(false);
     setRuleActivated(null);
     setDismissedDomains([]);
+    setStartedAt(null);
+    setCompletedAt(null);
     setExpandedId(GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null);
     try {
       localStorage.removeItem(STORAGE_KEY);
@@ -739,6 +808,7 @@ export function InboxSimulatorScreen() {
           {mode === 'guided' && currentScenario === null ? (
             <DemoCompletion
               decisions={guidedDecisions}
+              elapsedMs={elapsedMs}
               onExplore={() => changeMode('explore')}
               onReset={reset}
             />
@@ -973,15 +1043,19 @@ function RuleStepCard({ onPreview }: { onPreview: () => void }) {
 }
 
 function OutcomeSummary({ decisions }: { decisions: readonly DemoDecision[] }) {
-  const messagesMoved = decisions.reduce((total, decision) => total + decision.affectedCount, 0);
+  // "Cleared from Inbox" — never "freed" or "deleted": Archive/Later/Delete
+  // all remove the message from Inbox view, but only Delete (via Gmail
+  // Trash) is on any path to actually freeing storage (see step 4's own
+  // scenario copy). This label must not blur that distinction.
+  const clearedFromInbox = decisions.reduce((total, decision) => total + decision.affectedCount, 0);
   const undoable = decisions.filter(isActivityUndoable).length;
   const oneWay = decisions.filter((decision) => decision.verb === 'Unsubscribe').length;
 
   return (
     <dl className="dm-simulator-outcome" aria-label="Sample outcome">
       <div>
-        <dt>Messages moved</dt>
-        <dd>{messagesMoved.toLocaleString('en-US')}</dd>
+        <dt>Cleared from Inbox</dt>
+        <dd>{clearedFromInbox.toLocaleString('en-US')}</dd>
       </div>
       <div>
         <dt>Undoable actions</dt>
@@ -993,6 +1067,15 @@ function OutcomeSummary({ decisions }: { decisions: readonly DemoDecision[] }) {
       </div>
     </dl>
   );
+}
+
+/** Renders a measured millisecond delta as "Ns" or "Nm Ns" — never a
+ *  hardcoded string (see the `startedAt`/`completedAt` state notes). */
+function formatElapsedTime(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
 function CopySimulatorLink() {
@@ -1022,10 +1105,14 @@ function CopySimulatorLink() {
 
 function DemoCompletion({
   decisions,
+  elapsedMs,
   onExplore,
   onReset,
 }: {
   decisions: readonly DemoDecision[];
+  /** Measured, never hardcoded — `null` only for a session restored
+   *  already-complete from storage (see the `elapsedMs` note above). */
+  elapsedMs: number | null;
   onExplore: () => void;
   onReset: () => void;
 }) {
@@ -1039,7 +1126,14 @@ function DemoCompletion({
         Suggestions stay suggestions. Mail-changing decisions show their exact effect first, and
         confirmed outcomes appear in Activity.
       </p>
+      {elapsedMs !== null ? (
+        <p className="dm-simulator-elapsed">{`Done in ${formatElapsedTime(elapsedMs)}, start to finish.`}</p>
+      ) : null}
       <OutcomeSummary decisions={decisions} />
+      {/* Never future mail (D245 global constraint) — the public FAQ says
+          archiving a sender does not automatically archive future
+          messages, and this is the canonical claim, not a paraphrase. */}
+      <p className="dm-simulator-scope-note">{MANUAL_ACTION_SCOPE_CLAIM}</p>
       <div className="dm-simulator-plan-path" aria-label="How the plans extend Triage">
         <span>
           <strong>Every plan</strong>
@@ -1067,6 +1161,11 @@ function DemoCompletion({
         </Button>
       </div>
       <p className="dm-simulator-oauth-note">{OAUTH_SCOPE_DISCLOSURE}</p>
+      {/* Next to the connect CTA above. "Approved" only — Google approved
+          an OAuth verification; it did not certify or audit the product. */}
+      <p className="dm-simulator-oauth-note">
+        {`Google approved DeclutrMail's OAuth verification on ${CASA_VERIFICATION_APPROVED_ON} for the single restricted scope this connection would request, gmail.modify.`}
+      </p>
     </div>
   );
 }

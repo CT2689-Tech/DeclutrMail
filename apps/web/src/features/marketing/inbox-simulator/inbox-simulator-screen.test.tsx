@@ -18,7 +18,7 @@ import { findDomainBatches } from '@/features/triage/domain-batch';
 import { GUIDED_SCENARIOS, InboxSimulatorScreen } from './inbox-simulator-screen';
 import { syntheticInboxCount } from './synthetic-preview';
 
-const STORAGE_KEY = 'dm.inbox-simulator.state.v3';
+const STORAGE_KEY = 'dm.inbox-simulator.state.v4';
 const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
 const firstRow = TRIAGE_QUEUE[0]!;
 const validDecision = {
@@ -38,8 +38,12 @@ const nonFiniteTimestamp = JSON.stringify({ ...validDecision, at: '__NON_FINITE_
   '1e309',
 );
 
-function storedState(decisions: unknown, mode: 'guided' | 'explore' = 'guided'): string {
-  return JSON.stringify({ version: 3, mode, decisions });
+function storedState(
+  decisions: unknown,
+  mode: 'guided' | 'explore' = 'guided',
+  ruleDecision: 'active' | 'observe' | null = null,
+): string {
+  return JSON.stringify({ version: 4, mode, decisions, ruleDecision });
 }
 
 describe('InboxSimulatorScreen', () => {
@@ -140,6 +144,44 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
   });
 
+  it('drops the stale aggregate batch card once a member has its own decision', async () => {
+    // Found via browser smoke: `dismissedDomains` (the "Decide one by one"
+    // choice) is never persisted, so a reload after deciding ONE amazon.com
+    // sender individually used to forget the dismissal while keeping the
+    // decision — re-showing "5 senders from amazon.com" with the decided
+    // sender's count still folded into the aggregate total and its own
+    // row gone missing from the one-by-one fallback. Restoring exactly one
+    // individual decision reproduces that state without a real reload.
+    const amazonBatch = findDomainBatches(TRIAGE_QUEUE).find((b) => b.domain === 'amazon.com')!;
+    const decidedRow = amazonBatch.eligibleRows[0]!;
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      storedState([
+        {
+          rowId: decidedRow.id,
+          verb: 'Archive',
+          senderName: decidedRow.senderName,
+          affectedCount: syntheticInboxCount(decidedRow),
+          at: 1_750_000_000_000,
+        },
+      ]),
+    );
+
+    render(<InboxSimulatorScreen />);
+
+    expect(await screen.findByText('0 of 4 decisions complete')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/senders from amazon\.com — decide together\?/i),
+    ).not.toBeInTheDocument();
+    // The decided sender is gone (already handled); every OTHER eligible
+    // member still renders, one row at a time.
+    expect(screen.queryByText(decidedRow.senderName)).not.toBeInTheDocument();
+    for (const row of amazonBatch.eligibleRows) {
+      if (row.id === decidedRow.id) continue;
+      expect(screen.getByText(row.senderName)).toBeInTheDocument();
+    }
+  });
+
   it('migrates the previous local decision format into the guided demo', async () => {
     window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify([validDecision]));
 
@@ -152,9 +194,12 @@ describe('InboxSimulatorScreen', () => {
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
-        version: 3,
+        version: 4,
         mode: 'guided',
         decisions: [validDecision],
+        // The v2 format predates the rule step; migration has nothing to
+        // carry a rule decision over from.
+        ruleDecision: null,
       }),
     );
   });
@@ -170,10 +215,21 @@ describe('InboxSimulatorScreen', () => {
     ['a forged sender name', storedState([{ ...validDecision, senderName: 'Injected' }])],
     [
       'a non-finite affected count',
-      `{"version":3,"mode":"guided","decisions":[${nonFiniteCount}]}`,
+      `{"version":4,"mode":"guided","decisions":[${nonFiniteCount}],"ruleDecision":null}`,
     ],
-    ['a non-finite timestamp', `{"version":3,"mode":"guided","decisions":[${nonFiniteTimestamp}]}`],
+    [
+      'a non-finite timestamp',
+      `{"version":4,"mode":"guided","decisions":[${nonFiniteTimestamp}],"ruleDecision":null}`,
+    ],
     ['a duplicate row/timestamp', storedState([validDecision, validDecision])],
+    // v4-specific (D133 Plan 4 Task 5): the rule decision is a new
+    // top-level field, not a `DemoDecision` — its own strictness needs its
+    // own coverage, or a typo here would silently degrade to "always null".
+    [
+      'an invalid rule decision',
+      '{"version":4,"mode":"guided","decisions":[],"ruleDecision":"sometimes"}',
+    ],
+    ['a v4 payload missing the rule decision key', '{"version":4,"mode":"guided","decisions":[]}'],
   ])('rejects persisted state containing %s without poisoning the demo', async (_case, stored) => {
     window.localStorage.setItem(STORAGE_KEY, stored);
 
@@ -183,9 +239,10 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.queryByText(/Injected/)).not.toBeInTheDocument();
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toEqual({
-        version: 3,
+        version: 4,
         mode: 'guided',
         decisions: [],
+        ruleDecision: null,
       }),
     );
   });
@@ -332,6 +389,27 @@ describe('InboxSimulatorScreen', () => {
     );
   }
 
+  /** Walks every remaining step after `reachRuleStep()`: turns the rule on,
+   *  then deletes Groupon (step 4) — landing on `DemoCompletion`. */
+  function finishFromRuleStep() {
+    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Turn on and run it/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Groupon' })).getByRole('button', {
+        name: /^Delete/,
+      }),
+    );
+  }
+
+  /** Walks all four guided steps to completion: batch archive (amazon.com)
+   *  → unsubscribe (LinkedIn) → rule (turn on) → delete (Groupon). Shared
+   *  by every test that needs to reach `DemoCompletion`. */
+  function completeGuide() {
+    reachRuleStep();
+    finishFromRuleStep();
+  }
+
   it('offers both turning the rule on and watching first, and names Plus', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
@@ -371,7 +449,7 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: 'Archive and Unsubscribe never remove a message.' }),
+      screen.getByRole('heading', { name: 'Archiving freed no storage.' }),
     ).toBeInTheDocument();
   });
 
@@ -386,21 +464,101 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
   });
 
-  // D133 Plan 4: unreachable until Task 4 lands the Autopilot rule step.
-  // `DemoCompletion` (where this plan-comparison strip lives) only
-  // renders once every guided step is complete, and step 3 (the rule
-  // step) has no way to record a decision yet — see `isScenarioComplete`
-  // in inbox-simulator-screen.tsx. Re-enable once Task 4 wires
-  // `ActivateRuleModal`'s confirm into the guide.
-  it.skip('names every capability Plus adds over Free in the plan-comparison strip', () => {
-    render(<InboxSimulatorScreen />);
+  it('persists the rule decision so a reload after step 3 resumes at step 4', async () => {
+    // `ruleActivated` was ephemeral through Tasks 3-4 (reset on reload).
+    // Task 5 owns persisting it — a reload right after step 3 must resume
+    // at step 4, never replay the already-decided rule step.
+    const { unmount } = render(<InboxSimulatorScreen />);
+    reachRuleStep();
+    fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Turn on and run it/i }));
 
-    // Reach the completion block, which is where the plan strip lives.
-    fireEvent.click(screen.getByRole('button', { name: /Archive \(A\)/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Archive' }));
-    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm sample Unsubscribe' }));
-    fireEvent.click(screen.getByRole('button', { name: /Keep \(K\)/ }));
+    await waitFor(() =>
+      expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
+        version: 4,
+        ruleDecision: 'active',
+      }),
+    );
+    unmount();
+
+    render(<InboxSimulatorScreen />);
+    expect(await screen.findByText('3 of 4 decisions complete')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Archiving freed no storage.' }),
+    ).toBeInTheDocument();
+  });
+
+  it('projects backlog cleared, never future mail', () => {
+    render(<InboxSimulatorScreen />);
+    completeGuide();
+
+    // The public FAQ says archiving a sender does NOT automatically
+    // archive future messages — nothing on this screen may imply
+    // otherwise, for any verb.
+    expect(screen.queryByText(/future emails? will skip/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/cleared/i)).toBeInTheDocument();
+  });
+
+  it('rejects a v3 snapshot rather than half-restoring it', () => {
+    // A stale v3 blob has neither the right `version` nor the new
+    // `ruleDecision` key — the whole point of the v4 bump is that this
+    // shape genuinely changed, so it must not half-restore.
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ version: 3, mode: 'guided', decisions: [] }),
+    );
+    render(<InboxSimulatorScreen />);
+    expect(screen.getByText(/Guided decision 1 of 4/i)).toBeInTheDocument();
+  });
+
+  it('measures elapsed time from the clock rather than a hardcoded constant', () => {
+    // Negative control (Plan 4 Task 5 Step 5): a hardcoded figure would
+    // print the SAME text under two different frozen deltas. `startedAt`
+    // is stamped by an effect on the first decision (the batch archive
+    // below); `completedAt` is stamped when the last decision — the
+    // Groupon delete — completes the guide. Advancing the clock in
+    // between makes the gap between those two stamps exactly the delta
+    // asserted below.
+    vi.useFakeTimers();
+    try {
+      const t0 = new Date('2026-08-27T00:00:00.000Z').getTime();
+
+      function completeGuideWithGap(gapMs: number) {
+        fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+        fireEvent.click(
+          within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
+            name: /^Archive all/,
+          }),
+        );
+        vi.setSystemTime(Date.now() + gapMs);
+        fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
+        fireEvent.click(
+          within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+            name: /^Unsubscribe/,
+          }),
+        );
+        finishFromRuleStep();
+      }
+
+      vi.setSystemTime(t0);
+      render(<InboxSimulatorScreen />);
+      completeGuideWithGap(12_000);
+      expect(screen.getByText(/Done in 12s, start to finish\./)).toBeInTheDocument();
+
+      // Replay with a DIFFERENT gap through the completion screen's own
+      // reset — a hardcoded string would show the same "12s" again.
+      fireEvent.click(screen.getByRole('button', { name: 'Start again' }));
+      vi.setSystemTime(t0);
+      completeGuideWithGap(75_000);
+      expect(screen.getByText(/Done in 1m 15s, start to finish\./)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('names every capability Plus adds over Free in the plan-comparison strip', () => {
+    render(<InboxSimulatorScreen />);
+    completeGuide();
     expect(screen.getByText('Guided demo complete')).toBeInTheDocument();
 
     const free = new Set(TIER_MANIFEST.free.capabilities);
