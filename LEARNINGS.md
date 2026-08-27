@@ -2064,3 +2064,25 @@ the other mode.
 wrong surface" coverage gap is found — this is the second after
 `a11y-public.spec.ts`, which existed for exactly the same reason (the
 authed lane covered five screens and the public surface none).
+
+## 2026-08-27 — A number in a sentence about the future
+**Context:** adding a line to the Later preview so a large snooze says
+what happens when it comes back (founder option 3B).
+**Finding:** the first draft read "All 1,718 arrive back together." Every
+part of that was sourced correctly — the count came from the same live
+preview the headline uses, and all four confirm surfaces rendered it. It
+was still a false claim, because the headline one line above already
+disclaims that number ("Rechecked when it runs, so the final count can
+differ from this preview") and the return happens weeks later, after an
+Activity undo or any other action can change what is left. The count was
+the one part of the sentence that could go wrong; the timing was the part
+worth saying.
+**Rule (provisional):** a figure is only as true as the moment it
+describes. Before putting a number in a sentence, check what tense the
+sentence is in — if it describes a future event, it needs the same hedge
+the present-tense one carries, or the number should not be there. Say the
+part that does not drift.
+**Distillation trigger:** promote to CLAUDE.md §2 if a third preview
+number is found asserting something the surface cannot know — it would
+join null→0, page-count-as-total and unknown→"Ready" in the UI-truth
+class, which is already the dominant defect here.

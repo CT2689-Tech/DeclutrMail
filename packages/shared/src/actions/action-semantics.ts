@@ -407,6 +407,17 @@ export function actionHasRecovery(verb: ActionVerb): boolean {
  * deliberately NOT a gate: Later returns the mail on a date the user
  * picked and Activity can reverse it, so friction here would tax the one
  * mail-moving verb that undoes itself.
+ *
+ * The sentence carries NO count, and that is the whole design. The first
+ * draft read "All 1,718 arrive back together." — a definite quantity,
+ * asserted at confirm time, about an event weeks away. The preview one
+ * line above already disclaims that very number ("Rechecked when it runs,
+ * so the final count can differ from this preview"), and between the move
+ * and the wake date an Activity undo or any other action changes what is
+ * left to come back. So the figure was the one falsifiable part of a
+ * sentence whose true content is the timing. The count stays where it is
+ * honest — in the headline, under its own disclaimer — and this line says
+ * only what does not drift.
  */
 export const LATER_BULK_RETURN_NOTICE_THRESHOLD = 200;
 
@@ -654,7 +665,7 @@ function presentAction(input: PresentActionInput): PresentedAction {
     schedule.kind === 'scheduled' &&
     input.liveCount !== null &&
     input.liveCount >= LATER_BULK_RETURN_NOTICE_THRESHOLD
-      ? `All ${input.liveCount.toLocaleString('en-US')} arrive back together.`
+      ? 'They all return together, not spread out.'
       : null;
   const effectFacts = [
     currentMail.summary,

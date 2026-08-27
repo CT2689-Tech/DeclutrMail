@@ -21,7 +21,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
 }));
 
 const BIG = 1_718;
-const NOTICE = `All ${BIG.toLocaleString('en-US')} arrive back together.`;
+const NOTICE = 'They all return together, not spread out.';
 const WAKE_AT = '2026-09-03T08:01:00.000Z';
 
 const buckets = {
@@ -153,6 +153,6 @@ describe('Later bulk-return notice reaches every confirm surface (D226, 3B)', ()
         onConfirm={() => {}}
       />,
     );
-    expect(container.textContent).not.toContain('arrive back together');
+    expect(container.textContent).not.toContain('return together');
   });
 });

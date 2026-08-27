@@ -461,23 +461,31 @@ describe('D226 Later says when the whole pile comes back at once', () => {
       unsubscribeChannel: null,
     }).primary;
 
-  it('names the returning volume once the reach crosses the threshold', () => {
+  it('names the timing once the reach crosses the threshold', () => {
     const p = later(1_718);
-    expect(p.bulkReturnNotice).toBe('All 1,718 arrive back together.');
+    expect(p.bulkReturnNotice).toBe('They all return together, not spread out.');
     // In the shared copy too, so any surface rendering it inherits the
     // sentence without wiring a prop of its own.
-    expect(p.effectCopy).toContain('All 1,718 arrive back together.');
-    expect(p.previewCopy).toContain('All 1,718 arrive back together.');
+    expect(p.effectCopy).toContain('They all return together, not spread out.');
+    expect(p.previewCopy).toContain('They all return together, not spread out.');
+  });
+
+  // The count is stated once, in the headline, under its own "rechecked
+  // when it runs" disclaimer. Repeating it here would assert a definite
+  // quantity about an event weeks away that an Activity undo can change.
+  it('asserts no count for the future return', () => {
+    const p = later(1_718);
+    expect(p.bulkReturnNotice).not.toMatch(/\d/);
   });
 
   it('stays quiet below the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD - 1).bulkReturnNotice).toBeNull();
-    expect(later(17).effectCopy).not.toContain('arrive back together');
+    expect(later(17).effectCopy).not.toContain('return together');
   });
 
   it('fires exactly at the threshold', () => {
     expect(later(LATER_BULK_RETURN_NOTICE_THRESHOLD).bulkReturnNotice).toBe(
-      `All ${LATER_BULK_RETURN_NOTICE_THRESHOLD} arrive back together.`,
+      'They all return together, not spread out.',
     );
   });
 
