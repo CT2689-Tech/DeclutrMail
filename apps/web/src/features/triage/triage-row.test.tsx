@@ -23,6 +23,7 @@ import { render, screen, within } from '@testing-library/react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
+import { UnprotectButton } from './unprotect-button';
 import { recommendedVerb } from './types';
 
 function rowById(id: string): TriageDecisionRow {
@@ -384,6 +385,9 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
           onToggleExpand={() => {}}
           onAction={() => {}}
           inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+          // Mirrors what triage-queue.tsx constructs for a daily-Triage
+          // row (offerUnprotect unset — surface is the inline preview).
+          unprotectSlot={<UnprotectButton row={row} surface="triage-preview" />}
         />
       </QueryWrapper>,
     );
@@ -428,6 +432,7 @@ describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
     row: ReturnType<typeof rowById>,
     opts: { offerUnprotect?: boolean; inline?: boolean } = {},
   ) {
+    const offerUnprotect = opts.offerUnprotect ?? true;
     return render(
       <QueryWrapper client={createTestQueryClient()}>
         <TriageRow
@@ -435,7 +440,16 @@ describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
           expanded={false}
           onToggleExpand={() => {}}
           onAction={() => {}}
-          offerUnprotect={opts.offerUnprotect ?? true}
+          offerUnprotect={offerUnprotect}
+          // Mirrors what triage-queue.tsx constructs per row: the same
+          // control, surfaced under whichever `surface` the active
+          // position (row strip vs inline notice) needs.
+          unprotectSlot={
+            <UnprotectButton
+              row={row}
+              surface={offerUnprotect ? 'onboarding-review' : 'triage-preview'}
+            />
+          }
           inlinePreview={
             opts.inline ? { verb: 'Archive', archiveHistoric: false, inboxCount: 2 } : null
           }
@@ -462,11 +476,12 @@ describe('TriageRow — the D245 review row strip (offerUnprotect)', () => {
   });
 
   it('never stacks two Unprotect buttons when the strip and an inline preview are both live', () => {
-    // `showUnprotect={!offerUnprotect}` on the inline notice exists for
-    // exactly this: with D34's remember-preference set, a protected row
-    // on the review renders BOTH the strip and the inline preview. Two
-    // identical buttons with two overlapping sentences on one card was
-    // the bug; this pins the suppression in both directions.
+    // `unprotectSlot={offerUnprotect ? undefined : unprotectSlot}` on the
+    // inline notice (triage-row.tsx) exists for exactly this: with D34's
+    // remember-preference set, a protected row on the review renders BOTH
+    // the strip and the inline preview. Two identical buttons with two
+    // overlapping sentences on one card was the bug; this pins the
+    // suppression in both directions.
     renderStrip(rowById('t-sarah'), { inline: true });
     expect(screen.getAllByRole('button', { name: /^Unprotect$/i })).toHaveLength(1);
     // The notice itself still renders — only its duplicate control is
