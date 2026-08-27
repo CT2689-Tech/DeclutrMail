@@ -47,6 +47,7 @@ export function TriageQueue({
   busyRowIds = NO_BUSY_ROWS,
   previewInboxCount = 'loading',
   previewDetail,
+  previewQuotaRemaining,
   allowBatching = true,
   offerUnprotect = false,
   onBatchVerb,
@@ -67,6 +68,8 @@ export function TriageQueue({
   previewInboxCount?: PreviewCount;
   /** D226 verification detail, shared with the sheet path. */
   previewDetail?: ActionPreviewDetail | undefined;
+  /** Cleanup allowance — independent of the preview, see `ActionSheet`. */
+  previewQuotaRemaining?: number | null | undefined;
   /** Disable multi-sender shortcuts for finite guided sessions. */
   allowBatching?: boolean;
   /** Show a direct Unprotect control on Protected rows (D245 review). */
@@ -160,7 +163,7 @@ export function TriageQueue({
                   archiveHistoric: false,
                   inboxCount: previewInboxCount,
                   wakeAt: pendingAction.wakeAt,
-                  quotaRemaining: previewDetail?.quotaRemaining,
+                  quotaRemaining: previewQuotaRemaining,
                   // Built here rather than inside `TriageRow`: the public
                   // inbox simulator imports that module, so an import of
                   // the detail block there lands in its route chunk.

@@ -437,6 +437,13 @@ export function TriageScreen({
    * So the richer preview costs no extra request; the data was on the
    * client and simply never rendered.
    */
+  /**
+   * The month's remaining cleanup allowance, or null on an unmetered
+   * tier. Read straight off `me` so every confirm surface below can state
+   * the cost regardless of whether a mail preview has resolved.
+   */
+  const cleanupRemaining = auth?.me.cleanupRemaining ?? null;
+
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
     if (data == null || pendingRow == null) return undefined;
@@ -480,7 +487,6 @@ export function TriageScreen({
         ? { matchSample: { rows: sampleRows, total: data.counts.all } }
         : {}),
       ...(gmailScopeSearch === null ? {} : { verifyInGmailUrl: gmailScopeSearch }),
-      quotaRemaining: auth?.me.cleanupRemaining ?? null,
     };
   })();
 
@@ -1380,6 +1386,7 @@ export function TriageScreen({
           busyRowIds={busyRowIds}
           previewInboxCount={previewInboxCount}
           previewDetail={previewDetail}
+          previewQuotaRemaining={cleanupRemaining}
           allowBatching={journey === 'daily'}
           offerUnprotect={offerUnprotect}
           onBatchVerb={onBatchVerb}
@@ -1399,6 +1406,9 @@ export function TriageScreen({
         onConfirm={onSheetConfirm}
         onRetryPreview={() => void compositePreview.refetch()}
         detail={previewDetail}
+        // Unconditional: `previewDetail` is undefined until the composite
+        // preview resolves, and Unsubscribe confirms without waiting for it.
+        quotaRemaining={cleanupRemaining}
       />
 
       {/* Batch sheet — the D226 preview for a domain-batch decision. */}

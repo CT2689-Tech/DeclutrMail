@@ -135,3 +135,58 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     expect(screen.getByRole('button', { name: /later for all/i })).not.toBeDisabled();
   });
 });
+
+// A domain batch is the largest spend reachable from Triage — one cleanup
+// action per eligible sender — and stated no cost at all. Its own
+// `onError` catches 402 FREE_CAP_REACHED, so the cap was known to be
+// reachable from here; the preview just never said so before the click.
+describe('BatchActionSheet — states what the batch costs (D226)', () => {
+  it('counts one cleanup action per eligible sender', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={{ senders: [], totals: buckets, protectedCount: 0 }}
+        quotaRemaining={34}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText(/Uses 3 of your 34 cleanup actions left this month/),
+    ).toBeInTheDocument();
+  });
+
+  it('warns instead of promising when the batch exceeds the allowance', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={{ senders: [], totals: buckets, protectedCount: 0 }}
+        quotaRemaining={2}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText(/needs 3 cleanup actions but only 2 are left this month/),
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing on a tier that does not meter cleanup actions', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={{ senders: [], totals: buckets, protectedCount: 0 }}
+        quotaRemaining={null}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/cleanup action/)).toBeNull();
+  });
+});
