@@ -8,6 +8,7 @@ import {
   COMPARISONS,
   COMPARISONS_VERIFIED_FLOOR_ISO,
   comparisonVerifiedLabel,
+  ROUNDUP_DIMENSIONS,
   type ComparisonCell,
   type ComparisonDefinition,
   type EvidenceState,
@@ -237,12 +238,99 @@ export function ComparisonIndexScreen() {
           </div>
         </section>
 
+        <MatrixSection />
+
         <div className="dm-mkt-shell dm-compare-method-wrap">
           <MethodNote />
           <FinalCta />
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * The multi-way matrix — every tool against every dimension in one view.
+ *
+ * WHY IT EXISTS. The three-way comparison on the retired `.ai` site was
+ * the single best-converting page the product has ever had (4.08% CTR
+ * against a site-wide 0.5%), and the format is absent here: `/compare`
+ * shipped a descriptive table — what each tool is FOR — and seven 1v1
+ * pages, but nothing that answers "how do these differ on the thing I
+ * care about" without opening seven tabs.
+ *
+ * Every cell is the same object the `/vs/<slug>` page renders (see
+ * `ROUNDUP_DIMENSIONS`), so this adds a view, not a claim. A competitor
+ * that does not compare on a dimension renders as an explicit dash with
+ * a screen-reader phrase, never as a blank a reader could read as "no".
+ */
+function MatrixSection() {
+  return (
+    <section className="dm-mkt-shell dm-compare-index-section" aria-labelledby="matrix-title">
+      <p className="dm-mkt-eyebrow">Side by side</p>
+      <h2 id="matrix-title" className="dm-mkt-h2">
+        Every tool, every dimension, one table.
+      </h2>
+      <p className="dm-compare-matrix-lede">
+        The same facts as the individual comparisons, turned sideways. Each column links to the full
+        page and the official sources behind it.
+      </p>
+      <div
+        className="dm-compare-quick-table-wrap"
+        role="region"
+        aria-label="Scrollable side-by-side comparison matrix"
+        tabIndex={0}
+      >
+        <table className="dm-compare-quick-table dm-compare-matrix">
+          <caption className="dm-compare-sr-only">
+            DeclutrMail compared with {COMPARISON_COUNT_WORD} alternatives across{' '}
+            {ROUNDUP_DIMENSIONS.length} dimensions. Cells marked not compared were not assessed on
+            that alternative&rsquo;s page.
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Dimension</th>
+              <th scope="col">DeclutrMail</th>
+              {COMPARISONS.map((comparison) => (
+                <th scope="col" key={comparison.slug}>
+                  <a href={`/vs/${comparison.slug}`}>{comparison.name}</a>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ROUNDUP_DIMENSIONS.map((dimension) => (
+              <tr key={dimension.label}>
+                <th scope="row">{dimension.label}</th>
+                <td>
+                  <span
+                    className={`dm-compare-state dm-compare-state-${dimension.declutrMail.state}`}
+                  >
+                    {STATE_LABEL[dimension.declutrMail.state]}
+                  </span>
+                  <strong>{dimension.declutrMail.summary}</strong>
+                </td>
+                {dimension.competitors.map(([slug, cell]) => (
+                  <td key={slug}>
+                    {cell ? (
+                      <>
+                        <span className={`dm-compare-state dm-compare-state-${cell.state}`}>
+                          {STATE_LABEL[cell.state]}
+                        </span>
+                        <strong>{cell.summary}</strong>
+                      </>
+                    ) : (
+                      <span aria-hidden="true">&mdash;</span>
+                    )}
+                    {cell ? null : <span className="dm-compare-sr-only">Not compared</span>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

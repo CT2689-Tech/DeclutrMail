@@ -247,6 +247,46 @@
   text-underline-offset: 4px;
 }
 
+/*
+ * The multi-way matrix. Eight columns instead of four, so cells get
+ * tighter and the row header sticks while the reader scrolls sideways —
+ * without it, a dimension name scrolls out of view and every cell in
+ * the row loses the thing it is a value OF.
+ */
+.dm-compare-matrix {
+  min-width: 1180px;
+}
+
+.dm-compare-matrix th,
+.dm-compare-matrix td {
+  padding: 14px 16px;
+  font-size: 12.5px;
+}
+
+.dm-compare-matrix tbody th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--mkt-paper);
+  font-size: 14px;
+  border-right: 1px solid var(--mkt-line-soft);
+}
+
+.dm-compare-matrix td strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--mkt-ink);
+  font-weight: 550;
+}
+
+.dm-compare-matrix-lede {
+  max-width: 62ch;
+  margin: 0 0 22px;
+  color: var(--mkt-ink-soft);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
 .dm-compare-method-wrap {
   display: grid;
   grid-template-columns: minmax(0, 4fr) minmax(0, 6fr);

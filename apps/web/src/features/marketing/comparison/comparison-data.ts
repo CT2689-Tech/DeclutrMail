@@ -1148,3 +1148,63 @@ export const COMPARISONS_VERIFIED_FLOOR_ISO = COMPARISONS.reduce(
 export function comparisonBySlug(slug: string): ComparisonDefinition | undefined {
   return COMPARISONS.find((comparison) => comparison.slug === slug);
 }
+
+/**
+ * One dimension of the multi-way matrix on `/compare`: DeclutrMail's cell
+ * once, and each competitor's cell beside it.
+ */
+export interface RoundupDimension {
+  readonly label: string;
+  readonly declutrMail: ComparisonCell;
+  /** Absent when a 1v1 page does not compare on this dimension. */
+  readonly competitors: readonly (readonly [ComparisonSlug, ComparisonCell | undefined])[];
+}
+
+/**
+ * The multi-way view, PIVOTED from the 1v1 pages rather than restated.
+ *
+ * Every cell here is the same object the `/vs/<slug>` page renders, so a
+ * fact cannot say one thing head-to-head and another in the matrix, and
+ * the matrix inherits each page's sources and `verifiedIso` for free.
+ * Nothing new is asserted; only the axis changes.
+ *
+ * DeclutrMail's own column is safe to collapse because the 1v1 pages
+ * already share it — every `declutrMail` cell is a reference into the
+ * `DECLUTR` constant above, not per-page prose. `comparison-data.test.ts`
+ * pins that, so a future page that hand-writes its own DeclutrMail cell
+ * fails rather than silently disagreeing with this table.
+ *
+ * A dimension is included when at least two comparisons carry it, and a
+ * competitor that does not compare on it renders as an explicit gap —
+ * never as an implied "no". Same rule the 1v1 pages follow for `unknown`.
+ */
+export const ROUNDUP_DIMENSIONS: readonly RoundupDimension[] = (() => {
+  const order: string[] = [];
+  for (const comparison of COMPARISONS) {
+    for (const row of comparison.rows) {
+      if (!order.includes(row.label)) order.push(row.label);
+    }
+  }
+
+  const dimensions: RoundupDimension[] = [];
+  for (const label of order) {
+    const carriers = COMPARISONS.filter((comparison) =>
+      comparison.rows.some((row) => row.label === label),
+    );
+    const declutrMail = carriers[0]?.rows.find((row) => row.label === label)?.declutrMail;
+    if (!declutrMail || carriers.length < 2) continue;
+
+    dimensions.push({
+      label,
+      declutrMail,
+      competitors: COMPARISONS.map(
+        (comparison) =>
+          [
+            comparison.slug,
+            comparison.rows.find((row) => row.label === label)?.competitor,
+          ] as const,
+      ),
+    });
+  }
+  return dimensions;
+})();
