@@ -1,6 +1,7 @@
 // @declutrmail/shared/copy — how sure the engine is, in words.
 //
-// `triage_decisions.confidence` is not a probability. `score-cascade.ts`
+// `triage_decisions.confidence` is not a probability.
+// `packages/shared/src/triage-engine/cascade.ts`
 // builds it by adding fixed weights (0.35 for a one-click channel, 0.15
 // for volume, 0.10 for a Gmail category …) and clamping the total into a
 // narrow band, so the set of values it can actually reach is small, and

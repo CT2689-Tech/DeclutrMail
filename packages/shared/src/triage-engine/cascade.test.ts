@@ -5,7 +5,7 @@ import {
   isGovernmentDomain,
   runCascade,
   type SenderSignals,
-} from './score-cascade.js';
+} from './cascade.js';
 
 /**
  * Cascade unit tests (D20, D21).

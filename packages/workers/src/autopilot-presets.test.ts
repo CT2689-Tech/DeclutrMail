@@ -30,7 +30,7 @@ describe('AUTOPILOT_PRESETS', () => {
       expect(r.reason).toBe('Engine verdict=Archive @0.92 above threshold 0.72');
     });
 
-    // The reason the default moved off D101's 0.85. `score-cascade.ts`
+    // The reason the default moved off D101's 0.85. `packages/shared/src/triage-engine/cascade.ts`
     // caps Archive at 0.74 unless the user has already archived that
     // sender 3+ times by hand, so at 0.85 this preset was inert by
     // construction — it swept the founder's mailbox once and took 0

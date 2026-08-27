@@ -76,7 +76,7 @@ export interface LastReviewWire {
    * FE intent-bucketing logic (uplift-d/intent.ts).
    *
    * BE TODO: populate from the cascade result. Cascade already
-   * computes this (see packages/workers/src/score-cascade.ts
+   * computes this (see packages/shared/src/triage-engine/cascade.ts
    * CascadeResult.confidence). Wire it through
    * apps/api/src/senders/senders.service.ts in a follow-up PR.
    */

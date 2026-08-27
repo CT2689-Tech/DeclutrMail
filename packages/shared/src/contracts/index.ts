@@ -159,6 +159,8 @@ export type {
 // apps/api/src/senders/senders.types.ts.
 export type { GmailCategory } from './gmail-category';
 
+export type { TriageVerdict, ProtectionReason } from './triage-enums';
+
 // U14 — Autopilot approve + dry-run preview contracts (D99/D101/D104).
 export {
   AUTOPILOT_PENDING_PAGE_SIZE,

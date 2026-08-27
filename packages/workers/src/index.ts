@@ -170,14 +170,14 @@ export {
   CASCADE_RULE_PHRASE,
   isGovernmentDomain,
   runCascade,
-} from './score-cascade.js';
+} from '@declutrmail/shared/triage-engine';
 export type {
   CascadePhase,
   CascadeResult,
   CascadeRuleId,
   SenderSignals,
   UnsubscribeChannel,
-} from './score-cascade.js';
+} from '@declutrmail/shared/triage-engine';
 export { AUTOPILOT_PRESETS } from './autopilot-presets.js';
 export type {
   PresetDefinition,

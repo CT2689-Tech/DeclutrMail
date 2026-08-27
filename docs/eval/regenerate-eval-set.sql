@@ -7,7 +7,7 @@
 --
 -- Outputs 165-ish rows (100 top-volume + ~15 important + 50 random-tail).
 -- Schema = the SenderSignals fields the cascade in
--- packages/workers/src/score-cascade.ts needs, plus three empty label
+-- packages/shared/src/triage-engine/cascade.ts needs, plus three empty label
 -- columns (desired_action, desired_reason, notes) for manual labeling.
 
 COPY (

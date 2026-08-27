@@ -35,6 +35,7 @@ export function ActivateRuleModal({
   intent = 'activate',
   canRunUnattended = true,
   pendingAction,
+  mailboxEmail,
   pendingCount,
   pendingApproximate,
   preview,
@@ -80,6 +81,8 @@ export function ActivateRuleModal({
   canRunUnattended?: boolean;
   /** Which commit is in flight — drives the busy label on the right button. */
   pendingAction?: 'primary' | 'secondary' | undefined;
+  /** The active mailbox to show in the note; omitted renders nothing. */
+  mailboxEmail?: string | undefined;
   pendingCount: number;
   /** True when the pending buffer hit the BE's 50-row cap (count is a floor). */
   pendingApproximate: boolean;
@@ -143,6 +146,7 @@ export function ActivateRuleModal({
       confirmBusyLabel={enabling ? 'Turning on…' : 'Switching…'}
       canConfirm={preview.status === 'ready'}
       pendingAction={pendingAction}
+      mailboxEmail={mailboxEmail}
       secondaryAction={
         enablingToAct && onWatchFirst != null
           ? { label: 'Watch first', busyLabel: 'Starting to watch…', onClick: onWatchFirst }

@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-249 decisions — ⬜ Not started 73 · 🔵 Shipped 111 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
+249 decisions — ⬜ Not started 72 · 🔵 Shipped 112 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -69,7 +69,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D18 | Legal/DPA review trigger: **Add to Human-Approval-Gates | ⬜ |  |  |  |
 | D19 | Pricing/tier structure (resolves gaps #8 + #9) | 🔵 | #193 |  |  |
 | D20 | Verdict set: **4 verdicts (Keep / Archive / Unsubscribe / Screen) | 🟢 | #32 | packages/workers/src/reasoning.test.ts — VERDICT_LABEL exhaustiveness |  |
-| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32 | packages/workers/src/score-cascade.test.ts |  |
+| D21 | Decision architecture: **Hybrid (cascade + scoring + protection model) | 🟢 | #32 | packages/shared/src/triage-engine/cascade.test.ts |  |
 | D22 | Protection model: **Sender-layer-only, engagement-respect + user-defined | 🟢 | #32 | packages/workers/src/score.worker.test.ts |  |
 | D23 | New sender default: **Screen | 🔵 | #32 |  |  |
 | D24 | LLM role: **Haiku for explanation only, template fallback | 🟢 | #32 | apps/api/src/adapters/anthropic-haiku.adapter.spec.ts |  |
@@ -181,7 +181,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D130 | Brand voice principles (locked, summarizing Phase 1) | ⬜ |  |  |  |
 | D131 | Top nav: **6-item flat | ⬜ |  |  |  |
 | D132 | 28-page launch IA (scaled with Claude SEO agent maintenance) | 🔵 | #283 |  |  |
-| D133 | Inbox Simulator: **Claude Code React build with real engine | ⬜ |  |  |  |
+| D133 | Inbox Simulator: **Claude Code React build with real engine | 🔵 | #643 |  |  |
 | D134 | Landing page 10-section structure | 🔵 | #196 |  |  |
 | D135 | Hero animated preview card | ⬜ |  |  |  |
 | D136 | Social proof strategy: beta quotes post-launch (no testimonials at launch) | ⬜ |  |  |  |
