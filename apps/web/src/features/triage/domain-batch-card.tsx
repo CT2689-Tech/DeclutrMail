@@ -84,7 +84,10 @@ export function DomainBatchCard({
         </span>
         {protectedCount > 0 && (
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-            {protectedCount} protected sender{protectedCount === 1 ? '' : 's'} stay untouched
+            {/* The verb has to agree too. This read "1 protected sender stay
+                untouched" until 2026-08-27 — the noun was pluralised and the verb
+                was not, and a test asserted the broken string verbatim. */}
+            {protectedCount} protected sender{protectedCount === 1 ? ' stays' : 's stay'} untouched
           </span>
         )}
       </div>
