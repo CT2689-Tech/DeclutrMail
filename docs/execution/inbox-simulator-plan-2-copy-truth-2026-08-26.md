@@ -378,7 +378,7 @@ Expected: only the divergent-ladder fallback branches you deliberately kept. Nam
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/web/src/features/triage
+git add apps/web/src/features/triage apps/web/src/features/settings/privacy-data
 git commit -m "fix(copy): state the undo window on triage sheets (D245)"
 ```
 
