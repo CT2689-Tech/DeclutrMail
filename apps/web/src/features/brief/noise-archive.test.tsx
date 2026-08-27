@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 
 import { ToastHost } from '@declutrmail/shared';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
   installFetchStub,

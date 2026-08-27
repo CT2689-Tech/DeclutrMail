@@ -10,11 +10,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import {
-  TIER_MANIFEST,
-  UNIFORM_UNDO_WINDOW_DAYS,
-  type TierDefinition,
-} from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
   CAPABILITY_LABELS,

@@ -6,7 +6,7 @@
  * linking users to a long generic FAQ.
  */
 
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 export const GLOSSARY_TERMS = {
   sender: {

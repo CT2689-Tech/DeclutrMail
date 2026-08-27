@@ -15,6 +15,7 @@
     "./contracts/signup-attribution-ref": "./src/contracts/signup-attribution-ref.ts",
     "./copy": "./src/copy/index.ts",
     "./entitlements": "./src/entitlements/index.ts",
+    "./entitlements/undo-window": "./src/entitlements/undo-window.ts",
     "./flags": "./src/flags/index.ts",
     "./observability": "./src/observability/index.ts",
     "./senders": "./src/senders/index.ts",

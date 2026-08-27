@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { ReviewSession } from './review-session';
 import { makeSender } from './testing/make-sender';

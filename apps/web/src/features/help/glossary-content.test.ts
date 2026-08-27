@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { GLOSSARY_TERMS } from './glossary-content';
 

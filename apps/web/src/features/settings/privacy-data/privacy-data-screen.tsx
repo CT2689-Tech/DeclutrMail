@@ -18,11 +18,8 @@ import {
   ScreenIntro,
   tokens,
 } from '@declutrmail/shared';
-import {
-  MIN_UNDO_WINDOW_DAYS,
-  TIER_MANIFEST,
-  UNIFORM_UNDO_WINDOW_DAYS,
-} from '@declutrmail/shared/entitlements';
+import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';

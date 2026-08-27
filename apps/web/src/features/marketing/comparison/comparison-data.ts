@@ -6,7 +6,8 @@
  * claim stays `unknown`; it is never completed from memory or a review site.
  */
 
-import { TIER_MANIFEST, UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 /**
  * Freshness is per comparison, because verification is per comparison:

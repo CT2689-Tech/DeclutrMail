@@ -26,7 +26,7 @@ import {
   useIsAtMost,
 } from '@declutrmail/shared';
 import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
