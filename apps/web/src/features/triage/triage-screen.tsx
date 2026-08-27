@@ -1422,6 +1422,11 @@ export function TriageScreen({
         onCancel={() => setPendingBatch(null)}
         onConfirm={onBatchConfirm}
         onRetryPreview={() => void bulkPreview.refetch()}
+        // The join #652 left out. `BatchActionSheet` grew the prop and
+        // three passing tests that hand it the value directly, while this
+        // call site never passed it — so production stated no cost and the
+        // suite stayed green.
+        quotaRemaining={cleanupRemaining}
       />
 
       {/* `?` reveals the shortcut overlay — real bindings only. */}
