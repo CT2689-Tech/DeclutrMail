@@ -22,9 +22,10 @@ much as the findings that survived. P0/P1 survivors are also appended to the
 
 ## Runs
 
-| job    | date       | personas                                                   | broke it? | findings (new / inherited)                                                                                                              | notes                                                                                                                                                |
-| ------ | ---------- | ---------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| triage | 2026-08-27 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 15 new / 0 inherited (first triage run); 4 refuted before filing. 3 P1 + 1 P2 also in `FINDINGS.md`; all 15 in `docs/qa/qa-worklist.md` | Drove list → expanded card → preview → mutation → undo on the real mailbox. D226 held on every reachable path. `U` never pressed. Full detail below. |
+| job    | date       | personas                                                   | broke it? | findings (new / inherited)                                                                                                              | notes                                                                                                                                                                                                                                                                                                                                                        |
+| ------ | ---------- | ---------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| triage | 2026-08-27 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 15 new / 0 inherited (first triage run); 4 refuted before filing. 3 P1 + 1 P2 also in `FINDINGS.md`; all 15 in `docs/qa/qa-worklist.md` | Drove list → expanded card → preview → mutation → undo on the real mailbox. D226 held on every reachable path. `U` never pressed. Full detail below.                                                                                                                                                                                                         |
+| undo   | 2026-08-28 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 4 new / 0 inherited (first undo run); 3 refuted before filing. 1 P1 also in `FINDINGS.md`; all 4 in `docs/qa/qa-worklist.md`            | A prior same-day attempt aborted mid-run — a concurrent session raced the same mailbox/DB and the round-trip's attribution became unverifiable; no row was written for it, restart below has the detail. Archive→Undo and Delete→Undo both driven clean afterward, single session, verified via Gmail MCP + `action_jobs`/`undo_journal`. `U` never pressed. |
 
 ### `triage` — 2026-08-27
 
@@ -138,6 +139,158 @@ strips `CATEGORY_*`; the reorder cause treated "stable across 3 API calls" as
 determinism when a non-total `ORDER BY` is stable only until the next write. A
 check that cannot fail did not pass.
 
+### `undo` — 2026-08-28
+
+**Aborted first attempt, same day, no row.** Preflight passed and the first
+Archive→Undo round-trip was driven on the real mailbox (`classicfirearms.com`),
+but a concurrent local session was independently committing to this same
+branch/checkout during the mutation window, queried the same Gmail message
+mid-archive, concluded it was abandoned residue from an earlier run, and
+hand-restored its `INBOX` label by API roughly a minute before this run's own
+Undo click completed. Both fixes landed on the same message inside a ~90-second
+window, so which one actually restored the label is unattributable — the run's
+central proof was compromised by a class this command's own preflight cannot
+catch (it verifies the checkout at one instant; this checkout changed four
+times after). Stopped before filing anything. Mail state was independently
+re-verified clean (both test messages exactly at their pre-run label sets) and
+`Outstanding restores` was empty — the abort cost nothing but the run itself.
+
+**Restarted, same day, ~8 hours later** (model switched to Sonnet 5 mid-session;
+skill content had itself changed underneath — the unsubscribe gate went from an
+unconditional ban to a two-check gate to (per the worklist's own tail) a
+same-day withdrawal of that gate). Preflight found the branch had been
+squash-merged to `main` (PRs #663–#665) — the exact "closed PR silently moves
+you to main" trap the preflight checklist names. Before touching anything,
+checked whether the dev stack was live-driven by another session (`api.log`'s
+last write was 6 hours stale despite a misleadingly-recent `worker.log` mtime
+from routine cron sweeps; only one process per role, no orphans) and messaged
+peer session `declutrmail-8d` as a courtesy before mutating shared mailbox
+state; no reply arrived, but the evidence of idleness was strong enough to
+proceed. **Deviated from preflight**: skipped the mandatory `dev-up.sh --stop
+&& dev-up.sh` restart, since the running stack was already verified clean and a
+restart risked repeating the exact collision that voided the first attempt for
+zero benefit (nothing to sweep).
+
+**Walked:** `/activity` outcome tiles and contextual help, Senders drawer →
+D226 preview → Delete → Undo (fresh single-message sender, `ukpos.com`, chosen
+to keep blast radius minimal) → re-verify, double-undo via a direct repeat
+`POST /api/undo/:token` (idempotent, no second reverse job), 375px viewport
+pass on `/activity`.
+
+**Filed (survived `finding-refuter`):**
+
+- **P1 — Activity's own stat tiles disagree with each other about whether an
+  undone action still counts**, on the same page, same window, with no label
+  on either tile saying which convention it follows. `QA-undo-20260828-01`.
+  Live-verified: 4 `activity_log` rows in the 7-day window, all 4 reverted
+  (2 from this run's own Archive/Delete-then-Undo tests), top "This week"
+  metrics panel still read `ARCHIVED 3 / DELETED 1`. A `defect-class-sweeper`
+  found the same mechanism live in two Tier 1b public-facing benefit-accuracy
+  claims (Triage's "handled N automatically", "noise prevented per month") plus
+  two narrower instances — recorded as siblings on the worklist row, not
+  independently re-refuted.
+- **P2 — `/activity`'s 30-day stat row collides at 375px** ("UNSUBSCRIBES" and
+  "KEPT" overprint into "UNSUBSCRIBKEPTS") for ~390ms before hydration
+  restacks it — caught mid-flash via headless-Chromium frame capture, not the
+  `innerWidth: 0` harness artifact. Self-corrects; fix shape already documented
+  in `LEARNINGS.md:1348`. `QA-undo-20260828-02`.
+- **P3 — the "Recovered" outcome tile can never register a user's own Undo**
+  (a structurally different, currently-unused mechanism — retried-after-failure
+  jobs) and nothing in the product defines it anywhere a user could learn that.
+  `QA-undo-20260828-03`.
+- **P2 — Delete's own verb name disappears across all 6 of its result
+  surfaces** (button says Delete, every banner/toast/row/tile/chip after it
+  says "Moved to Gmail Trash" or "Deleted"), and its undo deadline repeats the
+  UTC-toast/reader's-zone-banner mechanism already filed on `triage`
+  (`QA-triage-20260827-09`) — a second live instance, now on the undo surface
+  itself. `QA-undo-20260828-04`, filed from the `usability-editor` pass; not
+  put through a dedicated `finding-refuter` (each item is independently
+  source-traced with file:line by the editor, not a raw screen impression —
+  see the worklist row for the scope call).
+
+**Refuted before filing:**
+
+- **"No outcomes in the last 7 days. Nothing needs your attention." is a false
+  or self-contradicting claim.** Killed on two grounds: the sentence is
+  logically entailed true (gated on 5 zero tiles, which entails `failed=0`,
+  exactly the separate `needsAttention` condition), and every one of the 4
+  reverted rows renders an explicit `UNDONE` badge one panel below — the screen
+  states "4 actions, all undone" and "0 outcomes" simultaneously, which is
+  coherent, not contradictory. What survived from this candidate is the P1
+  above — the actual defect is narrower: raw verb counts (not the outcome
+  tiles, and not this sentence) omit the undo filter that a different tile row
+  correctly applies.
+- The original framing of the Recovered-tile candidate — that a user's own
+  Undo click would plausibly be misread against a specific "0 Recovered" —
+  died too: this account has zero `action_jobs` with `recovery_attempt > 0`
+  ever, so the tile was never going to move for any reason this run tested,
+  and survived only as the narrower P3 above.
+- **The Delete preview's default filter is a silent 0-match dead end.**
+  Surfaced by the editor pass from this run's own live Delete-preview walk;
+  sent to a `finding-refuter`, killed by measurement: the default (180 days,
+  Delete-only) is spec'd, not leftover state, and the remedy control
+  advertises its own non-zero count on the same frame ("All inbox 1" beside
+  four zeros) plus a status line naming the fix — nothing about it is silent.
+  Measured against the founder's real mailbox: only 6.5% of Delete-opens hit
+  zero-match at all (426/6,564 senders), and the job in this run completed in
+  one click. At most P3 polish; not filed.
+- **The reach chip ("Inbox only 0") contradicts the sentence below it ("1
+  email... is in your inbox").** Also killed by measurement: the exact frame
+  described cannot render — with the windowed filter selected, the correctly-
+  windowed chip reads "Inbox only 0 · Inbox + archived 76" for `ukpos.com`,
+  not 169. The "169" this run cited came from a different UI surface (the
+  drawer card's un-windowed total-received figure), spliced against the
+  modal's windowed reach count as if they were the same number at the same
+  moment — the exact same-window/different-population comparison error this
+  codebase's own `cumulative-stats-are-not-rates` lesson warns about, this
+  time made by the run itself rather than caught in the product. The
+  sentence's own second clause ("but it is not older than 180 days") is the
+  reconciliation; reading it resolves the apparent contradiction rather than
+  deepening it.
+
+**Held up under attack (what the probes would have caught):**
+
+- D226 preview rendered correctly on the Delete path, including the
+  zero-match state when the default "6 months+" filter excluded the (9-day-old)
+  target message — confirm control implicitly required a widened window, never
+  producing a mutation without a rendered preview.
+- Double-undo via a direct repeat API call on an already-reverted token
+  returned `reverted: true` idempotently; `SELECT count(*)` confirmed no
+  second reverse `action_jobs` row was created.
+- Gmail label state matched the pre-run set exactly after both Archive→Undo
+  and Delete→Undo, verified via the Gmail MCP tools directly (not the
+  product's own read path) against `action_jobs`/`undo_journal` DB rows
+  independently.
+
+**Not run, with reasons:** unsubscribe (Safety §, gate withdrawn same day per
+the worklist — `U` stays unpressed regardless of what this run's own skill
+prompt said about a two-check gate, which was already stale relative to the
+command file on disk); two-tab concurrency and mid-flow mailbox switch (belong
+more to `mailbox-switch`; not reached before budget); worker-kill /
+`reconnect_required` (belongs to `sync`/`disconnect-reconnect`); real 429
+(rate-limit job).
+
+**Method note worth keeping, same class as the file's earlier one.** This
+run made the exact mistake it was checking the product for: it cited "169"
+against "Inbox only 0" as a contradiction without noticing the two numbers
+came from different UI surfaces with different windows. A `finding-refuter`
+caught it by re-measuring both figures live rather than trusting the
+transcript. The lesson generalizes past this one candidate — any claim built
+by comparing two numbers glimpsed at different moments needs the same
+re-measurement before it is trusted, whether the numbers come from the
+product or from the run's own notes.
+
+**Process note worth keeping.** Two live file collisions happened on this run
+alone, on two different systems — Gmail (a concurrent session's hand-edit
+during the aborted first attempt) and this same ledger/worklist file (a
+different concurrent session added a status-glyph column and moved several
+`triage` rows to `Merged`/`Fixed` while this run's own `## undo` section was
+being appended). Both resolved cleanly because the edits landed on disjoint
+regions of shared state — but neither preflight nor this file format has any
+mechanism that would catch two sessions targeting the _same_ row or the _same_
+message at the same time beyond luck. Worth a founder decision on worktree
+isolation per session, not attempted here.
+
 ## Outstanding restores
 
 **Check this section before starting any run, and clear it first.**
@@ -154,6 +307,8 @@ re-query. Empty is the correct steady state.
 | run      | statement to restore | why it was forced | cleared |
 | -------- | -------------------- | ----------------- | ------- |
 | _Empty._ |
+
+**Cleared 2026-08-28 (undo run, 2nd attempt).** `1a018f268335bec0` (`ukpos.com`) was Deleted via the product Senders drawer, then Undone via the product's own Undo button — no manual restore was needed. Re-queried via Gmail MCP: labels are `{UNREAD, IMPORTANT, INBOX}`, its exact pre-run set, no `TRASH`. `action_jobs` shows `delete forward done` (09:12:03) then `delete reverse done` (09:12:33); `undo_journal.reverted_at` = 09:12:33. Single session throughout, no concurrent-agent risk this time (see ledger note below on the first attempt's abort).
 
 **Cleared 2026-08-28.** This row was real, not stale. `19cb4856014df770` was
 found still archived — Gmail reported `[UNREAD, IMPORTANT]` with no `INBOX` and a

@@ -29,10 +29,11 @@ screens that spans, then start. Never stop to ask.
 
 ## Safety — read before the job list
 
-**`U` may be pressed ONLY after this run has proved, in this process, that the
-send is refused.** Unproved means unpressed — not the confirm control, not the
-shortcut, not a `POST` to the actions API with that verb, not enqueueing or
-un-pausing the job by hand.
+**No run executes an unsubscribe, on any job, by any route — and `U` is never
+pressed.** Not the confirm control, not the shortcut, not a `POST` to the
+actions API with that verb, not enqueueing or un-pausing the job by hand. The
+kill switch below is real but does not authorise a press; why not is stated
+under it, with each hole demonstrated.
 
 `UnsubExecutionWorker` performs a real RFC 8058 one-click `POST` to the
 sender's URL, carrying a per-send token, from the founder's address. It is
@@ -45,55 +46,49 @@ Six earlier drafts put the rule in a section scoped to the unsubscribe job
 while the break list told every run to press `K/A/U/L/D`. **A safety rule
 scoped narrower than its hazard is not a safety rule.**
 
-### The gate — two checks, in this order
+### `U` is not pressed — the gate was tried and it does not hold
 
-The ban lifted on 2026-08-28 because a real mechanism now exists. Sending
-requires `UNSUB_SEND_ENABLED` to be exactly `true`, read explicitly — unset,
-empty, `1`, `TRUE` and `yes` all refuse. **Silence means do not send**, and the
-refusal happens at the ENQUEUE boundary: the API answers `409
-UNSUB_SEND_DISABLED` before any `action_jobs` row is written, so there is
-nothing queued, nothing resumable, and nothing that changes meaning if the
-flag is flipped later.
+A kill switch now exists: sending requires `UNSUB_SEND_ENABLED` to be exactly
+`true`, read explicitly, and the API refuses at the ENQUEUE boundary before any
+`action_jobs` row is written. That mechanism is real and it is fail-closed.
 
-**1 — Before pressing anything, prove the flag is absent.** Zero, or the gate
-fails and `U` stays unpressed:
+**It is still not enough to authorise a press.** A gate was written on
+2026-08-28 that lifted the ban behind two checks. It was withdrawn the same day,
+because the check meant to make the FIRST press safe passes in four situations
+where the running app sends anyway. Each was demonstrated, not reasoned about:
 
-```bash
-grep -c '^UNSUB_SEND_ENABLED=true' .env.local
-```
+1. **A quoted value defeats the grep.** `UNSUB_SEND_ENABLED="true"` in
+   `.env.local` is parsed by `node --env-file` to the string `true`, so
+   `unsubSendsEnabled()` returns true and the app sends — while
+   `grep -c '^UNSUB_SEND_ENABLED=true'` returns **0** and the gate passes.
+2. **An exported shell variable beats the file entirely.** `.env.local` may say
+   `false` while the launching shell exported `true`; the process env wins and
+   the file check never sees it.
+3. **A stale process carries the old value.** A worker booted while the flag was
+   set keeps sending after the line is deleted from the file.
+4. **The ordering was circular.** The second check — press once, then confirm
+   zero `action_jobs` rows — cannot make the first press safe, because if the
+   first three holes let a send through, the press already happened. A probe
+   whose failure mode is the hazard it screens for is not a probe.
 
-**2 — Then press `U` on exactly ONE sender, and read the result before
-pressing a second.** The request must be refused, and it must leave no trace:
+**Reading the live process environment does not rescue it.** `ps eww` shows only
+the exec-time environment; this app injects config via
+`node --env-file-if-exists=../../.env.local` at boot, so `DATABASE_URL` and every
+other runtime variable are invisible to it. A zero from `ps eww` is vacuous.
+Tested — do not re-propose it.
 
-```bash
-./scripts/assert-dev-db.sh --exec "SELECT count(*) AS unsub_rows FROM action_jobs WHERE verb='unsubscribe' AND created_at > now() - interval '5 minutes'"
-```
+So the surface is reviewed by **reading, not driving**: is the control present,
+labelled with the canonical verb, visually distinct from the safe ones; does the
+sender row carry the channel it claims; is one-click distinguished from
+`mailto:`, which is manual at launch (D230). Whether the preview renders for `U`
+is checked in the Storybook story and the component. Record it as read-not-driven.
 
-The UI says **"Unsubscribe sending is turned off in this environment — nothing
-was sent."** and the count is **0** → the refusal is live in the running API;
-drive the surface freely.
+**Never set `UNSUB_SEND_ENABLED=true` during a QA run, for any reason.**
 
-**Anything else stops the run.** A row that exists at all means the enqueue
-boundary did not refuse; a `status='done'` row means a send went out. Say so to
-the founder immediately rather than continuing.
-
-Check 1 is what makes the first press safe; check 2 is what makes the rest
-safe. Neither alone is enough: reading the env proves the condition but not
-that the running process enforces it, and the outcome check cannot come first
-because it needs a press to produce an outcome. **Do not collapse them.** An
-earlier draft gated on "far enough to see the preview", which was circular —
-it assumed the preview renders while whether it renders is one of the things
-this tool exists to find out.
-
-Never set `UNSUB_SEND_ENABLED=true` during a QA run, for any reason. It exists
-so production can send, and locally so a fake target you control can be
-smoked — neither is QA of the product.
-
-If either check fails, the surface falls back to **reading, not driving**: is
-the control present, labelled with the canonical verb, visually distinct from
-the safe ones; does the sender row carry the channel it claims; is one-click
-distinguished from `mailto:`, which is manual at launch (D230). Record it as
-read-not-driven.
+Lifting this needs a mechanism, not a firmer sentence — the same conclusion six
+earlier drafts reached. The open question is with the founder in
+`FOUNDER-FOLLOWUPS.md`: the candidate is a dev-only target allowlist, so a press
+cannot reach a real sender's host even when every flag is wrong.
 
 ## The jobs, in the order they should be QA'd
 
@@ -357,10 +352,15 @@ instance from trust 8 to trust 10.
 See **Safety**, above the job list. It is stated once, before the jobs, because
 it binds every job — not only the one that was named after it.
 
-Once the two-check gate passes, unsubscribe is an ordinary verb for this run:
-drive it, break it, and hold it to D226 like Archive and Delete. Every job's
-break list applies to it. Until the gate passes it is read-not-driven, and
-`n/a — send refusal unproved` goes in the ledger.
+Unsubscribe is read-not-driven, on every job. `U` is not pressed and the verb is
+not exercised by any route; the reasons are under Safety, with each one
+demonstrated rather than argued. Whether the preview renders is checked in the
+Storybook story and the component, never by trying to defeat it.
+
+To see the shape of a queued unsubscribe row, read an existing one — do not
+manufacture one. A probe that would require executing the verb does not run:
+`n/a — would fire a real unsubscribe` goes in the ledger. **This is the one
+place in this document where an unexplored gap is the right outcome.**
 
 ## 8 — What survived, and who fixes it
 
