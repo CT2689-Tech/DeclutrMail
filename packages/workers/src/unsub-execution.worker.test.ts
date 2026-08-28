@@ -24,8 +24,10 @@ import {
   FETCH_UNSUB_HTTP_PORT,
   UNSUB_MAX_ATTEMPTS,
   UNSUB_USER_AGENT,
+  UNSUB_SEND_BLOCKED_ERROR_CODE,
   UnsubExecutionWorker,
   unsubExecutionJobOptions,
+  unsubSendsBlocked,
 } from './unsub-execution.worker.js';
 import type { UnsubHttpPort } from './unsub-execution.worker.js';
 import { TransientError } from './worker-errors.js';
@@ -217,6 +219,47 @@ function ctx(attempt: number): WorkerContext {
   };
 }
 
+/**
+ * The suite opts IN to exercising the send path.
+ *
+ * Without this every test below records `UNSUB_SEND_BLOCKED_NON_PRODUCTION`
+ * instead of POSTing to its fake, because the kill switch refuses real sends
+ * outside production. Needing the opt-in at all is the proof the default is
+ * the safe one — delete these two lines and the suite goes red.
+ */
+beforeAll(() => {
+  process.env.UNSUB_ALLOW_REAL_SENDS = 'true';
+});
+afterAll(() => {
+  delete process.env.UNSUB_ALLOW_REAL_SENDS;
+});
+
+describe('unsubSendsBlocked — the kill switch', () => {
+  it('sends in production', () => {
+    expect(unsubSendsBlocked({ NODE_ENV: 'production' })).toBe(false);
+  });
+
+  it('refuses everywhere else by default', () => {
+    // The state a QA run, a laptop, and CI are all in.
+    expect(unsubSendsBlocked({ NODE_ENV: 'development' })).toBe(true);
+    expect(unsubSendsBlocked({ NODE_ENV: 'test' })).toBe(true);
+    expect(unsubSendsBlocked({})).toBe(true);
+  });
+
+  it('refuses anything short of the exact opt-in string', () => {
+    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: 'true' })).toBe(false);
+    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: 'TRUE' })).toBe(true);
+    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: '1' })).toBe(true);
+    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: 'yes' })).toBe(true);
+  });
+
+  it('never lets the opt-in weaken production', () => {
+    expect(unsubSendsBlocked({ NODE_ENV: 'production', UNSUB_ALLOW_REAL_SENDS: 'false' })).toBe(
+      false,
+    );
+  });
+});
+
 describe('UnsubExecutionWorker', () => {
   let db: Db;
   let mailboxId: string;
@@ -249,6 +292,52 @@ describe('UnsubExecutionWorker', () => {
     const events = await db.select().from(outboxEvents);
     return { job: job!, policy: policy!, activities, events };
   }
+
+  it('the kill switch refuses the send without touching the network', async () => {
+    // The only test in this file that runs as a laptop, a QA run or CI
+    // actually runs — with the suite's opt-in removed.
+    // Save and restore the PREVIOUS value, never a hardcoded 'true'. An
+    // earlier version reset it to 'true' unconditionally, which quietly
+    // re-enabled sends for every test after this one — so removing the
+    // suite-level opt-in left the file green and the docblock above it
+    // lying. A cleanup that restores a value nobody set is a state leak.
+    const previousOptIn = process.env.UNSUB_ALLOW_REAL_SENDS;
+    delete process.env.UNSUB_ALLOW_REAL_SENDS;
+    try {
+      await seedSender(db, mailboxId);
+      await seedPendingPolicy(db, mailboxId);
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([200]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      const result = await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'blocked-1' },
+        ctx(1),
+      );
+
+      // The load-bearing assertion: nothing left the process. A fake that
+      // would have answered 200 was never asked.
+      expect(http.calls).toEqual([]);
+      expect(result.outcome).toBe('failed');
+
+      const { job } = await readState(actionId);
+      expect(job.status).toBe('failed');
+      expect(job.errorCode).toBe(UNSUB_SEND_BLOCKED_ERROR_CODE);
+      // Never a faked acceptance — the send did not happen.
+      expect(job.errorCode).not.toBeNull();
+    } finally {
+      if (previousOptIn === undefined) {
+        delete process.env.UNSUB_ALLOW_REAL_SENDS;
+      } else {
+        process.env.UNSUB_ALLOW_REAL_SENDS = previousOptIn;
+      }
+    }
+  });
 
   it('2xx → endpoint accepted: action row, truthful Activity outcome, no undo, outbox event', async () => {
     await seedSender(db, mailboxId);

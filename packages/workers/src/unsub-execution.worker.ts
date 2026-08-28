@@ -226,6 +226,28 @@ export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
   },
 };
 
+/** `action_jobs.error_code` when the kill switch refused the send. */
+export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_BLOCKED_NON_PRODUCTION';
+
+/**
+ * Whether a real one-click POST is refused in this process.
+ *
+ * Production sends; everything else refuses unless it opts in explicitly with
+ * `UNSUB_ALLOW_REAL_SENDS=true`. The default is the safe one because the
+ * unsafe direction here is irreversible and aimed at a third party.
+ *
+ * `NODE_ENV=production` is set explicitly on both Cloud Run services in
+ * `deploy-cloud-run.yml`, and that file is the full env on every deploy
+ * (`--set-env-vars` replaces rather than merges), so the live worker cannot
+ * drift into a state where this quietly disables unsubscribing for real users.
+ *
+ * Takes `env` so a test can decide without mutating the process.
+ */
+export function unsubSendsBlocked(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.NODE_ENV === 'production') return false;
+  return env.UNSUB_ALLOW_REAL_SENDS !== 'true';
+}
+
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
 export interface UnsubExecutionDeps {
@@ -362,6 +384,43 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
         mailboxAccountId,
         senderKey,
         { outcome: 'failed', httpStatus: null, errorCode: 'UNSUB_NOT_ONE_CLICK' },
+        payload.source ?? 'manual',
+        payload.ruleId ?? null,
+      );
+    }
+
+    // KILL SWITCH — no real unsubscribe leaves a non-production process.
+    //
+    // This POST is irreversible and leaves the founder's own address on a
+    // third party's list processor. There was no way to stop it: no dry-run,
+    // and stopping the worker only DEFERS the send until one returns. So no
+    // QA pass could press `U` on any surface it is reachable from — Triage,
+    // Senders, Sender detail, Brief and Screener — and the entire surface
+    // below the unsubscribe preview went untested for that reason alone.
+    //
+    // Sits after channel resolution so QA still sees the honest
+    // `UNSUB_NOT_ONE_CLICK` answer for a sender that has no one-click
+    // channel, and before the pre-flight so nothing touches the network.
+    //
+    // The outcome is `failed`, not a faked acceptance: the send did not
+    // happen, and a recorded success for a message never sent is the exact
+    // fake-completion this repo forbids.
+    if (unsubSendsBlocked()) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'unsub.send_blocked_non_production',
+          actionId: job.id,
+          nodeEnv: process.env.NODE_ENV ?? null,
+          message:
+            'Refused a one-click unsubscribe: not production, and UNSUB_ALLOW_REAL_SENDS is not "true".',
+        }),
+      );
+      return this.recordOutcome(
+        job.id,
+        mailboxAccountId,
+        senderKey,
+        { outcome: 'failed', httpStatus: null, errorCode: UNSUB_SEND_BLOCKED_ERROR_CODE },
         payload.source ?? 'manual',
         payload.ruleId ?? null,
       );
