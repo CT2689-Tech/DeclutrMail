@@ -39,9 +39,11 @@ export function relTime(days: number): string {
  * Relative time for an ISO-8601 string.
  *
  * Delegates its day-count to the shared `daysSince` (calendar-midnight,
- * not an elapsed-24h floor) so this page can't disagree with the "Last
- * seen" stat tile — both read the same `last_seen_at` value
- * (QA-archive-20260828-03).
+ * not an elapsed-24h floor) instead of its own copy of that math — this
+ * page's Decision Timeline (`sender-detail-page.tsx`'s `formatRelative`)
+ * used a third, independently-written day-count and could print "today"
+ * for one row while this list printed "yesterday" for a message a few
+ * hours apart (QA-archive-20260828-03).
  */
 export function relTimeFromIso(iso: string, now: Date = new Date()): string {
   return relTime(daysSince(iso, now.getTime()));

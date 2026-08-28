@@ -148,3 +148,38 @@ describe('ActionPreviewPresentation — verification detail (D226 parity)', () =
     expect(screen.getByText(/Uses 1 of your 34 cleanup actions/)).toBeInTheDocument();
   });
 });
+
+// QA-archive-20260828-02: this dialog rendered the frozen `reasoning`
+// sentence with no indication of when it was scored, unlike every other
+// place the identical text renders (triage-row.tsx, triage-row-expanded.tsx).
+describe('ActionPreviewPresentation — reasoning age label (D25, QA-archive-20260828-02)', () => {
+  it('states how old the reasoning is when scoredAt is known', async () => {
+    const scoredAt = new Date(Date.now() - 60_000).toISOString(); // 1 minute ago
+    render(
+      <ActionPreviewPresentation
+        verb="Archive"
+        row={{ ...row, scoredAt }}
+        archiveHistoric={false}
+        inboxCount={17}
+        mode="modal"
+      />,
+    );
+    expect(await screen.findByText('Scored today')).toBeInTheDocument();
+  });
+
+  it('renders no age label when scoredAt is unknown (demo/simulator rows)', () => {
+    expect(row.scoredAt).toBeUndefined(); // fixture precondition for this test
+    render(
+      <ActionPreviewPresentation
+        verb="Archive"
+        row={row}
+        archiveHistoric={false}
+        inboxCount={17}
+        mode="modal"
+      />,
+    );
+    expect(screen.queryByText(/^Scored /)).toBeNull();
+    // The reasoning itself still renders — only the age label is gated.
+    expect(screen.getByText('Why we suggested this:')).toBeInTheDocument();
+  });
+});

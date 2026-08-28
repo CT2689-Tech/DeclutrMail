@@ -54,6 +54,7 @@ import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import { formatReadRatePct } from '../fact-language';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { useNow } from '@/lib/use-now';
 
 const { color, font, radius, shadow, space } = tokens;
 
@@ -255,6 +256,13 @@ export function SenderDetailRoute({ id }: { id: string }) {
 function ReadyState({ initial }: { initial: SenderDetail }) {
   const auth = useOptionalAuth();
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
+  // Hydration-safe clock for the Decision Timeline's relative-time
+  // labels (same reasoning as `recent-messages.tsx`'s `useNow()` gate)
+  // — an ambient `Date.now()` read during render can put the server and
+  // the client on opposite sides of a calendar-day boundary and print
+  // "today" on one and "yesterday" on the other for the identical
+  // instant (Codex review, QA-archive-20260828-03).
+  const now = useNow();
   // Protect/Keep are real mutations: the chip flips
   // optimistically (standard non-destructive mutation UX, not the D226
   // lifecycle), `useSetSenderPolicy` persists the set-state patch +
@@ -958,8 +966,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // most-recent row carries the `current` flag so its node renders
   // filled + with a soft halo per ADR-0010.
   const timelineItems = useMemo<TimelineItem[]>(
-    () => history.map((row, i) => historyRowToTimelineItem(row, i === 0)),
-    [history],
+    () => history.map((row, i) => historyRowToTimelineItem(row, i === 0, now)),
+    [history, now],
   );
 
   return (
@@ -1410,8 +1418,12 @@ function relationshipDisplay(months: number) {
   };
 }
 
-function historyRowToTimelineItem(row: DecisionHistoryRow, isCurrent: boolean): TimelineItem {
-  const when = formatRelative(row.at);
+function historyRowToTimelineItem(
+  row: DecisionHistoryRow,
+  isCurrent: boolean,
+  now: number | null,
+): TimelineItem {
+  const when = now === null ? '' : formatRelative(row.at, now);
   return {
     id: row.id,
     when,
@@ -1432,8 +1444,12 @@ function historyRowToTimelineItem(row: DecisionHistoryRow, isCurrent: boolean): 
 // elapsed-24h round — this timeline sat on its own algorithm and could
 // print "yesterday" while `recent-messages.tsx` printed "today" for a
 // message a few hours apart in the same list (QA-archive-20260828-03).
-function formatRelative(iso: string): string {
-  const days = daysSince(iso, Date.now());
+// `now` comes from the caller's `useNow()`, not an ambient `Date.now()`
+// read here: this page has no `ssr:false` boundary, so a clock read
+// during render can put the server and the client on opposite sides of
+// a calendar-day cutoff and hydrate a different label than it rendered.
+function formatRelative(iso: string, now: number): string {
+  const days = daysSince(iso, now);
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
   if (days < 7) return `${days}d ago`;
