@@ -48,7 +48,10 @@ vi.mock('@sentry/node', () => ({
  * Locks in: the full envelope shape, the 429 → 'RATE_LIMITED' mapping
  * the rate-limit interceptor depends on (D156), status-derived
  * retryable/severityTier (D169), AppException passthrough (incl. D170
- * critical_trust), 5xx message genericization (D7), and the defensive
+ * critical_trust), the CLIENT-facing 5xx message staying generic
+ * (unrelated to and unaffected by the Sentry/log policy below), the
+ * real exception now reaching Sentry/Cloud Logging for 5xx (founder
+ * decision 2026-08-28 — those are internal tooling), and the defensive
  * correlationId fallback when the middleware did not run.
  */
 function invoke(
@@ -202,9 +205,8 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
     expect(body.error.traceId).toBeNull();
   });
 
-  it('uses a route template and sends no raw 5xx detail to logs or Sentry', async () => {
-    const leakMarker = 'LEAK_MARKER_undo_31ed0f12';
-    const lowercaseLeakMarker = 'secretvalue31ed0f12';
+  it('templates the route regardless of the message policy, and sends the real exception to Sentry + logs', async () => {
+    const marker = 'MARKER_undo_31ed0f12';
     const loggerSpy = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const previousDsn = process.env.SENTRY_DSN;
@@ -214,42 +216,55 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
     sentryHarness.fingerprints.length = 0;
     let constructorGetterCalls = 0;
     try {
-      const exception = Object.assign(new Error(leakMarker), {
-        code: lowercaseLeakMarker,
-        response: { status: 502, data: { private: leakMarker, identifier: lowercaseLeakMarker } },
+      const exception = Object.assign(new Error(marker), {
+        code: 'ECONNRESET',
+        response: { status: 502 },
       });
       Object.defineProperty(exception, 'constructor', {
         get() {
           constructorGetterCalls += 1;
-          throw new Error(lowercaseLeakMarker);
+          throw new Error(marker);
         },
       });
-      exception.stack = `Error: ${leakMarker}\n    at ${leakMarker}`;
+      exception.stack = `Error: ${marker}\n    at ${marker}`;
       invoke(new AllExceptionsFilter(), exception, {
         ...REQ_WITH_CORRELATION,
-        path: `/api/undo/${leakMarker}`,
+        path: `/api/undo/${marker}`,
         route: { path: '/api/undo/:token' },
       });
       await vi.waitFor(() => expect(sentryHarness.captured).toHaveLength(1));
 
-      const serialized = JSON.stringify({
+      // The raw request PATH never appears anywhere — only the templated
+      // route. `requestOperation()` never reads the path for a matched
+      // route, so this protection is independent of, and unaffected by,
+      // the message policy asserted below.
+      const structural = JSON.stringify({
         logger: loggerSpy.mock.calls,
-        console: consoleSpy.mock.calls,
         tags: sentryHarness.tags,
         fingerprints: sentryHarness.fingerprints,
       });
-      expect(serialized).not.toContain(leakMarker);
-      expect(serialized).not.toContain(lowercaseLeakMarker);
-      expect(serialized).toContain('/api/undo/:token');
+      expect(structural).not.toContain(marker);
+      expect(structural).toContain('/api/undo/:token');
+      // Hostile-getter defense: a crafted Error subclass with a throwing
+      // `constructor` getter still can't make errorName() throw.
       expect(constructorGetterCalls).toBe(0);
+
+      // The real exception now reaches Sentry and the structured console
+      // log (founder decision 2026-08-28: Sentry/Cloud Logging are
+      // internal tooling, not a public surface). This is what would have
+      // let the 2026-08-28 Supavisor pool-exhaustion incident be
+      // diagnosed from Sentry directly instead of raw Postgres/pooler
+      // logs — every 5xx used to arrive as an unactionable generic
+      // "Server exception". The CLIENT-facing response body is untouched
+      // (see the 'genericizes 5xx messages' test above) — this is only
+      // about what internal tooling sees.
       const captured = sentryHarness.captured[0]!;
-      expect(`${captured.name}\n${captured.message}\n${captured.stack ?? ''}`).not.toContain(
-        leakMarker,
-      );
-      expect(`${captured.name}\n${captured.message}\n${captured.stack ?? ''}`).not.toContain(
-        lowercaseLeakMarker,
-      );
-      expect(captured.message).toBe('Server exception');
+      expect(captured.message).toBe(marker);
+      expect(captured.stack).toContain(marker);
+      const detail = JSON.parse(String(consoleSpy.mock.calls[0]?.[0])) as Record<string, unknown>;
+      expect(detail.message).toBe(marker);
+      expect(detail.code).toBe('ECONNRESET');
+      expect(sentryHarness.tags).toContainEqual({ error_code: 'ECONNRESET' });
     } finally {
       if (previousDsn === undefined) {
         delete process.env.SENTRY_DSN;

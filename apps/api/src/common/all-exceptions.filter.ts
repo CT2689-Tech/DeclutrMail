@@ -32,12 +32,14 @@ const SAFE_RUNTIME_ERROR_CODES: ReadonlySet<string> = new Set([
   'ETIMEDOUT',
 ]);
 
-// Attribution set for `errorName`. Deliberately NOT a local list: it is
-// the scrubber's own server-profile predicate, so a name this filter
-// attributes is a name that survives to Sentry. The parallel list that
-// used to live here held 24 names of which only 6 were accepted on the
-// wire, so the ordinary unhandled 5xx arrived with no type and — since
-// `value` is dropped for D7 — no message either (audit 2026-08-21).
+// Attribution set for `errorName`'s fingerprint/log label — kept as a
+// stable grouping key even though the real exception (name, message,
+// stack) now reaches Sentry directly (founder decision 2026-08-28:
+// Sentry is internal tooling, not a public surface, so the D7-motivated
+// scrub that used to replace every 5xx with a synthetic placeholder no
+// longer applies to it — see the 5xx block in `catch` below). The
+// CLIENT-facing response in `safeHttpMessage` is untouched: that message
+// reaches arbitrary callers of the endpoint and stays generic.
 
 /**
  * AllExceptionsFilter — maps every thrown exception to the D168 error
@@ -82,11 +84,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
       `${operation.method} ${operation.route} -> ${status} ${this.errorName(exception)} cid=${correlationId}`,
     );
 
-    // 5xx-only diagnostics are deliberately structural until the server
-    // Sentry bootstrap has a deny-by-default event sanitizer. Exception
-    // messages, response payloads and original stacks can all contain
-    // provider ids, OAuth codes or capability URLs, so none cross this
-    // operational boundary.
+    // 5xx-only diagnostics. Exception message, code and stack reach both
+    // Cloud Logging and Sentry directly — both are internal tooling
+    // (founder decision 2026-08-28), which is what actually diagnosed
+    // the 2026-08-28 pool-exhaustion incident: without this, every 5xx
+    // arrived as a generic "Error" and the real cause (Supavisor
+    // ECHECKOUTTIMEOUT) had to be found by reading raw Postgres/pooler
+    // logs instead of the one place meant for exactly this. The
+    // CLIENT-facing response body is a separate boundary (see
+    // `safeHttpMessage`) and stays generic regardless.
     if (status >= 500 && exception instanceof Error) {
       const errObj = exception as Error & {
         response?: { status?: number; data?: unknown };
@@ -101,6 +107,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         route: operation.route,
         method: operation.method,
         errorKind,
+        message: errObj.message,
         ...(exceptionCode !== null ? { code: exceptionCode } : {}),
         ...(upstreamStatus !== null ? { responseStatus: upstreamStatus } : {}),
       };
@@ -119,6 +126,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
                 route: operation.route,
                 response_status: String(status),
               });
+              if (exceptionCode !== null) {
+                scope.setTag('error_code', exceptionCode);
+              }
               if (upstreamStatus !== null) {
                 scope.setTag('upstream_status', String(upstreamStatus));
               }
@@ -129,9 +139,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
                 errorKind,
                 String(status),
               ]);
-              const safeException = new Error('Server exception');
-              safeException.name = errorKind;
-              Sentry.captureException(safeException);
+              // The real exception — name, message and stack all reach
+              // Sentry now. Grouping is still controlled by the explicit
+              // fingerprint above, not by the message text.
+              Sentry.captureException(exception);
             });
           })
           .catch(() => {
