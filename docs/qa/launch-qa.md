@@ -151,10 +151,17 @@ else broke and file the damage as findings.
 A row is deleted only when the restore has run **and** been verified by
 re-query. Empty is the correct steady state.
 
-| run | statement to restore | why it was forced | cleared |
-| --- | -------------------- | ----------------- | ------- |
+| run      | statement to restore | why it was forced | cleared |
+| -------- | -------------------- | ----------------- | ------- |
+| _Empty._ |
 
-_Empty._
+**Cleared 2026-08-28.** This row was real, not stale. `19cb4856014df770` was
+found still archived — Gmail reported `[UNREAD, IMPORTANT]` with no `INBOX` and a
+newer historyId than its sibling — so the undo it was written for never ran.
+`INBOX` was re-added directly and re-queried: it now reads
+`[CATEGORY_PROMOTIONS, UNREAD, IMPORTANT, INBOX]`, its exact pre-run set.
+`19db0a9129e5e588` was intact and untouched. No `action_jobs` row exists for the
+archive, so it did not go through the product's own action pipeline.
 
 Cleared during the 2026-08-27 `triage` run: Gmail messages `19cb4856014df770`
 and `19db0a9129e5e588` (sender `classicfirearms.com`) were archived and undone
