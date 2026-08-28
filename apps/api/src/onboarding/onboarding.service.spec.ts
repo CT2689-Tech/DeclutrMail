@@ -1255,7 +1255,7 @@ describe('pickFirstTriageCandidates', () => {
     monthlyVolume: 0,
     last90dMessages: 0,
     readRate: 0,
-    lastDays: 0,
+    lastSeenAt: new Date().toISOString(),
     totalAllTime: 10,
     // Positive by default so a row is pickable unless a test says
     // otherwise — the payoff gate requires mail actually in the inbox.

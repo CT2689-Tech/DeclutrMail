@@ -621,8 +621,14 @@ describe('TriageReadService.listQueue — "last seen" is when the SENDER wrote',
     await seedMessage(db, mailboxId, SENDER_A, 0, { isOutbound: true });
 
     const [row] = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
-    // 45, not 0. The outbound message is the most recent row for this key.
-    expect(row?.lastDays).toBe(45);
+    // The 45-day-old INBOUND message, not today's outbound one. The wire
+    // carries the instant; the browser turns it into a day count, so this
+    // asserts the date itself rather than a rounded difference.
+    const seen =
+      row?.lastSeenAt === undefined || row.lastSeenAt === null ? null : new Date(row.lastSeenAt);
+    expect(seen).not.toBeNull();
+    const ageDays = Math.round((Date.now() - seen!.getTime()) / 86_400_000);
+    expect(ageDays).toBe(45);
   });
 });
 

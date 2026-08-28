@@ -133,7 +133,17 @@ export interface TriageQueueRow {
    * cannot be read. Never 0-as-unknown: a confident "today" for a sender who
    * has not written in six weeks is a false statement about the user's own mail.
    */
-  lastDays: number | null;
+  /**
+   * ISO timestamp of the sender's newest INBOUND message, or `null` when no
+   * readable date exists.
+   *
+   * The instant, not a day count. "Last seen" renders `0` as the word
+   * "today", and only the browser knows which calendar day the reader is in —
+   * a server counting elapsed 24-hour blocks called 14:00-yesterday "today"
+   * for anyone reading after their local midnight. The client derives the day
+   * count with `daysSince`.
+   */
+  lastSeenAt: string | null;
   totalAllTime: number;
   /**
    * Messages from this sender sitting in INBOX right now — what an
@@ -750,10 +760,6 @@ export class TriageReadService {
       // this date" with the most recent date possible, so a sender last seen 45
       // days ago rendered "LAST SEEN today" — the same rule this file already
       // applies to `readRate` ("no denominator means unknown, not zero").
-      const lastDays =
-        lastInternal === null
-          ? null
-          : Math.max(0, Math.floor((now - lastInternal.getTime()) / 86_400_000));
 
       // Protection overrides the recommendation (2026-07-10 founder
       // dogfood): a row reading "PROTECTED" and "Unsubscribe · 95% ·
@@ -814,7 +820,7 @@ export class TriageReadService {
          */
         last90dMessages: last90Total,
         readRate,
-        lastDays,
+        lastSeenAt: lastInternal === null ? null : lastInternal.toISOString(),
         totalAllTime: total,
         inboxCount,
         unreadInboxCount: inbox.unread,
