@@ -310,13 +310,27 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * the denominator midnight-anchored, so the share was a ratio between two
  * spans that differed by up to a day. Both now take this one instant.
  *
- * Known residue, accepted: `/queue` and `/today-summary` are separate
- * requests with independently invalidated caches, so each derives its own
- * instant and their windows can differ by the seconds between them. That is
- * true of every rolling window in the product, it moves the denominator by
- * at most a message or two, and it cannot move a rounded percentage. Closing
- * it would require anchoring, which costs more than it buys. Do not "fix" it
- * by anchoring this alone; if it is ever worth closing, the whole product's
+ * KNOWN RESIDUE — pre-existing, filed as QA-triage-20260828-03, and this is
+ * the one place that says what closing it actually requires.
+ *
+ * `/queue` and `/today-summary` are separate requests with independently
+ * invalidated caches, so each derives its own instant AND its own copy of the
+ * queue. Their windows differ by the seconds between the two calls. The
+ * user-visible break needs a queued sender whose entire 90-day volume sits
+ * inside that gap: the strip then reports a share above a row whose own
+ * 90-day count reads 0. Rare, not impossible.
+ *
+ * The safe replacement is ONE REQUEST, not one window rule: `getBootstrap`
+ * already returns queue + stats + summary from a single `listQueue` promise,
+ * so the SSR first paint has no drift at all. Only the client refetch after a
+ * decision splits them (`invalidateAfterDecision` marks both keys stale
+ * separately). Pointing that refetch at `/bootstrap` removes the drift by
+ * construction, for the counts as well as the window.
+ *
+ * Do NOT close it by anchoring this window alone. That was tried and reverted
+ * in `5bea2db0`: it made Triage the only surface not reading 90 days as
+ * rolling, so the stat tile disagreed with the scorer's own sentence rendered
+ * beside it. If the window rule is ever worth changing, the whole product's
  * definition of 90 days moves together.
  */
 function noiseWindowStartFrom(now: Date | undefined): Date {
