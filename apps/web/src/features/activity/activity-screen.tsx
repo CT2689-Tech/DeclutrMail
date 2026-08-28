@@ -2216,7 +2216,9 @@ function ActivityRow({
   const sourceAttribution =
     row.source === 'autopilot'
       ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
-      : `via ${sourceLabel}`;
+      : row.source === 'manual'
+        ? 'by you'
+        : `via ${sourceLabel}`;
 
   // ── Mobile card (< sm) ──────────────────────────────────────────────
   // The desktop 7-column grid clips hard on a phone. Below `sm` the same
@@ -2511,8 +2513,9 @@ function ActivityRow({
           }}
           // D57 rule attribution — Autopilot rows name the rule that
           // fired ("by Autopilot · Newsletter graveyard"); a deleted
-          // rule degrades to plain "by Autopilot". Other sources keep
-          // the "via <source>" form.
+          // rule degrades to plain "by Autopilot". Triage/Screener keep
+          // the "via <source>" form; Manual reads as "by you" instead of
+          // the raw enum voice "via Manual" (QA-archive-20260828-06).
           title={
             row.source === 'autopilot' && row.rule
               ? `By Autopilot rule “${row.rule.name}”`
@@ -2521,7 +2524,9 @@ function ActivityRow({
         >
           {row.source === 'autopilot'
             ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
-            : `via ${sourceLabel}`}
+            : row.source === 'manual'
+              ? 'by you'
+              : `via ${sourceLabel}`}
         </span>
       </div>
       <RowActions

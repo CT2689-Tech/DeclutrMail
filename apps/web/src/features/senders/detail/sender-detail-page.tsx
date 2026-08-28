@@ -13,7 +13,13 @@ import {
   toast,
 } from '@declutrmail/shared';
 import { buildActionReceiptResult, getActionSemantics } from '@declutrmail/shared/actions';
-import { senderAddressLine, type ActionRequest, type ActionVerb, type Sender } from '../data';
+import {
+  daysSince,
+  senderAddressLine,
+  type ActionRequest,
+  type ActionVerb,
+  type Sender,
+} from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
@@ -1422,10 +1428,12 @@ function historyRowToTimelineItem(row: DecisionHistoryRow, isCurrent: boolean): 
   };
 }
 
+// Day-count via the shared `daysSince` (calendar-midnight), not an
+// elapsed-24h round — this timeline sat on its own algorithm and could
+// print "yesterday" while `recent-messages.tsx` printed "today" for a
+// message a few hours apart in the same list (QA-archive-20260828-03).
 function formatRelative(iso: string): string {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const days = Math.max(0, Math.round((now - then) / (1000 * 60 * 60 * 24)));
+  const days = daysSince(iso, Date.now());
   if (days === 0) return 'today';
   if (days === 1) return 'yesterday';
   if (days < 7) return `${days}d ago`;

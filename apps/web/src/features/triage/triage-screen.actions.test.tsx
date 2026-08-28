@@ -1340,9 +1340,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
     expandRow(senderName);
     fireEvent.keyDown(window, { key: 'a' });
     const dialog = await screen.findByRole('dialog');
-    fireEvent.click(
-      within(dialog).getByRole('checkbox', { name: 'Show this in the row next time' }),
-    );
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Skip this dialog for Archive' }));
     const confirm = within(dialog).getByRole('button', { name: /^Archive/i });
     await waitFor(() => expect(confirm).not.toBeDisabled());
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });

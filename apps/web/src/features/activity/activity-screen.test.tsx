@@ -1776,7 +1776,19 @@ describe('ActivityScreen — D57 rule attribution', () => {
     await waitFor(() => expect(screen.getByText('by Autopilot')).toBeInTheDocument());
   });
 
-  it('keeps the "via <source>" form for non-autopilot rows', async () => {
+  it('keeps the "via <source>" form for non-autopilot, non-manual rows', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ source: 'triage' })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('via Triage')).toBeInTheDocument());
+  });
+
+  it('reads manual rows as "by you", not the raw source enum (QA-archive-20260828-06)', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -1785,7 +1797,8 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('via Manual')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('by you')).toBeInTheDocument());
+    expect(screen.queryByText('via Manual')).not.toBeInTheDocument();
   });
 });
 
