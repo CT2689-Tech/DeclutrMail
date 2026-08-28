@@ -29,44 +29,71 @@ screens that spans, then start. Never stop to ask.
 
 ## Safety — read before the job list
 
-**No run executes an unsubscribe, on any job, by any route — and `U` is never
-pressed.** Not the confirm control, not the `U` shortcut at all, not a `POST`
-to the actions API with that verb, not enqueueing or un-pausing the job by
-hand.
+**`U` may be pressed ONLY after this run has proved, in this process, that the
+send is refused.** Unproved means unpressed — not the confirm control, not the
+shortcut, not a `POST` to the actions API with that verb, not enqueueing or
+un-pausing the job by hand.
 
 `UnsubExecutionWorker` performs a real RFC 8058 one-click `POST` to the
-sender's URL, carrying a per-send token, from the founder's address. There is
-no dry-run flag and no kill switch. Once it is queued, stopping the worker does
-not prevent the send — it defers it until a worker returns, and this command's
-own preflight starts one.
+sender's URL, carrying a per-send token, from the founder's address. It is
+irreversible, and stopping the worker does not prevent a queued send — it
+defers it until a worker returns, and this command's own preflight starts one.
 
 This block sits above the job list because the hazard is not confined to one
-job. `U` is a triage shortcut: it is reachable from Triage, Senders, Sender
-detail, Brief and Screener. Six earlier drafts put this rule in a numbered
-section scoped to the unsubscribe job while the break list told every run to
-press `K/A/U/L/D`. **A safety rule scoped narrower than its hazard is not a
-safety rule.**
+job. `U` is reachable from Triage, Senders, Sender detail, Brief and Screener.
+Six earlier drafts put the rule in a section scoped to the unsubscribe job
+while the break list told every run to press `K/A/U/L/D`. **A safety rule
+scoped narrower than its hazard is not a safety rule.**
 
-**`U` is not pressed at all.** Not "far enough to see the preview" — an
-earlier draft said exactly that, and it is circular: it assumes the preview
-renders and gates on nothing, while whether the preview renders is one of the
-things this tool exists to find out. If D226 is broken on that surface, or D34's
-remember-preference has the sheet skipped, the keystroke IS the send. A probe
-whose safety depends on the property it is testing is not a probe.
+### The gate — two checks, in this order
 
-So the unsubscribe surface is reviewed by **reading, not driving**: is the
-control present, labelled with the canonical verb, visually distinguished from
+The ban lifted on 2026-08-28 because a real mechanism now exists. Sending
+requires `UNSUB_SEND_ENABLED` to be exactly `true`, read explicitly — unset,
+empty, `1`, `TRUE` and `yes` all refuse. **Silence means do not send**, and the
+refusal happens at the ENQUEUE boundary: the API answers `409
+UNSUB_SEND_DISABLED` before any `action_jobs` row is written, so there is
+nothing queued, nothing resumable, and nothing that changes meaning if the
+flag is flipped later.
+
+**1 — Before pressing anything, prove the flag is absent.** Zero, or the gate
+fails and `U` stays unpressed:
+
+```bash
+grep -c '^UNSUB_SEND_ENABLED=true' .env.local
+```
+
+**2 — Then press `U` on exactly ONE sender, and read the result before
+pressing a second.** The request must be refused, and it must leave no trace:
+
+```bash
+./scripts/assert-dev-db.sh --exec "SELECT count(*) AS unsub_rows FROM action_jobs WHERE verb='unsubscribe' AND created_at > now() - interval '5 minutes'"
+```
+
+The UI says **"Unsubscribe sending is turned off in this environment — nothing
+was sent."** and the count is **0** → the refusal is live in the running API;
+drive the surface freely.
+
+**Anything else stops the run.** A row that exists at all means the enqueue
+boundary did not refuse; a `status='done'` row means a send went out. Say so to
+the founder immediately rather than continuing.
+
+Check 1 is what makes the first press safe; check 2 is what makes the rest
+safe. Neither alone is enough: reading the env proves the condition but not
+that the running process enforces it, and the outcome check cannot come first
+because it needs a press to produce an outcome. **Do not collapse them.** An
+earlier draft gated on "far enough to see the preview", which was circular —
+it assumed the preview renders while whether it renders is one of the things
+this tool exists to find out.
+
+Never set `UNSUB_SEND_ENABLED=true` during a QA run, for any reason. It exists
+so production can send, and locally so a fake target you control can be
+smoked — neither is QA of the product.
+
+If either check fails, the surface falls back to **reading, not driving**: is
+the control present, labelled with the canonical verb, visually distinct from
 the safe ones; does the sender row carry the channel it claims; is one-click
-distinguished from `mailto:`, which is manual at launch (D230). Whether the
-preview actually renders for `U` is checked in the Storybook story and the
-component, and recorded as read-not-driven. It stays that way until the kill
-switch below exists.
-
-There is no standalone `unsubscribe` job. The founder's original carve-out —
-drive it to the confirm step, never send — could not be enforced by wording,
-which is what six review rounds demonstrated. Restoring it needs a real
-mechanism, not a firmer sentence: a dev-only refusal inside
-`UnsubExecutionWorker`. Filed in `FOUNDER-FOLLOWUPS.md`.
+distinguished from `mailto:`, which is manual at launch (D230). Record it as
+read-not-driven.
 
 ## The jobs, in the order they should be QA'd
 
@@ -330,10 +357,10 @@ instance from trust 8 to trust 10.
 See **Safety**, above the job list. It is stated once, before the jobs, because
 it binds every job — not only the one that was named after it.
 
-To see the shape of a queued unsubscribe row, read an existing one. Do not
-manufacture one. A probe that would require executing the verb does not run:
-write `n/a — would fire a real unsubscribe` in the ledger and move on. This is
-the one place in this document where an unexplored gap is the right outcome.
+Once the two-check gate passes, unsubscribe is an ordinary verb for this run:
+drive it, break it, and hold it to D226 like Archive and Delete. Every job's
+break list applies to it. Until the gate passes it is read-not-driven, and
+`n/a — send refusal unproved` goes in the ledger.
 
 ## 8 — What survived, and who fixes it
 
