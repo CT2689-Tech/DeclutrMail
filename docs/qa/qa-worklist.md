@@ -128,28 +128,35 @@ ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
 The three P1s share one branch, so they are reviewed as one diff.
 
-| round | ran against | verdict         | what it returned                                                                                   |
-| ----- | ----------- | --------------- | -------------------------------------------------------------------------------------------------- |
-| —     | `da7d4073`  | cancelled       | Dispatched against an ancestor of the final diff. Superseded, not counted.                         |
-| 1     | `d9554423`  | **substantive** | 2 High, 1 Medium, 1 Low. 4 areas nothing-found. All four reproduced; all four fixed in `933a3e89`. |
-| 2     | `933a3e89`  | dispatched      | Pending.                                                                                           |
+| round | ran against | verdict         | what it returned                                                                                                                                                                         |
+| ----- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| —     | `da7d4073`  | cancelled       | Dispatched against an ancestor of the final diff. Superseded, not counted.                                                                                                               |
+| 1     | `d9554423`  | **substantive** | **4 findings** (2 High, 1 Medium, 1 Low) covering **5 distinct defects** — its first bundled two independent mechanisms. 4 areas nothing-found. All reproduced; all fixed in `933a3e89`. |
+| 2     | `933a3e89`  | dispatched      | Pending.                                                                                                                                                                                 |
 
-**Round 1 found, in its own words, and what it cost:**
+**Round 1's four findings, numbered as the reviewer numbered them.** Finding 1
+carries two independent defects, which is why the fix commit lists five items
+and this table counts four. Both are true; the count that governs the row
+status is the reviewer's, because `Review found <n>` records what came back,
+not how it decomposed.
 
-1. **High** — the noise share divided by a different 90-day window than it
-   measured. Numerator cut at `Date.now() - 90d`, denominator at
-   `todayStartUtc - 90d`; up to a day apart, worst just before midnight UTC.
-2. **High** — `Math.min(100, …)` printed exactly "100%" for a ratio above 1,
-   which can only happen when the two non-transactional reads disagree. The
-   most confident possible claim, produced from a detected inconsistency.
-3. **High** — a missing `noiseSenderCount` restored the exact falsehood
+1. **High** — the noise share is not the ratio it claims. Two mechanisms, each
+   fixable alone, each sufficient to make the number false:
+   - **(a) Mismatched windows.** The numerator cut at `Date.now() - 90d`, the
+     denominator at `todayStartUtc - 90d` — up to a day apart, so the share
+     spanned two different periods. Worst just before midnight UTC.
+   - **(b) A clamp over a detected inconsistency.** `Math.min(100, …)` printed
+     exactly "100%" for a raw ratio above 1, which can only occur when the two
+     non-transactional reads disagree. The most confident claim available,
+     produced from evidence that the inputs did not agree.
+2. **High** — a missing `noiseSenderCount` restored the exact falsehood
    `d9554423` removed. Nothing validates the wire, so an older API revision
    omits it, and `undefined < 12` is false — which fell into the whole-queue
    branch. **The fix's own new field was the regression vector.**
-4. **Medium** — `MAX(internal_date)` was not inbound-filtered while the counts
+3. **Medium** — `MAX(internal_date)` was not inbound-filtered while the counts
    beside it were, so outbound mail under a shared sender key rendered "LAST
    SEEN today". Same defect class as QA-02, one column over.
-5. **Low** — the equal-count branch was plural unconditionally: "1 sender
+4. **Low** — the equal-count branch was plural unconditionally: "1 sender
    decision. These senders sent …".
 
 Nothing-found areas: the Protected override (the display verdict is applied
@@ -157,11 +164,11 @@ before `noiseRows` is built, so a protected Archive contributes to neither the
 count nor the numerator), the nullable `lastDays` consumers, the total-order
 fixture, and the tiebreak's effect on D30 queue size.
 
-**Round 1 is why the pipeline was inverted.** Three of its five findings are
-defects the fixing session introduced or left standing in its own diff, and
-finding 3 is one the fixing session could not have caught by reading its own
-code: it needs a reader asking what the wire does when the producer is a
-version behind. A self-approved `Fixing → PR` would have shipped all five.
+**Round 1 is why the pipeline was inverted.** Three of the five defects were
+introduced by the fixing session's own diff, and finding 2 is one it could not
+have caught by reading its own code: it needs a reader asking what the wire
+does when the producer is a version behind. A self-approved `Fixing → PR`
+would have shipped every one of them.
 
 **Pipeline changed 2026-08-28 — Codex no longer writes these fixes.** The run
 writes them and Codex reviews the diff adversarially. The two attempts at the
