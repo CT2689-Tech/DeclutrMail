@@ -109,9 +109,9 @@ ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
 | id                    | sev                       | one line                                                                                                                                   | status                                      | PR  |
 | --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | --- |
-| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | **At review cap** (dc36daab) — founder call |     |
-| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | **At review cap** (dc36daab) — founder call |     |
-| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | **At review cap** (dc36daab) — founder call |     |
+| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | **At review cap** (5bea2db0) — founder call |     |
+| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | **At review cap** (5bea2db0) — founder call |     |
+| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | **At review cap** (5bea2db0) — founder call |     |
 | QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                             | Approved — queued behind the P1 branch      |     |
 | QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                          | Approved — queued behind P1s                |     |
 | QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                     | Approved — queued behind P1s                |     |
@@ -123,6 +123,7 @@ ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 | QA-triage-20260827-12 | P3                        | The `K · A · U · L · D` legend renders from first paint, but the keys do nothing until a row is expanded                                   | Open                                        |     |
 | QA-triage-20260827-13 | P3                        | Rows 2–12 show a bare `›` while row 1 shows a rationale, reading as "row 1 loaded and the rest failed"                                     | Open                                        |     |
 | QA-triage-20260827-14 | P3                        | A sender with no inbox mail occupies a decision slot with no signal until the preview opens                                                | Open                                        |     |
+| QA-triage-20260828-02 | P3                        | "The last 90 days" is implemented independently in 4+ places with no shared definition; nothing makes them agree                           | Open                                        |     |
 | QA-triage-20260828-01 | P2                        | "LAST SEEN today" is shown for mail that arrived yesterday — the label buckets by elapsed hours, not calendar day                          | Open                                        |     |
 | QA-triage-20260827-15 | P3                        | The H1 and queue legend give an unscoped count, and no "done for today" state ever renders to correct it                                   | Open                                        |     |
 
@@ -130,12 +131,13 @@ ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
 The three P1s share one branch, so they are reviewed as one diff.
 
-| round | ran against | verdict         | what it returned                                                                                                                                                                         |
-| ----- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| —     | `da7d4073`  | cancelled       | Dispatched against an ancestor of the final diff. Superseded, not counted.                                                                                                               |
-| 1     | `d9554423`  | **substantive** | **4 findings** (2 High, 1 Medium, 1 Low) covering **5 distinct defects** — its first bundled two independent mechanisms. 4 areas nothing-found. All reproduced; all fixed in `933a3e89`. |
-| 2     | `933a3e89`  | **substantive** | 1 Medium, 1 Low. Re-cleared all four of round 1's nothing-found areas and confirmed the five round-1 tests have teeth. Both fixed in `dc36daab`.                                         |
-| —     | —           | **cap reached** | Two substantive rounds. No round 3: at this point either the diff is too big or the finding under it is wrong, and another lap cannot say which. Founder call.                           |
+| round | ran against | verdict            | what it returned                                                                                                                                                                                                         |
+| ----- | ----------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| —     | `da7d4073`  | cancelled          | Dispatched against an ancestor of the final diff. Superseded, not counted.                                                                                                                                               |
+| 1     | `d9554423`  | **substantive**    | **4 findings** (2 High, 1 Medium, 1 Low) covering **5 distinct defects** — its first bundled two independent mechanisms. 4 areas nothing-found. All reproduced; all fixed in `933a3e89`.                                 |
+| 2     | `933a3e89`  | **substantive**    | 1 Medium, 1 Low. Re-cleared all four of round 1's nothing-found areas and confirmed the five round-1 tests have teeth. Both fixed in `dc36daab`.                                                                         |
+| —     | `dc36daab`  | **over-corrected** | The round-2 fix anchored the window to the UTC day, making Triage the only surface in the product not reading 90 days as rolling. Caught at stop-review; reverted in `5bea2db0`, which keeps the within-request sharing. |
+| —     | —           | **cap reached**    | Two substantive rounds. No round 3: at this point either the diff is too big or the finding under it is wrong, and another lap cannot say which. Founder call.                                                           |
 
 **Round 1's four findings, numbered as the reviewer numbered them.** Finding 1
 carries two independent defects, which is why the fix commit lists five items
@@ -181,6 +183,24 @@ because the state that triggers it cannot be staged through the database. The
 decision is now a pure `noiseSharePct(queuedNoise, total)` the spec calls
 directly.
 
+**The round-2 fix then over-corrected, and that is worth more than either
+finding.** Round 2 observed that `/queue` and `/today-summary` derive separate
+instants. It never prescribed a remedy. The remedy chosen — anchor the window
+to the UTC day — closed a rare, invisible drift by opening a permanent, visible
+one: the scorer writes "1% read rate over the last 90 days" into the row's own
+reasoning text on a ROLLING window, and the stat tile directly above that
+sentence would have rendered a 90-to-91-day number for the same sender. Same
+card, two windows.
+
+Every other 90-day read in the product is rolling (`score.worker.ts`
+`NINETY_DAYS_MS`, `activity.read-service.ts`, `actions.service.ts`). Reverted
+in `5bea2db0`; the within-request sharing that fixes the actual defect stays.
+
+**The lesson is not "the reviewer was wrong".** It is that a finding names a
+problem, not a fix, and the fix is where the next defect gets introduced —
+three times in this branch now. The residue round 2 named is documented at the
+helper with an explicit instruction not to close it by anchoring Triage alone.
+
 **Round 1 is the evidence FOR the inversion, not its cause.** The pipeline was
 inverted by founder instruction in `6ae06847`, ten minutes before `d9554423` —
 the commit round 1 reviewed — so round 1 could not have caused it. The reasons
@@ -215,11 +235,12 @@ test could ever reproduce it. The varied values above are that path executing
 correctly against the real driver.
 
 **What the smoke did NOT prove.** This mailbox's anchored and rolling
-denominators differ by only 5 messages (12368 vs 12363), and both round to 9%,
-so the data cannot discriminate the anchored-vs-rolling choice. That fix rests
-on its negative control (`expected null to be 75`), not on this run. Nor did
-any queued sender have outbound mail under a shared key, so the inbound-`MAX`
-fix's own effect is covered by spec only.
+denominators differ by only 5 messages (12368 vs 12363) and both round to 9%,
+so the data cannot discriminate the two rules — which is why cross-surface
+consistency, not this run, decided it. Re-smoked after the revert: rolling
+returns the same 9%, the same 1126-message numerator and the same `lastDays`
+including the 45. Nor did any queued sender have outbound mail under a shared
+key, so the inbound-`MAX` fix's own effect is covered by spec only.
 
 **QA-triage-20260828-01, filed from the smoke above, is NOT fixed in this
 branch.** `lastDays` is `floor(elapsed_hours / 24)`, so `0` means "within 24
@@ -240,6 +261,15 @@ Strongest objection on record, for the founder: `lastDays` is documented as an
 elapsed-day count, so "today" could be read as shorthand for "in the last 24
 hours". Rejected as a defence of the copy — the label is what the user reads,
 and no user reads "today" as "since this time yesterday" at 01:00.
+
+**QA-triage-20260828-02** is the class behind the over-correction above. "The
+last 90 days" is spelled out separately in `score.worker.ts`,
+`activity.read-service.ts`, `actions.service.ts` and `triage.read-service.ts`,
+with nothing holding them to one definition — which is exactly why changing one
+of them in isolation looked safe and was not. A shared constant would have made
+the anchoring change fail loudly instead of silently disagreeing with the
+sentence beside it. Not fixed here: it spans four modules well outside this
+diff, and this branch is at its review cap.
 
 **Pipeline changed 2026-08-28 — Codex no longer writes these fixes.** The run
 writes them and Codex reviews the diff adversarially. The two attempts at the
