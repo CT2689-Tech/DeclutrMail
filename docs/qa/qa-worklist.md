@@ -164,11 +164,16 @@ before `noiseRows` is built, so a protected Archive contributes to neither the
 count nor the numerator), the nullable `lastDays` consumers, the total-order
 fixture, and the tiebreak's effect on D30 queue size.
 
-**Round 1 is why the pipeline was inverted.** Three of the five defects were
-introduced by the fixing session's own diff, and finding 2 is one it could not
-have caught by reading its own code: it needs a reader asking what the wire
-does when the producer is a version behind. A self-approved `Fixing → PR`
-would have shipped every one of them.
+**Round 1 is the evidence FOR the inversion, not its cause.** The pipeline was
+inverted by founder instruction in `6ae06847`, ten minutes before `d9554423` —
+the commit round 1 reviewed — so round 1 could not have caused it. The reasons
+it was inverted are the two failed handoffs recorded below.
+
+What round 1 bought is separable from why it was commissioned: three of the
+five defects were introduced by the fixing session's own diff, and finding 2 is
+one it could not have caught by reading its own code — it needs a reader asking
+what the wire does when the producer is a version behind. A self-approved
+`Fixing → PR` would have shipped every one of them.
 
 **Pipeline changed 2026-08-28 — Codex no longer writes these fixes.** The run
 writes them and Codex reviews the diff adversarially. The two attempts at the
