@@ -334,7 +334,10 @@ describe('UnsubExecutionWorker', () => {
       // unsub_status would put a failed chip on the senders list, an activity
       // row would show an unsubscribe that never happened, and an outbox
       // event would tell every downstream consumer the same.
-      expect(policy.unsubStatus).toBe('requested');
+      // RESOLVED, not left pending. Leaving `requested` behind a terminally
+      // failed job made the senders list and Screener claim a send was still
+      // in flight — forever, for one that had been refused outright.
+      expect(policy.unsubStatus).toBe('failed');
       expect(activities.filter((a) => a.action !== 'unsubscribe')).toHaveLength(0);
       expect(events).toHaveLength(0);
     } finally {

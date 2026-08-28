@@ -962,13 +962,22 @@ describe('AutopilotActionWorker', () => {
         .where(eq(actionJobs.idempotencyKey, `autopilot-unsubexec-${matchId}`));
       expect(exec).toHaveLength(0);
 
-      // The projection must NOT claim a method. Sending `one_click` would
-      // project unsub_status='requested' for an attempt never made — the same
-      // lie the `unknown` case already avoids.
+      // NOTHING is recorded — no intent event, no activity row. The run
+      // simply did not process this sender.
       const events = await db.select().from(outboxEvents);
-      const intent = events.filter((e) => e.topic === TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED);
-      expect(intent).toHaveLength(1);
-      expect((intent[0]!.payload as { method?: string }).method).toBeUndefined();
+      expect(
+        events.filter((e) => e.topic === TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED),
+      ).toHaveLength(0);
+
+      // The load-bearing one: the match stays UNAPPLIED, so the next sweep
+      // picks it up. Marking it applied consumed autopilot's own work — the
+      // sender was never retried once sending was enabled again, and nothing
+      // recorded that it had been dropped.
+      const [matchRow] = await db
+        .select({ intentApplied: ruleMatchLog.intentApplied })
+        .from(ruleMatchLog)
+        .where(eq(ruleMatchLog.id, matchId));
+      expect(matchRow!.intentApplied).toBe(false);
     } finally {
       if (previousOptIn === undefined) delete process.env.UNSUB_SEND_ENABLED;
       else process.env.UNSUB_SEND_ENABLED = previousOptIn;

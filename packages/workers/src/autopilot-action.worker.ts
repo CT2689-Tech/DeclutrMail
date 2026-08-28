@@ -1165,6 +1165,30 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // Read once per match so the audit payload and the execution row cannot
     // disagree about whether a send was going to happen.
     const canSendUnsub = unsubSendsEnabled();
+    // LEAVE THE MATCH ALONE when a one-click send is refused.
+    //
+    // The earlier version gated only the execution row, but the
+    // `intentApplied` flip below sits OUTSIDE that gate — so a refused match
+    // was still marked applied and resolved, and the sender was never
+    // retried once sending was enabled again. Autopilot silently dropped
+    // work it had matched, and nothing recorded that it had.
+    //
+    // Returning before the transaction leaves `intent_applied = false`, so
+    // the next sweep picks the sender up exactly as if this run had not seen
+    // it. Nothing is written, so there is no audit row claiming a decision
+    // and no duplicate to reconcile when it is processed for real.
+    if (method === 'one_click' && !canSendUnsub) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'autopilot.unsub_send_disabled',
+          matchId: match.matchId,
+          message:
+            'Left a one-click unsubscribe match unapplied: UNSUB_SEND_ENABLED is not "true".',
+        }),
+      );
+      return { executionEnqueued: false };
+    }
     const executionKey = `autopilot-unsubexec-${match.matchId}`;
 
     // Unsubscribe records its decision, its execution row and the match
@@ -1224,12 +1248,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           // status untouched. That is exactly right for `unknown`:
           // sending 'none' would project `unsub_status='unavailable'`
           // and re-tell the lie one layer down (D248).
-          // Also omitted when a one-click send is REFUSED by the kill
-          // switch: claiming `one_click` would project
-          // `unsub_status='requested'` for an attempt that will never be
-          // made, which is the same lie this line already avoids for
-          // `unknown`. Nothing was requested, so nothing is recorded.
-          ...(method === 'unknown' || (method === 'one_click' && !canSendUnsub) ? {} : { method }),
+          ...(method === 'unknown' ? {} : { method }),
         },
         schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
       });
@@ -1237,12 +1256,9 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       // Execution row — one_click only; `UnsubExecutionWorker` flips it
       // terminal. Same-tx as the audit row so they commit atomically.
       let actionId: string | null = null;
-      // `canSendUnsub` gates the ROW, not just the enqueue. Writing it and
-      // skipping the enqueue would leave a `queued` job no worker will ever
-      // pick up — the stuck state CLAUDE.md §10 bans — and writing it and
-      // letting the worker refuse would land `status='failed'`, which
-      // recovery treats as retryable. Neither is a no-op. Not writing it is.
-      if (method === 'one_click' && canSendUnsub) {
+      // A refused one-click match returned above, before this transaction, so
+      // reaching here with `one_click` means sending is enabled.
+      if (method === 'one_click') {
         const senderId = match.senderId;
         if (!senderId) {
           throw new ValidationError(`match ${match.matchId} has no resolved sender id`);
