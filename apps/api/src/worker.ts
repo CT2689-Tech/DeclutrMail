@@ -95,6 +95,7 @@ import {
   enqueueLapseReengagementTick,
   UNSUB_EXECUTION_JOB,
   UNSUB_EXECUTION_QUEUE,
+  unsubSendsEnabled,
   UnsubExecutionWorker,
   unsubExecutionJobOptions,
   ValidationError,
@@ -354,6 +355,26 @@ async function bootstrap(): Promise<void> {
     process.env.UNSUB_ALLOW_INSECURE_TARGETS === 'true'
   ) {
     throw new Error('UNSUB_ALLOW_INSECURE_TARGETS must never be set when NODE_ENV=production.');
+  }
+
+  // The MIRROR of the guard above, and it points the other way.
+  //
+  // `UNSUB_SEND_ENABLED` fails closed everywhere: silence means do not send.
+  // That is right for a laptop and fatal for production, where the same
+  // silence would stop every real unsubscribe while recording each one as a
+  // handled `failed` job — the feature looking like it works. A var that only
+  // exists live is not enough either: `--set-env-vars` full-replaces, so the
+  // next deploy wipes it and production goes quiet again.
+  //
+  // So production must SAY so, and refuse to boot if it has not. A worker that
+  // will not start is a page; a worker that silently stops unsubscribing is a
+  // support thread six weeks later.
+  if (process.env.NODE_ENV === 'production' && !unsubSendsEnabled()) {
+    throw new Error(
+      'UNSUB_SEND_ENABLED must be exactly "true" when NODE_ENV=production — ' +
+        'otherwise every real unsubscribe is silently refused. Set it in ' +
+        "deploy-cloud-run.yml's worker env block, not just live.",
+    );
   }
 
   // D159: initialise Sentry before anything else so the worker process —
