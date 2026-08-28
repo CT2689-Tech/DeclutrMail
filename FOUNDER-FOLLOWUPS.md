@@ -44,9 +44,31 @@ that never reached the worker service all send. Invert it.
 - The var must go in `deploy-cloud-run.yml`'s **worker** env block, not just
   set live. `--set-env-vars` full-replaces, so a var only set live is wiped by
   the next deploy — which would silently disable production unsubscribes.
-- Two tests: with the flag absent the worker records the intent and performs no
-  request; with it `'true'` behaviour is byte-identical to today. Assert on the
-  absence of the outbound call, not on a log line.
+- **Terminal-state contract — specify this before writing code.** A refusal is
+  not a success and not a retryable failure, and getting that wrong is worse
+  than having no kill switch.
+  - It must NOT land on `status='done'`. `action_job_status` is
+    `queued|executing|done|failed`, and `done` is what the FE polls for before
+    showing the user their unsubscribe went through. A refusal recorded as
+    `done` tells the user they left a mailing list they are still on — the
+    UI-truth class this codebase keeps shipping, in its most expensive form.
+  - Use `status='failed'` with its own classified `failure_code`
+    (e.g. `UNSUB_SEND_DISABLED`), and make it **non-retryable** so it
+    terminates on attempt 1. A retryable throw burns three attempts and then
+    dead-letters, and a dead-letter is indistinguishable from
+    delivered-but-unconfirmed — the exact ambiguity that has bitten this repo
+    before.
+  - **No `undo_journal` row.** Nothing happened, so there is nothing to
+    reverse, and an undo token for a send that never occurred is a second lie.
+  - **No `activity_log` row that reads as an unsubscribe.** If Activity records
+    anything, it says the attempt was refused, never that the sender was
+    unsubscribed.
+  - The FE must render that failure code as a real state with a route out, not
+    a generic error toast — it is a designed state, not a fault.
+- Four tests, and none of them assert on a log line: with the flag absent the
+  worker performs **no outbound request**, the row is `failed` with the
+  classified code, no undo token is issued, and no activity row claims success.
+  With it `'true'`, behaviour is byte-identical to today.
 
 Then restore `unsubscribe` as a `/ct-qa` job, re-allow the `U` keystroke, and
 delete the Safety block's closing paragraph.

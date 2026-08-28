@@ -129,6 +129,30 @@ CSRF=$(awk '/dm_csrf/{print $7}' /tmp/dm.jar)
 **Preflight fails → the run stops.** QA against the wrong checkout is worse
 than no QA.
 
+### Step 0 — clear Outstanding restores before anything else
+
+Open `docs/qa/launch-qa.md` and read **Outstanding restores**. Empty is the
+normal case; a row means an earlier run died between forcing a value and
+putting it back, and the database is still dirty.
+
+For each row, in order:
+
+1. Run its statement through `./scripts/assert-dev-db.sh --exec`.
+2. Re-query to prove the value is back. A restore you did not verify is not a
+   restore.
+3. Only then delete the row.
+
+**If a restore fails, or its statement is unclear, stop the run and tell the
+founder.** Do not QA on top of it: findings gathered against a dirty database
+are someone else's damage wearing your run's name, and you will file them as
+product bugs.
+
+Writing to that table is not bookkeeping you do at the end. **Write the
+restoring statement, save the file, and only then run the mutation** — if the
+order is reversed, the window where the session can die is exactly the window
+where nothing knows the database is dirty. Say in the run that you did it in
+that order.
+
 ### Touching the database — `--exec`, always
 
 **Never `psql "$DATABASE_URL"`.** Not for writes, and not for reads either.
@@ -296,7 +320,8 @@ the one place in this document where an unexplored gap is the right outcome.
 - [ ] Break list exhausted, or each skip named with its reason
 - [ ] Every finding carries evidence a stranger could re-check
 - [ ] Every finding survived a `finding-refuter`
-- [ ] Every forced value restored, and the restore verified
+- [ ] Every forced value restored, verified by re-query, and its Outstanding
+      restores row deleted
 - [ ] Every bug given its `defect-class-sweeper` pass
 
 ## Output
