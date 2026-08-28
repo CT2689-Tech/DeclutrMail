@@ -2,8 +2,9 @@
 /**
  * scripts/check-cron-stale.ts
  *
- * Detects a cron worker that has STOPPED running, or that started a run
- * and never finished. Exit code 1 if any watched worker is stale — the
+ * Detects a cron worker that has STOPPED running, that started a run and
+ * never finished, or that ticks punctually and FAILS every time. Exit
+ * code 1 if any watched worker is unhealthy — the
  * signal the GitHub Actions watchdog turns into a founder email, same
  * channel as the sync-stuck and vendor-limits watchdogs.
  *
@@ -18,6 +19,14 @@
  * Uptime checks answer "is the API up". Nothing answered "did this job
  * stop". A cron that stops is invisible precisely because it produces no
  * errors — there is nothing to alert on except the absence itself.
+ *
+ * The same reasoning applies one step further, and the first version of
+ * this file missed it: a cron that runs on time and fails on every tick
+ * is INDISTINGUISHABLE from a healthy one if you measure attempts. Its
+ * row is fresh and its status is not 'running', so a recency check waves
+ * it through. The job is just as dead as a stopped one. So the age that
+ * matters is the age of the last SUCCESS, never the age of the last
+ * attempt.
  *
  * `WatchRenewalWorker` is the sharpest example: Gmail `users.watch`
  * registrations expire after 7 days, so if renewal stops, push sync dies
@@ -105,7 +114,7 @@ function humanise(ms: number): string {
 
 interface Finding {
   workerName: string;
-  reason: 'never_ran' | 'stale' | 'hung';
+  reason: 'never_ran' | 'stale' | 'hung' | 'failing';
   detail: string;
   impact: string;
 }
@@ -122,11 +131,21 @@ async function main(): Promise<void> {
 
   try {
     const rows = await sql<
-      Array<{ worker_name: string; started_at: Date; status: string }>
-    >`SELECT DISTINCT ON (worker_name) worker_name, started_at, status
+      Array<{
+        worker_name: string;
+        first_started: Date;
+        last_started: Date;
+        last_succeeded: Date | null;
+        latest_status: string;
+      }>
+    >`SELECT worker_name,
+             MIN(started_at)                                        AS first_started,
+             MAX(started_at)                                        AS last_started,
+             MAX(started_at) FILTER (WHERE status = 'succeeded')    AS last_succeeded,
+             (ARRAY_AGG(status ORDER BY started_at DESC))[1]        AS latest_status
         FROM cron_runs
        WHERE worker_name IN ${sql(WATCHED.map((w) => w.workerName))}
-       ORDER BY worker_name, started_at DESC`;
+       GROUP BY worker_name`;
 
     const latest = new Map(rows.map((r) => [r.worker_name, r]));
     const now = Date.now();
@@ -149,7 +168,7 @@ async function main(): Promise<void> {
         continue;
       }
 
-      const ageMs = now - new Date(row.started_at).getTime();
+      const ageMs = now - new Date(row.last_started).getTime();
 
       // Hung is checked FIRST and on a TIGHTER bound than stale. A run
       // that started and never finished is already a fault at one missed
@@ -157,7 +176,7 @@ async function main(): Promise<void> {
       // worker looking recent while nothing is progressing. (Ordering this
       // second, on the same bound, made the branch unreachable — the stale
       // arm had already matched and continued.)
-      if (row.status === 'running' && ageMs > cron.intervalMs + GRACE_MS) {
+      if (row.latest_status === 'running' && ageMs > cron.intervalMs + GRACE_MS) {
         findings.push({
           workerName: cron.workerName,
           reason: 'hung',
@@ -174,6 +193,47 @@ async function main(): Promise<void> {
           detail: `last run started ${humanise(ageMs)} ago; expected every ${humanise(
             cron.intervalMs,
           )} (tolerance ${humanise(tolerance)})`,
+          impact: cron.impact,
+        });
+        continue;
+      }
+
+      // Ticking on schedule. That is not the same as WORKING. Everything
+      // above measures attempts; only this measures outcomes. Held to the
+      // same tolerance as stale on purpose — a single transient failure
+      // followed by a success must not page, but a job that has not
+      // succeeded within its stale window has stopped doing its job
+      // whether or not it is still starting.
+      const successAgeMs =
+        row.last_succeeded === null ? null : now - new Date(row.last_succeeded).getTime();
+
+      // A worker whose FIRST run is still in flight has no success yet and
+      // is not a fault — flagging it would page on every fresh deploy. Give
+      // it the same tolerance window before calling it as anything else.
+      if (successAgeMs === null) {
+        const recordingForMs = now - new Date(row.first_started).getTime();
+        if (recordingForMs > tolerance) {
+          findings.push({
+            workerName: cron.workerName,
+            reason: 'failing',
+            detail: `recording runs for ${humanise(
+              recordingForMs,
+            )} and NOT ONE has ever succeeded (latest is '${row.latest_status}')`,
+            impact: cron.impact,
+          });
+        }
+        continue;
+      }
+
+      if (successAgeMs > tolerance) {
+        findings.push({
+          workerName: cron.workerName,
+          reason: 'failing',
+          detail: `starting on schedule but failing — last SUCCESS was ${humanise(
+            successAgeMs,
+          )} ago (latest run '${row.latest_status}', started ${humanise(
+            ageMs,
+          )} ago; tolerance ${humanise(tolerance)})`,
           impact: cron.impact,
         });
       }

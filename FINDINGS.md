@@ -297,6 +297,47 @@ make_interval(...)` where `now` is a `Date`. Under `postgres-js` that always thr
   but any Archive/Delete/Unsubscribe there still changes the real mailbox.
   _(via Codex)_
 
+- **2026-08-27** · `scripts/check-vendor-limits.mjs` — **the one state that means GCP spend has no alerting net is graded WARN, and WARN exits 0.**
+  Surfaced by a `defect-class-sweeper` run and then narrowed by a `finding-refuter`
+  verdict of PARTIALLY REFUTED — the original claim was wrong and this is the half
+  that survived, restated. **Refuted half:** "budgets armed" is NOT an unverified
+  claim. Google's Budget API sends default notifications to Billing Account
+  Administrator and User IAM roles, with `disableDefaultIamRecipients` defaulting
+  false, so a budget carrying threshold rules and no explicit `notificationsRule`
+  genuinely is armed and the comment at `:195-196` is true as written. **Surviving
+  half:** `:215` grades zero budgets as `WARN`, and `main()` at `:713-715` fails the
+  run only on `BREACH`/`ERROR`, or on `WARN` when `WARN_IS_FAILURE === 'true'`.
+  `WARN_IS_FAILURE` is set in no workflow and in no repo variable — and more
+  decisively, GitHub Actions variables are never auto-injected into `process.env`
+  and the step's `env:` block does not map it, so no variable could turn it on
+  without a workflow edit. The result: if GCP spend alerting disappears entirely,
+  the watchdog announces it inside a green run that GitHub reports as success, with
+  no issue, no Slack, nothing but `GITHUB_STEP_SUMMARY`. Latent rather than active —
+  reaching it needs the founder deleting `declutrmail-pre-launch-30` or repointing
+  `GCP_BILLING_ACCOUNT_ID`. This is an unswept instance of the class already in
+  `MISTAKES.md` (2026-07-26), and the fix is a one-line status change on that row,
+  NOT a global `WARN_IS_FAILURE` flip, which the file's own comments at `:293-315`
+  explicitly and correctly reject. Proposed **P2**.
+
+- **2026-08-27** · `SnoozeWakeWorker` — **lead, not verified by me: a retryable failure may produce no signal anywhere at all.**
+  Reported by `finding-refuter` while refuting a different finding, so it has had no
+  independent confirmation and no reproduction — treat it as a question, not a
+  verdict. The claim: `snooze-wake.worker.ts:229-233` claims its cron run via
+  `onConflictDoNothing`, so when BullMQ retries a failed attempt the slot is already
+  taken and the retry returns `skippedDuplicateRun: true`, which counts as success.
+  Attempt 1 was non-terminal, so no `captureFailure` and no `recordDeadLetter` ever
+  fire. If that holds, a retryable SnoozeWake sweep failure leaves the `cron_runs`
+  row as its only trace in existence — which is what makes the 2026-08-27
+  `check-cron-stale.ts` fix (see `MISTAKES.md`) the sole detection path for this
+  worker rather than one of several. Worth reproducing before it is believed.
+
+- **2026-08-27** · `vendor-limits-watchdog` — **lead, not verified by me: the vendor table may be missing a row without saying so.**
+  Reported in passing by a `finding-refuter` run, unconfirmed. The claim is that the
+  latest workflow run's summary table prints eight vendor rows and contains no
+  `Vercel` row at all. If true it is the blind-guard shape again — a watchdog whose
+  coverage silently shrinks reports green on what is left. Needs one `gh run view`
+  against a current run to confirm or kill.
+
 ## P0 — launch blockers
 
 _None open._ The five that stood here — F008, F009, F010, F011, F012 — were
