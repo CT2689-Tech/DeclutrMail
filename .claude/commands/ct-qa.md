@@ -151,18 +151,17 @@ finding appears rather than at the point the agent should run. The rules say
 
 It is safe precisely because none of them touches the stack, the database or
 the browser. They can run with the stack already down — which is also why they
-must not be interleaved with driving. §8 already forbids fixing mid-walk for
-the same reason it applies here: a candidate found at 10:00 is refuted after
-the walk, not at 10:01. Write it down and keep driving.
+must not be interleaved with driving. The stack is the scarce resource and
+nothing can duplicate it: one database, one Gmail mailbox, one worker, one
+`:4000` (`packages/e2e/playwright.config.ts` pins `workers: 1` and says
+*"never parallelise"* for the same reason) — whatever does not need it should
+not wait behind it. §8 already forbids fixing mid-walk for the same reason it
+applies here: a candidate found at 10:00 is refuted after the walk, not at
+10:01. Write it down and keep driving.
 
 The exception is evidence only capturable in the moment — a screenshot, a
 console line, an `action_jobs` row a later query would no longer see. Capture
 those as you go (rule 5); judge them in the wave.
-
-The stack is the scarce resource and nothing can duplicate it: one database,
-one Gmail mailbox, one worker, one `:4000`. `packages/e2e/playwright.config.ts`
-pins `workers: 1` and says *"never parallelise"* for the same reason. Whatever
-does not need it should not be waiting behind it.
 
 ## Preflight — six lines, each has voided a past run
 
@@ -327,7 +326,8 @@ The first three *use* it. The fourth *judges* it.
   Safety, above.
 
 On lifecycle jobs (`onboarding`, `sync`, `mailbox-switch`) call
-**`flow-completeness-auditor`** for the state table rather than re-deriving one.
+**`flow-completeness-auditor`** for the state table rather than re-deriving
+one — in the single wave above, like every other agent in this document.
 
 **Restore contract.** Write the restoring statement BEFORE you run the
 mutation, and paste it into the ledger row at that moment — not after. If the
