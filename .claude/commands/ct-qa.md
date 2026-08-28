@@ -166,6 +166,7 @@ The first three *use* it. The fourth *judges* it.
 
 - **Empty · one · enormous.** New mailbox; a single row; the biggest sender.
 - **Twice.** Double-click. Re-send the same `Idempotency-Key`. Undo twice.
+  Never on unsubscribe — see rule 7; every one of these is a send.
 - **Interrupt.** Refresh mid-flow. Back button. Close the tab mid-action.
 - **Two tabs.** Same action from both. Action in one, undo in the other.
 - **Switch mailboxes mid-flow.** Look for survivors from the old one.
@@ -234,18 +235,39 @@ marked **unmeasured** with the exact SQL it needed. Run those through
 `assert-dev-db.sh --exec` and give it the numbers — that is what moves an
 instance from trust 8 to trust 10.
 
-## 7 — Unsubscribe stops before the send
+## 7 — Unsubscribe: you never press confirm
 
-Drive intent → sheet → preview → confirm → queued row. **The real one-click
-HTTP / mailto send is never fired** — the one verb with no undo, and it goes
-outward under the founder's name.
+Drive intent → sheet → **preview**, and **stop there**. Do not click the
+confirm/execute control on an unsubscribe. Not once, not to "see the queued
+row", not with the worker stopped.
 
-Read `apps/api/src/actions/actions.controller.ts` around the D248 unsubscribe
-branch and the unsubscribe worker FIRST, record in the ledger *which* mechanism
-held the send back, and if that cannot be established with certainty, skip the
-probe and say why.
+This is not a style preference. `UnsubExecutionWorker` performs a real RFC 8058
+one-click `POST` to the sender's URL, carrying a per-send token, from the
+founder's address. There is no dry-run flag and no kill switch — I looked. Once
+confirm is pressed the job is in Redis, and **stopping the worker does not
+prevent the send, it defers it**: the job fires the moment a worker comes back,
+and this command's own preflight runs `dev-up.sh`, which starts one. An earlier
+draft of this rule said "drive it to the queued row and record which mechanism
+held the send back". There is no such mechanism. That draft instructed the
+exact irreversible action it claimed to forbid.
 
----
+All the QA value is at or before the preview, and none of it needs a send:
+
+- Does the preview name the right sender, the right channel, and the right
+  message count?
+- Does it state the consequence honestly — that this leaves the sender's list
+  and cannot be undone?
+- Is the one-click path distinguished from `mailto:`, which is **manual at
+  launch** (D230) and must never auto-send?
+- Is the destructive control distinguishable from the safe one, and does the
+  copy survive 375px?
+
+To see the shape of a queued unsubscribe row, read an existing one or the
+contract. Do not manufacture one.
+
+If a probe seems to require confirming, that probe does not run. Write
+`n/a — would fire a real unsubscribe` in the ledger and move on. This is the
+one place in this document where an unexplored gap is the correct outcome.
 
 ## Done means done — six boxes, not vibes
 
