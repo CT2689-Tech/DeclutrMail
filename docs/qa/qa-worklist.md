@@ -75,6 +75,7 @@ landed.
 | `Fixed YYYY-MM-DD`    | Merged **and** a later run confirmed the symptom is gone.                                          | a run, after checking |
 | `Gone YYYY-MM-DD`     | No longer reproduces, no fix attributable to it. Say what you ran.                                 | a run, after checking |
 | `Refuted YYYY-MM-DD`  | New evidence killed the finding itself. Point at the ledger row.                                   | a run                 |
+| `At review cap`       | Two substantive rounds ran. Goes to the founder to ship or keep reviewing. Name the last commit.   | a run                 |
 | `Won't do YYYY-MM-DD` | Founder declined. Keep the reason.                                                                 | founder only          |
 
 `Fixed` and `Gone` are deliberately separate: "we fixed it" and "it stopped
@@ -106,23 +107,24 @@ lap will not say which. The row names the commit the clean round ran against.
 Rows accumulate across every `/ct-qa triage` run. Per-run counts are in the
 ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
-| id                    | sev                       | one line                                                                                                                                   | status                                  | PR  |
-| --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------- | --- |
-| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | Review 1 found 4 → In review (933a3e89) |     |
-| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | Review 1 found 4 → In review (933a3e89) |     |
-| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | Review 1 found 4 → In review (933a3e89) |     |
-| QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                             | Approved — queued behind the P1 branch  |     |
-| QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                          | Approved — queued behind P1s            |     |
-| QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                     | Approved — queued behind P1s            |     |
-| QA-triage-20260827-07 | P2                        | One measurement, two names on the same card: the row says "marked read", the tile and bullet say "read rate"                               | Approved — queued behind P1s            |     |
-| QA-triage-20260827-08 | P2                        | "You'll see the affected email before anything changes" names Keep first, and Keep has no preview by design (D40)                          | Approved — queued behind P1s            |     |
-| QA-triage-20260827-09 | P2                        | The undo deadline renders in UTC in the toast and in the reader's zone in the preview, two clicks apart                                    | Approved — queued behind P1s            |     |
-| QA-triage-20260827-10 | P2                        | Two stat tiles are windowed and two are not, with nothing saying so; at 375px "90D" orphans onto its own line                              | Approved — queued behind P1s            |     |
-| QA-triage-20260827-11 | P2                        | The preview's footer — reversibility line, Cancel, confirm — sits below the fold on a 375px phone                                          | Approved — queued behind P1s            |     |
-| QA-triage-20260827-12 | P3                        | The `K · A · U · L · D` legend renders from first paint, but the keys do nothing until a row is expanded                                   | Open                                    |     |
-| QA-triage-20260827-13 | P3                        | Rows 2–12 show a bare `›` while row 1 shows a rationale, reading as "row 1 loaded and the rest failed"                                     | Open                                    |     |
-| QA-triage-20260827-14 | P3                        | A sender with no inbox mail occupies a decision slot with no signal until the preview opens                                                | Open                                    |     |
-| QA-triage-20260827-15 | P3                        | The H1 and queue legend give an unscoped count, and no "done for today" state ever renders to correct it                                   | Open                                    |     |
+| id                    | sev                       | one line                                                                                                                                   | status                                      | PR  |
+| --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | --- |
+| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | **At review cap** (dc36daab) — founder call |     |
+| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | **At review cap** (dc36daab) — founder call |     |
+| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | **At review cap** (dc36daab) — founder call |     |
+| QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                             | Approved — queued behind the P1 branch      |     |
+| QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                          | Approved — queued behind P1s                |     |
+| QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                     | Approved — queued behind P1s                |     |
+| QA-triage-20260827-07 | P2                        | One measurement, two names on the same card: the row says "marked read", the tile and bullet say "read rate"                               | Approved — queued behind P1s                |     |
+| QA-triage-20260827-08 | P2                        | "You'll see the affected email before anything changes" names Keep first, and Keep has no preview by design (D40)                          | Approved — queued behind P1s                |     |
+| QA-triage-20260827-09 | P2                        | The undo deadline renders in UTC in the toast and in the reader's zone in the preview, two clicks apart                                    | Approved — queued behind P1s                |     |
+| QA-triage-20260827-10 | P2                        | Two stat tiles are windowed and two are not, with nothing saying so; at 375px "90D" orphans onto its own line                              | Approved — queued behind P1s                |     |
+| QA-triage-20260827-11 | P2                        | The preview's footer — reversibility line, Cancel, confirm — sits below the fold on a 375px phone                                          | Approved — queued behind P1s                |     |
+| QA-triage-20260827-12 | P3                        | The `K · A · U · L · D` legend renders from first paint, but the keys do nothing until a row is expanded                                   | Open                                        |     |
+| QA-triage-20260827-13 | P3                        | Rows 2–12 show a bare `›` while row 1 shows a rationale, reading as "row 1 loaded and the rest failed"                                     | Open                                        |     |
+| QA-triage-20260827-14 | P3                        | A sender with no inbox mail occupies a decision slot with no signal until the preview opens                                                | Open                                        |     |
+| QA-triage-20260828-01 | P2                        | "LAST SEEN today" is shown for mail that arrived yesterday — the label buckets by elapsed hours, not calendar day                          | Open                                        |     |
+| QA-triage-20260827-15 | P3                        | The H1 and queue legend give an unscoped count, and no "done for today" state ever renders to correct it                                   | Open                                        |     |
 
 ### Review rounds — QA-01 / QA-02 / QA-03
 
@@ -132,7 +134,8 @@ The three P1s share one branch, so they are reviewed as one diff.
 | ----- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | —     | `da7d4073`  | cancelled       | Dispatched against an ancestor of the final diff. Superseded, not counted.                                                                                                               |
 | 1     | `d9554423`  | **substantive** | **4 findings** (2 High, 1 Medium, 1 Low) covering **5 distinct defects** — its first bundled two independent mechanisms. 4 areas nothing-found. All reproduced; all fixed in `933a3e89`. |
-| 2     | `933a3e89`  | dispatched      | Pending.                                                                                                                                                                                 |
+| 2     | `933a3e89`  | **substantive** | 1 Medium, 1 Low. Re-cleared all four of round 1's nothing-found areas and confirmed the five round-1 tests have teeth. Both fixed in `dc36daab`.                                         |
+| —     | —           | **cap reached** | Two substantive rounds. No round 3: at this point either the diff is too big or the finding under it is wrong, and another lap cannot say which. Founder call.                           |
 
 **Round 1's four findings, numbered as the reviewer numbered them.** Finding 1
 carries two independent defects, which is why the fix commit lists five items
@@ -164,6 +167,20 @@ before `noiseRows` is built, so a protected Archive contributes to neither the
 count nor the numerator), the nullable `lastDays` consumers, the total-order
 fixture, and the tiebreak's effect on D30 queue size.
 
+**Round 2 found the trap round 1's fix walked into.** Round 1's window fix
+threaded one cutoff through a single request. But the rows and the strip reach
+the user through DIFFERENT requests — `/queue` and `/today-summary`, each
+invalidated separately — so each still derived its own rolling cutoff, and the
+strip could claim a share above a row whose own 90-day count read 0. There is
+no instant to share across two HTTP requests, only a rule both re-derive; the
+cutoff is now anchored to the UTC day. **The first fix was the wrong half of
+the problem, and only a reader looking at the request boundary saw it.**
+
+Round 2's second finding: the clamp removal had no test and could not have one,
+because the state that triggers it cannot be staged through the database. The
+decision is now a pure `noiseSharePct(queuedNoise, total)` the spec calls
+directly.
+
 **Round 1 is the evidence FOR the inversion, not its cause.** The pipeline was
 inverted by founder instruction in `6ae06847`, ten minutes before `d9554423` —
 the commit round 1 reviewed — so round 1 could not have caused it. The reasons
@@ -174,6 +191,55 @@ five defects were introduced by the fixing session's own diff, and finding 2 is
 one it could not have caught by reading its own code — it needs a reader asking
 what the wire does when the producer is a version behind. A self-approved
 `Fixing → PR` would have shipped every one of them.
+
+### Smoke — 2026-08-28, `dc36daab`, real mailbox
+
+Dev stack restarted so `:4000` served this branch; verified its cwd. Signed in
+via the D206 dev login as `chintan.a.thakkar@gmail.com` (12 queued decisions,
+12,368 inbound messages in the anchored 90-day window).
+
+| what               | result                                                                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Strip copy         | "12 sender decisions. These senders sent ~9% of the email you received in the last 90 days." Past tense; plural correct for 12 of 12 non-Keep.               |
+| Share arithmetic   | `/queue` non-Keep `last90dMessages` sum = 1126; anchored denominator = 12368; 1126/12368 = 9.1% → **9**, matching `/today-summary` from a SEPARATE request.  |
+| `lastDays` honesty | Returns 0, 1, 2 and 45 — varied, where the bug collapsed every row to 0. All five spot-checked senders match `MAX(internal_date)` for inbound mail exactly.  |
+| The 45-day sender  | "Thomas Dixon \| Red State Legacy" renders **LAST SEEN 45d**. Last inbound 2026-07-13. This row read "today" before the fix.                                 |
+| D226 preview       | Renders for Archive; 283 matches the row's RECEIVED and the DB inbound count. Escaped without confirming — **no new `action_jobs` row**, so nothing mutated. |
+| Console            | Clean.                                                                                                                                                       |
+| 375px              | Strip wraps, no overflow.                                                                                                                                    |
+
+**This is the driver boundary the spec suite structurally cannot reach.** The
+`lastDays` defect existed because a raw `sql` fragment carries no decoder, so
+postgres.js returned a STRING where PGlite returns a `Date` — which is why no
+test could ever reproduce it. The varied values above are that path executing
+correctly against the real driver.
+
+**What the smoke did NOT prove.** This mailbox's anchored and rolling
+denominators differ by only 5 messages (12368 vs 12363), and both round to 9%,
+so the data cannot discriminate the anchored-vs-rolling choice. That fix rests
+on its negative control (`expected null to be 75`), not on this run. Nor did
+any queued sender have outbound mail under a shared key, so the inbound-`MAX`
+fix's own effect is covered by spec only.
+
+**QA-triage-20260828-01, filed from the smoke above, is NOT fixed in this
+branch.** `lastDays` is `floor(elapsed_hours / 24)`, so `0` means "within 24
+hours" while the label renders "today". Temu's newest inbound message was
+2026-08-27 14:14 PDT — 11.1 hours before the smoke, and one calendar day back.
+The screen said today.
+
+It is the same class as QA-02 (a recency label asserting more than the data
+supports) by a different mechanism, and it is on a surface this branch already
+touches, which normally means fixing it here. It is deliberately not fixed
+here anyway: an honest fix needs the timestamp on the wire so the client can
+compare calendar days in the reader's own zone, and adding an unreviewed wire
+field to a diff that just hit its two-round review cap repeats the exact
+mistake round 1 caught — a new required field nothing validates. It goes in
+the next branch, reviewed on its own.
+
+Strongest objection on record, for the founder: `lastDays` is documented as an
+elapsed-day count, so "today" could be read as shorthand for "in the last 24
+hours". Rejected as a defence of the copy — the label is what the user reads,
+and no user reads "today" as "since this time yesterday" at 01:00.
 
 **Pipeline changed 2026-08-28 — Codex no longer writes these fixes.** The run
 writes them and Codex reviews the diff adversarially. The two attempts at the
