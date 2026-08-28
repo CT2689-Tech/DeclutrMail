@@ -293,28 +293,34 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * helper in `lapse-reengagement.worker.ts`.
  */
 /**
- * Start of the trailing-90-day window — anchored to the UTC day, so that
- * every caller deriving it independently gets the SAME instant.
+ * Start of the trailing-90-day window: ONE rolling instant, re-used by both
+ * halves of the share within a request.
  *
- * Determinism is the whole point, and it is why this is not
- * `Date.now() - 90d`. The share divides a per-sender count (from
- * `listQueue`) by a mailbox-wide count, and those two numbers reach the
- * user through DIFFERENT HTTP requests: the rows come from `/queue`, the
- * strip above them from `/today-summary`, and a decision invalidates both
- * caches independently. There is no instant to share across two requests —
- * only a rule they can both re-derive. A rolling cutoff cannot be
- * re-derived: two calls a second apart produce two windows, so the strip
- * could claim "~100%" above a row whose own 90-day count read 0.
+ * ROLLING, not anchored to the UTC day, because "the last 90 days" has to
+ * mean the same thing everywhere in the product. Every other surface reads
+ * it rolling — the scorer that writes "1% read rate over the last 90 days"
+ * into the row's own reasoning text (`score.worker.ts` `NINETY_DAYS_MS`),
+ * the activity read service, and the action preview's `older than 90 days`
+ * filter. Anchoring only Triage would put a 90-to-91-day number in the stat
+ * tile directly above a rolling-90-day sentence about the same sender, which
+ * is the list/detail window drift this codebase keeps relearning — a bigger,
+ * permanently visible lie than the one it would fix.
  *
- * The original defect was never that anchoring is wrong. It was that the
- * numerator anchored one way and the denominator another. Anchoring BOTH
- * fixes it and survives the request boundary; making both rolling fixed
- * only the half that lives inside a single request.
+ * What this DOES fix is the original defect: the numerator was rolling and
+ * the denominator midnight-anchored, so the share was a ratio between two
+ * spans that differed by up to a day. Both now take this one instant.
+ *
+ * Known residue, accepted: `/queue` and `/today-summary` are separate
+ * requests with independently invalidated caches, so each derives its own
+ * instant and their windows can differ by the seconds between them. That is
+ * true of every rolling window in the product, it moves the denominator by
+ * at most a message or two, and it cannot move a rounded percentage. Closing
+ * it would require anchoring, which costs more than it buys. Do not "fix" it
+ * by anchoring this alone; if it is ever worth closing, the whole product's
+ * definition of 90 days moves together.
  */
 function noiseWindowStartFrom(now: Date | undefined): Date {
-  const at = now ?? new Date();
-  const dayStartUtc = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
-  return new Date(dayStartUtc - 90 * 86_400_000);
+  return new Date((now ?? new Date()).getTime() - 90 * 86_400_000);
 }
 
 /**

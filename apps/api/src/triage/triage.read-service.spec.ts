@@ -504,53 +504,60 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     expect(summary.noiseReductionPct).toBe(75);
   });
 
-  it('gives the same share to two requests in the same UTC day', async () => {
-    // The rows and the strip reach the user through DIFFERENT requests:
-    // `/queue` renders the per-sender 90-day counts, `/today-summary` renders
-    // the share built from them, and a decision invalidates both caches
-    // independently. So the cutoff cannot be an instant one request shares —
-    // it has to be a RULE both re-derive to the same value.
+  it('divides by the SAME 90-day window the numerator counted', async () => {
+    // The original defect: the numerator cut at `Date.now() - 90d` (rolling)
+    // while the denominator cut at `todayStartUtc - 90d` (UTC midnight). The
+    // denominator's window was therefore up to a day WIDER, so the share was a
+    // ratio between two different spans and read low — worst just before
+    // midnight UTC, which is what this fixture pins.
     //
-    // A rolling `Date.now() - 90d` cannot be re-derived. Two calls hours apart
-    // produce two windows, and the strip could claim a share above a row whose
-    // own 90-day count read zero. Anchoring both to the UTC day fixes it.
-    const early = new Date(Date.UTC(2026, 4, 20, 0, 30));
-    const late = new Date(Date.UTC(2026, 4, 20, 23, 30));
+    // The window stays ROLLING, matching every other 90-day read in the
+    // product; what changed is that both halves take the same instant.
+    const now = new Date(Date.UTC(2026, 4, 20, 23, 0, 0));
+    const at = (msBefore: number): Date => new Date(now.getTime() - msBefore);
 
     await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
     const quietKey = 'c'.repeat(64);
-    await db.insert(senders).values({
-      mailboxAccountId: mailboxId,
-      senderKey: quietKey,
-      email: 'c@quiet.example',
-      domain: 'quiet.example',
-      gmailCategory: 'primary',
-      firstSeenAt: new Date('2026-01-01'),
-      lastSeenAt: new Date('2026-06-01'),
-    });
+    const stragglerKey = 'e'.repeat(64);
+    for (const [key, email] of [
+      [quietKey, 'c@quiet.example'],
+      [stragglerKey, 'e@old.example'],
+    ] as const) {
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        email,
+        domain: email.split('@')[1]!,
+        gmailCategory: 'primary',
+        firstSeenAt: new Date('2026-01-01'),
+        lastSeenAt: new Date('2026-06-01'),
+      });
+    }
     const seedAt = async (key: string, when: Date): Promise<void> => {
       await db.insert(mailMessages).values({
         mailboxAccountId: mailboxId,
         senderKey: key,
-        providerMessageId: `d-${key.slice(0, 6)}-${when.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
-        providerThreadId: `dt-${key.slice(0, 6)}`,
+        providerMessageId: `w-${key.slice(0, 6)}-${when.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+        providerThreadId: `wt-${key.slice(0, 6)}`,
         internalDate: when,
         isUnread: true,
         isOutbound: false,
       });
     };
-    // Mid-day on the 90th-day-back date. A rolling cutoff taken at 00:30
-    // includes it; the same rule at 23:30 excludes it. The UTC-day anchor
-    // (00:00 that date) includes it from either call.
-    for (let i = 0; i < 3; i++) await seedAt(SENDER_A, new Date(Date.UTC(2026, 1, 19, 12, 0)));
-    await seedAt(quietKey, new Date(Date.UTC(2026, 4, 15, 9, 0)));
+    // 6 queued of 8 in-window inbound → 75%.
+    for (let i = 0; i < 4; i++) await seedAt(SENDER_A, at(5 * 86_400_000));
+    for (let i = 0; i < 2; i++) await seedAt(SENDER_B, at(10 * 86_400_000));
+    for (let i = 0; i < 2; i++) await seedAt(quietKey, at(20 * 86_400_000));
+    // 90 days and 12 hours old: outside the rolling window BOTH halves now
+    // use, but inside the midnight-anchored one the denominator used to take.
+    // It is the only row the two cutoffs ever disagreed about.
+    await seedAt(stragglerKey, at(90 * 86_400_000 + 12 * 3_600_000));
 
-    const atEarly = await svc.getTodaySummary({ mailboxAccountId: mailboxId, now: early });
-    const atLate = await svc.getTodaySummary({ mailboxAccountId: mailboxId, now: late });
-
-    // 3 queued of 4 in-window inbound, from both ends of the day.
-    expect(atEarly.noiseReductionPct).toBe(75);
-    expect(atLate.noiseReductionPct).toBe(atEarly.noiseReductionPct);
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId, now });
+    expect(summary.queuedDecisions).toBe(2);
+    // 6/8. Counting the straggler in the denominator alone gave 6/9 → 67%.
+    expect(summary.noiseReductionPct).toBe(75);
   });
 
   it('a decided sender leaves both the decision count and the noise share (D30 exclusion parity)', async () => {
