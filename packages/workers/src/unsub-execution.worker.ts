@@ -226,26 +226,36 @@ export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
   },
 };
 
-/** `action_jobs.error_code` when the kill switch refused the send. */
-export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_BLOCKED_NON_PRODUCTION';
+/** `action_jobs.error_code` when the defence-in-depth refusal fires. */
+export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';
 
 /**
- * Whether a real one-click POST is refused in this process.
+ * Whether this process may perform a real one-click unsubscribe POST.
  *
- * Production sends; everything else refuses unless it opts in explicitly with
- * `UNSUB_ALLOW_REAL_SENDS=true`. The default is the safe one because the
- * unsafe direction here is irreversible and aimed at a third party.
+ * `UNSUB_SEND_ENABLED === 'true'`, read explicitly, and nothing else. Unset,
+ * empty, `1`, `TRUE`, `yes` — all refuse. **Silence means do not send**, in
+ * every environment including production.
  *
- * `NODE_ENV=production` is set explicitly on both Cloud Run services in
- * `deploy-cloud-run.yml`, and that file is the full env on every deploy
- * (`--set-env-vars` replaces rather than merges), so the live worker cannot
- * drift into a state where this quietly disables unsubscribing for real users.
+ * The polarity is the whole design, and the obvious alternative is wrong.
+ * Refusing only when a flag is SET makes silence mean SEND, so an unset var, a
+ * typo, or a var that never reached the worker service all send. This is the
+ * inverse of `DEV_AUTH_ENABLED`, which gates a dev capability and is asserted
+ * OFF in production; this gates a real-world side effect on a third party and
+ * is asserted ON in production, at boot, by the composition root.
  *
- * Takes `env` so a test can decide without mutating the process.
+ * Takes `env` so a caller can decide without mutating the process.
  */
-export function unsubSendsBlocked(env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.NODE_ENV === 'production') return false;
-  return env.UNSUB_ALLOW_REAL_SENDS !== 'true';
+export function unsubSendsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.UNSUB_SEND_ENABLED === 'true';
+}
+
+/** Host only, for logs. Never the path or query — the token lives there. */
+function safeHost(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
 }
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
@@ -405,15 +415,20 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     // The outcome is `failed`, not a faked acceptance: the send did not
     // happen, and a recorded success for a message never sent is the exact
     // fake-completion this repo forbids.
-    if (unsubSendsBlocked()) {
+    if (!unsubSendsEnabled()) {
       console.warn(
         JSON.stringify({
           level: 'warn',
-          kind: 'unsub.send_blocked_non_production',
+          kind: 'unsub.send_disabled',
           actionId: job.id,
-          nodeEnv: process.env.NODE_ENV ?? null,
-          message:
-            'Refused a one-click unsubscribe: not production, and UNSUB_ALLOW_REAL_SENDS is not "true".',
+          // HOST + channel only. Never the one-click URL: it carries a
+          // per-send token, and D7 keeps tokenised recipient identifiers out
+          // of logs. Named `unsubscribeHost` rather than `senderDomain`
+          // because that is what it is — the list processor's host, which is
+          // routinely a different domain from the sender's.
+          unsubscribeHost: safeHost(oneClickUrl),
+          channel: 'one_click',
+          message: 'Refused a one-click unsubscribe: UNSUB_SEND_ENABLED is not "true".',
         }),
       );
       return this.recordOutcome(

@@ -27,7 +27,7 @@ import {
   UNSUB_SEND_BLOCKED_ERROR_CODE,
   UnsubExecutionWorker,
   unsubExecutionJobOptions,
-  unsubSendsBlocked,
+  unsubSendsEnabled,
 } from './unsub-execution.worker.js';
 import type { UnsubHttpPort } from './unsub-execution.worker.js';
 import { TransientError } from './worker-errors.js';
@@ -228,35 +228,36 @@ function ctx(attempt: number): WorkerContext {
  * the safe one — delete these two lines and the suite goes red.
  */
 beforeAll(() => {
-  process.env.UNSUB_ALLOW_REAL_SENDS = 'true';
+  process.env.UNSUB_SEND_ENABLED = 'true';
 });
 afterAll(() => {
-  delete process.env.UNSUB_ALLOW_REAL_SENDS;
+  delete process.env.UNSUB_SEND_ENABLED;
 });
 
-describe('unsubSendsBlocked — the kill switch', () => {
-  it('sends in production', () => {
-    expect(unsubSendsBlocked({ NODE_ENV: 'production' })).toBe(false);
+describe('unsubSendsEnabled — the kill switch', () => {
+  it('silence means DO NOT SEND, in every environment', () => {
+    // The polarity is the design. Refusing only when a flag is SET would make
+    // silence mean send, so an unset var, a typo, or a var that never reached
+    // the worker service would all send.
+    expect(unsubSendsEnabled({})).toBe(false);
+    expect(unsubSendsEnabled({ NODE_ENV: 'development' })).toBe(false);
+    expect(unsubSendsEnabled({ NODE_ENV: 'test' })).toBe(false);
+    // Production included. It is asserted ON at boot, never inferred here.
+    expect(unsubSendsEnabled({ NODE_ENV: 'production' })).toBe(false);
   });
 
-  it('refuses everywhere else by default', () => {
-    // The state a QA run, a laptop, and CI are all in.
-    expect(unsubSendsBlocked({ NODE_ENV: 'development' })).toBe(true);
-    expect(unsubSendsBlocked({ NODE_ENV: 'test' })).toBe(true);
-    expect(unsubSendsBlocked({})).toBe(true);
+  it('sends only on the exact string "true"', () => {
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: 'true' })).toBe(true);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: 'TRUE' })).toBe(false);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: '1' })).toBe(false);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: 'yes' })).toBe(false);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: '' })).toBe(false);
   });
 
-  it('refuses anything short of the exact opt-in string', () => {
-    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: 'true' })).toBe(false);
-    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: 'TRUE' })).toBe(true);
-    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: '1' })).toBe(true);
-    expect(unsubSendsBlocked({ UNSUB_ALLOW_REAL_SENDS: 'yes' })).toBe(true);
-  });
-
-  it('never lets the opt-in weaken production', () => {
-    expect(unsubSendsBlocked({ NODE_ENV: 'production', UNSUB_ALLOW_REAL_SENDS: 'false' })).toBe(
-      false,
-    );
+  it('does not read NODE_ENV at all', () => {
+    // NODE_ENV cannot enable a send on its own, and cannot disable one either.
+    expect(unsubSendsEnabled({ NODE_ENV: 'production', UNSUB_SEND_ENABLED: 'true' })).toBe(true);
+    expect(unsubSendsEnabled({ NODE_ENV: 'development', UNSUB_SEND_ENABLED: 'true' })).toBe(true);
   });
 });
 
@@ -301,8 +302,8 @@ describe('UnsubExecutionWorker', () => {
     // re-enabled sends for every test after this one — so removing the
     // suite-level opt-in left the file green and the docblock above it
     // lying. A cleanup that restores a value nobody set is a state leak.
-    const previousOptIn = process.env.UNSUB_ALLOW_REAL_SENDS;
-    delete process.env.UNSUB_ALLOW_REAL_SENDS;
+    const previousOptIn = process.env.UNSUB_SEND_ENABLED;
+    delete process.env.UNSUB_SEND_ENABLED;
     try {
       await seedSender(db, mailboxId);
       await seedPendingPolicy(db, mailboxId);
@@ -332,9 +333,9 @@ describe('UnsubExecutionWorker', () => {
       expect(job.errorCode).not.toBeNull();
     } finally {
       if (previousOptIn === undefined) {
-        delete process.env.UNSUB_ALLOW_REAL_SENDS;
+        delete process.env.UNSUB_SEND_ENABLED;
       } else {
-        process.env.UNSUB_ALLOW_REAL_SENDS = previousOptIn;
+        process.env.UNSUB_SEND_ENABLED = previousOptIn;
       }
     }
   });
