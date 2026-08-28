@@ -106,6 +106,54 @@ nobody is watching: `screener` · `brief` · `autopilot` · `quiet`.
 **Final sweeps** — `mobile` and `keyboard` are inside every run's break list
 already; standalone they are a last pass across everything.
 
+## Shape of a run — five phases, and the run ships nothing
+
+**A `/ct-qa` run produces findings. It does not produce commits.** No fix, no
+PR, no file touched outside the ledger and `FINDINGS.md`.
+
+Rule 6 has always said this. The 2026-08-27 triage run shipped nine fix PRs
+anyway, and four of them — #657, #658, #659, #660 — rewrote the same sentence
+in the Later preview, each a full round through typecheck, lint, tests, smoke,
+gates, CI and merge before the next defect in that sentence was found. Ten
+hours; the browser was driven for about one of them.
+
+The cause is structural, not discipline. The stack is the only thing in this
+pipeline that cannot be duplicated — one database, one Gmail mailbox, one
+worker, one `:4000`. `playwright.config.ts` says it outright: *"Shared dev DB
+and one Gmail mailbox — never parallelise."* Every minute spent fixing is a
+minute that lock is held and no QA happens. So the run holds the lock as
+briefly as it can and hands everything else off.
+
+| Phase | Holds the stack? | What happens |
+| ----- | ---------------- | ------------ |
+| **A — Drive** | **Exclusively** | Preflight → Step 0 restores → the three using personas → the break list. Collect candidates. Fix nothing. |
+| **B — Fan out** | No | Every read-only agent at once: all `finding-refuter`s, all `defect-class-sweeper`s, `usability-editor`, `flow-completeness-auditor`. |
+| **C — Measure** | Brief, read-only | Run the sweepers' `unmeasured` SQL through `assert-dev-db.sh --exec`; hand the numbers back. |
+| **D — File** | No | Ledger row, `FINDINGS.md` Inbox, closing summary. **The run ends here.** |
+| **E — Fix** | Per fix | A SEPARATE session. See **Handoff** under Output. |
+
+### Phase B goes out as ONE wave
+
+Dispatch every Phase B agent **in a single message**, so they actually run
+concurrently. Firing them one at a time — a refuter after each finding, a
+sweeper after each mechanism — costs the same wall clock as no parallelism at
+all. It is also the default mistake, because each rule below names its agent
+at the point the finding appears rather than at the point the agent should
+run. The rules describe *what* to dispatch; this section decides *when*.
+
+Nothing in Phase B touches the stack, the database, or the browser. It can run
+against the checkout with the stack already down.
+
+### Phase A collects; it does not adjudicate
+
+A candidate found at 10:00 is refuted in Phase B, not at 10:01. Stopping
+mid-drive to prove or disprove something is the interleaving this structure
+exists to remove. Write it down and keep driving.
+
+The exception is evidence only capturable in the moment — a screenshot, a
+console line, an `action_jobs` row a later query would no longer see. Capture
+those as you go (rule 5); judge them in Phase B.
+
 ## Preflight — six lines, each has voided a past run
 
 ```bash
@@ -243,8 +291,9 @@ The first three *use* it. The fourth *judges* it.
 - **The editor** — runs **last**, because you cannot judge whether the language
   matched the experience until you have had the experience. Capture the screen
   text and screenshots, then dispatch **`usability-editor`** — one per screen
-  set, in parallel, nothing mutates. It is the only persona that can be
-  delegated; the other three depend on the founder seeing what happened.
+  set, in **Phase B's single wave**, nothing mutates. It is the only persona
+  that can be delegated; the other three depend on the founder seeing what
+  happened.
 
 ## 4 — Try to break it
 
@@ -269,7 +318,8 @@ The first three *use* it. The fourth *judges* it.
   Safety, above.
 
 On lifecycle jobs (`onboarding`, `sync`, `mailbox-switch`) call
-**`flow-completeness-auditor`** for the state table rather than re-deriving one.
+**`flow-completeness-auditor`** for the state table rather than re-deriving
+one — in Phase B's wave, like every other agent in this document.
 
 **Restore contract.** Write the restoring statement BEFORE you run the
 mutation, and paste it into the ledger row at that moment — not after. If the
@@ -312,8 +362,9 @@ cannot fail did not pass — it asked nothing.
 ## 6 — Every bug gets a sibling sweep
 
 Name the **mechanism** and dispatch **`defect-class-sweeper`** — one per
-mechanism, in parallel. Record the instances; do not fix them here. Hand the
-class to `/ct-class` for the fix.
+mechanism, in **Phase B's single wave**, never one after each bug is found.
+Record the instances. Fixing is Phase E, in another session; hand the class to
+`/ct-class`, which refuses to patch in the same pass for the same reason.
 
 The sweeper must prove its query rediscovers the known instance before its
 silence means anything.
@@ -333,8 +384,11 @@ manufacture one. A probe that would require executing the verb does not run:
 write `n/a — would fire a real unsubscribe` in the ledger and move on. This is
 the one place in this document where an unexplored gap is the right outcome.
 
-## Done means done — six boxes, not vibes
+## Done means done — eight boxes, not vibes
 
+- [ ] The run made **no commit and opened no PR**, and changed no file outside
+      the ledger and `FINDINGS.md`
+- [ ] Phase B went out as ONE wave, not agent-by-agent
 - [ ] All four personas walked, the editor last (as `usability-editor`)
 - [ ] Break list exhausted, or each skip named with its reason
 - [ ] Every finding carries evidence a stranger could re-check
@@ -357,8 +411,8 @@ dirty, and QA'ing on top of that files someone else's damage as your findings.
 **Screenshots** to the scratchpad, sent to the founder inline — not committed.
 
 **Nothing is filed unrefuted.** Every candidate goes to a **`finding-refuter`**
-first, in parallel, one per finding, each told to disprove it and to default to
-REFUTED when uncertain. Refuted candidates are dropped with a one-line note in
+first — one per finding, all of them in Phase B's single wave — each told to
+disprove it and to default to REFUTED when uncertain. Refuted candidates are dropped with a one-line note in
 the ledger, not silently. Survivors are filed carrying the refuter's strongest
 surviving objection, so the founder sees what was argued.
 
@@ -387,8 +441,32 @@ P0/P1 are appended to the `FINDINGS.md` **Inbox** in its existing shape for
 **Closing summary** is `/ct-status` shaped: what a user would have hit, how
 bad, what proved it. Product language, no file paths in the body.
 
+### Handoff — how findings become fixes
+
+Phase E is a separate session. Three rules govern it, all three learned from
+#657–#660:
+
+- **Group by surface, not by finding.** Nine findings on the Later preview are
+  one PR, not nine. Every PR pays the full §8 definition of done — typecheck,
+  lint, unit, e2e, smoke, gate agents, CI — and that cost is per PR, not per
+  fix.
+- **Adversarial review runs BEFORE the commit, on the working tree.** #658,
+  #659 and #660 each open with "Codex stop-time review". The reviewer was
+  right every time and was asked too late every time. The same reviewer, moved
+  ahead of the PR, is one PR instead of four.
+- **A claim about behaviour is checked against the code that implements it**,
+  never against the other copy on the screen. #659 asserted a delivery
+  guarantee `GmailClientService.batchModify` does not make; #660 asserted a
+  moment `SnoozeWakeWorker`'s 15-minute sweep cannot promise. Both were copy
+  read against copy.
+
 ## Boundaries
 
 Mutations are dev-stack only; prod reads are fine. No migrations from a laptop,
 no cloud-resource deletion, no credential rotation. One job per run — never
 bleed into the next one.
+
+**The run ships nothing.** No commit, no PR, no fix — not even a one-line one
+that is "obviously right". The ledger row and the `FINDINGS.md` Inbox entries
+are the entire output. A fix made here holds the stack lock, and the next
+finding waits behind it.
