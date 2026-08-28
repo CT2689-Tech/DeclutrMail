@@ -90,10 +90,10 @@ ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
 | id                    | sev                       | one line                                                                                                                                   | status                                           | PR  |
 | --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------ | --- |
-| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | Approved 2026-08-27 → Handed to Codex 2026-08-27 |     |
-| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | Approved 2026-08-27 → Handed to Codex 2026-08-27 |     |
-| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | Approved 2026-08-27 → Handed to Codex 2026-08-27 |     |
-| QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                             | Approved 2026-08-27 → Handed to Codex 2026-08-27 |     |
+| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | Approved 2026-08-27 → Handed to Codex 2026-08-28 |     |
+| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | Approved 2026-08-27 → Handed to Codex 2026-08-28 |     |
+| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | Approved 2026-08-27 → Handed to Codex 2026-08-28 |     |
+| QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                             | Approved — queued behind the P1 branch           |     |
 | QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                          | Approved — queued behind P1s                     |     |
 | QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                     | Approved — queued behind P1s                     |     |
 | QA-triage-20260827-07 | P2                        | One measurement, two names on the same card: the row says "marked read", the tile and bullet say "read rate"                               | Approved — queued behind P1s                     |     |
@@ -115,11 +115,21 @@ tasks got was an inline argument the runtime silently compressed (~230 lines to
 dispatches (`task-mtclawpt-0angwp`, `task-mtckxmm4-9r9pb9`) are of unknown
 standing and neither has returned a PR.
 
-The four rows below therefore read `Handed to Codex` because a dispatch did
-happen — not because a complete brief was delivered. **Re-dispatch from the
-committed briefs rather than trusting whatever comes back.** The rule that
-prevents a repeat is in `.claude/commands/ct-qa.md` §8: write the brief, commit
-it, then pass the path.
+The rule that prevents a repeat is in `.claude/commands/ct-qa.md` §8: write the
+brief, commit it, then pass the path.
+
+**Re-dispatched 2026-08-28, correctly.** The briefs were committed in
+`428fa3b5`, so they now exist at HEAD and resolve inside any checkout or
+worktree cut from it. `QA-triage-20260827-01/-02/-03` were re-sent as one task
+pointed at the committed path, with no worktree isolation — isolation is
+auto-removed when the dispatching agent changes nothing, which is precisely what
+a dispatch-only agent does, and that is what stranded the first attempt.
+`QA-triage-20260827-04` is held until the P1 branch lands: the two are disjoint
+by file, but a second concurrent task in one checkout interleaves commits on one
+branch, and sequencing costs nothing here. Anything returned by the two original
+dispatches (`task-mtclawpt-0angwp`, `task-mtckxmm4-9r9pb9`) should be discarded
+rather than reviewed — those ran from a 28-line compression of a 111-line
+brief.
 
 **Id note.** The two Codex handoffs dispatched on 2026-08-27 cite the short form
 (`QA-triage-01`…`-04`), which was the scheme at the time. Those PRs map to
