@@ -185,9 +185,23 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
   });
 
   it('keeps the plain display when the window has messages', () => {
+    // `lastDays: 0` means today and nothing else. It used to be ambiguous —
+    // the BE collapsed an unreadable date to 0 — so this assertion was true
+    // for the wrong reason half the time. The BE now sends `null` for unknown,
+    // which is what the next test pins.
     expect(lastSeenLabel({ last90dMessages: 13, lastDays: 0 })).toBe('today');
     expect(lastSeenLabel({ last90dMessages: 13, lastDays: 1 })).toBe('1d');
     expect(lastSeenLabel({ last90dMessages: 13, lastDays: 12 })).toBe('12d');
+  });
+
+  it('renders unknown as unknown, never as a recency', () => {
+    // The defect this replaced: an unreadable MAX(internal_date) became 0 and
+    // the tile read "LAST SEEN today" for a sender who last wrote 45 days ago.
+    // Every branch must refuse to invent a recency, including the ones where
+    // the 90-day window would otherwise look self-consistent.
+    expect(lastSeenLabel({ last90dMessages: 13, lastDays: null })).toBe('unknown');
+    expect(lastSeenLabel({ last90dMessages: 0, lastDays: null })).toBe('unknown');
+    expect(lastSeenLabel({ last90dMessages: 1, lastDays: null })).not.toBe('today');
   });
 });
 

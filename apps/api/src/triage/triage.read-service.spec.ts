@@ -282,6 +282,60 @@ async function seedMessage(
   });
 }
 
+describe('TriageReadService.listQueue — the daily ORDER BY is a total order', () => {
+  let db: Db;
+  let mailboxId: string;
+  let svc: TriageReadService;
+
+  // Keys chosen so sorted order is the REVERSE of insertion order. Without a
+  // tiebreak the rows come back in physical/insertion order, so this fixture
+  // makes the two orders disagree — a fixture that inserted in sorted order
+  // would pass with or without the fix and prove nothing.
+  const TIED = ['c', 'b', 'a'].map((ch) => ch.repeat(64));
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'tied');
+    for (const key of TIED) {
+      // Identical verdict AND confidence: everything ahead of the tiebreak in
+      // the ORDER BY is equal, so only the tiebreak can decide the order.
+      await seedSenderWithDecision(db, mailboxId, key, `${key.slice(0, 6)}@tied.example`);
+    }
+    svc = new TriageReadService(db as never);
+  });
+
+  it('breaks confidence ties deterministically instead of by physical row order', async () => {
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.senderKey)).toEqual([...TIED].sort());
+  });
+
+  it('returns the same order across reads with an unrelated write in between', async () => {
+    // The user-visible failure: expanding a row rewrites `triage_decisions`,
+    // and with a non-total ORDER BY that write reshuffled the visible queue —
+    // cards moved, or fell out of the LIMIT entirely, mid-decision.
+    //
+    // HONEST LABEL: this one does NOT go red against the pre-fix code. PGlite
+    // returned a stable order here anyway, so it documents the scenario rather
+    // than guarding it. The test above is the one with teeth — it fails without
+    // the tiebreak. Kept because a future ordering change could break this in a
+    // way PGlite does expose; do not mistake it for the protection.
+    const before = (await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 })).map(
+      (r) => r.senderKey,
+    );
+
+    await db
+      .update(triageDecisions)
+      .set({ reasoning: 'rescored by an unrelated write' })
+      .where(eq(triageDecisions.senderKey, TIED[0]!));
+
+    const after = (await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 })).map(
+      (r) => r.senderKey,
+    );
+    expect(after).toEqual(before);
+  });
+});
+
 describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
   let db: Db;
   let mailboxId: string;

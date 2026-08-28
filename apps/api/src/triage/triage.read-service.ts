@@ -128,7 +128,12 @@ export interface TriageQueueRow {
    * types this `number | null`; Triage was the outlier.
    */
   readRate: number | null;
-  lastDays: number;
+  /**
+   * Whole days since this sender's newest message, or `null` when that date
+   * cannot be read. Never 0-as-unknown: a confident "today" for a sender who
+   * has not written in six weeks is a false statement about the user's own mail.
+   */
+  lastDays: number | null;
   totalAllTime: number;
   /**
    * Messages from this sender sitting in INBOX right now — what an
@@ -271,6 +276,21 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * can move the evidence relevant to the selected relief goal ahead of
  * the SQL limit, then apply its richer signal ordering in memory.
  */
+/**
+ * postgres.js and PGlite disagree about raw `sql` timestamp fragments — one
+ * hands back a string, the other a `Date` — and a raw fragment gets no drizzle
+ * decoder either way, so the declared generic proves nothing. Mirrors the same
+ * helper in `lapse-reengagement.worker.ts`.
+ */
+function toDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
 function queueGoalPriority(ordering: TriageQueueOrdering) {
   switch (ordering) {
     // Both cleanup orderings push `later` to the BACK, and that is
@@ -406,15 +426,22 @@ export class TriageReadService {
       ordering === 'newsletter-first' || ordering === 'promotions-first'
         ? desc(senders.totalReceived)
         : null;
-    const queueOrder = goalPriority
-      ? [
-          goalPriority,
-          ...(payoffPriority ? [payoffPriority] : []),
-          verdictPriority,
-          desc(triageDecisions.confidence),
-          triageDecisions.senderKey,
-        ]
-      : [verdictPriority, desc(triageDecisions.confidence)];
+    // `senderKey` last, on EVERY path, so the ORDER BY is a total order.
+    // Built as one list rather than a branch per ordering: the daily
+    // (`actionable`) route takes the null-goal path, and when that path was
+    // spelled separately it omitted the tiebreak. Confidence ties are not rare
+    // there — the engine emits a handful of discrete values, so a real mailbox
+    // had 33 decisions tied at 0.87 contending for the last 4 of 12 LIMIT
+    // slots. Without a tiebreak, Postgres may return any of them in any order,
+    // so which senders appear at all was undefined and any write to
+    // `triage_decisions` reshuffled the queue under the reader mid-decision.
+    const queueOrder = [
+      ...(goalPriority ? [goalPriority] : []),
+      ...(payoffPriority ? [payoffPriority] : []),
+      verdictPriority,
+      desc(triageDecisions.confidence),
+      triageDecisions.senderKey,
+    ];
 
     // Exclude senders the user has already decided on within the D30
     // window — the "decided" record is the K/A/U/L/D `activity_log` row
@@ -538,7 +565,13 @@ export class TriageReadService {
         // DIFFERENT read rates for the same sender on the same day.
         // Numerator only: the message still arrived.
         last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} AND ${readStateNotSweeperMarked(input.mailboxAccountId, getTableName(mailMessages))} THEN 1 ELSE 0 END)`,
-        lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
+        // `unknown`, not `Date` — a raw `sql` fragment carries no decoder
+        // (drizzle's `SQL.decoder` is a no-op), so the declared generic is an
+        // unchecked assertion about the driver's wire shape rather than a
+        // guarantee. It resolved to a STRING under postgres.js while PGlite
+        // handed back a Date, which is why no test could reproduce the bug it
+        // caused. Normalise through `toDate` at the consumer instead.
+        lastInternalDate: sql<unknown>`MAX(${mailMessages.internalDate})`,
       })
       .from(mailMessages)
       .where(
@@ -600,11 +633,19 @@ export class TriageReadService {
       const inbox = inboxBySender.get(r.senderKey) ?? { inbox: 0, unread: 0 };
       const inboxCount = inbox.inbox;
       const monthlyVolume = Math.round(last90Total / 3);
-      const lastInternal = agg?.lastInternalDate ?? r.lastSeenAt;
+      // `??` on the RAW value would pick an unreadable non-null and shadow
+      // `r.lastSeenAt`, which is a correctly-typed column read — that is the
+      // exact shape of the defect this replaced. Normalise first, then fall
+      // back, so the fallback can actually do its job.
+      const lastInternal = toDate(agg?.lastInternalDate) ?? toDate(r.lastSeenAt);
+      // Unknown stays unknown. The previous `: 0` answered "I could not read
+      // this date" with the most recent date possible, so a sender last seen 45
+      // days ago rendered "LAST SEEN today" — the same rule this file already
+      // applies to `readRate` ("no denominator means unknown, not zero").
       const lastDays =
-        lastInternal instanceof Date
-          ? Math.max(0, Math.floor((now - lastInternal.getTime()) / 86_400_000))
-          : 0;
+        lastInternal === null
+          ? null
+          : Math.max(0, Math.floor((now - lastInternal.getTime()) / 86_400_000));
 
       // Protection overrides the recommendation (2026-07-10 founder
       // dogfood): a row reading "PROTECTED" and "Unsubscribe · 95% ·

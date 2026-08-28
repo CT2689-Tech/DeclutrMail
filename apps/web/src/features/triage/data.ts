@@ -161,7 +161,7 @@ export interface TriageDecisionRow {
    */
   readRate: number | null;
   /** Days since the sender's most recent message. */
-  lastDays: number;
+  lastDays: number | null;
   /** Inbound messages currently present in DeclutrMail's mailbox index. */
   totalAllTime: number;
   /**
@@ -1067,15 +1067,24 @@ export function canUnsubscribe(row: TriageDecisionRow): boolean {
  * the stat card said "LAST SEEN today").
  *
  * When the sender has ZERO messages inside the rolling 90-day window,
- * any `lastDays < 90` is internally inconsistent — the aggregate
- * window is computed in SQL from real rows, while `lastDays` rides a
- * raw-SQL `MAX(internal_date)` that the BE currently collapses to `0`
- * (see the PR body — data-layer fix tracked separately). The window
- * wins: render "90d+" unless `lastDays` already agrees.
+ * any `lastDays < 90` is internally inconsistent — the aggregate window is
+ * computed in SQL from real rows. The window wins: render "90d+" unless
+ * `lastDays` already agrees.
+ *
+ * The back end no longer collapses an unreadable date to `0` (it sends `null`),
+ * so this is now a consistency guard rather than the mitigation it started as.
+ * It was never sufficient on its own: gated on an EMPTY 90-day window, it only
+ * ever covered senders where a "today" would have looked absurd, and left the
+ * 1-89 day band — where a wrong "today" reads as entirely plausible — rendering
+ * the false value. 849 of the 954 rows that asserted a recency were wrong.
  */
 export function lastSeenLabel(
   row: Pick<TriageDecisionRow, 'lastDays' | 'last90dMessages'>,
 ): string {
+  // Unknown renders as unknown — the word, not a glyph the reader has to
+  // infer. Anything else here invents a recency for mail whose date we could
+  // not read.
+  if (row.lastDays === null) return 'unknown';
   if (row.last90dMessages === 0) {
     return row.lastDays >= 90 ? `${row.lastDays}d` : '90d+';
   }

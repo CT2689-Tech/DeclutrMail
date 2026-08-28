@@ -15,7 +15,8 @@ const { color, font } = tokens;
  *   Today
  *   You received 184 emails from 63 senders.
  *   DeclutrMail handled 129 automatically.
- *   12 sender decisions can reduce future noise by ~38%.
+ *   12 sender decisions. These senders sent ~38% of the email you received
+ *   in the last 90 days.
  *
  * Copy rules: the queue count reads as DECISIONS, never senders or
  * emails (D221 canonical phrasing). Numbers are the BE's real
@@ -117,15 +118,23 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
           </strong>{' '}
           sender decision{summary.queuedDecisions === 1 ? '' : 's'}
           {summary.noiseReductionPct != null && summary.noiseReductionPct > 0 ? (
+            // PENDING FOUNDER WORDING — the claim is corrected, the phrasing is
+            // provisional. This states what `noiseReductionPct` measures: a
+            // share of mail ALREADY RECEIVED in the trailing 90 days. It used to
+            // read "can reduce future noise by ~N%", which promised a future
+            // effect that three of the five verbs explicitly disclaim — Archive
+            // and Later both carry `futureMail: { effect: 'unchanged' }`, Keep
+            // leaves delivery alone, and Delete only trashes what already
+            // arrived. Unsubscribe is the only verb that changes future mail,
+            // and only if the sender honours it.
             <>
-              {' '}
-              can reduce future noise by ~
+              . These senders sent ~
               <strong
                 style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
               >
                 {summary.noiseReductionPct}%
-              </strong>
-              .
+              </strong>{' '}
+              of the email you received in the last 90 days.
             </>
           ) : (
             <> waiting below.</>
