@@ -40,9 +40,16 @@ function envBlocksByService(workflow: string): Map<string, string> {
   // occurrences file-wide is the point: two vars in ONE block would satisfy a
   // file-wide count while leaving the other service unprotected.
   const deploys = [...workflow.matchAll(/gcloud run deploy (\S+)/g)];
-  for (const deploy of deploys) {
-    const after = workflow.slice(deploy.index);
-    const envVars = /--set-env-vars="((?:[^"\\]|\\.)*)"/.exec(after);
+  for (const [i, deploy] of deploys.entries()) {
+    // Bound the search at the NEXT deploy, never at end-of-file. Searching to
+    // EOF means a service with no `--set-env-vars` of its own silently adopts
+    // the next service's block — so both keys resolve to one payload and every
+    // assertion below passes twice on the same config while the other service
+    // is unprotected. That is the same defect as the file-wide count this
+    // parser replaced, one level further in.
+    const start = deploy.index;
+    const end = deploys[i + 1]?.index ?? workflow.length;
+    const envVars = /--set-env-vars="((?:[^"\\]|\\.)*)"/.exec(workflow.slice(start, end));
     if (envVars?.[1] !== undefined) blocks.set(deploy[1]!, envVars[1]);
   }
   return blocks;
@@ -59,6 +66,14 @@ describe('UNSUB_SEND_ENABLED survives deployment', () => {
     for (const service of SEND_SERVICES) {
       expect(BLOCKS.has(service)).toBe(true);
     }
+  });
+
+  it('binds each service to its OWN env block', () => {
+    // Two services resolving to one payload is a parse failure, not a pass.
+    // Every assertion below reads a per-service block, so if the parser ever
+    // collapses them the suite would verify one service twice and call it two.
+    const payloads = SEND_SERVICES.map((service) => BLOCKS.get(service));
+    expect(new Set(payloads).size).toBe(SEND_SERVICES.length);
   });
 
   it.each(SEND_SERVICES)('sets UNSUB_SEND_ENABLED on %s', (service) => {
