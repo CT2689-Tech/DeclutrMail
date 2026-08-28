@@ -135,6 +135,35 @@ nobody is watching: `screener` · `brief` · `autopilot` · `quiet`.
 **Final sweeps** — `mobile` and `keyboard` are inside every run's break list
 already; standalone they are a last pass across everything.
 
+## The agents go out in ONE wave
+
+Four agents in this document are read-only and dispatched "in parallel":
+`finding-refuter` (one per candidate), `defect-class-sweeper` (one per
+mechanism), `usability-editor` (one per screen set), and
+`flow-completeness-auditor` on lifecycle jobs.
+
+**Dispatch them in a single message, so they actually run concurrently.**
+Firing them one at a time — a refuter after each candidate, a sweeper after
+each bug — costs the same wall clock as no parallelism at all. That is the
+default mistake here, because each rule below names its agent at the point the
+finding appears rather than at the point the agent should run. The rules say
+*what* to dispatch; this section says *when*: once, after the walk, together.
+
+It is safe precisely because none of them touches the stack, the database or
+the browser. They can run with the stack already down — which is also why they
+must not be interleaved with driving. §8 already forbids fixing mid-walk for
+the same reason it applies here: a candidate found at 10:00 is refuted after
+the walk, not at 10:01. Write it down and keep driving.
+
+The exception is evidence only capturable in the moment — a screenshot, a
+console line, an `action_jobs` row a later query would no longer see. Capture
+those as you go (rule 5); judge them in the wave.
+
+The stack is the scarce resource and nothing can duplicate it: one database,
+one Gmail mailbox, one worker, one `:4000`. `packages/e2e/playwright.config.ts`
+pins `workers: 1` and says *"never parallelise"* for the same reason. Whatever
+does not need it should not be waiting behind it.
+
 ## Preflight — six lines, each has voided a past run
 
 ```bash
@@ -272,8 +301,8 @@ The first three *use* it. The fourth *judges* it.
 - **The editor** — runs **last**, because you cannot judge whether the language
   matched the experience until you have had the experience. Capture the screen
   text and screenshots, then dispatch **`usability-editor`** — one per screen
-  set, in parallel, nothing mutates. It is the only persona that can be
-  delegated; the other three depend on the founder seeing what happened.
+  set, in the single wave above, nothing mutates. It is the only persona that
+  can be delegated; the other three depend on the founder seeing what happened.
 
 ## 4 — Try to break it
 
@@ -341,7 +370,8 @@ cannot fail did not pass — it asked nothing.
 ## 6 — Every bug gets a sibling sweep
 
 Name the **mechanism** and dispatch **`defect-class-sweeper`** — one per
-mechanism, in parallel. Record the instances; do not fix them here. Hand the
+mechanism, in the single wave above — never one after each bug is found.
+Record the instances; do not fix them here. Hand the
 class to `/ct-class` for the fix.
 
 The sweeper must prove its query rediscovers the known instance before its
@@ -468,6 +498,10 @@ Rules for the fix itself:
 - **Tier 1 stays hands-off** unless the founder approved that specific item, and
   the §9 stop conditions still apply — billing, OAuth scopes, token crypto,
   webhook auth, prod migrations, deletion, privacy.
+- **Group the PR by surface, not by finding.** Nine approved rows on one
+  screen are one PR, not nine. Every PR pays the full §8 definition of done —
+  typecheck, lint, unit, e2e, smoke, gate agents, CI — and that cost is per PR,
+  not per fix. #657–#660 spent four full rounds on one sentence.
 - **Do not edit the finding to match the fix.** If the fix reveals the finding
   was wrong, say so and move the row to `Refuted`. Rewriting the symptom so your
   diff looks correct is the worst available outcome.
@@ -549,9 +583,10 @@ If the review says the fix is wrong rather than incomplete, the row goes back to
 `Approved` and the diff is rewritten. It does not go to the founder as "done
 with caveats".
 
-## Done means done — thirteen boxes, not vibes
+## Done means done — fourteen boxes, not vibes
 
 - [ ] All four personas walked, the editor last (as `usability-editor`)
+- [ ] The read-only agents went out as ONE wave, not agent-by-agent
 - [ ] Break list exhausted, or each skip named with its reason
 - [ ] Every finding carries evidence a stranger could re-check
 - [ ] Every finding survived a `finding-refuter`
@@ -601,7 +636,8 @@ restate them here. The ledger is frozen once written; this file and
 **Screenshots** to the scratchpad, sent to the founder inline — not committed.
 
 **Nothing is filed unrefuted.** Every candidate goes to a **`finding-refuter`**
-first, in parallel, one per finding, each told to disprove it and to default to
+first — one per finding, all of them in the single wave — each told to
+disprove it and to default to
 REFUTED when uncertain. Refuted candidates are dropped with a one-line note in
 the ledger, not silently. Survivors are filed carrying the refuter's strongest
 surviving objection, so the founder sees what was argued.

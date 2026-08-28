@@ -135,6 +135,30 @@ jobs:
             echo "✓ Bootstrap/distill branch — exempt from Closes D### requirement."
             exit 0
           fi
+          # `claude/` branches may DECLARE no D-tie instead of citing one
+          # (founder call 2026-08-28). Claude Code on the web assigns the
+          # branch name and the session is forbidden from renaming it, so
+          # the previous advice in this job's own error message — "rename
+          # the branch to chore/bootstrap-*" — was unreachable from a web
+          # session. D-less web work (QA tooling, docs rescues, process
+          # changes) therefore could not go green by any route it could
+          # actually take. #661 and #662 hit this and were rebranched by
+          # hand; #666 could not be.
+          #
+          # Deliberately NOT a blanket exemption. Most `claude/` PRs DO
+          # ship D-decisions, and a branch-name-only exemption would let
+          # every one of them omit `Closes D###` in silence — leaving the
+          # IMPLEMENTATION-LOG row unflipped with no signal, which is the
+          # traceability §6 exists to provide. Requiring the declaration
+          # keeps the choice conscious and greppable; both #661 and #662
+          # already wrote exactly this sentence in prose.
+          #
+          # Matched in-process for the same SIGPIPE reason as the
+          # `Closes D###` check below — see the comment there.
+          if [[ "$HEAD_REF" == claude/* ]] && [[ "$PR_BODY" =~ [Nn]o[[:blank:]]+D-(tie|number) ]]; then
+            echo "✓ claude/ branch explicitly declares no D-tie — exempt."
+            exit 0
+          fi
           # Non-bootstrap/distill: must have at least one `Closes D###`.
           #
           # Matched in-process, NOT via `printf "$PR_BODY" | grep -q`.
@@ -156,5 +180,7 @@ jobs:
             exit 0
           fi
           echo "::error::PR body must contain at least one 'Closes D###' reference (CLAUDE.md §6)."
-          echo "If this PR genuinely has no D-tie, rename the branch to chore/bootstrap-<topic> or chore/distill-<topic>."
+          echo "If this PR genuinely has no D-tie: on a claude/ branch, say so in the body"
+          echo "(e.g. 'No D-tie — Tier 2 tooling'); otherwise rename the branch to"
+          echo "chore/bootstrap-<topic> or chore/distill-<topic>."
           exit 1
