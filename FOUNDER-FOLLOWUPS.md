@@ -23,15 +23,38 @@ skip-the-preview probe, hand-enqueueing, an un-paused queue, and the `U`
 keyboard shortcut, which is reachable from Triage, Senders, Sender detail,
 Brief and Screener). `/ct-qa` currently forbids the verb outright and has no
 standalone `unsubscribe` job, so that surface ships un-QA'd below the preview.
-**How:** add a dev-only refusal inside `packages/workers/src/unsub-execution.worker.ts`
-— refuse to perform the outbound request when an explicit env flag is set
-(fail closed, log the intended target and channel instead of sending). Never
-enabled in production; assert that in `main.ts`/`worker.ts` boot the same way
-`DEV_AUTH_ENABLED` is asserted. Then restore `unsubscribe` as a `/ct-qa` job
-and delete the Safety block's closing paragraph.
-**Verifies by:** with the flag set, confirming an unsubscribe in the dev UI
-produces an `action_jobs` row, a worker log line naming the target, and NO
-outbound request; with it unset, behaviour is byte-identical to today.
+**How:** the polarity matters more than the flag. A first draft of this entry
+said "refuse when an explicit env flag is set" and called it fail-closed. It is
+the opposite: that makes silence mean SEND, so an unset var, a typo, or a var
+that never reached the worker service all send. Invert it.
+
+- In `packages/workers/src/unsub-execution.worker.ts`, refuse the outbound
+  request **by default**. Sending requires `UNSUB_SEND_ENABLED === 'true'`
+  read explicitly; anything else — unset, empty, `1`, `TRUE` — refuses. Silence
+  must mean "do not send".
+- Do NOT copy the `DEV_AUTH_ENABLED` shape. That flag enables a dev capability
+  and is asserted OFF in production. This one enables the real-world side
+  effect and must be asserted **ON** in production: `worker.ts` boot refuses to
+  start when `NODE_ENV === 'production'` and the flag is not `'true'`.
+  Otherwise the same typo silently stops every real unsubscribe in prod — the
+  mirror failure, just as quiet, and it would look like the feature working.
+- On refusal, log the sender's **domain and channel only**. Never the one-click
+  URL: it carries a per-send token, and D7 keeps tokenised recipient
+  identifiers out of logs.
+- The var must go in `deploy-cloud-run.yml`'s **worker** env block, not just
+  set live. `--set-env-vars` full-replaces, so a var only set live is wiped by
+  the next deploy — which would silently disable production unsubscribes.
+- Two tests: with the flag absent the worker records the intent and performs no
+  request; with it `'true'` behaviour is byte-identical to today. Assert on the
+  absence of the outbound call, not on a log line.
+
+Then restore `unsubscribe` as a `/ct-qa` job, re-allow the `U` keystroke, and
+delete the Safety block's closing paragraph.
+**Verifies by:** with the flag ABSENT (the default), confirming an unsubscribe
+in the dev UI produces an `action_jobs` row, a worker log line naming the
+sender's domain and channel, and NO outbound request. With it `'true'`,
+behaviour is byte-identical to today. And a production boot with the flag
+missing refuses to start rather than starting quietly un-sending.
 **Status:** Open
 
 ## Entry format

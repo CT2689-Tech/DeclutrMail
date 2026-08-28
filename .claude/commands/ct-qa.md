@@ -301,7 +301,10 @@ the one place in this document where an unexplored gap is the right outcome.
 
 ## Output
 
-**Ledger** — `docs/qa/launch-qa.md`, append-only, one row per run:
+**Ledger** — `docs/qa/launch-qa.md`, append-only, one row per run. It already
+exists; do not recreate it. Read **Outstanding restores** before you start and
+clear anything there first — an interrupted earlier run leaves the database
+dirty, and QA'ing on top of that files someone else's damage as your findings.
 
 ```
 | job | date | personas | broke it? | findings | notes |
