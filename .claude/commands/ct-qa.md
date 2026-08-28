@@ -27,9 +27,10 @@ screens that spans, then start. Never stop to ask.
 
 ## Safety — read before the job list
 
-**No run executes an unsubscribe, on any job, by any route.** Not the confirm
-control, not the `U` shortcut, not a `POST` to the actions API with that verb,
-not enqueueing or un-pausing the job by hand.
+**No run executes an unsubscribe, on any job, by any route — and `U` is never
+pressed.** Not the confirm control, not the `U` shortcut at all, not a `POST`
+to the actions API with that verb, not enqueueing or un-pausing the job by
+hand.
 
 `UnsubExecutionWorker` performs a real RFC 8058 one-click `POST` to the
 sender's URL, carrying a per-send token, from the founder's address. There is
@@ -44,10 +45,20 @@ section scoped to the unsubscribe job while the break list told every run to
 press `K/A/U/L/D`. **A safety rule scoped narrower than its hazard is not a
 safety rule.**
 
-Everything up to the preview is in scope and is where the value is: does it
-name the right sender, the right channel and the right count; does it say
-plainly that this cannot be undone; is one-click distinguished from `mailto:`,
-which is manual at launch (D230). Stop at the preview.
+**`U` is not pressed at all.** Not "far enough to see the preview" — an
+earlier draft said exactly that, and it is circular: it assumes the preview
+renders and gates on nothing, while whether the preview renders is one of the
+things this tool exists to find out. If D226 is broken on that surface, or D34's
+remember-preference has the sheet skipped, the keystroke IS the send. A probe
+whose safety depends on the property it is testing is not a probe.
+
+So the unsubscribe surface is reviewed by **reading, not driving**: is the
+control present, labelled with the canonical verb, visually distinguished from
+the safe ones; does the sender row carry the channel it claims; is one-click
+distinguished from `mailto:`, which is manual at launch (D230). Whether the
+preview actually renders for `U` is checked in the Storybook story and the
+component, and recorded as read-not-driven. It stays that way until the kill
+switch below exists.
 
 There is no standalone `unsubscribe` job. The founder's original carve-out —
 drive it to the confirm step, never send — could not be enforced by wording,
@@ -211,8 +222,8 @@ The first three *use* it. The fourth *judges* it.
   this on unsubscribe is an attempt to execute one without a preview, which is
   the send itself. Confirm D226 holds for unsubscribe by reading whether the
   preview renders, never by trying to defeat it.
-- **375px**, then keyboard only: **K / A / L / D**. Press **U only far enough
-  to see its preview render**, never through it — see Safety, above.
+- **375px**, then keyboard only: **K / A / L / D**. `U` is not pressed — see
+  Safety, above.
 
 On lifecycle jobs (`onboarding`, `sync`, `mailbox-switch`) call
 **`flow-completeness-auditor`** for the state table rather than re-deriving one.
