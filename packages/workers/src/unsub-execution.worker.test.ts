@@ -326,11 +326,17 @@ describe('UnsubExecutionWorker', () => {
       expect(http.calls).toEqual([]);
       expect(result.outcome).toBe('failed');
 
-      const { job } = await readState(actionId);
+      const { job, policy, activities, events } = await readState(actionId);
       expect(job.status).toBe('failed');
       expect(job.errorCode).toBe(UNSUB_SEND_BLOCKED_ERROR_CODE);
-      // Never a faked acceptance — the send did not happen.
-      expect(job.errorCode).not.toBeNull();
+
+      // Nothing was ATTEMPTED, so nothing may claim an attempt. A projected
+      // unsub_status would put a failed chip on the senders list, an activity
+      // row would show an unsubscribe that never happened, and an outbox
+      // event would tell every downstream consumer the same.
+      expect(policy.unsubStatus).toBe('requested');
+      expect(activities.filter((a) => a.action !== 'unsubscribe')).toHaveLength(0);
+      expect(events).toHaveLength(0);
     } finally {
       if (previousOptIn === undefined) {
         delete process.env.UNSUB_SEND_ENABLED;

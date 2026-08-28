@@ -39,6 +39,7 @@ import { labelChangeForVerb, type MailboxActionLock } from './label-action.worke
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
+import { unsubSendsEnabled } from './unsub-execution.worker.js';
 import type { UnsubExecutionJobData } from './unsub-execution.worker.js';
 import { ValidationError } from './worker-errors.js';
 import { WORKER_POLICIES } from './worker-policies.js';
@@ -1161,6 +1162,9 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // wrote `unsubscribe_unavailable` — "No unsubscribe channel
     // available" — into Activity for a sender nobody ever checked.
     const method = unsubscribeCapabilityOf(match.unsubscribeMethod);
+    // Read once per match so the audit payload and the execution row cannot
+    // disagree about whether a send was going to happen.
+    const canSendUnsub = unsubSendsEnabled();
     const executionKey = `autopilot-unsubexec-${match.matchId}`;
 
     // Unsubscribe records its decision, its execution row and the match
@@ -1220,7 +1224,12 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           // status untouched. That is exactly right for `unknown`:
           // sending 'none' would project `unsub_status='unavailable'`
           // and re-tell the lie one layer down (D248).
-          ...(method === 'unknown' ? {} : { method }),
+          // Also omitted when a one-click send is REFUSED by the kill
+          // switch: claiming `one_click` would project
+          // `unsub_status='requested'` for an attempt that will never be
+          // made, which is the same lie this line already avoids for
+          // `unknown`. Nothing was requested, so nothing is recorded.
+          ...(method === 'unknown' || (method === 'one_click' && !canSendUnsub) ? {} : { method }),
         },
         schema: ActionsUnsubscribeIntentRecordedPayloadSchema,
       });
@@ -1228,7 +1237,12 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       // Execution row — one_click only; `UnsubExecutionWorker` flips it
       // terminal. Same-tx as the audit row so they commit atomically.
       let actionId: string | null = null;
-      if (method === 'one_click') {
+      // `canSendUnsub` gates the ROW, not just the enqueue. Writing it and
+      // skipping the enqueue would leave a `queued` job no worker will ever
+      // pick up — the stuck state CLAUDE.md §10 bans — and writing it and
+      // letting the worker refuse would land `status='failed'`, which
+      // recovery treats as retryable. Neither is a no-op. Not writing it is.
+      if (method === 'one_click' && canSendUnsub) {
         const senderId = match.senderId;
         if (!senderId) {
           throw new ValidationError(`match ${match.matchId} has no resolved sender id`);

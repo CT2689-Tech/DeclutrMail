@@ -226,6 +226,14 @@ export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
   },
 };
 
+/**
+ * Envelope `code` for the enqueue-boundary refusal (D202).
+ *
+ * Same string as the worker's `error_code` on purpose: one condition, one
+ * name, wherever the user or an operator meets it.
+ */
+export const UNSUB_SEND_DISABLED_CODE = 'UNSUB_SEND_DISABLED';
+
 /** `action_jobs.error_code` when the defence-in-depth refusal fires. */
 export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';
 
@@ -431,14 +439,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
           message: 'Refused a one-click unsubscribe: UNSUB_SEND_ENABLED is not "true".',
         }),
       );
-      return this.recordOutcome(
-        job.id,
-        mailboxAccountId,
-        senderKey,
-        { outcome: 'failed', httpStatus: null, errorCode: UNSUB_SEND_BLOCKED_ERROR_CODE },
-        payload.source ?? 'manual',
-        payload.ruleId ?? null,
-      );
+      return this.recordSendDisabled(job.id);
     }
 
     // SSRF pre-flight — scheme + resolved-address checks.
@@ -645,6 +646,40 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       .limit(1);
 
     return { oneClickUrl: oneClick?.url ?? null, mailtoUrl: mailto?.url ?? null };
+  }
+
+  /**
+   * Terminal write for a job the kill switch refused. Deliberately NOT
+   * `recordOutcome`.
+   *
+   * `recordOutcome` writes the honest record of an ATTEMPT: it projects
+   * `sender_policies.unsub_status`, appends an `activity_log` row, and
+   * publishes an outbox event. Every one of those would be a lie here —
+   * nothing was attempted. The senders list would show a failed unsubscribe
+   * chip, /activity would show an unsubscribe that never happened, and the
+   * outbox would tell downstream consumers the same.
+   *
+   * So only `action_jobs` moves, and only to a terminal state. Never `done`:
+   * the FE polls `done` before telling the user their unsubscribe went
+   * through, and that would say they left a list they are still on. Never a
+   * retryable throw either — three attempts then a dead letter, and a dead
+   * letter is indistinguishable from delivered-but-unconfirmed.
+   *
+   * This path is defence-in-depth only. The refusal that matters happens at
+   * the enqueue boundary, where no row is written at all; this catches a job
+   * already queued when the flag changed.
+   */
+  private async recordSendDisabled(actionId: string): Promise<UnsubExecutionResult> {
+    await this.deps.db
+      .update(actionJobs)
+      .set({
+        status: 'failed',
+        errorCode: UNSUB_SEND_BLOCKED_ERROR_CODE,
+        affectedCount: 0,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(actionJobs.id, actionId));
+    return { outcome: 'failed', httpStatus: null, alreadyDone: false };
   }
 
   private async recordOutcome(
