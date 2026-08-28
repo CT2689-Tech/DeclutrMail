@@ -22,8 +22,10 @@ screens that spans, then start. Never stop to ask.
 - `/ct-qa <job>` — that job.
 - `/ct-qa status` — print the ledger, run nothing.
 - **Bare `/ct-qa`** — print the menu below in priority order, annotated with
-  each job's ledger state (`✔ done <date>` / `🐛 <n> open` / blank), then start
-  the highest-priority job not yet done.
+  each job's state — `✔ last run <date>` from the ledger, `🐛 <n> open` from the
+  worklist — then start the highest-priority job not yet done. Counts only: do
+  not print the open rows themselves, and do not read them, or you have primed
+  the run you are about to start (§1).
 
 ## Safety — read before the job list
 
@@ -333,7 +335,161 @@ manufacture one. A probe that would require executing the verb does not run:
 write `n/a — would fire a real unsubscribe` in the ledger and move on. This is
 the one place in this document where an unexplored gap is the right outcome.
 
-## Done means done — six boxes, not vibes
+## 8 — What survived, and who fixes it
+
+A run's product is not the findings you had. It is **the ones still standing
+after the refuters**. Say so explicitly, in one block, before anything else in
+the closing summary:
+
+```
+New: <n>   Inherited and still open: <n>   Refuted or downgraded: <n>
+QA-<job>-<YYYYMMDD>-01 · P1 · <one line> · <the refuter's strongest surviving objection>
+QA-<job>-<YYYYMMDD>-02 · P2 · …
+```
+
+On a job's first run the inherited count is zero and the block still states it —
+a reader should never have to infer whether a run checked.
+
+Every survivor has an id and a row in the **QA worklist**,
+`docs/qa/qa-worklist.md` — a new id if this run found it, its existing one if
+this run inherited it. That file is the only place that tracks a finding's
+*fix* state; the ledger records what happened in a run and never changes, and
+`FINDINGS.md` holds the P0/P1 subset as open product questions. So a P0/P1 sits
+in all three and a P2/P3 in two, and none of those are duplicates — run record,
+open question, work item.
+
+**The id carries the date of the run that FIRST filed it**
+(`QA-triage-20260827-01`) — never the run that last touched it. A job is QA'd
+more than once and the ledger keeps every run, so a bare `QA-triage-01` collides
+with the next triage run and silently re-points every PR, sweep and refutation
+that cited it. Re-dating an inherited row does the same damage more slowly, so
+an inherited row keeps its original id for life.
+
+### A repeat run inherits before it files — but after it walks
+
+**Read the worklist at filing time, not at preflight.** "Inherits first" means
+first in the *filing* step, never first in the run. §1 and §2 forbid priming
+yourself before the walk, and a list of fifteen findings someone already wrote
+is the strongest prime there is — read it beforehand and you will spend the run
+confirming it, notice only what is on it, and call the screen fine everywhere
+else. Walk the job cold, gather candidates, refute them, and only then open the
+worklist to reconcile.
+
+The second run of a job does NOT start from an empty page. Before filing
+anything, read that job's existing worklist rows and settle each one, because a
+row still `Open` from last time is the same defect — re-filing it under a fresh
+id fakes a discovery and doubles the backlog:
+
+- still reproduces → leave the row and its id, append `· re-confirmed <date>`;
+- no longer reproduces → `Fixed <date>` if a PR is attributable to it, `Gone
+  <date>` if not, and say what you ran to check either way. A fix you did not
+  verify is not a fix, whoever wrote it, and "it stopped happening and nobody
+  knows why" is a different fact worth keeping separate;
+- reproduces differently, or new evidence refutes it → `Refuted <date>` on the
+  row, pointing at the ledger entry with the grounds. The row stays; rows are
+  never deleted.
+
+Closing a row this way does **not** need the founder — recording that work is
+unnecessary is not doing work. Moving a row toward a fix does.
+
+Only a genuinely new survivor gets a new id. Say in the closing summary how many
+were inherited versus new — a run that reports twelve findings when nine were
+already on the list is inflating its own yield.
+
+### You do not fix what you found
+
+**Claude does not write the fix in a QA run.** Not the one-liner, not "while
+I'm here", not a P3 copy tweak. The run is an instrument; an instrument that
+edits the thing it measures stops being one, and a session that has spent an
+hour arguing itself into a finding is the worst-placed reader to judge whether
+the fix is right. This is not about capability. It is about who checks whom.
+
+The only files a QA run may write are the ledger, the worklist, `FINDINGS.md`,
+`docs/qa/handoffs/**`, and scratchpad screenshots. Product code, tests, and migrations are untouched.
+A temporary diagnostic probe is the single exception (§5) and must be reverted
+and proven clean in the same run.
+
+### Ask the founder, per item
+
+When the survivors are recorded, ask — do not assume, and do not batch a Tier 1
+item in with the rest. Present the numbered list and ask which to hand off.
+Recommend an order, and say what each fix costs and risks in one line.
+
+- **No answer, or the founder is away** → every item stays `Open` in the
+  worklist. That is a complete, correct outcome. Do not fix, and do not hand
+  off anything to warm the queue.
+- **Tier 1 items** (§2 of CLAUDE.md — billing, OAuth scopes, token crypto,
+  webhook auth, prod migrations, deletion, privacy) are named as Tier 1 in the
+  ask and never bundled into a "fix all of these" approval.
+- **A refuted candidate is never offered.** It lost. Offering it anyway
+  launders an argument the run already failed.
+
+### Hand the approved items to Codex
+
+Approved items go to **Codex**, via the `codex:rescue` skill (the local CLI is
+the runtime; `codex:setup` checks it). Group handoffs one of three ways, and no
+other: per item; per defect class where the sweep found siblings; or **per set
+of items whose fixes edit the same files**. Never one lump, and never "all the
+approved ones" as a single task.
+
+That third grouping is not a convenience — two Codex runs editing one file
+concurrently produce conflicting branches instead of parallel progress. When you
+use it, name the shared files in the handoff, give each item its own acceptance
+criteria inside that one task, and say in the worklist why they were grouped.
+Approved items that overlap a task already running are marked
+`Approved — queued` and go out when it lands; queued is a real state, not a
+stalled one, and the founder is told which items are in it and behind what.
+
+**Write the handoff to `docs/qa/handoffs/<worklist-id>.md`, COMMIT it, and then
+pass Codex the repo-relative path.** All three steps, in that order. Everything
+here was learned by getting it wrong on 2026-08-27:
+
+- *Not as a shell argument.* The Codex runtime rejects heredocs, pipes and
+  command substitution outright and caps argument size well below a real brief —
+  a ~230-line handoff was silently compressed to 28 lines before it arrived. A
+  contract the transport truncates is not a contract, and you are not told.
+- *Not as an uncommitted file.* Codex runs in a git worktree, and `git worktree
+  add` checks out a **commit** — an untracked file in your checkout does not
+  exist there. Writing the brief and passing its path delivers nothing, and the
+  path resolves to a missing file rather than erroring in a way you would notice.
+  Committing it first is what makes it visible; the handoff is docs-only, so the
+  commit is cheap and safe.
+- *Do not lean on worktree isolation to keep concurrent tasks apart.* A worktree
+  is auto-removed when the agent that owns it changes nothing, and an agent whose
+  only job is to start a background Codex task changes nothing — so the isolation
+  disappears while the task it was protecting is still running. **The file-overlap
+  grouping rule above is the real protection**, not the worktree. Treat isolation
+  as a bonus that may not be there.
+
+The committed file is also the record of what was asked, which the PR cites and a
+later run diffs against what was delivered.
+
+The handoff must be self-contained, because Codex has none of this run's
+context. The file gives it, verbatim:
+
+- the worklist id and the one-line symptom;
+- the reproduction, with the exact SQL / curl / Gmail read that shows it;
+- the traced cause as `path:line`, and say plainly if it was never traced;
+- **the refuter's strongest surviving objection** — the fix has to survive it too;
+- the sibling instances the `defect-class-sweeper` returned, and the ones it
+  killed, so Codex does not re-lit an argument that is already settled;
+- the regression test the finding named: which file, which tier, and what the
+  assertion must say **to have gone RED against today's code**;
+- the Tier 1 flag, if it carries one.
+
+Then update the worklist row with the date. The states and who may set each one
+are defined **once**, in the worklist's own States table — do not restate them
+here or in a handoff, because a vocabulary written down twice drifts, which is
+how the first version of this section ended up forbidding a grouping it also
+required. Two rules matter at this step: a row never skips straight from `Open`
+to `Handed to Codex` (the founder's approval is a state, and losing it loses the
+record that they were asked), and an approved item whose files are held by a
+running task is `Approved — queued` with the blocker named, not silently
+dropped. When Codex returns a PR, record the number. **Do not review your own finding's fix into
+main** — that is the same loop this section exists to break; it goes to the
+gate network and the founder like any other PR.
+
+## Done means done — ten boxes, not vibes
 
 - [ ] All four personas walked, the editor last (as `usability-editor`)
 - [ ] Break list exhausted, or each skip named with its reason
@@ -342,6 +498,18 @@ the one place in this document where an unexplored gap is the right outcome.
 - [ ] Every forced value restored, verified by re-query, and its Outstanding
       restores row deleted
 - [ ] Every bug given its `defect-class-sweeper` pass
+- [ ] Worklist opened only AFTER the walk (never at preflight — it primes),
+      then that job's existing rows reconciled before anything new is filed:
+      each re-confirmed, or closed as `Fixed` / `Gone` / `Refuted` with the
+      check stated, and no inherited row re-dated or re-numbered
+- [ ] Survivors counted against refuted and against inherited, each given a
+      `QA-<job>-<YYYYMMDD>-<nn>` id and a row in `docs/qa/qa-worklist.md`
+- [ ] Approval asked per item; every approved item either handed to Codex or
+      marked `Approved — queued` with its blocker named; and **nothing fixed in
+      this run**
+- [ ] Every handoff brief written to `docs/qa/handoffs/`, **committed before
+      dispatch**, and its path confirmed to resolve inside the runtime Codex
+      actually got — an uncommitted brief reaches nobody
 
 ## Output
 
@@ -351,8 +519,18 @@ clear anything there first — an interrupted earlier run leaves the database
 dirty, and QA'ing on top of that files someone else's damage as your findings.
 
 ```
-| job | date | personas | broke it? | findings | notes |
+| job | date | personas | broke it? | findings (new / inherited) | notes |
 ```
+
+The findings column separates the two on purpose. A repeat run that reports
+twelve when nine were already on the worklist is inflating its own yield, and
+the ledger is the one place that number is fixed forever.
+
+**Worklist** — `docs/qa/qa-worklist.md`, one row per surviving finding at every
+severity, grouped by job and carried across runs. Its states, and who may set
+each, are defined in that file's own States table and **nowhere else** — do not
+restate them here. The ledger is frozen once written; this file and
+`FINDINGS.md` both keep moving. It already exists; do not recreate it.
 
 **Screenshots** to the scratchpad, sent to the founder inline — not committed.
 
@@ -381,14 +559,28 @@ Regression test: which file, which tier, and what the assertion must say
 - **P2** — friction, ugly, slow; they still get there.
 - **P3** — an idea that needs evidence first.
 
-P0/P1 are appended to the `FINDINGS.md` **Inbox** in its existing shape for
-`/ct-finding triage`. P2/P3 stay in the ledger.
+**Every** survivor, at every severity, gets a worklist row — that is where the
+fix pipeline lives. On top of that, P0/P1 are appended to the `FINDINGS.md`
+**Inbox** in its existing shape for `/ct-finding triage`, because they are also
+open product questions. P2/P3 get no `FINDINGS.md` entry; the ledger and the
+worklist carry them.
 
 **Closing summary** is `/ct-status` shaped: what a user would have hit, how
-bad, what proved it. Product language, no file paths in the body.
+bad, what proved it. Product language, no file paths in the body. It opens with
+the survivors block (§8) and ends with the approval ask — those are the two
+things the founder acts on, so nothing goes between them and the end.
+
+Say what the refuters killed and why, in the founder's summary and not only in
+the ledger. A run that reports four findings and hides that three others died is
+selling a hit rate it did not earn, and the deaths are usually the more useful
+half — they are where the run's own reasoning was wrong.
 
 ## Boundaries
 
 Mutations are dev-stack only; prod reads are fine. No migrations from a laptop,
 no cloud-resource deletion, no credential rotation. One job per run — never
 bleed into the next one.
+
+**No fixes.** Product code, tests and migrations are not touched by this
+command, at any severity, however small the diff (§8). Findings are handed to
+Codex after the founder approves them, one item at a time.

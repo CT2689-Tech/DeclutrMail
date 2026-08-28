@@ -43,6 +43,110 @@ the point.
 
 ## Inbox (untriaged)
 
+- **2026-08-27** · Entitlements cap arithmetic — **the Free-tier paywall is one `::int` away from inverting, and its test asserts a decode path production does not use.** _(Tier 1 — billing. Surfacing per CLAUDE.md §9, not deciding.)_
+  Found by the `defect-class-sweeper` pass of `/ct-qa triage`, sweeping the
+  class behind the Triage `lastDays` defect. Not currently broken — a latent
+  risk with a live tripwire. `apps/api/src/common/entitlements/entitlements.service.ts:315`
+  gates on `if (used + unitsNeeded > limit)`. `used` comes from a raw
+  `sql<number>` at `:188` and is returned via `?? 0` at `:212` with **no
+  `Number()` coercion**. It is correct today only because the fragment at `:188`
+  ends in `::int` (OID 23, which postgres.js parses). Bare `COUNT`/`SUM` return
+  OID 20 (`bigint`), for which postgres.js registers no default parser. So if
+  that one cast is ever dropped or refactored away, `used` becomes a string,
+  `"5" + 1` evaluates to `"51"`, and a Free user is told `FREE_CAP_REACHED` at
+  6 of 50 actions.
+  The reason this would not be caught: `entitlements.service.spec.ts` imports
+  `drizzle-orm/pglite`, so the suite exercises PGlite's decode path rather than
+  the postgres.js path production runs — the same reason the Triage `lastDays`
+  defect was untestable. A green suite here is not evidence about the
+  production driver.
+  Cheapest durable fix is `Number(...)` at the consumer so the cast stops being
+  load-bearing; the deeper one is a decode-path test that runs on postgres.js.
+  **P2** (latent, billing).
+
+- **2026-08-27** · Triage Today panel — **"reduce future noise by ~10%" measures the past and promises the future; three of the five verbs explicitly change no future mail.**
+  Found by `/ct-qa triage`. The arithmetic is right and the sentence is not.
+  `queuedNoise` sums `last90dMessages` across the non-Keep rows and divides by
+  90-day inbound volume (`apps/api/src/triage/triage.read-service.ts:1071`,
+  `:1088`) — verified on the dev mailbox as 1,243 / 12,363 = 10.05%, so the
+  number is a **past 90-day share of mail already received**. It is rendered as
+  "12 sender decisions can reduce **future** noise by ~10%." But Archive and
+  Later both carry `futureMail: { effect: 'unchanged', summary: 'Future email
+is unchanged.' }` (`packages/shared/src/actions/action-semantics.ts:169`,
+  `:194`), Keep by definition leaves delivery alone, and Delete only trashes
+  mail that already arrived. **Unsubscribe is the only verb of the five that
+  reduces future mail at all** — and even then delivery depends on the sender
+  honouring it. A user who archives all 12 gets the stated ~10% reduction in
+  nothing. "Noise" also has no denominator anywhere on screen.
+  Suggested: "12 decisions below. These senders sent 10% of the email you
+  received in the last 90 days." — which is what the code actually measures.
+  Worth noting how this got missed: the run checked the ratio, found it exact,
+  and called the claim earned. The arithmetic was never the risk. **P1.**
+
+- **2026-08-27** · Triage queue ordering — **the daily queue's `ORDER BY` is not a total order, so which 12 senders you see is undefined and reshuffles on any write.**
+  Found by `/ct-qa triage`. `queueGoalPriority` returns `null` for the daily
+  route (`apps/api/src/triage/triage.read-service.ts:301`, `case 'actionable':
+return null`), so the live ordering is `[verdictPriority, desc(confidence)]`
+  with **no tiebreak** — the `senderKey` tiebreak that exists in the array is on
+  the onboarding branch and never executes on `/triage`. Measured on the dev
+  mailbox: 6 decisions tie at `unsubscribe/0.91`, 2 at `0.89`, and **33 tie at
+  `0.87`**, so the last 4 of the 12 slots are drawn from a 33-way tie. Because
+  the tie straddles `LIMIT 12`, queue _membership_ — not merely order — is
+  undefined: an independent replication of the query returned Three Dots /
+  Emily from Fever / Stephanie Brunner where the run saw Columbia / The
+  Container Store. Observed live: after expanding two cards, five rows the run
+  never touched reshuffled among themselves (Temu #7→#1, Victoria's Secret
+  #6→#3, Donna Wilson #4→#6) at unchanged confidence, and Classic Firearms went
+  #2→#12. A card the user is about to act on can move or vanish.
+  The D25 `stale_refresh` comment at `apps/web/src/features/triage/triage-screen.tsx:203`
+  shows the hazard was understood — it scopes the re-score to the one expanded
+  row precisely because "refreshing all twelve on load would re-sort the list
+  and can retire the card mid-decision" — but the mitigation was applied to the
+  _trigger_, not to the ordering, so every sanctioned write still reshuffles.
+  Fix is a stable tiebreak on the actionable path, not throttling the refresh.
+  Note the run's own first attempt named the wrong cause (a confidence change
+  from re-scoring) and reasoned that "stable across 3 consecutive API calls"
+  proved determinism — a non-total `ORDER BY` is stable only until the next
+  write to the table. **P1.**
+
+- **2026-08-27** · Triage row "LAST SEEN" tile — **still reports "today" for senders that last wrote weeks ago; this is the open back-end half of PR #258, ~8 weeks old.**
+  Found by `/ct-qa triage`; not a new discovery. `GET /api/triage/queue` returns
+  `"lastDays": 0` for every row. Ground truth for one queue sender
+  (`news@r.redstatelegacy.com`): `senders.last_seen_at` and
+  `max(mail_messages.internal_date)` both `2026-07-13`, i.e. 45 days before the
+  run, while the expanded card rendered `today` under `LAST SEEN` beside
+  `44 PER MONTH` / `4% READ RATE 90D` / `283 RECEIVED`.
+  Cause, confirmed by temporary instrumentation of the live process (added,
+  exercised, reverted; tree verified clean):
+  `aggType:"string"`, `lastSeenCtor:"Date"`, `chosenIsDate:false`. At
+  `apps/api/src/triage/triage.read-service.ts:541` the projection
+  `sql<Date | null>MAX(internal_date)` is a type assertion the runtime does not
+  honour — drizzle's postgres-js driver installs a transparent (identity)
+  parser for OID 1184, so a raw `sql` timestamp fragment yields Postgres **text**
+  in dev and prod alike. At `:603` the `??` then selects that non-null string
+  and shadows `r.lastSeenAt`, which is a correct `Date`; `instanceof Date` is
+  false and the `: 0` branch renders "today".
+  **Why no test caught it:** the spec suite runs on PGlite, which returns a real
+  `Date` — the defect cannot reproduce under test. Worse,
+  `apps/web/src/features/triage/triage-row.test.tsx:189` asserts
+  `lastSeenLabel({ last90dMessages: 13, lastDays: 0 })` is `'today'`, pinning the
+  wrong output for exactly the case the FE guard leaves open.
+  Scope, measured on the dev mailbox (8,051 queue-eligible senders): the FE
+  guard `lastSeenLabel` (`apps/web/src/features/triage/data.ts:1076`) is gated
+  on `last90dMessages === 0`, so it rescues the 7,097 quiet senders — exactly
+  the population where a "today" would be self-evidently absurd — and does not
+  cover the 1–89-day band at all. Of the **954 senders where the tile actually
+  asserts a recency, 849 (89%) are wrong**; only 105 are genuinely "today".
+  The mitigation therefore covers the cases that would have been caught by eye
+  and misses every case that reads as plausible. One consumer
+  only (`triage-row-expanded.tsx:78`); nothing in preview, mutation, undo or
+  scoring reads `lastDays`, so there is no data, billing or Gmail-state
+  consequence. Merged PR #258's body already names both the defect and the
+  one-line fix ("coerce `lastInternal` via `new Date(...)`, or select the typed
+  column"). **P1** — a false statement about the user's own mail, but
+  display-only. Sweep siblings first: any other raw `sql` timestamp fragment in
+  the API is the same class.
+
 - **2026-08-26** · `SendersCounterReconciliationWorker` — **a 24h cron actually fires on every deploy (4.1×/day), and its slowest pass is inside 1.75× of a hard timeout whose failure is silent.**
   Found while chasing a slow-query trend that turned out not to exist (see REFUTED
   below). Two facts survived the refutation. **(1) The cadence is not the designed
