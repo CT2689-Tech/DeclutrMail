@@ -57,6 +57,26 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
   const showReceived = summary.receivedToday > 0;
   const showHandled = summary.handledAutomatically > 0;
   const showDecisions = summary.queuedDecisions > 0;
+  // Which senders the noise share is allowed to name — `null` means "do not
+  // attribute it to anyone", not "attribute it to everyone".
+  //
+  // `noiseSenderCount` is optional on the wire because nothing validates the
+  // shape at runtime, so an older API revision answering a newer bundle omits
+  // it. `undefined < queuedDecisions` evaluates FALSE, which fell through to
+  // the "These senders" branch — restoring the exact whole-queue claim this
+  // line was corrected to stop making. A missing field degraded to the
+  // original falsehood rather than to silence.
+  //
+  // So the attribution now needs positive proof: a usable integer that really
+  // is a subset of the queue. Absent, non-numeric, or larger than the set it
+  // is a subset of all mean the two numbers do not describe one snapshot.
+  const noiseSenders =
+    typeof summary.noiseSenderCount === 'number' &&
+    Number.isInteger(summary.noiseSenderCount) &&
+    summary.noiseSenderCount > 0 &&
+    summary.noiseSenderCount <= summary.queuedDecisions
+      ? summary.noiseSenderCount
+      : null;
   // A fresh mailbox with nothing received, handled, or queued has no
   // situational awareness to show — the D212 empty state below the
   // strip already owns that moment.
@@ -117,7 +137,9 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
             {summary.queuedDecisions.toLocaleString('en-US')}
           </strong>{' '}
           sender decision{summary.queuedDecisions === 1 ? '' : 's'}
-          {summary.noiseReductionPct != null && summary.noiseReductionPct > 0 ? (
+          {noiseSenders !== null &&
+          summary.noiseReductionPct != null &&
+          summary.noiseReductionPct > 0 ? (
             // PENDING FOUNDER WORDING — the claim is corrected, the phrasing is
             // provisional. Two separate falsehoods were removed here.
             //
@@ -137,15 +159,19 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
             // happened to be an unsubscribe.
             <>
               .{' '}
-              {summary.noiseSenderCount < summary.queuedDecisions ? (
+              {noiseSenders < summary.queuedDecisions ? (
                 <>
                   <strong
                     style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
                   >
-                    {summary.noiseSenderCount.toLocaleString('en-US')}
+                    {noiseSenders.toLocaleString('en-US')}
                   </strong>{' '}
                   of them sent ~
                 </>
+              ) : summary.queuedDecisions === 1 ? (
+                // Equal counts, and the queue holds exactly one sender. The
+                // plural subject read "1 sender decision. These senders sent…"
+                <>This sender sent ~</>
               ) : (
                 <>These senders sent ~</>
               )}

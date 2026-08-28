@@ -40,6 +40,44 @@ describe('TodayStripView — the noise claim describes the past, and the right s
     expect(screen.getByText(/These senders sent/i)).toBeInTheDocument();
   });
 
+  it('makes no claim at all when the wire does not say which senders it describes', () => {
+    // An older API revision answering a newer bundle omits `noiseSenderCount`.
+    // Nothing validates the JSON, so the field arrives `undefined` — and
+    // `undefined < 12` is FALSE, which fell through to the "These senders"
+    // branch. A missing field degraded to the whole-queue falsehood rather
+    // than to silence, restoring the bug the subset was added to remove.
+    const { noiseSenderCount: _omitted, ...withoutCount } = BASE;
+    render(<TodayStripView summary={withoutCount} />);
+    const strip = document.body.textContent ?? '';
+    expect(strip).not.toMatch(/These senders sent/i);
+    expect(strip).not.toMatch(/of them sent/i);
+    expect(strip).not.toContain('38%');
+    // The rest of the strip still renders; only the unattributable claim goes.
+    expect(strip).toMatch(/12/);
+    expect(strip).toMatch(/waiting below/i);
+  });
+
+  it('makes no claim when the subset is larger than the queue it is a subset of', () => {
+    // Not producible by the current API — it is a filter of the queue rows —
+    // but the wire is unvalidated, and two numbers that cannot both be true
+    // are evidence they came from different snapshots.
+    render(<TodayStripView summary={{ ...BASE, queuedDecisions: 3, noiseSenderCount: 9 }} />);
+    const strip = document.body.textContent ?? '';
+    expect(strip).not.toMatch(/These senders sent/i);
+    expect(strip).not.toMatch(/of them sent/i);
+    expect(strip).toMatch(/waiting below/i);
+  });
+
+  it('uses a singular subject when the one queued sender is the whole subset', () => {
+    // Equal counts took the plural branch unconditionally, so a queue of one
+    // read "1 sender decision. These senders sent ~38% …".
+    render(<TodayStripView summary={{ ...BASE, queuedDecisions: 1, noiseSenderCount: 1 }} />);
+    const strip = document.body.textContent ?? '';
+    expect(strip).toMatch(/This sender sent/i);
+    expect(strip).not.toMatch(/These senders sent/i);
+    expect(strip).toMatch(/1 sender decision\b/);
+  });
+
   it('names the subset when Keep rows are queued, instead of crediting all of them', () => {
     // 12 decisions, 10 contributing: the share belongs to the 10.
     render(<TodayStripView summary={{ ...BASE, queuedDecisions: 12, noiseSenderCount: 10 }} />);

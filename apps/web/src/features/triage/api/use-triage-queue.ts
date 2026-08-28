@@ -32,8 +32,18 @@ export interface TodaySummary {
   sendersToday: number;
   handledAutomatically: number;
   queuedDecisions: number;
-  /** Non-Keep subset of `queuedDecisions` — the set `noiseReductionPct` describes. */
-  noiseSenderCount: number;
+  /**
+   * Non-Keep subset of `queuedDecisions` — the set `noiseReductionPct`
+   * describes.
+   *
+   * OPTIONAL on purpose, though the API always sends it. Nothing validates
+   * this shape at runtime: `apiGet` casts the parsed JSON. During a deploy
+   * an older API revision answers a newer web bundle, and the field is then
+   * genuinely absent — so declaring it required states a guarantee the wire
+   * does not make, and `undefined` would flow into the comparison that picks
+   * the sentence's subject. Optional forces the caller to handle the case.
+   */
+  noiseSenderCount?: number;
   noiseReductionPct: number | null;
 }
 

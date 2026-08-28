@@ -292,6 +292,18 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * decoder either way, so the declared generic proves nothing. Mirrors the same
  * helper in `lapse-reengagement.worker.ts`.
  */
+/**
+ * Start of the trailing-90-day window, as ONE instant per request.
+ *
+ * The noise share divides a per-sender 90-day count by a mailbox-wide
+ * 90-day count, and the two are computed in different statements. Each
+ * deriving its own cutoff made the ratio span mismatched windows, so both
+ * take this.
+ */
+function noiseWindowStartFrom(now: Date | undefined): Date {
+  return new Date((now ?? new Date()).getTime() - 90 * 86_400_000);
+}
+
 function toDate(value: unknown): Date | null {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
   if (typeof value === 'string') {
@@ -412,6 +424,16 @@ export class TriageReadService {
      * narrowed query silently returns the whole mailbox.
      */
     senderKeys?: readonly string[];
+    /**
+     * Start of the trailing-90-day window for `last90dMessages`.
+     *
+     * The Today strip divides this projection's 90-day counts by a
+     * mailbox-wide 90-day count taken in a SEPARATE statement. When each
+     * half picked its own cutoff the two windows differed by up to a full
+     * day, so the share was computed across mismatched spans. The caller
+     * passes ONE instant to both halves instead.
+     */
+    windowStart?: Date;
   }): Promise<TriageQueueFacts[]> {
     if (input.senderKeys?.length === 0) {
       return [];
@@ -557,7 +579,7 @@ export class TriageReadService {
     // string … Received an instance of Date" (Codex smoke 2026-05-27).
     // `gte()` in a `.where()` handles Dates fine; only raw `sql`
     // fragments need the manual ISO + cast.
-    const ninetyDaysAgoIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const ninetyDaysAgoIso = (input.windowStart ?? noiseWindowStartFrom(undefined)).toISOString();
     const aggRows = await this.db
       .select({
         senderKey: mailMessages.senderKey,
@@ -581,7 +603,16 @@ export class TriageReadService {
         // guarantee. It resolved to a STRING under postgres.js while PGlite
         // handed back a Date, which is why no test could reproduce the bug it
         // caused. Normalise through `toDate` at the consumer instead.
-        lastInternalDate: sql<unknown>`MAX(${mailMessages.internalDate})`,
+        // INBOUND only, like `last90Total` above. A sender's "last seen" is
+        // when THEY last wrote to you. Mail you SENT is stored under the
+        // hash of its own `From`, so a message to your own address or a
+        // sending alias shares the sender key — and an unfiltered MAX let
+        // today's outbound mail render "LAST SEEN today" for a sender whose
+        // newest inbound message was months old. `senders.lastSeenAt`, the
+        // fallback below, is already derived from inbound rows only, so the
+        // filter aligns the aggregate with what it falls back to. NULL when
+        // a sender has only outbound rows — which falls back correctly.
+        lastInternalDate: sql<unknown>`MAX(CASE WHEN ${mailMessages.isOutbound} = false THEN ${mailMessages.internalDate} END)`,
       })
       .from(mailMessages)
       .where(
@@ -1037,9 +1068,13 @@ export class TriageReadService {
     limit: number;
     now?: Date;
   }): Promise<TriageBootstrapFacts> {
+    // ONE window instant for both halves of the noise share — see
+    // `noiseWindowStartFrom`.
+    const windowStart = noiseWindowStartFrom(input.now);
     const queuePromise = this.listQueue({
       mailboxAccountId: input.mailboxAccountId,
       limit: input.limit,
+      windowStart,
     });
     const [queue, stats, todaySummary] = await Promise.all([
       queuePromise,
@@ -1047,7 +1082,7 @@ export class TriageReadService {
         mailboxAccountId: input.mailboxAccountId,
         ...(input.now === undefined ? {} : { now: input.now }),
       }),
-      this.getTodaySummaryFromQueue(input, queuePromise),
+      this.getTodaySummaryFromQueue(input, queuePromise, windowStart),
     ]);
     return { queue, stats, todaySummary };
   }
@@ -1067,15 +1102,18 @@ export class TriageReadService {
    * D7 / D228: counts over metadata only.
    */
   async getTodaySummary(input: { mailboxAccountId: string; now?: Date }): Promise<TodaySummary> {
+    const windowStart = noiseWindowStartFrom(input.now);
     return this.getTodaySummaryFromQueue(
       input,
-      this.listQueue({ mailboxAccountId: input.mailboxAccountId, limit: 12 }),
+      this.listQueue({ mailboxAccountId: input.mailboxAccountId, limit: 12, windowStart }),
+      windowStart,
     );
   }
 
   private async getTodaySummaryFromQueue(
     input: { mailboxAccountId: string; now?: Date },
     queuePromise: Promise<TriageQueueFacts[]>,
+    windowStart: Date,
   ): Promise<TodaySummary> {
     const now = input.now ?? new Date();
     const todayStartUtc = new Date(
@@ -1122,7 +1160,6 @@ export class TriageReadService {
 
     let noiseReductionPct: number | null = null;
     if (queueRows.length > 0 && queuedNoise > 0) {
-      const ninetyDaysAgo = new Date(todayStartUtc.getTime() - 90 * 86_400_000);
       const [volume] = await this.db
         .select({ total: count() })
         .from(mailMessages)
@@ -1130,12 +1167,24 @@ export class TriageReadService {
           and(
             eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
             eq(mailMessages.isOutbound, false),
-            gte(mailMessages.internalDate, ninetyDaysAgo),
+            // The SAME instant the numerator used, not `todayStartUtc - 90d`.
+            // Anchoring the denominator to UTC midnight made its window up to
+            // a day WIDER than the numerator's rolling one, so the share was a
+            // ratio between two different spans and read low all day.
+            gte(mailMessages.internalDate, windowStart),
           ),
         );
       const total = Number(volume?.total ?? 0);
-      if (total > 0) {
-        noiseReductionPct = Math.min(100, Math.round((queuedNoise / total) * 100));
+      // No clamp. The numerator and the denominator are separate statements
+      // with no transaction around them, so a sync that reclassifies mail as
+      // outbound or deletes rows between the two can leave the numerator
+      // describing a set the denominator no longer counts — a raw ratio above
+      // 1. `Math.min(100, …)` printed exactly "100%" for that: a maximally
+      // confident claim derived from an inconsistency it had just detected.
+      // An impossible ratio is evidence the two reads disagree, so make no
+      // claim rather than the strongest available one.
+      if (total > 0 && queuedNoise <= total) {
+        noiseReductionPct = Math.round((queuedNoise / total) * 100);
       }
     }
 
