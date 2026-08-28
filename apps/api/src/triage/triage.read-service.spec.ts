@@ -632,6 +632,29 @@ describe('TriageReadService.listQueue — "last seen" is when the SENDER wrote',
   });
 });
 
+describe('TriageReadService.listQueue — signals say "marked read", not "read rate" (QA-triage-20260827-07)', () => {
+  let db: Db;
+  let mailboxId: string;
+  let svc: TriageReadService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'signals-wording');
+    svc = new TriageReadService(db as never);
+  });
+
+  it('names the engagement signal "Marked read", matching the collapsed row\'s wording', async () => {
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'signals@declutrmail.ai');
+    await seedMessage(db, mailboxId, SENDER_A, 10);
+
+    const [row] = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    const engagementSignal = row?.signals.find(
+      (s) => s.startsWith('Marked read') || s.startsWith('Read rate'),
+    );
+    expect(engagementSignal).toMatch(/^Marked read: /);
+  });
+});
+
 describe('TriageReadService.listQueue — the senderKeys narrowing filter', () => {
   let db: Db;
   let mailboxId: string;

@@ -209,7 +209,11 @@ export class EntitlementsService {
           sql`(${actionJobs.verb} = 'unsubscribe' OR not (${actionJobs.status} = 'done' and ${actionJobs.affectedCount} = 0))`,
         ),
       );
-    return row?.used ?? 0;
+    // `used` is correct today only because the sql fragment ends in `::int`
+    // (postgres.js has no default parser for bare bigint/OID 20). Coerce
+    // explicitly so a dropped cast degrades loudly instead of turning
+    // `used + unitsNeeded > limit` into a string comparison (QA-triage-20260827-04).
+    return Number(row?.used ?? 0);
   }
 
   /**

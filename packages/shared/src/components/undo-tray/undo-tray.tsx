@@ -335,12 +335,17 @@ function resultLabel(kind: UndoActionKind): string {
 }
 
 function formatExpiry(value: string): string {
+  // No `timeZone` override — this tray only ever renders client-side with
+  // client-fetched entries (`useUndoEntries`'s `useQuery`, no SSR
+  // prefetch), so `Intl.DateTimeFormat` defaults to the reader's own
+  // zone with no hydration-mismatch risk. A hardcoded `'UTC'` here
+  // disagreed with every other surface stating this same deadline in the
+  // reader's zone (QA-triage-20260827-09 / QA-undo-20260828-04).
   return new Intl.DateTimeFormat('en', {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: 'UTC',
     timeZoneName: 'short',
   }).format(new Date(value));
 }

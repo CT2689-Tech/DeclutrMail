@@ -97,4 +97,27 @@ describe('<UndoTray /> — D35 injected-dataSource contract', () => {
     const html = renderToStaticMarkup(<UndoTray dataSource={source({ isLoading: true })} />);
     expect(html).toContain('Loading…');
   });
+
+  it('states the undo deadline in the reader zone, not a hardcoded UTC (QA-triage-20260827-09 / QA-undo-20260828-04)', () => {
+    // `Intl.DateTimeFormat` with no `timeZone` option reads `process.env.TZ`
+    // — flipping it between renders proves the label tracks the reader's
+    // zone instead of a fixed offset. A hardcoded `timeZone: 'UTC'` would
+    // render the identical string for both.
+    const originalTz = process.env.TZ;
+    try {
+      process.env.TZ = 'UTC';
+      const utc = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [entry()] })} />);
+
+      process.env.TZ = 'Pacific/Kiritimati'; // UTC+14 — always a different calendar day
+      const kiritimati = renderToStaticMarkup(
+        <UndoTray dataSource={source({ entries: [entry()] })} />,
+      );
+
+      expect(utc).toContain('Activity Undo until Jun 16');
+      expect(kiritimati).toContain('Activity Undo until Jun 17');
+      expect(utc).not.toBe(kiritimati);
+    } finally {
+      process.env.TZ = originalTz;
+    }
+  });
 });

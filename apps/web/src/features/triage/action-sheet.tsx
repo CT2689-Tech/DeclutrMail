@@ -403,6 +403,15 @@ export function ActionSheet({
             gap: 12,
             padding: '14px 24px 18px',
             borderTop: `1px solid ${color.line}`,
+            // Sticky, not just the last flow child: the dialog scrolls
+            // (`overflow: 'auto'` above) and its content stack — preview,
+            // contextual help, verb-specific toggles, protected notice —
+            // exceeds 76vh on a 375px phone, so Cancel/Confirm and the
+            // reversibility line sat below the fold with no visible cue
+            // that more content existed (QA-triage-20260827-11).
+            position: 'sticky',
+            bottom: 0,
+            background: color.card,
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>

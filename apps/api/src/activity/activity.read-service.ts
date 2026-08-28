@@ -1114,6 +1114,14 @@ export class ActivityReadService {
     const verbScope = and(
       eq(activityLog.mailboxAccountId, mailboxAccountId),
       inArray(activityLog.action, SUMMARY_VERBS),
+      // `reverted_at` is the durable reversal fact (same transaction as
+      // the undo-journal flip) — `persistedReviewOutcomeExpression`
+      // below already excludes a reverted row from every outcome
+      // bucket. This aggregate did not, so an archived-then-undone row
+      // still counted toward `byVerb.archived`, disagreeing with the
+      // per-row `UNDONE` badge one panel below on the same page
+      // (QA-undo-20260828-01).
+      isNull(activityLog.revertedAt),
       ...(windowStart ? [gte(activityLog.occurredAt, windowStart)] : []),
     );
     // Undos are bounded by WHEN THE UNDO HAPPENED (`reverted_at`), not

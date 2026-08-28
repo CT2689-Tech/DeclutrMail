@@ -390,6 +390,38 @@ describe('ActivityScreen — edge states', () => {
     expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeDisabled();
   });
 
+  it('restacks the metrics grid via a CSS media query, not a JS default (QA-undo-20260828-02)', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    const view = renderScreen();
+    await screen.findByText('Sender One');
+
+    // `useIsAtMost`'s `useState(false)` default means the FIRST render —
+    // server-rendered HTML included — always computes the desktop value.
+    // The regression is a hardcoded `gridTemplateColumns` ternary keyed
+    // on that JS flag; the fix moves the mobile override into a `@media`
+    // block so the served HTML is never wrong, only ever restacked later
+    // by CSS the browser already has. Assert the mechanism directly:
+    // inline style states the 5-column desktop track unconditionally,
+    // and a co-located `<style>` tag carries the 3-column override.
+    const metrics = screen.getByRole('status', { name: 'Activity metrics' });
+    const grid = metrics.querySelector('.dm-activity-metrics-grid');
+    expect(grid).not.toBeNull();
+    expect(grid).toHaveStyle({ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' });
+
+    const styleTag = Array.from(view.container.querySelectorAll('style')).find((el) =>
+      el.textContent?.includes('.dm-activity-metrics-grid'),
+    );
+    expect(styleTag).toBeDefined();
+    expect(styleTag!.textContent).toContain('max-width: 900px');
+    expect(styleTag!.textContent).toContain('repeat(3, minmax(0, 1fr))');
+  });
+
   it('does not mislabel a non-validation 4xx as a filter problem', async () => {
     installFetchStub([
       {

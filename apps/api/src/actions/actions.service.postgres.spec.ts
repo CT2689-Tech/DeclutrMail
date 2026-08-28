@@ -439,6 +439,21 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
     });
   });
 
+  it('cleanupUnitsUsed decodes as a JS number against real postgres.js, not a string', async () => {
+    // PGlite's decode path is not postgres.js's — postgres.js registers no
+    // default parser for a bare bigint (OID 20), so `used` is only a number
+    // today because the sql fragment ends in `::int`. If that cast is ever
+    // dropped, `used` silently becomes `"5"` and `used + unitsNeeded > limit`
+    // becomes a string comparison (QA-triage-20260827-04).
+    const { workspaceId } = await seedQuotaFixture(databases[0]!, 5, 'decode-check');
+    const used = await new EntitlementsService(databases[0]! as never).cleanupUnitsUsed(
+      workspaceId,
+      databases[0]! as never,
+    );
+    expect(typeof used).toBe('number');
+    expect(used).toBe(5);
+  });
+
   it('A3 bulk race: two concurrent bulks near the boundary cannot exceed the quota', async () => {
     // Three units remain; each racing bulk asks for two. The capacity
     // check, replay recheck and inserts share ONE transaction holding

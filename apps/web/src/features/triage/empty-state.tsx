@@ -59,7 +59,7 @@ export function TriageEmptyState({
     return (
       <EmptyState
         title="Nothing needs a decision right now."
-        description="New decisions appear after a sync finds another repeated sender pattern. Come back whenever it’s useful."
+        description="New decisions appear as previously-scored senders resurface, or a sync finds a new one. Come back whenever it’s useful."
         action={
           <a
             href="/senders"
@@ -152,8 +152,8 @@ export function TriageEmptyState({
             maxWidth: 460,
           }}
         >
-          New decisions appear after a sync finds another repeated sender pattern. Come back
-          whenever it&rsquo;s useful.
+          New decisions appear as previously-scored senders resurface, or a sync finds a new one.
+          Come back whenever it&rsquo;s useful.
         </p>
       </div>
 

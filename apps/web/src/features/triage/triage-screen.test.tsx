@@ -117,7 +117,7 @@ describe('TriageScreen — empty / loading branches', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     // Calm completion copy markers
     expect(html).toContain('You’re done for now.');
-    expect(html).toContain('New decisions appear after a sync');
+    expect(html).toContain('New decisions appear as previously-scored senders resurface');
     // Stats tile labels
     expect(html).toContain('Decided');
     expect(html).toContain('Archived');
@@ -129,7 +129,7 @@ describe('TriageScreen — empty / loading branches', () => {
 
   it('renders the empty state when state.kind=ready but rows is []', () => {
     const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS });
-    expect(html).toContain('New decisions appear after a sync');
+    expect(html).toContain('New decisions appear as previously-scored senders resurface');
   });
 
   it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {
