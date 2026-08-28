@@ -83,6 +83,7 @@ Then sign in, keeping the session for API proofs:
 curl -s -c /tmp/dm.jar "http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com" -o /dev/null
 CSRF=$(awk '/dm_csrf/{print $7}' /tmp/dm.jar)
 # mutations: -b /tmp/dm.jar -H "x-csrf-token: $CSRF" -H "Idempotency-Key: $(uuidgen)"
+# NEVER with the unsubscribe verb — the API is an execution route too (rule 7)
 ```
 
 **Preflight fails → the run stops.** QA against the wrong checkout is worse
@@ -177,7 +178,10 @@ The first three *use* it. The fourth *judges* it.
   `RATE_LIMIT_ENABLED=true`.
 - **Reach past your own data.** An id belonging to the other mailbox.
 - **Skip the preview.** Every destructive verb must render one (D226). Try to
-  get a mutation without it.
+  get a mutation without it — on Archive, Later and Delete **only**. Running
+  this on unsubscribe is an attempt to execute one without a preview, which is
+  the send itself. Confirm D226 holds for unsubscribe by reading whether the
+  preview renders, never by trying to defeat it.
 - **375px**, then keyboard only: K/A/U/L/D.
 
 On lifecycle jobs (`onboarding`, `sync`, `mailbox-switch`) call
@@ -237,9 +241,16 @@ instance from trust 8 to trust 10.
 
 ## 7 — Unsubscribe: you never press confirm
 
-Drive intent → sheet → **preview**, and **stop there**. Do not click the
-confirm/execute control on an unsubscribe. Not once, not to "see the queued
-row", not with the worker stopped.
+Drive intent → sheet → **preview**, and **stop there**.
+
+**Nothing in this run executes an unsubscribe, by any route.** Not the UI
+confirm control. Not a `POST` to the actions API with that verb, even one that
+"only" tests idempotency or ownership. Not enqueueing the job by hand. Not
+un-pausing a queue that holds one. The prohibition is on the verb reaching
+execution, not on one button — an earlier draft forbade the button and left the
+API, the break list's skip-the-preview probe, and the queue wide open.
+
+Not once, not to "see the queued row", not with the worker stopped.
 
 This is not a style preference. `UnsubExecutionWorker` performs a real RFC 8058
 one-click `POST` to the sender's URL, carrying a per-send token, from the
