@@ -40,7 +40,7 @@ import {
 
 import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
-import { TRIAGE_QUEUE_KEY } from './api/query-options';
+import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
 import { ActionSheet, type ConfirmDetails } from './action-sheet';
 import { UnprotectButton } from './unprotect-button';
@@ -222,7 +222,7 @@ export function TriageScreen({
     { stale: expandedRow?.stale === true },
     {
       enabled: journey === 'daily' && expandedRow !== null,
-      invalidate: TRIAGE_QUEUE_KEY,
+      invalidate: TRIAGE_BOOTSTRAP_KEY,
     },
   );
 

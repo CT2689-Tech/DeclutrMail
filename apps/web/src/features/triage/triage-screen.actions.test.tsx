@@ -275,7 +275,12 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() =>
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] }),
     );
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'stats'] });
+    // Stats and the Today strip ride the SAME cache entry as the queue, so
+    // there is no separate key to invalidate — and there must not be one.
+    // Three keys meant three independent refetches, which is how the strip
+    // came to describe a queue that was not the one rendered below it.
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'stats'] });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'today-summary'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
   });
 

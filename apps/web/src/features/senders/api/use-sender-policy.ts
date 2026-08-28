@@ -38,7 +38,7 @@ import {
 } from '@/lib/api/senders';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { SCREENER_QUEUE_KEY } from '@/features/screener/api/query-keys';
-import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/query-keys';
+import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-keys';
 import { track } from '@/lib/posthog';
 import { sendersKeys } from './query-keys';
 
@@ -71,7 +71,7 @@ export function useSetSenderPolicy() {
       // asserting a fact the server already contradicted, which is the
       // defect class this codebase keeps relearning. Cheap: the key is
       // only mounted on Triage and onboarding step 5.
-      void qc.invalidateQueries({ queryKey: TRIAGE_QUEUE_KEY });
+      void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
       // The Screener decide-preview renders "safe because
       // {protection reason}" from its own queue rows. #483 added two
       // Unprotect entry points (Triage preview, Settings list), so the

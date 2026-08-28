@@ -18,7 +18,7 @@ import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
-import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY } from './api/use-triage-queue';
+import { TRIAGE_BOOTSTRAP_KEY } from './api/use-triage-queue';
 import { useTriageStore } from './store';
 
 /**
@@ -29,8 +29,9 @@ import { useTriageStore } from './store';
  */
 export function invalidateAfterUndo(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: undoKeys.all });
-  void qc.invalidateQueries({ queryKey: TRIAGE_QUEUE_KEY });
-  void qc.invalidateQueries({ queryKey: TRIAGE_STATS_KEY });
+  // One key: the queue, the stats and the Today strip share a cache entry,
+  // so a reverted undo restores all three from the same read.
+  void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
 }
