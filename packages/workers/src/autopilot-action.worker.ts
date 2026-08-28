@@ -249,6 +249,12 @@ export interface AutopilotActionResult {
   skippedAlreadyUnsubscribed: number;
   /** Matches left pending because the rule's daily cap was reached. */
   skippedCapped: number;
+  /**
+   * One-click unsubscribe matches left pending because sending is disabled
+   * in this environment (`UNSUB_SEND_ENABLED`). Nothing was recorded and the
+   * cap was not spent; the next sweep retries them unchanged.
+   */
+  skippedUnsubSendDisabled: number;
   /** Matches left pending because the rule is now disabled/paused. */
   skippedRuleInactive: number;
   /** Matches left pending because the sender row is missing (race). */
@@ -439,6 +445,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       skippedProtected: 0,
       skippedAlreadyUnsubscribed: 0,
       skippedCapped: 0,
+      skippedUnsubSendDisabled: 0,
       skippedRuleInactive: 0,
       skippedMissingSender: 0,
       skippedIndexRebuilt: 0,
@@ -738,9 +745,24 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           }
           result.labelActionsExecuted += 1;
         } else if (match.actionKind === 'unsubscribe') {
-          const outcome = await this.executeUnsubscribeIntent(mailboxAccountId, match, now);
+          const outcome = await this.executeUnsubscribeIntent(
+            mailboxAccountId,
+            match,
+            now,
+            inFlight,
+          );
           if (outcome === 'stale') {
             result.skippedIndexRebuilt += 1;
+            continue;
+          }
+          // Nothing was recorded and nothing was sent, so this must not
+          // count as an intent NOR spend the rule's daily cap — the
+          // `continue` skips the decrement below. Counting a refusal as work
+          // done is how a sweep reports having handled a sender it did not
+          // touch, and how a cap gets consumed by matches that will be
+          // retried in full on the next run.
+          if (outcome === 'send_disabled') {
+            result.skippedUnsubSendDisabled += 1;
             continue;
           }
           result.unsubscribeIntentsRecorded += 1;
@@ -1154,7 +1176,15 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     mailboxAccountId: string,
     match: EligibleMatch,
     now: Date,
-  ): Promise<{ executionEnqueued: boolean } | 'stale'> {
+    /**
+     * A claim from an earlier sweep that already wrote its `action_jobs`
+     * row. Such a match is NEVER skipped: "an in-flight claim has exactly
+     * one correct outcome — finish it", and skipping leaves that row at
+     * `queued` forever. Finishing it is safe with sending disabled — the
+     * worker's own refusal terminates the job and resolves the policy.
+     */
+    inFlight: boolean,
+  ): Promise<{ executionEnqueued: boolean } | 'stale' | 'send_disabled'> {
     const { db } = this.deps;
     // D248 — the join is a leftJoin and the column is nullable, so a
     // missing method means "the sender index has not derived one", not
@@ -1177,7 +1207,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // the next sweep picks the sender up exactly as if this run had not seen
     // it. Nothing is written, so there is no audit row claiming a decision
     // and no duplicate to reconcile when it is processed for real.
-    if (method === 'one_click' && !canSendUnsub) {
+    if (method === 'one_click' && !canSendUnsub && !inFlight) {
       console.warn(
         JSON.stringify({
           level: 'warn',
@@ -1187,7 +1217,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
             'Left a one-click unsubscribe match unapplied: UNSUB_SEND_ENABLED is not "true".',
         }),
       );
-      return { executionEnqueued: false };
+      return 'send_disabled';
     }
     const executionKey = `autopilot-unsubexec-${match.matchId}`;
 
