@@ -32,9 +32,16 @@ const WORKFLOW = readFileSync(
   'utf8',
 );
 
+interface EnvBlock {
+  /** The `--set-env-vars` payload for this service. */
+  payload: string;
+  /** Byte offset of that payload IN THE WORKFLOW — its source identity. */
+  offset: number;
+}
+
 /** Every service's own `--set-env-vars` payload, keyed by service name. */
-function envBlocksByService(workflow: string): Map<string, string> {
-  const blocks = new Map<string, string>();
+function envBlocksByService(workflow: string): Map<string, EnvBlock> {
+  const blocks = new Map<string, EnvBlock>();
   // Each deploy is `gcloud run deploy <service>` followed by its own
   // `--set-env-vars="…"`. Anchoring on the deploy line rather than counting
   // occurrences file-wide is the point: two vars in ONE block would satisfy a
@@ -50,7 +57,9 @@ function envBlocksByService(workflow: string): Map<string, string> {
     const start = deploy.index;
     const end = deploys[i + 1]?.index ?? workflow.length;
     const envVars = /--set-env-vars="((?:[^"\\]|\\.)*)"/.exec(workflow.slice(start, end));
-    if (envVars?.[1] !== undefined) blocks.set(deploy[1]!, envVars[1]);
+    if (envVars?.[1] !== undefined) {
+      blocks.set(deploy[1]!, { payload: envVars[1], offset: start + envVars.index });
+    }
   }
   return blocks;
 }
@@ -68,25 +77,28 @@ describe('UNSUB_SEND_ENABLED survives deployment', () => {
     }
   });
 
-  it('binds each service to its OWN env block', () => {
-    // Two services resolving to one payload is a parse failure, not a pass.
-    // Every assertion below reads a per-service block, so if the parser ever
-    // collapses them the suite would verify one service twice and call it two.
-    const payloads = SEND_SERVICES.map((service) => BLOCKS.get(service));
-    expect(new Set(payloads).size).toBe(SEND_SERVICES.length);
+  it('reads each service from a DIFFERENT place in the file', () => {
+    // Distinct source OFFSETS, never distinct payloads. An earlier version
+    // compared the payload strings, which encoded a coincidence as a rule:
+    // nothing forbids two services from carrying identical env, so that test
+    // would have failed on a legitimate config while still passing on a
+    // parser that attributed one byte range to both names — the actual bug.
+    // Where the parser read is the structural fact; what it read is not.
+    const offsets = SEND_SERVICES.map((service) => BLOCKS.get(service)?.offset);
+    expect(new Set(offsets).size).toBe(SEND_SERVICES.length);
   });
 
   it.each(SEND_SERVICES)('sets UNSUB_SEND_ENABLED on %s', (service) => {
     const block = BLOCKS.get(service);
     expect(block).toBeDefined();
-    expect(block).toContain('UNSUB_SEND_ENABLED=');
+    expect(block?.payload).toContain('UNSUB_SEND_ENABLED=');
   });
 
   it.each(SEND_SERVICES)('sets a value the predicate accepts on %s', (service) => {
     // `=TRUE` or `=1` would deploy cleanly, survive a careless grep, and
     // silently disable sending. The predicate is the only judge of the value.
-    const block = BLOCKS.get(service) ?? '';
-    const assignment = /UNSUB_SEND_ENABLED=([^,|"\s]*)/.exec(block);
+    const payload = BLOCKS.get(service)?.payload ?? '';
+    const assignment = /UNSUB_SEND_ENABLED=([^,|"\s]*)/.exec(payload);
     expect(assignment).not.toBeNull();
     expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: assignment?.[1] ?? '' })).toBe(true);
   });
