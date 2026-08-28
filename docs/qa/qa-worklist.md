@@ -107,26 +107,27 @@ lap will not say which. The row names the commit the clean round ran against.
 Rows accumulate across every `/ct-qa triage` run. Per-run counts are in the
 ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
-| id                    | sev                       | one line                                                                                                                                     | status                                      | PR  |
-| --------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --- |
-| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader   | **At review cap** (5bea2db0) — founder call |     |
-| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                           | **At review cap** (5bea2db0) — founder call |     |
-| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                    | **At review cap** (5bea2db0) — founder call |     |
-| QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                               | Approved — queued behind the P1 branch      |     |
-| QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                            | Approved — queued behind P1s                |     |
-| QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                       | Approved — queued behind P1s                |     |
-| QA-triage-20260827-07 | P2                        | One measurement, two names on the same card: the row says "marked read", the tile and bullet say "read rate"                                 | Approved — queued behind P1s                |     |
-| QA-triage-20260827-08 | P2                        | "You'll see the affected email before anything changes" names Keep first, and Keep has no preview by design (D40)                            | Approved — queued behind P1s                |     |
-| QA-triage-20260827-09 | P2                        | The undo deadline renders in UTC in the toast and in the reader's zone in the preview, two clicks apart                                      | Approved — queued behind P1s                |     |
-| QA-triage-20260827-10 | P2                        | Two stat tiles are windowed and two are not, with nothing saying so; at 375px "90D" orphans onto its own line                                | Approved — queued behind P1s                |     |
-| QA-triage-20260827-11 | P2                        | The preview's footer — reversibility line, Cancel, confirm — sits below the fold on a 375px phone                                            | Approved — queued behind P1s                |     |
-| QA-triage-20260827-12 | P3                        | The `K · A · U · L · D` legend renders from first paint, but the keys do nothing until a row is expanded                                     | Open                                        |     |
-| QA-triage-20260827-13 | P3                        | Rows 2–12 show a bare `›` while row 1 shows a rationale, reading as "row 1 loaded and the rest failed"                                       | Open                                        |     |
-| QA-triage-20260827-14 | P3                        | A sender with no inbox mail occupies a decision slot with no signal until the preview opens                                                  | Open                                        |     |
-| QA-triage-20260828-03 | P2                        | The Today strip and the rows it summarises are two requests, so after a decision they can describe different 90-day windows and queue copies | Open — remedy named                         |     |
-| QA-triage-20260828-02 | P3                        | "The last 90 days" is implemented independently in 4+ places with no shared definition; nothing makes them agree                             | Open                                        |     |
-| QA-triage-20260828-01 | P2                        | "LAST SEEN today" is shown for mail that arrived yesterday — the label buckets by elapsed hours, not calendar day                            | Open                                        |     |
-| QA-triage-20260827-15 | P3                        | The H1 and queue legend give an unscoped count, and no "done for today" state ever renders to correct it                                     | Open                                        |     |
+| id                    | sev                       | one line                                                                                                                                                        | status                                      | PR  |
+| --------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- | --- |
+| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader                      | **At review cap** (5bea2db0) — founder call |     |
+| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                                              | **At review cap** (5bea2db0) — founder call |     |
+| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                                       | **At review cap** (5bea2db0) — founder call |     |
+| QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                                                  | Approved — queued behind the P1 branch      |     |
+| QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                                               | Approved — queued behind P1s                |     |
+| QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                                          | Approved — queued behind P1s                |     |
+| QA-triage-20260827-07 | P2                        | One measurement, two names on the same card: the row says "marked read", the tile and bullet say "read rate"                                                    | Approved — queued behind P1s                |     |
+| QA-triage-20260827-08 | P2                        | "You'll see the affected email before anything changes" names Keep first, and Keep has no preview by design (D40)                                               | Approved — queued behind P1s                |     |
+| QA-triage-20260827-09 | P2                        | The undo deadline renders in UTC in the toast and in the reader's zone in the preview, two clicks apart                                                         | Approved — queued behind P1s                |     |
+| QA-triage-20260827-10 | P2                        | Two stat tiles are windowed and two are not, with nothing saying so; at 375px "90D" orphans onto its own line                                                   | Approved — queued behind P1s                |     |
+| QA-triage-20260827-11 | P2                        | The preview's footer — reversibility line, Cancel, confirm — sits below the fold on a 375px phone                                                               | Approved — queued behind P1s                |     |
+| QA-triage-20260827-12 | P3                        | The `K · A · U · L · D` legend renders from first paint, but the keys do nothing until a row is expanded                                                        | Open                                        |     |
+| QA-triage-20260827-13 | P3                        | Rows 2–12 show a bare `›` while row 1 shows a rationale, reading as "row 1 loaded and the rest failed"                                                          | Open                                        |     |
+| QA-triage-20260827-14 | P3                        | A sender with no inbox mail occupies a decision slot with no signal until the preview opens                                                                     | Open                                        |     |
+| QA-triage-20260828-04 | P2                        | Protecting a queued sender updates the rows but not the Today strip, so the strip keeps naming a subset the rows no longer contain                              | Open                                        |     |
+| QA-triage-20260828-03 | P2                        | The Today strip and the rows it summarises are separate queries pulled apart by four independent paths, so they can describe different windows and queue copies | Open — remedy named                         |     |
+| QA-triage-20260828-02 | P3                        | "The last 90 days" is implemented independently in 4+ places with no shared definition; nothing makes them agree                                                | Open                                        |     |
+| QA-triage-20260828-01 | P2                        | "LAST SEEN today" is shown for mail that arrived yesterday — the label buckets by elapsed hours, not calendar day                                               | Open                                        |     |
+| QA-triage-20260827-15 | P3                        | The H1 and queue legend give an unscoped count, and no "done for today" state ever renders to correct it                                                        | Open                                        |     |
 
 ### Review rounds — QA-01 / QA-02 / QA-03
 
@@ -267,18 +268,42 @@ and no user reads "today" as "since this time yesterday" at 01:00.
 standing. It is PRE-EXISTING — every version of this code derived a fresh
 instant per request — but the branch should not close by pretending otherwise.
 
-The remedy is **one request, not one window rule.** `getBootstrap` already
-returns queue + stats + summary from a single `listQueue` promise, so the SSR
-first paint has no drift. Only the client refetch after a decision splits them:
-`invalidateAfterDecision` marks `TRIAGE_QUEUE_KEY` and `TODAY_SUMMARY_KEY`
-stale separately, and each refetches its own endpoint. Pointing that refetch at
-`/bootstrap` removes the drift by construction — and closes the wider version
-of it too, where the strip says "12 sender decisions" above 11 rendered rows
-because the two calls saw different queue copies.
+The remedy is **one query, not one window rule and not one patched call
+site.** An earlier draft of this note said "only the refetch after a decision
+splits them" and named `invalidateAfterDecision` as the fix. That was wrong,
+and wrong in the dangerous direction: it would have fixed a fraction while
+looking complete. Four paths pull the keys apart —
+
+1. `invalidateAfterDecision` marks all three stale as three separate refetches;
+2. `useRefreshStaleRead` (D25) invalidates the queue key **alone**;
+3. `use-sender-policy` invalidates the queue key alone as well — and that one
+   is QA-triage-20260828-04 below, a present bug rather than drift;
+4. all three query options carry `staleTime: 30_000` independently, so they
+   refetch on whichever component remounts or refocuses first, with no
+   mutation involved at all.
+
+So the strip must stop being a separately-fetched query: one bootstrap query
+key, rows and strip both selecting from it. One query is one instant and one
+copy of the queue, and every existing invalidator covers it automatically
+because only one key remains.
 
 Not done here: it moves the query keys, the SSR boundary, the strip's fetching
 half and their tests, on a branch already at its review cap. It is the natural
-first item of the next branch, ahead of the two rows below it.
+first item of the next branch.
+
+**QA-triage-20260828-04 is the sharp end of it, and this branch made it
+sharper.** `listQueue` rewrites a protected sender's verdict to `keep`, and the
+strip's subset is `verdict !== 'keep'` — so protecting a queued sender moves
+`noiseSenderCount` and `noiseReductionPct`. `use-sender-policy` invalidates
+`TRIAGE_QUEUE_KEY` and `SCREENER_QUEUE_KEY` and not `TODAY_SUMMARY_KEY`, so the
+rows update and the strip does not.
+
+The staleness pre-dates this branch. Its consequence does not: before
+`d9554423` the sentence did not depend on `noiseSenderCount`, and now its
+SUBJECT does. A stale summary used to show an old percentage; it can now also
+choose the wrong subject — "These senders sent…" over a queue where one row has
+just become Keep. Widening the blast radius of a gap that was already there,
+without noticing it, is worth recording as its own kind of mistake.
 
 **QA-triage-20260828-02** is the class behind the over-correction above. "The
 last 90 days" is spelled out separately in `score.worker.ts`,

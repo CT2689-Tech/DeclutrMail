@@ -320,12 +320,27 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * inside that gap: the strip then reports a share above a row whose own
  * 90-day count reads 0. Rare, not impossible.
  *
- * The safe replacement is ONE REQUEST, not one window rule: `getBootstrap`
- * already returns queue + stats + summary from a single `listQueue` promise,
- * so the SSR first paint has no drift at all. Only the client refetch after a
- * decision splits them (`invalidateAfterDecision` marks both keys stale
- * separately). Pointing that refetch at `/bootstrap` removes the drift by
- * construction, for the counts as well as the window.
+ * The safe replacement is ONE QUERY, not one window rule and not one patched
+ * call site. `getBootstrap` already returns queue + stats + summary from a
+ * single `listQueue` promise, so the SSR first paint has no drift at all —
+ * but the client then splits them across three cache keys, and at least four
+ * things pull those keys apart:
+ *
+ *   - `invalidateAfterDecision` marks all three stale as three refetches;
+ *   - `useRefreshStaleRead` (D25) invalidates the queue key ALONE;
+ *   - `use-sender-policy` invalidates the queue key alone too — and protection
+ *     rewrites a row's verdict to `keep`, which MOVES this summary's subset,
+ *     so the strip keeps describing a set the rows no longer contain;
+ *   - all three options carry `staleTime: 30_000` independently, so they
+ *     refetch on whichever component remounts or refocuses first, with no
+ *     mutation involved at all.
+ *
+ * Patching one invalidator therefore fixes a fraction and leaves the rest
+ * looking fixed. The structural answer is that the strip must stop being a
+ * separately-fetched query: one bootstrap query key, with the rows and the
+ * strip both selecting from it. One query is one instant and one copy of the
+ * queue, and every existing invalidator covers it automatically because there
+ * is only one key left to invalidate.
  *
  * Do NOT close it by anchoring this window alone. That was tried and reverted
  * in `5bea2db0`: it made Triage the only surface not reading 90 days as
