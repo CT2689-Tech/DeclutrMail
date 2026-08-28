@@ -8,6 +8,89 @@ or credentials.
 See CLAUDE.md §11 for the file's lifecycle. Append-only structurally;
 items physically move from **Open** to **Done** as they're addressed.
 
+
+### 2026-08-27 — No dev-only kill switch for real unsubscribe sends
+
+**Source:** session building `/ct-qa`; six consecutive Codex stop-time reviews
+**Why:** `UnsubExecutionWorker` performs a real RFC 8058 one-click POST to the
+sender's URL, carrying a per-send token, from your address. There is no
+dry-run flag and no kill switch, and stopping the worker only DEFERS a queued
+send until a worker returns. That makes the unsubscribe verb untestable: the
+carve-out you chose — drive it to the confirm step, never send — cannot be
+enforced by wording in a prompt, and six review rounds found six different
+routes around the wording (the confirm control, the actions API, the
+skip-the-preview probe, hand-enqueueing, an un-paused queue, and the `U`
+keyboard shortcut, which is reachable from Triage, Senders, Sender detail,
+Brief and Screener). `/ct-qa` currently forbids the verb outright and has no
+standalone `unsubscribe` job, so that surface ships un-QA'd below the preview.
+**How:** the polarity matters more than the flag. A first draft of this entry
+said "refuse when an explicit env flag is set" and called it fail-closed. It is
+the opposite: that makes silence mean SEND, so an unset var, a typo, or a var
+that never reached the worker service all send. Invert it.
+
+- In `packages/workers/src/unsub-execution.worker.ts`, refuse the outbound
+  request **by default**. Sending requires `UNSUB_SEND_ENABLED === 'true'`
+  read explicitly; anything else — unset, empty, `1`, `TRUE` — refuses. Silence
+  must mean "do not send".
+- Do NOT copy the `DEV_AUTH_ENABLED` shape. That flag enables a dev capability
+  and is asserted OFF in production. This one enables the real-world side
+  effect and must be asserted **ON** in production: `worker.ts` boot refuses to
+  start when `NODE_ENV === 'production'` and the flag is not `'true'`.
+  Otherwise the same typo silently stops every real unsubscribe in prod — the
+  mirror failure, just as quiet, and it would look like the feature working.
+- On refusal, log the sender's **domain and channel only**. Never the one-click
+  URL: it carries a per-send token, and D7 keeps tokenised recipient
+  identifiers out of logs.
+- The var must go in `deploy-cloud-run.yml`'s **worker** env block, not just
+  set live. `--set-env-vars` full-replaces, so a var only set live is wiped by
+  the next deploy — which would silently disable production unsubscribes.
+- **Refuse at the enqueue boundary, not in the worker.** This is the important
+  correction. A first draft put the refusal in the worker and recorded
+  `status='failed'` with a classified code — which routes a deliberate no-op
+  into exactly the state the recovery machinery keys on
+  (`action-recovery.service.ts:258,376` both gate on `status === 'failed'`),
+  and into whatever retry the FE offers on a failed action. A refusal that can
+  be retried is a send waiting for someone to press a button, and if the flag
+  is flipped on later that stale job sends unattended, long after anyone is
+  watching. That is the deferred-send trap in a new costume.
+
+  So when sending is disabled, the **API rejects the unsubscribe intent before
+  any row is written and any job is enqueued**, returning a designed 4xx the FE
+  renders as a real state ("unsubscribe execution is disabled in this
+  environment") with a route out — never a generic error toast. No
+  `action_jobs` row, no queued job, nothing resumable, nothing for recovery to
+  find, and nothing that changes meaning when the flag flips.
+
+- **Worker refusal stays, as defence-in-depth only** — for a job already queued
+  when the flag changed. There it must be terminal and non-retryable on attempt
+  1: never `status='done'` (the FE polls `done` before telling the user their
+  unsubscribe went through, so `done` would tell them they left a list they are
+  still on), never a retryable throw (three attempts then a dead-letter, and a
+  dead-letter is indistinguishable from delivered-but-unconfirmed), no
+  `undo_journal` row (nothing happened; an undo token for a send that never
+  occurred is a second lie), and no `activity_log` row that reads as an
+  unsubscribe.
+
+- **Check before building:** confirm whether the FE offers retry on a failed
+  action, and whether anything sweeps failed `action_jobs`. If either is true,
+  the enqueue-boundary refusal is not merely preferable — it is the only safe
+  option.
+
+- Tests, none asserting on a log line: with sending disabled the intent is
+  rejected and **no `action_jobs` row is created at all**; a pre-existing
+  queued job performs **no outbound request**, issues no undo token, and writes
+  no activity row claiming success; with sending enabled, behaviour is
+  byte-identical to today.
+
+Then restore `unsubscribe` as a `/ct-qa` job, re-allow the `U` keystroke, and
+delete the Safety block's closing paragraph.
+**Verifies by:** with the flag ABSENT (the default), confirming an unsubscribe
+in the dev UI produces an `action_jobs` row, a worker log line naming the
+sender's domain and channel, and NO outbound request. With it `'true'`,
+behaviour is byte-identical to today. And a production boot with the flag
+missing refuses to start rather than starting quietly un-sending.
+**Status:** Open
+
 ## Entry format
 
 ```markdown

@@ -4166,3 +4166,55 @@ digits, and must not contain `together` / `at once` / `simultaneous` —
 plus one pinning the schedule line to the `from` floor. All three
 negative-controlled. The deeper guard is the rule above, which no test
 can express.
+
+## 2026-08-27 — The cron watchdog measured attempts, so a job failing every tick read as healthy
+
+**PR:** none yet — fix is in the working tree (`scripts/check-cron-stale.ts`)
+**Caught by:** adversarial review — a `defect-class-sweeper` run seeded from an
+already-fixed C3 instance, then confirmed by `finding-refuter` (SURVIVES, no
+grounds applied). Not caught by any test, gate, typecheck or lint.
+
+**What happened:** `scripts/check-cron-stale.ts` selected `cron_runs.status`
+but branched on it only for `'running'` (the hung check). Its health verdict
+was the recency of `started_at` — the last ATTEMPT. A cron that starts
+punctually and fails on every tick therefore has a fresh row and a non-running
+status, so it cleared all three gates: the watchdog printed
+`✓ all 4 watched crons are running on schedule` and exited 0. Exit 0 means the
+GitHub workflow is green and its failed-workflow email — which the script's own
+docblock names as the entire alert channel — never fires.
+
+Reproduced against an isolated probe database: on identical data the old code
+reported 1 of 2 real faults, the new code reports 2. The state is reached by
+real code and not only by forcing — `WatchRenewalWorker|failed` rows are
+already in the dev DB (2026-07-16, 2026-08-05).
+
+The delegation defence was weighed and rejected.
+`.github/workflows/cron-stale-watchdog.yml` says "Sentry covers 'did something
+throw'", but `FOUNDER-FOLLOWUPS.md:1767` ("Sentry: alert rules for prod
+errors") has been Open since 2026-06-07 and
+`docs/execution/audit-2026-08-11/audit-ops-readiness.md:40` records "Nothing
+pages on ~795 Sentry errors/day". The signals are produced and terminate in an
+unwatched dashboard, so this watchdog was the only channel that would have
+reached the founder. For `SnoozeWakeWorker` there was not even that: it claims
+its run via `onConflictDoNothing`, so a BullMQ retry finds the slot taken and
+returns `skippedDuplicateRun: true` = success — no Sentry capture, no
+dead-letter row, and the `failed` row is the only trace that exists.
+
+**Correct approach:** a health check must measure the age of the last SUCCESS,
+never the age of the last attempt. Those are the same number only when nothing
+is failing, which is precisely the case the check exists to detect.
+
+**Rule:** For any guard, state what the unhealthy subject looks like in the
+data, then confirm the verdict expression can actually see it. A check whose
+input already contains the failure and whose branches never read it is a guard
+that cannot fail.
+
+**Enforcement update:** `check-cron-stale.ts` now derives staleness from
+`MAX(started_at) FILTER (WHERE status = 'succeeded')`, adds a `failing` reason
+covering both "ticking on schedule but not succeeding" and "recording runs and
+never once succeeded", and gates the latter on `MIN(started_at)` so a fresh
+deploy's first in-flight run does not page. No hook added: `scripts/` has no
+test harness and is not typechecked in CI at all
+(`FOUNDER-FOLLOWUPS.md:601`, Open since 2026-08-18 — filed by the same PR that
+introduced this script, and the reason 34 type errors sit unread in the root
+tsconfig today). Verified by executable negative control, not by a unit test.
