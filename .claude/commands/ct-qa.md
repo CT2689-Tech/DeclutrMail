@@ -485,11 +485,24 @@ body rather than silently declining — the disagreement is part of the record.
 Record the outcome on the worklist row: `Review passed`, or `Review found <n>`
 with what you did about each.
 
+**Acting on a review invalidates it.** The moment you change code in response,
+the reviewed diff is not the diff you intend to merge, and the delta — the part
+written under review pressure, in a hurry, by the author — is the least
+scrutinised code in the change. Send the NEW diff back. Repeat until a review
+passes against the diff you are actually proposing; cite that commit on the
+worklist row so a reader can check the review covered the final state and not an
+ancestor of it. Two rounds is normal. A first-round pass on a non-trivial diff is
+more likely a shallow review than a clean one.
+
+The same applies to anything you change afterwards for an unrelated reason — a
+rebase that resolves conflicts, a lint fix, a "tiny" follow-up commit. If the
+merged diff is not the reviewed diff, it was not reviewed.
+
 If the review says the fix is wrong rather than incomplete, the row goes back to
 `Approved` and the diff is rewritten. It does not go to the founder as "done
 with caveats".
 
-## Done means done — twelve boxes, not vibes
+## Done means done — thirteen boxes, not vibes
 
 - [ ] All four personas walked, the editor last (as `usability-editor`)
 - [ ] Break list exhausted, or each skip named with its reason
@@ -510,8 +523,11 @@ with caveats".
       never mid-walk, which blinds every persona that comes after
 - [ ] Negative control run per new assertion: fix reverted, test seen RED,
       fix restored — and said so out loud
-- [ ] Diff sent to Codex for adversarial review, the review actually passed or
-      its findings were acted on, and the outcome recorded on the worklist row
+- [ ] Diff sent to Codex for adversarial review, its findings acted on, and the
+      outcome recorded on the worklist row
+- [ ] The **final** diff reviewed — not an ancestor of it. Every change made in
+      response to a review, or after one, goes back for another round, and the
+      passing commit is named on the row
 
 ## Output
 

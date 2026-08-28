@@ -63,19 +63,19 @@ the ledger, which is the run record.
 Not a single line — a row has four ways out, and only one of them is a fix that
 landed.
 
-| state                 | means                                                              | who can set it        |
-| --------------------- | ------------------------------------------------------------------ | --------------------- |
-| `Open`                | Filed and unapproved. The resting state.                           | a run                 |
-| `Approved`            | Founder said fix it. Nothing is touched before this.               | founder only          |
-| `Approved — queued`   | Approved, not yet started. Name what it is waiting on.             | a run                 |
-| `Fixing`              | Diff in progress on a branch.                                      | a run                 |
-| `In review`           | Diff sent to Codex for adversarial review.                         | a run                 |
-| `Review found <n>`    | Review landed findings. Row returns to `Fixing`.                   | a run                 |
-| `PR #n`               | Review passed or its findings were acted on; branch proposed.      | a run                 |
-| `Fixed YYYY-MM-DD`    | Merged **and** a later run confirmed the symptom is gone.          | a run, after checking |
-| `Gone YYYY-MM-DD`     | No longer reproduces, no fix attributable to it. Say what you ran. | a run, after checking |
-| `Refuted YYYY-MM-DD`  | New evidence killed the finding itself. Point at the ledger row.   | a run                 |
-| `Won't do YYYY-MM-DD` | Founder declined. Keep the reason.                                 | founder only          |
+| state                 | means                                                                                              | who can set it        |
+| --------------------- | -------------------------------------------------------------------------------------------------- | --------------------- |
+| `Open`                | Filed and unapproved. The resting state.                                                           | a run                 |
+| `Approved`            | Founder said fix it. Nothing is touched before this.                                               | founder only          |
+| `Approved — queued`   | Approved, not yet started. Name what it is waiting on.                                             | a run                 |
+| `Fixing`              | Diff in progress on a branch.                                                                      | a run                 |
+| `In review`           | Diff sent to Codex for adversarial review.                                                         | a run                 |
+| `Review found <n>`    | Review landed findings. Row returns to `Fixing`.                                                   | a run                 |
+| `PR #n`               | A review passed against **this** diff, not an ancestor; branch proposed. Name the reviewed commit. | a run                 |
+| `Fixed YYYY-MM-DD`    | Merged **and** a later run confirmed the symptom is gone.                                          | a run, after checking |
+| `Gone YYYY-MM-DD`     | No longer reproduces, no fix attributable to it. Say what you ran.                                 | a run, after checking |
+| `Refuted YYYY-MM-DD`  | New evidence killed the finding itself. Point at the ledger row.                                   | a run                 |
+| `Won't do YYYY-MM-DD` | Founder declined. Keep the reason.                                                                 | founder only          |
 
 `Fixed` and `Gone` are deliberately separate: "we fixed it" and "it stopped
 happening and nobody knows why" are different facts, and collapsing them hides
@@ -88,6 +88,12 @@ approval. That is not a skipped step; it is the row leaving without work.
 was self-approved by the session that wrote both the finding and the fix, which
 is the one combination this pipeline exists to prevent.
 
+**And it is not a one-shot.** Acting on a review invalidates it: the code written
+in response is the least-scrutinised part of the change, written by the author
+under time pressure. A row returns to `Fixing`, then `In review` again, until a
+review passes against the diff actually being proposed. The row names that commit
+so a reader can confirm the review covered the final state and not an ancestor.
+
 ---
 
 ## triage
@@ -97,9 +103,9 @@ ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
 | id                    | sev                       | one line                                                                                                                                   | status                                 | PR  |
 | --------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- | --- |
-| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | Fixing → In review (da7d4073)          |     |
-| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | Fixing → In review (da7d4073)          |     |
-| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | Fixing → In review (da7d4073)          |     |
+| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader | Fixing → In review (d9554423)          |     |
+| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                         | Fixing → In review (d9554423)          |     |
+| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                  | Fixing → In review (d9554423)          |     |
 | QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                             | Approved — queued behind the P1 branch |     |
 | QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                          | Approved — queued behind P1s           |     |
 | QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                     | Approved — queued behind P1s           |     |
