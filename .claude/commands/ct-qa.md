@@ -485,18 +485,38 @@ body rather than silently declining — the disagreement is part of the record.
 Record the outcome on the worklist row: `Review passed`, or `Review found <n>`
 with what you did about each.
 
-**Acting on a review invalidates it.** The moment you change code in response,
-the reviewed diff is not the diff you intend to merge, and the delta — the part
-written under review pressure, in a hurry, by the author — is the least
-scrutinised code in the change. Send the NEW diff back. Repeat until a review
-passes against the diff you are actually proposing; cite that commit on the
-worklist row so a reader can check the review covered the final state and not an
-ancestor of it. Two rounds is normal. A first-round pass on a non-trivial diff is
-more likely a shallow review than a clean one.
+**A SUBSTANTIVE response to a review invalidates it.** The code written in
+response is the least-scrutinised part of the change — authored under time
+pressure, by the author, after the reviewer stopped looking — so it gets its own
+round. Substantive means it changes behaviour: logic, control flow, a wire
+shape, a rendered string, a test's assertion.
 
-The same applies to anything you change afterwards for an unrelated reason — a
-rebase that resolves conflicts, a lint fix, a "tiny" follow-up commit. If the
-merged diff is not the reviewed diff, it was not reviewed.
+Mechanical changes do not: a formatter or lint autofix, a comment or docstring,
+a local rename with no behaviour change, a rebase whose conflict resolution
+leaves the resolved hunks identical. Note them on the row and move on. Requiring
+a fresh round for a prettier pass is how a review gate becomes a ritual nobody
+finishes.
+
+**It terminates, and here is exactly how.** A round is CLEAN when it returns
+nothing you had to act on. A clean round ends the loop — a pass is a pass, and
+treating every pass as presumptively shallow removes the only exit the process
+has. Cite that commit on the worklist row.
+
+Two substantive rounds is the cap. If a third would be needed, stop and take it
+to the founder with what each round found: at that point the diff is either
+bigger than one change should be, or the finding underneath it is wrong, and
+another lap will not tell you which.
+
+One calibration, used once and not as a standing objection: if round one returns
+zero findings on a diff that touches several files or a wire shape, ask for one
+targeted deeper pass naming the riskiest area. If that also comes back clean,
+believe it.
+
+**Merging is not a substantive change.** The review attaches to a commit, not to
+whatever git produces at merge time. A squash, or a rebase onto a moved `main`
+that resolves cleanly, does not invalidate it — otherwise nothing could ever be
+merged, since the merged artifact is never byte-identical to the reviewed one.
+A rebase you had to resolve by hand is substantive; say so and take the round.
 
 If the review says the fix is wrong rather than incomplete, the row goes back to
 `Approved` and the diff is rewritten. It does not go to the founder as "done
@@ -525,9 +545,10 @@ with caveats".
       fix restored — and said so out loud
 - [ ] Diff sent to Codex for adversarial review, its findings acted on, and the
       outcome recorded on the worklist row
-- [ ] The **final** diff reviewed — not an ancestor of it. Every change made in
-      response to a review, or after one, goes back for another round, and the
-      passing commit is named on the row
+- [ ] A review came back CLEAN against the final diff — or the two-round cap was
+      hit and the founder was told what each round found. Mechanical-only
+      changes since that commit are named on the row; substantive ones took
+      another round
 
 ## Output
 

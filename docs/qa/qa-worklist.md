@@ -88,11 +88,16 @@ approval. That is not a skipped step; it is the row leaving without work.
 was self-approved by the session that wrote both the finding and the fix, which
 is the one combination this pipeline exists to prevent.
 
-**And it is not a one-shot.** Acting on a review invalidates it: the code written
-in response is the least-scrutinised part of the change, written by the author
-under time pressure. A row returns to `Fixing`, then `In review` again, until a
-review passes against the diff actually being proposed. The row names that commit
-so a reader can confirm the review covered the final state and not an ancestor.
+**And it is not a one-shot — but it does terminate.** A SUBSTANTIVE response to a
+review (behaviour, wire shape, rendered string, an assertion) sends the row back
+through `Fixing → In review`. A mechanical one (formatter, lint autofix, comment,
+a rebase that resolved cleanly) does not; name it on the row instead.
+
+A round is CLEAN when it returns nothing you had to act on, and a clean round
+ends the loop. **Two substantive rounds is the cap** — if a third would be
+needed, the row goes to the founder with what each round found, because at that
+point either the diff is too big or the finding under it is wrong, and another
+lap will not say which. The row names the commit the clean round ran against.
 
 ---
 
