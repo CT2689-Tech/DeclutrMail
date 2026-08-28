@@ -354,7 +354,7 @@ export function ActionSheet({
               aria-checked={rememberPreference}
               // Must equal the visible label (WCAG 2.5.3 label-in-name)
               // so voice control can target the visible text.
-              aria-label="Show this in the row next time"
+              aria-label={`Skip this dialog for ${verb}`}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -374,9 +374,9 @@ export function ActionSheet({
               <CheckSquare on={rememberPreference} muted={!rememberPreference} />
               <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
                 <strong style={{ color: color.fg, fontWeight: 600 }}>
-                  Show this in the row next time
+                  {`Skip this dialog for ${verb}`}
                 </strong>{' '}
-                — the same preview will appear below the sender. You can change this in Settings.
+                — the preview shows in the row instead. Change this in Settings.
               </span>
             </button>
           )}

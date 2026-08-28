@@ -621,3 +621,189 @@ Delete` → banner "Moved to Gmail Trash" → toast "Moved to Gmail Trash" →
   independently re-verified live.
 
 **Regression test:** none — copy consistency, not logic.
+
+## archive
+
+Rows accumulate across every `/ct-qa archive` run. Per-run counts are in the
+ledger. First filed 2026-08-28 (6 survivors; 3 candidates refuted before
+filing — a claimed D226 preview-bypass, a claimed triple last-seen
+mismatch, and a claimed rationale-vs-stat mismatch; see the ledger's
+Refuted table for the grounds on each).
+
+**Shipped 2026-08-28, [PR #670](https://github.com/CT2689-Tech/DeclutrMail/pull/670):**
+QA-archive-20260828-01, -02, -03, -04, -06 (5 of 6 — pushed, opened, Codex
+round 2 clean, awaiting merge). **Not in that PR:** QA-archive-20260828-05,
+attempted and reverted — stays 🔴, open for a founder design call, tracked
+separately below.
+
+|     | id                     | sev | one line                                                                                                                                                                                           | status                                                                                                                              | PR   |
+| --- | ---------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 🟡  | QA-archive-20260828-01 | P2  | The Triage volume tile shows a 90-day-derived average unlabelled as such, while the adjacent read-rate tile on the same row does label its window                                                  | PR #670 — Codex round 2 clean on `b369f4ab`, pushed & opened, awaiting merge                                                        | #670 |
+| 🟡  | QA-archive-20260828-02 | P2  | The D226 action-preview dialog — the one screen a destructive mutation cannot skip — renders frozen LLM rationale text with no staleness indicator, unlike every other place the same text renders | PR #670 — Codex round 2 clean on `b369f4ab`; live-verified (Victoria's Secret Panty Party, "Scored today" now renders)              | #670 |
+| 🟡  | QA-archive-20260828-03 | P2  | Sender Detail renders "today" and "yesterday" for the same last-seen fact via three independently-written day-math algorithms on one page                                                          | PR #670 — Codex round 2 clean on `b369f4ab`; live-verified (Pepperfry `updates.pepperfry.com`, a 14h-old message reads "yesterday") | #670 |
+| 🟡  | QA-archive-20260828-04 | P3  | "Show this in the row next time" describes where the preview renders, not that it skips the dialog, and not that the choice is per-verb                                                            | PR #670 — Codex round 2 clean on `b369f4ab`, pushed & opened, awaiting merge                                                        | #670 |
+| 🔴  | QA-archive-20260828-05 | P3  | The same "preview before anything changes" idea is worded three different ways across the Triage row, Triage modal, and Senders bulk modal                                                         | Attempted, reverted — see note below. **Not in PR #670.**                                                                           |      |
+| 🟡  | QA-archive-20260828-06 | P3  | Activity's per-row source label uses the internal enum voice "VIA MANUAL" instead of "by you"                                                                                                      | PR #670 — Codex round 2 clean on `b369f4ab`, pushed & opened, awaiting merge                                                        | #670 |
+
+**QA-archive-20260828-05, attempted and reverted.** The proposed fix
+(matching the Triage row toolbar's static hint to the inline preview's
+eyebrow, both "Preview · before anything changes") is unsafe as filed: the
+toolbar hint and the inline preview render SIMULTANEOUSLY once a verb is
+selected (`triage-row.tsx` mounts `ActionToolbar` on `expanded` and
+`ActionPreviewPresentation` on `inlinePreview`, independently). Making the
+two strings byte-identical broke `triage-screen.actions.test.tsx` with
+`TestingLibraryElementError: Found multiple elements with the text: Preview
+· before anything changes` — caught by running the existing suite, not by a
+negative control, because the collision is a NEW defect the fix itself
+would introduce, not the one being fixed. The original three-way "one
+concept, three headers" framing also doesn't hold up: the toolbar hint has
+no verb selected yet at its own render point (it renders before any K/A/U/L/D
+press), so "PREVIEW · ARCHIVE" isn't a coherent target for it the way the
+finding's proposed fix assumed. Reverted to the original `action-toolbar.tsx`
+text in both files (Triage and Sender Detail) — net diff on those two files
+is zero. Left `Open` would be wrong (nothing safe was identified to change);
+marked 🔴 instead — this needs a design call (rename one of the two texts to
+something that doesn't collide, or accept the toolbar hint is a different
+kind of copy than a preview header and leave it as is), not a wording tweak.
+
+### Review rounds — QA-01 / QA-02 / QA-03 / QA-04 / QA-06
+
+One diff, reviewed as one unit (all five ride the same PR).
+
+| round | ran against | verdict         | what it returned                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----- | ----------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `19f01ef6`  | **substantive** | Label missing "avg" + a stale doc comment (-01); zero test coverage for the new age-label branch (-02); the fix's own comments claimed a "Last seen" stat tile coexists on Sender Detail and that two lists share `last_seen_at` — both false (`StatsStrip` was replaced by `KpiStrip`, unmounted); a real hydration-mismatch risk left in place (`formatRelative` still called `Date.now()` ambiently on a page with no `ssr:false` boundary) (-03); mobile branch of the source-label fix had no test (-06). All fixed in `b369f4ab`. |
+| 2     | `b369f4ab`  | **CLEAN**       | Independently re-verified the hydration fix is correct and complete, the TZ-independent test's math holds under 5 timezones tried by hand (UTC, Pacific/Kiritimati, America/Los_Angeles, Asia/Kathmandu, Australia/Lord_Howe), and agreed with all four declined-scope calls below. Nothing to act on — round ends here.                                                                                                                                                                                                                |
+
+**Declined, on record (Codex agreed with each in round 2, flagged as separate pre-existing debt, not blockers):**
+
+- `scoredAgeLabel` returning `null` for a future-skewed `scoredAt` — documented-intentional (`engine-read-age.ts`'s own comment), shared by the two pre-existing call sites this fix's third call site copies exactly.
+- A `null` (not `undefined`) `scoredAt` rendering "Scored ~57 years ago" via epoch-zero — pre-existing gap in the shared helper (typed `string | undefined`, not `| null`, and no call site guards `null`). Worth its own fix; not touched here.
+- The remember-preference checkbox's `aria-label` overrides its descendant explanation sentence for screen readers — the exact same structural pattern existed pre-`19f01ef6`; this diff changed only the string. A real accessibility gap, needs `aria-describedby`, not this diff's scope.
+- An unawaited preference-persistence `PATCH` with no `onError` (`triage-screen.tsx`, `use-me-settings.ts`) can leave the checkbox's local state out of sync with what's actually persisted on failure — unrelated code path to the copy-only change QA-04 made.
+
+### QA-archive-20260828-02 — frozen rationale, no age, inside the one dialog that gates a real mutation
+
+**Not independently live-verified this run — sourced from `defect-class-sweeper`,
+file:line only, no browser confirmation.** Flagged at P2 rather than dropped
+because of where it sits: `apps/web/src/features/triage/action-preview-presentation.tsx:241`
+and `apps/web/src/features/screener/decide-preview.tsx:297` render the frozen
+`triage_decisions.reasoning` sentence with no `ageLabel`, while
+`triage-row-expanded.tsx:121`, `triage-row.tsx:423`, `screener-row.tsx:347`,
+and `recommendation-banner.tsx:60` all carry one for the identical text. The
+seed for the wider class — a rationale's embedded numbers (`monthlyVolume`,
+read rate, unsubscribe channel) freezing at score time while a live
+recomputation of the same fact renders elsewhere — was independently
+confirmed live this run for one instance (see Refuted table: the founder
+run's own "36 vs 109" read was a misattribution, but the underlying
+frozen-vs-live split is real and documented in ADR-0037's own "Negative"
+consequences section). Re-scoring cadence: `RESCORE_TTL_MS = 7d`
+(`score.worker.ts:112`), but the sweep found **no producer actually enqueues
+the sweep** — refresh is lazy, on-open, once per sender per tab session
+(`use-refresh-stale-read.ts:11`) — so a sender never re-opened can carry an
+arbitrarily stale rationale into the one dialog a destructive verb cannot
+bypass. **Needs a live re-drive before this moves past Open**, since the
+sweeper has no shell/DB access to confirm the staleness magnitude on a real
+row.
+
+**Siblings, same mechanism, not independently filed (sweeper output, full
+list in the agent transcript):** read rate stated in the frozen sentence vs.
+`triage.read-service.ts:751`'s live figure on the same expanded row;
+unsubscribe channel named in the frozen `ruleLabel` vs. `senders.unsubscribe_method`
+(unmeasured — sweeper gave the exact SQL); the template-fallback path
+(`generated_by='template'`) carries the identical two numbers, so it is not
+LLM-only.
+
+**Live-verified after the fix.** Opened the D226 preview for Victoria's
+Secret Panty Party from `/triage` — "Why we suggested this:" now shows
+"Scored today" beside it, matching the pattern already used on
+`triage-row-expanded.tsx` and `triage-row.tsx`. The "needs a live re-drive"
+condition above is satisfied; this moved to `PR ready` on the strength of
+that plus Codex's round-2 clean (see Review rounds above).
+
+### QA-archive-20260828-03 — three day-math algorithms disagreeing on Sender Detail
+
+**Not independently live-verified this run — sourced from `defect-class-sweeper`,
+file:line only.** `apps/web/src/features/senders/detail/sender-detail-page.tsx:1428`
+uses `Math.round(ms/86400000)` (round-to-nearest, a fourth variant the sweep
+had not seen elsewhere), `apps/web/src/features/senders/detail/data.ts:39`
+uses `Math.floor(...)`, and `apps/web/src/features/senders/api/adapters.ts:111`
+uses the calendar-midnight `daysSince` shared with the Senders grid
+(post-#663). Three independent implementations on one page can render
+"today" and "yesterday" for the same underlying `last_seen_at` value — the
+sweeper's worked example: a message 13 hours old rounds to "yesterday" and
+floors to "today". This is a sibling of the seed candidate filed this run
+(Senders grid vs. action-preview header, ≤1-day disagreement near local
+midnight — see the ledger's Refuted table, where the narrower claim survived
+adversarial review but the reviewer doubted it cleared the filing bar on its
+own). Sender Detail is a stronger instance because both numbers are visible
+on ONE page with no user action between them, not two separate widgets a
+reader might not compare. **Needs a live re-drive** (open Sender Detail for
+a sender last seen 12-20 hours ago local time) before this moves past Open.
+
+**Siblings, same mechanism, not independently filed:** Triage's "Scored
+{today/yesterday}" engine-age line (`packages/shared/src/copy/engine-read-age.ts:39`,
+24h-floor) beside `lastSeenLabel` (calendar-round) on the same row; Autopilot
+match-reason copy (`score.worker.ts:995`, `autopilot-signals.ts:213`, both
+24h-floor, rendered via `autopilot-presets.ts:305,330`) which never meets the
+calendar-round card it explains; two byte-identical `relativeTime` helpers
+(`activity-screen.tsx:3624`, `followups-screen.tsx:594`) that currently agree
+but have no shared source; and unrounded fractional-day thresholds gating
+`dormant`/quiet classification (`senders.read-service.ts:1987`,
+`followup.read-service.ts:264`) — sizing needs
+`SELECT count(*) FROM senders WHERE extract(epoch from now()-last_seen_at)/86400 BETWEEN 89.5 AND 90.5;`
+per the sweeper, not yet run.
+
+**Live-verified after the fix, and the original filing corrected.** The
+"Last seen" stat tile claimed above does not actually coexist on this page —
+`StatsStrip` was replaced by `KpiStrip` (which has no last-seen stat) before
+this run; Codex caught the misattribution during round-1 review and the
+worklist's own comments were corrected in `b369f4ab`. The real, narrower
+claim — Recent Messages and the Decision Timeline disagree with each other,
+not with a third tile — reproduced live: a message from `updates.pepperfry.com`
+received 2026-08-27 22:21:08 PDT (14h before the check) read "yesterday" in
+Recent Messages after the fix, where the pre-fix `Math.round` timeline
+algorithm would have read "today." The "needs a live re-drive" condition is
+satisfied; this moved to `PR ready` on the strength of that plus Codex's
+round-2 clean (see Review rounds above).
+
+### QA-archive-20260828-01, -04, -05, -06 — filed from `usability-editor`, not put through a dedicated `finding-refuter`
+
+**Scope/budget call, same as `QA-undo-20260828-04`'s precedent** — each item
+below is copy I drove and captured verbatim live this run, then handed to the
+editor for source-tracing and exact replacement text; none of the four was
+independently re-attacked by a `finding-refuter`. All are P2/P3: friction and
+inconsistency, nothing unreachable, nothing false enough to block the job.
+
+- **-01, P2 — "33 PER MONTH" is `round(last90d / 3)`** (`apps/web/src/features/triage/data.ts:149`)
+  shown unwindowed, while the adjacent read-rate tile on the same row states
+  its own window (`triage-row-expanded.tsx:62`, "READ RATE 90D"). Propose
+  `"33 /mo avg · 90d"`.
+- **-04, P3 — the remember-preference checkbox undersells what it does.**
+  Current: "Show this in the row next time — the same preview will appear
+  below the sender. You can change this in Settings." It flips
+  `rememberPreference[verb]` to `'inline'` per verb
+  (`apps/web/src/features/triage/triage-screen.tsx:1068`) — it skips the
+  modal dialog, not just relocates it, and the choice is Archive-only, not
+  global. Propose "Skip this dialog for Archive — the preview shows in the
+  row instead. Change in Settings."
+- **-05, P3 — one concept, three headers.** Triage row: "PREVIEW BEFORE
+  ANYTHING CHANGES". Triage modal: "PREVIEW · ARCHIVE". Senders bulk modal:
+  "PREVIEW · BEFORE ANYTHING CHANGES". Propose "PREVIEW · ARCHIVE" (or the
+  active verb) on all three.
+- **-06, P3 — Activity's source column reads "VIA MANUAL"**
+  (`apps/web/src/features/activity/activity-screen.tsx:2219,2524`), the only
+  enum-voice string on a page that otherwise speaks in plain sentences.
+  Propose "by you".
+
+Also observed, not filed as new: the toast's full timezone+minute timestamp
+("ACTIVITY UNDO UNTIL SEP 27, 2026, 11:07 AM PDT") and the D226 dialog's
+"Why do I review this before confirming?" disclosure (which restates
+everything already on screen) are verbose but not incorrect — logged in the
+editor's transcript, not given their own rows. The 375px Archive-preview
+confirm-button-below-fold problem was independently re-observed this run but
+is **not** re-filed here — it is the still-open `QA-triage-20260827-11`,
+carried on the `triage` job since that is where it was first filed.
+
+**Regression test:** none of the six — copy/labelling consistency and a
+staleness gap, not logic defects with a clean red/green boundary.

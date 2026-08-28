@@ -1,7 +1,9 @@
 import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import type { CSSProperties, ReactNode } from 'react';
 
+import { useNow } from '@/lib/use-now';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 
@@ -77,6 +79,15 @@ export function ActionPreviewPresentation({
   detailSlot,
   quotaRemaining,
 }: ActionPreviewPresentationProps) {
+  // `useNow`, not an ambient `new Date()` — same hydration reasoning as
+  // `TriageRowExpanded`, which this age label is copied from (D25,
+  // founder 2026-08-19): the reasoning sentence freezes at score time,
+  // the impact count above is live, and this dialog is the one place a
+  // destructive verb cannot be confirmed without seeing both
+  // (QA-archive-20260828-02).
+  const now = useNow();
+  const ageLabel =
+    row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
   const subject = row.senderName;
   const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
   const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
@@ -237,7 +248,28 @@ export function ActionPreviewPresentation({
             fontFamily: font.sans,
           }}
         >
-          <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this: </span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this:</span>
+            {ageLabel !== null && (
+              <span
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 9.5,
+                  color: color.fgMuted,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {ageLabel}
+              </span>
+            )}
+          </div>
           {row.reasoning}
         </div>
       )}

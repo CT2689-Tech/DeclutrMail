@@ -22,10 +22,11 @@ much as the findings that survived. P0/P1 survivors are also appended to the
 
 ## Runs
 
-| job    | date       | personas                                                   | broke it? | findings (new / inherited)                                                                                                              | notes                                                                                                                                                                                                                                                                                                                                                        |
-| ------ | ---------- | ---------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| triage | 2026-08-27 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 15 new / 0 inherited (first triage run); 4 refuted before filing. 3 P1 + 1 P2 also in `FINDINGS.md`; all 15 in `docs/qa/qa-worklist.md` | Drove list → expanded card → preview → mutation → undo on the real mailbox. D226 held on every reachable path. `U` never pressed. Full detail below.                                                                                                                                                                                                         |
-| undo   | 2026-08-28 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 4 new / 0 inherited (first undo run); 3 refuted before filing. 1 P1 also in `FINDINGS.md`; all 4 in `docs/qa/qa-worklist.md`            | A prior same-day attempt aborted mid-run — a concurrent session raced the same mailbox/DB and the round-trip's attribution became unverifiable; no row was written for it, restart below has the detail. Archive→Undo and Delete→Undo both driven clean afterward, single session, verified via Gmail MCP + `action_jobs`/`undo_journal`. `U` never pressed. |
+| job     | date       | personas                                                   | broke it? | findings (new / inherited)                                                                                                              | notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------- | ---------- | ---------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| triage  | 2026-08-27 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 15 new / 0 inherited (first triage run); 4 refuted before filing. 3 P1 + 1 P2 also in `FINDINGS.md`; all 15 in `docs/qa/qa-worklist.md` | Drove list → expanded card → preview → mutation → undo on the real mailbox. D226 held on every reachable path. `U` never pressed. Full detail below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| undo    | 2026-08-28 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 4 new / 0 inherited (first undo run); 3 refuted before filing. 1 P1 also in `FINDINGS.md`; all 4 in `docs/qa/qa-worklist.md`            | A prior same-day attempt aborted mid-run — a concurrent session raced the same mailbox/DB and the round-trip's attribution became unverifiable; no row was written for it, restart below has the detail. Archive→Undo and Delete→Undo both driven clean afterward, single session, verified via Gmail MCP + `action_jobs`/`undo_journal`. `U` never pressed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| archive | 2026-08-28 | first-timer · scared · heavy · editor (`usability-editor`) | yes       | 6 new / 0 inherited (first archive run); 3 refuted before filing. All P2/P3 — none in `FINDINGS.md`; all 6 in `docs/qa/qa-worklist.md`  | Own worktree stack (API :4001, web :3002 — :4000/:3000/:3001 already held by other live sessions on this shared dev box; never ran `dev-up.sh --stop`). Drove Triage single-row archive and Senders bulk-select archive to completion, both preview→mutation→undo verified via Gmail MCP + `action_jobs`. Tried hardest to break preview enforcement (hand-crafted `POST /api/actions` with zero preceding `GET /api/actions/preview` call — succeeded, 47 real messages archived) and a same-Idempotency-Key double-submit (correctly deduped, no bug) — see Refuted below for why the preview-bypass didn't survive review. Mailbox switch (primary ↔ `.crypt` account) held with no cache leak. Mobile 375px: row/toolbar layout clean; the preview-modal tap sequence hit repeated browser-pane click timeouts on this session's mobile emulation and is recorded as inconclusive, not a product finding. Two-tab race, worker-kill mid-job, and an enormous-sender (500+) test were skipped for time; not driven. `U` never pressed. Full detail below. |
 
 ### `triage` — 2026-08-27
 
@@ -290,6 +291,141 @@ regions of shared state — but neither preflight nor this file format has any
 mechanism that would catch two sessions targeting the _same_ row or the _same_
 message at the same time beyond luck. Worth a founder decision on worktree
 isolation per session, not attempted here.
+
+### `archive` — 2026-08-28
+
+**Walked:** Triage single-row Archive (Temu, K/A/U/L/D expanded toolbar,
+D226 preview, confirm, undo, re-confirm), Senders grid bulk-select Archive
+(RetailMeNot, 3-message blast radius, same preview→mutation→undo cycle),
+keyboard-only (`A` key opens the same preview modal as a click; `Esc`
+cancels cleanly with zero mutation), mailbox switch mid-session (primary ↔
+`chintan.a.thakkar.crypt@gmail.com`, no stale data leaked either direction),
+and a deliberate attempt to defeat D226 by calling the mutation API directly
+without ever calling preview.
+
+**Stack note.** `:4000`/`:3000` were already running another checkout's
+worktree stack (confirmed via `lsof -p <pid> | awk '$4=="cwd"'` — cwd pointed
+at the main checkout, not this worktree) and `:3001` was held by a third,
+unrelated worktree. Per `parallel-worktree-dev-stack` precedent: never ran
+`dev-up.sh` (it force-kills those ports), instead ran this worktree's own
+`PORT=4001 pnpm --filter @declutrmail/api dev` + `apps/web/.env.local` with
+`NEXT_PUBLIC_API_URL=http://localhost:4001` + `next dev -p 3002`, reusing the
+already-running shared worker (same code, same queues — starting a second
+worker on the same BullMQ queues is the real hazard, not sharing one).
+Recorded `.dev-db-identity` fresh for this worktree via `assert-dev-db.sh
+--record` before any `--exec`.
+
+**Cross-session collision, disclosed by the other party.** Mid-run, session
+`declutrmail-3e` (running `/ct-qa triage` concurrently against the same
+shared dev DB and the same real mailbox) messaged to flag that its own
+archive+undo pair on `em.abercrombie.com` (11:06:15/11:09:47) would appear in
+this run's `action_jobs` history, and to confirm this run's Temu/behno.com
+rows weren't theirs. Checked: correct on both counts — none of this run's
+filed evidence touches Abercrombie, and the Temu/behno.com action_jobs rows
+used as evidence below are this run's own (confirmed by literal `id`,
+sender, and timestamp match against what this run actually clicked/curled).
+The general point stands as a caveat, not a finding: some of the queue churn
+observed mid-run (sender/email counts ticking up between checks) may partly
+be the other session's concurrent triage decisions rather than organic mail
+arrival — noted, not relied on as evidence for anything filed.
+
+**The preview-bypass attempt, in full, because it is the most load-bearing
+thing this run tried.** Monkey-patched `window.fetch` in the browser tab
+(read-only instrumentation, not a product change) to capture the exact body
+the real product sends on a normal Archive click:
+`{"selector":{"type":"sender","senderId":"..."},"primary":{"type":"archive","olderThanDays":null},"override":false}`.
+Replayed that exact body via a hand-crafted `curl POST /api/actions` (valid
+session cookie + CSRF header + fresh `Idempotency-Key`) for `behno.com` (47
+inbox messages) — from a plain terminal, no browser tab open on that sender
+at all, so no `GET /api/actions/preview` call happened anywhere for this
+sender before the POST. Server returned `201 Created`. Confirmed via
+`assert-dev-db.sh --exec`: `action_jobs` row `verb=archive, direction=forward,
+status=done, affected_count=47`. Confirmed via Gmail MCP `search_threads
+from:behno.com in:inbox`: zero results (down from 47). Undid via
+`POST /api/undo/<undo_token>`, re-verified via Gmail MCP: all 47 messages
+back in inbox with original `UNREAD`/`IMPORTANT`/`INBOX` labels intact.
+Separately fired the identical body twice with the same `Idempotency-Key` —
+correctly deduped to one `action_jobs` row (`queued` → `executing` on the
+second response, no double-archive) — held, not a bug.
+
+**Why this did not survive as a finding.** Sent to `finding-refuter`
+independently of the sweep. Verdict: REFUTED. The reviewer's core point:
+D226 ("action sheet → preview → mutation → undo") is a rendering-order
+guarantee for the product's own UI, enforced correctly at the only layer
+where it can mean anything (the frontend's call sequence, backed by
+`architecture-guardian` and the `require-preview-before-mutation.sh`
+authoring lint) — not an authorization control. `GET /api/actions/preview`
+is itself an unguarded, side-effect-free read available to any caller who
+can already `POST`, so a "preview token" would be minted by the same
+authenticated caller for itself; it would defend against nobody, because the
+population it would gate is empty (the caller is either the account owner
+using their own session, or an attacker who already has that session, in
+which case CSRF+session — the actual boundary — already failed). The
+reviewer's own strongest objection, not itself filed: CLAUDE.md §2.6 records
+this exact shape — a guard on the request side, nothing on a non-UI producer
+— as the root cause of a real prior incident (the Brief cron's Free/Plus
+Anthropic leak). A `defect-class-sweeper` run in parallel (unaware of the
+refutation) found five structurally-identical instances — Screener decide,
+Autopilot rule-approve, Snoozed wake, unsubscribe-intent, and the bundled
+secondary-action path — all sharing the same no-server-linkage shape. Given
+the refuter's reasoning, none of the six are filed as bugs. The one thread
+worth pulling that the refutation does NOT close: Autopilot's only preview is
+a rule-level dry-run at rule-creation time, not a per-execution preview — so
+for a rule that auto-approves and runs unattended, no human necessarily ever
+sees a preview for the specific messages a given run moves, which is closer
+to what D226 actually cares about than the curl-replay framing above. That
+is a design question for the founder, not a QA finding, and is not filed
+here or in the worklist.
+
+**The other two candidates that also didn't survive**, in briefer form (full
+grounds on the worklist's Refuted-adjacent notes are folded into the two rows
+below rather than duplicated here):
+
+- **Triple "last seen" mismatch (RetailMeNot: grid "1d" / preview header
+  "today" / preview body "273 days old").** PARTIALLY REFUTED. The "273
+  days" figure is a deliberately different, inbox-scoped metric (already
+  documented in `MISTAKES.md` as its own prior incident) — comparing it to
+  `last_seen_at` was this run's own mistake, not a product bug. What
+  survives is narrower and weaker than filed: the grid card and the preview
+  header use two different day-rounding conventions on the identical
+  `last_seen_at` value and can disagree by exactly one day inside a
+  sub-24-hour, cross-midnight window (confirmed via `assert-dev-db.sh
+--exec` against the live row: elapsed 20h57m, floor→0/"today",
+  calendar-round→1/"1d"). The reviewer's own read: this may not clear the
+  bar for a filed row on its own — dropped, not filed, but recorded in the
+  worklist's `archive` section as context for `QA-archive-20260828-03`,
+  which is the same mechanism on a stronger, single-page instance.
+- **Rationale (36/mo) vs. stat badge (109) for Victoria's Secret.** REFUTED
+  outright — this run's own analysis error. `monthlyVolume` on the Senders
+  API is a knowingly-misleadingly-named 90-day WINDOW count (documented in
+  ADR-0037), not a monthly figure; the Triage card's own "36 per month" tile
+  is the correct `round(109 / 3)` derivation of that same 90-day count,
+  confirmed against a live DB read of the sender's actual `triage_decisions`
+  row (12h21m old, not stale). All three numbers this run saw were
+  consistent once correctly attributed; there was no product bug to file.
+
+**Six survivors filed** (`docs/qa/qa-worklist.md`, `## archive`): two
+sourced from the `defect-class-sweeper` output and explicitly marked as not
+independently live-verified this run (frozen-rationale-with-no-age-label
+inside the D226 dialog itself; a three-way day-math self-contradiction on
+Sender Detail), and four sourced from `usability-editor` against copy this
+run captured live and verbatim, per the same "scope/budget call, not put
+through a dedicated `finding-refuter`" precedent `QA-undo-20260828-04`
+already set. One already-open row from the `triage` job
+(`QA-triage-20260827-11`, the 375px confirm-below-fold problem) was
+independently re-observed on the Archive preview specifically and is
+re-confirmed there rather than re-filed under `archive`.
+
+**Genuinely blocked / skipped, named:** two-tab race (same action from two
+tabs) and worker-kill-mid-job were not driven — time, not access; an
+enormous-sender test (500+ inbox messages) was skipped in favor of smaller,
+faster-to-verify senders, since blast radius doesn't change what the test
+proves. The mobile 375px preview-modal TAP sequence (as opposed to the row
+layout, which was checked and is clean) hit repeated browser-pane click
+timeouts specific to this session's mobile-viewport emulation and is
+recorded as inconclusive, not attempted further — not filed as a product
+finding, since desktop clicks on the identical control worked without
+incident throughout the same session.
 
 ## Outstanding restores
 

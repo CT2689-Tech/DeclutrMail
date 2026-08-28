@@ -344,6 +344,20 @@ describe('TriageRow — every protection reason names its evidence', () => {
   });
 });
 
+describe('TriageRow — the volume tile discloses its 90-day derivation (QA-archive-20260828-01)', () => {
+  // `monthlyVolume` is `round(last90dMessages / 3)` (data.ts) — a
+  // 90-day-derived average, not a measured monthly count. A bare
+  // "per month" label read as one; the sibling "read rate 90d" tile
+  // already names its window, so this one should too.
+  it('labels the volume tile with its window, matching the read-rate tile convention', () => {
+    const row = rowById('t-oldnavy'); // monthlyVolume: 48
+    renderRow(row, { expanded: true });
+
+    expect(screen.getByText('per month 90d avg')).toBeInTheDocument();
+    expect(screen.getByText('48')).toBeInTheDocument();
+  });
+});
+
 describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
   // The BE has always sent `null` when the sender mailed nothing in the
   // 90-day window; the FE typed it `number` and every consumer did

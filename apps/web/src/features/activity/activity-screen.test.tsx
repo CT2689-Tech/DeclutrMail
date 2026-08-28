@@ -1776,7 +1776,19 @@ describe('ActivityScreen — D57 rule attribution', () => {
     await waitFor(() => expect(screen.getByText('by Autopilot')).toBeInTheDocument());
   });
 
-  it('keeps the "via <source>" form for non-autopilot rows', async () => {
+  it('keeps the "via <source>" form for non-autopilot, non-manual rows', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ source: 'triage' })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('via Triage')).toBeInTheDocument());
+  });
+
+  it('reads manual rows as "by you", not the raw source enum (QA-archive-20260828-06)', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -1785,7 +1797,8 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('via Manual')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('by you')).toBeInTheDocument());
+    expect(screen.queryByText('via Manual')).not.toBeInTheDocument();
   });
 });
 
@@ -2003,6 +2016,22 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
     expect(within(dialog).getByRole('button', { name: 'Autopilot' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Archived' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /view results/i })).toBeInTheDocument();
+  });
+
+  // The mobile card computes its own `sourceAttribution` independently of
+  // the desktop grid's inline ternary (QA-archive-20260828-06) — this
+  // pins the mobile copy too, since nothing else does.
+  it('reads manual rows as "by you" on the mobile card as well as desktop', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ source: 'manual' })], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('by you')).toBeInTheDocument());
+    expect(screen.queryByText('via Manual')).not.toBeInTheDocument();
   });
 
   it('a source chip inside the drawer drives the filter URL', async () => {

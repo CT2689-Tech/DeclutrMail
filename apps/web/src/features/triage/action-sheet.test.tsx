@@ -134,7 +134,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
           onConfirm={() => {}}
         />,
       );
-      expect(html).toContain('Show this in the row next time');
+      expect(html).toContain(`Skip this dialog for ${verb}`);
     }
   });
 
@@ -151,7 +151,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     );
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.
-    expect(html.toLowerCase()).toContain('same preview will appear below the sender');
+    expect(html.toLowerCase()).toContain('the preview shows in the row instead');
   });
 
   it('keeps Delete in the full confirmation sheet and states both recovery paths', () => {
@@ -170,7 +170,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     expect(html).toContain('Gmail Trash');
     expect(html).toContain('Activity Undo');
     expect(html).toContain('up to 30 days');
-    expect(html).not.toContain('Show this in the row next time');
+    expect(html).not.toContain('Skip this dialog for');
   });
 
   it('states the undo window on a Delete sheet instead of hedging', () => {
@@ -337,7 +337,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     expect(backlog).toHaveAttribute('aria-checked', 'true');
 
     const remember = screen.getByRole('checkbox', {
-      name: 'Show this in the row next time',
+      name: 'Skip this dialog for Unsubscribe',
     });
     expect(remember).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(remember);
@@ -351,7 +351,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     renderUnsubSheet();
     const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
     const remember = screen.getByRole('checkbox', {
-      name: 'Show this in the row next time',
+      name: 'Skip this dialog for Unsubscribe',
     });
     fireEvent.click(backlog);
     fireEvent.click(remember);

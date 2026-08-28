@@ -7,6 +7,8 @@
  * unification) — this module is prod-consumed only.
  */
 
+import { daysSince } from '../data';
+
 /**
  * Compact size label — 1024 → "1KB", 8742 → "9KB", 2_500_000 → "2.4MB".
  *
@@ -33,11 +35,18 @@ export function relTime(days: number): string {
   return `${Math.round(days / 365)}y ago`;
 }
 
-/** Relative time for an ISO-8601 string. */
+/**
+ * Relative time for an ISO-8601 string.
+ *
+ * Delegates its day-count to the shared `daysSince` (calendar-midnight,
+ * not an elapsed-24h floor) instead of its own copy of that math — this
+ * page's Decision Timeline (`sender-detail-page.tsx`'s `formatRelative`)
+ * used a third, independently-written day-count and could print "today"
+ * for one row while this list printed "yesterday" for a message a few
+ * hours apart (QA-archive-20260828-03).
+ */
 export function relTimeFromIso(iso: string, now: Date = new Date()): string {
-  const then = new Date(iso).getTime();
-  const days = Math.max(0, Math.floor((now.getTime() - then) / (1000 * 60 * 60 * 24)));
-  return relTime(days);
+  return relTime(daysSince(iso, now.getTime()));
 }
 
 /**

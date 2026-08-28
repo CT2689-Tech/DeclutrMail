@@ -141,7 +141,12 @@ export interface TriageDecisionRow {
    */
   protectionEvidenceCurrent?: boolean | null;
 
-  /** Volume signal — messages/month, recent cadence (4-week average). */
+  /**
+   * Volume signal — `round(last90dMessages / 3)`, a 90-day-derived
+   * average, not a measured rolling monthly count (Codex review,
+   * QA-archive-20260828-01 — this doc comment previously called it a
+   * "4-week average", which doesn't match the actual derivation below).
+   */
   monthlyVolume: number;
   /**
    * Raw last-90-day message count. Lets the FE render an honest

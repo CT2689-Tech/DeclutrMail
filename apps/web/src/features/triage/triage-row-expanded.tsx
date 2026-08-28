@@ -57,7 +57,11 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
           gap: 12,
         }}
       >
-        <Stat label="per month" value={row.monthlyVolume.toLocaleString('en-US')} />
+        {/* Names the window AND that it's derived: `monthlyVolume` is
+            `round(last90dMessages / 3)` (data.ts), a 90-day-derived
+            average, not a measured monthly count — a bare "per month"
+            reads as one (QA-archive-20260828-01, Codex review). */}
+        <Stat label="per month 90d avg" value={row.monthlyVolume.toLocaleString('en-US')} />
         <Stat
           // Names the window: this cell sits in a grid beside
           // lifetime figures, so a bare rate reads as lifetime.
