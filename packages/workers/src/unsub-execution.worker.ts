@@ -447,7 +447,7 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
           message: 'Refused a one-click unsubscribe: UNSUB_SEND_ENABLED is not "true".',
         }),
       );
-      return this.recordSendDisabled(job.id);
+      return this.recordSendDisabled(job.id, mailboxAccountId, senderKey);
     }
 
     // SSRF pre-flight — scheme + resolved-address checks.
@@ -677,16 +677,46 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
    * the enqueue boundary, where no row is written at all; this catches a job
    * already queued when the flag changed.
    */
-  private async recordSendDisabled(actionId: string): Promise<UnsubExecutionResult> {
-    await this.deps.db
-      .update(actionJobs)
-      .set({
-        status: 'failed',
-        errorCode: UNSUB_SEND_BLOCKED_ERROR_CODE,
-        affectedCount: 0,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(actionJobs.id, actionId));
+  private async recordSendDisabled(
+    actionId: string,
+    mailboxAccountId: string,
+    senderKey: string,
+  ): Promise<UnsubExecutionResult> {
+    await this.deps.db.transaction(async (tx) => {
+      await tx
+        .update(actionJobs)
+        .set({
+          status: 'failed',
+          errorCode: UNSUB_SEND_BLOCKED_ERROR_CODE,
+          affectedCount: 0,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(actionJobs.id, actionId));
+
+      // RESOLVE the policy too. The first version updated only the job and
+      // left `unsub_status` at `requested` — so the job was terminally
+      // failed while the senders list and Screener went on showing
+      // "Unsubscribe requested" forever, claiming a send was in flight that
+      // had been refused and would never be attempted. A stranded pending
+      // state is a worse lie than a blunt terminal one.
+      //
+      // `failed` rather than a state of its own, following the pattern the
+      // outcome writer already uses: `unconfirmed` and `action_required`
+      // both ride `failed` and are separated by `error_code` (D252). It is
+      // honest about what the user needs to know — they are still on the
+      // list — and `UNSUB_SEND_DISABLED` on the job says why.
+      await tx
+        .update(senderPolicies)
+        .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        );
+    });
+    // Still no activity row and no outbox event: those record an ATTEMPT,
+    // and nothing was attempted.
     return { outcome: 'failed', httpStatus: null, alreadyDone: false };
   }
 
