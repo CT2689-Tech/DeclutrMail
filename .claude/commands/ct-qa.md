@@ -22,49 +22,78 @@ screens that spans, then start. Never stop to ask.
 - `/ct-qa <job>` — that job.
 - `/ct-qa status` — print the ledger, run nothing.
 - **Bare `/ct-qa`** — print the menu below in priority order, annotated with
-  each job's ledger state (`✔ done <date>` / `🐛 <n> open` / blank), then start
-  the highest-priority job not yet done.
+  each job's state — `✔ last run <date>` from the ledger, `🐛 <n> open` from the
+  worklist — then start the highest-priority job not yet done. Counts only: do
+  not print the open rows themselves, and do not read them, or you have primed
+  the run you are about to start (§1).
 
 ## Safety — read before the job list
 
-**No run executes an unsubscribe, on any job, by any route — and `U` is never
-pressed.** Not the confirm control, not the `U` shortcut at all, not a `POST`
-to the actions API with that verb, not enqueueing or un-pausing the job by
-hand.
+**`U` may be pressed ONLY after this run has proved, in this process, that the
+send is refused.** Unproved means unpressed — not the confirm control, not the
+shortcut, not a `POST` to the actions API with that verb, not enqueueing or
+un-pausing the job by hand.
 
 `UnsubExecutionWorker` performs a real RFC 8058 one-click `POST` to the
-sender's URL, carrying a per-send token, from the founder's address. There is
-no dry-run flag and no kill switch. Once it is queued, stopping the worker does
-not prevent the send — it defers it until a worker returns, and this command's
-own preflight starts one.
+sender's URL, carrying a per-send token, from the founder's address. It is
+irreversible, and stopping the worker does not prevent a queued send — it
+defers it until a worker returns, and this command's own preflight starts one.
 
 This block sits above the job list because the hazard is not confined to one
-job. `U` is a triage shortcut: it is reachable from Triage, Senders, Sender
-detail, Brief and Screener. Six earlier drafts put this rule in a numbered
-section scoped to the unsubscribe job while the break list told every run to
-press `K/A/U/L/D`. **A safety rule scoped narrower than its hazard is not a
-safety rule.**
+job. `U` is reachable from Triage, Senders, Sender detail, Brief and Screener.
+Six earlier drafts put the rule in a section scoped to the unsubscribe job
+while the break list told every run to press `K/A/U/L/D`. **A safety rule
+scoped narrower than its hazard is not a safety rule.**
 
-**`U` is not pressed at all.** Not "far enough to see the preview" — an
-earlier draft said exactly that, and it is circular: it assumes the preview
-renders and gates on nothing, while whether the preview renders is one of the
-things this tool exists to find out. If D226 is broken on that surface, or D34's
-remember-preference has the sheet skipped, the keystroke IS the send. A probe
-whose safety depends on the property it is testing is not a probe.
+### The gate — two checks, in this order
 
-So the unsubscribe surface is reviewed by **reading, not driving**: is the
-control present, labelled with the canonical verb, visually distinguished from
+The ban lifted on 2026-08-28 because a real mechanism now exists. Sending
+requires `UNSUB_SEND_ENABLED` to be exactly `true`, read explicitly — unset,
+empty, `1`, `TRUE` and `yes` all refuse. **Silence means do not send**, and the
+refusal happens at the ENQUEUE boundary: the API answers `409
+UNSUB_SEND_DISABLED` before any `action_jobs` row is written, so there is
+nothing queued, nothing resumable, and nothing that changes meaning if the
+flag is flipped later.
+
+**1 — Before pressing anything, prove the flag is absent.** Zero, or the gate
+fails and `U` stays unpressed:
+
+```bash
+grep -c '^UNSUB_SEND_ENABLED=true' .env.local
+```
+
+**2 — Then press `U` on exactly ONE sender, and read the result before
+pressing a second.** The request must be refused, and it must leave no trace:
+
+```bash
+./scripts/assert-dev-db.sh --exec "SELECT count(*) AS unsub_rows FROM action_jobs WHERE verb='unsubscribe' AND created_at > now() - interval '5 minutes'"
+```
+
+The UI says **"Unsubscribe sending is turned off in this environment — nothing
+was sent."** and the count is **0** → the refusal is live in the running API;
+drive the surface freely.
+
+**Anything else stops the run.** A row that exists at all means the enqueue
+boundary did not refuse; a `status='done'` row means a send went out. Say so to
+the founder immediately rather than continuing.
+
+Check 1 is what makes the first press safe; check 2 is what makes the rest
+safe. Neither alone is enough: reading the env proves the condition but not
+that the running process enforces it, and the outcome check cannot come first
+because it needs a press to produce an outcome. **Do not collapse them.** An
+earlier draft gated on "far enough to see the preview", which was circular —
+it assumed the preview renders while whether it renders is one of the things
+this tool exists to find out.
+
+Never set `UNSUB_SEND_ENABLED=true` during a QA run, for any reason. It exists
+so production can send, and locally so a fake target you control can be
+smoked — neither is QA of the product.
+
+If either check fails, the surface falls back to **reading, not driving**: is
+the control present, labelled with the canonical verb, visually distinct from
 the safe ones; does the sender row carry the channel it claims; is one-click
-distinguished from `mailto:`, which is manual at launch (D230). Whether the
-preview actually renders for `U` is checked in the Storybook story and the
-component, and recorded as read-not-driven. It stays that way until the kill
-switch below exists.
-
-There is no standalone `unsubscribe` job. The founder's original carve-out —
-drive it to the confirm step, never send — could not be enforced by wording,
-which is what six review rounds demonstrated. Restoring it needs a real
-mechanism, not a firmer sentence: a dev-only refusal inside
-`UnsubExecutionWorker`. Filed in `FOUNDER-FOLLOWUPS.md`.
+distinguished from `mailto:`, which is manual at launch (D230). Record it as
+read-not-driven.
 
 ## The jobs, in the order they should be QA'd
 
@@ -328,12 +357,199 @@ instance from trust 8 to trust 10.
 See **Safety**, above the job list. It is stated once, before the jobs, because
 it binds every job — not only the one that was named after it.
 
-To see the shape of a queued unsubscribe row, read an existing one. Do not
-manufacture one. A probe that would require executing the verb does not run:
-write `n/a — would fire a real unsubscribe` in the ledger and move on. This is
-the one place in this document where an unexplored gap is the right outcome.
+Once the two-check gate passes, unsubscribe is an ordinary verb for this run:
+drive it, break it, and hold it to D226 like Archive and Delete. Every job's
+break list applies to it. Until the gate passes it is read-not-driven, and
+`n/a — send refusal unproved` goes in the ledger.
 
-## Done means done — six boxes, not vibes
+## 8 — What survived, and who fixes it
+
+A run's product is not the findings you had. It is **the ones still standing
+after the refuters**. Say so explicitly, in one block, before anything else in
+the closing summary:
+
+```
+New: <n>   Inherited and still open: <n>   Refuted or downgraded: <n>
+QA-<job>-<YYYYMMDD>-01 · P1 · <one line> · <the refuter's strongest surviving objection>
+QA-<job>-<YYYYMMDD>-02 · P2 · …
+```
+
+On a job's first run the inherited count is zero and the block still states it —
+a reader should never have to infer whether a run checked.
+
+Every survivor has an id and a row in the **QA worklist**,
+`docs/qa/qa-worklist.md` — a new id if this run found it, its existing one if
+this run inherited it. That file is the only place that tracks a finding's
+*fix* state; the ledger records what happened in a run and never changes, and
+`FINDINGS.md` holds the P0/P1 subset as open product questions. So a P0/P1 sits
+in all three and a P2/P3 in two, and none of those are duplicates — run record,
+open question, work item.
+
+**The id carries the date of the run that FIRST filed it**
+(`QA-triage-20260827-01`) — never the run that last touched it. A job is QA'd
+more than once and the ledger keeps every run, so a bare `QA-triage-01` collides
+with the next triage run and silently re-points every PR, sweep and refutation
+that cited it. Re-dating an inherited row does the same damage more slowly, so
+an inherited row keeps its original id for life.
+
+### A repeat run inherits before it files — but after it walks
+
+**Read the worklist at filing time, not at preflight.** "Inherits first" means
+first in the *filing* step, never first in the run. §1 and §2 forbid priming
+yourself before the walk, and a list of fifteen findings someone already wrote
+is the strongest prime there is — read it beforehand and you will spend the run
+confirming it, notice only what is on it, and call the screen fine everywhere
+else. Walk the job cold, gather candidates, refute them, and only then open the
+worklist to reconcile.
+
+The second run of a job does NOT start from an empty page. Before filing
+anything, read that job's existing worklist rows and settle each one, because a
+row still `Open` from last time is the same defect — re-filing it under a fresh
+id fakes a discovery and doubles the backlog:
+
+- still reproduces → leave the row and its id, append `· re-confirmed <date>`;
+- no longer reproduces → `Fixed <date>` if a PR is attributable to it, `Gone
+  <date>` if not, and say what you ran to check either way. A fix you did not
+  verify is not a fix, whoever wrote it, and "it stopped happening and nobody
+  knows why" is a different fact worth keeping separate;
+- reproduces differently, or new evidence refutes it → `Refuted <date>` on the
+  row, pointing at the ledger entry with the grounds. The row stays; rows are
+  never deleted.
+
+Closing a row this way does **not** need the founder — recording that work is
+unnecessary is not doing work. Moving a row toward a fix does.
+
+Only a genuinely new survivor gets a new id. Say in the closing summary how many
+were inherited versus new — a run that reports twelve findings when nine were
+already on the list is inflating its own yield.
+
+### You fix it. Codex reviews it adversarially.
+
+The run finds, the founder approves, **you write the fix**, and then **Codex
+attacks it**. The independent check does not disappear — it moves from writing
+the fix to reviewing it, which is the stronger place for it. A reviewer reading
+real code can see what a brief cannot describe: what you actually changed, what
+you did not, and what you broke on the way past.
+
+This replaces an earlier arrangement where Codex wrote the fix from a written
+brief. That failed twice for the same reason — the brief is a lossy channel. The
+runtime silently compressed a 111-line handoff to 28 lines, and an uncommitted
+brief did not exist inside the worktree at all. Reviewing a diff has no such
+channel: the diff **is** the artifact.
+
+What does not change is the reason the check exists. A session that has spent an
+hour arguing itself into a finding is the worst-placed reader to decide whether
+its own fix is right, and it will grade its own homework generously every time.
+So the review is not optional, not advisory, and not something you may waive
+because the diff is small.
+
+**The review runs before the PR is proposed for merge, and it must actually
+pass.** A run that fixes and self-approves has removed the only adversary in the
+loop.
+
+### Fixing, without becoming the thing you were measuring
+
+The QA walk and the fix are separate acts. Finish the walk, file the survivors,
+get approval — **then** touch code. Never fix mid-walk: the moment you start
+editing you stop being able to see the screen as a stranger, and every remaining
+persona is compromised.
+
+Rules for the fix itself:
+
+- **Minimum surgical diff** (CLAUDE.md §1.2/§1.3). Every changed line traces to
+  an approved worklist id. No adjacent cleanups, no refactors, no "while I'm
+  here" — a QA fix is the highest-temptation moment in this repo for scope creep,
+  because you have just spent an hour cataloguing everything that is wrong.
+- **Negative control, per assertion.** Revert the fix, watch the new test go RED,
+  restore it. A test that never failed against the old code proves nothing, and
+  this repo has shipped three of them (CLAUDE.md §8).
+- **Fix only what was approved.** A P3 you did not get approval for is not a
+  freebie; it is an unreviewed change riding a reviewed PR.
+- **Tier 1 stays hands-off** unless the founder approved that specific item, and
+  the §9 stop conditions still apply — billing, OAuth scopes, token crypto,
+  webhook auth, prod migrations, deletion, privacy.
+- **Do not edit the finding to match the fix.** If the fix reveals the finding
+  was wrong, say so and move the row to `Refuted`. Rewriting the symptom so your
+  diff looks correct is the worst available outcome.
+
+### Ask the founder, per item
+
+When the survivors are recorded, ask — do not assume, and do not batch a Tier 1
+item in with the rest. Present the numbered list and ask which to hand off.
+Recommend an order, and say what each fix costs and risks in one line.
+
+- **No answer, or the founder is away** → every item stays `Open` in the
+  worklist. That is a complete, correct outcome. Do not fix, and do not hand
+  off anything to warm the queue.
+- **Tier 1 items** (§2 of CLAUDE.md — billing, OAuth scopes, token crypto,
+  webhook auth, prod migrations, deletion, privacy) are named as Tier 1 in the
+  ask and never bundled into a "fix all of these" approval.
+- **A refuted candidate is never offered.** It lost. Offering it anyway
+  launders an argument the run already failed.
+
+### Send the diff to Codex for adversarial review
+
+When the fix is written and green, hand the **diff** — not a brief — to Codex
+via the `codex:rescue` skill or `codex:adversarial-review`. Tell it to attack the
+change, not to admire it. It has the repo, so it needs from you only:
+
+- the approved worklist ids this diff claims to close;
+- for each, the symptom in one line and the acceptance criterion;
+- what you deliberately did **not** change, and why — otherwise a reviewer
+  reports your restraint as an omission;
+- the refuter's strongest surviving objection to each finding, because a fix
+  that does not survive it is fixing the wrong thing;
+- that you want the failure modes named, not a verdict: what input breaks this,
+  what did the negative control not cover, what did the diff miss.
+
+Keep the message short and point at the branch. The diff is already in the repo;
+do not paste it, and do not restate the finding at length — that is what put a
+111-line brief through a 28-line hole last time.
+
+**Then act on what comes back.** A review that finds something and changes
+nothing is theatre. Fix what it lands, and where you disagree, say why in the PR
+body rather than silently declining — the disagreement is part of the record.
+Record the outcome on the worklist row: `Review passed`, or `Review found <n>`
+with what you did about each.
+
+**A SUBSTANTIVE response to a review invalidates it.** The code written in
+response is the least-scrutinised part of the change — authored under time
+pressure, by the author, after the reviewer stopped looking — so it gets its own
+round. Substantive means it changes behaviour: logic, control flow, a wire
+shape, a rendered string, a test's assertion.
+
+Mechanical changes do not: a formatter or lint autofix, a comment or docstring,
+a local rename with no behaviour change, a rebase whose conflict resolution
+leaves the resolved hunks identical. Note them on the row and move on. Requiring
+a fresh round for a prettier pass is how a review gate becomes a ritual nobody
+finishes.
+
+**It terminates, and here is exactly how.** A round is CLEAN when it returns
+nothing you had to act on. A clean round ends the loop — a pass is a pass, and
+treating every pass as presumptively shallow removes the only exit the process
+has. Cite that commit on the worklist row.
+
+Two substantive rounds is the cap. If a third would be needed, stop and take it
+to the founder with what each round found: at that point the diff is either
+bigger than one change should be, or the finding underneath it is wrong, and
+another lap will not tell you which.
+
+One calibration, used once and not as a standing objection: if round one returns
+zero findings on a diff that touches several files or a wire shape, ask for one
+targeted deeper pass naming the riskiest area. If that also comes back clean,
+believe it.
+
+**Merging is not a substantive change.** The review attaches to a commit, not to
+whatever git produces at merge time. A squash, or a rebase onto a moved `main`
+that resolves cleanly, does not invalidate it — otherwise nothing could ever be
+merged, since the merged artifact is never byte-identical to the reviewed one.
+A rebase you had to resolve by hand is substantive; say so and take the round.
+
+If the review says the fix is wrong rather than incomplete, the row goes back to
+`Approved` and the diff is rewritten. It does not go to the founder as "done
+with caveats".
+
+## Done means done — thirteen boxes, not vibes
 
 - [ ] All four personas walked, the editor last (as `usability-editor`)
 - [ ] Break list exhausted, or each skip named with its reason
@@ -342,6 +558,24 @@ the one place in this document where an unexplored gap is the right outcome.
 - [ ] Every forced value restored, verified by re-query, and its Outstanding
       restores row deleted
 - [ ] Every bug given its `defect-class-sweeper` pass
+- [ ] Worklist opened only AFTER the walk (never at preflight — it primes),
+      then that job's existing rows reconciled before anything new is filed:
+      each re-confirmed, or closed as `Fixed` / `Gone` / `Refuted` with the
+      check stated, and no inherited row re-dated or re-numbered
+- [ ] Survivors counted against refuted and against inherited, each given a
+      `QA-<job>-<YYYYMMDD>-<nn>` id and a row in `docs/qa/qa-worklist.md`
+- [ ] Approval asked per item, and **nothing touched that was not approved** —
+      no unapproved P3 riding along, no adjacent cleanup
+- [ ] Fixes written only after the walk was finished and the survivors filed —
+      never mid-walk, which blinds every persona that comes after
+- [ ] Negative control run per new assertion: fix reverted, test seen RED,
+      fix restored — and said so out loud
+- [ ] Diff sent to Codex for adversarial review, its findings acted on, and the
+      outcome recorded on the worklist row
+- [ ] A review came back CLEAN against the final diff — or the two-round cap was
+      hit and the founder was told what each round found. Mechanical-only
+      changes since that commit are named on the row; substantive ones took
+      another round
 
 ## Output
 
@@ -351,8 +585,18 @@ clear anything there first — an interrupted earlier run leaves the database
 dirty, and QA'ing on top of that files someone else's damage as your findings.
 
 ```
-| job | date | personas | broke it? | findings | notes |
+| job | date | personas | broke it? | findings (new / inherited) | notes |
 ```
+
+The findings column separates the two on purpose. A repeat run that reports
+twelve when nine were already on the worklist is inflating its own yield, and
+the ledger is the one place that number is fixed forever.
+
+**Worklist** — `docs/qa/qa-worklist.md`, one row per surviving finding at every
+severity, grouped by job and carried across runs. Its states, and who may set
+each, are defined in that file's own States table and **nowhere else** — do not
+restate them here. The ledger is frozen once written; this file and
+`FINDINGS.md` both keep moving. It already exists; do not recreate it.
 
 **Screenshots** to the scratchpad, sent to the founder inline — not committed.
 
@@ -381,14 +625,30 @@ Regression test: which file, which tier, and what the assertion must say
 - **P2** — friction, ugly, slow; they still get there.
 - **P3** — an idea that needs evidence first.
 
-P0/P1 are appended to the `FINDINGS.md` **Inbox** in its existing shape for
-`/ct-finding triage`. P2/P3 stay in the ledger.
+**Every** survivor, at every severity, gets a worklist row — that is where the
+fix pipeline lives. On top of that, P0/P1 are appended to the `FINDINGS.md`
+**Inbox** in its existing shape for `/ct-finding triage`, because they are also
+open product questions. P2/P3 get no `FINDINGS.md` entry; the ledger and the
+worklist carry them.
 
 **Closing summary** is `/ct-status` shaped: what a user would have hit, how
-bad, what proved it. Product language, no file paths in the body.
+bad, what proved it. Product language, no file paths in the body. It opens with
+the survivors block (§8) and ends with the approval ask — those are the two
+things the founder acts on, so nothing goes between them and the end.
+
+Say what the refuters killed and why, in the founder's summary and not only in
+the ledger. A run that reports four findings and hides that three others died is
+selling a hit rate it did not earn, and the deaths are usually the more useful
+half — they are where the run's own reasoning was wrong.
 
 ## Boundaries
 
 Mutations are dev-stack only; prod reads are fine. No migrations from a laptop,
 no cloud-resource deletion, no credential rotation. One job per run — never
 bleed into the next one.
+
+**Fixes are approved-only, and never self-signed.** Product code, tests and
+migrations are touched only for a worklist id the founder has approved (§8), and
+the resulting diff goes to Codex for adversarial review before it is proposed
+for merge. A run that fixes and approves its own fix has removed the only
+adversary in the loop, which is the entire point of the arrangement.

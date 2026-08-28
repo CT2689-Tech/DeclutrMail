@@ -18,7 +18,7 @@ vi.mock('@/lib/posthog', () => ({ track: trackSpy }));
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { installFetchStub, resetFetchStub } from '@/test/fetch-stub';
 import { SCREENER_QUEUE_KEY } from '@/features/screener/api/query-keys';
-import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/query-keys';
+import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from './query-keys';
 import { useSetSenderPolicy } from './use-sender-policy';
@@ -68,7 +68,7 @@ describe('useSetSenderPolicy', () => {
       expect.arrayContaining([
         sendersKeys.all,
         activityKeys.all,
-        TRIAGE_QUEUE_KEY,
+        TRIAGE_BOOTSTRAP_KEY,
         SCREENER_QUEUE_KEY,
       ]),
     );

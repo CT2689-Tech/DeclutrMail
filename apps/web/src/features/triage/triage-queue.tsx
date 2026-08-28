@@ -81,6 +81,9 @@ export function TriageQueue({
   batchBusyDomain?: string | null;
 }) {
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
+  // The verb keys are bound by the expanded row's action toolbar, so they do
+  // nothing until a row is open. The legend has to know that.
+  const hasOpenRow = expandedRowId !== null;
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
   const pendingAction = useTriageStore((s) => s.pendingAction);
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
@@ -116,14 +119,23 @@ export function TriageQueue({
         >
           {rows.length} decisions waiting
         </span>
+        {/* The shortcut legend. It is only TRUE once a row is open: the
+            bindings live in the expanded row's action toolbar, so from first
+            paint this advertised five keys that did nothing. It now says
+            which state it belongs to instead of implying the keys are live. */}
         <span
+          title={
+            hasOpenRow
+              ? 'Keep · Archive · Unsubscribe · Later · Delete — acts on the open row'
+              : 'Open a row to use these keys'
+          }
           style={{
             fontSize: 11.5,
             color: color.fgMuted,
             fontFamily: font.mono,
           }}
         >
-          K · A · U · L · D
+          {hasOpenRow ? 'K · A · U · L · D' : 'Open a row for K · A · U · L · D'}
         </span>
       </div>
       <div

@@ -15,7 +15,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TriageReadService } from './triage.read-service.js';
+import { TriageReadService, noiseSharePct } from './triage.read-service.js';
 
 /**
  * TriageReadService.listQueue integration tests (D29, D30, D226).
@@ -282,6 +282,60 @@ async function seedMessage(
   });
 }
 
+describe('TriageReadService.listQueue — the daily ORDER BY is a total order', () => {
+  let db: Db;
+  let mailboxId: string;
+  let svc: TriageReadService;
+
+  // Keys chosen so sorted order is the REVERSE of insertion order. Without a
+  // tiebreak the rows come back in physical/insertion order, so this fixture
+  // makes the two orders disagree — a fixture that inserted in sorted order
+  // would pass with or without the fix and prove nothing.
+  const TIED = ['c', 'b', 'a'].map((ch) => ch.repeat(64));
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'tied');
+    for (const key of TIED) {
+      // Identical verdict AND confidence: everything ahead of the tiebreak in
+      // the ORDER BY is equal, so only the tiebreak can decide the order.
+      await seedSenderWithDecision(db, mailboxId, key, `${key.slice(0, 6)}@tied.example`);
+    }
+    svc = new TriageReadService(db as never);
+  });
+
+  it('breaks confidence ties deterministically instead of by physical row order', async () => {
+    const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    expect(rows).toHaveLength(3);
+    expect(rows.map((r) => r.senderKey)).toEqual([...TIED].sort());
+  });
+
+  it('returns the same order across reads with an unrelated write in between', async () => {
+    // The user-visible failure: expanding a row rewrites `triage_decisions`,
+    // and with a non-total ORDER BY that write reshuffled the visible queue —
+    // cards moved, or fell out of the LIMIT entirely, mid-decision.
+    //
+    // HONEST LABEL: this one does NOT go red against the pre-fix code. PGlite
+    // returned a stable order here anyway, so it documents the scenario rather
+    // than guarding it. The test above is the one with teeth — it fails without
+    // the tiebreak. Kept because a future ordering change could break this in a
+    // way PGlite does expose; do not mistake it for the protection.
+    const before = (await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 })).map(
+      (r) => r.senderKey,
+    );
+
+    await db
+      .update(triageDecisions)
+      .set({ reasoning: 'rescored by an unrelated write' })
+      .where(eq(triageDecisions.senderKey, TIED[0]!));
+
+    const after = (await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 })).map(
+      (r) => r.senderKey,
+    );
+    expect(after).toEqual(before);
+  });
+});
+
 describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
   let db: Db;
   let mailboxId: string;
@@ -293,6 +347,58 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     svc = new TriageReadService(db as never);
   });
 
+  it('counts only the senders the noise percentage is computed from', async () => {
+    // The percentage's numerator excludes Keep rows; `queuedDecisions` counts
+    // them. Copy that credits the share to all `queuedDecisions` is therefore
+    // false whenever a Keep row is queued — which stayed invisible on a mailbox
+    // where every queued row happened to be an unsubscribe. `noiseSenderCount`
+    // exists so the FE can name the set the percentage actually describes, and
+    // this pins the two to the same filter rather than to two matching
+    // hand-written queries.
+    const keepKey = 'k'.repeat(64);
+    const dropKey = 'd'.repeat(64);
+    for (const [key, verdict] of [
+      [keepKey, 'keep'],
+      [dropKey, 'unsubscribe'],
+    ] as const) {
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        email: `${key.slice(0, 5)}@mixed.example`,
+        domain: 'mixed.example',
+        gmailCategory: 'promotions',
+        firstSeenAt: daysAgo(60),
+        lastSeenAt: daysAgo(1),
+      });
+      await db.insert(triageDecisions).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        verdict,
+        confidence: '0.90',
+        reasoning: 'seeded',
+        generatedBy: 'template',
+        expiresAt: new Date(Date.now() + 7 * 86_400_000),
+      });
+      await db.insert(mailMessages).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        providerMessageId: `m-${key.slice(0, 8)}`,
+        providerThreadId: `t-${key.slice(0, 8)}`,
+        subject: 'seeded',
+        internalDate: daysAgo(5),
+        isUnread: true,
+        isOutbound: false,
+        labelIds: ['INBOX'],
+      });
+    }
+
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary.queuedDecisions).toBe(2);
+    // The Keep row is counted as a decision but contributes no noise.
+    expect(summary.noiseSenderCount).toBe(1);
+    expect(summary.noiseSenderCount).toBeLessThan(summary.queuedDecisions);
+  });
+
   it('returns all-zero on a fresh mailbox (queue empty → pct null)', async () => {
     const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
     expect(summary).toEqual({
@@ -300,6 +406,7 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
       sendersToday: 0,
       handledAutomatically: 0,
       queuedDecisions: 0,
+      noiseSenderCount: 0,
       noiseReductionPct: null,
     });
   });
@@ -397,6 +504,62 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     expect(summary.noiseReductionPct).toBe(75);
   });
 
+  it('divides by the SAME 90-day window the numerator counted', async () => {
+    // The original defect: the numerator cut at `Date.now() - 90d` (rolling)
+    // while the denominator cut at `todayStartUtc - 90d` (UTC midnight). The
+    // denominator's window was therefore up to a day WIDER, so the share was a
+    // ratio between two different spans and read low — worst just before
+    // midnight UTC, which is what this fixture pins.
+    //
+    // The window stays ROLLING, matching every other 90-day read in the
+    // product; what changed is that both halves take the same instant.
+    const now = new Date(Date.UTC(2026, 4, 20, 23, 0, 0));
+    const at = (msBefore: number): Date => new Date(now.getTime() - msBefore);
+
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
+    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
+    const quietKey = 'c'.repeat(64);
+    const stragglerKey = 'e'.repeat(64);
+    for (const [key, email] of [
+      [quietKey, 'c@quiet.example'],
+      [stragglerKey, 'e@old.example'],
+    ] as const) {
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        email,
+        domain: email.split('@')[1]!,
+        gmailCategory: 'primary',
+        firstSeenAt: new Date('2026-01-01'),
+        lastSeenAt: new Date('2026-06-01'),
+      });
+    }
+    const seedAt = async (key: string, when: Date): Promise<void> => {
+      await db.insert(mailMessages).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        providerMessageId: `w-${key.slice(0, 6)}-${when.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+        providerThreadId: `wt-${key.slice(0, 6)}`,
+        internalDate: when,
+        isUnread: true,
+        isOutbound: false,
+      });
+    };
+    // 6 queued of 8 in-window inbound → 75%.
+    for (let i = 0; i < 4; i++) await seedAt(SENDER_A, at(5 * 86_400_000));
+    for (let i = 0; i < 2; i++) await seedAt(SENDER_B, at(10 * 86_400_000));
+    for (let i = 0; i < 2; i++) await seedAt(quietKey, at(20 * 86_400_000));
+    // 90 days and 12 hours old: outside the rolling window BOTH halves now
+    // use, but inside the midnight-anchored one the denominator used to take.
+    // It is the only row the two cutoffs ever disagreed about.
+    await seedAt(stragglerKey, at(90 * 86_400_000 + 12 * 3_600_000));
+
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId, now });
+    expect(summary.queuedDecisions).toBe(2);
+    // 6/8. Counting the straggler in the denominator alone gave 6/9 → 67%.
+    expect(summary.noiseReductionPct).toBe(75);
+  });
+
   it('a decided sender leaves both the decision count and the noise share (D30 exclusion parity)', async () => {
     await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
     await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
@@ -414,6 +577,58 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     expect(summary.queuedDecisions).toBe(1);
     // SENDER_B's 4 of 8 messages → 50%.
     expect(summary.noiseReductionPct).toBe(50);
+  });
+});
+
+describe('noiseSharePct — the share refuses to guess', () => {
+  it('reports the share when the two reads agree', () => {
+    expect(noiseSharePct(6, 8)).toBe(75);
+  });
+
+  it('makes no claim when the queued subset exceeds the mailbox total', () => {
+    // Only reachable when the numerator and denominator — separate statements
+    // with no transaction around them — describe different snapshots, e.g. a
+    // sync reclassifying mail as outbound between the two reads. `Math.min`
+    // rendered this as exactly "100%": the most confident claim available,
+    // from evidence the inputs disagreed.
+    expect(noiseSharePct(12, 10)).toBeNull();
+  });
+
+  it('makes no claim when there is nothing to divide by', () => {
+    expect(noiseSharePct(3, 0)).toBeNull();
+  });
+});
+
+describe('TriageReadService.listQueue — "last seen" is when the SENDER wrote', () => {
+  let db: Db;
+  let mailboxId: string;
+  let svc: TriageReadService;
+
+  beforeEach(async () => {
+    db = await freshDb();
+    mailboxId = await seedMailbox(db, 'lastseen');
+    svc = new TriageReadService(db as never);
+  });
+
+  it('ignores outbound mail when picking the last-seen date', async () => {
+    // Mail the user SENT is stored under the hash of its own `From`, so a
+    // message to your own address or a sending alias shares the sender key.
+    // `last90dMessages` filtered those out; the sibling `MAX(internal_date)`
+    // in the same SELECT did not — so sending today made a sender whose newest
+    // inbound message was 45 days old render "LAST SEEN today".
+    await seedSenderWithDecision(db, mailboxId, SENDER_A, 'me@declutrmail.ai');
+    await seedMessage(db, mailboxId, SENDER_A, 45);
+    await seedMessage(db, mailboxId, SENDER_A, 0, { isOutbound: true });
+
+    const [row] = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    // The 45-day-old INBOUND message, not today's outbound one. The wire
+    // carries the instant; the browser turns it into a day count, so this
+    // asserts the date itself rather than a rounded difference.
+    const seen =
+      row?.lastSeenAt === undefined || row.lastSeenAt === null ? null : new Date(row.lastSeenAt);
+    expect(seen).not.toBeNull();
+    const ageDays = Math.round((Date.now() - seen!.getTime()) / 86_400_000);
+    expect(ageDays).toBe(45);
   });
 });
 

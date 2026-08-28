@@ -15,7 +15,8 @@ const { color, font } = tokens;
  *   Today
  *   You received 184 emails from 63 senders.
  *   DeclutrMail handled 129 automatically.
- *   12 sender decisions can reduce future noise by ~38%.
+ *   12 sender decisions. These senders sent ~38% of the email you received
+ *   in the last 90 days.
  *
  * Copy rules: the queue count reads as DECISIONS, never senders or
  * emails (D221 canonical phrasing). Numbers are the BE's real
@@ -56,6 +57,26 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
   const showReceived = summary.receivedToday > 0;
   const showHandled = summary.handledAutomatically > 0;
   const showDecisions = summary.queuedDecisions > 0;
+  // Which senders the noise share is allowed to name — `null` means "do not
+  // attribute it to anyone", not "attribute it to everyone".
+  //
+  // `noiseSenderCount` is optional on the wire because nothing validates the
+  // shape at runtime, so an older API revision answering a newer bundle omits
+  // it. `undefined < queuedDecisions` evaluates FALSE, which fell through to
+  // the "These senders" branch — restoring the exact whole-queue claim this
+  // line was corrected to stop making. A missing field degraded to the
+  // original falsehood rather than to silence.
+  //
+  // So the attribution now needs positive proof: a usable integer that really
+  // is a subset of the queue. Absent, non-numeric, or larger than the set it
+  // is a subset of all mean the two numbers do not describe one snapshot.
+  const noiseSenders =
+    typeof summary.noiseSenderCount === 'number' &&
+    Number.isInteger(summary.noiseSenderCount) &&
+    summary.noiseSenderCount > 0 &&
+    summary.noiseSenderCount <= summary.queuedDecisions
+      ? summary.noiseSenderCount
+      : null;
   // A fresh mailbox with nothing received, handled, or queued has no
   // situational awareness to show — the D212 empty state below the
   // strip already owns that moment.
@@ -116,16 +137,50 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
             {summary.queuedDecisions.toLocaleString('en-US')}
           </strong>{' '}
           sender decision{summary.queuedDecisions === 1 ? '' : 's'}
-          {summary.noiseReductionPct != null && summary.noiseReductionPct > 0 ? (
+          {noiseSenders !== null &&
+          summary.noiseReductionPct != null &&
+          summary.noiseReductionPct > 0 ? (
+            // PENDING FOUNDER WORDING — the claim is corrected, the phrasing is
+            // provisional. Two separate falsehoods were removed here.
+            //
+            // TENSE: it read "can reduce future noise by ~N%", promising a
+            // FUTURE effect from a measurement of mail ALREADY RECEIVED in the
+            // trailing 90 days — while Archive and Later both carry
+            // `futureMail: { effect: 'unchanged' }`, Keep leaves delivery alone
+            // and Delete only trashes what already arrived. Unsubscribe is the
+            // only verb of the five that changes future mail, and only if the
+            // sender honours it.
+            //
+            // SUBJECT: the percentage's numerator EXCLUDES Keep rows while
+            // `queuedDecisions` counts them, so attributing it to "these
+            // senders" overstates whenever a Keep row is queued. `noiseSenderCount`
+            // is the set the percentage actually describes; say so when the two
+            // differ. This read as true only on a mailbox where every queued row
+            // happened to be an unsubscribe.
             <>
-              {' '}
-              can reduce future noise by ~
+              .{' '}
+              {noiseSenders < summary.queuedDecisions ? (
+                <>
+                  <strong
+                    style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {noiseSenders.toLocaleString('en-US')}
+                  </strong>{' '}
+                  of them sent ~
+                </>
+              ) : summary.queuedDecisions === 1 ? (
+                // Equal counts, and the queue holds exactly one sender. The
+                // plural subject read "1 sender decision. These senders sent…"
+                <>This sender sent ~</>
+              ) : (
+                <>These senders sent ~</>
+              )}
               <strong
                 style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
               >
                 {summary.noiseReductionPct}%
-              </strong>
-              .
+              </strong>{' '}
+              of the email you received in the last 90 days.
             </>
           ) : (
             <> waiting below.</>

@@ -23,6 +23,7 @@
  */
 
 import type { TriageVerdict } from './types';
+import { daysSince } from '@/features/senders/data';
 
 import { renderTemplate, runCascade, type SenderSignals } from '@declutrmail/shared/triage-engine';
 
@@ -161,7 +162,13 @@ export interface TriageDecisionRow {
    */
   readRate: number | null;
   /** Days since the sender's most recent message. */
-  lastDays: number;
+  /**
+   * ISO timestamp of the sender's newest inbound message, or `null` when the
+   * back end could not read one. The DAY COUNT is derived here, not sent —
+   * "today" is a calendar claim and only this process knows the reader's
+   * calendar. See `lastSeenLabel`.
+   */
+  lastSeenAt: string | null;
   /** Inbound messages currently present in DeclutrMail's mailbox index. */
   totalAllTime: number;
   /**
@@ -299,6 +306,25 @@ function buildFixtureRow(seed: TriageFixtureSeed): TriageDecisionRow {
  * `findDomainBatches` needs the six amazon.com seeds contiguous.
  * Fixtures are static so Storybook variants stay byte-stable.
  */
+/**
+ * Fixture dates as an ISO instant N calendar days back from midnight today.
+ *
+ * Anchored to LOCAL midnight, not `Date.now() - n * 86400000`. The rendered
+ * label is a calendar-day difference, so a fixture built from elapsed
+ * milliseconds lands on the previous day whenever the suite runs before that
+ * many hours past midnight — a story that reads "2d" in the morning and "3d"
+ * at night.
+ */
+function fixtureDaysAgo(days: number): string {
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  midnight.setDate(midnight.getDate() - days);
+  // Mid-morning, so the instant is unambiguously inside that calendar day in
+  // any timezone the value is later read back in.
+  midnight.setHours(9, 0, 0, 0);
+  return midnight.toISOString();
+}
+
 export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
   // ── Groupon — the guided demo's Archive anchor (D133 RESOLVED
   // 2026-08-26). The original hand-written signals (0% read, no manual-
@@ -328,7 +354,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 52,
     last90dMessages: 156,
     readRate: 0.3,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 1745,
     unreadInboxCount: 288,
     cascadeSignals: {
@@ -379,7 +405,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 64,
     last90dMessages: 192,
     readRate: 0,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 2432,
     unreadInboxCount: 372,
     cascadeSignals: {
@@ -421,7 +447,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 48,
     last90dMessages: 144,
     readRate: 0,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 1056,
     unreadInboxCount: 118,
     cascadeSignals: {
@@ -464,7 +490,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 46,
     last90dMessages: 138,
     readRate: 0.04,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 4692,
     unreadInboxCount: 640,
     cascadeSignals: {
@@ -502,7 +528,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 12,
     last90dMessages: 36,
     readRate: 0.3,
-    lastDays: 4,
+    lastSeenAt: fixtureDaysAgo(4),
     totalAllTime: 264,
     unreadInboxCount: 31,
     cascadeSignals: {
@@ -543,7 +569,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 8,
     last90dMessages: 24,
     readRate: 0.85,
-    lastDays: 3,
+    lastSeenAt: fixtureDaysAgo(3),
     totalAllTime: 96,
     unreadInboxCount: 1,
     cascadeSignals: {
@@ -584,7 +610,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 17,
     last90dMessages: 51,
     readRate: 1,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 306,
     unreadInboxCount: 44,
     cascadeSignals: {
@@ -628,7 +654,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 6,
     last90dMessages: 18,
     readRate: 0.95,
-    lastDays: 2,
+    lastSeenAt: fixtureDaysAgo(2),
     totalAllTime: 84,
     unreadInboxCount: 6,
     cascadeSignals: {
@@ -680,7 +706,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     last90dMessages: 0,
     // Quiet within the window — the BE sends null, not 0.
     readRate: null,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 555,
     unreadInboxCount: 210,
     cascadeSignals: {
@@ -734,7 +760,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 62,
     last90dMessages: 186,
     readRate: 0.35,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 1800,
     unreadInboxCount: 120,
     cascadeSignals: {
@@ -775,7 +801,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 30,
     last90dMessages: 90,
     readRate: 0.25,
-    lastDays: 1,
+    lastSeenAt: fixtureDaysAgo(1),
     totalAllTime: 400,
     unreadInboxCount: 55,
     cascadeSignals: {
@@ -818,7 +844,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 18,
     last90dMessages: 54,
     readRate: 0.02,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 90,
     unreadInboxCount: 53,
     cascadeSignals: {
@@ -857,7 +883,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 2,
     last90dMessages: 2,
     readRate: 0,
-    lastDays: 0,
+    lastSeenAt: fixtureDaysAgo(0),
     totalAllTime: 2,
     unreadInboxCount: 2,
     cascadeSignals: {
@@ -898,7 +924,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 30,
     last90dMessages: 90,
     readRate: 0.3,
-    lastDays: 2,
+    lastSeenAt: fixtureDaysAgo(2),
     totalAllTime: 120,
     unreadInboxCount: 60,
     cascadeSignals: {
@@ -942,7 +968,7 @@ export const TRIAGE_FIXTURE_SEEDS: readonly TriageFixtureSeed[] = [
     monthlyVolume: 1,
     last90dMessages: 3,
     readRate: 0.9,
-    lastDays: 10,
+    lastSeenAt: fixtureDaysAgo(10),
     totalAllTime: 40,
     unreadInboxCount: 2,
     cascadeSignals: {
@@ -1067,21 +1093,35 @@ export function canUnsubscribe(row: TriageDecisionRow): boolean {
  * the stat card said "LAST SEEN today").
  *
  * When the sender has ZERO messages inside the rolling 90-day window,
- * any `lastDays < 90` is internally inconsistent — the aggregate
- * window is computed in SQL from real rows, while `lastDays` rides a
- * raw-SQL `MAX(internal_date)` that the BE currently collapses to `0`
- * (see the PR body — data-layer fix tracked separately). The window
- * wins: render "90d+" unless `lastDays` already agrees.
+ * any `lastDays < 90` is internally inconsistent — the aggregate window is
+ * computed in SQL from real rows. The window wins: render "90d+" unless
+ * `lastDays` already agrees.
+ *
+ * The back end no longer collapses an unreadable date to `0` (it sends `null`),
+ * so this is now a consistency guard rather than the mitigation it started as.
+ * It was never sufficient on its own: gated on an EMPTY 90-day window, it only
+ * ever covered senders where a "today" would have looked absurd, and left the
+ * 1-89 day band — where a wrong "today" reads as entirely plausible — rendering
+ * the false value. 849 of the 954 rows that asserted a recency were wrong.
  */
 export function lastSeenLabel(
-  row: Pick<TriageDecisionRow, 'lastDays' | 'last90dMessages'>,
+  row: Pick<TriageDecisionRow, 'lastSeenAt' | 'last90dMessages'>,
+  now: number = Date.now(),
 ): string {
+  // Unknown renders as unknown — the word, not a glyph the reader has to
+  // infer. Anything else here invents a recency for mail whose date we could
+  // not read.
+  if (row.lastSeenAt === null) return 'unknown';
+  // CALENDAR days in the reader's timezone, derived here rather than sent.
+  // The back end used to send elapsed 24-hour blocks, so a message from
+  // 14:00 yesterday floored to 0 and rendered "today" all night.
+  const lastDays = daysSince(row.lastSeenAt, now);
   if (row.last90dMessages === 0) {
-    return row.lastDays >= 90 ? `${row.lastDays}d` : '90d+';
+    return lastDays >= 90 ? `${lastDays}d` : '90d+';
   }
-  if (row.lastDays === 0) return 'today';
-  if (row.lastDays === 1) return '1d';
-  return `${row.lastDays}d`;
+  if (lastDays === 0) return 'today';
+  if (lastDays === 1) return '1d';
+  return `${lastDays}d`;
 }
 
 /** Compact "12.4k" formatter — matches senders/data.ts:fmtCompact. */

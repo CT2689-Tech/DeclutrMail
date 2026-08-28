@@ -82,6 +82,9 @@ export {
 } from './action-recovery.queue.js';
 export {
   FETCH_UNSUB_HTTP_PORT,
+  UNSUB_SEND_BLOCKED_ERROR_CODE,
+  UNSUB_SEND_DISABLED_CODE,
+  unsubSendsEnabled,
   UNSUB_EXECUTION_JOB,
   UNSUB_EXECUTION_QUEUE,
   UNSUB_MAX_ATTEMPTS,

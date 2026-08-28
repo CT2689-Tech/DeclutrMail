@@ -1,4 +1,5 @@
 import { request as httpRequest } from 'node:http';
+import type { ErrorCode } from '@declutrmail/shared/contracts';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 
@@ -226,6 +227,53 @@ export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
   },
 };
 
+/**
+ * Envelope `code` for the enqueue-boundary refusal (D202).
+ *
+ * Same string as the worker's `error_code` on purpose: one condition, one
+ * name, wherever the user or an operator meets it.
+ *
+ * Typed as `ErrorCode`, which is the registry's own key union — so removing
+ * this from `ERROR_CODES` breaks the build. That matters because the failure
+ * is otherwise SILENT: `AllExceptionsFilter` drops any unregistered code and
+ * flattens the envelope to the bare status, so the client's branch for it
+ * becomes unreachable while every test on both sides stays green. This
+ * shipped exactly that way and only a browser smoke found it.
+ */
+export const UNSUB_SEND_DISABLED_CODE: ErrorCode = 'UNSUB_SEND_DISABLED';
+
+/** `action_jobs.error_code` when the defence-in-depth refusal fires. */
+export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';
+
+/**
+ * Whether this process may perform a real one-click unsubscribe POST.
+ *
+ * `UNSUB_SEND_ENABLED === 'true'`, read explicitly, and nothing else. Unset,
+ * empty, `1`, `TRUE`, `yes` — all refuse. **Silence means do not send**, in
+ * every environment including production.
+ *
+ * The polarity is the whole design, and the obvious alternative is wrong.
+ * Refusing only when a flag is SET makes silence mean SEND, so an unset var, a
+ * typo, or a var that never reached the worker service all send. This is the
+ * inverse of `DEV_AUTH_ENABLED`, which gates a dev capability and is asserted
+ * OFF in production; this gates a real-world side effect on a third party and
+ * is asserted ON in production, at boot, by the composition root.
+ *
+ * Takes `env` so a caller can decide without mutating the process.
+ */
+export function unsubSendsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.UNSUB_SEND_ENABLED === 'true';
+}
+
+/** Host only, for logs. Never the path or query — the token lives there. */
+function safeHost(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
 export interface UnsubExecutionDeps {
@@ -365,6 +413,41 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
         payload.source ?? 'manual',
         payload.ruleId ?? null,
       );
+    }
+
+    // KILL SWITCH — no real unsubscribe leaves a non-production process.
+    //
+    // This POST is irreversible and leaves the founder's own address on a
+    // third party's list processor. There was no way to stop it: no dry-run,
+    // and stopping the worker only DEFERS the send until one returns. So no
+    // QA pass could press `U` on any surface it is reachable from — Triage,
+    // Senders, Sender detail, Brief and Screener — and the entire surface
+    // below the unsubscribe preview went untested for that reason alone.
+    //
+    // Sits after channel resolution so QA still sees the honest
+    // `UNSUB_NOT_ONE_CLICK` answer for a sender that has no one-click
+    // channel, and before the pre-flight so nothing touches the network.
+    //
+    // The outcome is `failed`, not a faked acceptance: the send did not
+    // happen, and a recorded success for a message never sent is the exact
+    // fake-completion this repo forbids.
+    if (!unsubSendsEnabled()) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'unsub.send_disabled',
+          actionId: job.id,
+          // HOST + channel only. Never the one-click URL: it carries a
+          // per-send token, and D7 keeps tokenised recipient identifiers out
+          // of logs. Named `unsubscribeHost` rather than `senderDomain`
+          // because that is what it is — the list processor's host, which is
+          // routinely a different domain from the sender's.
+          unsubscribeHost: safeHost(oneClickUrl),
+          channel: 'one_click',
+          message: 'Refused a one-click unsubscribe: UNSUB_SEND_ENABLED is not "true".',
+        }),
+      );
+      return this.recordSendDisabled(job.id);
     }
 
     // SSRF pre-flight — scheme + resolved-address checks.
@@ -571,6 +654,40 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       .limit(1);
 
     return { oneClickUrl: oneClick?.url ?? null, mailtoUrl: mailto?.url ?? null };
+  }
+
+  /**
+   * Terminal write for a job the kill switch refused. Deliberately NOT
+   * `recordOutcome`.
+   *
+   * `recordOutcome` writes the honest record of an ATTEMPT: it projects
+   * `sender_policies.unsub_status`, appends an `activity_log` row, and
+   * publishes an outbox event. Every one of those would be a lie here —
+   * nothing was attempted. The senders list would show a failed unsubscribe
+   * chip, /activity would show an unsubscribe that never happened, and the
+   * outbox would tell downstream consumers the same.
+   *
+   * So only `action_jobs` moves, and only to a terminal state. Never `done`:
+   * the FE polls `done` before telling the user their unsubscribe went
+   * through, and that would say they left a list they are still on. Never a
+   * retryable throw either — three attempts then a dead letter, and a dead
+   * letter is indistinguishable from delivered-but-unconfirmed.
+   *
+   * This path is defence-in-depth only. The refusal that matters happens at
+   * the enqueue boundary, where no row is written at all; this catches a job
+   * already queued when the flag changed.
+   */
+  private async recordSendDisabled(actionId: string): Promise<UnsubExecutionResult> {
+    await this.deps.db
+      .update(actionJobs)
+      .set({
+        status: 'failed',
+        errorCode: UNSUB_SEND_BLOCKED_ERROR_CODE,
+        affectedCount: 0,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(actionJobs.id, actionId));
+    return { outcome: 'failed', httpStatus: null, alreadyDone: false };
   }
 
   private async recordOutcome(

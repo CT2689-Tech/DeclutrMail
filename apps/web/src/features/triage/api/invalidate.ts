@@ -15,21 +15,22 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 
-import { TRIAGE_QUEUE_KEY, TRIAGE_STATS_KEY, TODAY_SUMMARY_KEY } from './use-triage-queue';
+import { TRIAGE_BOOTSTRAP_KEY } from './use-triage-queue';
 
 /**
  * Mark every surface a confirmed decision touches as stale (D200):
- * the queue (the decided sender leaves it — server-confirmed, never
- * optimistic), stats (decidedToday moved), the D214 today strip (its
- * decision count tracks the queue), the activity feed (the audit row),
+ * the Triage route (the decided sender leaves the queue — server-confirmed,
+ * never optimistic — while stats and the D214 strip move with it, all three
+ * from one cache entry), the activity feed (the audit row),
  * the senders list (inbox counts moved), and the undo tray (a fresh
  * token may exist). Keys are not partitioned by mailbox —
  * `resetMailboxScopedCache` owns the switch invariant.
  */
 export function invalidateAfterDecision(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: TRIAGE_QUEUE_KEY });
-  void qc.invalidateQueries({ queryKey: TRIAGE_STATS_KEY });
-  void qc.invalidateQueries({ queryKey: TODAY_SUMMARY_KEY });
+  // ONE key covers the queue, the stats and the Today strip. They used to be
+  // three invalidations of three queries, which refetched independently — so
+  // the strip could settle on a different queue snapshot than the rows.
+  void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
   void qc.invalidateQueries({ queryKey: undoKeys.all });

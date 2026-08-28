@@ -21,7 +21,7 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { TOPICS } from '@declutrmail/events';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   AutopilotActionWorker,
@@ -243,6 +243,19 @@ const CTX: WorkerContext = {
   startedAt: new Date(),
   policy: 'perMailboxPolicy',
 };
+
+/**
+ * Autopilot's one-click unsubscribe path performs a real send, so it sits
+ * behind the same kill switch as the worker that executes it:
+ * `UNSUB_SEND_ENABLED` must be exactly 'true' or nothing is enqueued. This
+ * suite opts IN so the send path is exercised; the refusal has its own test.
+ */
+beforeAll(() => {
+  process.env.UNSUB_SEND_ENABLED = 'true';
+});
+afterAll(() => {
+  delete process.env.UNSUB_SEND_ENABLED;
+});
 
 describe('AutopilotActionWorker', () => {
   let db: Db;
@@ -921,6 +934,45 @@ describe('AutopilotActionWorker', () => {
     const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
     expect(match!.intentApplied).toBe(true);
     expect(match!.intentToken).toBeNull();
+  });
+
+  it('unsubscribe one_click: the kill switch writes no row and enqueues nothing', async () => {
+    // Runs as a laptop, a QA run and CI actually run — opt-in removed.
+    const previousOptIn = process.env.UNSUB_SEND_ENABLED;
+    delete process.env.UNSUB_SEND_ENABLED;
+    try {
+      const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy');
+      const { senderKey } = await seedSender(db, mailboxId, 'list@news.com', {
+        unsubscribeMethod: 'one_click',
+        unsubscribeUrl: 'https://news.com/unsub',
+      });
+      const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      // Nothing queued, and no execution row for a worker to pick up later.
+      expect(result.unsubscribeExecutionsEnqueued).toBe(0);
+      expect(unsubJobs).toHaveLength(0);
+      const exec = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, `autopilot-unsubexec-${matchId}`));
+      expect(exec).toHaveLength(0);
+
+      // The projection must NOT claim a method. Sending `one_click` would
+      // project unsub_status='requested' for an attempt never made — the same
+      // lie the `unknown` case already avoids.
+      const events = await db.select().from(outboxEvents);
+      const intent = events.filter((e) => e.topic === TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED);
+      expect(intent).toHaveLength(1);
+      expect((intent[0]!.payload as { method?: string }).method).toBeUndefined();
+    } finally {
+      if (previousOptIn === undefined) delete process.env.UNSUB_SEND_ENABLED;
+      else process.env.UNSUB_SEND_ENABLED = previousOptIn;
+    }
   });
 
   it('unsubscribe one_click: records intent + outbox event + enqueues execution', async () => {

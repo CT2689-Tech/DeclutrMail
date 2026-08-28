@@ -449,6 +449,16 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Every selected sender is Protected or no longer exists.',
   },
+  // The environment refuses to SEND unsubscribes (`UNSUB_SEND_ENABLED` is not
+  // `true`), so the API refused before writing anything. `retryable: false` —
+  // asking again cannot change it, and a retry affordance on a refusal is how
+  // a deferred send gets sent later by someone who has stopped watching.
+  UNSUB_SEND_DISABLED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Unsubscribe sending is turned off in this environment — nothing was sent.',
+  },
   ACTION_NOT_RECOVERABLE: {
     status: 409,
     severityTier: 'inline_recoverable',
