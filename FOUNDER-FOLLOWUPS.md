@@ -9,6 +9,7 @@ See CLAUDE.md §11 for the file's lifecycle. Append-only structurally;
 items physically move from **Open** to **Done** as they're addressed.
 
 
+```markdown
 ### YYYY-MM-DD — Short title
 **Source:** <PR #N | session | review finding | external ask>
 **Why:** what this unblocks or fixes
@@ -21,6 +22,44 @@ When an item moves to **Done**, cut + paste the entry from the Open
 section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
+
+### 2026-08-28 — Decide what would make a QA unsubscribe press harmless
+
+**Source:** session 2026-08-28 — the `U` ban was lifted behind a two-check gate
+and reinstated the same day; the shipped switch is the Done entry
+"2026-08-27 — No dev-only kill switch for real unsubscribe sends"
+
+**Why:** `UNSUB_SEND_ENABLED` is sound and fail-closed, but it does not make a
+press safe to attempt, and every gate written on top of it has failed the same
+way — it PREDICTS the send will be refused instead of making the press unable to
+reach a real sender. The withdrawn gate's file check passed in four demonstrated
+situations where the app still sends: a quoted `="true"` parses to `true` while
+the grep returns 0; an exported shell variable beats the env file; a process
+booted before the line was removed keeps the old value; and the outcome check ran
+after the press it was meant to guard. Until this is answered, unsubscribe is the
+one surface in the product with no QA coverage below the preview — and it is the
+only verb with no undo (D58).
+
+**How:** pick one.
+
+- **A — build a dev-only target allowlist** in `UnsubExecutionWorker`: outside
+  production, refuse any target host not on a local allowlist, then lift the ban
+  behind it. Composes with the flag (fail-closed on the flag, fail-closed on the
+  target) and fails safe under all four holes, because none of them can put a
+  stranger's host on the allowlist. Unblocks QA of the whole surface.
+- **B — leave `U` unpressed indefinitely.** Costs nothing today; the coverage gap
+  becomes permanent.
+
+Recommendation: **A.** Sending is the only verb with no undo, so it is the one
+that most needs to have been exercised before a real user reaches it, and B
+leaves that permanently untested. Not urgent — nothing ships broken while it
+waits.
+
+**Verifies by:** with the allowlist built, a `U` press in dev against a real
+sender produces a refusal naming the blocked host and NO outbound request; and
+`.claude/commands/ct-qa.md` drops its read-not-driven rule for unsubscribe.
+
+**Status:** Open
 
 ### 2026-08-26 — The public /inbox-simulator route ships the authenticated API client and useMe to anonymous visitors
 
@@ -2357,18 +2396,16 @@ that never reached the worker service all send. Invert it.
   no activity row claiming success; with sending enabled, behaviour is
   byte-identical to today.
 
-Then restore `unsubscribe` as a `/ct-qa` job, re-allow the `U` keystroke, and
-delete the Safety block's closing paragraph.
-**Verifies by:** with the flag ABSENT (the default), confirming an unsubscribe
-in the dev UI produces an `action_jobs` row, a worker log line naming the
-sender's domain and channel, and NO outbound request. With it `'true'`,
-behaviour is byte-identical to today. And a production boot with the flag
-missing refuses to start rather than starting quietly un-sending.
-**Status:** Open
+~~Then restore `unsubscribe` as a `/ct-qa` job, re-allow the `U` keystroke, and
+delete the Safety block's closing paragraph.~~ **Superseded 2026-08-28 — do not
+follow this line.** It assumes a flag check can make a press safe. It cannot;
+see the reinstatement below.
 
-## Entry format
-
-```markdown
+**Verifies by:** a production boot with the flag missing refuses to start rather
+than starting quietly un-sending. With the flag ABSENT (the default), an
+unsubscribe intent is refused at the enqueue boundary and **no `action_jobs` row
+is created at all** — an earlier draft of this line said a row IS produced,
+which described the worker-refusal design this entry rejected.
 
 **Status:** Done 2026-08-28 — shipped on `chore/bootstrap-qa-worklist`.
 
@@ -2398,9 +2435,20 @@ came back positive on both counts (recovery gates on `status==='failed'` at
 `action-recovery.service.ts:258,376`; the FE exposes a retry route), so the
 enqueue-boundary refusal was the only safe option, exactly as written here.
 
-`/ct-qa` now lifts the `U` ban behind a two-check gate, and there is no
-standalone `unsubscribe` job — it is an ordinary verb for every job once the
-gate passes.
+**The `U` ban was lifted behind a two-check gate on 2026-08-28 and reinstated
+the same day.** The kill switch is sound; the gate built on top of it was not.
+Its first check — grep `.env.local` for the flag — passes in four demonstrated
+situations where the running app still sends: a quoted `="true"` parses to
+`true` while the grep returns 0; an exported shell variable beats the env file;
+a process booted before the line was removed keeps the old value; and the
+second check ran *after* the press it was meant to guard. `ps eww` does not
+rescue it — this app injects config via `node --env-file-if-exists`, so runtime
+variables are invisible to the exec environment and a zero reading is vacuous.
+`U` is unpressed again, and there is still no standalone `unsubscribe` job.
+
+**What is still open** is a mechanism that would make a press harmless
+rather than a check that predicts it will be refused. That is a live founder
+decision and lives in the Open section above, dated 2026-08-28 — not here.
 
 
 ### 2026-08-26 — Seven decisions were demoted from Verified by a regex bug, not by evidence

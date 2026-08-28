@@ -63,20 +63,21 @@ the ledger, which is the run record.
 Not a single line — a row has four ways out, and only one of them is a fix that
 landed.
 
-| state                 | means                                                                                              | who can set it        |
-| --------------------- | -------------------------------------------------------------------------------------------------- | --------------------- |
-| `Open`                | Filed and unapproved. The resting state.                                                           | a run                 |
-| `Approved`            | Founder said fix it. Nothing is touched before this.                                               | founder only          |
-| `Approved — queued`   | Approved, not yet started. Name what it is waiting on.                                             | a run                 |
-| `Fixing`              | Diff in progress on a branch.                                                                      | a run                 |
-| `In review`           | Diff sent to Codex for adversarial review.                                                         | a run                 |
-| `Review found <n>`    | Review landed findings. Row returns to `Fixing`.                                                   | a run                 |
-| `PR #n`               | A review passed against **this** diff, not an ancestor; branch proposed. Name the reviewed commit. | a run                 |
-| `Fixed YYYY-MM-DD`    | Merged **and** a later run confirmed the symptom is gone.                                          | a run, after checking |
-| `Gone YYYY-MM-DD`     | No longer reproduces, no fix attributable to it. Say what you ran.                                 | a run, after checking |
-| `Refuted YYYY-MM-DD`  | New evidence killed the finding itself. Point at the ledger row.                                   | a run                 |
-| `At review cap`       | Two substantive rounds ran. Goes to the founder to ship or keep reviewing. Name the last commit.   | a run                 |
-| `Won't do YYYY-MM-DD` | Founder declined. Keep the reason.                                                                 | founder only          |
+|     | state                 | means                                                                                              | who can set it        |
+| --- | --------------------- | -------------------------------------------------------------------------------------------------- | --------------------- |
+| ⬜  | `Open`                | Filed and unapproved. The resting state.                                                           | a run                 |
+| ⬜  | `Approved`            | Founder said fix it. Nothing is touched before this.                                               | founder only          |
+| ⬜  | `Approved — queued`   | Approved, not yet started. Name what it is waiting on.                                             | a run                 |
+| 🟡  | `Fixing`              | Diff in progress on a branch.                                                                      | a run                 |
+| 🟡  | `In review`           | Diff sent to Codex for adversarial review.                                                         | a run                 |
+| 🟡  | `Review found <n>`    | Review landed findings. Row returns to `Fixing`.                                                   | a run                 |
+| 🟡  | `PR #n`               | A review passed against **this** diff, not an ancestor; branch proposed. Name the reviewed commit. | a run                 |
+| 🔵  | `Merged #n`           | Landed on main. NOT `Fixed` — no run has re-checked the symptom yet.                               | a run                 |
+| 🟢  | `Fixed YYYY-MM-DD`    | Merged **and** a later run confirmed the symptom is gone.                                          | a run, after checking |
+| 🟢  | `Gone YYYY-MM-DD`     | No longer reproduces, no fix attributable to it. Say what you ran.                                 | a run, after checking |
+| 🟢  | `Refuted YYYY-MM-DD`  | New evidence killed the finding itself. Point at the ledger row.                                   | a run                 |
+| 🔴  | `At review cap`       | Two substantive rounds ran. Goes to the founder to ship or keep reviewing. Name the last commit.   | a run                 |
+| ⏸️  | `Won't do YYYY-MM-DD` | Founder declined. Keep the reason.                                                                 | founder only          |
 
 `Fixed` and `Gone` are deliberately separate: "we fixed it" and "it stopped
 happening and nobody knows why" are different facts, and collapsing them hides
@@ -107,27 +108,48 @@ lap will not say which. The row names the commit the clean round ran against.
 Rows accumulate across every `/ct-qa triage` run. Per-run counts are in the
 ledger. First filed 2026-08-27 (15 survivors, 4 refuted before filing).
 
-| id                    | sev                       | one line                                                                                                                                                        | status                                 | PR  |
-| --------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | --- |
-| QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader                      | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                                              | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                                       | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                                                  | Approved — queued behind the P1 branch |     |
-| QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                                               | Approved — queued behind P1s           |     |
-| QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                                          | Approved — queued behind P1s           |     |
-| QA-triage-20260827-07 | P2                        | One measurement, two names on the same card: the row says "marked read", the tile and bullet say "read rate"                                                    | Approved — queued behind P1s           |     |
-| QA-triage-20260827-08 | P2                        | "You'll see the affected email before anything changes" names Keep first, and Keep has no preview by design (D40)                                               | Approved — queued behind P1s           |     |
-| QA-triage-20260827-09 | P2                        | The undo deadline renders in UTC in the toast and in the reader's zone in the preview, two clicks apart                                                         | Approved — queued behind P1s           |     |
-| QA-triage-20260827-10 | P2                        | Two stat tiles are windowed and two are not, with nothing saying so; at 375px "90D" orphans onto its own line                                                   | Approved — queued behind P1s           |     |
-| QA-triage-20260827-11 | P2                        | The preview's footer — reversibility line, Cancel, confirm — sits below the fold on a 375px phone                                                               | Approved — queued behind P1s           |     |
-| QA-triage-20260827-12 | P3                        | The `K · A · U · L · D` legend renders from first paint, but the keys do nothing until a row is expanded                                                        | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260827-13 | P3                        | Rows 2–12 show a bare `›` while row 1 shows a rationale, reading as "row 1 loaded and the rest failed"                                                          | Open                                   |     |
-| QA-triage-20260827-14 | P3                        | A sender with no inbox mail occupies a decision slot with no signal until the preview opens                                                                     | Open                                   |     |
-| QA-triage-20260828-04 | P2                        | Protecting a queued sender updates the rows but not the Today strip, so the strip keeps naming a subset the rows no longer contain                              | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260828-03 | P2                        | The Today strip and the rows it summarises are separate queries pulled apart by four independent paths, so they can describe different windows and queue copies | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260828-02 | P3                        | "The last 90 days" is implemented independently in 4+ places with no shared definition; nothing makes them agree                                                | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260828-01 | P2                        | "LAST SEEN today" is shown for mail that arrived yesterday — the label buckets by elapsed hours, not calendar day                                               | Fixed on branch — awaiting merge       |     |
-| QA-triage-20260827-15 | P3                        | The H1 and queue legend give an unscoped count, and no "done for today" state ever renders to correct it                                                        | Open                                   |     |
+**Scan the first column.** It collapses the twelve states above into the same
+six glyphs `IMPLEMENTATION-LOG.md` uses (CLAUDE.md §8), so nothing new has to be
+learned to read it:
+
+⬜ pending · 🟡 being worked · 🔵 shipped, not yet re-checked · 🟢 closed ·
+🔴 needs the founder · ⏸️ won't do
+
+The glyph answers "is this still on me?" and nothing else — 🟢 covers `Fixed`,
+`Gone` and `Refuted` alike, which are three different reasons a row is finished.
+The `status` column keeps that distinction; this one deliberately throws it away.
+
+**🔵 means merged, and nothing short of it.** An open PR is 🟡, however green its
+checks: a proposed branch is work in flight, and a column that reads "shipped"
+for an unmerged diff tells you the one thing you were scanning to find out. The
+line is `Merged #n`, not `PR #n`.
+
+**As of 2026-08-28: 🔵 8 shipped · ⬜ 11 pending · 🟢 0 confirmed.** This line is
+a hand-count and goes stale the moment a row moves — it carries a date so you can
+see that, rather than trusting a number nothing regenerates. A run that moves a
+row updates it.
+
+|     | id                    | sev                       | one line                                                                                                                                                        | status                                | PR   |
+| --- | --------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- | ---- |
+| 🔵  | QA-triage-20260827-01 | P1                        | The daily queue's `ORDER BY` has no tiebreak, so _which_ 12 senders appear is undefined and any write reshuffles the list under the reader                      | Merged #663 — awaiting confirming run | #663 |
+| 🔵  | QA-triage-20260827-02 | P1                        | "LAST SEEN today" is false for 849 of the 954 rows that assert a recency; the open back-end half of merged PR #258                                              | Merged #663 — awaiting confirming run | #663 |
+| 🔵  | QA-triage-20260827-03 | P1                        | "reduce future noise by ~10%" measures mail already received, while Archive and Later both declare future email unchanged                                       | Merged #663 — awaiting confirming run | #663 |
+| ⬜  | QA-triage-20260827-04 | P2 · **Tier 1 (billing)** | The Free-tier cap is one `::int` from inverting, and its spec runs on PGlite rather than the production driver                                                  | Approved — unblocked (#663 merged)    |      |
+| ⬜  | QA-triage-20260827-05 | P2                        | D30's adaptive 5–12 queue size is dead code — no client ever calls `queue-size`, so everyone gets the hard max 12                                               | Approved — unblocked (#663 merged)    |      |
+| ⬜  | QA-triage-20260827-06 | P2                        | The Triage empty state says new decisions arrive after a sync; the queue refills from already-scored rows with no sync                                          | Approved — unblocked (#663 merged)    |      |
+| ⬜  | QA-triage-20260827-07 | P2                        | One measurement, two names on the same card: the row says "marked read", the tile and bullet say "read rate"                                                    | Approved — unblocked (#663 merged)    |      |
+| ⬜  | QA-triage-20260827-08 | P2                        | "You'll see the affected email before anything changes" names Keep first, and Keep has no preview by design (D40)                                               | Approved — unblocked (#663 merged)    |      |
+| ⬜  | QA-triage-20260827-09 | P2                        | The undo deadline renders in UTC in the toast and in the reader's zone in the preview, two clicks apart                                                         | Approved — unblocked (#663 merged)    |      |
+| ⬜  | QA-triage-20260827-10 | P2                        | Two stat tiles are windowed and two are not, with nothing saying so; at 375px "90D" orphans onto its own line                                                   | Approved — unblocked (#663 merged)    |      |
+| ⬜  | QA-triage-20260827-11 | P2                        | The preview's footer — reversibility line, Cancel, confirm — sits below the fold on a 375px phone                                                               | Approved — unblocked (#663 merged)    |      |
+| 🔵  | QA-triage-20260827-12 | P3                        | The `K · A · U · L · D` legend renders from first paint, but the keys do nothing until a row is expanded                                                        | Merged #663 — awaiting confirming run | #663 |
+| ⬜  | QA-triage-20260827-13 | P3                        | Rows 2–12 show a bare `›` while row 1 shows a rationale, reading as "row 1 loaded and the rest failed"                                                          | Open                                  |      |
+| ⬜  | QA-triage-20260827-14 | P3                        | A sender with no inbox mail occupies a decision slot with no signal until the preview opens                                                                     | Open                                  |      |
+| 🔵  | QA-triage-20260828-04 | P2                        | Protecting a queued sender updates the rows but not the Today strip, so the strip keeps naming a subset the rows no longer contain                              | Merged #663 — awaiting confirming run | #663 |
+| 🔵  | QA-triage-20260828-03 | P2                        | The Today strip and the rows it summarises are separate queries pulled apart by four independent paths, so they can describe different windows and queue copies | Merged #663 — awaiting confirming run | #663 |
+| 🔵  | QA-triage-20260828-02 | P3                        | "The last 90 days" is implemented independently in 4+ places with no shared definition; nothing makes them agree                                                | Merged #663 — awaiting confirming run | #663 |
+| 🔵  | QA-triage-20260828-01 | P2                        | "LAST SEEN today" is shown for mail that arrived yesterday — the label buckets by elapsed hours, not calendar day                                               | Merged #663 — awaiting confirming run | #663 |
+| ⬜  | QA-triage-20260827-15 | P3                        | The H1 and queue legend give an unscoped count, and no "done for today" state ever renders to correct it                                                        | Open                                  |      |
 
 ### Review rounds — QA-01 / QA-02 / QA-03
 
@@ -316,10 +338,12 @@ diff, and this branch is at its review cap.
 
 ### What this branch ships, and what it deliberately does not
 
-Fixed and awaiting merge: the three P1s, plus QA-12 and all four rows filed
-during the 2026-08-28 smoke and reviews. The unsubscribe kill switch
-(`FOUNDER-FOLLOWUPS.md`) landed with it, which unblocks QA of that surface for
-the first time.
+Merged as #663: the three P1s, plus QA-12 and all four rows filed during the
+2026-08-28 smoke and reviews. The unsubscribe kill switch
+(`FOUNDER-FOLLOWUPS.md`) landed with it, corrected twice afterwards in #664 and
+#665. **It does not unblock QA of that surface** — the gate built on it was
+withdrawn the day it was written, and `U` stays unpressed. See "Blocked, not
+findable — still" below.
 
 **QA-13, QA-14 and QA-15 are NOT fixed, and each is held for a reason rather
 than skipped.**
@@ -361,12 +385,14 @@ comparison only.
 (`QA-triage-01`…`-04`), which was the scheme at the time. Those PRs map to
 `QA-triage-20260827-01`…`-04`. The dated form is correct from here on.
 
-**Sequencing.** QA-triage-20260827-05 through QA-triage-20260827-11 are approved but deliberately not handed off
-yet: they edit the same files as QA-01/02/03 (`triage.read-service.ts`,
-`triage-row-expanded.tsx`, `triage-row.tsx`), and two Codex runs in those files
-at once produce conflicting branches rather than parallel progress. They go out
-as one sweep once the P1 branch lands. QA-04 is isolated in the entitlements
-service and runs alongside the P1s.
+**Sequencing — the block is lifted.** QA-triage-20260827-05 through
+QA-triage-20260827-11 were held because they edit the same files as
+QA-01/02/03 (`triage.read-service.ts`, `triage-row-expanded.tsx`,
+`triage-row.tsx`), and two authors in those files at once produce conflicting
+branches rather than parallel progress. That branch merged as #663 on
+2026-08-27, so the seven go out as one sweep whenever the founder starts them.
+QA-04 is isolated in the entitlements service and was never blocked by the
+file overlap — only by the queue.
 
 **Not offered, and why.** Four candidates died to the refuters and are not on
 this list: the undo/category-label claim (the run compared a DB row against a
@@ -377,8 +403,221 @@ symptom, wrong mechanism — the surviving version is QA-triage-20260827-01), an
 printing the larger number would have been the bigger falsehood — the surviving
 remnant is QA-triage-20260827-15). Detail in the ledger's Refuted table.
 
-**Blocked, not findable.** Unsubscribe execution and the `U` keystroke were not
-exercised, by any route. `UnsubExecutionWorker` performs a real one-click POST
-from the founder's address with no dry-run and no kill switch, so the surface is
-reviewed by reading until the dev-only send refusal in `FOUNDER-FOLLOWUPS.md`
-exists. Nothing below the unsubscribe preview has been QA'd.
+**Blocked, not findable — still.** Unsubscribe execution and the `U` keystroke
+have never been exercised, by any route, on any run. `UnsubExecutionWorker`
+performs a real one-click POST to the sender's host from the founder's address,
+and it is irreversible (D58 — no undo). **Nothing below the unsubscribe preview
+has been QA'd**, and the surface stays reviewed by reading, not driving.
+
+A kill switch now exists and is sound: `UNSUB_SEND_ENABLED`, **fail-closed** —
+anything other than the exact string `true` refuses, the API refuses at the
+enqueue boundary before any write, and production boot asserts the flag so the
+refusal cannot silently reach a real user. Shipped in #663, corrected twice
+(#664, #665).
+
+**It does not authorise pressing `U`.** A gate that said it did was written on
+2026-08-28 and withdrawn the same day. Its first check — grep `.env.local` for
+the flag — passes in four situations where the running app still sends, each
+demonstrated rather than argued: a quoted `UNSUB_SEND_ENABLED="true"` parses to
+`true` while the grep returns 0; an exported shell variable beats the env file;
+a process booted before the line was removed keeps the old value; and the
+second check ran _after_ the press it was meant to guard. Reading the live
+process environment does not rescue it — this app injects config via
+`node --env-file-if-exists`, so runtime variables are invisible to `ps eww` and
+its zero is vacuous. The withdrawn gate and the evidence are in
+`.claude/commands/ct-qa.md`.
+
+`U` stays unpressed. **Never set the flag during a QA run.** Lifting this needs
+a mechanism that makes a press unable to reach a real sender, not a check that
+predicts it will be refused; the decision is open in `FOUNDER-FOLLOWUPS.md`.
+
+## undo
+
+Rows accumulate across every `/ct-qa undo` run. Per-run counts are in the
+ledger. First filed 2026-08-28 (4 survivors; 3 candidates refuted before
+filing — "no outcomes / nothing needs your attention" is a false claim
+(see QA-undo-20260828-01's "What this is NOT"), the Delete preview's default
+filter is a silent dead end, and its reach chip contradicts its own inbox
+count — the last two died to measurement: the first is spec'd, Delete-only,
+and self-annotated (6.5% of sends even hit it, one click clears it); the
+second compared two numbers from two different UI moments that cannot
+coexist on one frame).
+
+|     | id                  | sev | one line                                                                                                                                                                  | status | PR  |
+| --- | ------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | --- |
+| ⬜  | QA-undo-20260828-01 | P1  | Activity's own verb-count tiles include actions the user already undid while a different tile row on the same page correctly excludes them — no label says which is which | Open   |     |
+| ⬜  | QA-undo-20260828-02 | P2  | `/activity`'s stat row ships the desktop 5-column grid before hydration at 375px, so "UNSUBSCRIBES" and "KEPT" briefly overprint each other                               | Open   |     |
+| ⬜  | QA-undo-20260828-03 | P3  | The "Recovered" outcome tile can never register a user's own Undo (a different mechanism entirely — retried-after-failure jobs) and nothing in the product defines it     | Open   |     |
+| ⬜  | QA-undo-20260828-04 | P2  | Delete's own verb name disappears across 6 result surfaces, and its undo deadline repeats the two-clock mechanism already filed on `triage`, now on a second surface      | Open   |     |
+
+### QA-undo-20260828-01 — inconsistent undo/reverted-action exclusion
+
+**Core mechanism.** `activity_log.reverted_at` is a terminal-state fact
+(stamped in the same transaction as the undo-journal flip). Different
+aggregates over `activity_log` take opposite, undisclosed positions on
+whether a reverted row still counts.
+
+**Anchor evidence, live-verified this run.** The `window=7d` "This week"
+metrics panel (`activity-screen.tsx:3587`) reads `ARCHIVED 3 / DELETED 1` for
+the SAME window the "Your last 7 days" outcome tiles read `0/0/0/0/0` for.
+Confirmed via SQL: exactly 4 `activity_log` rows exist in that 7-day window,
+and **all 4 have `reverted_at` set** — they are two real actions performed and
+undone in this QA session (Archive of `classicfirearms.com`, Delete of
+`ukpos.com`) plus inherited rows from the prior session's run. `summarizeActivity`
+(`apps/api/src/activity/activity.read-service.ts:1071-1073`, `byVerb`) applies
+no `reverted_at` filter; `persistedReviewOutcomeExpression`
+(`apps/api/src/activity/activity.read-service.ts:1248-1291`) explicitly does
+(`when activityLog.revertedAt is not null then null`). Neither tile row
+carries a tooltip saying so.
+
+**What this is NOT** (refuted, do not re-file): "No outcomes in the last 7
+days. Nothing needs your attention." is NOT a false or contradictory
+statement — it is entailed true (gated on 5 zero tiles, which entails
+`failed=0`, which is exactly the separate `needsAttention` condition), and
+every one of the 4 rows renders an explicit `UNDONE` badge one panel below,
+so the screen is coherent, not self-contradicting. The original "Recovered
+tile" framing is also not this — see QA-undo-20260828-03, filed separately
+at P3.
+
+**Siblings — same mechanism, found by `defect-class-sweeper`, not
+independently re-refuted (recorded per finding, not filed as separate rows;
+promote any of these to its own row if a future run re-confirms it live):**
+
+- Triage's Today strip credits Autopilot with messages the user has since
+  undone — "DeclutrMail handled N automatically"
+  (`apps/api/src/triage/triage.read-service.ts:1211-1222`, no `reverted_at`
+  filter; contrast `packages/workers/src/weekly-value-receipt.worker.ts:301`,
+  which filters correctly on the identical shape — proof this is an omission,
+  not a house convention). **Tier 1b** (public-facing benefit-accuracy claim).
+- "Noise prevented per month" keeps a sender's full 90-day volume in its
+  projection after the user undoes the archive that would have deflected it
+  — the highest-magnitude overclaim of the set, since the error multiplies by
+  sender volume, not action count
+  (`apps/api/src/activity/activity.read-service.ts:1041-1065`). **Tier 1b.**
+- Two of Autopilot's four dismiss-reasons (`superseded`, `entitlement`) are
+  produced but accepted by no consumer — those matches vanish from both the
+  Skipped/Protected tiles and the Activity feed entirely
+  (`autopilot.read-service.ts:604-619,972`; consumers at
+  `activity.read-service.ts:669,805` only accept `user`/`protected`).
+  `entitlement` fires on a billing downgrade.
+- The `Protected` tile (same row as Recovered) is narrow but not dead —
+  reachable only via a race between an active-mode rule match and the sender
+  becoming Protected before the sweep runs
+  (`packages/workers/src/autopilot-action.worker.ts:929-933`) — same bare
+  label, same absence of any explanation.
+
+Six unmeasured per-instance counts (SQL provided by the sweeper) are needed
+before any of the siblings move past "live in principle" — see the sweep
+output; not reproduced here to keep this row's evidence to what was actually
+re-verified.
+
+**Regression test:** a spec on `summarizeActivity` (or wherever `byVerb` is
+computed) that seeds one archived-then-reverted row and asserts the returned
+count for that verb is 0, not 1 — must go RED against today's code first.
+
+**Editor pass addendum (`usability-editor`, source-verified, not
+independently re-refuted beyond the editor's own tracing):** the two panels
+share a window label ("Your last 7 days" / "THIS WEEK") that is the actual
+reason a reader assumes one denominator — propose distinguishing them
+("Still in effect · last 7 days" / "THIS WEEK · ACTIONS TAKEN"), generated
+from the same `windowToLabel` helper so "This window (30 days)" and "All
+time" get the same qualifier for free. "Nothing needs your attention" is
+true under the code's definition and false under the reader's — propose
+"Nothing failed and nothing is waiting on you. Actions you undid are not
+counted here." The `Skipped`/`Protected` tiles are a third population
+entirely (`rule_match_log.dismiss_reason`, not an action outcome at all),
+and "Protected · 0" collides head-on with D245's standing safety-state
+name — propose "Skipped by you" / "Skipped: protected".
+
+### QA-undo-20260828-02 — 375px hydration flash on the metrics grid
+
+**Cause, corrected by `finding-refuter` using headless-Chromium frame
+capture:** `apps/web/src/features/activity/activity-screen.tsx:686`'s
+`MetricsHeader` gates its mobile restack on `useIsAtMost('sm')`, whose
+`useState(false)` default means the server-rendered HTML ships the desktop
+`repeat(5, minmax(0, 1fr))` grid at every viewport width. At a real 375×812
+viewport the collision is visible for ~390ms in local dev (production window
+unmeasured) before the client-side effect fires and the grid restacks to
+`repeat(3, minmax(0px, 1fr))`, at which point Unsubscribes and Kept land on
+separate rows and the layout is correct. Self-corrects; no persistent state,
+no wrong number.
+
+The fix shape is already written down: `LEARNINGS.md:1348` names CSS-driven
+mobile restacking (inline `<style>` media queries, no JS-gated default) as
+the pattern that avoids this class of post-hydration flash. Not a duplicate
+finding — the fix is pre-decided, just not applied to this component.
+
+**Not swept further this run** (scope discipline — one job per run): the
+refuter noted 8 call sites across 7 screens gate `gridTemplateColumns` on
+`useIsAtMost`, meaning all 8 ship desktop-first SSR markup by the same
+pattern. Worth a dedicated `defect-class-sweeper` pass in a future run; not
+run here since this component is adjacent to, not part of, the `undo` job.
+
+**Regression test:** a Playwright/Storybook check that renders at 375px
+before JS executes (or throttles to catch the pre-hydration frame) and
+asserts no two stat labels' bounding boxes overlap — must go RED against
+today's code first.
+
+### QA-undo-20260828-03 — "Recovered" tile is permanently dead for Undo, and undefined
+
+**Corrected by `finding-refuter`:** the original claim (undo caused a specific
+"0 Recovered" a user would notice and misread) does not survive — this
+account has zero `action_jobs` with `recovery_attempt > 0` ever, so the tile
+was never going to move for any reason, and the surrounding screen gives the
+user positive confirmation via the per-row `UNDONE` badge and, for Archive,
+visibly-restored mail. What survives: the tile's _mechanism_ genuinely can
+never be triggered by a user's own Undo — only by a failed action's retry
+succeeding, a structurally different, currently-unused code path
+(`apps/api/src/activity/activity.read-service.ts:1248-1266`, gated by the
+`action_jobs` schema CHECK `recovery_attempt = 0 ⟺ root_action_id IS NULL`)
+— and nothing in the product defines this anywhere a user could learn it: no
+tooltip on the tile (`apps/web/src/features/activity/weekly-review-card.tsx:9`,
+bare label), and the page's own contextual-help panel ("Which Undo or
+recovery option applies?") describes exactly two recovery mechanisms
+("Activity Undo" and "Gmail Trash recovery") and never uses the word
+"Recovered" or ties it to either.
+
+Downgraded from the original P1 framing to P3: a vocabulary gap, not a false
+belief about what happened to the user's mail.
+
+**Regression test:** none proposed — this is a copy/definition gap, not a
+logic defect; the fix is a tooltip or glossary entry, not a code change with
+a meaningful red/green assertion.
+
+**Editor pass addendum (`usability-editor`):** proposed replacement label
+"Fixed on retry" (states what the tile actually measures — a failed action
+whose retry succeeded — instead of a word a reader maps onto Undo) and,
+same tile, "Clear recovered filter" → "Show all outcomes" (drop the raw
+wire-enum interpolation from user-facing copy).
+
+### QA-undo-20260828-04 — Delete's result copy and undo deadline are each stated in two inconsistent forms
+
+**Filed from `usability-editor`, not put through a dedicated
+`finding-refuter`** (scope/budget call — see the run notes in the ledger;
+each item below is independently source-traced by the editor with file:line,
+not a raw screen impression). P2: friction and inconsistency, nothing
+unreachable, nothing false.
+
+- **Delete's own verb disappears from every result surface.** Button `🗑
+Delete` → banner "Moved to Gmail Trash" → toast "Moved to Gmail Trash" →
+  Activity row "Moved to Gmail Trash" → Activity tile "DELETED" → filter chip
+  "Deleted". One shared string (`resultLabel`,
+  `packages/shared/src/actions/activity-record-copy.ts:16`) feeds all of
+  them; Archive/Later/Keep trace clean. Propose "Deleted to Gmail Trash".
+- **Second live instance of `QA-triage-20260827-09`'s two-clock mechanism,**
+  now on the undo surface itself rather than the triage preview: the banner
+  states the deadline in the reader's zone
+  (`receipt-strip.tsx:186-193`, matches `activity-screen.tsx`'s own
+  `formatExpiry`, which has a test pinning that behavior,
+  `activity-screen.test.tsx:996-1000`) while the toast hardcodes UTC
+  (`undo-tray.tsx:343`). Same fix as the original row: drop the hardcoded
+  `timeZone: 'UTC'`.
+- Lower-priority, same pass, not separately verified against a live screen
+  this run: verbosity trims on the Delete preview's recovery-facts banner
+  and empty-state copy, and a computed (not measured) 375px stacking-order
+  concern on `/activity`'s intro + help + weekly-card + metrics stack. Full
+  detail, exact replacement text, and file:line for all of these are in the
+  editor pass transcript; not reproduced here because they were not each
+  independently re-verified live.
+
+**Regression test:** none — copy consistency, not logic.

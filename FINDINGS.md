@@ -442,6 +442,23 @@ make_interval(...)` where `now` is a `Date`. Under `postgres-js` that always thr
   coverage silently shrinks reports green on what is left. Needs one `gh run view`
   against a current run to confirm or kill.
 
+- **2026-08-28** · `/activity` — **verified, survived `finding-refuter`: the page's own stat tiles disagree with each other about whether an undone action still counts.**
+  From `/ct-qa undo`, `QA-undo-20260828-01` in `docs/qa/qa-worklist.md`. The "This
+  week" metrics panel (`ARCHIVED`/`DELETED`/etc., `apps/api/src/activity/activity.read-service.ts:1071-1073`,
+  `summarizeActivity`'s `byVerb`) counts an action even after the user undoes it;
+  the "Your last 7 days" outcome tiles directly below (`persistedReviewOutcomeExpression`,
+  same file, `:1248-1291`) correctly exclude it — same page, same window, opposite
+  answers, no label on either tile saying which convention it follows. Live-verified
+  in a real account: 4 `activity_log` rows in the 7-day window, all 4 reverted, top
+  panel still read `ARCHIVED 3 / DELETED 1`. A `defect-class-sweeper` found the same
+  mechanism live in two more places that are public-facing benefit-accuracy claims
+  (Tier 1b per CLAUDE.md §2.0) — Triage's "handled N automatically" strip crediting
+  undone Autopilot batches, and "noise prevented per month" retaining a sender's full
+  volume after its archive is undone — plus two narrower instances (Autopilot
+  dismiss-reasons that reach no bucket; the `Protected` tile's own opacity). Detail,
+  siblings, and unmeasured per-instance SQL counts are all in the worklist row.
+  Proposed **P1**.
+
 ## P0 — launch blockers
 
 _None open._ The five that stood here — F008, F009, F010, F011, F012 — were
