@@ -15,6 +15,7 @@ import {
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
@@ -922,6 +923,11 @@ export function TriageScreen({
               }
             },
             onError: (err) => {
+              // Designed refusal — no Sentry, and say plainly nothing was sent.
+              if (isUnsubSendDisabled(err)) {
+                toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
+                return;
+              }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
               toast(
                 getActionFailureCopy('enqueue', {
@@ -990,7 +996,7 @@ export function TriageScreen({
             // retry. Says "nothing was sent" explicitly, because the one
             // thing a user must never be left unsure of is whether their
             // address reached a list processor.
-            const sendDisabled = apiErrorCode(err) === 'UNSUB_SEND_DISABLED';
+            const sendDisabled = isUnsubSendDisabled(err);
             if (!conflict) {
               captureFeatureException(err, {
                 surface: 'triage',
@@ -1007,7 +1013,7 @@ export function TriageScreen({
               staleProtection
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : sendDisabled
-                  ? 'Unsubscribe sending is turned off in this environment — nothing was sent.'
+                  ? UNSUB_SEND_DISABLED_MESSAGE
                   : getActionFailureCopy('enqueue', {
                       action: `${verb.toLowerCase()} ${row.senderName}`,
                     }).message,

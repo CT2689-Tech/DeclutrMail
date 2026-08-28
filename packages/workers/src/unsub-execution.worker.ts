@@ -1,4 +1,5 @@
 import { request as httpRequest } from 'node:http';
+import type { ErrorCode } from '@declutrmail/shared/contracts';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 
@@ -231,8 +232,15 @@ export const FETCH_UNSUB_HTTP_PORT: UnsubHttpPort = {
  *
  * Same string as the worker's `error_code` on purpose: one condition, one
  * name, wherever the user or an operator meets it.
+ *
+ * Typed as `ErrorCode`, which is the registry's own key union — so removing
+ * this from `ERROR_CODES` breaks the build. That matters because the failure
+ * is otherwise SILENT: `AllExceptionsFilter` drops any unregistered code and
+ * flattens the envelope to the bare status, so the client's branch for it
+ * becomes unreachable while every test on both sides stays green. This
+ * shipped exactly that way and only a browser smoke found it.
  */
-export const UNSUB_SEND_DISABLED_CODE = 'UNSUB_SEND_DISABLED';
+export const UNSUB_SEND_DISABLED_CODE: ErrorCode = 'UNSUB_SEND_DISABLED';
 
 /** `action_jobs.error_code` when the defence-in-depth refusal fires. */
 export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';

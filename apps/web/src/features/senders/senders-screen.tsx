@@ -65,6 +65,10 @@ import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions'
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
 import { useQueryClient } from '@tanstack/react-query';
+import {
+  isUnsubSendDisabled,
+  UNSUB_SEND_DISABLED_MESSAGE,
+} from '@/features/triage/unsub-send-disabled';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
@@ -1146,11 +1150,8 @@ function SendersScreenContent({
                 // and no Sentry event, because nothing broke. Says "nothing
                 // was sent" outright, since whether their address reached a
                 // list processor is the one thing a user must not be unsure of.
-                if (apiErrorCode(err) === 'UNSUB_SEND_DISABLED') {
-                  toast(
-                    'Unsubscribe sending is turned off in this environment — nothing was sent.',
-                    'warn',
-                  );
+                if (isUnsubSendDisabled(err)) {
+                  toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
                   return;
                 }
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
