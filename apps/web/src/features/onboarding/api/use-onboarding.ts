@@ -3,7 +3,7 @@
  * `/api/onboarding/*` surface.
  *
  * Query-key note (D226 wiring): the first-triage key extends
- * `TRIAGE_QUEUE_KEY`, so the triage pipeline's
+ * `TRIAGE_BOOTSTRAP_KEY`, so the triage pipeline's
  * `invalidateAfterDecision` (which invalidates the `['triage','queue']`
  * PREFIX after a server-confirmed decision) refetches the practice
  * set too — the decided row leaves step 5 exactly the way it leaves

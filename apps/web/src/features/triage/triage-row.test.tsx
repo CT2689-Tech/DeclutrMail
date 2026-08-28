@@ -79,6 +79,45 @@ function header(row: TriageDecisionRow): HTMLElement {
   });
 }
 
+/**
+ * A fixed "now" and calendar-day helper, so these assertions do not depend on
+ * what time of day the suite runs. `lastSeenLabel` compares CALENDAR days in
+ * the reader's timezone, so a fixture built from elapsed milliseconds would
+ * cross a day boundary depending on the clock.
+ */
+const NOW_FIXED = new Date(2026, 4, 20, 15, 0, 0).getTime();
+function daysAgoIso(days: number): string {
+  const d = new Date(NOW_FIXED);
+  d.setDate(d.getDate() - days);
+  d.setHours(9, 0, 0, 0);
+  return d.toISOString();
+}
+
+describe('lastSeenLabel — "today" is a calendar day, not 24 hours', () => {
+  it('calls yesterday afternoon "1d" when read after midnight', () => {
+    // The live bug, from a real smoke: a sender whose newest message arrived
+    // 2026-08-27 14:14 rendered "LAST SEEN today" at 01:21 on the 28th. Only
+    // 11 hours had elapsed, which floored to 0 — but it was the previous day,
+    // and nobody reads "today" as "since this time yesterday".
+    const readAt = new Date(2026, 7, 28, 1, 21).getTime();
+    const arrived = new Date(2026, 7, 27, 14, 14).toISOString();
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('1d');
+  });
+
+  it('still says "today" for earlier the same day', () => {
+    const readAt = new Date(2026, 7, 28, 23, 59).getTime();
+    const arrived = new Date(2026, 7, 28, 0, 1).toISOString();
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('today');
+  });
+
+  it('counts whole calendar days across a span longer than the elapsed hours', () => {
+    // 25 hours apart but two calendar days.
+    const readAt = new Date(2026, 7, 28, 0, 30).getTime();
+    const arrived = new Date(2026, 7, 26, 23, 30).toISOString();
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('2d');
+  });
+});
+
 describe('TriageRow — narrow-viewport identity (W1)', () => {
   it('stacks the header grid at ≤480px so the identity cell keeps its track', () => {
     setViewportWidth(375);
@@ -174,20 +213,48 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
   it('renders "90d+" when the 90d window is empty but lastDays disagrees', () => {
     // The live bug shape: quiet 90d with a collapsed lastDays of 0
     // ("LAST SEEN today" beside "Quiet 90d · 555 received").
-    expect(lastSeenLabel({ last90dMessages: 0, lastDays: 0 })).toBe('90d+');
-    expect(lastSeenLabel({ last90dMessages: 0, lastDays: 45 })).toBe('90d+');
-    expect(lastSeenLabel({ last90dMessages: 0, lastDays: 89 })).toBe('90d+');
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(0) }, NOW_FIXED)).toBe(
+      '90d+',
+    );
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(45) }, NOW_FIXED)).toBe(
+      '90d+',
+    );
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(89) }, NOW_FIXED)).toBe(
+      '90d+',
+    );
   });
 
   it('trusts lastDays when it agrees with the empty window (≥90)', () => {
-    expect(lastSeenLabel({ last90dMessages: 0, lastDays: 90 })).toBe('90d');
-    expect(lastSeenLabel({ last90dMessages: 0, lastDays: 200 })).toBe('200d');
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(90) }, NOW_FIXED)).toBe(
+      '90d',
+    );
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(200) }, NOW_FIXED)).toBe(
+      '200d',
+    );
   });
 
   it('keeps the plain display when the window has messages', () => {
-    expect(lastSeenLabel({ last90dMessages: 13, lastDays: 0 })).toBe('today');
-    expect(lastSeenLabel({ last90dMessages: 13, lastDays: 1 })).toBe('1d');
-    expect(lastSeenLabel({ last90dMessages: 13, lastDays: 12 })).toBe('12d');
+    // `lastDays: 0` means today and nothing else. It used to be ambiguous —
+    // the BE collapsed an unreadable date to 0 — so this assertion was true
+    // for the wrong reason half the time. The BE now sends `null` for unknown,
+    // which is what the next test pins.
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(0) }, NOW_FIXED)).toBe(
+      'today',
+    );
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(1) }, NOW_FIXED)).toBe('1d');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(12) }, NOW_FIXED)).toBe(
+      '12d',
+    );
+  });
+
+  it('renders unknown as unknown, never as a recency', () => {
+    // The defect this replaced: an unreadable MAX(internal_date) became 0 and
+    // the tile read "LAST SEEN today" for a sender who last wrote 45 days ago.
+    // Every branch must refuse to invent a recency, including the ones where
+    // the 90-day window would otherwise look self-consistent.
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: null }, NOW_FIXED)).toBe('unknown');
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: null }, NOW_FIXED)).toBe('unknown');
+    expect(lastSeenLabel({ last90dMessages: 1, lastSeenAt: null }, NOW_FIXED)).not.toBe('today');
   });
 });
 

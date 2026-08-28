@@ -2,34 +2,29 @@ import { queryOptions } from '@tanstack/react-query';
 
 import type { TriageDecisionRow, TriageSessionStats } from '@/features/triage/data';
 import type { TodaySummary } from './use-triage-queue';
-import { TRIAGE_QUEUE_KEY } from './query-keys';
+import { TRIAGE_BOOTSTRAP_KEY } from './query-keys';
 
-export { TRIAGE_QUEUE_KEY };
+export { TRIAGE_BOOTSTRAP_KEY };
 
-export const TRIAGE_STATS_KEY = ['triage', 'stats'] as const;
-export const TODAY_SUMMARY_KEY = ['triage', 'today-summary'] as const;
+/** Everything the Triage route renders, from one request. */
+export interface TriageBootstrap {
+  queue: TriageDecisionRow[];
+  stats: TriageSessionStats;
+  todaySummary: TodaySummary;
+}
 
 type TriageReader<T> = (signal: AbortSignal) => Promise<T>;
 
-export function triageQueueQueryOptions(reader: TriageReader<TriageDecisionRow[]>) {
+/**
+ * The single Triage query. The queue, the stats and the Today strip all
+ * `select` from this one cache entry — see `query-keys.ts` for why they are
+ * not three queries.
+ *
+ * 30s stale time: the strip is situational awareness, not a live ticker.
+ */
+export function triageBootstrapQueryOptions(reader: TriageReader<TriageBootstrap>) {
   return queryOptions({
-    queryKey: TRIAGE_QUEUE_KEY,
-    queryFn: ({ signal }) => reader(signal),
-    staleTime: 30_000,
-  });
-}
-
-export function triageStatsQueryOptions(reader: TriageReader<TriageSessionStats>) {
-  return queryOptions({
-    queryKey: TRIAGE_STATS_KEY,
-    queryFn: ({ signal }) => reader(signal),
-    staleTime: 30_000,
-  });
-}
-
-export function todaySummaryQueryOptions(reader: TriageReader<TodaySummary>) {
-  return queryOptions({
-    queryKey: TODAY_SUMMARY_KEY,
+    queryKey: TRIAGE_BOOTSTRAP_KEY,
     queryFn: ({ signal }) => reader(signal),
     staleTime: 30_000,
   });

@@ -33,7 +33,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import type { OnboardingFirstTriageMeta } from '@declutrmail/shared/contracts';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
-import { TRIAGE_STATS_KEY } from '@/features/triage/api/use-triage-queue';
+import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/use-triage-queue';
 import { FIRST_TRIAGE_KEY } from './api/use-onboarding';
 import { StepProtectionReview } from './step-protection-review';
 
@@ -94,13 +94,26 @@ function Seeded({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
   client.setQueryData(FIRST_TRIAGE_KEY, { rows, meta: readMeta });
-  client.setQueryData(TRIAGE_STATS_KEY, {
-    decidedToday: 0,
-    archivedToday: 0,
-    unsubscribedToday: 0,
-    laterToday: 0,
-    freeRemaining: null,
-    tier: 'free',
+  // The stats are one field of the single Triage cache entry now, so the
+  // story seeds the whole payload rather than a stats-only key.
+  client.setQueryData(TRIAGE_BOOTSTRAP_KEY, {
+    queue: [],
+    stats: {
+      decidedToday: 0,
+      archivedToday: 0,
+      unsubscribedToday: 0,
+      laterToday: 0,
+      freeRemaining: null,
+      tier: 'free',
+    },
+    todaySummary: {
+      receivedToday: 0,
+      sendersToday: 0,
+      handledAutomatically: 0,
+      queuedDecisions: 0,
+      noiseSenderCount: 0,
+      noiseReductionPct: null,
+    },
   });
   return (
     <QueryClientProvider client={client}>

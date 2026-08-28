@@ -31,6 +31,8 @@ import {
   labelActionJobOptions,
   OutboxPublisher,
   UNSUB_EXECUTION_JOB,
+  UNSUB_SEND_DISABLED_CODE,
+  unsubSendsEnabled,
   unsubExecutionJobOptions,
 } from '@declutrmail/workers';
 import type { LabelActionJobData, UnsubExecutionJobData } from '@declutrmail/workers';
@@ -975,6 +977,24 @@ export class ActionsService {
       });
     }
 
+    // Same refusal as the single-sender intent, and for the same reason:
+    // before the write transaction below, so no row and no job exist to be
+    // retried or resumed. Placed after the capability split so a selection
+    // with nothing sendable still gets the more specific answer above.
+    //
+    // This rejects the whole batch rather than demoting one-click senders to
+    // a skip reason, which would need a new `BulkSkipReason` on two wire
+    // types and a render path for it. The cost is that a MIXED batch cannot
+    // be exercised for its mailto half while sending is off; the
+    // single-sender mailto route is unaffected and is how D230 is normally
+    // driven.
+    if (!unsubSendsEnabled()) {
+      throw new ConflictException({
+        code: UNSUB_SEND_DISABLED_CODE,
+        message: 'Unsubscribe sending is disabled in this environment.',
+      });
+    }
+
     const safeKey = idempotencyKey.replace(/:/g, '-');
     const rowKey = (senderId: string): string => `unsubexec-${safeKey}-${senderId}`;
     const anchorKey = rowKey(actionable[0]!.id);
@@ -1444,6 +1464,30 @@ export class ActionsService {
       throw new ServiceUnavailableException({
         code: 'QUEUE_UNAVAILABLE',
         message: 'Unsubscribe queue unavailable — REDIS_URL is not set.',
+      });
+    }
+
+    // The kill switch, refused HERE rather than in the worker.
+    //
+    // Refusing in the worker looked equivalent and is not: it records
+    // `status='failed'`, and recovery gates on exactly that
+    // (`action-recovery.service.ts:258,376`) while the FE exposes a retry
+    // route. A refusal that can be retried is a send waiting for someone to
+    // press a button — and if the flag is later turned on, that stale job
+    // sends unattended, long after anyone is watching. So nothing is written
+    // and nothing is enqueued: no `action_jobs` row, no queued job, nothing
+    // resumable, nothing that changes meaning when the flag flips.
+    //
+    // `one_click` only. A `mailto` or `none` intent sends nothing — the user
+    // sends the opt-out themselves (D230) — so refusing those would block a
+    // decision the switch has no reason to touch.
+    //
+    // 409, not 503: the client must not retry it. `makeQueryClient` retries
+    // 5xx and never 4xx, and this state does not resolve by asking again.
+    if (method === 'one_click' && !unsubSendsEnabled()) {
+      throw new ConflictException({
+        code: UNSUB_SEND_DISABLED_CODE,
+        message: 'Unsubscribe sending is disabled in this environment.',
       });
     }
 

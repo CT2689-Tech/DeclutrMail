@@ -15,7 +15,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
@@ -187,6 +187,18 @@ function fakeQueue() {
   };
   return q;
 }
+
+/**
+ * One-click unsubscribe is a real send, refused at the ENQUEUE boundary unless
+ * `UNSUB_SEND_ENABLED` is exactly 'true'. This suite opts IN so the send path
+ * is exercised; the refusal has its own tests below.
+ */
+beforeAll(() => {
+  process.env.UNSUB_SEND_ENABLED = 'true';
+});
+afterAll(() => {
+  delete process.env.UNSUB_SEND_ENABLED;
+});
 
 describe('ActionsService', () => {
   let db: Db;
@@ -2056,6 +2068,62 @@ describe('ActionsService', () => {
         .set({ unsubscribeMethod: method, unsubscribeUrl: url })
         .where(eq(senders.id, senderId));
     }
+
+    it('one_click: the kill switch rejects the intent and writes NOTHING', async () => {
+      // The whole point of refusing HERE rather than in the worker. A
+      // worker-side refusal records status='failed', and recovery gates on
+      // exactly that (action-recovery.service.ts:258,376) while the FE
+      // exposes a retry route — so the refusal would be a send waiting for a
+      // button press, and if the flag were later turned on that stale job
+      // would send unattended. Nothing written means nothing to resume.
+      const previousOptIn = process.env.UNSUB_SEND_ENABLED;
+      delete process.env.UNSUB_SEND_ENABLED;
+      try {
+        await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');
+        const service = svcWithUnsubQueue();
+
+        await expect(
+          service.recordUnsubscribeIntent({
+            mailboxAccountId: mailboxId,
+            senderId,
+            idempotencyKey: 'blocked-unsub-1',
+          }),
+        ).rejects.toMatchObject({ status: 409 });
+
+        // No row, under either key shape. A 4xx that still left a row would
+        // be the stuck state wearing a designed-error costume.
+        const rows = await db.select().from(actionJobs);
+        expect(rows).toHaveLength(0);
+      } finally {
+        if (previousOptIn === undefined) delete process.env.UNSUB_SEND_ENABLED;
+        else process.env.UNSUB_SEND_ENABLED = previousOptIn;
+      }
+    });
+
+    it('mailto is untouched by the kill switch — nothing is sent for it anyway', async () => {
+      // D230: the USER sends the opt-out from Gmail. Refusing this would
+      // block a decision the switch has no reason to touch, and would make
+      // the manual path untestable in exactly the environments that need it.
+      const previousOptIn = process.env.UNSUB_SEND_ENABLED;
+      delete process.env.UNSUB_SEND_ENABLED;
+      try {
+        await setSenderMethod('mailto', 'mailto:unsub@shop.example');
+        const service = svcWithUnsubQueue();
+
+        const result = await service.recordUnsubscribeIntent({
+          mailboxAccountId: mailboxId,
+          senderId,
+          idempotencyKey: 'mailto-while-blocked-1',
+        });
+
+        expect(result.method).toBe('mailto');
+        expect(result.mailtoUrl).toBe('mailto:unsub@shop.example');
+        expect(result.executionActionId).toBeNull();
+      } finally {
+        if (previousOptIn === undefined) delete process.env.UNSUB_SEND_ENABLED;
+        else process.env.UNSUB_SEND_ENABLED = previousOptIn;
+      }
+    });
 
     it('one_click: returns the execution handle, persists the queued execution row, sets unsub_status=requested, enqueues', async () => {
       await setSenderMethod('one_click', 'https://unsub.shop.example/oc?u=1');

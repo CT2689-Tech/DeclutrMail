@@ -15,6 +15,7 @@ import {
   useRecordUnsubscribeIntent,
 } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
+import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
@@ -40,7 +41,7 @@ import {
 
 import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
-import { TRIAGE_QUEUE_KEY } from './api/query-options';
+import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
 import { ActionSheet, type ConfirmDetails } from './action-sheet';
 import { UnprotectButton } from './unprotect-button';
@@ -222,7 +223,7 @@ export function TriageScreen({
     { stale: expandedRow?.stale === true },
     {
       enabled: journey === 'daily' && expandedRow !== null,
-      invalidate: TRIAGE_QUEUE_KEY,
+      invalidate: TRIAGE_BOOTSTRAP_KEY,
     },
   );
 
@@ -922,6 +923,11 @@ export function TriageScreen({
               }
             },
             onError: (err) => {
+              // Designed refusal — no Sentry, and say plainly nothing was sent.
+              if (isUnsubSendDisabled(err)) {
+                toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
+                return;
+              }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
               toast(
                 getActionFailureCopy('enqueue', {
@@ -984,6 +990,13 @@ export function TriageScreen({
             // user something false about their sender.
             const conflict = err instanceof ApiError && err.status === 409;
             const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+            // Unsubscribe sending is off in this environment. A DESIGNED
+            // state, not a failure: the API refused before writing anything,
+            // so there is no half-finished action behind this and nothing to
+            // retry. Says "nothing was sent" explicitly, because the one
+            // thing a user must never be left unsure of is whether their
+            // address reached a list processor.
+            const sendDisabled = isUnsubSendDisabled(err);
             if (!conflict) {
               captureFeatureException(err, {
                 surface: 'triage',
@@ -999,9 +1012,11 @@ export function TriageScreen({
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
-                : getActionFailureCopy('enqueue', {
-                    action: `${verb.toLowerCase()} ${row.senderName}`,
-                  }).message,
+                : sendDisabled
+                  ? UNSUB_SEND_DISABLED_MESSAGE
+                  : getActionFailureCopy('enqueue', {
+                      action: `${verb.toLowerCase()} ${row.senderName}`,
+                    }).message,
               'warn',
             );
           },

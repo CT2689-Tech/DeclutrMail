@@ -24,8 +24,10 @@ import {
   FETCH_UNSUB_HTTP_PORT,
   UNSUB_MAX_ATTEMPTS,
   UNSUB_USER_AGENT,
+  UNSUB_SEND_BLOCKED_ERROR_CODE,
   UnsubExecutionWorker,
   unsubExecutionJobOptions,
+  unsubSendsEnabled,
 } from './unsub-execution.worker.js';
 import type { UnsubHttpPort } from './unsub-execution.worker.js';
 import { TransientError } from './worker-errors.js';
@@ -217,6 +219,48 @@ function ctx(attempt: number): WorkerContext {
   };
 }
 
+/**
+ * The suite opts IN to exercising the send path.
+ *
+ * Without this every test below records `UNSUB_SEND_BLOCKED_NON_PRODUCTION`
+ * instead of POSTing to its fake, because the kill switch refuses real sends
+ * outside production. Needing the opt-in at all is the proof the default is
+ * the safe one — delete these two lines and the suite goes red.
+ */
+beforeAll(() => {
+  process.env.UNSUB_SEND_ENABLED = 'true';
+});
+afterAll(() => {
+  delete process.env.UNSUB_SEND_ENABLED;
+});
+
+describe('unsubSendsEnabled — the kill switch', () => {
+  it('silence means DO NOT SEND, in every environment', () => {
+    // The polarity is the design. Refusing only when a flag is SET would make
+    // silence mean send, so an unset var, a typo, or a var that never reached
+    // the worker service would all send.
+    expect(unsubSendsEnabled({})).toBe(false);
+    expect(unsubSendsEnabled({ NODE_ENV: 'development' })).toBe(false);
+    expect(unsubSendsEnabled({ NODE_ENV: 'test' })).toBe(false);
+    // Production included. It is asserted ON at boot, never inferred here.
+    expect(unsubSendsEnabled({ NODE_ENV: 'production' })).toBe(false);
+  });
+
+  it('sends only on the exact string "true"', () => {
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: 'true' })).toBe(true);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: 'TRUE' })).toBe(false);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: '1' })).toBe(false);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: 'yes' })).toBe(false);
+    expect(unsubSendsEnabled({ UNSUB_SEND_ENABLED: '' })).toBe(false);
+  });
+
+  it('does not read NODE_ENV at all', () => {
+    // NODE_ENV cannot enable a send on its own, and cannot disable one either.
+    expect(unsubSendsEnabled({ NODE_ENV: 'production', UNSUB_SEND_ENABLED: 'true' })).toBe(true);
+    expect(unsubSendsEnabled({ NODE_ENV: 'development', UNSUB_SEND_ENABLED: 'true' })).toBe(true);
+  });
+});
+
 describe('UnsubExecutionWorker', () => {
   let db: Db;
   let mailboxId: string;
@@ -249,6 +293,61 @@ describe('UnsubExecutionWorker', () => {
     const events = await db.select().from(outboxEvents);
     return { job: job!, policy: policy!, activities, events };
   }
+
+  it('the kill switch refuses the send without touching the network', async () => {
+    // The only test in this file that runs as a laptop, a QA run or CI
+    // actually runs — with the suite's opt-in removed.
+    // Save and restore the PREVIOUS value, never a hardcoded 'true'. An
+    // earlier version reset it to 'true' unconditionally, which quietly
+    // re-enabled sends for every test after this one — so removing the
+    // suite-level opt-in left the file green and the docblock above it
+    // lying. A cleanup that restores a value nobody set is a state leak.
+    const previousOptIn = process.env.UNSUB_SEND_ENABLED;
+    delete process.env.UNSUB_SEND_ENABLED;
+    try {
+      await seedSender(db, mailboxId);
+      await seedPendingPolicy(db, mailboxId);
+      const actionId = await seedExecutionJob(db, mailboxId);
+      const http = fakeHttp([200]);
+      const worker = new UnsubExecutionWorker({
+        db: db as never,
+        http,
+        outbox: new OutboxPublisher(),
+        resolveHost: PUBLIC_RESOLVE,
+      });
+
+      const result = await worker.processJob(
+        { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'blocked-1' },
+        ctx(1),
+      );
+
+      // The load-bearing assertion: nothing left the process. A fake that
+      // would have answered 200 was never asked.
+      expect(http.calls).toEqual([]);
+      expect(result.outcome).toBe('failed');
+
+      const { job, policy, activities, events } = await readState(actionId);
+      expect(job.status).toBe('failed');
+      expect(job.errorCode).toBe(UNSUB_SEND_BLOCKED_ERROR_CODE);
+
+      // Nothing was ATTEMPTED, so nothing may claim an attempt. A projected
+      // unsub_status would put a failed chip on the senders list, an activity
+      // row would show an unsubscribe that never happened, and an outbox
+      // event would tell every downstream consumer the same.
+      // RESOLVED, not left pending. Leaving `requested` behind a terminally
+      // failed job made the senders list and Screener claim a send was still
+      // in flight — forever, for one that had been refused outright.
+      expect(policy.unsubStatus).toBe('failed');
+      expect(activities.filter((a) => a.action !== 'unsubscribe')).toHaveLength(0);
+      expect(events).toHaveLength(0);
+    } finally {
+      if (previousOptIn === undefined) {
+        delete process.env.UNSUB_SEND_ENABLED;
+      } else {
+        process.env.UNSUB_SEND_ENABLED = previousOptIn;
+      }
+    }
+  });
 
   it('2xx → endpoint accepted: action row, truthful Activity outcome, no undo, outbox event', async () => {
     await seedSender(db, mailboxId);

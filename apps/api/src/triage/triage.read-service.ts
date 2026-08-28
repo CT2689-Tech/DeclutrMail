@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { engagementWindowStart } from '@declutrmail/shared/contracts';
 import { and, count, desc, eq, getTableName, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
@@ -128,7 +129,22 @@ export interface TriageQueueRow {
    * types this `number | null`; Triage was the outlier.
    */
   readRate: number | null;
-  lastDays: number;
+  /**
+   * Whole days since this sender's newest message, or `null` when that date
+   * cannot be read. Never 0-as-unknown: a confident "today" for a sender who
+   * has not written in six weeks is a false statement about the user's own mail.
+   */
+  /**
+   * ISO timestamp of the sender's newest INBOUND message, or `null` when no
+   * readable date exists.
+   *
+   * The instant, not a day count. "Last seen" renders `0` as the word
+   * "today", and only the browser knows which calendar day the reader is in —
+   * a server counting elapsed 24-hour blocks called 14:00-yesterday "today"
+   * for anyone reading after their local midnight. The client derives the day
+   * count with `daysSince`.
+   */
+  lastSeenAt: string | null;
   totalAllTime: number;
   /**
    * Messages from this sender sitting in INBOX right now — what an
@@ -219,7 +235,7 @@ export type TriageQueueOrdering = 'actionable' | 'newsletter-first' | 'promotion
  *
  *   You received {receivedToday} emails from {sendersToday} senders.
  *   DeclutrMail handled {handledAutomatically} automatically.
- *   {queuedDecisions} sender decisions can reduce future noise by
+ *   {queuedDecisions} sender decisions; {noiseSenderCount} of them sent N% of
  *   ~{noiseReductionPct}%.
  *
  * `noiseReductionPct` is the queued non-Keep senders' share of the
@@ -234,6 +250,16 @@ export interface TodaySummary {
   handledAutomatically: number;
   /** Queue length the user will actually see (D30 clamp applied). */
   queuedDecisions: number;
+  /**
+   * How many of `queuedDecisions` actually contribute to
+   * `noiseReductionPct` — the non-Keep rows. Surfaced separately because the
+   * two numbers describe DIFFERENT sender sets: the count is every queued row,
+   * the percentage excludes Keep. Copy that attributes the percentage to all
+   * `queuedDecisions` is false whenever a Keep row is queued, which is most
+   * mailboxes and was invisible on the one where every row happened to be
+   * an unsubscribe.
+   */
+  noiseSenderCount: number;
   noiseReductionPct: number | null;
 }
 
@@ -271,6 +297,100 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * can move the evidence relevant to the selected relief goal ahead of
  * the SQL limit, then apply its richer signal ordering in memory.
  */
+/**
+ * postgres.js and PGlite disagree about raw `sql` timestamp fragments — one
+ * hands back a string, the other a `Date` — and a raw fragment gets no drizzle
+ * decoder either way, so the declared generic proves nothing. Mirrors the same
+ * helper in `lapse-reengagement.worker.ts`.
+ */
+/**
+ * Start of the trailing-90-day window: ONE rolling instant, re-used by both
+ * halves of the share within a request.
+ *
+ * ROLLING, not anchored to the UTC day, because "the last 90 days" has to
+ * mean the same thing everywhere in the product. Every other surface reads
+ * it rolling — the scorer that writes "1% read rate over the last 90 days"
+ * into the row's own reasoning text (`score.worker.ts` `NINETY_DAYS_MS`),
+ * the activity read service, and the action preview's `older than 90 days`
+ * filter. Anchoring only Triage would put a 90-to-91-day number in the stat
+ * tile directly above a rolling-90-day sentence about the same sender, which
+ * is the list/detail window drift this codebase keeps relearning — a bigger,
+ * permanently visible lie than the one it would fix.
+ *
+ * What this DOES fix is the original defect: the numerator was rolling and
+ * the denominator midnight-anchored, so the share was a ratio between two
+ * spans that differed by up to a day. Both now take this one instant.
+ *
+ * KNOWN RESIDUE — pre-existing, filed as QA-triage-20260828-03, and this is
+ * the one place that says what closing it actually requires.
+ *
+ * `/queue` and `/today-summary` are separate requests with independently
+ * invalidated caches, so each derives its own instant AND its own copy of the
+ * queue. Their windows differ by the seconds between the two calls. The
+ * user-visible break needs a queued sender whose entire 90-day volume sits
+ * inside that gap: the strip then reports a share above a row whose own
+ * 90-day count reads 0. Rare, not impossible.
+ *
+ * The safe replacement is ONE QUERY, not one window rule and not one patched
+ * call site. `getBootstrap` already returns queue + stats + summary from a
+ * single `listQueue` promise, so the SSR first paint has no drift at all —
+ * but the client then splits them across three cache keys, and at least four
+ * things pull those keys apart:
+ *
+ *   - `invalidateAfterDecision` marks all three stale as three refetches;
+ *   - `useRefreshStaleRead` (D25) invalidates the queue key ALONE;
+ *   - `use-sender-policy` invalidates the queue key alone too — and protection
+ *     rewrites a row's verdict to `keep`, which MOVES this summary's subset,
+ *     so the strip keeps describing a set the rows no longer contain;
+ *   - all three options carry `staleTime: 30_000` independently, so they
+ *     refetch on whichever component remounts or refocuses first, with no
+ *     mutation involved at all.
+ *
+ * Patching one invalidator therefore fixes a fraction and leaves the rest
+ * looking fixed. The structural answer is that the strip must stop being a
+ * separately-fetched query: one bootstrap query key, with the rows and the
+ * strip both selecting from it. One query is one instant and one copy of the
+ * queue, and every existing invalidator covers it automatically because there
+ * is only one key left to invalidate.
+ *
+ * Do NOT close it by anchoring this window alone. That was tried and reverted
+ * in `5bea2db0`: it made Triage the only surface not reading 90 days as
+ * rolling, so the stat tile disagreed with the scorer's own sentence rendered
+ * beside it. If the window rule is ever worth changing, the whole product's
+ * definition of 90 days moves together.
+ */
+function noiseWindowStartFrom(now: Date | undefined): Date {
+  return engagementWindowStart(now ?? new Date());
+}
+
+/**
+ * The queued share of 90-day inbound volume, or `null` when no honest
+ * number exists.
+ *
+ * Extracted so the impossible-ratio branch is reachable by a test. The
+ * state that produces `queuedNoise > total` — a sync reclassifying mail as
+ * outbound between two non-transactional reads — cannot be staged through
+ * the database from a spec, so behind the query this branch was untestable.
+ * An untested branch guarding a user-visible claim is the shape this repo
+ * keeps shipping.
+ */
+export function noiseSharePct(queuedNoise: number, total: number): number | null {
+  // `Math.min(100, …)` used to sit here. It printed exactly "100%" for a
+  // ratio above 1 — the most confident claim available, produced from
+  // evidence that the two reads disagreed. Say nothing instead.
+  if (total <= 0 || queuedNoise > total) return null;
+  return Math.round((queuedNoise / total) * 100);
+}
+
+function toDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
 function queueGoalPriority(ordering: TriageQueueOrdering) {
   switch (ordering) {
     // Both cleanup orderings push `later` to the BACK, and that is
@@ -382,6 +502,16 @@ export class TriageReadService {
      * narrowed query silently returns the whole mailbox.
      */
     senderKeys?: readonly string[];
+    /**
+     * Start of the trailing-90-day window for `last90dMessages`.
+     *
+     * The Today strip divides this projection's 90-day counts by a
+     * mailbox-wide 90-day count taken in a SEPARATE statement. When each
+     * half picked its own cutoff the two windows differed by up to a full
+     * day, so the share was computed across mismatched spans. The caller
+     * passes ONE instant to both halves instead.
+     */
+    windowStart?: Date;
   }): Promise<TriageQueueFacts[]> {
     if (input.senderKeys?.length === 0) {
       return [];
@@ -406,15 +536,22 @@ export class TriageReadService {
       ordering === 'newsletter-first' || ordering === 'promotions-first'
         ? desc(senders.totalReceived)
         : null;
-    const queueOrder = goalPriority
-      ? [
-          goalPriority,
-          ...(payoffPriority ? [payoffPriority] : []),
-          verdictPriority,
-          desc(triageDecisions.confidence),
-          triageDecisions.senderKey,
-        ]
-      : [verdictPriority, desc(triageDecisions.confidence)];
+    // `senderKey` last, on EVERY path, so the ORDER BY is a total order.
+    // Built as one list rather than a branch per ordering: the daily
+    // (`actionable`) route takes the null-goal path, and when that path was
+    // spelled separately it omitted the tiebreak. Confidence ties are not rare
+    // there — the engine emits a handful of discrete values, so a real mailbox
+    // had 33 decisions tied at 0.87 contending for the last 4 of 12 LIMIT
+    // slots. Without a tiebreak, Postgres may return any of them in any order,
+    // so which senders appear at all was undefined and any write to
+    // `triage_decisions` reshuffled the queue under the reader mid-decision.
+    const queueOrder = [
+      ...(goalPriority ? [goalPriority] : []),
+      ...(payoffPriority ? [payoffPriority] : []),
+      verdictPriority,
+      desc(triageDecisions.confidence),
+      triageDecisions.senderKey,
+    ];
 
     // Exclude senders the user has already decided on within the D30
     // window — the "decided" record is the K/A/U/L/D `activity_log` row
@@ -520,7 +657,7 @@ export class TriageReadService {
     // string … Received an instance of Date" (Codex smoke 2026-05-27).
     // `gte()` in a `.where()` handles Dates fine; only raw `sql`
     // fragments need the manual ISO + cast.
-    const ninetyDaysAgoIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const ninetyDaysAgoIso = (input.windowStart ?? noiseWindowStartFrom(undefined)).toISOString();
     const aggRows = await this.db
       .select({
         senderKey: mailMessages.senderKey,
@@ -538,7 +675,22 @@ export class TriageReadService {
         // DIFFERENT read rates for the same sender on the same day.
         // Numerator only: the message still arrived.
         last90Read: sql<number>`SUM(CASE WHEN ${mailMessages.isOutbound} = false AND ${mailMessages.internalDate} >= ${ninetyDaysAgoIso}::timestamptz AND NOT ${mailMessages.isUnread} AND ${readStateNotSweeperMarked(input.mailboxAccountId, getTableName(mailMessages))} THEN 1 ELSE 0 END)`,
-        lastInternalDate: sql<Date | null>`MAX(${mailMessages.internalDate})`,
+        // `unknown`, not `Date` — a raw `sql` fragment carries no decoder
+        // (drizzle's `SQL.decoder` is a no-op), so the declared generic is an
+        // unchecked assertion about the driver's wire shape rather than a
+        // guarantee. It resolved to a STRING under postgres.js while PGlite
+        // handed back a Date, which is why no test could reproduce the bug it
+        // caused. Normalise through `toDate` at the consumer instead.
+        // INBOUND only, like `last90Total` above. A sender's "last seen" is
+        // when THEY last wrote to you. Mail you SENT is stored under the
+        // hash of its own `From`, so a message to your own address or a
+        // sending alias shares the sender key — and an unfiltered MAX let
+        // today's outbound mail render "LAST SEEN today" for a sender whose
+        // newest inbound message was months old. `senders.lastSeenAt`, the
+        // fallback below, is already derived from inbound rows only, so the
+        // filter aligns the aggregate with what it falls back to. NULL when
+        // a sender has only outbound rows — which falls back correctly.
+        lastInternalDate: sql<unknown>`MAX(CASE WHEN ${mailMessages.isOutbound} = false THEN ${mailMessages.internalDate} END)`,
       })
       .from(mailMessages)
       .where(
@@ -600,11 +752,15 @@ export class TriageReadService {
       const inbox = inboxBySender.get(r.senderKey) ?? { inbox: 0, unread: 0 };
       const inboxCount = inbox.inbox;
       const monthlyVolume = Math.round(last90Total / 3);
-      const lastInternal = agg?.lastInternalDate ?? r.lastSeenAt;
-      const lastDays =
-        lastInternal instanceof Date
-          ? Math.max(0, Math.floor((now - lastInternal.getTime()) / 86_400_000))
-          : 0;
+      // `??` on the RAW value would pick an unreadable non-null and shadow
+      // `r.lastSeenAt`, which is a correctly-typed column read — that is the
+      // exact shape of the defect this replaced. Normalise first, then fall
+      // back, so the fallback can actually do its job.
+      const lastInternal = toDate(agg?.lastInternalDate) ?? toDate(r.lastSeenAt);
+      // Unknown stays unknown. The previous `: 0` answered "I could not read
+      // this date" with the most recent date possible, so a sender last seen 45
+      // days ago rendered "LAST SEEN today" — the same rule this file already
+      // applies to `readRate` ("no denominator means unknown, not zero").
 
       // Protection overrides the recommendation (2026-07-10 founder
       // dogfood): a row reading "PROTECTED" and "Unsubscribe · 95% ·
@@ -665,7 +821,7 @@ export class TriageReadService {
          */
         last90dMessages: last90Total,
         readRate,
-        lastDays,
+        lastSeenAt: lastInternal === null ? null : lastInternal.toISOString(),
         totalAllTime: total,
         inboxCount,
         unreadInboxCount: inbox.unread,
@@ -986,9 +1142,13 @@ export class TriageReadService {
     limit: number;
     now?: Date;
   }): Promise<TriageBootstrapFacts> {
+    // ONE window instant for both halves of the noise share — see
+    // `noiseWindowStartFrom`.
+    const windowStart = noiseWindowStartFrom(input.now);
     const queuePromise = this.listQueue({
       mailboxAccountId: input.mailboxAccountId,
       limit: input.limit,
+      windowStart,
     });
     const [queue, stats, todaySummary] = await Promise.all([
       queuePromise,
@@ -996,7 +1156,7 @@ export class TriageReadService {
         mailboxAccountId: input.mailboxAccountId,
         ...(input.now === undefined ? {} : { now: input.now }),
       }),
-      this.getTodaySummaryFromQueue(input, queuePromise),
+      this.getTodaySummaryFromQueue(input, queuePromise, windowStart),
     ]);
     return { queue, stats, todaySummary };
   }
@@ -1016,15 +1176,18 @@ export class TriageReadService {
    * D7 / D228: counts over metadata only.
    */
   async getTodaySummary(input: { mailboxAccountId: string; now?: Date }): Promise<TodaySummary> {
+    const windowStart = noiseWindowStartFrom(input.now);
     return this.getTodaySummaryFromQueue(
       input,
-      this.listQueue({ mailboxAccountId: input.mailboxAccountId, limit: 12 }),
+      this.listQueue({ mailboxAccountId: input.mailboxAccountId, limit: 12, windowStart }),
+      windowStart,
     );
   }
 
   private async getTodaySummaryFromQueue(
     input: { mailboxAccountId: string; now?: Date },
     queuePromise: Promise<TriageQueueFacts[]>,
+    windowStart: Date,
   ): Promise<TodaySummary> {
     const now = input.now ?? new Date();
     const todayStartUtc = new Date(
@@ -1066,13 +1229,11 @@ export class TriageReadService {
       autopilotPromise,
       queuePromise,
     ]);
-    const queuedNoise = queueRows
-      .filter((r) => r.verdict !== 'keep')
-      .reduce((sum, r) => sum + r.last90dMessages, 0);
+    const noiseRows = queueRows.filter((r) => r.verdict !== 'keep');
+    const queuedNoise = noiseRows.reduce((sum, r) => sum + r.last90dMessages, 0);
 
     let noiseReductionPct: number | null = null;
     if (queueRows.length > 0 && queuedNoise > 0) {
-      const ninetyDaysAgo = new Date(todayStartUtc.getTime() - 90 * 86_400_000);
       const [volume] = await this.db
         .select({ total: count() })
         .from(mailMessages)
@@ -1080,13 +1241,13 @@ export class TriageReadService {
           and(
             eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
             eq(mailMessages.isOutbound, false),
-            gte(mailMessages.internalDate, ninetyDaysAgo),
+            // The SAME cutoff the numerator used. These were two different
+            // rules — rolling here, midnight-anchored there — so the share
+            // was a ratio between two spans that could differ by a day.
+            gte(mailMessages.internalDate, windowStart),
           ),
         );
-      const total = Number(volume?.total ?? 0);
-      if (total > 0) {
-        noiseReductionPct = Math.min(100, Math.round((queuedNoise / total) * 100));
-      }
+      noiseReductionPct = noiseSharePct(queuedNoise, Number(volume?.total ?? 0));
     }
 
     return {
@@ -1094,6 +1255,7 @@ export class TriageReadService {
       sendersToday: Number(received?.senders ?? 0),
       handledAutomatically: Number(autopilot?.handled ?? 0),
       queuedDecisions: queueRows.length,
+      noiseSenderCount: noiseRows.length,
       noiseReductionPct,
     };
   }

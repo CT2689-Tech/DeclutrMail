@@ -21,7 +21,7 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { TOPICS } from '@declutrmail/events';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   AutopilotActionWorker,
@@ -243,6 +243,19 @@ const CTX: WorkerContext = {
   startedAt: new Date(),
   policy: 'perMailboxPolicy',
 };
+
+/**
+ * Autopilot's one-click unsubscribe path performs a real send, so it sits
+ * behind the same kill switch as the worker that executes it:
+ * `UNSUB_SEND_ENABLED` must be exactly 'true' or nothing is enqueued. This
+ * suite opts IN so the send path is exercised; the refusal has its own test.
+ */
+beforeAll(() => {
+  process.env.UNSUB_SEND_ENABLED = 'true';
+});
+afterAll(() => {
+  delete process.env.UNSUB_SEND_ENABLED;
+});
 
 describe('AutopilotActionWorker', () => {
   let db: Db;
@@ -921,6 +934,109 @@ describe('AutopilotActionWorker', () => {
     const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
     expect(match!.intentApplied).toBe(true);
     expect(match!.intentToken).toBeNull();
+  });
+
+  it('unsubscribe one_click: the kill switch writes no row and enqueues nothing', async () => {
+    // Runs as a laptop, a QA run and CI actually run — opt-in removed.
+    const previousOptIn = process.env.UNSUB_SEND_ENABLED;
+    delete process.env.UNSUB_SEND_ENABLED;
+    try {
+      const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy');
+      const { senderKey } = await seedSender(db, mailboxId, 'list@news.com', {
+        unsubscribeMethod: 'one_click',
+        unsubscribeUrl: 'https://news.com/unsub',
+      });
+      const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      // Nothing queued, and no execution row for a worker to pick up later.
+      expect(result.unsubscribeExecutionsEnqueued).toBe(0);
+      // Not counted as work done. The caller increments
+      // `unsubscribeIntentsRecorded` for every non-'stale' return, so an
+      // early return of the normal shape made the sweep report an intent it
+      // never recorded.
+      expect(result.unsubscribeIntentsRecorded).toBe(0);
+      expect(result.skippedUnsubSendDisabled).toBe(1);
+      expect(unsubJobs).toHaveLength(0);
+      const exec = await db
+        .select()
+        .from(actionJobs)
+        .where(eq(actionJobs.idempotencyKey, `autopilot-unsubexec-${matchId}`));
+      expect(exec).toHaveLength(0);
+
+      // NOTHING is recorded — no intent event, no activity row. The run
+      // simply did not process this sender.
+      const events = await db.select().from(outboxEvents);
+      expect(
+        events.filter((e) => e.topic === TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED),
+      ).toHaveLength(0);
+
+      // The load-bearing one: the match stays UNAPPLIED, so the next sweep
+      // picks it up. Marking it applied consumed autopilot's own work — the
+      // sender was never retried once sending was enabled again, and nothing
+      // recorded that it had been dropped.
+      const [matchRow] = await db
+        .select({ intentApplied: ruleMatchLog.intentApplied })
+        .from(ruleMatchLog)
+        .where(eq(ruleMatchLog.id, matchId));
+      expect(matchRow!.intentApplied).toBe(false);
+    } finally {
+      if (previousOptIn === undefined) delete process.env.UNSUB_SEND_ENABLED;
+      else process.env.UNSUB_SEND_ENABLED = previousOptIn;
+    }
+  });
+
+  it('unsubscribe one_click: an IN-FLIGHT claim is finished, never skipped', async () => {
+    // The kill switch stops NEW work. It must not strand a claim from an
+    // earlier sweep that already wrote its `action_jobs` row: skipping that
+    // leaves the row at `queued` forever, which is the one outcome the
+    // in-flight rule exists to prevent — "an in-flight claim has exactly one
+    // correct outcome: finish it".
+    //
+    // Finishing it is safe with sending disabled. The execution worker's own
+    // refusal terminates the job and resolves the policy; nothing is sent.
+    const previousOptIn = process.env.UNSUB_SEND_ENABLED;
+    delete process.env.UNSUB_SEND_ENABLED;
+    try {
+      const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy');
+      const { senderKey, senderId } = await seedSender(db, mailboxId, 'list@news.com', {
+        unsubscribeMethod: 'one_click',
+        unsubscribeUrl: 'https://news.com/unsub',
+      });
+      const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+      // The claim a crashed earlier sweep left behind, ADVANCED past
+      // creation. `claimIsInFlight` treats a `queued` row with no resolved
+      // ids as not-yet-started — that one is safe to leave, and the next
+      // enabled sweep reuses it. `executing` is the state that must never be
+      // skipped, because it may already have acted.
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'unsubscribe',
+        direction: 'forward',
+        selector: { type: 'sender', senderId, senderKey },
+        resolvedMessageIds: [],
+        requestedCount: 1,
+        status: 'executing',
+        idempotencyKey: `autopilot-unsubexec-${matchId}`,
+      });
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      // NOT skipped — the claim is carried to completion.
+      expect(result.skippedUnsubSendDisabled).toBe(0);
+      const [row] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(row!.intentApplied).toBe(true);
+    } finally {
+      if (previousOptIn === undefined) delete process.env.UNSUB_SEND_ENABLED;
+      else process.env.UNSUB_SEND_ENABLED = previousOptIn;
+    }
   });
 
   it('unsubscribe one_click: records intent + outbox event + enqueues execution', async () => {

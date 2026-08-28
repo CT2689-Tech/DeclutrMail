@@ -69,11 +69,36 @@ void _assertNoShadow;
  */
 export type Sender = SenderListRow & DerivedSenderFields;
 
-/** Computes whole days between an ISO date and "now" — clamped to 0. */
+/**
+ * Whole CALENDAR days between an ISO date and "now", in the reader's own
+ * timezone — clamped to 0.
+ *
+ * Calendar days, not elapsed 24-hour blocks, because `0` renders as the word
+ * "today". Elapsed hours made that false for most of every night: mail that
+ * arrived at 14:00 yesterday is 11 hours old at 01:00, which floors to 0 and
+ * printed "today" for a message from the previous day. Nobody reads "today"
+ * as "since this time yesterday".
+ *
+ * The comparison has to happen HERE and not on the server, because only the
+ * browser knows which calendar day the reader is in. A server computing this
+ * in UTC would be wrong for every reader west of it after their local
+ * midnight, and wrong for everyone east of it before theirs.
+ */
 export function daysSince(iso: string, now: number): number {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return 0;
-  return Math.max(0, Math.floor((now - then) / (1000 * 60 * 60 * 24)));
+  const then = new Date(iso);
+  if (!Number.isFinite(then.getTime())) return 0;
+  // Midnight-to-midnight in local time. Building the dates through the local
+  // Y/M/D constructor is what makes DST-crossing spans come out whole: the
+  // raw millisecond gap across a clock change is 23 or 25 hours, which
+  // truncating division would round the wrong way.
+  const thenMidnight = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();
+  const nowDate = new Date(now);
+  const nowMidnight = new Date(
+    nowDate.getFullYear(),
+    nowDate.getMonth(),
+    nowDate.getDate(),
+  ).getTime();
+  return Math.max(0, Math.round((nowMidnight - thenMidnight) / 86_400_000));
 }
 
 /** Computes whole months between an ISO date and "now" — clamped to 0. */

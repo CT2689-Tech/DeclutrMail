@@ -1,11 +1,11 @@
 import { queryOptions } from '@tanstack/react-query';
 import type { OnboardingState } from '@declutrmail/shared/contracts';
 
-import { TRIAGE_QUEUE_KEY } from '@/features/triage/api/query-options';
+import { TRIAGE_BOOTSTRAP_KEY } from '@/features/triage/api/query-options';
 import type { FirstTriageRead } from './use-onboarding';
 
 export const ONBOARDING_STATE_KEY = ['onboarding', 'state'] as const;
-export const FIRST_TRIAGE_KEY = [...TRIAGE_QUEUE_KEY, 'onboarding-first'] as const;
+export const FIRST_TRIAGE_KEY = [...TRIAGE_BOOTSTRAP_KEY, 'onboarding-first'] as const;
 
 type OnboardingReader<T> = (signal: AbortSignal) => Promise<T>;
 
