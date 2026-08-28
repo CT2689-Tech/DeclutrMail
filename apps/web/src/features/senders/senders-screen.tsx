@@ -1140,6 +1140,19 @@ function SendersScreenContent({
                 }
               },
               onError: (err) => {
+                // Sending is off in this environment. A DESIGNED state, not a
+                // failure: the API refused before writing anything, so there
+                // is no half-finished action behind it and nothing to retry —
+                // and no Sentry event, because nothing broke. Says "nothing
+                // was sent" outright, since whether their address reached a
+                // list processor is the one thing a user must not be unsure of.
+                if (apiErrorCode(err) === 'UNSUB_SEND_DISABLED') {
+                  toast(
+                    'Unsubscribe sending is turned off in this environment — nothing was sent.',
+                    'warn',
+                  );
+                  return;
+                }
                 captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
                 toast(`Couldn't request the unsubscribe from ${sref.name}`, 'warn');
               },

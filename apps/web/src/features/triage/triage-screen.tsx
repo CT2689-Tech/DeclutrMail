@@ -984,6 +984,13 @@ export function TriageScreen({
             // user something false about their sender.
             const conflict = err instanceof ApiError && err.status === 409;
             const staleProtection = apiErrorCode(err) === 'PROTECTED_SENDER';
+            // Unsubscribe sending is off in this environment. A DESIGNED
+            // state, not a failure: the API refused before writing anything,
+            // so there is no half-finished action behind this and nothing to
+            // retry. Says "nothing was sent" explicitly, because the one
+            // thing a user must never be left unsure of is whether their
+            // address reached a list processor.
+            const sendDisabled = apiErrorCode(err) === 'UNSUB_SEND_DISABLED';
             if (!conflict) {
               captureFeatureException(err, {
                 surface: 'triage',
@@ -999,9 +1006,11 @@ export function TriageScreen({
             toast(
               staleProtection
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
-                : getActionFailureCopy('enqueue', {
-                    action: `${verb.toLowerCase()} ${row.senderName}`,
-                  }).message,
+                : sendDisabled
+                  ? 'Unsubscribe sending is turned off in this environment — nothing was sent.'
+                  : getActionFailureCopy('enqueue', {
+                      action: `${verb.toLowerCase()} ${row.senderName}`,
+                    }).message,
               'warn',
             );
           },
