@@ -50,3 +50,23 @@ describe('TriageQueue — wires the D245 row-strip Unprotect control for real', 
     expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 });
+
+describe('the shortcut legend tells the truth about when the keys work', () => {
+  beforeEach(() => {
+    resetTriageStore();
+  });
+
+  it('does not advertise live keys before a row is open', () => {
+    // The keys are bound by the EXPANDED row's action toolbar, so with the
+    // queue collapsed `K · A · U · L · D` promised five shortcuts that did
+    // nothing. A first-timer presses one, nothing happens, and the screen has
+    // taught them the app is broken.
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <TriageQueue rows={TRIAGE_QUEUE as readonly TriageDecisionRow[]} onAction={() => {}} />
+      </QueryWrapper>,
+    );
+    expect(screen.getByTitle('Open a row to use these keys')).toBeInTheDocument();
+    expect(screen.queryByText('K · A · U · L · D')).not.toBeInTheDocument();
+  });
+});
