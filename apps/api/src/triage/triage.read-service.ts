@@ -293,15 +293,47 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * helper in `lapse-reengagement.worker.ts`.
  */
 /**
- * Start of the trailing-90-day window, as ONE instant per request.
+ * Start of the trailing-90-day window — anchored to the UTC day, so that
+ * every caller deriving it independently gets the SAME instant.
  *
- * The noise share divides a per-sender 90-day count by a mailbox-wide
- * 90-day count, and the two are computed in different statements. Each
- * deriving its own cutoff made the ratio span mismatched windows, so both
- * take this.
+ * Determinism is the whole point, and it is why this is not
+ * `Date.now() - 90d`. The share divides a per-sender count (from
+ * `listQueue`) by a mailbox-wide count, and those two numbers reach the
+ * user through DIFFERENT HTTP requests: the rows come from `/queue`, the
+ * strip above them from `/today-summary`, and a decision invalidates both
+ * caches independently. There is no instant to share across two requests —
+ * only a rule they can both re-derive. A rolling cutoff cannot be
+ * re-derived: two calls a second apart produce two windows, so the strip
+ * could claim "~100%" above a row whose own 90-day count read 0.
+ *
+ * The original defect was never that anchoring is wrong. It was that the
+ * numerator anchored one way and the denominator another. Anchoring BOTH
+ * fixes it and survives the request boundary; making both rolling fixed
+ * only the half that lives inside a single request.
  */
 function noiseWindowStartFrom(now: Date | undefined): Date {
-  return new Date((now ?? new Date()).getTime() - 90 * 86_400_000);
+  const at = now ?? new Date();
+  const dayStartUtc = Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
+  return new Date(dayStartUtc - 90 * 86_400_000);
+}
+
+/**
+ * The queued share of 90-day inbound volume, or `null` when no honest
+ * number exists.
+ *
+ * Extracted so the impossible-ratio branch is reachable by a test. The
+ * state that produces `queuedNoise > total` — a sync reclassifying mail as
+ * outbound between two non-transactional reads — cannot be staged through
+ * the database from a spec, so behind the query this branch was untestable.
+ * An untested branch guarding a user-visible claim is the shape this repo
+ * keeps shipping.
+ */
+export function noiseSharePct(queuedNoise: number, total: number): number | null {
+  // `Math.min(100, …)` used to sit here. It printed exactly "100%" for a
+  // ratio above 1 — the most confident claim available, produced from
+  // evidence that the two reads disagreed. Say nothing instead.
+  if (total <= 0 || queuedNoise > total) return null;
+  return Math.round((queuedNoise / total) * 100);
 }
 
 function toDate(value: unknown): Date | null {
@@ -1167,25 +1199,13 @@ export class TriageReadService {
           and(
             eq(mailMessages.mailboxAccountId, input.mailboxAccountId),
             eq(mailMessages.isOutbound, false),
-            // The SAME instant the numerator used, not `todayStartUtc - 90d`.
-            // Anchoring the denominator to UTC midnight made its window up to
-            // a day WIDER than the numerator's rolling one, so the share was a
-            // ratio between two different spans and read low all day.
+            // The SAME cutoff the numerator used. These were two different
+            // rules — rolling here, midnight-anchored there — so the share
+            // was a ratio between two spans that could differ by a day.
             gte(mailMessages.internalDate, windowStart),
           ),
         );
-      const total = Number(volume?.total ?? 0);
-      // No clamp. The numerator and the denominator are separate statements
-      // with no transaction around them, so a sync that reclassifies mail as
-      // outbound or deletes rows between the two can leave the numerator
-      // describing a set the denominator no longer counts — a raw ratio above
-      // 1. `Math.min(100, …)` printed exactly "100%" for that: a maximally
-      // confident claim derived from an inconsistency it had just detected.
-      // An impossible ratio is evidence the two reads disagree, so make no
-      // claim rather than the strongest available one.
-      if (total > 0 && queuedNoise <= total) {
-        noiseReductionPct = Math.round((queuedNoise / total) * 100);
-      }
+      noiseReductionPct = noiseSharePct(queuedNoise, Number(volume?.total ?? 0));
     }
 
     return {

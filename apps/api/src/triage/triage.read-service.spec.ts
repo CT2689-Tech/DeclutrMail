@@ -15,7 +15,7 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TriageReadService } from './triage.read-service.js';
+import { TriageReadService, noiseSharePct } from './triage.read-service.js';
 
 /**
  * TriageReadService.listQueue integration tests (D29, D30, D226).
@@ -504,60 +504,53 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     expect(summary.noiseReductionPct).toBe(75);
   });
 
-  it('divides by the SAME 90-day window the numerator used', async () => {
-    // The numerator's cutoff was `Date.now() - 90d` (a rolling instant) while
-    // the denominator's was `todayStartUtc - 90d` (anchored to UTC midnight).
-    // The denominator's window was therefore up to a full day WIDER, so the
-    // share was a ratio between two different spans and read low all day —
-    // worst just before midnight UTC, which is what this fixture pins.
+  it('gives the same share to two requests in the same UTC day', async () => {
+    // The rows and the strip reach the user through DIFFERENT requests:
+    // `/queue` renders the per-sender 90-day counts, `/today-summary` renders
+    // the share built from them, and a decision invalidates both caches
+    // independently. So the cutoff cannot be an instant one request shares —
+    // it has to be a RULE both re-derive to the same value.
     //
-    // 23:00 UTC: the two cutoffs sit 23 hours apart. Straggler mail in that
-    // gap counted in the denominator while being outside the window the
-    // numerator measured.
-    const now = new Date(Date.UTC(2026, 4, 20, 23, 0, 0));
-    const at = (msBefore: number): Date => new Date(now.getTime() - msBefore);
+    // A rolling `Date.now() - 90d` cannot be re-derived. Two calls hours apart
+    // produce two windows, and the strip could claim a share above a row whose
+    // own 90-day count read zero. Anchoring both to the UTC day fixes it.
+    const early = new Date(Date.UTC(2026, 4, 20, 0, 30));
+    const late = new Date(Date.UTC(2026, 4, 20, 23, 30));
 
     await seedSenderWithDecision(db, mailboxId, SENDER_A, 'a@shop.example');
-    await seedSenderWithDecision(db, mailboxId, SENDER_B, 'b@news.example');
     const quietKey = 'c'.repeat(64);
-    const stragglerKey = 'e'.repeat(64);
-    for (const [key, email] of [
-      [quietKey, 'c@quiet.example'],
-      [stragglerKey, 'e@old.example'],
-    ] as const) {
-      await db.insert(senders).values({
-        mailboxAccountId: mailboxId,
-        senderKey: key,
-        email,
-        domain: email.split('@')[1]!,
-        gmailCategory: 'primary',
-        firstSeenAt: new Date('2026-01-01'),
-        lastSeenAt: new Date('2026-06-01'),
-      });
-    }
+    await db.insert(senders).values({
+      mailboxAccountId: mailboxId,
+      senderKey: quietKey,
+      email: 'c@quiet.example',
+      domain: 'quiet.example',
+      gmailCategory: 'primary',
+      firstSeenAt: new Date('2026-01-01'),
+      lastSeenAt: new Date('2026-06-01'),
+    });
     const seedAt = async (key: string, when: Date): Promise<void> => {
       await db.insert(mailMessages).values({
         mailboxAccountId: mailboxId,
         senderKey: key,
-        providerMessageId: `w-${key.slice(0, 6)}-${when.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
-        providerThreadId: `wt-${key.slice(0, 6)}`,
+        providerMessageId: `d-${key.slice(0, 6)}-${when.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+        providerThreadId: `dt-${key.slice(0, 6)}`,
         internalDate: when,
         isUnread: true,
         isOutbound: false,
       });
     };
-    // 6 queued of 8 in-window inbound → 75%.
-    for (let i = 0; i < 4; i++) await seedAt(SENDER_A, at(5 * 86_400_000));
-    for (let i = 0; i < 2; i++) await seedAt(SENDER_B, at(10 * 86_400_000));
-    for (let i = 0; i < 2; i++) await seedAt(quietKey, at(20 * 86_400_000));
-    // 90 days and 12 hours old: OUTSIDE the numerator's window, but inside the
-    // midnight-anchored one. It is the only row the two cutoffs disagree about.
-    await seedAt(stragglerKey, at(90 * 86_400_000 + 12 * 3_600_000));
+    // Mid-day on the 90th-day-back date. A rolling cutoff taken at 00:30
+    // includes it; the same rule at 23:30 excludes it. The UTC-day anchor
+    // (00:00 that date) includes it from either call.
+    for (let i = 0; i < 3; i++) await seedAt(SENDER_A, new Date(Date.UTC(2026, 1, 19, 12, 0)));
+    await seedAt(quietKey, new Date(Date.UTC(2026, 4, 15, 9, 0)));
 
-    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId, now });
-    expect(summary.queuedDecisions).toBe(2);
-    // 6/8. Counting the straggler in the denominator alone gave 6/9 → 67%.
-    expect(summary.noiseReductionPct).toBe(75);
+    const atEarly = await svc.getTodaySummary({ mailboxAccountId: mailboxId, now: early });
+    const atLate = await svc.getTodaySummary({ mailboxAccountId: mailboxId, now: late });
+
+    // 3 queued of 4 in-window inbound, from both ends of the day.
+    expect(atEarly.noiseReductionPct).toBe(75);
+    expect(atLate.noiseReductionPct).toBe(atEarly.noiseReductionPct);
   });
 
   it('a decided sender leaves both the decision count and the noise share (D30 exclusion parity)', async () => {
@@ -577,6 +570,25 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     expect(summary.queuedDecisions).toBe(1);
     // SENDER_B's 4 of 8 messages → 50%.
     expect(summary.noiseReductionPct).toBe(50);
+  });
+});
+
+describe('noiseSharePct — the share refuses to guess', () => {
+  it('reports the share when the two reads agree', () => {
+    expect(noiseSharePct(6, 8)).toBe(75);
+  });
+
+  it('makes no claim when the queued subset exceeds the mailbox total', () => {
+    // Only reachable when the numerator and denominator — separate statements
+    // with no transaction around them — describe different snapshots, e.g. a
+    // sync reclassifying mail as outbound between the two reads. `Math.min`
+    // rendered this as exactly "100%": the most confident claim available,
+    // from evidence the inputs disagreed.
+    expect(noiseSharePct(12, 10)).toBeNull();
+  });
+
+  it('makes no claim when there is nothing to divide by', () => {
+    expect(noiseSharePct(3, 0)).toBeNull();
   });
 });
 
