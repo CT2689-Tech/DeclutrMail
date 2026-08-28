@@ -396,18 +396,54 @@ Only a genuinely new survivor gets a new id. Say in the closing summary how many
 were inherited versus new — a run that reports twelve findings when nine were
 already on the list is inflating its own yield.
 
-### You do not fix what you found
+### You fix it. Codex reviews it adversarially.
 
-**Claude does not write the fix in a QA run.** Not the one-liner, not "while
-I'm here", not a P3 copy tweak. The run is an instrument; an instrument that
-edits the thing it measures stops being one, and a session that has spent an
-hour arguing itself into a finding is the worst-placed reader to judge whether
-the fix is right. This is not about capability. It is about who checks whom.
+The run finds, the founder approves, **you write the fix**, and then **Codex
+attacks it**. The independent check does not disappear — it moves from writing
+the fix to reviewing it, which is the stronger place for it. A reviewer reading
+real code can see what a brief cannot describe: what you actually changed, what
+you did not, and what you broke on the way past.
 
-The only files a QA run may write are the ledger, the worklist, `FINDINGS.md`,
-`docs/qa/handoffs/**`, and scratchpad screenshots. Product code, tests, and migrations are untouched.
-A temporary diagnostic probe is the single exception (§5) and must be reverted
-and proven clean in the same run.
+This replaces an earlier arrangement where Codex wrote the fix from a written
+brief. That failed twice for the same reason — the brief is a lossy channel. The
+runtime silently compressed a 111-line handoff to 28 lines, and an uncommitted
+brief did not exist inside the worktree at all. Reviewing a diff has no such
+channel: the diff **is** the artifact.
+
+What does not change is the reason the check exists. A session that has spent an
+hour arguing itself into a finding is the worst-placed reader to decide whether
+its own fix is right, and it will grade its own homework generously every time.
+So the review is not optional, not advisory, and not something you may waive
+because the diff is small.
+
+**The review runs before the PR is proposed for merge, and it must actually
+pass.** A run that fixes and self-approves has removed the only adversary in the
+loop.
+
+### Fixing, without becoming the thing you were measuring
+
+The QA walk and the fix are separate acts. Finish the walk, file the survivors,
+get approval — **then** touch code. Never fix mid-walk: the moment you start
+editing you stop being able to see the screen as a stranger, and every remaining
+persona is compromised.
+
+Rules for the fix itself:
+
+- **Minimum surgical diff** (CLAUDE.md §1.2/§1.3). Every changed line traces to
+  an approved worklist id. No adjacent cleanups, no refactors, no "while I'm
+  here" — a QA fix is the highest-temptation moment in this repo for scope creep,
+  because you have just spent an hour cataloguing everything that is wrong.
+- **Negative control, per assertion.** Revert the fix, watch the new test go RED,
+  restore it. A test that never failed against the old code proves nothing, and
+  this repo has shipped three of them (CLAUDE.md §8).
+- **Fix only what was approved.** A P3 you did not get approval for is not a
+  freebie; it is an unreviewed change riding a reviewed PR.
+- **Tier 1 stays hands-off** unless the founder approved that specific item, and
+  the §9 stop conditions still apply — billing, OAuth scopes, token crypto,
+  webhook auth, prod migrations, deletion, privacy.
+- **Do not edit the finding to match the fix.** If the fix reveals the finding
+  was wrong, say so and move the row to `Refuted`. Rewriting the symptom so your
+  diff looks correct is the worst available outcome.
 
 ### Ask the founder, per item
 
@@ -424,72 +460,36 @@ Recommend an order, and say what each fix costs and risks in one line.
 - **A refuted candidate is never offered.** It lost. Offering it anyway
   launders an argument the run already failed.
 
-### Hand the approved items to Codex
+### Send the diff to Codex for adversarial review
 
-Approved items go to **Codex**, via the `codex:rescue` skill (the local CLI is
-the runtime; `codex:setup` checks it). Group handoffs one of three ways, and no
-other: per item; per defect class where the sweep found siblings; or **per set
-of items whose fixes edit the same files**. Never one lump, and never "all the
-approved ones" as a single task.
+When the fix is written and green, hand the **diff** — not a brief — to Codex
+via the `codex:rescue` skill or `codex:adversarial-review`. Tell it to attack the
+change, not to admire it. It has the repo, so it needs from you only:
 
-That third grouping is not a convenience — two Codex runs editing one file
-concurrently produce conflicting branches instead of parallel progress. When you
-use it, name the shared files in the handoff, give each item its own acceptance
-criteria inside that one task, and say in the worklist why they were grouped.
-Approved items that overlap a task already running are marked
-`Approved — queued` and go out when it lands; queued is a real state, not a
-stalled one, and the founder is told which items are in it and behind what.
+- the approved worklist ids this diff claims to close;
+- for each, the symptom in one line and the acceptance criterion;
+- what you deliberately did **not** change, and why — otherwise a reviewer
+  reports your restraint as an omission;
+- the refuter's strongest surviving objection to each finding, because a fix
+  that does not survive it is fixing the wrong thing;
+- that you want the failure modes named, not a verdict: what input breaks this,
+  what did the negative control not cover, what did the diff miss.
 
-**Write the handoff to `docs/qa/handoffs/<worklist-id>.md`, COMMIT it, and then
-pass Codex the repo-relative path.** All three steps, in that order. Everything
-here was learned by getting it wrong on 2026-08-27:
+Keep the message short and point at the branch. The diff is already in the repo;
+do not paste it, and do not restate the finding at length — that is what put a
+111-line brief through a 28-line hole last time.
 
-- *Not as a shell argument.* The Codex runtime rejects heredocs, pipes and
-  command substitution outright and caps argument size well below a real brief —
-  a ~230-line handoff was silently compressed to 28 lines before it arrived. A
-  contract the transport truncates is not a contract, and you are not told.
-- *Not as an uncommitted file.* Codex runs in a git worktree, and `git worktree
-  add` checks out a **commit** — an untracked file in your checkout does not
-  exist there. Writing the brief and passing its path delivers nothing, and the
-  path resolves to a missing file rather than erroring in a way you would notice.
-  Committing it first is what makes it visible; the handoff is docs-only, so the
-  commit is cheap and safe.
-- *Do not lean on worktree isolation to keep concurrent tasks apart.* A worktree
-  is auto-removed when the agent that owns it changes nothing, and an agent whose
-  only job is to start a background Codex task changes nothing — so the isolation
-  disappears while the task it was protecting is still running. **The file-overlap
-  grouping rule above is the real protection**, not the worktree. Treat isolation
-  as a bonus that may not be there.
+**Then act on what comes back.** A review that finds something and changes
+nothing is theatre. Fix what it lands, and where you disagree, say why in the PR
+body rather than silently declining — the disagreement is part of the record.
+Record the outcome on the worklist row: `Review passed`, or `Review found <n>`
+with what you did about each.
 
-The committed file is also the record of what was asked, which the PR cites and a
-later run diffs against what was delivered.
+If the review says the fix is wrong rather than incomplete, the row goes back to
+`Approved` and the diff is rewritten. It does not go to the founder as "done
+with caveats".
 
-The handoff must be self-contained, because Codex has none of this run's
-context. The file gives it, verbatim:
-
-- the worklist id and the one-line symptom;
-- the reproduction, with the exact SQL / curl / Gmail read that shows it;
-- the traced cause as `path:line`, and say plainly if it was never traced;
-- **the refuter's strongest surviving objection** — the fix has to survive it too;
-- the sibling instances the `defect-class-sweeper` returned, and the ones it
-  killed, so Codex does not re-lit an argument that is already settled;
-- the regression test the finding named: which file, which tier, and what the
-  assertion must say **to have gone RED against today's code**;
-- the Tier 1 flag, if it carries one.
-
-Then update the worklist row with the date. The states and who may set each one
-are defined **once**, in the worklist's own States table — do not restate them
-here or in a handoff, because a vocabulary written down twice drifts, which is
-how the first version of this section ended up forbidding a grouping it also
-required. Two rules matter at this step: a row never skips straight from `Open`
-to `Handed to Codex` (the founder's approval is a state, and losing it loses the
-record that they were asked), and an approved item whose files are held by a
-running task is `Approved — queued` with the blocker named, not silently
-dropped. When Codex returns a PR, record the number. **Do not review your own finding's fix into
-main** — that is the same loop this section exists to break; it goes to the
-gate network and the founder like any other PR.
-
-## Done means done — ten boxes, not vibes
+## Done means done — twelve boxes, not vibes
 
 - [ ] All four personas walked, the editor last (as `usability-editor`)
 - [ ] Break list exhausted, or each skip named with its reason
@@ -504,12 +504,14 @@ gate network and the founder like any other PR.
       check stated, and no inherited row re-dated or re-numbered
 - [ ] Survivors counted against refuted and against inherited, each given a
       `QA-<job>-<YYYYMMDD>-<nn>` id and a row in `docs/qa/qa-worklist.md`
-- [ ] Approval asked per item; every approved item either handed to Codex or
-      marked `Approved — queued` with its blocker named; and **nothing fixed in
-      this run**
-- [ ] Every handoff brief written to `docs/qa/handoffs/`, **committed before
-      dispatch**, and its path confirmed to resolve inside the runtime Codex
-      actually got — an uncommitted brief reaches nobody
+- [ ] Approval asked per item, and **nothing touched that was not approved** —
+      no unapproved P3 riding along, no adjacent cleanup
+- [ ] Fixes written only after the walk was finished and the survivors filed —
+      never mid-walk, which blinds every persona that comes after
+- [ ] Negative control run per new assertion: fix reverted, test seen RED,
+      fix restored — and said so out loud
+- [ ] Diff sent to Codex for adversarial review, the review actually passed or
+      its findings were acted on, and the outcome recorded on the worklist row
 
 ## Output
 
@@ -581,6 +583,8 @@ Mutations are dev-stack only; prod reads are fine. No migrations from a laptop,
 no cloud-resource deletion, no credential rotation. One job per run — never
 bleed into the next one.
 
-**No fixes.** Product code, tests and migrations are not touched by this
-command, at any severity, however small the diff (§8). Findings are handed to
-Codex after the founder approves them, one item at a time.
+**Fixes are approved-only, and never self-signed.** Product code, tests and
+migrations are touched only for a worklist id the founder has approved (§8), and
+the resulting diff goes to Codex for adversarial review before it is proposed
+for merge. A run that fixes and approves its own fix has removed the only
+adversary in the loop, which is the entire point of the arrangement.
