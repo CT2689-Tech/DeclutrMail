@@ -630,14 +630,14 @@ filing — a claimed D226 preview-bypass, a claimed triple last-seen
 mismatch, and a claimed rationale-vs-stat mismatch; see the ledger's
 Refuted table for the grounds on each).
 
-|     | id                     | sev | one line                                                                                                                                                                                           | status                                                                                                                                 | PR  |
-| --- | ---------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| 🟡  | QA-archive-20260828-01 | P2  | The Triage volume tile shows a 90-day-derived average unlabelled as such, while the adjacent read-rate tile on the same row does label its window                                                  | Fixing — diff ready, in review                                                                                                         |     |
-| 🟡  | QA-archive-20260828-02 | P2  | The D226 action-preview dialog — the one screen a destructive mutation cannot skip — renders frozen LLM rationale text with no staleness indicator, unlike every other place the same text renders | Fixing — diff ready, in review; live-verified (Victoria's Secret Panty Party, "Scored today" now renders)                              |     |
-| 🟡  | QA-archive-20260828-03 | P2  | Sender Detail renders "today" and "yesterday" for the same last-seen fact via three independently-written day-math algorithms on one page                                                          | Fixing — diff ready, in review; live-verified (Pepperfry `updates.pepperfry.com`, a 14h-old message now reads "yesterday" not "today") |     |
-| 🟡  | QA-archive-20260828-04 | P3  | "Show this in the row next time" describes where the preview renders, not that it skips the dialog, and not that the choice is per-verb                                                            | Fixing — diff ready, in review                                                                                                         |     |
-| 🔴  | QA-archive-20260828-05 | P3  | The same "preview before anything changes" idea is worded three different ways across the Triage row, Triage modal, and Senders bulk modal                                                         | Attempted, reverted — see note below                                                                                                   |     |
-| 🟡  | QA-archive-20260828-06 | P3  | Activity's per-row source label uses the internal enum voice "VIA MANUAL" instead of "by you"                                                                                                      | Fixing — diff ready, in review                                                                                                         |     |
+|     | id                     | sev | one line                                                                                                                                                                                           | status                                                                                                                               | PR  |
+| --- | ---------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --- |
+| 🟡  | QA-archive-20260828-01 | P2  | The Triage volume tile shows a 90-day-derived average unlabelled as such, while the adjacent read-rate tile on the same row does label its window                                                  | PR ready — Codex round 2 clean on `b369f4ab`                                                                                         |     |
+| 🟡  | QA-archive-20260828-02 | P2  | The D226 action-preview dialog — the one screen a destructive mutation cannot skip — renders frozen LLM rationale text with no staleness indicator, unlike every other place the same text renders | PR ready — Codex round 2 clean on `b369f4ab`; live-verified (Victoria's Secret Panty Party, "Scored today" now renders)              |     |
+| 🟡  | QA-archive-20260828-03 | P2  | Sender Detail renders "today" and "yesterday" for the same last-seen fact via three independently-written day-math algorithms on one page                                                          | PR ready — Codex round 2 clean on `b369f4ab`; live-verified (Pepperfry `updates.pepperfry.com`, a 14h-old message reads "yesterday") |     |
+| 🟡  | QA-archive-20260828-04 | P3  | "Show this in the row next time" describes where the preview renders, not that it skips the dialog, and not that the choice is per-verb                                                            | PR ready — Codex round 2 clean on `b369f4ab`                                                                                         |     |
+| 🔴  | QA-archive-20260828-05 | P3  | The same "preview before anything changes" idea is worded three different ways across the Triage row, Triage modal, and Senders bulk modal                                                         | Attempted, reverted — see note below                                                                                                 |     |
+| 🟡  | QA-archive-20260828-06 | P3  | Activity's per-row source label uses the internal enum voice "VIA MANUAL" instead of "by you"                                                                                                      | PR ready — Codex round 2 clean on `b369f4ab`                                                                                         |     |
 
 **QA-archive-20260828-05, attempted and reverted.** The proposed fix
 (matching the Triage row toolbar's static hint to the inline preview's
@@ -659,6 +659,22 @@ is zero. Left `Open` would be wrong (nothing safe was identified to change);
 marked 🔴 instead — this needs a design call (rename one of the two texts to
 something that doesn't collide, or accept the toolbar hint is a different
 kind of copy than a preview header and leave it as is), not a wording tweak.
+
+### Review rounds — QA-01 / QA-02 / QA-03 / QA-04 / QA-06
+
+One diff, reviewed as one unit (all five ride the same PR).
+
+| round | ran against | verdict         | what it returned                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----- | ----------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `19f01ef6`  | **substantive** | Label missing "avg" + a stale doc comment (-01); zero test coverage for the new age-label branch (-02); the fix's own comments claimed a "Last seen" stat tile coexists on Sender Detail and that two lists share `last_seen_at` — both false (`StatsStrip` was replaced by `KpiStrip`, unmounted); a real hydration-mismatch risk left in place (`formatRelative` still called `Date.now()` ambiently on a page with no `ssr:false` boundary) (-03); mobile branch of the source-label fix had no test (-06). All fixed in `b369f4ab`. |
+| 2     | `b369f4ab`  | **CLEAN**       | Independently re-verified the hydration fix is correct and complete, the TZ-independent test's math holds under 5 timezones tried by hand (UTC, Pacific/Kiritimati, America/Los_Angeles, Asia/Kathmandu, Australia/Lord_Howe), and agreed with all four declined-scope calls below. Nothing to act on — round ends here.                                                                                                                                                                                                                |
+
+**Declined, on record (Codex agreed with each in round 2, flagged as separate pre-existing debt, not blockers):**
+
+- `scoredAgeLabel` returning `null` for a future-skewed `scoredAt` — documented-intentional (`engine-read-age.ts`'s own comment), shared by the two pre-existing call sites this fix's third call site copies exactly.
+- A `null` (not `undefined`) `scoredAt` rendering "Scored ~57 years ago" via epoch-zero — pre-existing gap in the shared helper (typed `string | undefined`, not `| null`, and no call site guards `null`). Worth its own fix; not touched here.
+- The remember-preference checkbox's `aria-label` overrides its descendant explanation sentence for screen readers — the exact same structural pattern existed pre-`19f01ef6`; this diff changed only the string. A real accessibility gap, needs `aria-describedby`, not this diff's scope.
+- An unawaited preference-persistence `PATCH` with no `onError` (`triage-screen.tsx`, `use-me-settings.ts`) can leave the checkbox's local state out of sync with what's actually persisted on failure — unrelated code path to the copy-only change QA-04 made.
 
 ### QA-archive-20260828-02 — frozen rationale, no age, inside the one dialog that gates a real mutation
 
@@ -692,6 +708,13 @@ unsubscribe channel named in the frozen `ruleLabel` vs. `senders.unsubscribe_met
 (`generated_by='template'`) carries the identical two numbers, so it is not
 LLM-only.
 
+**Live-verified after the fix.** Opened the D226 preview for Victoria's
+Secret Panty Party from `/triage` — "Why we suggested this:" now shows
+"Scored today" beside it, matching the pattern already used on
+`triage-row-expanded.tsx` and `triage-row.tsx`. The "needs a live re-drive"
+condition above is satisfied; this moved to `PR ready` on the strength of
+that plus Codex's round-2 clean (see Review rounds above).
+
 ### QA-archive-20260828-03 — three day-math algorithms disagreeing on Sender Detail
 
 **Not independently live-verified this run — sourced from `defect-class-sweeper`,
@@ -724,6 +747,19 @@ but have no shared source; and unrounded fractional-day thresholds gating
 `followup.read-service.ts:264`) — sizing needs
 `SELECT count(*) FROM senders WHERE extract(epoch from now()-last_seen_at)/86400 BETWEEN 89.5 AND 90.5;`
 per the sweeper, not yet run.
+
+**Live-verified after the fix, and the original filing corrected.** The
+"Last seen" stat tile claimed above does not actually coexist on this page —
+`StatsStrip` was replaced by `KpiStrip` (which has no last-seen stat) before
+this run; Codex caught the misattribution during round-1 review and the
+worklist's own comments were corrected in `b369f4ab`. The real, narrower
+claim — Recent Messages and the Decision Timeline disagree with each other,
+not with a third tile — reproduced live: a message from `updates.pepperfry.com`
+received 2026-08-27 22:21:08 PDT (14h before the check) read "yesterday" in
+Recent Messages after the fix, where the pre-fix `Math.round` timeline
+algorithm would have read "today." The "needs a live re-drive" condition is
+satisfied; this moved to `PR ready` on the strength of that plus Codex's
+round-2 clean (see Review rounds above).
 
 ### QA-archive-20260828-01, -04, -05, -06 — filed from `usability-editor`, not put through a dedicated `finding-refuter`
 
