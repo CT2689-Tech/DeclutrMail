@@ -1,6 +1,6 @@
 ---
 description: Adversarial QA of one user job — drive it in the browser, try to break it, judge it as a stranger
-argument-hint: "onboarding | undo | archive | delete | unsubscribe | triage | mailbox-switch | billing | … (bare /ct-qa lists all)"
+argument-hint: "onboarding | undo | archive | delete | triage | mailbox-switch | billing | sync | … (bare /ct-qa lists all)"
 ---
 
 Take **one user job**. Open the browser. Actually do it, the way a person
@@ -25,6 +25,36 @@ screens that spans, then start. Never stop to ask.
   each job's ledger state (`✔ done <date>` / `🐛 <n> open` / blank), then start
   the highest-priority job not yet done.
 
+## Safety — read before the job list
+
+**No run executes an unsubscribe, on any job, by any route.** Not the confirm
+control, not the `U` shortcut, not a `POST` to the actions API with that verb,
+not enqueueing or un-pausing the job by hand.
+
+`UnsubExecutionWorker` performs a real RFC 8058 one-click `POST` to the
+sender's URL, carrying a per-send token, from the founder's address. There is
+no dry-run flag and no kill switch. Once it is queued, stopping the worker does
+not prevent the send — it defers it until a worker returns, and this command's
+own preflight starts one.
+
+This block sits above the job list because the hazard is not confined to one
+job. `U` is a triage shortcut: it is reachable from Triage, Senders, Sender
+detail, Brief and Screener. Six earlier drafts put this rule in a numbered
+section scoped to the unsubscribe job while the break list told every run to
+press `K/A/U/L/D`. **A safety rule scoped narrower than its hazard is not a
+safety rule.**
+
+Everything up to the preview is in scope and is where the value is: does it
+name the right sender, the right channel and the right count; does it say
+plainly that this cannot be undone; is one-click distinguished from `mailto:`,
+which is manual at launch (D230). Stop at the preview.
+
+There is no standalone `unsubscribe` job. The founder's original carve-out —
+drive it to the confirm step, never send — could not be enforced by wording,
+which is what six review rounds demonstrated. Restoring it needs a real
+mechanism, not a firmer sentence: a dev-only refusal inside
+`UnsubExecutionWorker`. Filed in `FOUNDER-FOLLOWUPS.md`.
+
 ## The jobs, in the order they should be QA'd
 
 Ranked by **what a bug here costs the user**: lost mail › wrong money ›
@@ -42,7 +72,6 @@ can't start at all › a false statement about their own data › friction.
    implementation. A break here is a break in the pattern every verb copies.
 4. `delete` — highest damage. The only verb where a bug loses real mail; the
    30-day Trash window is the entire margin.
-5. `unsubscribe` — irreversible and outward-facing. See rule 7.
 
 **Tier 1 — the loop and the money**
 
@@ -182,7 +211,8 @@ The first three *use* it. The fourth *judges* it.
   this on unsubscribe is an attempt to execute one without a preview, which is
   the send itself. Confirm D226 holds for unsubscribe by reading whether the
   preview renders, never by trying to defeat it.
-- **375px**, then keyboard only: K/A/U/L/D.
+- **375px**, then keyboard only: **K / A / L / D**. Press **U only far enough
+  to see its preview render**, never through it — see Safety, above.
 
 On lifecycle jobs (`onboarding`, `sync`, `mailbox-switch`) call
 **`flow-completeness-auditor`** for the state table rather than re-deriving one.
@@ -239,46 +269,15 @@ marked **unmeasured** with the exact SQL it needed. Run those through
 `assert-dev-db.sh --exec` and give it the numbers — that is what moves an
 instance from trust 8 to trust 10.
 
-## 7 — Unsubscribe: you never press confirm
+## 7 — Unsubscribe
 
-Drive intent → sheet → **preview**, and **stop there**.
+See **Safety**, above the job list. It is stated once, before the jobs, because
+it binds every job — not only the one that was named after it.
 
-**Nothing in this run executes an unsubscribe, by any route.** Not the UI
-confirm control. Not a `POST` to the actions API with that verb, even one that
-"only" tests idempotency or ownership. Not enqueueing the job by hand. Not
-un-pausing a queue that holds one. The prohibition is on the verb reaching
-execution, not on one button — an earlier draft forbade the button and left the
-API, the break list's skip-the-preview probe, and the queue wide open.
-
-Not once, not to "see the queued row", not with the worker stopped.
-
-This is not a style preference. `UnsubExecutionWorker` performs a real RFC 8058
-one-click `POST` to the sender's URL, carrying a per-send token, from the
-founder's address. There is no dry-run flag and no kill switch — I looked. Once
-confirm is pressed the job is in Redis, and **stopping the worker does not
-prevent the send, it defers it**: the job fires the moment a worker comes back,
-and this command's own preflight runs `dev-up.sh`, which starts one. An earlier
-draft of this rule said "drive it to the queued row and record which mechanism
-held the send back". There is no such mechanism. That draft instructed the
-exact irreversible action it claimed to forbid.
-
-All the QA value is at or before the preview, and none of it needs a send:
-
-- Does the preview name the right sender, the right channel, and the right
-  message count?
-- Does it state the consequence honestly — that this leaves the sender's list
-  and cannot be undone?
-- Is the one-click path distinguished from `mailto:`, which is **manual at
-  launch** (D230) and must never auto-send?
-- Is the destructive control distinguishable from the safe one, and does the
-  copy survive 375px?
-
-To see the shape of a queued unsubscribe row, read an existing one or the
-contract. Do not manufacture one.
-
-If a probe seems to require confirming, that probe does not run. Write
-`n/a — would fire a real unsubscribe` in the ledger and move on. This is the
-one place in this document where an unexplored gap is the correct outcome.
+To see the shape of a queued unsubscribe row, read an existing one. Do not
+manufacture one. A probe that would require executing the verb does not run:
+write `n/a — would fire a real unsubscribe` in the ledger and move on. This is
+the one place in this document where an unexplored gap is the right outcome.
 
 ## Done means done — six boxes, not vibes
 

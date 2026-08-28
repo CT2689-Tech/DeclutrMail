@@ -8,6 +8,32 @@ or credentials.
 See CLAUDE.md §11 for the file's lifecycle. Append-only structurally;
 items physically move from **Open** to **Done** as they're addressed.
 
+
+### 2026-08-27 — No dev-only kill switch for real unsubscribe sends
+
+**Source:** session building `/ct-qa`; six consecutive Codex stop-time reviews
+**Why:** `UnsubExecutionWorker` performs a real RFC 8058 one-click POST to the
+sender's URL, carrying a per-send token, from your address. There is no
+dry-run flag and no kill switch, and stopping the worker only DEFERS a queued
+send until a worker returns. That makes the unsubscribe verb untestable: the
+carve-out you chose — drive it to the confirm step, never send — cannot be
+enforced by wording in a prompt, and six review rounds found six different
+routes around the wording (the confirm control, the actions API, the
+skip-the-preview probe, hand-enqueueing, an un-paused queue, and the `U`
+keyboard shortcut, which is reachable from Triage, Senders, Sender detail,
+Brief and Screener). `/ct-qa` currently forbids the verb outright and has no
+standalone `unsubscribe` job, so that surface ships un-QA'd below the preview.
+**How:** add a dev-only refusal inside `packages/workers/src/unsub-execution.worker.ts`
+— refuse to perform the outbound request when an explicit env flag is set
+(fail closed, log the intended target and channel instead of sending). Never
+enabled in production; assert that in `main.ts`/`worker.ts` boot the same way
+`DEV_AUTH_ENABLED` is asserted. Then restore `unsubscribe` as a `/ct-qa` job
+and delete the Safety block's closing paragraph.
+**Verifies by:** with the flag set, confirming an unsubscribe in the dev UI
+produces an `action_jobs` row, a worker log line naming the target, and NO
+outbound request; with it unset, behaviour is byte-identical to today.
+**Status:** Open
+
 ## Entry format
 
 ```markdown
