@@ -32,6 +32,8 @@ export interface TodaySummary {
   sendersToday: number;
   handledAutomatically: number;
   queuedDecisions: number;
+  /** Non-Keep subset of `queuedDecisions` — the set `noiseReductionPct` describes. */
+  noiseSenderCount: number;
   noiseReductionPct: number | null;
 }
 

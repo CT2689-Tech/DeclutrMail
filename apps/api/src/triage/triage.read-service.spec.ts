@@ -347,6 +347,58 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     svc = new TriageReadService(db as never);
   });
 
+  it('counts only the senders the noise percentage is computed from', async () => {
+    // The percentage's numerator excludes Keep rows; `queuedDecisions` counts
+    // them. Copy that credits the share to all `queuedDecisions` is therefore
+    // false whenever a Keep row is queued — which stayed invisible on a mailbox
+    // where every queued row happened to be an unsubscribe. `noiseSenderCount`
+    // exists so the FE can name the set the percentage actually describes, and
+    // this pins the two to the same filter rather than to two matching
+    // hand-written queries.
+    const keepKey = 'k'.repeat(64);
+    const dropKey = 'd'.repeat(64);
+    for (const [key, verdict] of [
+      [keepKey, 'keep'],
+      [dropKey, 'unsubscribe'],
+    ] as const) {
+      await db.insert(senders).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        email: `${key.slice(0, 5)}@mixed.example`,
+        domain: 'mixed.example',
+        gmailCategory: 'promotions',
+        firstSeenAt: daysAgo(60),
+        lastSeenAt: daysAgo(1),
+      });
+      await db.insert(triageDecisions).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        verdict,
+        confidence: '0.90',
+        reasoning: 'seeded',
+        generatedBy: 'template',
+        expiresAt: new Date(Date.now() + 7 * 86_400_000),
+      });
+      await db.insert(mailMessages).values({
+        mailboxAccountId: mailboxId,
+        senderKey: key,
+        providerMessageId: `m-${key.slice(0, 8)}`,
+        providerThreadId: `t-${key.slice(0, 8)}`,
+        subject: 'seeded',
+        internalDate: daysAgo(5),
+        isUnread: true,
+        isOutbound: false,
+        labelIds: ['INBOX'],
+      });
+    }
+
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary.queuedDecisions).toBe(2);
+    // The Keep row is counted as a decision but contributes no noise.
+    expect(summary.noiseSenderCount).toBe(1);
+    expect(summary.noiseSenderCount).toBeLessThan(summary.queuedDecisions);
+  });
+
   it('returns all-zero on a fresh mailbox (queue empty → pct null)', async () => {
     const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
     expect(summary).toEqual({
@@ -354,6 +406,7 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
       sendersToday: 0,
       handledAutomatically: 0,
       queuedDecisions: 0,
+      noiseSenderCount: 0,
       noiseReductionPct: null,
     });
   });

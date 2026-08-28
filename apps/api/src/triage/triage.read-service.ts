@@ -224,7 +224,7 @@ export type TriageQueueOrdering = 'actionable' | 'newsletter-first' | 'promotion
  *
  *   You received {receivedToday} emails from {sendersToday} senders.
  *   DeclutrMail handled {handledAutomatically} automatically.
- *   {queuedDecisions} sender decisions can reduce future noise by
+ *   {queuedDecisions} sender decisions; {noiseSenderCount} of them sent N% of
  *   ~{noiseReductionPct}%.
  *
  * `noiseReductionPct` is the queued non-Keep senders' share of the
@@ -239,6 +239,16 @@ export interface TodaySummary {
   handledAutomatically: number;
   /** Queue length the user will actually see (D30 clamp applied). */
   queuedDecisions: number;
+  /**
+   * How many of `queuedDecisions` actually contribute to
+   * `noiseReductionPct` — the non-Keep rows. Surfaced separately because the
+   * two numbers describe DIFFERENT sender sets: the count is every queued row,
+   * the percentage excludes Keep. Copy that attributes the percentage to all
+   * `queuedDecisions` is false whenever a Keep row is queued, which is most
+   * mailboxes and was invisible on the one where every row happened to be
+   * an unsubscribe.
+   */
+  noiseSenderCount: number;
   noiseReductionPct: number | null;
 }
 
@@ -1107,9 +1117,8 @@ export class TriageReadService {
       autopilotPromise,
       queuePromise,
     ]);
-    const queuedNoise = queueRows
-      .filter((r) => r.verdict !== 'keep')
-      .reduce((sum, r) => sum + r.last90dMessages, 0);
+    const noiseRows = queueRows.filter((r) => r.verdict !== 'keep');
+    const queuedNoise = noiseRows.reduce((sum, r) => sum + r.last90dMessages, 0);
 
     let noiseReductionPct: number | null = null;
     if (queueRows.length > 0 && queuedNoise > 0) {
@@ -1135,6 +1144,7 @@ export class TriageReadService {
       sendersToday: Number(received?.senders ?? 0),
       handledAutomatically: Number(autopilot?.handled ?? 0),
       queuedDecisions: queueRows.length,
+      noiseSenderCount: noiseRows.length,
       noiseReductionPct,
     };
   }

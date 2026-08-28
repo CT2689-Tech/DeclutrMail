@@ -119,16 +119,36 @@ export function TodayStripView({ summary }: { summary: TodaySummary }) {
           sender decision{summary.queuedDecisions === 1 ? '' : 's'}
           {summary.noiseReductionPct != null && summary.noiseReductionPct > 0 ? (
             // PENDING FOUNDER WORDING — the claim is corrected, the phrasing is
-            // provisional. This states what `noiseReductionPct` measures: a
-            // share of mail ALREADY RECEIVED in the trailing 90 days. It used to
-            // read "can reduce future noise by ~N%", which promised a future
-            // effect that three of the five verbs explicitly disclaim — Archive
-            // and Later both carry `futureMail: { effect: 'unchanged' }`, Keep
-            // leaves delivery alone, and Delete only trashes what already
-            // arrived. Unsubscribe is the only verb that changes future mail,
-            // and only if the sender honours it.
+            // provisional. Two separate falsehoods were removed here.
+            //
+            // TENSE: it read "can reduce future noise by ~N%", promising a
+            // FUTURE effect from a measurement of mail ALREADY RECEIVED in the
+            // trailing 90 days — while Archive and Later both carry
+            // `futureMail: { effect: 'unchanged' }`, Keep leaves delivery alone
+            // and Delete only trashes what already arrived. Unsubscribe is the
+            // only verb of the five that changes future mail, and only if the
+            // sender honours it.
+            //
+            // SUBJECT: the percentage's numerator EXCLUDES Keep rows while
+            // `queuedDecisions` counts them, so attributing it to "these
+            // senders" overstates whenever a Keep row is queued. `noiseSenderCount`
+            // is the set the percentage actually describes; say so when the two
+            // differ. This read as true only on a mailbox where every queued row
+            // happened to be an unsubscribe.
             <>
-              . These senders sent ~
+              .{' '}
+              {summary.noiseSenderCount < summary.queuedDecisions ? (
+                <>
+                  <strong
+                    style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
+                  >
+                    {summary.noiseSenderCount.toLocaleString('en-US')}
+                  </strong>{' '}
+                  of them sent ~
+                </>
+              ) : (
+                <>These senders sent ~</>
+              )}
               <strong
                 style={{ color: color.fg, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}
               >

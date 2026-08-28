@@ -54,6 +54,7 @@ describe('ServerTriageBoundary', () => {
               sendersToday: 0,
               handledAutomatically: 0,
               queuedDecisions: 0,
+              noiseSenderCount: 0,
               noiseReductionPct: null,
             },
           },

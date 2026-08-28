@@ -68,6 +68,28 @@ export const FullSummary: Story<typeof TodayStripView> = {
       sendersToday: 63,
       handledAutomatically: 129,
       queuedDecisions: 12,
+      noiseSenderCount: 12,
+      noiseReductionPct: 38,
+    } satisfies TodaySummary,
+  },
+  render: (args: Args) => frame(<TodayStripView {...args} />),
+};
+
+/**
+ * The mixed queue — some rows are Keep, so the percentage describes a SUBSET of
+ * the decisions counted beside it. The copy must name that subset ("10 of them
+ * sent ~38%") rather than attributing the share to all 12. This is the shape the
+ * pre-fix copy got wrong, and it stayed invisible because the founder's mailbox
+ * happened to queue nothing but unsubscribes.
+ */
+export const MixedQueueWithKeepRows: Story<typeof TodayStripView> = {
+  args: {
+    summary: {
+      receivedToday: 184,
+      sendersToday: 63,
+      handledAutomatically: 129,
+      queuedDecisions: 12,
+      noiseSenderCount: 10,
       noiseReductionPct: 38,
     } satisfies TodaySummary,
   },
@@ -86,6 +108,7 @@ export const NoNoisePct: Story<typeof TodayStripView> = {
       sendersToday: 9,
       handledAutomatically: 6,
       queuedDecisions: 4,
+      noiseSenderCount: 4,
       noiseReductionPct: null,
     } satisfies TodaySummary,
   },
@@ -103,6 +126,7 @@ export const ReceivedOnly: Story<typeof TodayStripView> = {
       sendersToday: 18,
       handledAutomatically: 0,
       queuedDecisions: 0,
+      noiseSenderCount: 0,
       noiseReductionPct: null,
     } satisfies TodaySummary,
   },
@@ -120,6 +144,7 @@ export const HandledOnly: Story<typeof TodayStripView> = {
       sendersToday: 30,
       handledAutomatically: 88,
       queuedDecisions: 0,
+      noiseSenderCount: 0,
       noiseReductionPct: null,
     } satisfies TodaySummary,
   },
@@ -138,6 +163,7 @@ export const EmptyRendersNothing: Story<typeof TodayStripView> = {
       sendersToday: 0,
       handledAutomatically: 0,
       queuedDecisions: 0,
+      noiseSenderCount: 0,
       noiseReductionPct: null,
     } satisfies TodaySummary,
   },
