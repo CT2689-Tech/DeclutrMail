@@ -44,31 +44,43 @@ that never reached the worker service all send. Invert it.
 - The var must go in `deploy-cloud-run.yml`'s **worker** env block, not just
   set live. `--set-env-vars` full-replaces, so a var only set live is wiped by
   the next deploy — which would silently disable production unsubscribes.
-- **Terminal-state contract — specify this before writing code.** A refusal is
-  not a success and not a retryable failure, and getting that wrong is worse
-  than having no kill switch.
-  - It must NOT land on `status='done'`. `action_job_status` is
-    `queued|executing|done|failed`, and `done` is what the FE polls for before
-    showing the user their unsubscribe went through. A refusal recorded as
-    `done` tells the user they left a mailing list they are still on — the
-    UI-truth class this codebase keeps shipping, in its most expensive form.
-  - Use `status='failed'` with its own classified `failure_code`
-    (e.g. `UNSUB_SEND_DISABLED`), and make it **non-retryable** so it
-    terminates on attempt 1. A retryable throw burns three attempts and then
-    dead-letters, and a dead-letter is indistinguishable from
-    delivered-but-unconfirmed — the exact ambiguity that has bitten this repo
-    before.
-  - **No `undo_journal` row.** Nothing happened, so there is nothing to
-    reverse, and an undo token for a send that never occurred is a second lie.
-  - **No `activity_log` row that reads as an unsubscribe.** If Activity records
-    anything, it says the attempt was refused, never that the sender was
-    unsubscribed.
-  - The FE must render that failure code as a real state with a route out, not
-    a generic error toast — it is a designed state, not a fault.
-- Four tests, and none of them assert on a log line: with the flag absent the
-  worker performs **no outbound request**, the row is `failed` with the
-  classified code, no undo token is issued, and no activity row claims success.
-  With it `'true'`, behaviour is byte-identical to today.
+- **Refuse at the enqueue boundary, not in the worker.** This is the important
+  correction. A first draft put the refusal in the worker and recorded
+  `status='failed'` with a classified code — which routes a deliberate no-op
+  into exactly the state the recovery machinery keys on
+  (`action-recovery.service.ts:258,376` both gate on `status === 'failed'`),
+  and into whatever retry the FE offers on a failed action. A refusal that can
+  be retried is a send waiting for someone to press a button, and if the flag
+  is flipped on later that stale job sends unattended, long after anyone is
+  watching. That is the deferred-send trap in a new costume.
+
+  So when sending is disabled, the **API rejects the unsubscribe intent before
+  any row is written and any job is enqueued**, returning a designed 4xx the FE
+  renders as a real state ("unsubscribe execution is disabled in this
+  environment") with a route out — never a generic error toast. No
+  `action_jobs` row, no queued job, nothing resumable, nothing for recovery to
+  find, and nothing that changes meaning when the flag flips.
+
+- **Worker refusal stays, as defence-in-depth only** — for a job already queued
+  when the flag changed. There it must be terminal and non-retryable on attempt
+  1: never `status='done'` (the FE polls `done` before telling the user their
+  unsubscribe went through, so `done` would tell them they left a list they are
+  still on), never a retryable throw (three attempts then a dead-letter, and a
+  dead-letter is indistinguishable from delivered-but-unconfirmed), no
+  `undo_journal` row (nothing happened; an undo token for a send that never
+  occurred is a second lie), and no `activity_log` row that reads as an
+  unsubscribe.
+
+- **Check before building:** confirm whether the FE offers retry on a failed
+  action, and whether anything sweeps failed `action_jobs`. If either is true,
+  the enqueue-boundary refusal is not merely preferable — it is the only safe
+  option.
+
+- Tests, none asserting on a log line: with sending disabled the intent is
+  rejected and **no `action_jobs` row is created at all**; a pre-existing
+  queued job performs **no outbound request**, issues no undo token, and writes
+  no activity row claiming success; with sending enabled, behaviour is
+  byte-identical to today.
 
 Then restore `unsubscribe` as a `/ct-qa` job, re-allow the `U` keystroke, and
 delete the Safety block's closing paragraph.

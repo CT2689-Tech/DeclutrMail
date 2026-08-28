@@ -147,11 +147,30 @@ founder.** Do not QA on top of it: findings gathered against a dirty database
 are someone else's damage wearing your run's name, and you will file them as
 product bugs.
 
-Writing to that table is not bookkeeping you do at the end. **Write the
-restoring statement, save the file, and only then run the mutation** — if the
-order is reversed, the window where the session can die is exactly the window
-where nothing knows the database is dirty. Say in the run that you did it in
-that order.
+### Forcing state — pin the ids first
+
+Writing to that table is not bookkeeping you do at the end, and "write the
+restore, then mutate" is not sufficient on its own: a restore written before
+the mutation is a guess about what the mutation will touch. If the `WHERE`
+matches five rows and the restore names one, the ledger holds a restore that is
+wrong, and it looks right.
+
+Pin the set instead, so before and after are identical by construction — the
+same reason `action_jobs.resolved_message_ids` is captured *before* the Gmail
+call rather than re-resolved after:
+
+1. `SELECT id, <column> …` for the predicate. Read the **exact ids and their
+   current values**.
+2. Write the restore into Outstanding restores keyed by **those literal ids**,
+   with the per-row values. Save the file.
+3. Mutate **by those same literal ids** — never by the original predicate,
+   which may match differently a second later.
+4. Confirm the mutation's row count equals the number of ids you pinned. If it
+   does not, stop: something moved underneath you and the restore no longer
+   describes reality.
+
+Never force state with a broad `WHERE`. Say in the run that you pinned ids and
+that the counts matched.
 
 ### Touching the database — `--exec`, always
 
