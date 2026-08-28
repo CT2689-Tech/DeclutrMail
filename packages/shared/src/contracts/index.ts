@@ -381,3 +381,9 @@ export type {
   MailboxDataDeletionView,
   MailboxIndexedDataState,
 } from './mailbox-data-deletion';
+
+export {
+  ENGAGEMENT_WINDOW_DAYS,
+  ENGAGEMENT_WINDOW_MS,
+  engagementWindowStart,
+} from './engagement-window';

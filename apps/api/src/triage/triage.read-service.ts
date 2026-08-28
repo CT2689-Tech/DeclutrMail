@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { engagementWindowStart } from '@declutrmail/shared/contracts';
 import { and, count, desc, eq, getTableName, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 import {
@@ -359,7 +360,7 @@ export const TRIAGE_DECIDED_WINDOW_DAYS = 7;
  * definition of 90 days moves together.
  */
 function noiseWindowStartFrom(now: Date | undefined): Date {
-  return new Date((now ?? new Date()).getTime() - 90 * 86_400_000);
+  return engagementWindowStart(now ?? new Date());
 }
 
 /**

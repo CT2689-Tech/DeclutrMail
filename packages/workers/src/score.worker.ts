@@ -1,4 +1,5 @@
 import { and, eq, getTableName, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { ENGAGEMENT_WINDOW_MS } from '@declutrmail/shared/contracts';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -183,8 +184,16 @@ export interface ScoreJobResult {
   chunksFailed: number;
 }
 
-/** Window for "monthly volume" — D21 reads the last full calendar month. */
-const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+/**
+ * Window for "monthly volume" — D21 reads the last full calendar month.
+ *
+ * The 90-day span comes from the shared contract, not a local literal. This
+ * worker writes "N% read rate over the last 90 days" into a triage row's
+ * reasoning text, and the triage read service renders a stat tile from its
+ * own 90-day count right above that sentence. Two literals could drift apart
+ * and the card would contradict itself with every check green.
+ */
+const NINETY_DAYS_MS = ENGAGEMENT_WINDOW_MS;
 
 export interface ScoreWorkerDeps {
   db: WorkerDb;

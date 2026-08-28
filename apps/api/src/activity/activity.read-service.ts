@@ -17,6 +17,7 @@
 //     + a corresponding writer change. See FOUNDER-FOLLOWUPS.
 
 import { Inject, Injectable } from '@nestjs/common';
+import { engagementWindowStart } from '@declutrmail/shared/contracts';
 import {
   and,
   count,
@@ -1036,7 +1037,7 @@ export class ActivityReadService {
     // D33 payoff — summed last-90d volume of the window's deflected
     // senders, projected to per-month. Same join + formula as
     // Historical message-volume context, windowed to THIS stats range.
-    const ninetyDaysAgoIso = new Date(Date.now() - 90 * 86_400_000).toISOString();
+    const ninetyDaysAgoIso = engagementWindowStart().toISOString();
     const deflectWhere = [
       eq(activityLog.mailboxAccountId, args.mailboxAccountId),
       sql`${activityLog.action} IN ('archive','unsubscribe','later')`,
