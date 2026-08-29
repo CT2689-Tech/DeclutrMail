@@ -23,60 +23,34 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-29 — Turn on Vercel's Spend Management hard cap; the watchdog has been correctly alerting on Vercel overage since Aug 23 and BREACHing since Aug 28
+### 2026-08-29 — Confirm GitHub's failed-workflow-run notifications are actually reaching you
 
-**Source:** session 2026-08-29 — founder forwarded a Vercel receipt
-(Aug 29–Sep 28, 2026 cycle, $59.99 total: Pro seat $20 + Build CPU
-Minutes $39.80 + Function Invocations/Fluid CPU/Fluid Memory/Fast
-Origin Transfer/ISR Reads/Observability Events) and asked why it
-wasn't caught. **Correction of an earlier draft of this entry:** the
-first pass of this session wrongly concluded `VERCEL_TOKEN`/
-`VERCEL_TEAM_ID` were never wired and the check was silently
-`UNCONFIGURED` — that was checked against stale runbook prose, not
-against the actual GitHub secrets or watchdog run history. Both were
-already checked (job logs going back to at least 2026-08-23 show them
-populated), and `vendor-limits-watchdog` has been doing exactly its
-job: WARN on Vercel spend since 2026-08-23, BREACH (failing the daily
-CI job, red X) since 2026-08-28, current MTD $46.81 against a $20 warn
-threshold. See `MISTAKES.md` 2026-08-29 for both the original doc/code
-gap and this session's own correction.
+**Source:** session 2026-08-29 — founder forwarded a Vercel receipt and
+asked why it wasn't caught. Two earlier drafts of this entry were wrong
+in sequence: first claiming Vercel's watchdog secrets were never wired
+(they were — see Done below), then claiming Spend Management was never
+turned on (it was — the founder's own dashboard screenshot on
+2026-08-29 shows On-Demand Budget $40, Notifications: On, Pause
+Projects: On, Pause Production Deployments: On). Both corrections are
+in `MISTAKES.md` 2026-08-29.
 
-**Why:** the daily watchdog IS the alert — a failed scheduled workflow
-run triggers GitHub's own "failed workflow run" email if that
-notification setting is enabled on the founder's account. Two things
-are still actually missing:
-1. **No vendor-side hard cap.** Vercel's Spend Management (auto-pause at
-   a USD ceiling) has never been turned on, so nothing stops the number
-   from growing beyond what the daily check catches — the three-layer
-   guardrail principle in `billing-guardrails.md` currently has only
-   layer 3 (the watchdog) live for Vercel.
-2. **Unverified whether the daily failure emails are actually reaching
-   the founder.** A week of BREACH runs with no apparent response is
-   worth checking — either the emails aren't arriving, are being
-   filtered, or are arriving and getting lost in an Actions-notification
-   folder. If the watchdog IS being seen and simply hasn't been actioned
-   yet, this item is really just #1.
+**Why:** with Spend Management confirmed on, the one thing this session
+could not verify either way is whether GitHub's own "failed workflow
+run" emails are actually reaching an inbox. `vendor-limits-watchdog`
+BREACHed (failed, red X) on Vercel overage every day from 2026-08-28
+through this session with no visible response — worth a quick check in
+case those emails are being missed or filtered, independent of the
+Vercel spend question itself (which now has real vendor-side
+protection and needs no further action here).
 
-**How:**
+**How:** github.com → Settings → Notifications → **Actions** — confirm
+"Send notifications for failed workflows" (or the current equivalent)
+is on for this account, so a future `vendor-limits-watchdog` BREACH
+(on any vendor, not just Vercel) actually surfaces.
 
-1. Dashboard → Settings → Billing → **Spend Management** → toggle
-   on → set a USD cap per billing cycle → enable **"Pause
-   production deployment"** (50/75/100% emails). This is the one
-   concrete gap; do this regardless of #2 below.
-2. Check github.com → Settings → Notifications → **Actions** — confirm
-   "Send notifications for failed workflows" (or equivalent) is on for
-   this repo/account, so the next BREACH actually reaches an inbox.
-3. Once (1) is done, decide what to do about the current overage itself
-   (nothing in this session's scope — that's a product/spend decision,
-   not an infra-wiring one).
-4. Fill in the `Vendor label` / `Rotated` columns for the two existing
-   Vercel secrets in `docs/runbooks/secrets-inventory.md` next time
-   either is touched — nobody currently knows when they were created.
-
-**Verifies by:** Spend Management shows "on" in the Vercel dashboard
-with a cap set; the next `vendor-limits-watchdog` run either reports
-`OK` (spend brought under the cap) or continues to correctly `BREACH`
-loudly rather than silently.
+**Verifies by:** a deliberate `workflow_dispatch` re-run of
+`vendor-limits-watchdog` with a low threshold produces a visible
+notification.
 
 **Status:** Open
 
@@ -2420,6 +2394,31 @@ the shipped design; a fresh session reading them finds no contradiction with
 **Status:** Open
 
 ## Done
+
+### 2026-08-29 — Vercel watchdog secrets + Spend Management hard cap — both already in place
+
+**Source:** session 2026-08-29 — founder forwarded a Vercel receipt
+($59.99, real Pro-tier overage) asking why infra-cost tracking missed
+it. Two things this session initially got wrong, in sequence:
+1. First draft claimed `VERCEL_TOKEN`/`VERCEL_TEAM_ID` were never
+   wired and the watchdog silently skipped Vercel. Wrong — job logs
+   showed both populated since at least 2026-08-23, with the check
+   correctly WARNing since 2026-08-23 and BREACHing (failing the daily
+   job, red X) since 2026-08-28 on the closed Jul29–Aug28 cycle.
+2. Second draft, after correcting (1), claimed Vercel's Spend
+   Management hard cap had never been turned on. Also wrong — founder
+   screenshot confirmed On-Demand Budget $40, Notifications: On, Pause
+   Projects: On, Pause Production Deployments: On, all already
+   configured. This was asserted with no way to check it (the watchdog
+   script has no API call that reads Spend Management config), which
+   is itself the mistake — see `MISTAKES.md` 2026-08-29.
+
+**Why it's Done:** both the watchdog wiring and the vendor-side hard
+cap that a founder would otherwise need to go set up already exist.
+Nothing to configure. `docs/runbooks/billing-guardrails.md` and
+`docs/runbooks/secrets-inventory.md` corrected accordingly.
+
+**Status:** Done 2026-08-29
 
 ### 2026-08-27 — No dev-only kill switch for real unsubscribe sends
 

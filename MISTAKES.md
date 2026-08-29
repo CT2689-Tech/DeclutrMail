@@ -21,6 +21,41 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-29 — Asserted a Vercel console setting was off with no way to check it — it was on
+
+**PR:** #676 (docs-only, branch `claude/infra-cost-capture-gap-wsqdhz`)
+**Caught by:** founder, who pasted a screenshot of Vercel's own Billing
+settings — same investigation as the entry directly below this one, one
+correction later
+**What happened:** immediately after correcting the first wrong claim
+(that Vercel's watchdog secrets were never wired — they were), this
+session wrote a second claim into the same PR, `billing-guardrails.md`,
+and `FOUNDER-FOLLOWUPS.md`: that Vercel's Spend Management hard cap had
+"never been turned on." That claim had no evidence behind it at all —
+`check-vendor-limits.mjs`'s `checkVercel()` only reads spend
+(`/v1/billing/charges`), it has no API call anywhere that reads Spend
+Management's on/off state, and this session has no Vercel dashboard
+login. The claim was pattern-matched from "nobody mentioned it," not
+observed. The founder's screenshot showed it was already fully
+configured: $40 on-demand budget, notifications on, Pause Production
+Deployments on.
+**Correct approach:** the previous entry's rule ("verify against the
+live system before the doc that describes it") has a gap this exposes:
+some system state has NO available live check from inside this session
+at all — a vendor console setting behind a login this session doesn't
+have. For that class, the honest move is to say "I cannot verify this,
+please check" and ask, not to write down a guess as a finding.
+**Rule:** before asserting any vendor-side or console-only configuration
+state as fact, first confirm there IS a way to check it (API call,
+script output, or existing evidence). If there is not, say so explicitly
+and ask the founder to check, instead of stating the unverified guess
+as fact in a runbook, FOUNDER-FOLLOWUPS entry, or chat reply.
+**Enforcement update:** PR #676 corrected again (billing-guardrails.md
+§5(b), the guardrail matrix, and the Vercel FOUNDER-FOLLOWUPS entry now
+marked Done); no code change — this is a process rule, not a check the
+watchdog script could itself enforce (it has no path to Vercel's Spend
+Management config).
+
 ## 2026-08-29 — A session shipped a wrong root-cause (and nearly a wrong PR) by trusting stale runbook prose instead of checking live secrets and CI run history
 
 **PR:** #676 (docs-only, branch `claude/infra-cost-capture-gap-wsqdhz`) —
