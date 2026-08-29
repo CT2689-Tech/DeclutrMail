@@ -564,6 +564,49 @@ test would have to look like to catch the bug the code has. Tests that
 assert on the producer and tests that mock the consumer can both be
 green while the join between them is broken.
 
+### A guard that cannot fail is not a guard (2026-08-29)
+
+Distinct from the rule above — that one is about tests asserting the bug
+they were meant to catch. This one is about **guards, hooks, watchdogs
+and sweep scripts whose subject goes missing or invisible**, and which
+print green anyway because nothing in them can express "I saw nothing."
+This class has recurred at least eight times: a dependency-free `/healthz`
+check with an uptime monitor pointed at it, `pr-merged.yml`'s push that
+branch protection silently rejected on every run, `verify-d` recording
+verifications it never ran, `check-changelog.ts` printing
+`✓ ... (0 merges walked)` on a shallow `depth: 1` checkout, a receipt
+validator that split a control byte into single characters and matched
+nothing while a neighboring check's failure was mistaken for its own, a
+cron watchdog that measured the recency of the last *attempt* instead of
+the last *success* — so a job failing every tick read as healthy for
+months — and, in its ops form, a prod-data sweep that read a row our own
+webhook handler had written locally and cited it as proof a third-party
+provider had been told something.
+
+**The tell:** every one of these is a filter, count, or match over a
+collection that can legitimately be empty, absent, or unreadable — and
+every one of them treated that state as the same as "checked, and it's
+fine." A check whose input already contains the failure, but whose
+branches never distinguish "saw failure" from "saw nothing," is a check
+that cannot fail.
+
+**Rule:** For any new guard, hook, watchdog, or sweep: before trusting
+the positive case, starve it — empty input, a shallow git checkout, an
+unreachable data source, a stale-forever record — and require it to fail
+closed, loudly, and by name. State what the unhealthy subject looks like
+in the data first, then confirm the verdict expression can actually see
+it. If the blind run goes green, it is a green light wired to nothing,
+not a guard. When the guard's own source has gone dark, the correct
+verdict is `UNVERIFIED` / `PLAUSIBLE`, never a promotion to the nearest
+substitute source that can't structurally testify to the same claim.
+
+Related but separate: a hook can only enforce a **match** (a fixed
+string, a closed set). A constraint that needs a **reading** — proximity,
+"near", "in the same sentence," judgment about intent — has no correct
+window size and belongs in review, not a regex (`.claude/hooks/
+check-microcopy.sh`'s T3 rule, removed after seven rounds of fixes to
+fixes for exactly this reason).
+
 ### Flow & state completeness (the gap structural gates miss)
 
 Gate agents (§7) review STRUCTURE — module boundaries, types, design
