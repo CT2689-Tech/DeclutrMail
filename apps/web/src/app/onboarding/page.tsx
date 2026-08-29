@@ -25,7 +25,7 @@ import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
 import { useMe } from '@/features/auth/api/use-me';
 import { billingIntentPath, parseBillingIntentPath } from '@/features/billing/billing-intent';
 import { useSetActiveMailbox } from '@/features/mailboxes/api/use-set-active-mailbox';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { captureFeatureException } from '@/lib/sentry';
 import { track } from '@/lib/posthog';
 
@@ -351,12 +351,6 @@ function SecondaryConnectGate({
   useSyncGateFunnel(sync.data, mailboxId);
   const ready = sync.data?.is_ready_for_triage ?? false;
 
-  useEffect(() => {
-    if (ready) {
-      router.replace(exitPath);
-    }
-  }, [exitPath, ready, router]);
-
   // Escape hatch only when ANOTHER active mailbox exists to return to.
   const other = me.mailboxes.find((m) => m.status === 'active' && m.id !== mailboxId);
   const escape: SyncGateEscape | undefined = other
@@ -368,6 +362,30 @@ function SecondaryConnectGate({
         },
       }
     : undefined;
+
+  // QA-onboarding-20260828-04: a persistent NO_ACTIVE_MAILBOX 409 means
+  // this target went inactive out-of-band (disconnect / delete-indexed-
+  // data in another tab) with no other active mailbox to escape to —
+  // `retryTransientOnly` correctly refuses to retry a 4xx, so `sync.data`
+  // stays `undefined` forever and the fallback below would otherwise fake
+  // a "Reading your inbox… 0%" scan that will never run. `/senders` is
+  // under the app shell's own well-tested `NoActiveMailbox` gate (unlike
+  // this route), so route there instead of inventing a second one.
+  //
+  // Scoped to the EXACT error code (Codex adversarial review, round 1):
+  // `sync.isError` alone also covers an exhausted 5xx or a network
+  // failure, which production explicitly keeps retryable — a transient
+  // failure self-heals via `refetchOnWindowFocus` (`use-sync-status.ts`),
+  // and bailing to /senders on every such error would cut that recovery
+  // short for a target mailbox that never actually went inactive.
+  const trapped = !other && apiErrorCode(sync.error) === 'NO_ACTIVE_MAILBOX';
+  useEffect(() => {
+    if (ready) {
+      router.replace(exitPath);
+    } else if (trapped) {
+      router.replace('/senders');
+    }
+  }, [exitPath, ready, router, trapped]);
 
   const status = sync.data ?? {
     readiness_status: 'queued' as const,

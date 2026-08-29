@@ -13,6 +13,8 @@ const mockAuth = vi.hoisted(() => ({
   tier: 'plus' as 'free' | 'plus' | 'pro' | 'team' | 'enterprise',
   /** null = unlimited. Set per-test to drive the monthly cleanup cap. */
   cleanupRemaining: null as number | null,
+  /** Active mailbox's initial-sync readiness (QA-onboarding-20260828-01). */
+  readiness: 'ready' as 'queued' | 'syncing' | 'ready' | 'failed' | null,
 }));
 
 // The screen reads the active mailbox label via `useAuth`; stub it so the
@@ -30,7 +32,7 @@ vi.mock('@/features/auth/auth-provider', () => {
           email: 'me@example.com',
           status: 'active',
           connectedAt: null,
-          readiness: 'ready',
+          readiness: mockAuth.readiness,
         },
       ],
     },
@@ -111,6 +113,7 @@ function archiveStatus(
 beforeEach(() => {
   mockAuth.tier = 'plus';
   mockAuth.cleanupRemaining = null;
+  mockAuth.readiness = 'ready';
 });
 
 function renderScreen() {
@@ -342,6 +345,42 @@ describe('SendersScreen — edge states', () => {
     expect(screen.queryByText(/no senders match these filters/i)).not.toBeInTheDocument();
   });
 
+  it.each(['queued', 'syncing'] as const)(
+    'does not claim "no active senders" while the mailbox is still %s (QA-onboarding-20260828-01)',
+    async (readiness) => {
+      // The negative control: reverting `mailboxStillSyncing`'s gate on
+      // the "No active senders" branch in `senders-screen.tsx` makes this
+      // assertion fail — that branch asserts a completed-but-empty
+      // conclusion the app has not earned on a mailbox still `queued`/
+      // `syncing`, which is reachable on any ordinary returning login
+      // mid-resync, not only a fresh connect. Both readiness values are
+      // covered — a fix that only checked `syncing` would still pass a
+      // single-case test (Codex adversarial review, round 1).
+      mockAuth.readiness = readiness;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: () =>
+            jsonOk({
+              data: [],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+              },
+            }),
+        },
+      ]);
+
+      renderScreen();
+      await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
+      expect(
+        screen.getByText(/your mailbox is still syncing\. this list will update/i),
+      ).toBeInTheDocument();
+      expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
+    },
+  );
+
   it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {
     // The founder's bug: searching "dealskhoj" returned nothing because the
     // FE filtered only the loaded ≤50-row page. With server-side search the
@@ -407,6 +446,24 @@ describe('SendersScreen — edge states', () => {
     // One responsive line serves both desktop and mobile; it wraps instead
     // of being hidden behind either view's layout breakpoint.
     expect(freshness).toHaveStyle({ display: 'flex', flexWrap: 'wrap' });
+  });
+
+  it('does not claim "Synced through" a time it never measured while the mailbox is still syncing (QA-onboarding-20260828-01)', async () => {
+    // The negative control: reverting the `stillSyncing` branch in
+    // `SenderResultsFreshness` makes this assertion fail — `asOf` is the
+    // server's compute time for THIS request, not a measured sync-
+    // completion timestamp, so labelling a mid-resync, possibly
+    // pre-disconnect snapshot "Synced through <now>" asserts a currency
+    // the app never checked.
+    mockAuth.readiness = 'syncing';
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+
+    renderScreen();
+
+    await screen.findAllByText(/Sender A/);
+    const freshness = screen.getByTestId('sender-results-freshness');
+    expect(freshness).toHaveTextContent(/still syncing/i);
+    expect(freshness).not.toHaveTextContent(/synced through/i);
   });
 
   it('makes placeholder rows read-only and announces the query transition', async () => {

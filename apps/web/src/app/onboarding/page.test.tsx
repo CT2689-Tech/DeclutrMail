@@ -144,6 +144,35 @@ const setPrimaryActive: FetchStubHandler = {
   respond: () => json({ data: { activeMailboxId: 'mb1' } }),
 };
 
+/** Only the `?mailbox=` target is connected — no other active mailbox to escape to. */
+const soloMe = (targetMailboxId = 'mb2'): FetchStubHandler => ({
+  method: 'GET',
+  path: '/api/auth/me',
+  respond: () =>
+    json({
+      data: {
+        user: { id: 'u1', email: 'c@d.com', workspaceId: 'w1' },
+        mailboxes: [
+          {
+            id: targetMailboxId,
+            email: 'c@d.com',
+            status: 'active',
+            connectedAt: null,
+            readiness: 'syncing',
+          },
+        ],
+        activeMailboxId: targetMailboxId,
+      },
+    }),
+});
+
+const syncStatusNoActiveMailbox: FetchStubHandler = {
+  method: 'GET',
+  path: '/api/v1/sync/status',
+  respond: () =>
+    json({ error: { code: 'NO_ACTIVE_MAILBOX', message: 'No active Gmail account.' } }, 409),
+};
+
 function renderPage() {
   return render(
     <QueryWrapper client={createTestQueryClient()}>
@@ -408,4 +437,40 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
       await waitFor(() => expect(replace).toHaveBeenCalledWith(exit));
     },
   );
+
+  it('routes to /senders instead of faking a scan when the target has gone inactive with no other mailbox to escape to (QA-onboarding-20260828-04)', async () => {
+    // The negative control: before the fix, `sync.data ?? {queued, 0%}`
+    // fabricated a status object on ANY missing data — including a
+    // persistent error — so this screen kept rendering "Reading your
+    // inbox… 0%" forever instead of ever calling `replace`. Reverting the
+    // `trapped` branch in `SecondaryConnectGate` makes this assertion fail.
+    searchParams = new URLSearchParams({ mailbox: 'mb2' });
+    installFetchStub([soloMe(), syncStatusNoActiveMailbox]);
+    renderPage();
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+  });
+
+  it('does NOT bail to /senders on a transient sync-status error with no other mailbox — only the exact NO_ACTIVE_MAILBOX code traps (Codex adversarial review, round 1)', async () => {
+    // `sync.isError` alone (the pre-review version of `trapped`) also
+    // covers an exhausted 5xx or a network failure — both of which
+    // production keeps retryable and self-healing (`refetchOnWindowFocus`
+    // in `use-sync-status.ts`). Bailing to /senders on every such error
+    // would cut that recovery short for a target mailbox that never
+    // actually went inactive. Negative control: reverting `trapped` back
+    // to `sync.isError && !other` makes this assertion fail.
+    searchParams = new URLSearchParams({ mailbox: 'mb2' });
+    installFetchStub([
+      soloMe(),
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () => json({ error: { code: 'internal_error' } }, 500),
+      },
+    ]);
+    renderPage();
+
+    await screen.findByText('Reading your inbox…');
+    expect(replace).not.toHaveBeenCalledWith('/senders');
+  });
 });

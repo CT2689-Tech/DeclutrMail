@@ -8,7 +8,7 @@
  * bogus body.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError, apiGet, apiPost } from './client';
 import { installFetchStub, jsonOk, jsonNotFound, resetFetchStub } from '@/test/fetch-stub';
 
@@ -188,5 +188,102 @@ describe('apiPost — CSRF double-submit', () => {
     ]);
     await apiGet('/api/echo');
     expect(observed!.has('X-CSRF-Token')).toBe(false);
+  });
+});
+
+describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', () => {
+  // `redirectToLogin`'s `redirecting` guard is module-level singleton
+  // state — without a fresh module registry per test, an earlier test's
+  // navigation would leave it permanently latched and every assertion
+  // below would observe a no-op no matter what the code does.
+  beforeEach(() => {
+    vi.resetModules();
+    installFetchStub([]);
+  });
+  afterEach(() => {
+    resetFetchStub();
+  });
+
+  it('navigates to Google OAuth start exactly once, even when two requests terminal-401 at the same time', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/a',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'unauthorized' } }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/b',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'unauthorized' } }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => new Response(null, { status: 401 }),
+      },
+    ]);
+
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign },
+    });
+
+    // Imported AFTER `vi.resetModules()` so `redirecting` starts unlatched,
+    // the same state a real first page load starts from.
+    const { apiGet: freshApiGet } = await import('./client');
+
+    const results = await Promise.allSettled([freshApiGet('/api/a'), freshApiGet('/api/b')]);
+    expect(results.every((r) => r.status === 'rejected')).toBe(true);
+
+    expect(assign).toHaveBeenCalledOnce();
+    expect(String(assign.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
+  });
+
+  it('navigates to Google OAuth start when a SUCCESSFUL refresh is immediately followed by another 401 (Codex adversarial review, round 1)', async () => {
+    // A refresh that reports success but whose new cookies don't actually
+    // authenticate (e.g. a race, or a refresh response arriving without
+    // the Set-Cookie taking effect yet). Before this fix, `!options.
+    // _isRetry` alone gated the whole 401 branch, so the replay's own
+    // 401 skipped straight to `throw` with no redirect ever queued — a
+    // real dead end once `AuthProvider` stopped providing a (duplicate,
+    // unguarded) fallback redirect of its own.
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/a',
+        respond: () =>
+          new Response(JSON.stringify({ error: { code: 'unauthorized' } }), {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => new Response(JSON.stringify({ data: {} }), { status: 200 }),
+      },
+    ]);
+
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign },
+    });
+
+    const { apiGet: freshApiGet } = await import('./client');
+
+    await expect(freshApiGet('/api/a')).rejects.toBeInstanceOf(Error);
+
+    expect(assign).toHaveBeenCalledOnce();
+    expect(String(assign.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
   });
 });

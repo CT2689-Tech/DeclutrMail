@@ -59,12 +59,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useMe();
 
   // A revoked session is the one failure that must NOT keep rendering off a
-  // cached identity — send it to consent whatever is in the cache.
+  // cached identity. The redirect itself is NOT done here: `apiGet`'s own
+  // terminal-401 handling (`client.ts`'s `redirectToLogin`, guarded against
+  // stacking navigations) already fired before this error ever reached
+  // `useMe` — a second, unguarded `window.location.assign` here duplicated
+  // that real external navigation on every re-render while the 401
+  // persisted (QA-onboarding-20260828-02: 2-3 live hits to Google's OAuth
+  // start per session-expiry event, one of which tripped the API's own
+  // rate limiter). Render the skeleton and let the in-flight redirect land.
   if (me.error instanceof ApiError && me.error.status === 401) {
-    if (typeof window !== 'undefined') {
-      const apiBase = process.env.NEXT_PUBLIC_API_URL ?? '';
-      window.location.assign(`${apiBase}/api/auth/google/start`);
-    }
     return <AuthSkeleton />;
   }
 

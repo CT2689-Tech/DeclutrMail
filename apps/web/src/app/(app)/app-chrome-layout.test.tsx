@@ -702,6 +702,46 @@ describe('(app) layout — no-active-mailbox branch (ladder #5)', () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
+  it('explains a connect failure on the reconnect gate instead of swallowing it (QA-onboarding-20260828-05)', async () => {
+    // QA-onboarding-20260828-05: the toast used to be wired to the Triage
+    // page only, which never mounts here — a connect failure leaves
+    // `activeMailboxId` null, so this reconnect-gate branch renders
+    // instead. The negative control: reverting `useConnectResultToast`'s
+    // call site back to `triage/page.tsx` makes this assertion fail,
+    // because that page never mounts on this branch.
+    (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(
+      'http://localhost/senders?connect_error=connect_failed',
+    );
+    installFetchStub([
+      noMailboxMe(),
+      {
+        method: 'GET',
+        path: '/api/onboarding/state',
+        respond: () => ok({ data: { onboardedAt: '2026-01-02T00:00:00.000Z' } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/account/deletion',
+        respond: () => ok({ data: { request: null, projection: null } }),
+      },
+    ]);
+
+    try {
+      renderLayout();
+
+      expect(await screen.findByText('No active mailbox')).toBeInTheDocument();
+      expect(
+        await screen.findByText('Could not connect that Gmail account. Try again.'),
+      ).toBeInTheDocument();
+      // One-shot: the param is stripped so a refresh doesn't replay it.
+      expect(window.location.search).toBe('');
+    } finally {
+      (window as unknown as { happyDOM?: { setURL?: (u: string) => void } }).happyDOM?.setURL?.(
+        'http://localhost/senders',
+      );
+    }
+  });
+
   it('an ONBOARDING-INCOMPLETE user with no active mailbox goes to /onboarding, NOT the reconnect gate', async () => {
     installFetchStub([
       noMailboxMe(),

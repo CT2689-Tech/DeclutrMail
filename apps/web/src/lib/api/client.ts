@@ -17,8 +17,11 @@
  *      `mailboxId`, the client stamps `X-Active-Mailbox-Id` so the BE
  *      reads from that mailbox instead of the user's preferred default.
  *   4. 401 retry-once-via-refresh: a single rotation through
- *      `POST /api/auth/refresh` is attempted on the first 401; a second
- *      401 surfaces as an `ApiError` so the caller can route to login.
+ *      `POST /api/auth/refresh` is attempted on the first 401. A second
+ *      401 — whether the refresh failed outright or its replay 401'd
+ *      again — is terminal: this module redirects to the OAuth start
+ *      endpoint itself (`redirectToLogin`, idempotent) before throwing
+ *      the `ApiError`. Callers never need their own redirect for this.
  *   5. Parse the D202 envelope. Successful responses unwrap to
  *      `Envelope<T>` so callers receive the raw `data` plus optional
  *      `meta` — never the raw `Response`. Failed responses throw an
@@ -220,14 +223,24 @@ async function apiRequest<T>(
     // redirect to the OAuth start endpoint rather than failing
     // silently (a mutation 401 with no UI feedback reads as "the
     // button did nothing" — Codex smoke 2026-05-27).
-    if (res.status === 401 && !options._isRetry && path !== '/api/auth/refresh') {
-      const refreshed = await attemptRefresh();
-      if (refreshed) {
-        return apiRequest<T>(method, path, body, { ...options, _isRetry: true });
+    if (res.status === 401 && path !== '/api/auth/refresh') {
+      if (!options._isRetry) {
+        const refreshed = await attemptRefresh();
+        if (refreshed) {
+          return apiRequest<T>(method, path, body, { ...options, _isRetry: true });
+        }
       }
-      // Terminal 401: refresh failed → session gone. Hard-redirect to
-      // re-auth. `redirectToLogin` is idempotent within a tick so
-      // concurrent terminal-401s don't stack navigations.
+      // Terminal 401: either the refresh itself failed, or (Codex
+      // adversarial review, QA-onboarding-20260828-02) this WAS the
+      // post-refresh replay and it 401'd again — a successful refresh
+      // whose new cookies don't actually authenticate. Both mean the
+      // session is dead. `options._isRetry` alone used to skip this
+      // whole branch on the replay, throwing with no redirect queued —
+      // harmless while `AuthProvider` still had its own (duplicate,
+      // unguarded) redirect as a fallback, but a real dead-end once that
+      // was removed in favor of trusting this one. `redirectToLogin` is
+      // idempotent within a tick so concurrent terminal-401s don't stack
+      // navigations.
       if (!options.suppressAuthRedirect) redirectToLogin();
     }
     throw new ApiError(

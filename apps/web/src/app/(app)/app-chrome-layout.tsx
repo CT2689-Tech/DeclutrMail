@@ -19,6 +19,7 @@ import { UpgradeModal } from '@/features/billing/upgrade-modal';
 import { AccountMenu } from '@/features/mailboxes/account-menu';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toasts';
+import { useConnectResultToast } from '@/features/mailboxes/use-connect-result-toast';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
@@ -160,6 +161,12 @@ function AppChrome({ children }: { children: ReactNode }) {
 
   // In-app "B is ready" toast when a background sync finishes (D116).
   useMailboxSyncToasts();
+  // Connect-mailbox result toast (QA-onboarding-20260828-05). Mounted
+  // above the branch ladder so it fires whichever branch renders — a
+  // connect FAILURE leaves `activeMailboxId` null, so it is the
+  // `NoActiveMailbox` branch below, not any particular route, that
+  // would otherwise swallow it silently.
+  useConnectResultToast();
 
   // Returning-user strict onboarding gate (D6/D109/D113) — ladder #4.
   const onboardingGate = useOnboardingGate();

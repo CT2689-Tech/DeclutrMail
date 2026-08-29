@@ -521,9 +521,18 @@ function SendersScreenContent({
 }) {
   const { me } = useAuth();
   const tier = me.tier ?? 'free';
+  const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   // Which mailbox these senders belong to — makes a multi-mailbox switch
   // visible in the header instead of a static "default mailbox".
-  const activeEmail = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.email ?? me.user.email;
+  const activeEmail = activeMailbox?.email ?? me.user.email;
+  // QA-onboarding-20260828-01: an active mailbox that is still `queued`/
+  // `syncing` (e.g. an ordinary returning login mid-resync, not only a
+  // fresh connect) must not be presented as fully synced — the sender
+  // index is torn down and rebuilt in ONE transaction only at the END of
+  // sync, so a mid-resync read is either genuinely empty or a stale
+  // pre-resync snapshot, never partial.
+  const mailboxStillSyncing =
+    activeMailbox?.readiness === 'queued' || activeMailbox?.readiness === 'syncing';
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
@@ -2301,6 +2310,7 @@ function SendersScreenContent({
           mailboxEmail={activeEmail}
           totalSenders={filterCounts?.total ?? null}
           updating={showingStaleRows}
+          stillSyncing={mailboxStillSyncing}
         />
       )}
 
@@ -2447,7 +2457,28 @@ function SendersScreenContent({
           transition: 'opacity 120ms ease',
         }}
       >
-        {senders.length === 0 && !query && isDefaultCompose(compose) ? (
+        {senders.length === 0 && !query && isDefaultCompose(compose) && mailboxStillSyncing ? (
+          // QA-onboarding-20260828-01: an empty result on the default
+          // (unfiltered-from-the-user's-view) compose while the active
+          // mailbox is still `queued`/`syncing` is NOT "no active
+          // senders" — that asserts a completed-but-empty conclusion the
+          // app has not earned. Checked BEFORE the default-compose branch
+          // below (`isDefaultCompose(DEFAULT)` is active-only, which
+          // `hasAnyFilter` — correctly, for the "clear filters" affordance
+          // — counts as a filter, so this case would otherwise fall into
+          // the "no senders match these filters" branch, an even worse
+          // false claim).
+          <EmptyState
+            title="No senders yet"
+            // Codex adversarial review, round 2: "will appear here"
+            // promises a result this screen hasn't earned — a mailbox
+            // whose only mail is from dormant senders stays empty on
+            // this active-only default even after the scan finishes.
+            // Say what's true (the scan is still running), not what
+            // will happen.
+            body="Your mailbox is still syncing. This list will update as the scan finishes."
+          />
+        ) : senders.length === 0 && !query && isDefaultCompose(compose) ? (
           // First-visit default is active-only (launch-audit B2). A
           // mailbox with nothing ACTIVE must not read as a filter
           // mistake — name the default and offer the full list.
@@ -2663,22 +2694,24 @@ function SenderResultsFreshness({
   mailboxEmail,
   totalSenders,
   updating,
+  stillSyncing,
 }: {
   asOf: string;
   mailboxEmail: string;
   totalSenders: number | null;
   updating: boolean;
+  stillSyncing: boolean;
 }) {
   const label = formatSenderSnapshotTime(asOf);
   return (
     <div
       data-testid="sender-results-freshness"
-      role={updating ? 'status' : undefined}
-      aria-live={updating ? 'polite' : undefined}
-      aria-atomic={updating ? 'true' : undefined}
+      role={updating || stillSyncing ? 'status' : undefined}
+      aria-live={updating || stillSyncing ? 'polite' : undefined}
+      aria-atomic={updating || stillSyncing ? 'true' : undefined}
       style={{
         alignItems: 'baseline',
-        color: updating ? color.amber : color.fgMuted,
+        color: updating || stillSyncing ? color.amber : color.fgMuted,
         display: 'flex',
         flexWrap: 'wrap',
         fontFamily: font.mono,
@@ -2688,7 +2721,27 @@ function SenderResultsFreshness({
         margin: '-2px 0 2px',
       }}
     >
-      {updating ? (
+      {stillSyncing ? (
+        // QA-onboarding-20260828-01: `asOf` is the server's compute time
+        // for THIS request, not a measured sync-completion timestamp —
+        // "Synced through <now>" on a mailbox that is still `queued`/
+        // `syncing` asserted a currency the app never checked, over
+        // rows that (if any) are a pre-resync snapshot, not partial
+        // results (the sender index is rebuilt in one transaction only
+        // at the end of sync).
+        <>
+          <strong style={{ fontWeight: 600 }}>Still syncing…</strong>
+          <span>
+            {/* Codex adversarial review, round 2: "more will appear"
+                promises growth a resync hasn't earned — it can also
+                find the same or fewer senders. Say the list may
+                change, not that it will grow. */}
+            {totalSenders !== null
+              ? `Showing ${totalSenders.toLocaleString('en-US')} senders indexed before this sync started for ${mailboxEmail} — this may change once it finishes.`
+              : `Showing what was indexed before this sync started for ${mailboxEmail} — this may change once it finishes.`}
+          </span>
+        </>
+      ) : updating ? (
         <>
           <strong style={{ fontWeight: 600 }}>Updating results…</strong>
           <span>Previous count and rows are read-only.</span>
