@@ -21,6 +21,38 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-29 — Vercel moved to Pro and started billing; the watchdog stayed silently UNCONFIGURED
+
+**PR:** (docs-only, this session, branch `claude/infra-cost-capture-gap-wsqdhz`)
+**Caught by:** founder — forwarded a $59.99 Vercel receipt (Aug 29–Sep 28,
+2026 cycle) by hand; `vendor-limits-watchdog` never flagged it
+**What happened:** `check-vendor-limits.mjs`'s Vercel check requires
+`VERCEL_TOKEN` + `VERCEL_TEAM_ID`. Both have been absent since the watchdog
+was written — `billing-guardrails.md` explicitly deferred wiring them
+"until Pro lands." Pro landed (the receipt has a $20 Pro line plus real
+usage charges: Build CPU Minutes, Function Invocations, Fluid CPU/Memory,
+Fast Origin Transfer, ISR Reads, Observability Events) but nobody turned
+the deferred runbook note into an actual task, so the check has run as
+`UNCONFIGURED` — which exits 0, keeping the workflow green — through at
+least the whole billing cycle. `billing-guardrails.md`'s "Current known
+limits" table also still asserted "Vercel | Hobby | $0", which was false
+the moment the plan changed. No vendor-side hard cap (Spend Management)
+was ever enabled either, so there was no layer-1 backstop covering the
+gap in layer 3.
+**Correct approach:** when a vendor's plan crosses a line the guardrail
+matrix models (Hobby → Pro, free → paid, etc.), wire the deferred
+secrets and the vendor's own hard cap in the SAME change as the
+upgrade — "wire it when X happens" in a runbook is not itself tracked
+work, it's a comment nobody re-reads once X actually happens.
+**Rule:** any runbook line phrased "do X when Y happens" needs a
+FOUNDER-FOLLOWUPS entry opened the moment Y happens, not a note that sits
+until someone finds the bill by hand.
+**Enforcement update:** FOUNDER-FOLLOWUPS 2026-08-29 opened to wire
+`VERCEL_TOKEN`/`VERCEL_TEAM_ID` and turn on Spend Management;
+`billing-guardrails.md`'s guardrail matrix + "Current known limits" table
+and `secrets-inventory.md` corrected to show the real, currently-blind
+state instead of the stale Hobby assumption.
+
 ## 2026-08-26 — A regex demoted seven verified decisions and blamed the missing file on them
 
 **PR:** branch `claude/brief-billing-polish-bzpitp` — found because it rejected

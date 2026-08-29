@@ -131,6 +131,20 @@ the browser. Like a Sentry DSN, it is NOT a hard secret in the strict
 sense (a leaked phc\_ key lets attackers send events to your project,
 not read data). Inventory it for rotation triage.
 
+### Vercel (billing watchdog)
+
+| Slot                          | Vendor label                   | Storage            | Env var          | Rotated | Owner   |
+| ------------------------------ | ------------------------------- | ------------------- | ---------------- | ------- | ------- |
+| Billing-watchdog token (`NOT YET CREATED`) | `declutrmail-watchdog-202608` | GH Actions secret   | `VERCEL_TOKEN`    | —       | founder |
+| Team ID (`NOT YET SET`)        | n/a (identifier)                | GH Actions secret   | `VERCEL_TEAM_ID`  | n/a     | founder |
+
+**Gap (open, see FOUNDER-FOLLOWUPS 2026-08-29):** `scripts/check-vendor-limits.mjs`
+requires both to gauge Vercel spend; without them the daily watchdog
+reports Vercel as `UNCONFIGURED` (a silent skip, not a failure). The
+team is confirmed on Pro with real usage-based billing (a $59.99
+receipt for the Aug 29–Sep 28, 2026 cycle) and these were never wired
+— see `docs/runbooks/billing-guardrails.md` §5.
+
 ### Google OAuth (Gmail)
 
 | Slot                | Vendor label                | Storage                                                                                  | Env var                   | Rotated             | Owner   |
@@ -292,7 +306,7 @@ Listed here so a missing row is a known gap, not an oversight.
 | --------------------------------------------- | --------- | ---------------------------------------------- |
 | Paddle live API key + webhook secret          | Not wired | Billing go-live §9 (D117; runbook 2026-07-17)  |
 | Razorpay live key pair + webhook secret       | Not wired | Same go-live sequence (D117)                   |
-| Vercel deploy token (CI)                      | Not wired | First Cloud Run + Vercel pairing PR (D160)     |
+| Vercel deploy token (CI) — distinct from the billing-watchdog token above | Not wired | First Cloud Run + Vercel pairing PR (D160)     |
 | GCP service account JSON for Cloud Run deploy | Not wired | Same PR                                        |
 | Atlas Cloud token                             | Not wired | If Atlas Cloud is adopted post-migration count |
 

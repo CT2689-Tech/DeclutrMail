@@ -23,6 +23,52 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-29 — Wire the Vercel billing watchdog now that the team is on Pro
+
+**Source:** session 2026-08-29 — founder forwarded a Vercel receipt
+(Aug 29–Sep 28, 2026 cycle, $59.99 total: Pro seat $20 + Build CPU
+Minutes $39.80 + Function Invocations/Fluid CPU/Fluid Memory/Fast
+Origin Transfer/ISR Reads/Observability Events) that never surfaced
+in `vendor-limits-watchdog` or anywhere else in the product.
+
+**Why:** `scripts/check-vendor-limits.mjs`'s `checkVercel()` needs
+`VERCEL_TOKEN` + `VERCEL_TEAM_ID`; neither has ever been set as a GH
+Actions secret (confirmed absent from `secrets-inventory.md` before
+this session). `billing-guardrails.md` documented this as
+intentional — "Hobby plan, cannot bill, skip until Pro" — but the
+receipt proves the team is now on **Pro** with real usage-based
+charges, and nobody wired the deferred secrets when the upgrade
+happened. Because a missing credential makes the check
+`UNCONFIGURED` rather than fail, the watchdog workflow has stayed
+green through at least this whole billing cycle while real money
+was spent with zero automated visibility. Compounding it: Vercel's
+own vendor-side hard cap (Spend Management) was also never turned
+on, so there was no layer-1 backstop either — see the three-layer
+guardrail principle in `billing-guardrails.md`. This is the same
+failure shape as the 2026-07-25 Upstash incident in `MISTAKES.md`: a
+watchdog that reads "OK" only because it never learned the vendor
+started billing.
+
+**How:**
+
+1. `https://vercel.com/account/tokens` → **Create**, scope to the
+   DeclutrMail team, label `declutrmail-watchdog-202608`.
+2. ```bash
+   gh secret set VERCEL_TOKEN
+   gh secret set VERCEL_TEAM_ID   # Dashboard → Settings → General → Team ID
+   ```
+3. Dashboard → Settings → Billing → **Spend Management** → toggle
+   on → set a USD cap per billing cycle → enable **"Pause
+   production deployment"** (50/75/100% emails).
+4. Update the `Rotated` column in `docs/runbooks/secrets-inventory.md`
+   → "Vercel (billing watchdog)" section once the token exists.
+
+**Verifies by:** the next `vendor-limits-watchdog` run reports Vercel
+as `OK`/`WARN`/`BREACH` instead of `UNCONFIGURED`, and its MTD figure
+is in the same ballpark as the Vercel console.
+
+**Status:** Open
+
 ### 2026-08-28 — Decide what would make a QA unsubscribe press harmless
 
 **Source:** session 2026-08-28 — the `U` ban was lifted behind a two-check gate
