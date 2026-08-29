@@ -93,7 +93,19 @@ export function withSignupRef(
   return `${path}${qs ? `?${qs}` : ''}${hash}`;
 }
 
-/** Share URL for the simulator. Recipients get `ref=simulator`; set-once capture protects the sharer's own first touch. */
-export function simulatorShareUrl(origin: string): string {
-  return `${origin.replace(/\/+$/, '')}/inbox-simulator?ref=simulator`;
+/**
+ * Share URL for the simulator. Recipients get `ref=simulator`; set-once
+ * capture protects the sharer's own first touch. `step` (1-indexed) and
+ * `detail` (a sender-detail-preview fixture id) reproduce whatever the
+ * sharer currently has in view — see `?step=`/`?detail=` parsing in
+ * `inbox-simulator-screen.tsx`.
+ */
+export function simulatorShareUrl(
+  origin: string,
+  params: { step?: number | null; detail?: string | null } = {},
+): string {
+  const search = new URLSearchParams({ ref: 'simulator' });
+  if (params.step != null) search.set('step', String(params.step));
+  if (params.detail != null) search.set('detail', params.detail);
+  return `${origin.replace(/\/+$/, '')}/inbox-simulator?${search.toString()}`;
 }

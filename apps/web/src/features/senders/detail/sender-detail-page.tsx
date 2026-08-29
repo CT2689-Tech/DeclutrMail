@@ -13,19 +13,13 @@ import {
   toast,
 } from '@declutrmail/shared';
 import { buildActionReceiptResult, getActionSemantics } from '@declutrmail/shared/actions';
-import {
-  daysSince,
-  senderAddressLine,
-  type ActionRequest,
-  type ActionVerb,
-  type Sender,
-} from '../data';
+import { senderAddressLine, type ActionRequest, type ActionVerb, type Sender } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
 import { ActionToolbar } from './action-toolbar';
 import { RecentMessages } from './recent-messages';
-import type { DecisionHistoryRow, SenderDetail, SenderDetailState } from './types';
+import type { SenderDetail, SenderDetailState } from './types';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { useSenderDetail } from '../api/use-sender-detail';
 import { useRefreshStaleRead } from '../api/use-refresh-stale-read';
@@ -47,6 +41,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
+import { historyRowToTimelineItem, monthAbbrev, relationshipDisplay } from './format';
 import { unsubscribeStatusCopy } from '../grid/sender-card';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
@@ -1377,22 +1372,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
 /* ────────────────── HELPERS ────────────────── */
 
-/**
- * `YYYY-MM` (timeseries axis key) maps to a short month name
- * (`May`, `Jun`). Pure JS Date — no timezone subtlety since the
- * timeseries buckets are month-resolution. Returns `''` for malformed
- * input so the hero copy gracefully degrades rather than rendering
- * `undefined` next to the count. `Intl.DateTimeFormat` is locale-aware;
- * explicit `en-US` keeps the abbrev stable across deploys.
- */
-function monthAbbrev(yearMonth: string): string {
-  const m = /^(\d{4})-(\d{2})$/.exec(yearMonth);
-  if (m == null) return '';
-  const year = Number(m[1]);
-  const month = Number(m[2]) - 1;
-  if (Number.isNaN(year) || month < 0 || month > 11) return '';
-  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(year, month, 1));
-}
+// `monthAbbrev`, `relationshipDisplay`, `historyRowToTimelineItem` and
+// `formatRelative` moved to `./format` so they're importable without
+// pulling in this module's hook wiring — see the note on that file.
 
 // `trendCaption` retired (founder 2026-06-06): the bucket strings
 // ("↑ up vs prior 3mo") leaned on the same misleading derivation as
@@ -1401,62 +1383,6 @@ function monthAbbrev(yearMonth: string): string {
 // want a textual trend chip back, derive it from a rolling window
 // the user can compute themselves from the sparkline (e.g. "5 in May
 // vs 12 avg prior 11mo") rather than a bucketed adjective.
-
-function relationshipDisplay(months: number) {
-  if (months < 12) {
-    return {
-      value: months,
-      unit: months === 1 ? 'mo' : 'mo',
-      since: months === 0 ? 'New' : `Since ${months} month${months === 1 ? '' : 's'} ago`,
-    };
-  }
-  const years = Math.floor(months / 12);
-  return {
-    value: years,
-    unit: years === 1 ? 'yr' : 'yr',
-    since: `${months} months`,
-  };
-}
-
-function historyRowToTimelineItem(
-  row: DecisionHistoryRow,
-  isCurrent: boolean,
-  now: number | null,
-): TimelineItem {
-  const when = now === null ? '' : formatRelative(row.at, now);
-  return {
-    id: row.id,
-    when,
-    current: isCurrent,
-    what: (
-      <>
-        <span style={{ color: '#4B5552' }}>{row.source}</span> <strong>{row.action}</strong>
-        {row.count != null && (
-          <span style={{ color: '#646D69', fontSize: 11.5 }}> · {row.count} messages</span>
-        )}{' '}
-        <span style={{ color: '#646D69', fontSize: 11.5 }}>· op {row.opId}</span>
-      </>
-    ),
-  };
-}
-
-// Day-count via the shared `daysSince` (calendar-midnight), not an
-// elapsed-24h round — this timeline sat on its own algorithm and could
-// print "yesterday" while `recent-messages.tsx` printed "today" for a
-// message a few hours apart in the same list (QA-archive-20260828-03).
-// `now` comes from the caller's `useNow()`, not an ambient `Date.now()`
-// read here: this page has no `ssr:false` boundary, so a clock read
-// during render can put the server and the client on opposite sides of
-// a calendar-day cutoff and hydrate a different label than it rendered.
-function formatRelative(iso: string, now: number): string {
-  const days = daysSince(iso, now);
-  if (days === 0) return 'today';
-  if (days === 1) return 'yesterday';
-  if (days < 7) return `${days}d ago`;
-  if (days < 30) return `${Math.round(days / 7)}w ago`;
-  if (days < 365) return `${Math.round(days / 30)}mo ago`;
-  return `${Math.round(days / 365)}yr ago`;
-}
 
 function LoadingState() {
   return (
