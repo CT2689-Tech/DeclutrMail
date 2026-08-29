@@ -625,6 +625,12 @@ function SendersScreenContent({
   const unsubBatchStatus = useBatchStatus(activeUnsubBatch?.batchId ?? null);
   const revertStatus = useActionStatus(revertActionId);
   const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
+  // QA-delete-20260829-05, Codex round 2 — same dedup as sender-detail-page.tsx:
+  // a revert this screen did NOT initiate polls through its OWN quiet handle
+  // instead of `revertActionId`, so the tray's own completion toast is not
+  // duplicated here.
+  const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
+  const externalRevertStatus = useActionStatus(externalRevertActionId);
   // Overdue parking slots (ACTION_OVERDUE_MS, 2026-08-12 incident) —
   // one slot per latch, free-slot rule: a handle parks only while its
   // slot is EMPTY (an occupied slot holds the active timer instead, so
@@ -1896,9 +1902,11 @@ function SendersScreenContent({
   // sibling receipt: this screen's `receipt` is local state that only heard
   // about a revert THIS page's own `onUndo` performed, not one the global
   // undo tray (`ProductUndoTray`) performed through its own `useRevertUndo()`
-  // instance. See that file's identical effect for the full reasoning —
-  // both cases (immediate `reverted: true`, and pending `actionId` to poll
-  // via the existing `revertActionId` effect below) are handled the same way.
+  // instance. See that file's identical effect for the full reasoning,
+  // including Codex round 2's duplicate-toast catch — the pending
+  // (`actionId` returned) case routes through the QUIET
+  // `externalRevertActionId` poll below, never the toasting `revertActionId`
+  // one, so the tray's own completion toast is not said twice.
   useEffect(() => {
     const token = receipt?.activityUndo.token;
     if (!token) return;
@@ -1911,10 +1919,27 @@ function SendersScreenContent({
       if (result?.reverted) {
         setReceipt(null);
       } else if (result?.actionId) {
-        setRevertActionId(result.actionId);
+        setExternalRevertActionId(result.actionId);
       }
     });
   }, [receipt, qc]);
+
+  // Quiet poll-to-terminal for an EXTERNALLY-triggered revert (see above) —
+  // no toast, no cache invalidation: the tray's own completion already
+  // toasts and its own `invalidateAfterUndo` already covers Senders/Activity.
+  useEffect(() => {
+    if (!externalRevertActionId) return;
+    const data = externalRevertStatus.data;
+    if (externalRevertStatus.isError) {
+      setExternalRevertActionId(null);
+      return;
+    }
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      setReceipt(null);
+    }
+    setExternalRevertActionId(null);
+  }, [externalRevertActionId, externalRevertStatus.data, externalRevertStatus.isError]);
 
   // Archive / Unsubscribe / Later / Delete move mail, so they route
   // through the mandatory preview (D226 + spec v1.2 Decision 15). Keep /

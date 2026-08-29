@@ -958,6 +958,7 @@ describe('SenderDetailRoute', () => {
     // above — that pending shape is what the global tray actually produces
     // on a first-time Undo, and the original fix silently missed it.
     it('clears the receipt via the poll-to-terminal path when the external revert is still pending (reverted: false)', async () => {
+      h.toast.mockClear();
       let actionPosts = 0;
       let undoPosts = 0;
       installHappyPath();
@@ -1012,14 +1013,18 @@ describe('SenderDetailRoute', () => {
       expect(undoPosts).toBe(1);
       expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
 
-      // The poll this page's OWN `revertActionId` effect now runs (fed
-      // `act-revert-1` by the mutation-cache listener) resolves terminal,
-      // and clears the receipt exactly as it does for a LOCAL undo.
+      // The QUIET `externalRevertActionId` poll (fed `act-revert-1` by the
+      // mutation-cache listener) resolves terminal and clears the receipt —
+      // but Codex round 2: it must NOT toast. The tray that actually
+      // performed this revert already told the user; this page saying
+      // "Restored to your inbox" too would be a duplicate confirmation for
+      // one action.
       await waitFor(
         () => expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
         { timeout: 3000 },
       );
       expect(actionPosts).toBe(1);
+      expect(h.toast).not.toHaveBeenCalledWith('Restored to your inbox', 'success');
     });
   });
 });
