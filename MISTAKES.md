@@ -4218,3 +4218,56 @@ test harness and is not typechecked in CI at all
 (`FOUNDER-FOLLOWUPS.md:601`, Open since 2026-08-18 — filed by the same PR that
 introduced this script, and the reason 34 type errors sit unread in the root
 tsconfig today). Verified by executable negative control, not by a unit test.
+
+## 2026-08-29 — A second consumer of a feature-owned component blew a budget the merge queue didn't catch
+
+**PR:** #677 (shipped), #678 (fix, both merged same session)
+**Caught by:** CI (`Build — Web + bundle budget`), but only AFTER #677 was
+already on `main` — the check ran and failed on the PR, yet `gh pr merge
+--auto` still merged it.
+
+**What happened:** #677 added a Sender Detail preview to the public,
+no-signup `/inbox-simulator` demo, built from `RecentMessages`,
+`RecommendationBanner`, `KpiStrip` and `DecisionTimeline` — all genuinely
+presentation-only, deliberately chosen instead of the real `SenderDetailPage`
+specifically to avoid dragging the authenticated API client into the public
+bundle (a known open issue on `TriageRow`'s own chain). That avoidance
+worked — `/inbox-simulator` shipped well under its budget. But those four
+components previously had exactly ONE consumer: the authenticated
+`/senders/[id]` page, so webpack inlined them there with no separate chunk.
+Adding a second consumer in a different route group made webpack hoist them
+into a chunk shared by both pages, adding real bytes to `/senders/[id]`'s own
+First Load JS and pushing it from 191.3kB to 195.2kB — over its 195kB CI
+budget. `Build — Web + bundle budget` failed on the PR's check list, but it
+does not gate GitHub's merge queue (the same class of gap as the
+`cron-stale-watchdog`/`Analyze (javascript-typescript)` findings already in
+this file and `merge-queue-posture` memory: a check can be red on the PR and
+still let `merge_group` through), so `--auto` merged anyway. Root-caused by
+grepping the built `.next` chunk for the literal string `"Recent messages"` —
+`app-build-manifest.json`'s per-page chunk list is what actually proves chunk
+membership, not chunk names, same technique as the barrel-imports finding.
+
+**Correct approach:** `kpi-strip.tsx` and `decision-timeline.tsx` already
+carry their own comment: "feature-owned per ADR-0007 (lazy promotion)...
+Promote to `packages/shared/` when the second consumer... needs it." #677
+WAS that second consumer, and the comment's own predicted failure mode is
+exactly what happened. The fix isn't "don't reuse the component" — it's
+"promote it to `packages/shared/` at the moment a second consumer appears,"
+which sidesteps the cross-route-group chunk-sharing problem entirely. #678
+reverted the Sender Detail piece rather than rush that promotion under
+live-regression pressure; the promotion itself is still open work.
+
+**Rule:** Before adding a second consumer to any component carrying an
+ADR-0007 "lazy promotion" comment, promote it first — don't add the import
+and find out from a bundle-budget failure. And after ANY change that adds a
+new cross-feature import (even of code proven hook-free/auth-free), rebuild
+locally and run `node scripts/check-web-bundle-budget.mjs` before opening the
+PR — "pure" and "cheap to bundle" are different claims, and only one of them
+was checked.
+
+**Enforcement update:** None yet — `check-web-bundle-budget.mjs` exists and
+correctly caught this, but nothing makes its failure gate the merge queue.
+Filing to `FOUNDER-FOLLOWUPS.md` as a companion to the existing
+`merge-queue-posture` gap: a bundle-budget regression on an authenticated
+route with heavy daily traffic is exactly the kind of check whose absence
+from `merge_group` should not be silent.
