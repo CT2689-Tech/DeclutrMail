@@ -668,38 +668,15 @@ describe('InboxSimulatorScreen', () => {
     expect(screen.getByText(/senders you just archived/i)).toBeInTheDocument();
   });
 
-  it('offers a Sender Detail preview on the two guided rows with a matching fixture, never in Explore', () => {
-    render(<InboxSimulatorScreen />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 2: One-way' }));
-    const detailLink = screen.getByRole('button', { name: 'View sender detail →' });
-    fireEvent.click(detailLink);
-
-    const dialog = screen.getByRole('dialog', { name: /LinkedIn/ });
-    expect(within(dialog).getByText('Decision timeline')).toBeInTheDocument();
-    expect(within(dialog).getByText('Sample sender · not from your inbox')).toBeInTheDocument();
-
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Close sender detail preview' }));
-    expect(screen.queryByRole('dialog', { name: /LinkedIn/ })).not.toBeInTheDocument();
-
-    // Explore mode renders the same underlying row but never the link —
-    // scoped to the 2 curated fixtures on the guided path only.
-    fireEvent.click(
-      screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
-    );
-    expect(screen.queryByRole('button', { name: 'View sender detail →' })).not.toBeInTheDocument();
-  });
-
-  it('opens directly on a deep-linked step and sender-detail overlay', async () => {
-    window.history.pushState({}, '', '/inbox-simulator?step=2&detail=groupon');
+  it('opens directly on a deep-linked step', async () => {
+    window.history.pushState({}, '', '/inbox-simulator?step=2');
 
     render(<InboxSimulatorScreen />);
 
     expect(await screen.findByText('Pause before a one-way request.')).toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: /Groupon/ })).toBeInTheDocument();
   });
 
-  it('copies a link that reproduces the current step and open detail overlay', async () => {
+  it('copies a link that reproduces the current step', async () => {
     const writeText = vi.fn(async () => undefined);
     Object.defineProperty(window.navigator, 'clipboard', {
       value: { writeText },
@@ -708,18 +685,8 @@ describe('InboxSimulatorScreen', () => {
 
     render(<InboxSimulatorScreen />);
     fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 2: One-way' }));
-    // The button's own label flips to "Copied" after a successful copy
-    // (never resets), so it's queried by either state throughout.
-    const copyLink = () => screen.getByRole('button', { name: /^(Copy demo link|Copied)$/ });
-    fireEvent.click(copyLink());
+    fireEvent.click(screen.getByRole('button', { name: 'Copy demo link' }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('step=2')));
-    expect(writeText).toHaveBeenCalledWith(expect.not.stringContaining('detail='));
-
-    fireEvent.click(screen.getByRole('button', { name: 'View sender detail →' }));
-    fireEvent.click(copyLink());
-    await waitFor(() =>
-      expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining('detail=linkedin')),
-    );
   });
 });

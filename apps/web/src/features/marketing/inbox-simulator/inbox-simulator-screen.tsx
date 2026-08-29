@@ -37,19 +37,6 @@ import {
   syntheticInboxCount,
   SYNTHETIC_RULE,
 } from './synthetic-preview';
-import {
-  isSenderDetailPreviewFixtureId,
-  SenderDetailPreviewModal,
-  type SenderDetailPreviewFixtureId,
-} from './sender-detail-preview';
-
-/** The only two demo rows with a matching entry in `SENDER_FIXTURES` —
- *  see `SENDER_DETAIL_PREVIEW_FIXTURE_IDS`. Every other row would need a
- *  new synthetic `SenderDetail` authored by hand. */
-const SENDER_DETAIL_LINK_BY_ROW_ID: Readonly<Record<string, SenderDetailPreviewFixtureId>> = {
-  't-linkedin': 'linkedin',
-  't-groupon': 'groupon',
-};
 
 const { color } = tokens;
 
@@ -467,9 +454,6 @@ export function InboxSimulatorScreen() {
   // step is actually next, so revisiting/looking ahead never fires an
   // action out from under the visitor.
   const [viewIndex, setViewIndex] = useState<number | null>(null);
-  // The sender-detail overlay's open fixture, or `null` when closed.
-  // Also settable via a `?detail=` deep link.
-  const [detailFixtureId, setDetailFixtureId] = useState<SenderDetailPreviewFixtureId | null>(null);
   // Measured elapsed time (never a hardcoded figure). `startedAt` is
   // stamped by an effect the first time ANY decision exists — not during
   // render, so server and first-paint HTML never have to guess a value
@@ -509,21 +493,17 @@ export function InboxSimulatorScreen() {
     } catch {
       // A corrupt or unavailable local store never blocks the demo.
     }
-    // Deep link — `?step=1..4` jumps straight to a guided step, `?detail=`
-    // opens the sender-detail overlay on load. Read from `location.search`
-    // rather than `useSearchParams()` so this stays client-only with no
-    // Suspense boundary requirement, consistent with the rest of this
-    // component's hydration-safe (server-then-client) pattern.
+    // Deep link — `?step=1..4` jumps straight to a guided step. Read from
+    // `location.search` rather than `useSearchParams()` so this stays
+    // client-only with no Suspense boundary requirement, consistent with
+    // the rest of this component's hydration-safe (server-then-client)
+    // pattern.
     try {
       const params = new URLSearchParams(window.location.search);
       const stepParam = params.get('step');
       const stepIndex = stepParam === null ? NaN : Number(stepParam) - 1;
       if (Number.isInteger(stepIndex) && stepIndex >= 0 && stepIndex < GUIDED_SCENARIOS.length) {
         setViewIndex(stepIndex);
-      }
-      const detailParam = params.get('detail');
-      if (isSenderDetailPreviewFixtureId(detailParam)) {
-        setDetailFixtureId(detailParam);
       }
     } catch {
       // A malformed query string never blocks the demo.
@@ -809,7 +789,6 @@ export function InboxSimulatorScreen() {
     setCompletedAt(null);
     setExpandedId(GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null);
     setViewIndex(null);
-    setDetailFixtureId(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -872,7 +851,6 @@ export function InboxSimulatorScreen() {
             <div className="dm-simulator-queue-head-actions">
               <CopySimulatorLink
                 step={mode === 'guided' && effectiveIndex !== -1 ? effectiveIndex + 1 : null}
-                detailFixtureId={detailFixtureId}
               />
               <button
                 type="button"
@@ -907,33 +885,19 @@ export function InboxSimulatorScreen() {
             <ExploreCompletion decisions={decisions} onReset={reset} />
           ) : (
             <div className="dm-simulator-rows">
-              {rows.map((row, index) => {
-                const detailFixture =
-                  mode === 'guided' ? SENDER_DETAIL_LINK_BY_ROW_ID[row.id] : undefined;
-                return (
-                  <div key={row.id}>
-                    <TriageRow
-                      row={row}
-                      expanded={expandedId === row.id}
-                      hero={index === 0}
-                      busy={pending?.row.id === row.id}
-                      onToggleExpand={() =>
-                        setExpandedId((current) => (current === row.id ? null : row.id))
-                      }
-                      onAction={(verb) => chooseAction(row, verb)}
-                    />
-                    {detailFixture ? (
-                      <button
-                        type="button"
-                        className="dm-simulator-sender-detail-link"
-                        onClick={() => setDetailFixtureId(detailFixture)}
-                      >
-                        View sender detail →
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
+              {rows.map((row, index) => (
+                <TriageRow
+                  key={row.id}
+                  row={row}
+                  expanded={expandedId === row.id}
+                  hero={index === 0}
+                  busy={pending?.row.id === row.id}
+                  onToggleExpand={() =>
+                    setExpandedId((current) => (current === row.id ? null : row.id))
+                  }
+                  onAction={(verb) => chooseAction(row, verb)}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -1054,11 +1018,6 @@ export function InboxSimulatorScreen() {
           onConfirm={() => confirmRule('active')}
         />
       ) : null}
-
-      <SenderDetailPreviewModal
-        fixtureId={detailFixtureId}
-        onClose={() => setDetailFixtureId(null)}
-      />
     </div>
   );
 }
@@ -1202,16 +1161,10 @@ function formatElapsedTime(ms: number): string {
 /**
  * Persistent header instance (moved out of the two completion screens —
  * those only ever appeared after finishing the guide, which made "share
- * the card I'm looking at" impossible mid-guide). `step`/`detailFixtureId`
- * capture whatever the visitor currently has in view.
+ * the card I'm looking at" impossible mid-guide). `step` captures
+ * whichever step the visitor currently has in view.
  */
-function CopySimulatorLink({
-  step,
-  detailFixtureId,
-}: {
-  step: number | null;
-  detailFixtureId: string | null;
-}) {
+function CopySimulatorLink({ step }: { step: number | null }) {
   const [copied, setCopied] = useState(false);
 
   return (
@@ -1220,7 +1173,7 @@ function CopySimulatorLink({
       onClick={() => {
         if (!navigator.clipboard) return;
         void navigator.clipboard
-          .writeText(simulatorShareUrl(siteUrl(), { step, detail: detailFixtureId }))
+          .writeText(simulatorShareUrl(siteUrl(), { step }))
           .then(() => {
             setCopied(true);
           })
