@@ -447,6 +447,13 @@ export function InboxSimulatorScreen() {
   const [ruleActivated, setRuleActivated] = useState<RuleDecision>(null);
   const [dismissedDomains, setDismissedDomains] = useState<readonly string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  // Explicit step selection from the progress bar or a `?step=` deep
+  // link. `null` means "follow the guide" — the displayed step tracks
+  // whichever scenario is first-incomplete, same as before free
+  // navigation existed. Once set, it pins the view regardless of which
+  // step is actually next, so revisiting/looking ahead never fires an
+  // action out from under the visitor.
+  const [viewIndex, setViewIndex] = useState<number | null>(null);
   // Measured elapsed time (never a hardcoded figure). `startedAt` is
   // stamped by an effect the first time ANY decision exists — not during
   // render, so server and first-paint HTML never have to guess a value
@@ -486,6 +493,21 @@ export function InboxSimulatorScreen() {
     } catch {
       // A corrupt or unavailable local store never blocks the demo.
     }
+    // Deep link — `?step=1..4` jumps straight to a guided step. Read from
+    // `location.search` rather than `useSearchParams()` so this stays
+    // client-only with no Suspense boundary requirement, consistent with
+    // the rest of this component's hydration-safe (server-then-client)
+    // pattern.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const stepParam = params.get('step');
+      const stepIndex = stepParam === null ? NaN : Number(stepParam) - 1;
+      if (Number.isInteger(stepIndex) && stepIndex >= 0 && stepIndex < GUIDED_SCENARIOS.length) {
+        setViewIndex(stepIndex);
+      }
+    } catch {
+      // A malformed query string never blocks the demo.
+    }
     setHydrated(true);
   }, []);
 
@@ -516,20 +538,30 @@ export function InboxSimulatorScreen() {
     [decisions],
   );
   const ruleDecided = ruleActivated != null;
+  // First not-yet-decided scenario — the guide's default "next up" step,
+  // and what a `viewIndex` of `null` falls back to.
   const currentGuideIndex = GUIDED_SCENARIOS.findIndex(
     (scenario) => !isScenarioComplete(scenario, decidedIds, ruleDecided),
   );
-  const currentScenario =
-    currentGuideIndex === -1 ? null : (GUIDED_SCENARIOS[currentGuideIndex] ?? null);
-  // How many guided steps are done, counting only a consecutive run from
-  // the start — the guide can only ever be walked in order, so this and
-  // "count every individually-complete scenario" agree on every state
-  // this UI can reach. They diverge only for a hand-crafted localStorage
-  // payload that marks a LATER step done while an earlier one is not;
-  // treating that as "0 done, currently on step 1" (not "1 of 4") is the
-  // reading that matches what the screen actually shows.
-  const completedGuideCount =
-    currentGuideIndex === -1 ? GUIDED_SCENARIOS.length : currentGuideIndex;
+  // The DISPLAYED step. An explicit `viewIndex` (progress-bar click or a
+  // `?step=` deep link) pins the view to that step regardless of
+  // completion state — free navigation means step 3 is visible whether
+  // or not step 1 is done. `-1` here means "nothing pinned and every
+  // scenario is complete", matching `currentGuideIndex`'s own sentinel.
+  const effectiveIndex = viewIndex ?? currentGuideIndex;
+  const currentScenario = effectiveIndex === -1 ? null : (GUIDED_SCENARIOS[effectiveIndex] ?? null);
+  // Order-independent — counts every INDIVIDUALLY complete scenario, not
+  // just a consecutive run from the start. Before free navigation this
+  // was reachable only via a hand-crafted localStorage payload (the
+  // comment here used to say so); a real visitor can now legitimately
+  // decide step 3 before step 1, and "0 of 4" would read as broken.
+  const completedGuideCount = GUIDED_SCENARIOS.filter((scenario) =>
+    isScenarioComplete(scenario, decidedIds, ruleDecided),
+  ).length;
+  // Whether the Amazon batch step (index 0) is decided — the rule step's
+  // card references it, and with free navigation that step may not have
+  // happened yet when the rule step is the one on screen.
+  const batchStepDecided = isScenarioComplete(GUIDED_SCENARIOS[0]!, decidedIds, ruleDecided);
   const currentBatch =
     currentScenario?.kind === 'batch'
       ? (findDomainBatches(DEMO_ROWS, dismissedDomains).find(
@@ -756,6 +788,7 @@ export function InboxSimulatorScreen() {
     setStartedAt(null);
     setCompletedAt(null);
     setExpandedId(GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null);
+    setViewIndex(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
     } catch {
@@ -766,6 +799,7 @@ export function InboxSimulatorScreen() {
   const changeMode = (nextMode: DemoMode) => {
     setMode(nextMode);
     setPending(null);
+    setViewIndex(null);
     setExpandedId(firstUndecidedRow(nextMode, decisions, ruleDecided)?.id ?? null);
   };
 
@@ -798,9 +832,10 @@ export function InboxSimulatorScreen() {
           {mode === 'guided' && currentScenario ? (
             <GuidedScenarioPanel
               scenario={currentScenario}
-              currentIndex={currentGuideIndex}
+              currentIndex={effectiveIndex}
               decidedIds={decidedIds}
               ruleDecided={ruleDecided}
+              onSelect={setViewIndex}
             />
           ) : null}
 
@@ -813,13 +848,18 @@ export function InboxSimulatorScreen() {
                   : `${rows.length} decision${rows.length === 1 ? '' : 's'} remaining`}
               </strong>
             </div>
-            <button
-              type="button"
-              className="dm-simulator-mode-button"
-              onClick={() => changeMode(mode === 'guided' ? 'explore' : 'guided')}
-            >
-              {mode === 'guided' ? `Explore all ${DEMO_ROWS.length} senders` : 'Return to guide'}
-            </button>
+            <div className="dm-simulator-queue-head-actions">
+              <CopySimulatorLink
+                step={mode === 'guided' && effectiveIndex !== -1 ? effectiveIndex + 1 : null}
+              />
+              <button
+                type="button"
+                className="dm-simulator-mode-button"
+                onClick={() => changeMode(mode === 'guided' ? 'explore' : 'guided')}
+              >
+                {mode === 'guided' ? `Explore all ${DEMO_ROWS.length} senders` : 'Return to guide'}
+              </button>
+            </div>
           </div>
 
           {mode === 'guided' && currentScenario === null ? (
@@ -837,7 +877,10 @@ export function InboxSimulatorScreen() {
               onDismiss={() => setDismissedDomains((prev) => [...prev, currentBatch.domain])}
             />
           ) : mode === 'guided' && currentScenario?.kind === 'rule' ? (
-            <RuleStepCard onPreview={() => setPendingRule(true)} />
+            <RuleStepCard
+              onPreview={() => setPendingRule(true)}
+              batchStepDecided={batchStepDecided}
+            />
           ) : mode === 'explore' && rows.length === 0 ? (
             <ExploreCompletion decisions={decisions} onReset={reset} />
           ) : (
@@ -984,11 +1027,15 @@ function GuidedScenarioPanel({
   currentIndex,
   decidedIds,
   ruleDecided,
+  onSelect,
 }: {
   scenario: GuidedScenario;
   currentIndex: number;
   decidedIds: ReadonlySet<string>;
   ruleDecided: boolean;
+  /** Jump to any step, decided or not — looking ahead never fires an
+   *  action; only actually using that step's controls does. */
+  onSelect: (index: number) => void;
 }) {
   return (
     <section className="dm-simulator-guide" aria-labelledby="dm-simulator-guide-title">
@@ -1012,8 +1059,14 @@ function GuidedScenarioPanel({
               data-state={completed ? 'complete' : current ? 'current' : 'upcoming'}
               aria-current={current ? 'step' : undefined}
             >
-              <span aria-hidden="true">{completed ? '✓' : index + 1}</span>
-              <strong>{item.shortLabel}</strong>
+              <button
+                type="button"
+                onClick={() => onSelect(index)}
+                aria-label={`Go to guided decision ${index + 1}: ${item.shortLabel}`}
+              >
+                <span aria-hidden="true">{completed ? '✓' : index + 1}</span>
+                <strong>{item.shortLabel}</strong>
+              </button>
             </li>
           );
         })}
@@ -1032,7 +1085,16 @@ function GuidedScenarioPanel({
  * 2026-08-23, and a demo that gets this wrong contradicts the pricing
  * page it is trying to sell.
  */
-function RuleStepCard({ onPreview }: { onPreview: () => void }) {
+function RuleStepCard({
+  onPreview,
+  batchStepDecided,
+}: {
+  onPreview: () => void;
+  /** Whether the Amazon batch step (step 1) has been decided yet. Free
+   *  navigation means this step can be viewed before that one — the
+   *  copy has to read correctly either way rather than assume order. */
+  batchStepDecided: boolean;
+}) {
   return (
     <div
       style={{
@@ -1047,8 +1109,9 @@ function RuleStepCard({ onPreview }: { onPreview: () => void }) {
     >
       <Eyebrow tone="primary">Autopilot · {tierGranting('autopilot')}</Eyebrow>
       <p style={{ margin: 0, fontSize: 13, color: color.fgSoft, lineHeight: 1.5 }}>
-        Turn this into a standing rule: the senders you just archived, archived automatically as
-        more mail like them arrives — after you preview exactly what it would do right now.
+        {batchStepDecided
+          ? 'Turn this into a standing rule: the senders you just archived, archived automatically as more mail like them arrives — after you preview exactly what it would do right now.'
+          : 'Turn a decision like this into a standing rule: senders you archive get archived automatically as more mail like them arrives — after you preview exactly what it would do right now.'}
       </p>
       <div>
         <Button tone="primary" onClick={onPreview}>
@@ -1095,7 +1158,13 @@ function formatElapsedTime(ms: number): string {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
-function CopySimulatorLink() {
+/**
+ * Persistent header instance (moved out of the two completion screens —
+ * those only ever appeared after finishing the guide, which made "share
+ * the card I'm looking at" impossible mid-guide). `step` captures
+ * whichever step the visitor currently has in view.
+ */
+function CopySimulatorLink({ step }: { step: number | null }) {
   const [copied, setCopied] = useState(false);
 
   return (
@@ -1104,7 +1173,7 @@ function CopySimulatorLink() {
       onClick={() => {
         if (!navigator.clipboard) return;
         void navigator.clipboard
-          .writeText(simulatorShareUrl(siteUrl()))
+          .writeText(simulatorShareUrl(siteUrl(), { step }))
           .then(() => {
             setCopied(true);
           })
@@ -1169,7 +1238,6 @@ function DemoCompletion({
         <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
           Review my Gmail senders →
         </TrackedCta>
-        <CopySimulatorLink />
         <Button tone="default" onClick={onExplore}>
           Explore all sample senders
         </Button>
@@ -1203,7 +1271,6 @@ function ExploreCompletion({
         <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
           Review my Gmail senders →
         </TrackedCta>
-        <CopySimulatorLink />
         <Button tone="default" onClick={onReset}>
           Start again
         </Button>
