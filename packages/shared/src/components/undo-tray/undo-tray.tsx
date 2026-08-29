@@ -340,7 +340,7 @@ function formatExpiry(value: string): string {
   // other surface stating this same deadline in the reader's zone
   // (QA-triage-20260827-09 / QA-undo-20260828-04). Undo entries ARE
   // SSR-prefetched (`server-app-boundary.tsx`), but this app's own
-  // `useUndoEntries` (`triage-undo-tray.tsx`) hides every token already
+  // `ProductUndoTray` (`triage-undo-tray.tsx`) hides every token already
   // live when the screen was entered behind a baseline — nothing this
   // formatter renders is ever painted before hydration, so there is no
   // SSR/client TZ mismatch to worry about for THIS consumer. A future

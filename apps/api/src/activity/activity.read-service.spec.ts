@@ -975,8 +975,9 @@ describe('ActivityReadService', () => {
     it('excludes a reverted row from the live byVerb tiles AND noisePreventedPerMonth (QA-undo-20260828-01)', async () => {
       // This is the aggregate the `/activity` metrics header actually
       // renders (`listActivity` → `aggregateStats`) — the earlier fix to
-      // `summarizeActivity` (a separate, uncalled DQ16 endpoint) did not
-      // touch this one, so the live page kept crediting undone actions.
+      // `summarizeActivity` (a separate DQ16 endpoint with no web caller)
+      // did not touch this one, so the live page kept crediting undone
+      // actions.
       const { mailboxAccountId } = await seedMailbox(db, 'reverted-live-stats@x.test');
       const senderKey = 'r'.repeat(64);
       await seedSender(db, mailboxAccountId, senderKey, 'reverted@brand.test', 'Reverted Brand');

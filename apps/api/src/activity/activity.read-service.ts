@@ -1027,8 +1027,9 @@ export class ActivityReadService {
     // (`listActivity` → `aggregateStats`), so a reverted archive/delete/
     // etc. still counting here is the defect QA-undo-20260828-01 was
     // filed against — codex review caught that the earlier fix to the
-    // separate, uncalled `summarizeActivity` DQ16 endpoint left this one
-    // (the one the screen renders) untouched.
+    // separate `summarizeActivity` DQ16 endpoint — real, API-called, but
+    // with no web caller — left this one (the one the screen renders)
+    // untouched.
     const whereParts = [
       eq(activityLog.mailboxAccountId, args.mailboxAccountId),
       isNull(activityLog.revertedAt),
