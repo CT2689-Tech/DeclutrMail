@@ -133,10 +133,10 @@ not read data). Inventory it for rotation triage.
 
 ### Vercel (billing watchdog)
 
-| Slot                          | Vendor label                   | Storage            | Env var          | Rotated | Owner   |
-| ------------------------------ | ------------------------------- | ------------------- | ---------------- | ------- | ------- |
-| Billing-watchdog token (`NOT YET CREATED`) | `declutrmail-watchdog-202608` | GH Actions secret   | `VERCEL_TOKEN`    | —       | founder |
-| Team ID (`NOT YET SET`)        | n/a (identifier)                | GH Actions secret   | `VERCEL_TEAM_ID`  | n/a     | founder |
+| Slot                                       | Vendor label                  | Storage           | Env var          | Rotated | Owner   |
+| ------------------------------------------ | ----------------------------- | ----------------- | ---------------- | ------- | ------- |
+| Billing-watchdog token (`NOT YET CREATED`) | `declutrmail-watchdog-202608` | GH Actions secret | `VERCEL_TOKEN`   | —       | founder |
+| Team ID (`NOT YET SET`)                    | n/a (identifier)              | GH Actions secret | `VERCEL_TEAM_ID` | n/a     | founder |
 
 **Gap (open, see FOUNDER-FOLLOWUPS 2026-08-29):** `scripts/check-vendor-limits.mjs`
 requires both to gauge Vercel spend; without them the daily watchdog
@@ -302,13 +302,13 @@ the WIF pool/provider.
 These will become real entries when the corresponding feature ships.
 Listed here so a missing row is a known gap, not an oversight.
 
-| Slot                                          | Status    | Trigger to wire                                |
-| --------------------------------------------- | --------- | ---------------------------------------------- |
-| Paddle live API key + webhook secret          | Not wired | Billing go-live §9 (D117; runbook 2026-07-17)  |
-| Razorpay live key pair + webhook secret       | Not wired | Same go-live sequence (D117)                   |
+| Slot                                                                      | Status    | Trigger to wire                                |
+| ------------------------------------------------------------------------- | --------- | ---------------------------------------------- |
+| Paddle live API key + webhook secret                                      | Not wired | Billing go-live §9 (D117; runbook 2026-07-17)  |
+| Razorpay live key pair + webhook secret                                   | Not wired | Same go-live sequence (D117)                   |
 | Vercel deploy token (CI) — distinct from the billing-watchdog token above | Not wired | First Cloud Run + Vercel pairing PR (D160)     |
-| GCP service account JSON for Cloud Run deploy | Not wired | Same PR                                        |
-| Atlas Cloud token                             | Not wired | If Atlas Cloud is adopted post-migration count |
+| GCP service account JSON for Cloud Run deploy                             | Not wired | Same PR                                        |
+| Atlas Cloud token                                                         | Not wired | If Atlas Cloud is adopted post-migration count |
 
 ## Rotation cadence
 
