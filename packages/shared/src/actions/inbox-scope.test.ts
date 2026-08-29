@@ -135,8 +135,25 @@ describe('inboxScopeNoticeCopy', () => {
     expect(
       inboxScopeNoticeCopy({ kind: 'empty-window', inboxTotal: 30, olderThanDays: 180 }, 'Delete'),
     ).toBe(
-      '30 emails from this sender are in your inbox, but none are older than 180 days. Widen the window to include them.',
+      '30 emails from this sender are in your inbox, but none are older than the 6 months+ window. Widen the window to include them.',
     );
+  });
+
+  // QA-delete-20260829-03 — the notice must name the SAME unit the window
+  // chip itself is labelled in (a day count next to a "6 months+" chip is a
+  // unit mismatch), for every preset the window control actually offers.
+  it.each([
+    [30, '30 days+'],
+    [90, '3 months+'],
+    [180, '6 months+'],
+    [365, '1 year+'],
+  ])('names the %s-day preset as "%s", not a day count', (days, label) => {
+    const copy = inboxScopeNoticeCopy(
+      { kind: 'empty-window', inboxTotal: 1, olderThanDays: days },
+      'Delete',
+    );
+    expect(copy).toContain(`the ${label} window`);
+    expect(copy).not.toMatch(/\d+ days?\.?\s*Widen/);
   });
 
   // A bulk sheet covering twelve senders must not say "this sender".
@@ -157,7 +174,7 @@ describe('inboxScopeNoticeCopy', () => {
         'these senders',
       ),
     ).toBe(
-      '30 emails from these senders are in your inbox, but none are older than 180 days. Widen the window to include them.',
+      '30 emails from these senders are in your inbox, but none are older than the 6 months+ window. Widen the window to include them.',
     );
   });
 
@@ -287,9 +304,17 @@ describe('mailLocationCopy', () => {
     // The prod shape: header reads "6,668 received", inbox reads 0, and
     // the two never reconciled on screen.
     expect(mailLocationCopy({ inboxNow: 0, allMailNow: 6275, receivedTotal: 6668 })).toBe(
-      'Where this email is now: 0 in your inbox \u00b7 6,275 emails elsewhere in Gmail ' +
+      "Where this sender's mail is now: 0 emails in your inbox \u00b7 6,275 emails elsewhere in Gmail " +
         '(archived or under a label) \u00b7 393 in Trash or Spam.',
     );
+  });
+
+  // QA-delete-20260829-09 \u2014 "this email" is false for a population, and
+  // the inbox segment needs the same unit noun every other segment gets.
+  it('gives the inbox segment its own unit noun and a population-scoped opener', () => {
+    const copy = mailLocationCopy({ inboxNow: 1718, allMailNow: 1874, receivedTotal: 1874 })!;
+    expect(copy.startsWith("Where this sender's mail is now:")).toBe(true);
+    expect(copy).toContain('1,718 emails in your inbox');
   });
 
   it('subtracts the inbox out of the all-mail superset rather than double-counting', () => {
@@ -317,7 +342,7 @@ describe('mailLocationCopy', () => {
 
   it('says so plainly when the inbox holds everything', () => {
     const copy = mailLocationCopy({ inboxNow: 9, allMailNow: 9, receivedTotal: 9 })!;
-    expect(copy).toContain('9 in your inbox');
+    expect(copy).toContain('9 emails in your inbox');
     expect(copy).toContain('everything the mailbox holds');
     expect(copy).not.toContain('elsewhere');
   });

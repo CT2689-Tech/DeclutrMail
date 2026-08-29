@@ -2279,7 +2279,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreen();
     await selectBothAndPress('d');
     // Destructive treatment — same Trash copy as single-sender Delete.
-    await screen.findByText(/delete email from 2 senders/i);
+    await screen.findByText(/move email from 2 senders to gmail trash/i);
     await screen.findByText(/moves to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
     await screen.findByText(/couldn't load the live preview/i);
@@ -2298,7 +2298,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(deleteBtn).toHaveAttribute('aria-keyshortcuts', 'D');
     fireEvent.click(deleteBtn);
     // The click routes through the SAME mandatory preview.
-    expect(await screen.findByText(/delete email from 1 sender/i)).toBeInTheDocument();
+    expect(await screen.findByText(/move email from 1 sender to gmail trash/i)).toBeInTheDocument();
   });
 
   const PROTECTED_B = {

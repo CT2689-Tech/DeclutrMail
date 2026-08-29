@@ -109,16 +109,26 @@ export function ActionPreviewPresentation({
   // Unsubscribe sends the real one-click request (D9 Wave 2) or opens
   // the manual Gmail-compose path (mailto stays manual per D230);
   // Keep moves nothing.
+  //
+  // QA-delete-20260829-08 — a header that always promises a move read as
+  // active even when the live count is 0 ("Move inbox email from Victoria's
+  // Secret Panty Party to Gmail Trash" above a body reading "0 matching
+  // emails"). Only the three count-based verbs can BE zero this way —
+  // Unsubscribe and Keep never claim a mail move, so their headers are
+  // unaffected.
+  const movesCurrentInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const title =
-    verb === 'Archive'
-      ? `Archive all inbox email from ${subject}`
-      : verb === 'Later'
-        ? `Move ${subject} to Later`
-        : verb === 'Unsubscribe'
-          ? `Unsubscribe from ${subject}`
-          : verb === 'Delete'
-            ? `Move inbox email from ${subject} to Gmail Trash`
-            : `Keep ${subject}`;
+    movesCurrentInbox && liveCount === 0
+      ? `Nothing to move from ${subject} right now`
+      : verb === 'Archive'
+        ? `Archive all inbox email from ${subject}`
+        : verb === 'Later'
+          ? `Move ${subject} to Later`
+          : verb === 'Unsubscribe'
+            ? `Unsubscribe from ${subject}`
+            : verb === 'Delete'
+              ? `Move inbox email from ${subject} to Gmail Trash`
+              : `Keep ${subject}`;
 
   const lead = presentation.previewCopy;
 

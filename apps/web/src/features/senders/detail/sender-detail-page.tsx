@@ -914,6 +914,31 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     );
   }, [receipt, revert, qc]);
 
+  // QA-delete-20260829-05 — `receipt` is local component state, so it only
+  // knows about a revert THIS page's own `onUndo` performed. The global
+  // undo tray (`ProductUndoTray`) reverts the identical token through its
+  // own `useRevertUndo()` instance, mounted in a different component tree,
+  // and this page never heard about it — the receipt strip kept asserting
+  // "Moved to Gmail Trash" for mail the tray had already restored. Every
+  // `useRevertUndo()` call shares one `MutationCache` regardless of which
+  // component owns the hook, so a successful revert of THIS receipt's own
+  // token — from any source — clears it here. Only the immediate-revert
+  // case (`reverted: true`) is handled; a fresh token that enqueues a
+  // reverse job (`actionId` returned) resolves later via that other
+  // surface's own polling, same as it does today.
+  useEffect(() => {
+    const token = receipt?.activityUndo.token;
+    if (!token) return;
+    return qc.getMutationCache().subscribe((event) => {
+      if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
+      const variables = event.mutation.state.variables as { token?: string } | undefined;
+      const result = event.mutation.state.data as { reverted?: boolean } | undefined;
+      if (variables?.token === token && result?.reverted) {
+        setReceipt(null);
+      }
+    });
+  }, [receipt, qc]);
+
   /** Protect is the sole standing safety state. */
   const toggleProtect = useCallback(() => {
     if (setPolicy.isPending) return;

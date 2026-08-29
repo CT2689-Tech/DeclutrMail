@@ -178,13 +178,31 @@ export function inboxScopeNoticeCopy(
 
   const { inboxTotal, olderThanDays } = notice;
   const one = inboxTotal === 1;
-  const days = `${olderThanDays.toLocaleString('en-US')} day${olderThanDays === 1 ? '' : 's'}`;
+  // Name the SAME unit the window control itself is labelled in — every
+  // reach surface that offers this window (`confirm-action-modal.tsx`'s
+  // `TIME_WINDOW_PRESETS`) uses these four calendar-ish buckets, never a
+  // raw day count. A day figure next to a chip that reads "6 months+" is a
+  // unit mismatch the reader has to translate themselves; falls back to a
+  // day count only for a value outside the known presets.
+  const presetLabel = WINDOW_PRESET_LABELS[olderThanDays];
+  const threshold =
+    presetLabel !== undefined
+      ? `the ${presetLabel} window`
+      : `${olderThanDays.toLocaleString('en-US')} day${olderThanDays === 1 ? '' : 's'}`;
   return (
     `${inboxTotal.toLocaleString('en-US')} email${one ? '' : 's'} from ${subject} ${one ? 'is' : 'are'} in your inbox, ` +
-    `but ${one ? `it is not older than ${days}` : `none are older than ${days}`}. ` +
+    `but ${one ? `it is not older than ${threshold}` : `none are older than ${threshold}`}. ` +
     `Widen the window to include ${one ? 'it' : 'them'}.`
   );
 }
+
+/** Day-count → the same preset label every window chip renders for it. */
+const WINDOW_PRESET_LABELS: Record<number, string> = {
+  30: '30 days+',
+  90: '3 months+',
+  180: '6 months+',
+  365: '1 year+',
+};
 
 /**
  * The two populations of a sender's mail, side by side: what is in the
@@ -263,7 +281,7 @@ export function mailLocationCopy(input: MailLocationInput): string | null {
   // and clamping degrades to "omitted", which is merely uninformative.
   const elsewhere = Math.max(0, allMailNow - inboxNow);
   const binned = receivedTotal === null ? 0 : Math.max(0, receivedTotal - allMailNow);
-  const parts = [`${n(inboxNow)} in your inbox`];
+  const parts = [`${n(inboxNow)} ${plural(inboxNow)} in your inbox`];
   if (elsewhere > 0) {
     parts.push(
       `${n(elsewhere)} ${plural(elsewhere)} elsewhere in Gmail (archived or under a label)`,
@@ -276,7 +294,7 @@ export function mailLocationCopy(input: MailLocationInput): string | null {
     parts.push(`${n(binned)} in Trash or Spam`);
   }
   if (parts.length === 1) {
-    return `Where this email is now: ${parts[0]} — that is everything the mailbox holds for this sender.`;
+    return `Where this sender's mail is now: ${parts[0]} — that is everything the mailbox holds for this sender.`;
   }
-  return `Where this email is now: ${parts.join(' \u00b7 ')}.`;
+  return `Where this sender's mail is now: ${parts.join(' \u00b7 ')}.`;
 }

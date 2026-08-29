@@ -183,3 +183,41 @@ describe('ActionPreviewPresentation — reasoning age label (D25, QA-archive-202
     expect(screen.getByText('Why we suggested this:')).toBeInTheDocument();
   });
 });
+
+// QA-delete-20260829-08 — a header that always promises a move ("Move inbox
+// email from X to Gmail Trash") read as active even when the live count is
+// 0, one line above a body reading "0 matching emails."
+describe('ActionPreviewPresentation — zero-match header', () => {
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    "titles %s's empty-inbox preview as nothing-to-move, not an active move",
+    (verb) => {
+      render(
+        <ActionPreviewPresentation
+          verb={verb}
+          row={row}
+          archiveHistoric={false}
+          inboxCount={0}
+          mode="modal"
+        />,
+      );
+      expect(
+        screen.getByRole('heading', { level: 3, name: new RegExp(`Nothing to move from`, 'i') }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('still promises the move when the live count is non-zero', () => {
+    render(
+      <ActionPreviewPresentation
+        verb="Delete"
+        row={row}
+        archiveHistoric={false}
+        inboxCount={1}
+        mode="modal"
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 3, name: /Move inbox email from .* to Gmail Trash/i }),
+    ).toBeInTheDocument();
+  });
+});
