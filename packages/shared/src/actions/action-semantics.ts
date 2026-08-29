@@ -294,7 +294,12 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       kind: 'provider-permanent-deletion',
       summary: 'Gmail permanently deletes email after its Trash retention period.',
     },
-    resultLabel: 'Moved to Gmail Trash',
+    // "Deleted", not just "Moved" — every other verb's `resultLabel`
+    // names its own verb (Archived, Moved to Later, Restored to Inbox);
+    // Delete's had dropped it across all 6 surfaces this string feeds
+    // (button, banner, toast, Activity row, tile, filter chip) —
+    // QA-undo-20260828-04.
+    resultLabel: 'Deleted to Gmail Trash',
   },
 };
 

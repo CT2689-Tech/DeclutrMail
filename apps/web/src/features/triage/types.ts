@@ -38,7 +38,9 @@ export const VERB_PAST: Record<ActionVerb, string> = {
   Archive: 'Archived',
   Unsubscribe: 'Requested unsubscribe from',
   Later: 'Moved to Later',
-  Delete: 'Moved to Gmail Trash',
+  // "Deleted", not just "Moved" — every other verb's past-tense label
+  // names its own verb; Delete's dropped it (QA-undo-20260828-04).
+  Delete: 'Deleted to Gmail Trash',
 };
 
 /** Keyboard shortcut for each verb — single source so the toolbar

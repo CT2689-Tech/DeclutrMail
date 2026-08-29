@@ -129,6 +129,12 @@ export class TriageController {
    * Server-render bootstrap for the Triage route. One HTTP request means
    * one JwtGuard + CurrentMailboxGuard pass, and the read service reuses
    * the queue projection required by the Today strip.
+   *
+   * Sizes the queue via D30's adaptive policy (`TriageService.getQueueSize`)
+   * rather than the hard max — the bootstrap route is the ONLY path the
+   * client actually calls (`GET /queue-size` has no caller), so hardcoding
+   * `QUEUE_HARD_MAX` here silently gave every mailbox the ceiling
+   * (QA-triage-20260827-05).
    */
   @Get('bootstrap')
   @RateLimit('triage-load')
@@ -139,9 +145,10 @@ export class TriageController {
       todaySummary: TodaySummary;
     }>
   > {
+    const targetSize = await this.triage.getQueueSize(mailbox.id);
     const data = await this.reads.getBootstrap({
       mailboxAccountId: mailbox.id,
-      limit: TriageController.QUEUE_HARD_MAX,
+      limit: targetSize,
     });
     const marks = await this.brandMarksFor(data.queue.map((row) => row.senderDomain));
     return ok({

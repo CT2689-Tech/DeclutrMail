@@ -335,12 +335,22 @@ function resultLabel(kind: UndoActionKind): string {
 }
 
 function formatExpiry(value: string): string {
+  // No `timeZone` override — `Intl.DateTimeFormat` defaults to the
+  // reader's own zone. A hardcoded `'UTC'` here disagreed with every
+  // other surface stating this same deadline in the reader's zone
+  // (QA-triage-20260827-09 / QA-undo-20260828-04). Undo entries ARE
+  // SSR-prefetched (`server-app-boundary.tsx`), but this app's own
+  // `ProductUndoTray` (`triage-undo-tray.tsx`) hides every token already
+  // live when the screen was entered behind a baseline — nothing this
+  // formatter renders is ever painted before hydration, so there is no
+  // SSR/client TZ mismatch to worry about for THIS consumer. A future
+  // consumer of `<UndoTray>` that renders prefetched entries on first
+  // paint would need its own guard.
   return new Intl.DateTimeFormat('en', {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: 'UTC',
     timeZoneName: 'short',
   }).format(new Date(value));
 }

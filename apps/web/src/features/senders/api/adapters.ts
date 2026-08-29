@@ -219,7 +219,15 @@ const ACTION_LABEL: Record<DecisionHistoryRowDto['action'], DecisionAction> = {
   archive: 'Archived',
   unsubscribe: 'Unsubscribe requested',
   later: 'Moved to Later',
-  delete: 'Deleted',
+  // "Deleted to Gmail Trash", matching the other 3 independent copies of
+  // this label (action-semantics.ts, triage/types.ts, senders/data.ts) —
+  // a 4th copy Codex's review found still reading bare "Deleted" on
+  // Sender Detail's own decision-history timeline (QA-undo-20260828-04).
+  // "Deleted to Gmail Trash", matching the other 3 independent copies of
+  // this label (action-semantics.ts, triage/types.ts, senders/data.ts) —
+  // a 4th copy Codex's review found still reading bare "Deleted" on
+  // Sender Detail's own decision-history timeline (QA-undo-20260828-04).
+  delete: 'Deleted to Gmail Trash',
   marked_protected: 'Protected',
   unmarked_protected: 'Unprotected',
 };

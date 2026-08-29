@@ -33,7 +33,7 @@ describe('D245 Activity record copy', () => {
   });
 
   it('describes outcomes and unresolved execution without exposing status codes', () => {
-    expect(activityActionLabel('delete', null)).toBe('Moved to Gmail Trash');
+    expect(activityActionLabel('delete', null)).toBe('Deleted to Gmail Trash');
     expect(
       activityActionLabel('archive', {
         kind: 'in_progress',

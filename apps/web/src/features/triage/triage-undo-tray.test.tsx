@@ -169,7 +169,7 @@ describe('TriageUndoTray (D35)', () => {
   // The tray is decision feedback for the screen you are ON (D35 "tray
   // persists during the session"), not a list of every live token. Undo
   // windows run for days — Delete's is 5 (ADR-0019) — so rendering the
-  // raw list pinned "Moved to Gmail Trash" over Autopilot, Quiet and
+  // raw list pinned "Deleted to Gmail Trash" over Autopilot, Quiet and
   // Billing long after the act, and again on the next session's first
   // load. Long-tail undo belongs to Activity, which each row links to.
   it('hides decisions carried in from another screen, and shows new ones taken here', async () => {

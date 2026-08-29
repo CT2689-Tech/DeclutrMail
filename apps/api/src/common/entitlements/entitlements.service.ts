@@ -64,6 +64,21 @@ const CLEANUP_VERBS = Object.values(ACTION_REGISTRY)
   .map((descriptor) => descriptor.verb)
   .filter((verb): verb is PersistedActionVerb => PERSISTED_ACTION_VERBS.has(verb));
 
+/**
+ * Coerce `cleanupUnitsUsed`'s raw row value to a real number.
+ *
+ * `used` is correct today only because the sql fragment it decodes ends
+ * in `::int` — postgres.js has no default parser for a bare bigint
+ * (OID 20), so a dropped cast would silently hand this a string, and
+ * `used + unitsNeeded > limit` would become a string comparison
+ * (QA-triage-20260827-04: a Free user 402'd at 6 of 50 actions). A
+ * dedicated function so the coercion is unit-testable independently of
+ * whether `::int` is present in the query today.
+ */
+export function coerceUsedCount(raw: number | string | null | undefined): number {
+  return Number(raw ?? 0);
+}
+
 /** One workspace's cleanup-quota position (A3: Free = 50/month). */
 export interface CleanupSummary {
   tier: TierId;
@@ -209,7 +224,7 @@ export class EntitlementsService {
           sql`(${actionJobs.verb} = 'unsubscribe' OR not (${actionJobs.status} = 'done' and ${actionJobs.affectedCount} = 0))`,
         ),
       );
-    return row?.used ?? 0;
+    return coerceUsedCount(row?.used);
   }
 
   /**

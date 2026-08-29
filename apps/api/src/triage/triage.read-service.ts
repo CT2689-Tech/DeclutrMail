@@ -1272,9 +1272,13 @@ function buildSignals(input: {
   unsubscribeMethod: 'one_click' | 'mailto' | 'none' | null;
 }): string[] {
   const signals: string[] = [
+    // "Marked read", not "Read rate" — matches the collapsed row's
+    // deliberate wording (triage-row.tsx): Gmail exposes only the
+    // absence of the UNREAD label, never confirmed human reading
+    // (QA-triage-20260827-07 — same card, two names for one measurement).
     input.readRate === null
-      ? 'Read rate: no mail in the last 90 days, so there is nothing to measure'
-      : `Read rate: ${Math.round(input.readRate * 100)}% over the last 90 days`,
+      ? 'Marked read: no mail in the last 90 days, so there is nothing to measure'
+      : `Marked read: ${Math.round(input.readRate * 100)}% over the last 90 days`,
     `Volume: ${input.monthlyVolume} messages/month (90-day average)`,
   ];
   if (input.unsubscribeMethod === 'one_click') {

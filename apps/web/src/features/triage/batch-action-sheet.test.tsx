@@ -140,6 +140,24 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
 // action per eligible sender — and stated no cost at all. Its own
 // `onError` catches 402 FREE_CAP_REACHED, so the cap was known to be
 // reachable from here; the preview just never said so before the click.
+describe('BatchActionSheet — the confirm footer stays reachable on a short viewport (sibling of QA-triage-20260827-11)', () => {
+  it('sticks the Cancel/Confirm footer to the bottom of the scrolling dialog', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={readyPreview}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    const footer = cancel.parentElement!.parentElement!;
+    expect(footer).toHaveStyle({ position: 'sticky', bottom: '0px' });
+  });
+});
+
 describe('BatchActionSheet — states what the batch costs (D226)', () => {
   it('counts one cleanup action per eligible sender', () => {
     render(

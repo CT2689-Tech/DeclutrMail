@@ -347,14 +347,31 @@ describe('TriageRow — every protection reason names its evidence', () => {
 describe('TriageRow — the volume tile discloses its 90-day derivation (QA-archive-20260828-01)', () => {
   // `monthlyVolume` is `round(last90dMessages / 3)` (data.ts) — a
   // 90-day-derived average, not a measured monthly count. A bare
-  // "per month" label read as one; the sibling "read rate 90d" tile
+  // "per month" label read as one; the sibling "marked read 90d" tile
   // already names its window, so this one should too.
-  it('labels the volume tile with its window, matching the read-rate tile convention', () => {
+  it('labels the volume tile with its window, matching the marked-read tile convention', () => {
     const row = rowById('t-oldnavy'); // monthlyVolume: 48
     renderRow(row, { expanded: true });
 
     expect(screen.getByText('per month 90d avg')).toBeInTheDocument();
     expect(screen.getByText('48')).toBeInTheDocument();
+  });
+});
+
+describe('TriageRow — the stat grid reflows instead of orphaning a window word (QA-triage-20260827-10)', () => {
+  it('sizes the stat grid with auto-fit, not a fixed 4-column track', () => {
+    const row = rowById('t-oldnavy');
+    renderRow(row, { expanded: true });
+
+    const grid = screen.getByText('marked read 90d').parentElement!.parentElement!;
+    expect(grid.style.gridTemplateColumns).toContain('auto-fit');
+  });
+
+  it("labels the all-time tile so it does not read as sharing the 90d tiles' window", () => {
+    const row = rowById('t-oldnavy');
+    renderRow(row, { expanded: true });
+
+    expect(screen.getByText('received all time')).toBeInTheDocument();
   });
 });
 
@@ -369,7 +386,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBeNull();
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('read rate 90d').parentElement!;
+    const stats = screen.getByText('marked read 90d').parentElement!;
     expect(stats.textContent).toContain('—');
     expect(stats.textContent).not.toContain('0%');
   });
@@ -383,7 +400,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBe(0);
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('read rate 90d').parentElement!;
+    const stats = screen.getByText('marked read 90d').parentElement!;
     expect(stats.textContent).toContain('0%');
   });
 

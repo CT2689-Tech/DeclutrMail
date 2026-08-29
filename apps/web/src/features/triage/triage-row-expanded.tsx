@@ -49,11 +49,17 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
         fontFamily: font.sans,
       }}
     >
-      {/* Stats grid — 4 numbers, mono tabular figures so they line up. */}
+      {/* Stats grid — 4 numbers, mono tabular figures so they line up.
+          `auto-fit`/`minmax` (matching senders/detail/stats-strip.tsx)
+          instead of a fixed 4-column track: a fixed track left a label
+          like "MARKED READ 90D" with too little width at 375px and its
+          window word orphaned onto its own line (QA-triage-20260827-10).
+          Reflows to 2 columns below ~300px of grid width with no JS/media
+          hook, so there's no hydration-flash risk either. */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
           gap: 12,
         }}
       >
@@ -65,7 +71,9 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
         <Stat
           // Names the window: this cell sits in a grid beside
           // lifetime figures, so a bare rate reads as lifetime.
-          label="read rate 90d"
+          // "marked read", not "read rate" — matches the collapsed
+          // row's deliberate wording (QA-triage-20260827-07).
+          label="marked read 90d"
           value={readPct === null ? '—' : `${readPct}%`}
           valueColor={
             row.readRate === null
@@ -80,7 +88,10 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
         {/* Derived via `lastSeenLabel` so this card can never
             contradict the collapsed row's quiet-90d copy (audit W3). */}
         <Stat label="last seen" value={lastSeenLabel(row)} />
-        <Stat label="received" value={fmtCompact(row.totalAllTime)} />
+        {/* `totalAllTime` is a lifetime count sitting beside two 90d
+            figures — label it so it doesn't read as sharing their window
+            (QA-triage-20260827-10). */}
+        <Stat label="received all time" value={fmtCompact(row.totalAllTime)} />
       </div>
 
       {/* Full reasoning copy (D24) — the same string the engine writes

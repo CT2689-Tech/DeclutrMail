@@ -972,6 +972,49 @@ describe('ActivityReadService', () => {
       expect(after.stats.noisePreventedPerMonth).toBe(3);
     });
 
+    it('excludes a reverted row from the live byVerb tiles AND noisePreventedPerMonth (QA-undo-20260828-01)', async () => {
+      // This is the aggregate the `/activity` metrics header actually
+      // renders (`listActivity` → `aggregateStats`) — the earlier fix to
+      // `summarizeActivity` (a separate DQ16 endpoint with no web caller)
+      // did not touch this one, so the live page kept crediting undone
+      // actions.
+      const { mailboxAccountId } = await seedMailbox(db, 'reverted-live-stats@x.test');
+      const senderKey = 'r'.repeat(64);
+      await seedSender(db, mailboxAccountId, senderKey, 'reverted@brand.test', 'Reverted Brand');
+      await db.insert(mailMessages).values(
+        Array.from({ length: 3 }, (_, i) => ({
+          mailboxAccountId,
+          providerMessageId: `reverted-live-${i}`,
+          providerThreadId: `t-reverted-live-${i}`,
+          senderKey,
+          subject: '',
+          snippet: '',
+          internalDate: new Date(Date.now() - (i + 1) * 86_400_000),
+          labelIds: ['INBOX'],
+          isUnread: true,
+        })),
+      );
+      await seedActivity(db, {
+        mailboxAccountId,
+        occurredAt: new Date(),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        revertedAt: new Date(),
+      });
+
+      const result = await svc.listActivity({
+        mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: Date.now(),
+      });
+      expect(result.stats.archived).toBe(0);
+      expect(result.stats.noisePreventedPerMonth).toBeNull();
+    });
+
     it('D56 — unsubscribe_confirmed is a distinct feed row that does NOT double-count the intent', async () => {
       // A one-click unsubscribe writes TWO rows: the intent (the click)
       // and the worker's confirmed OUTCOME. Both must appear in the feed,
@@ -2233,6 +2276,37 @@ describe('ActivityReadService', () => {
       expect(b.decidedSenders).toBe(3);
       expect(b.emailsHandled).toBe(300);
       expect(b.undoCount).toBe(1);
+    });
+
+    it('excludes a reverted (undone) row from byVerb — matches the per-row UNDONE badge (QA-undo-20260828-01)', async () => {
+      // One archived row the user later undid, plus one archived row
+      // still standing. `persistedReviewOutcomeExpression` already
+      // excludes the reverted row from the row-level outcome badge;
+      // this aggregate must agree, or the tile above the row disagrees
+      // with the badge on the row itself.
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey: 'sk-reverted',
+        revertedAt: new Date(NOW_MS - 30 * 60 * 1000),
+      });
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+        senderKey: 'sk-standing',
+      });
+
+      const summary = await svc.summarizeActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        nowMs: NOW_MS,
+      });
+      expect(summary.byVerb.archive).toBe(1);
+      expect(summary.decidedSenders).toBe(1);
     });
 
     it('aggregates byVerb + emailsHandled across all five canonical verbs; non-canonical actions excluded', async () => {

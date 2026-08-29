@@ -121,6 +121,34 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
   });
 });
 
+describe('ActionSheet — the confirm footer stays reachable on a short viewport (QA-triage-20260827-11)', () => {
+  it('sticks the Cancel/Confirm footer to the bottom of the scrolling dialog', () => {
+    const html = renderToStaticMarkup(
+      <ActionSheet
+        open={true}
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        mailboxEmail="active@gmail.com"
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    // The footer holding the reversibility line + Cancel/Confirm buttons
+    // must be `position: sticky; bottom: 0` inside the scrolling dialog
+    // (`overflow: 'auto'` on the outer element) — otherwise it scrolls
+    // out of view below the fold on a 375px phone with no visible cue
+    // that more content exists. `position:sticky` appears nowhere else
+    // in this component, so its presence is the footer.
+    expect(html).toContain('position:sticky');
+    expect(html).toContain('bottom:0');
+    // And it genuinely wraps the buttons, not some unrelated element.
+    const stickyIdx = html.indexOf('position:sticky');
+    const cancelIdx = html.indexOf('>Cancel<');
+    expect(cancelIdx).toBeGreaterThan(stickyIdx);
+  });
+});
+
 describe('ActionSheet — D34 remember-preference toggle copy', () => {
   it('mentions the verb name so the user knows what they are persisting', () => {
     for (const verb of ['Archive', 'Unsubscribe', 'Later'] as const) {

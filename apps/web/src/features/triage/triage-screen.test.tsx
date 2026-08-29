@@ -112,12 +112,25 @@ describe('TriageScreen — populated queue', () => {
   });
 });
 
+describe('TriageScreen — the intro does not claim Keep gets a preview (QA-triage-20260827-08)', () => {
+  it('states the preview applies to actions that change mail, not to Keep', () => {
+    const html = renderState({
+      kind: 'ready',
+      rows: [...TRIAGE_QUEUE],
+      stats: TRIAGE_SESSION_STATS,
+    });
+    expect(html).toContain('Every action that changes your mail shows the affected email first');
+    expect(html).toContain('Keep never');
+    expect(html).not.toContain('You’ll see the affected email before anything changes');
+  });
+});
+
 describe('TriageScreen — empty / loading branches', () => {
   it('renders the empty state with stats summary when state.kind=empty', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     // Calm completion copy markers
     expect(html).toContain('You’re done for now.');
-    expect(html).toContain('New decisions appear after a sync');
+    expect(html).toContain('New decisions appear as previously-scored senders resurface');
     // Stats tile labels
     expect(html).toContain('Decided');
     expect(html).toContain('Archived');
@@ -129,7 +142,7 @@ describe('TriageScreen — empty / loading branches', () => {
 
   it('renders the empty state when state.kind=ready but rows is []', () => {
     const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS });
-    expect(html).toContain('New decisions appear after a sync');
+    expect(html).toContain('New decisions appear as previously-scored senders resurface');
   });
 
   it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {

@@ -50,7 +50,7 @@ export type DecisionSource = 'You' | 'Triage' | 'Autopilot' | 'Screener';
 export type DecisionAction =
   | 'Archived'
   | 'Kept'
-  | 'Deleted'
+  | 'Deleted to Gmail Trash'
   | 'Unsubscribe requested'
   | 'Moved to Later'
   | 'Protected'

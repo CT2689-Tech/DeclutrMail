@@ -317,7 +317,9 @@ export const VERB_PAST: Record<ActionVerb, string> = {
   Protect: 'Protected',
   // Spec v1.2 Decision 1 — Delete = Gmail Trash (recoverable 30 days).
   // Past-tense surfaces in the receipt strip after the worker completes.
-  Delete: 'Moved to Gmail Trash',
+  // "Deleted", not just "Moved" — every other verb's past-tense label
+  // names its own verb; Delete's dropped it (QA-undo-20260828-04).
+  Delete: 'Deleted to Gmail Trash',
 };
 
 /**

@@ -17,7 +17,7 @@ function toneFor(
       return 'default';
     case 'Unsubscribe requested':
       return 'amber';
-    case 'Deleted':
+    case 'Deleted to Gmail Trash':
       return 'red';
     case 'Kept':
       return 'primary';

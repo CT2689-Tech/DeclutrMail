@@ -1329,7 +1329,7 @@ export function TriageScreen({
           body={
             <>
               Choose what happens for each sender: Keep, Archive, Unsubscribe, Later, or Delete.
-              You’ll see the affected email before anything changes.{' '}
+              Every action that changes your mail shows the affected email first — Keep never does.{' '}
               <a href="/inbox-simulator" style={{ color: color.primary, fontWeight: 600 }}>
                 Practice with sample data.
               </a>

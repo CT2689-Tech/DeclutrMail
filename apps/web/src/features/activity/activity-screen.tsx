@@ -676,15 +676,27 @@ function MetricsHeader({
           </span>
         )}
       </header>
+      {/* CSS-driven restack, not the `isMobile` JS flag below: this grid
+          is server-rendered, and `useIsAtMost`'s `useState(false)` default
+          shipped the desktop 5-column track at every width until the
+          client effect fired — a ~390ms window where UNSUBSCRIBES and
+          KEPT collided (QA-undo-20260828-02). `!important` is required —
+          without it the media query loses to this element's own inline
+          `style`. Breakpoint matches `useIsAtMost('sm')` (900px, tokens.ts)
+          so this and the `isMobile`-driven per-tile dividers below agree
+          post-hydration. */}
+      <style>{`@media (max-width: 900px) {
+        .dm-activity-metrics-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+          gap: 12px 8px !important;
+        }
+      }`}</style>
       <div
+        className="dm-activity-metrics-grid"
         style={{
           display: 'grid',
-          // Mobile: 3 tiles per row (Archived·Deleted·Unsub / Kept·Later)
-          // — 5 across is unreadable under ~375px. The per-tile hairline
-          // separators are desktop-only (they'd render mid-row on a
-          // wrapped grid); mobile leans on grid gap instead.
-          gridTemplateColumns: isMobile ? 'repeat(3, minmax(0, 1fr))' : 'repeat(5, minmax(0, 1fr))',
-          gap: isMobile ? '12px 8px' : 0,
+          gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+          gap: 0,
           borderTop: `1px solid ${color.lineSoft}`,
           paddingTop: 12,
         }}
