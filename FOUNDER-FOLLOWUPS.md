@@ -23,6 +23,40 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-29 — `Build — Web + bundle budget` doesn't gate the merge queue
+
+**Source:** session 2026-08-29 — PR #677 shipped a Sender Detail preview in
+`/inbox-simulator` that pushed the authenticated `/senders/[id]` page over its
+195kB bundle budget (191.3kB → 195.2kB, a real cross-route chunk-sharing
+regression, not noise). `Build — Web + bundle budget` failed on the PR's own
+check list, and `gh pr merge --auto` merged it to `main` anyway. Fixed same
+session in PR #678 (reverted the Sender Detail piece; see MISTAKES.md
+"A second consumer of a feature-owned component blew a budget the merge queue
+didn't catch").
+
+**Why:** this is the same gap `merge-queue-posture`'s memory already names for
+`Analyze (javascript-typescript)` and the cron-stale-watchdog class of finding
+in this file — a check that is red on the PR but does not block `merge_group`
+is silently advisory, and nothing on the PR or in CI says so. A bundle-budget
+regression on a heavily-trafficked authenticated route shipped to production
+for the time between #677 merging and #678 merging (about 24 minutes this
+time; could be much longer if unnoticed).
+
+**How:** in the repo's branch protection / merge queue settings
+(Settings → Rules → Rulesets, or Settings → Branches → main), check whether
+`Build — Web + bundle budget` (from `.github/workflows/ci.yml` or wherever it
+lives) is listed as a required status check for the merge queue specifically,
+not just for the PR. GitHub's merge queue only re-blocks on checks explicitly
+configured to run on `merge_group` events — if this workflow triggers on
+`pull_request` only, add `merge_group` to its `on:` triggers, or add it to the
+ruleset's required-checks list, whichever the workflow's trigger config needs.
+
+**Verifies by:** open a PR that deliberately busts a bundle budget (or revert
+#678 in a scratch branch) and confirm the merge queue itself refuses it,
+not just the PR's own check list.
+
+**Status:** Open
+
 ### 2026-08-28 — Decide what would make a QA unsubscribe press harmless
 
 **Source:** session 2026-08-28 — the `U` ban was lifted behind a two-check gate
