@@ -459,6 +459,66 @@ make_interval(...)` where `now` is a `Date`. Under `postgres-js` that always thr
   siblings, and unmeasured per-instance SQL counts are all in the worklist row.
   Proposed **P1**.
 
+- **2026-08-28** · `/senders` — **verified, survived `finding-refuter`: the app can assert something false about the user's own inbox during an active sync.**
+  From `/ct-qa onboarding`, `QA-onboarding-20260828-01` in `docs/qa/qa-worklist.md`.
+  A mailbox that is still `queued`/`syncing` — including on an ordinary returning
+  sign-in, since `markQueued` (`apps/api/src/sync/sync.service.ts:123`) re-queues
+  on every login, not only reconnect — has no readiness-aware rendering anywhere in
+  the app shell except a collapsed account-menu dropdown
+  (`apps/web/src/features/mailboxes/account-menu.tsx:309-313`). A fresh `/senders`
+  load either flatly denies data exists ("No active senders — No sender has mailed
+  you recently", `senders-screen.tsx:2450-2466`) or, if the pre-disconnect sender
+  index survived, presents a stale snapshot under a "Synced through &lt;asOf&gt;"
+  freshness strip whose timestamp is server-compute time, not a measured currency
+  check (`senders.read-service.ts:1087,1413`). The sender index is torn down and
+  rebuilt in one transaction only at the END of sync
+  (`initial-sync.worker.ts:1015-1027`), so the mid-resync list is never partial —
+  it is stale-complete and labelled as fresh. `STALE_SYNCING_AFTER_MS = 15min`
+  (the system's own statement of how long a legitimate sync can run) sets the
+  floor on how long this window stays open. Proposed **P0** (CLAUDE.md's own
+  definition: the app states something false about the user's own data).
+
+- **2026-08-28** · Auth session (D155) — **verified, survived two `finding-refuter` passes with a corrected, narrower claim: `AuthProvider`'s 401→OAuth redirect fires more than once per session-expiry event, against a real external endpoint.**
+  From `/ct-qa onboarding`, `QA-onboarding-20260828-02` in `docs/qa/qa-worklist.md`.
+  `apps/web/src/features/auth/auth-provider.tsx:63-69` calls
+  `window.location.assign` directly in the component's render body — no
+  `useEffect`, no ref/module guard — duplicating an already-guarded sibling one
+  file away (`client.ts:310-315`'s `redirectToLogin`, which has exactly the
+  `redirecting` latch this call site lacks). A live incident this run (network
+  log: 401 on `/api/auth/me` and `/api/auth/refresh`, then 3× real requests to
+  `/api/auth/google/start`, 2 aborted + 1 rate-limited) was independently
+  corroborated in real time by a concurrent peer QA session hitting the same
+  shape. A `defect-class-sweeper` proved the repeat-fire is a PRODUCTION path —
+  `use-me.ts`'s 15s error-retry poll and `refetchOnWindowFocus: true` both
+  re-render `AuthProvider` while the 401 persists, not only React StrictMode's
+  dev double-invoke — and found zero sibling instances elsewhere (one isolated
+  defect). A `finding-refuter` narrowed the severity: the observed 429 needed
+  prior rate-limit consumption this QA session itself generated, so "locks a
+  legitimate user out" is unmeasured — the provable claim is 2 real navigations
+  in production per incident (3 in dev), burning a rate-limit bucket meant for 1.
+  Proposed **P1**.
+
+- **2026-08-28** · Auth session (D155) — **verified, survived two `finding-refuter` passes and a `defect-class-sweeper`: concurrent refresh from the same account (two tabs) can revoke the whole session, and the schema has no column that could hold a fix.**
+  From `/ct-qa onboarding`, `QA-onboarding-20260828-03` in `docs/qa/qa-worklist.md`.
+  `sessions.service.ts`'s `rotate()` doc comment (lines 130-132) promises the
+  loser of a concurrent refresh race "either gets the SAME tokens (grace) or
+  trips the reuse-defense revoke path" — the code (lines 149-214) has exactly
+  one branch, and it always revokes. `sessions.service.spec.ts:220-225` states
+  this is the intended defensive posture, and no `reuse detected` log line
+  exists anywhere on this machine tying it to this run's own live incident
+  (see the companion `-02` finding) — so causal attribution to THIS run's
+  incident does not hold. What survives independently: a real, reachable
+  window (two tabs of the same user, both refreshing inside one ~15-minute
+  access-token TTL round-trip — the FE's `pendingRefresh` single-flight is
+  per-tab, not cross-tab), corroborated by a concurrent peer QA session's own
+  independent live repro of the identical shape. The sweeper proved the
+  "grace" the comment promises is structurally unrepresentable today —
+  `active_sessions` has exactly one `refresh_token_hash` column, no slot for a
+  prior value a grace branch could compare against — so a real fix needs a
+  schema migration, not a code-only patch. _(Tier 1 — CLAUDE.md §9 token/
+  session handling. Surfacing per §9, not deciding; the founder sets any grace
+  window.)_ Proposed **P1**.
+
 ## P0 — launch blockers
 
 _None open._ The five that stood here — F008, F009, F010, F011, F012 — were

@@ -807,3 +807,177 @@ carried on the `triage` job since that is where it was first filed.
 
 **Regression test:** none of the six — copy/labelling consistency and a
 staleness gap, not logic defects with a clean red/green boundary.
+
+## onboarding
+
+Rows accumulate across every `/ct-qa onboarding` run. Per-run counts are in
+the ledger. First filed 2026-08-28 (5 survivors; 4 candidates refuted before
+filing — a claimed fake sync-stage checklist, a claimed wrong-button-primary
+on the failed-sync screen, and two narrowed-to-nothing edges of the
+fake-progress-on-error claim; see the ledger's Refuted table for the grounds
+on each). Two of the five were caught, corroborated, or narrowed with the
+help of `ct-qa-mailbox-switch-173132-64`, an independent peer QA session
+running `/ct-qa mailbox-switch` concurrently on the same shared dev stack —
+cited per row below.
+
+|     | id                        | sev | one line                                                                                                                                                                                                                                                                                                                       | status                                                                                                                                     | PR  |
+| --- | ------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ | --- |
+| 🟡  | QA-onboarding-20260828-01 | P0  | `/senders` can assert something false about the user's own inbox during an active sync — it either denies any senders exist, or shows a stale pre-disconnect snapshot labelled with a "Synced through" time it never measured — reachable on ANY ordinary returning login mid-resync, not only reconnect                       | In review — Codex 2 rounds (cap), both applied; not yet pushed                                                                             |     |
+| 🟡  | QA-onboarding-20260828-02 | P1  | `AuthProvider`'s 401→OAuth redirect runs in the render body with no fire-once guard, duplicating an already-guarded sibling (`client.ts`'s `redirectToLogin`) — every session-expiry event fires 2 real navigations to Google's live OAuth start in production (3 in dev), burning the app's own rate-limit bucket meant for 1 | In review — Codex round 1 found a real dead-end this fix introduced, fixed in `client.ts`, round 2 FIXED; not yet pushed                   |     |
+| 🔴  | QA-onboarding-20260828-03 | P1  | Refresh-token rotation revokes the whole session on any concurrent same-account refresh collision (two tabs racing the ~15-min access-token TTL edge) — no code path returns the same fresh tokens to the loser, and the DB schema has no column that could hold the value such a path would need                              | Open — founder deferred (Tier 1, needs a migration/grace-window design call, not folded into this batch)                                   |     |
+| 🟡  | QA-onboarding-20260828-04 | P1  | The `?mailbox=` secondary-connect gate shows a fake, never-resolving "Reading your inbox… 0%" scan instead of the reconnect gate when its target mailbox goes inactive out-of-band with no other active mailbox to escape to                                                                                                   | In review — Codex round 1 found the guard was too broad (any sync error, not just NO_ACTIVE_MAILBOX), fixed, round 2 FIXED; not yet pushed |     |
+| 🟡  | QA-onboarding-20260828-05 | P2  | The no-active-mailbox gate's plain "Connect a Gmail account" button (not Reconnect) silently swallows a connect failure — same gate re-renders with no explanation and a stale `connect_error` param stuck in the URL; two dead copy keys exist for codes no path can emit, and one real code has no copy entry at all         | In review — Codex round 2 found a history-state overwrite this fix's broadened reach exposed, fixed; not yet pushed                        |     |
+
+**QA-onboarding-20260828-01.** Filed from a `flow-completeness-auditor` GAP,
+adversarially confirmed (`SURVIVES`, no refutation ground applied) by a
+`finding-refuter` pass that corrected the auditor's own cited evidence: a
+fresh `/senders` load actually hits the "No active senders — No sender has
+mailed you recently" branch (`senders-screen.tsx:2450-2466`), not the
+syncing-aware empty state the auditor named — which is _worse_ for the
+claim, not better, since it flatly denies data exists rather than
+explaining why. Separately, the refuter traced that `markQueued`
+(`apps/api/src/sync/sync.service.ts:123`) fires on **every** login, not just
+reconnect, so this blind window opens on an ordinary returning sign-in
+whenever a resync is in flight — a materially wider reach than the auditor
+scoped. Readiness (`queued`/`syncing`) is surfaced nowhere in the app shell
+except inside the collapsed account-menu dropdown
+(`apps/web/src/features/mailboxes/account-menu.tsx:309-313`);
+`SyncNowButton` returns `null` (absence, not a state) while not ready. The
+sender index is torn down and reinserted in one transaction at the end of
+initial sync (`initial-sync.worker.ts:1015-1027`), so a mid-resync list is
+never partial — it is _stale-complete_, rendered under a "Synced through
+&lt;asOf&gt;" strip whose `asOf` is server-compute time
+(`senders.read-service.ts:1087,1413`), asserting a currency it never
+measured. `STALE_SYNCING_AFTER_MS = 15 * 60 * 1000` is the system's own
+statement that a legitimate sync can legitimately run 15 minutes — this is
+not a narrow race.
+**Regression test:** an e2e or component test asserting `/senders`'
+first-paint copy for a mailbox with `readiness ∈ {queued, syncing}` and zero
+`senders` rows — must go RED against current code (today it silently
+renders "No active senders").
+
+**QA-onboarding-20260828-02.** Filed from a live incident this run (network
+log: `GET /api/auth/me → 401`, `POST /api/auth/refresh → 401`, then 3×
+`GET /api/auth/google/start` — 2 `ERR_ABORTED`, 1 `429`), corroborated
+independently by `ct-qa-mailbox-switch-173132-64` hitting the same shape on
+its own run. Adversarially checked by two `finding-refuter` passes and a
+`defect-class-sweeper`: the defect stands — `auth-provider.tsx:63-69` calls
+`window.location.assign` directly in the render body, no `useEffect`, no
+ref/module guard — but the severity claim narrowed twice. First refuter:
+the observed `429` required prior consumption of the shared rate-limit
+bucket this QA session generated itself (`dev-auth.controller.ts`'s own
+`@RateLimit('auth')`), so "locks a legitimate user out" is unmeasured, not
+shown; corrected claim is 2 navigations in prod (not "a lockout"). The
+sweeper then proved the repeat-fire is a **production** path, not only
+React StrictMode's dev double-invoke: `use-me.ts`'s `refetchInterval`
+(15s while errored) and `refetchOnWindowFocus: true` both re-render
+`AuthProvider` while the 401 persists, each re-firing the unguarded
+`assign`. Zero sibling render-body-redirect instances found anywhere else
+in `apps/web` (13 other navigation sites and 9 `router.replace`/`push`
+sites all cleared with reasons) — this is one isolated instance, not a
+class. `client.ts:310-315`'s `redirectToLogin()` already implements the
+correct guarded pattern one file away.
+**Regression test:** `auth-provider.test.tsx:128`'s
+`toHaveBeenCalledOnce()` cannot fail against the current defect — `waitFor`
+stops at the first poll where the count is 1. Needs: force a second settle
+of the errored `me` query (fake-timer `refetchInterval` tick, or a second
+`invalidateQueries`) and assert `assign` is STILL called exactly once —
+must go RED against current code.
+
+**QA-onboarding-20260828-03.** Filed from the same live incident as -02 plus
+a direct read of `sessions.service.ts`'s doc comment (lines 130-132,
+promising a "grace" branch) against its code (lines 149-214, one branch,
+unconditional revoke). Corroborated independently by
+`ct-qa-mailbox-switch-173132-64`'s own live repro ("two tabs racing
+/api/auth/refresh... revoke the WHOLE session... hard-redirects to the real
+live Google OAuth start with zero warning"). Two `finding-refuter` passes
+and a `defect-class-sweeper` narrowed but did not kill it: no
+`reuse detected` log line exists anywhere on this machine for THIS run's
+specific incident, so the observed OAuth-redirect burst is not provably
+attributable to this exact code path (could equally be `Missing refresh
+cookie` / `Session not found or revoked`, which never reach the mismatch
+branch) — and `sessions.service.spec.ts:220-225` states the revoke-on-any-
+mismatch outcome is the intended defensive posture, not an oversight.
+What survives: the sweeper proved the "grace" the comment promises is
+**structurally unrepresentable**, not merely unwritten —
+`packages/db/src/schema/active-sessions.ts` has exactly one
+`refresh_token_hash` column, no slot for a prior value a grace branch could
+compare against — and the FE's `pendingRefresh` single-flight
+(`client.ts:260`) is per-tab, so it cannot prevent a genuinely
+cross-tab/cross-device race. Reachable window: two tabs of the same real
+user, both refreshing within the same ~15-minute access-token TTL
+round-trip. The same sweep pass found two siblings, not filed as separate
+rows this run pending their own refutation: a CSRF-token doc/code
+contradiction (`csrf.service.ts` says the token is stable for the session's
+life; `auth.controller.ts:196` reissues a new one on every refresh) and an
+OAuth state-nonce single-cookie collision (`google-oauth.controller.ts`,
+double-starting Gmail connect strands the earlier tab on raw API JSON) —
+see the closing summary.
+**Founder flag (Tier 1 — CLAUDE.md §9 token/session handling).** A real fix
+needs a schema migration (a second stored hash, or a rotation grace window)
+and touches D155's reuse-defense posture directly; the founder sets the
+grace window, not the fixing session.
+**Regression test:** two concurrent `rotate()` calls against the same
+session row, presenting the SAME (still-valid) refresh token — today one
+wins and one revokes the whole session; a fix should let both succeed (or
+the loser get the winner's fresh tokens) without either being treated as
+theft. Must go RED against current code.
+
+**QA-onboarding-20260828-04.** Filed from a `flow-completeness-auditor` GAP,
+narrowed hard by a `finding-refuter`: three of the four originally-claimed
+triggers (a stale/foreign `?mailbox=` id, a 404 on a mailbox with no sync
+row, an exhausted 5xx) are unreachable or self-healing — `markQueued`
+inserts `provider_sync_state` in the same transaction as every mailbox
+activation (no 404 is reachable), a `MAILBOX_NOT_OWNED` 409 only fires when
+another mailbox IS active (exactly the condition under which the escape
+hatch renders), and `refetchOnWindowFocus`/`refetchOnReconnect` both
+default true so a transient 5xx self-heals on refocus. What survives: a
+persistent `NO_ACTIVE_MAILBOX` 409 — the `?mailbox=` target went inactive
+out-of-band (a disconnect or delete-indexed-data from another tab) with no
+other active mailbox left to escape to. There, `escape` is `undefined`, the
+focus-refetch keeps re-hitting the same 409, and the gate keeps asserting
+`{queued, 0%}` — a progress bar for a scan that will never run — instead of
+routing to the reconnect gate the rest of the app already has for this
+exact account state.
+**Regression test:** force `mailbox_accounts.status='disconnected'` for a
+mailbox mid-`?mailbox=` visit with no other active mailbox on the account,
+assert the reconnect gate renders instead of a progress bar — must go RED
+against current code.
+
+**QA-onboarding-20260828-05.** Filed from a `flow-completeness-auditor` GAP,
+narrowed by a `finding-refuter`: the gate's **Reconnect** button actually
+routes failures correctly (`?reactivateMailboxId=` → `/settings?
+reconnect_result=…`, which mounts through Settings and fires its toast) —
+the auditor's model matched dead copy keys
+(`reconnect_account_mismatch`/`reconnect_target_invalid` in
+`CONNECT_ERROR_COPY`) that no live code path can ever emit. What survives
+is narrower: only the plain **Connect a Gmail account / Connect a different
+Gmail account** button (no recovery target) redirects failures to
+`/triage?connect_error=<code>`; since the mailbox still isn't active, the
+app shell keeps rendering `NoActiveMailbox` instead of ever mounting the
+triage page, so the toast hook that would explain the failure
+(`useConnectResultToast`) never runs and the param dangles unexplained in
+the URL. Reachable codes on this path:
+`MAILBOX_OWNED_BY_OTHER_WORKSPACE`, `MAILBOX_DATA_DELETION_IN_PROGRESS`
+(itself missing a `CONNECT_ERROR_COPY` entry — degrades further to a
+generic "Could not connect that account"), and generic `connect_failed`.
+**Regression test:** force a `connect_failed` redirect to
+`/triage?connect_error=connect_failed` with `activeMailboxId=null`, assert
+a toast (or equivalent explanation) renders on the no-active-mailbox gate —
+must go RED against current code.
+
+### Review rounds — QA-01 / QA-02 / QA-04 / QA-05
+
+One diff, reviewed as one unit (all four ride the same PR; QA-03 is not in
+this diff — founder-deferred, Tier 1).
+
+| round | verdict         | what it returned                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | **substantive** | Real dead-end in -02's fix: removing `AuthProvider`'s own redirect left NO redirect path for a successful-refresh-then-still-401-replay, because `client.ts`'s own guard only fired on the FIRST 401, not the post-refresh replay — fixed in `client.ts`, both branches now redirect. Real over-broad guard in -04's fix: `trapped = sync.isError && !other` fired on any sync-status error, including a transient 5xx production keeps retryable — narrowed to the exact `NO_ACTIVE_MAILBOX` code via `apiErrorCode()`. Real test gap in -01: only `syncing` was tested, not `queued`, though the code checked both — added `queued` coverage. -05's toast-delivery concern investigated and NOT changed: the shared toast bus queues messages at a module level and delivers them to any `ToastHost` that mounts within the 3.6s expiry, so a not-yet-mounted host does not lose the toast in the common case; a narrow race (onboarding-state read hanging past 3.6s with no host ever mounting) is accepted, not fixed. |
+| 2     | **substantive** | Two smaller findings: -01's "still syncing" copy promised growth ("will appear here" / "more will appear as it finishes") a resync hasn't earned — a mailbox with only dormant senders, or a resync that finds the same/fewer indexed senders, breaks the promise; reworded to "this list will update" / "this may change once it finishes". -05's URL-scrub overwrote `window.history.state` with `null` — harmless when the hook lived on one page, but it now mounts above the whole `(app)` branch ladder, so the overwrite reaches every route; fixed to preserve `window.history.state`, matching `settings-screen.tsx`'s own precedent for the identical pattern. Confirmed FIXED: -02 (redirect now fires on both terminal-401 paths) and -04 (guard now matches the exact error code).                                                                                                                                                                                                                             |
+
+**Cap reached at two substantive rounds.** Both round-2 findings were
+applied directly (small, well-scoped, verified by re-running the full
+affected-area suite — 551/551 green — plus typecheck and lint) rather than
+sending a third round, per the two-round cap. Founder sees this record
+rather than a third Codex pass.

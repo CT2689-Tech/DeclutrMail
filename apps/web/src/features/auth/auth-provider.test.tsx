@@ -109,7 +109,19 @@ describe('AuthProvider', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('sends a revoked session to consent even though a session is cached', async () => {
+  it('drops a revoked session even though one is cached, without navigating itself', async () => {
+    // QA-onboarding-20260828-02: AuthProvider used to call
+    // `window.location.assign` directly on a 401, in the render body with
+    // no fire-once guard — a real, external navigation duplicating the one
+    // `client.ts`'s `redirectToLogin` already fires (guarded) from inside
+    // `apiGet` before this error ever reaches `useMe`. Re-rendering while
+    // the 401 persisted (a background retry, a focus refetch) re-fired it,
+    // and in one live incident that hit the API's own auth rate limiter.
+    // The negative control: reverting the `auth-provider.tsx` fix makes
+    // `assign` non-zero here, because the old code called it directly —
+    // this test does not depend on the real `apiGet`/`redirectToLogin`
+    // integration at all (that path is covered separately in
+    // `client.test.ts`), so it isolates AuthProvider's OWN behavior.
     apiGet.mockResolvedValue({ data: ME });
     const { client } = mount();
     await waitFor(() => expect(screen.getByTestId('app')).toBeTruthy());
@@ -125,8 +137,19 @@ describe('AuthProvider', () => {
       await client.invalidateQueries({ queryKey: ME_QUERY_KEY }).catch(() => undefined);
     });
 
-    await waitFor(() => expect(assign).toHaveBeenCalledOnce());
-    expect(String(assign.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
-    expect(screen.queryByTestId('app')).toBeNull();
+    // Drops the cached session and stops rendering the app...
+    await waitFor(() => expect(screen.queryByTestId('app')).toBeNull());
+    expect(screen.getByTestId('auth-skeleton')).toBeTruthy();
+
+    // ...forcing a SECOND settle of the still-errored query (the exact
+    // re-render that used to fire a second live navigation) to prove this
+    // isn't merely "hasn't happened yet".
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ME_QUERY_KEY }).catch(() => undefined);
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    // ...but never calling `window.location.assign` itself, on either settle.
+    expect(assign).not.toHaveBeenCalled();
   });
 });

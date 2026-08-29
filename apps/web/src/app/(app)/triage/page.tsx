@@ -1,8 +1,6 @@
 'use client';
 
-import { ERROR_CODES } from '@declutrmail/shared/contracts';
-import { useEffect, useRef } from 'react';
-import { toast } from '@declutrmail/shared';
+import { useEffect } from 'react';
 import { useAuth } from '@/features/auth/auth-provider';
 import { TierGate } from '@/features/billing/tier-gate';
 import { useTriageQueue, useTriageStats } from '@/features/triage/api/use-triage-queue';
@@ -18,12 +16,13 @@ import { track } from '@/lib/posthog';
  * is fixture-shape compatible — the BE controllers return the same
  * JSON shapes the fixtures used, so the inner tree is unchanged.
  *
- * Connect-mailbox result toast: the OAuth connect-mailbox flow
- * (account menu → "Connect another Gmail") redirects back here with
- * `?connected=<email>` on success or `?connect_error=<code>` on
- * failure (e.g. the Google account already belongs to another
- * workspace). `useConnectResultToast` surfaces that as a toast and
- * strips the query param so a refresh doesn't re-fire it.
+ * The connect-mailbox result toast (`?connected=<email>` /
+ * `?connect_error=<code>`) used to be wired here, but a connect
+ * FAILURE leaves `activeMailboxId` null, so the app chrome renders the
+ * `NoActiveMailbox` reconnect takeover instead of this page — the toast
+ * never ran (QA-onboarding-20260828-05). It now lives at the chrome
+ * level (`app-chrome-layout.tsx`'s `useConnectResultToast`), above every
+ * branch that decision can take.
  */
 export default function TriagePage() {
   return (
@@ -37,15 +36,9 @@ export default function TriagePage() {
         'Activity records and eligible Undo controls',
       ]}
     >
-      <TriageRoute />
+      <TriageExperience />
     </TierGate>
   );
-}
-
-function TriageRoute() {
-  useConnectResultToast();
-
-  return <TriageExperience />;
 }
 
 function TriageExperience() {
@@ -73,48 +66,4 @@ function TriageExperience() {
     },
   });
   return <TriageScreen state={state} />;
-}
-
-/** Human copy for each `connect_error` code the BE can redirect with. */
-const CONNECT_ERROR_COPY: Record<string, string> = {
-  MAILBOX_OWNED_BY_OTHER_WORKSPACE: ERROR_CODES.MAILBOX_OWNED_BY_OTHER_WORKSPACE.message,
-  reconnect_account_mismatch:
-    'Google returned a different Gmail account. In Settings → Mailboxes, choose Reconnect next to the address you intended to restore, then select that same address at Google.',
-  reconnect_target_invalid:
-    'That reconnect request is no longer valid. Try again from the reconnect banner or Settings.',
-  connect_failed: 'Could not connect that Gmail account. Try again.',
-};
-
-/**
- * Reads `?connected` / `?connect_error` from the URL once on mount,
- * fires the matching toast, then clears the param via
- * `history.replaceState` so a manual refresh doesn't replay it.
- *
- * Uses `window.location` rather than `useSearchParams` to avoid the
- * Next.js "useSearchParams should be wrapped in a Suspense boundary"
- * build constraint — the value is only needed once, client-side.
- */
-function useConnectResultToast(): void {
-  const fired = useRef(false);
-  useEffect(() => {
-    if (fired.current || typeof window === 'undefined') return;
-    fired.current = true;
-
-    const params = new URLSearchParams(window.location.search);
-    const connected = params.get('connected');
-    const connectError = params.get('connect_error');
-    if (!connected && !connectError) return;
-
-    if (connected) {
-      toast(`Connected ${connected}.`, 'success');
-    } else if (connectError) {
-      toast(CONNECT_ERROR_COPY[connectError] ?? 'Could not connect that account.', 'danger');
-    }
-
-    // Strip the one-shot params without a navigation.
-    params.delete('connected');
-    params.delete('connect_error');
-    const qs = params.toString();
-    window.history.replaceState(null, '', window.location.pathname + (qs ? `?${qs}` : ''));
-  }, []);
 }
