@@ -23,49 +23,101 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-29 — Wire the Vercel billing watchdog now that the team is on Pro
+### 2026-08-29 — Turn on Vercel's Spend Management hard cap; the watchdog has been correctly alerting on Vercel overage since Aug 23 and BREACHing since Aug 28
 
 **Source:** session 2026-08-29 — founder forwarded a Vercel receipt
 (Aug 29–Sep 28, 2026 cycle, $59.99 total: Pro seat $20 + Build CPU
 Minutes $39.80 + Function Invocations/Fluid CPU/Fluid Memory/Fast
-Origin Transfer/ISR Reads/Observability Events) that never surfaced
-in `vendor-limits-watchdog` or anywhere else in the product.
+Origin Transfer/ISR Reads/Observability Events) and asked why it
+wasn't caught. **Correction of an earlier draft of this entry:** the
+first pass of this session wrongly concluded `VERCEL_TOKEN`/
+`VERCEL_TEAM_ID` were never wired and the check was silently
+`UNCONFIGURED` — that was checked against stale runbook prose, not
+against the actual GitHub secrets or watchdog run history. Both were
+already checked (job logs going back to at least 2026-08-23 show them
+populated), and `vendor-limits-watchdog` has been doing exactly its
+job: WARN on Vercel spend since 2026-08-23, BREACH (failing the daily
+CI job, red X) since 2026-08-28, current MTD $46.81 against a $20 warn
+threshold. See `MISTAKES.md` 2026-08-29 for both the original doc/code
+gap and this session's own correction.
 
-**Why:** `scripts/check-vendor-limits.mjs`'s `checkVercel()` needs
-`VERCEL_TOKEN` + `VERCEL_TEAM_ID`; neither has ever been set as a GH
-Actions secret (confirmed absent from `secrets-inventory.md` before
-this session). `billing-guardrails.md` documented this as
-intentional — "Hobby plan, cannot bill, skip until Pro" — but the
-receipt proves the team is now on **Pro** with real usage-based
-charges, and nobody wired the deferred secrets when the upgrade
-happened. Because a missing credential makes the check
-`UNCONFIGURED` rather than fail, the watchdog workflow has stayed
-green through at least this whole billing cycle while real money
-was spent with zero automated visibility. Compounding it: Vercel's
-own vendor-side hard cap (Spend Management) was also never turned
-on, so there was no layer-1 backstop either — see the three-layer
-guardrail principle in `billing-guardrails.md`. This is the same
-failure shape as the 2026-07-25 Upstash incident in `MISTAKES.md`: a
-watchdog that reads "OK" only because it never learned the vendor
-started billing.
+**Why:** the daily watchdog IS the alert — a failed scheduled workflow
+run triggers GitHub's own "failed workflow run" email if that
+notification setting is enabled on the founder's account. Two things
+are still actually missing:
+1. **No vendor-side hard cap.** Vercel's Spend Management (auto-pause at
+   a USD ceiling) has never been turned on, so nothing stops the number
+   from growing beyond what the daily check catches — the three-layer
+   guardrail principle in `billing-guardrails.md` currently has only
+   layer 3 (the watchdog) live for Vercel.
+2. **Unverified whether the daily failure emails are actually reaching
+   the founder.** A week of BREACH runs with no apparent response is
+   worth checking — either the emails aren't arriving, are being
+   filtered, or are arriving and getting lost in an Actions-notification
+   folder. If the watchdog IS being seen and simply hasn't been actioned
+   yet, this item is really just #1.
 
 **How:**
 
-1. `https://vercel.com/account/tokens` → **Create**, scope to the
-   DeclutrMail team, label `declutrmail-watchdog-202608`.
-2. ```bash
-   gh secret set VERCEL_TOKEN
-   gh secret set VERCEL_TEAM_ID   # Dashboard → Settings → General → Team ID
-   ```
-3. Dashboard → Settings → Billing → **Spend Management** → toggle
+1. Dashboard → Settings → Billing → **Spend Management** → toggle
    on → set a USD cap per billing cycle → enable **"Pause
-   production deployment"** (50/75/100% emails).
-4. Update the `Rotated` column in `docs/runbooks/secrets-inventory.md`
-   → "Vercel (billing watchdog)" section once the token exists.
+   production deployment"** (50/75/100% emails). This is the one
+   concrete gap; do this regardless of #2 below.
+2. Check github.com → Settings → Notifications → **Actions** — confirm
+   "Send notifications for failed workflows" (or equivalent) is on for
+   this repo/account, so the next BREACH actually reaches an inbox.
+3. Once (1) is done, decide what to do about the current overage itself
+   (nothing in this session's scope — that's a product/spend decision,
+   not an infra-wiring one).
+4. Fill in the `Vendor label` / `Rotated` columns for the two existing
+   Vercel secrets in `docs/runbooks/secrets-inventory.md` next time
+   either is touched — nobody currently knows when they were created.
 
-**Verifies by:** the next `vendor-limits-watchdog` run reports Vercel
-as `OK`/`WARN`/`BREACH` instead of `UNCONFIGURED`, and its MTD figure
-is in the same ballpark as the Vercel console.
+**Verifies by:** Spend Management shows "on" in the Vercel dashboard
+with a cap set; the next `vendor-limits-watchdog` run either reports
+`OK` (spend brought under the cap) or continues to correctly `BREACH`
+loudly rather than silently.
+
+**Status:** Open
+
+### 2026-08-29 — Create an Anthropic Admin API key so the watchdog can see LLM spend at all
+
+**Source:** session 2026-08-29, prompted by the same "monitor my entire
+infra spend" ask that surfaced the Vercel gap above.
+
+**Why:** `docs/runbooks/billing-guardrails.md` has described an
+Anthropic watchdog check (`GET /v1/organizations/cost_report` ·
+`ANTHROPIC_ADMIN_KEY`) since it was written, but
+`scripts/check-vendor-limits.mjs` never actually implemented it — no
+`checkAnthropic()` function existed, and Anthropic was absent from the
+`VENDORS` registry entirely. Anthropic is the single most
+usage-variable cost in the stack (LLM tokens, driven by triage volume
+and Brief generation) and had **zero** automated tracking of any kind —
+not even a BREACH-worthy gap like Vercel's, just total silence. This
+session implemented the check to match what was already documented
+(now live in `check-vendor-limits.mjs` + wired into
+`vendor-limits-watchdog.yml`), but it needs a real Admin API key to run
+— it currently reports `UNCONFIGURED`.
+
+**How:**
+
+1. `https://platform.claude.com/settings/admin-keys` (Console →
+   Settings → Admin keys — needs the admin role) → create
+   `declutrmail-watchdog-202608`.
+2. ```bash
+   gh secret set ANTHROPIC_ADMIN_KEY
+   ```
+3. Watch the next `vendor-limits-watchdog` run. Two possible outcomes,
+   both informative: it reports a real MTD dollar figure (works), or it
+   `ERROR`s citing "unavailable for individual accounts" (the Anthropic
+   Admin API's own documented restriction) — if the latter, this
+   confirms the account tier and the entry should be updated to say
+   Anthropic spend cannot be automated at all under the current account
+   type, with console.anthropic.com/cost as the only option.
+
+**Verifies by:** the watchdog table shows a Anthropic row with a real
+status (not `UNCONFIGURED`), or a clear `ERROR` explaining exactly why
+not.
 
 **Status:** Open
 
