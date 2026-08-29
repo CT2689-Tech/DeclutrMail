@@ -1892,6 +1892,30 @@ function SendersScreenContent({
     );
   }, [receipt, revert, qc]);
 
+  // QA-delete-20260829-05 — same staleness gap as `sender-detail-page.tsx`'s
+  // sibling receipt: this screen's `receipt` is local state that only heard
+  // about a revert THIS page's own `onUndo` performed, not one the global
+  // undo tray (`ProductUndoTray`) performed through its own `useRevertUndo()`
+  // instance. See that file's identical effect for the full reasoning —
+  // both cases (immediate `reverted: true`, and pending `actionId` to poll
+  // via the existing `revertActionId` effect below) are handled the same way.
+  useEffect(() => {
+    const token = receipt?.activityUndo.token;
+    if (!token) return;
+    return qc.getMutationCache().subscribe((event) => {
+      if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
+      const variables = event.mutation.state.variables as { token?: string } | undefined;
+      const result = event.mutation.state.data as
+        { reverted?: boolean; actionId?: string | null } | undefined;
+      if (variables?.token !== token) return;
+      if (result?.reverted) {
+        setReceipt(null);
+      } else if (result?.actionId) {
+        setRevertActionId(result.actionId);
+      }
+    });
+  }, [receipt, qc]);
+
   // Archive / Unsubscribe / Later / Delete move mail, so they route
   // through the mandatory preview (D226 + spec v1.2 Decision 15). Keep /
   // Protect change nothing and fire directly.

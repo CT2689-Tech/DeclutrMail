@@ -1356,7 +1356,7 @@ describe('ConfirmActionModal — where the sender’s mail actually is', () => {
     // 4 in inbox + 973 elsewhere + 23 binned = 1,000 received.
     expect(screen.getByTestId('mail-location-line')).toHaveTextContent(
       "Where this sender's mail is now: 4 emails in your inbox · 973 emails elsewhere in Gmail " +
-        '(archived or under a label) · 23 in Trash or Spam.',
+        '(archived or under a label) · 23 emails in Trash or Spam.',
     );
   });
 

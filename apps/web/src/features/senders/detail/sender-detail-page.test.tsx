@@ -886,7 +886,12 @@ describe('SenderDetailRoute', () => {
     // tray had already restored. Not Delete-specific — reused the
     // Archive fixtures already in this block since the undo-sync mechanism
     // is identical for every verb.
-    it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo)", async () => {
+    //
+    // This covers the immediate-revert response shape (`reverted: true`).
+    // The far more common shape — `reverted: false` plus an `actionId` to
+    // poll — is covered separately below (Codex round 1 caught that the
+    // first cut of this fix only handled this rarer, already-reverted case).
+    it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo, immediate)", async () => {
       let actionPosts = 0;
       let undoPosts = 0;
       installHappyPath();
@@ -944,6 +949,75 @@ describe('SenderDetailRoute', () => {
       expect(undoPosts).toBe(1);
       await waitFor(() =>
         expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
+      );
+      expect(actionPosts).toBe(1);
+    });
+
+    // Codex round 1: a FRESH token's revert normally returns `reverted:
+    // false` with an `actionId` to poll, not the immediate `reverted: true`
+    // above — that pending shape is what the global tray actually produces
+    // on a first-time Undo, and the original fix silently missed it.
+    it('clears the receipt via the poll-to-terminal path when the external revert is still pending (reverted: false)', async () => {
+      let actionPosts = 0;
+      let undoPosts = 0;
+      installHappyPath();
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () => {
+            actionPosts += 1;
+            return jsonOk({ data: { actionId: 'act-ext2', requestedCount: 12, status: 'queued' } });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: () => jsonOk({ data: actionStatusBody('act-ext2', true) }),
+        },
+        {
+          method: 'POST',
+          path: '/api/undo/tok-1',
+          respond: () => {
+            undoPosts += 1;
+            return jsonOk({ data: { verb: 'archive', reverted: false, actionId: 'act-revert-1' } });
+          },
+        },
+      ]);
+
+      const client = createTestQueryClient();
+      render(
+        <QueryWrapper client={client}>
+          <SenderDetailRoute id="linkedin" />
+        </QueryWrapper>,
+      );
+
+      const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
+      fireEvent.click(archiveButton);
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(actionPosts).toBe(1));
+      await screen.findByRole('button', { name: /^undo$/i });
+
+      const { result } = renderHook(() => useRevertUndo(), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      await act(async () => {
+        result.current.mutate({ token: 'tok-1' });
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      });
+
+      // Not cleared yet — the revert only enqueued a reverse job.
+      expect(undoPosts).toBe(1);
+      expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+
+      // The poll this page's OWN `revertActionId` effect now runs (fed
+      // `act-revert-1` by the mutation-cache listener) resolves terminal,
+      // and clears the receipt exactly as it does for a LOCAL undo.
+      await waitFor(
+        () => expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
+        { timeout: 3000 },
       );
       expect(actionPosts).toBe(1);
     });

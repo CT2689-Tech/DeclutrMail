@@ -305,7 +305,7 @@ describe('mailLocationCopy', () => {
     // the two never reconciled on screen.
     expect(mailLocationCopy({ inboxNow: 0, allMailNow: 6275, receivedTotal: 6668 })).toBe(
       "Where this sender's mail is now: 0 emails in your inbox \u00b7 6,275 emails elsewhere in Gmail " +
-        '(archived or under a label) \u00b7 393 in Trash or Spam.',
+        '(archived or under a label) \u00b7 393 emails in Trash or Spam.',
     );
   });
 
@@ -382,5 +382,12 @@ describe('mailLocationCopy', () => {
     expect(mailLocationCopy({ inboxNow: 0, allMailNow: 1, receivedTotal: 1 })).toContain(
       '1 email elsewhere',
     );
+  });
+
+  // Codex round 1 (QA-delete-20260829-09) — the Trash/Spam segment was
+  // missed in the first pass: only the inbox segment got a unit noun.
+  it('gives the Trash/Spam segment its own unit noun too', () => {
+    const copy = mailLocationCopy({ inboxNow: 0, allMailNow: 1, receivedTotal: 2 })!;
+    expect(copy).toContain('1 email in Trash or Spam');
   });
 });

@@ -922,19 +922,29 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // "Moved to Gmail Trash" for mail the tray had already restored. Every
   // `useRevertUndo()` call shares one `MutationCache` regardless of which
   // component owns the hook, so a successful revert of THIS receipt's own
-  // token — from any source — clears it here. Only the immediate-revert
-  // case (`reverted: true`) is handled; a fresh token that enqueues a
-  // reverse job (`actionId` returned) resolves later via that other
-  // surface's own polling, same as it does today.
+  // token — from any source — is caught here.
+  //
+  // Codex round 1 caught that the FIRST cut only handled `reverted: true`
+  // (the already-reverted / idempotent-repeat response) — the normal path
+  // for a fresh token returns `reverted: false` plus an `actionId` to poll,
+  // exactly like this page's OWN `onUndo` above. Threading that `actionId`
+  // into the SAME `revertActionId` state `onUndo` already sets reuses the
+  // existing poll-to-terminal effect (below) instead of duplicating it —
+  // that effect already clears `receipt` on `status === 'done'` regardless
+  // of who set `revertActionId`.
   useEffect(() => {
     const token = receipt?.activityUndo.token;
     if (!token) return;
     return qc.getMutationCache().subscribe((event) => {
       if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
       const variables = event.mutation.state.variables as { token?: string } | undefined;
-      const result = event.mutation.state.data as { reverted?: boolean } | undefined;
-      if (variables?.token === token && result?.reverted) {
+      const result = event.mutation.state.data as
+        { reverted?: boolean; actionId?: string | null } | undefined;
+      if (variables?.token !== token) return;
+      if (result?.reverted) {
         setReceipt(null);
+      } else if (result?.actionId) {
+        setRevertActionId(result.actionId);
       }
     });
   }, [receipt, qc]);

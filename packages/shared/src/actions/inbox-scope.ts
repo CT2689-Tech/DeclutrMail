@@ -256,7 +256,7 @@ export interface MailLocationInput {
  * nothing to place.
  *
  * Reads as a partition that sums to the "N received" already on screen:
- * `0 in your inbox · 6,275 elsewhere in Gmail · 393 in Trash or Spam`.
+ * `0 emails in your inbox · 6,275 elsewhere in Gmail · 393 in Trash or Spam`.
  * That closure is the point — the founder's report was three true
  * numbers on one card with no visible denominator between them.
  *
@@ -291,7 +291,7 @@ export function mailLocationCopy(input: MailLocationInput): string | null {
   // nobody asked for, and printing the gap when there is none is how a
   // reconciliation turns back into noise.
   if (binned > 0) {
-    parts.push(`${n(binned)} in Trash or Spam`);
+    parts.push(`${n(binned)} ${plural(binned)} in Trash or Spam`);
   }
   if (parts.length === 1) {
     return `Where this sender's mail is now: ${parts[0]} — that is everything the mailbox holds for this sender.`;

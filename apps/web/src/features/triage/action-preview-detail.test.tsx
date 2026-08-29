@@ -13,7 +13,7 @@ const row = TRIAGE_QUEUE[0]!;
 
 const detail: ActionPreviewDetail = {
   mailLocationLine:
-    'Where this email is now: 17 in your inbox · 885 emails elsewhere in Gmail (archived or under a label).',
+    "Where this sender's mail is now: 17 emails in your inbox · 885 emails elsewhere in Gmail (archived or under a label).",
   matchSample: {
     rows: [
       { subject: 'Your weekly digest', date: '2026-08-20' },
@@ -69,7 +69,9 @@ function renderPreview(
 describe('ActionPreviewPresentation — verification detail (D226 parity)', () => {
   it('states where the sender mail actually is', () => {
     renderPreview();
-    expect(screen.getByTestId('mail-location-line').textContent).toContain('17 in your inbox');
+    expect(screen.getByTestId('mail-location-line').textContent).toContain(
+      '17 emails in your inbox',
+    );
     expect(screen.getByTestId('mail-location-line').textContent).toContain(
       '885 emails elsewhere in Gmail',
     );
