@@ -972,6 +972,48 @@ describe('ActivityReadService', () => {
       expect(after.stats.noisePreventedPerMonth).toBe(3);
     });
 
+    it('excludes a reverted row from the live byVerb tiles AND noisePreventedPerMonth (QA-undo-20260828-01)', async () => {
+      // This is the aggregate the `/activity` metrics header actually
+      // renders (`listActivity` → `aggregateStats`) — the earlier fix to
+      // `summarizeActivity` (a separate, uncalled DQ16 endpoint) did not
+      // touch this one, so the live page kept crediting undone actions.
+      const { mailboxAccountId } = await seedMailbox(db, 'reverted-live-stats@x.test');
+      const senderKey = 'r'.repeat(64);
+      await seedSender(db, mailboxAccountId, senderKey, 'reverted@brand.test', 'Reverted Brand');
+      await db.insert(mailMessages).values(
+        Array.from({ length: 3 }, (_, i) => ({
+          mailboxAccountId,
+          providerMessageId: `reverted-live-${i}`,
+          providerThreadId: `t-reverted-live-${i}`,
+          senderKey,
+          subject: '',
+          snippet: '',
+          internalDate: new Date(Date.now() - (i + 1) * 86_400_000),
+          labelIds: ['INBOX'],
+          isUnread: true,
+        })),
+      );
+      await seedActivity(db, {
+        mailboxAccountId,
+        occurredAt: new Date(),
+        source: 'manual',
+        action: 'archive',
+        senderKey,
+        revertedAt: new Date(),
+      });
+
+      const result = await svc.listActivity({
+        mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: Date.now(),
+      });
+      expect(result.stats.archived).toBe(0);
+      expect(result.stats.noisePreventedPerMonth).toBeNull();
+    });
+
     it('D56 — unsubscribe_confirmed is a distinct feed row that does NOT double-count the intent', async () => {
       // A one-click unsubscribe writes TWO rows: the intent (the click)
       // and the worker's confirmed OUTCOME. Both must appear in the feed,

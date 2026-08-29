@@ -1020,7 +1020,19 @@ export class ActivityReadService {
     // template would emit bare column names that resolve against the
     // inner table (see [[drizzle-correlated-subquery-pitfall]]).
     const senderScope = this.senderScopeFilter(args.mailboxAccountId, args.senderQuery);
-    const whereParts = [eq(activityLog.mailboxAccountId, args.mailboxAccountId)];
+    // `reverted_at` is the durable reversal fact (same transaction as the
+    // undo-journal flip) — `persistedReviewOutcomeExpression` already
+    // excludes a reverted row from every per-row outcome badge. This is
+    // the aggregate the LIVE `/activity` metrics header actually reads
+    // (`listActivity` → `aggregateStats`), so a reverted archive/delete/
+    // etc. still counting here is the defect QA-undo-20260828-01 was
+    // filed against — codex review caught that the earlier fix to the
+    // separate, uncalled `summarizeActivity` DQ16 endpoint left this one
+    // (the one the screen renders) untouched.
+    const whereParts = [
+      eq(activityLog.mailboxAccountId, args.mailboxAccountId),
+      isNull(activityLog.revertedAt),
+    ];
     if (args.lowerBound) whereParts.push(gte(activityLog.occurredAt, args.lowerBound));
     if (args.upperBound) whereParts.push(lt(activityLog.occurredAt, args.upperBound));
     if (senderScope) whereParts.push(senderScope);
@@ -1038,8 +1050,13 @@ export class ActivityReadService {
     // senders, projected to per-month. Same join + formula as
     // Historical message-volume context, windowed to THIS stats range.
     const ninetyDaysAgoIso = engagementWindowStart().toISOString();
+    // Same reverted-row omission as `whereParts` above, one join over —
+    // a sender's full 90-day volume kept projecting into "noise
+    // prevented" after the user undid the archive that would have
+    // deflected it (ledger sibling, QA-undo-20260828-01).
     const deflectWhere = [
       eq(activityLog.mailboxAccountId, args.mailboxAccountId),
+      isNull(activityLog.revertedAt),
       sql`${activityLog.action} IN ('archive','unsubscribe','later')`,
     ];
     if (args.lowerBound) deflectWhere.push(gte(activityLog.occurredAt, args.lowerBound));

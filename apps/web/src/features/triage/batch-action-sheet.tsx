@@ -271,6 +271,13 @@ export function BatchActionSheet({
             gap: 12,
             padding: '14px 24px 18px',
             borderTop: `1px solid ${color.line}`,
+            // Same fix as the single-sender ActionSheet (QA-triage-20260827-11):
+            // this dialog scrolls (`overflow: 'auto'` above) and its sender
+            // list grows with `eligible.length`, so the footer is even more
+            // likely to sit below the fold on a short viewport.
+            position: 'sticky',
+            bottom: 0,
+            background: color.card,
           }}
         >
           <span

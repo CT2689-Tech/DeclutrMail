@@ -62,7 +62,7 @@ describe('adaptDecisionHistoryRow — actions that actually happened', () => {
       ['archive', 'Archived'],
       ['unsubscribe', 'Unsubscribe requested'],
       ['later', 'Moved to Later'],
-      ['delete', 'Deleted'],
+      ['delete', 'Deleted to Gmail Trash'],
       ['marked_protected', 'Protected'],
       ['unmarked_protected', 'Unprotected'],
     ];

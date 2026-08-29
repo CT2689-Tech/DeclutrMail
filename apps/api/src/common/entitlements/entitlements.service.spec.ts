@@ -25,7 +25,7 @@ import {
 
 import { ActionsService } from '../../actions/actions.service.js';
 import { AppException } from '../app-exception.js';
-import { EntitlementsService } from './entitlements.service.js';
+import { coerceUsedCount, EntitlementsService } from './entitlements.service.js';
 
 /** The Free monthly quota, from the pricing config (A3). */
 const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
@@ -179,6 +179,28 @@ function fakeQueue() {
     getJob: async () => null,
   };
 }
+
+describe('coerceUsedCount — the ::int cast is not load-bearing (QA-triage-20260827-04)', () => {
+  // postgres.js has no default parser for a bare bigint (OID 20); the
+  // real query fragment ends in `::int` today, so `used` never actually
+  // arrives as a string in production. This test proves the DEFENSIVE
+  // coercion works on its own terms — independent of whether the cast
+  // stays in the query — by feeding the exact shape a dropped cast
+  // would hand back.
+  it('coerces a string count (what a dropped ::int cast would decode to)', () => {
+    expect(coerceUsedCount('5')).toBe(5);
+    expect(typeof coerceUsedCount('5')).toBe('number');
+  });
+
+  it('passes a real number through unchanged', () => {
+    expect(coerceUsedCount(5)).toBe(5);
+  });
+
+  it('defaults a missing row to 0', () => {
+    expect(coerceUsedCount(undefined)).toBe(0);
+    expect(coerceUsedCount(null)).toBe(0);
+  });
+});
 
 describe('EntitlementsService — counting rule (D19/D77)', () => {
   let db: Db;
