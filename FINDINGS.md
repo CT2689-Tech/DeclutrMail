@@ -47,481 +47,7 @@ the point.
 
 ## Inbox (untriaged)
 
-- **2026-08-27** · Entitlements cap arithmetic — **the Free-tier paywall is one `::int` away from inverting, and its test asserts a decode path production does not use.** _(Tier 1 — billing. Surfacing per CLAUDE.md §9, not deciding.)_
-  Found by the `defect-class-sweeper` pass of `/ct-qa triage`, sweeping the
-  class behind the Triage `lastDays` defect. Not currently broken — a latent
-  risk with a live tripwire. `apps/api/src/common/entitlements/entitlements.service.ts:315`
-  gates on `if (used + unitsNeeded > limit)`. `used` comes from a raw
-  `sql<number>` at `:188` and is returned via `?? 0` at `:212` with **no
-  `Number()` coercion**. It is correct today only because the fragment at `:188`
-  ends in `::int` (OID 23, which postgres.js parses). Bare `COUNT`/`SUM` return
-  OID 20 (`bigint`), for which postgres.js registers no default parser. So if
-  that one cast is ever dropped or refactored away, `used` becomes a string,
-  `"5" + 1` evaluates to `"51"`, and a Free user is told `FREE_CAP_REACHED` at
-  6 of 50 actions.
-  The reason this would not be caught: `entitlements.service.spec.ts` imports
-  `drizzle-orm/pglite`, so the suite exercises PGlite's decode path rather than
-  the postgres.js path production runs — the same reason the Triage `lastDays`
-  defect was untestable. A green suite here is not evidence about the
-  production driver.
-  Cheapest durable fix is `Number(...)` at the consumer so the cast stops being
-  load-bearing; the deeper one is a decode-path test that runs on postgres.js.
-  **P2** (latent, billing).
-
-- **2026-08-27** · Triage Today panel — **"reduce future noise by ~10%" measures the past and promises the future; three of the five verbs explicitly change no future mail.**
-  Found by `/ct-qa triage`. The arithmetic is right and the sentence is not.
-  `queuedNoise` sums `last90dMessages` across the non-Keep rows and divides by
-  90-day inbound volume (`apps/api/src/triage/triage.read-service.ts:1071`,
-  `:1088`) — verified on the dev mailbox as 1,243 / 12,363 = 10.05%, so the
-  number is a **past 90-day share of mail already received**. It is rendered as
-  "12 sender decisions can reduce **future** noise by ~10%." But Archive and
-  Later both carry `futureMail: { effect: 'unchanged', summary: 'Future email
-is unchanged.' }` (`packages/shared/src/actions/action-semantics.ts:169`,
-  `:194`), Keep by definition leaves delivery alone, and Delete only trashes
-  mail that already arrived. **Unsubscribe is the only verb of the five that
-  reduces future mail at all** — and even then delivery depends on the sender
-  honouring it. A user who archives all 12 gets the stated ~10% reduction in
-  nothing. "Noise" also has no denominator anywhere on screen.
-  Suggested: "12 decisions below. These senders sent 10% of the email you
-  received in the last 90 days." — which is what the code actually measures.
-  Worth noting how this got missed: the run checked the ratio, found it exact,
-  and called the claim earned. The arithmetic was never the risk. **P1.**
-
-- **2026-08-27** · Triage queue ordering — **the daily queue's `ORDER BY` is not a total order, so which 12 senders you see is undefined and reshuffles on any write.**
-  Found by `/ct-qa triage`. `queueGoalPriority` returns `null` for the daily
-  route (`apps/api/src/triage/triage.read-service.ts:301`, `case 'actionable':
-return null`), so the live ordering is `[verdictPriority, desc(confidence)]`
-  with **no tiebreak** — the `senderKey` tiebreak that exists in the array is on
-  the onboarding branch and never executes on `/triage`. Measured on the dev
-  mailbox: 6 decisions tie at `unsubscribe/0.91`, 2 at `0.89`, and **33 tie at
-  `0.87`**, so the last 4 of the 12 slots are drawn from a 33-way tie. Because
-  the tie straddles `LIMIT 12`, queue _membership_ — not merely order — is
-  undefined: an independent replication of the query returned Three Dots /
-  Emily from Fever / Stephanie Brunner where the run saw Columbia / The
-  Container Store. Observed live: after expanding two cards, five rows the run
-  never touched reshuffled among themselves (Temu #7→#1, Victoria's Secret
-  #6→#3, Donna Wilson #4→#6) at unchanged confidence, and Classic Firearms went
-  #2→#12. A card the user is about to act on can move or vanish.
-  The D25 `stale_refresh` comment at `apps/web/src/features/triage/triage-screen.tsx:203`
-  shows the hazard was understood — it scopes the re-score to the one expanded
-  row precisely because "refreshing all twelve on load would re-sort the list
-  and can retire the card mid-decision" — but the mitigation was applied to the
-  _trigger_, not to the ordering, so every sanctioned write still reshuffles.
-  Fix is a stable tiebreak on the actionable path, not throttling the refresh.
-  Note the run's own first attempt named the wrong cause (a confidence change
-  from re-scoring) and reasoned that "stable across 3 consecutive API calls"
-  proved determinism — a non-total `ORDER BY` is stable only until the next
-  write to the table. **P1.**
-
-- **2026-08-27** · Triage row "LAST SEEN" tile — **still reports "today" for senders that last wrote weeks ago; this is the open back-end half of PR #258, ~8 weeks old.**
-  Found by `/ct-qa triage`; not a new discovery. `GET /api/triage/queue` returns
-  `"lastDays": 0` for every row. Ground truth for one queue sender
-  (`news@r.redstatelegacy.com`): `senders.last_seen_at` and
-  `max(mail_messages.internal_date)` both `2026-07-13`, i.e. 45 days before the
-  run, while the expanded card rendered `today` under `LAST SEEN` beside
-  `44 PER MONTH` / `4% READ RATE 90D` / `283 RECEIVED`.
-  Cause, confirmed by temporary instrumentation of the live process (added,
-  exercised, reverted; tree verified clean):
-  `aggType:"string"`, `lastSeenCtor:"Date"`, `chosenIsDate:false`. At
-  `apps/api/src/triage/triage.read-service.ts:541` the projection
-  `sql<Date | null>MAX(internal_date)` is a type assertion the runtime does not
-  honour — drizzle's postgres-js driver installs a transparent (identity)
-  parser for OID 1184, so a raw `sql` timestamp fragment yields Postgres **text**
-  in dev and prod alike. At `:603` the `??` then selects that non-null string
-  and shadows `r.lastSeenAt`, which is a correct `Date`; `instanceof Date` is
-  false and the `: 0` branch renders "today".
-  **Why no test caught it:** the spec suite runs on PGlite, which returns a real
-  `Date` — the defect cannot reproduce under test. Worse,
-  `apps/web/src/features/triage/triage-row.test.tsx:189` asserts
-  `lastSeenLabel({ last90dMessages: 13, lastDays: 0 })` is `'today'`, pinning the
-  wrong output for exactly the case the FE guard leaves open.
-  Scope, measured on the dev mailbox (8,051 queue-eligible senders): the FE
-  guard `lastSeenLabel` (`apps/web/src/features/triage/data.ts:1076`) is gated
-  on `last90dMessages === 0`, so it rescues the 7,097 quiet senders — exactly
-  the population where a "today" would be self-evidently absurd — and does not
-  cover the 1–89-day band at all. Of the **954 senders where the tile actually
-  asserts a recency, 849 (89%) are wrong**; only 105 are genuinely "today".
-  The mitigation therefore covers the cases that would have been caught by eye
-  and misses every case that reads as plausible. One consumer
-  only (`triage-row-expanded.tsx:78`); nothing in preview, mutation, undo or
-  scoring reads `lastDays`, so there is no data, billing or Gmail-state
-  consequence. Merged PR #258's body already names both the defect and the
-  one-line fix ("coerce `lastInternal` via `new Date(...)`, or select the typed
-  column"). **P1** — a false statement about the user's own mail, but
-  display-only. Sweep siblings first: any other raw `sql` timestamp fragment in
-  the API is the same class.
-
-- **2026-08-26** · `SendersCounterReconciliationWorker` — **a 24h cron actually fires on every deploy (4.1×/day), and its slowest pass is inside 1.75× of a hard timeout whose failure is silent.**
-  Found while chasing a slow-query trend that turned out not to exist (see REFUTED
-  below). Two facts survived the refutation. **(1) The cadence is not the designed
-  one.** `SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS = 24h`
-  (`packages/workers/src/senders-counter-reconciliation.queue.ts:31`), but
-  `apps/api/src/worker.ts:1339` enqueues a tick at worker **boot** with a fresh
-  `scheduledAtMinute()`, and `deploy-cloud-run.yml` redeploys on every push to main.
-  The D225 `(worker, minute)` idempotency key therefore never collapses these — each
-  deploy is a different minute. Measured: **323 calls since `stats_since=2026-06-09`
-  = 4.1/day against a designed 1/day**, and 13 calls in one 34h window that contained
-  7 merges. Harmless today; it means any "nightly" cron in this codebase silently
-  becomes per-deploy, and a deploy also SIGTERMs the old worker mid-pass while the new
-  one starts another, so the overlapping passes are the ones most likely to block each
-  other. **(2) The headroom on the timeout is thinner than it looks.**
-  `cronPolicy.timeoutMs = 60_000` with `maxAttempts: 3`
-  (`packages/workers/src/worker-policies.ts:83-89`). Steady-state cost measured live
-  against prod is **6.0-7.1 s**, but `pg_stat_statements` records
-  `max_exec_time = 34,237 ms` and `stddev = 5,829 ms` — so the worst observed pass is
-  **1.75×** off the ceiling, not 10×. Nothing is timing out today. What makes it worth
-  filing is the consequence if it ever does: since #625 moved `reconcileSenderTimeseries`
-  off the push path onto this sweep, three failed attempts leave `wrote_to_count`
-  (auto-Protect, D245) and `read_count` (auto-Unsubscribe) **stale with no user-visible
-  signal and no alert** — the BLIND-GUARD shape again. The underlying ~6-7 s for a
-  fully-cached 179k-row seq scan is Supabase Micro shared-vCPU starvation (~250× a
-  cached scan), which is a flat property of the instance, not a regression. Related
-  signal worth a look in the same pass: `senders` shows `n_tup_upd = 9,967,323` against
-  **11,433 live rows — 872 updates per row** — and `autovacuum_count = 4,275`, versus 17
-  for `mail_messages`. On a pre-launch DB with 4 mailboxes that is a lot of write
-  amplification. Proposed **P3**. Source: prod-sweep 2026-08-26.
-
-- **2026-08-25** · `apps/api` EmailService — **the loudest chronic ERROR in prod is intentional, and it is camouflage for the ones that are not.**
-  `declutrmail-api` has logged `RESEND_API_KEY is not set — transactional email is
-DISABLED (fail-closed)` at ERROR level **139 times since 2026-07-26**, still firing.
-  Nothing is broken: `deploy-cloud-run.yml:292` binds `RESEND_API_KEY` to the
-  **worker only**, on purpose, because the worker is the sender — the API fail-closes
-  and announces it. So this is expected configuration announcing itself as an error,
-  once per boot, forever. The cost is not the log line, it is what it does to every
-  other chronic error: it is the top standing ERROR cluster in the fleet, so any
-  reviewer who learns to skim past it has been trained to skim past exactly the shape
-  that hid the eight-day Paddle outage. Drop it to `warn`, or log it once at boot and
-  not per-call. (The prod-sweep routine now uses this line deliberately as its 2d
-  self-test fixture — a known-present cluster that proves the recurrence query still
-  matches — so if it is silenced, update that assertion in the same change.)
-  Proposed **P3**. Source: prod-sweep 2026-08-25.
-
-- **2026-08-25** · billing reconciliation — **the prod Paddle key is missing `adjustment.read`; the refund gate has been stuck 8 days and the cancel has never been sent.**
-  `paddle.api_read.failed adjustments sub=sub_01kzt82fegvpt8w1rnqbsz3mtg status=403`
-  has fired **1,230 times**, every ~10 min, from `2026-08-17T02:33:10Z` to
-  `2026-08-25T06:29:36Z` — still firing. Log retention reaches back to Jun 8, so
-  08-17 is a real start, not a retention floor. Only `adjustments` fails and only
-  with 403 (every other Paddle read succeeds), so the key is valid and the scope is
-  missing. `GET /adjustments` is the sole answer to "did the refund settle"
-  (`apps/api/src/billing/paddle.adapter.ts:713`); on 403 the adapter returns `null`,
-  the caller reads `facts = null` and `continue`s, so the row never settles and the
-  banner's promise to "switch this back on automatically" cannot come true.
-  **The money half:** `verdict_enforced` has fired **0 times in 30 days** — the
-  outbound cancel is gated behind the same unreadable-facts check
-  (`apps/api/src/billing/billing-reconciliation.service.ts:720`), so we never told
-  Paddle to cancel. If that subscription was not cancelled by hand in the dashboard,
-  the refunded customer is re-billed at renewal. Verified directly against prod logs.
-  **Why nobody knew:** no billing alert policy exists (prod policies are API-not-ready,
-  BullMQ limit, mailbox-lock leak, destructive-infra-op, API-unavailable), and the
-  verdict line logs below ERROR, so a permanently-failing revenue gate reads as
-  routine chatter. This is the BLIND-GUARD class again — and
-  `billing-reconciliation.service.ts:693` _already carries a comment_ saying "A null
-  here is a READ FAILURE, not 'nothing settled'", then logs it with no counter, no
-  alert and no attempt cap. D253 specifies "a row that exhausts its attempts is
-  logged for support rather than retried silently"; that cap was never implemented —
-  it retries silently 144x/day. Proposed **P0**. Source: prod-sweep 2026-08-25
-  (surfaced by the "Unexpected waiting state" session; independently verified here).
-  **UPDATE 2026-08-26 (prod-sweep) — the read half cleared; the money half is NOT
-  confirmed, and the detection half is untouched. Do not close this.** Prod DB shows
-  `reconciliation.refund_settled` at `2026-08-25T07:08:41.376Z`, followed 406 ms later
-  by `subscription.updated`, and `subscriptions.status` is now `canceled`. Two
-  independent refuters traced the deployed code. Both agree the **read gate cleared**:
-  `projectRefundSettlement` (`billing-reconciliation.service.ts:793`) is the sole
-  non-test emitter of that event and sits strictly downstream of the `facts === null`
-  guard at `:693`, which `continue`s unconditionally; `paddle.adapter.ts:749-753`
-  returns `null` on any 403. So `GET /adjustments` succeeded — the missing
-  `adjustment.read` scope was granted between the last 403 (`06:29:36Z`) and
-  `07:08:41Z`. No code change explains it: the only billing commit since 08-24 is
-  dbb57790 (#633), authored 70 minutes _after_ the events, and it leaves
-  `billing-reconciliation.service.ts` byte-identical. The event ORDER
-  (`refund_settled` before `subscription.updated`) rules out a hand-cancel in the
-  Paddle dashboard. The 8-day read outage is over and the entitlement was released.
-  **What is NOT proven — and what this sweep nearly got wrong:** `subscriptions.status
-= 'canceled'` is written by `applyRefundSettlement` (`billing-webhook.service.ts`) in
-  a purely local transaction with **no outbound provider call**, so the DB row is not
-  evidence Paddle was told to cancel. One refuter argues the reachability chain implies
-  it (`cancelSubscription` throws on `!res.ok`, so reaching `:793` means the cancel
-  succeeded _or_ was skipped by the `if (!provider.cancelAtPeriodEnd)` guard as
-  already-scheduled); the other argues that "or" is exactly the gap, and that with
-  `current_period_end = 2026-09-12` the single remaining collection opportunity is
-  **17 days out and still in the future**. Cloud Run logs were unreadable this run
-  (expired gcloud credential), so `verdict_enforced` was inferred, never observed.
-  **Action:** check `scheduled_change` on `sub_01kzt82fegvpt8w1rnqbsz3mtg` in the
-  Paddle dashboard before 2026-09-12. **The detection half is unchanged:** there is
-  still no durable per-row attempt cap (D253) — `consecutiveErrors` is method-local and
-  re-initialised every pass, so `DRIFT_SWEEP_TRIP_AFTER` is a within-pass breaker only —
-  and the follow-up to run `scripts/setup-billing-verdict-alert.sh` is still
-  **Status: Open**. The next read failure reproduces the same silent 8-day outage.
-  Downgraded **P0 → P1** (money half watched, not closed). Source: prod-sweep 2026-08-26.
-
-- **2026-08-25** · `infra-snapshot` workflow — **the daily infra-drift monitor has been red for 12 consecutive runs and nothing noticed.**
-  Every scheduled run since 2026-08-13 has failed at the same step. `Run snapshot`
-  succeeds, then `Check out the snapshot branch` (`actions/checkout@v7`,
-  `ref: infra-snapshots`) exits 1 because that branch no longer exists —
-  `gh api repos/CT2689-Tech/DeclutrMail/branches/infra-snapshots` returns 404. The
-  `Publish when the snapshot has drifted` step is therefore `skipped` on every run,
-  and because both the branch commit and the `$GITHUB_STEP_SUMMARY` drift diff live
-  _inside_ that skipped step — and there is no `actions/upload-artifact` anywhere in
-  the file — the snapshot JSON is written to `RUNNER_TEMP` and discarded. Zero drift
-  signal for twelve days. This is not redundant coverage: of the five scheduled
-  workflows, `cron-stale-watchdog` / `sync-stuck-watchdog` / `vendor-limits-watchdog`
-  cover cron liveness, stuck syncs and vendor quota; none reads Cloud Run revisions,
-  Secret Manager versions, runtime-SA IAM bindings, the Atlas head, or GH secret
-  names. `launch-preflight.sh` overlaps partially but is referenced by no workflow —
-  it is manual-only. **This is a regression after a closed fix:** MISTAKES.md records
-  this same defect fixed 2026-08-10 by pushing an empty orphan `infra-snapshots`
-  branch; runs on 08-10/08-11/08-12 were green, then the branch was deleted and the
-  failure returned. The 08-10→08-12 snapshot history went with it —
-  `docs/infra-snapshots/` on main holds only `2026-07-26.json`. Both refuters failed
-  to break this and each independently corrected the streak upward from my initial
-  count of 8. Fix is small: have the step bootstrap the branch when absent rather
-  than hard-fail, so a deleted data branch degrades instead of silently killing the
-  monitor. Proposed **P1**. Source: prod-sweep 2026-08-25.
-
-- **2026-08-25** · `packages/workers/src/lapse-reengagement.worker.ts:120` — **a raw JS `Date` bound into a `sql` fragment makes the lapse re-engagement sweep throw for every candidate, while the cron reports success.**
-  Sentry `DECLUTRMAIL-WEB-1A` (new 2026-08-23, 4 events, `environment: production`,
-  `kind: lapse_reengagement.user_failed`) bottoms out in `PostgresJsPreparedQuery`.
-  `notDecidedRecently` builds `AND al.occurred_at >= ${now}::timestamptz -
-make_interval(...)` where `now` is a `Date`. Under `postgres-js` that always throws
-  — the repo already knows this pitfall, and **line 258 of this same file** does it
-  correctly with `${bandOldestLastSeen.toISOString()}::timestamptz`. I verified both
-  lines on `origin/main`; the file contradicts itself, so this is a defect and not a
-  design. A refuter reproduced the throw against a real Postgres with the production
-  driver stack. Tests miss it because the harness (`packages/db/src/testing/fresh-db.ts`)
-  uses PGlite, which serializes `Date` fine. Introduced by #531, still byte-identical
-  on current main. The failure is swallowed by the per-candidate `catch`, so
-  `processJob` returns success and the job never retries or dead-letters — a silent
-  100% functional outage wearing a green cron. **User impact today is zero**, for an
-  unrelated reason: `BUSINESS_POSTAL_ADDRESS` is `[]` on main, so `EmailSendWorker`
-  refuses every `COMMERCIAL_KINDS` job with `skipped_no_postal_address` anyway. That
-  gate is what makes this P2 rather than P1 — but it also means the bug will surface
-  the moment the postal address lands, and the green cron will still be hiding it.
-  Verdict PLAUSIBLE (split refuters: the dissent was about severity and assumed a
-  transient DB blip, which the reproduction disproved; neither refuter disputed the
-  mechanism). Proposed **P2**. Source: prod-sweep 2026-08-25.
-
-- **2026-08-07** · `/onboarding` step 5 — **confirmed live, on a real first-run.**
-  Founder onboarded a beta user end to end and step 5 pinned five
-  senders that ALL have single-digit lifetime email counts, after the user had
-  picked "reduce newsletters" on step 4. Founder's words: _"very diminishing
-  value as a first time user."_ This is the same defect the Codex item below
-  describes, now observed rather than reasoned about — and it lands on the one
-  screen where the product has to prove itself. Note what production actually
-  runs: `origin/main` has NO payoff floor at all, so any eligible sender can be
-  pinned including one-message senders. A fix exists but is UNCOMMITTED in this
-  checkout (another session added `FIRST_TRIAGE_MIN_RECEIVED = 10` /
-  `FIRST_TRIAGE_MIN_RECENT = 3` plus a pin-version bump so existing users
-  re-pin), and the Codex item below is a critique of THAT fix. So there are
-  three states in play — shipped (no floor), uncommitted (arbitrary floor),
-  proposed (outcome ranking). Triage all three together.
-  **Resolved 2026-08-08 (#477):** outcome ranking shipped; the arbitrary
-  `10`/`3` floor was deleted rather than merged. The beta user's account
-  itself is production-only and was never reachable from this checkout.
-
-- **2026-08-07** · `/settings/senders` — **the protected-senders list never says
-  WHY a sender is protected.** Three of the four `protection_reason` values are
-  automatic (`replied`, `starred`, `gmail_important`); only `user_defined` is
-  the user's own doing. The list renders avatar, name, email and a Manage
-  button — no reason. CLAUDE.md §2.6 requires the opposite: "Show the exact
-  reason and preserve a manual Unprotect as a sticky override." Found while
-  fixing copy on that page that wrongly called every row "senders you've told
-  us to leave alone"; the copy is fixed, the missing reason is not. The data is
-  already there (`sender_policies.protection_reason` + `protection_set_at`) and
-  `screener/data.ts:93` already renders reason strings, so this is a display
-  gap, not a modelling one.
-  **Resolved 2026-08-09 (#483):** every row on `/settings/senders` now names
-  the exact reason (via the shared `protectionReasonLabel`), shows the unread
-  inbox mail the protection is shielding, and offers an in-place Unprotect
-  with the D245 sticky caveat —
-  [senders-policies-screen.tsx](apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx).
-
-- **2026-08-07** · Triage — **"four daily verbs" is spec vocabulary, shipped.**
-  Founder hit this string in production: _"Looking for Delete? Triage keeps to
-  the four daily verbs — deleting a sender's mail lives on Senders and Sender
-  Detail."_ Two separate problems. (1) Nobody says "four daily verbs" — it is
-  our ADR-0019 language leaking into product UI. (2) The founder's expectation
-  was that Delete works everywhere, and as of the 2026-08-06 founder amendment
-  to ADR-0019 it does: Triage now renders the full K/A/U/L/D set directly. So
-  this copy is describing a constraint that no longer exists. Both are already
-  addressed by uncommitted work in this checkout — `why-no-delete.tsx` and its
-  story are deleted — but nothing is merged, so production still shows it.
-  Founder's broader ask: run a public-facing copy audit to find every sibling
-  of this, not just this one string.
-  **Resolved 2026-08-08:** Delete on the Triage toolbar shipped in #476;
-  `why-no-delete.tsx` is gone. The copy sweep is this PR. The broader audit
-  — every sibling string, not just this one — is still open.
-  **Audit run 2026-08-10:** swept every string literal under
-  `apps/web/src/features` + `packages/shared/src/{copy,components}` for
-  spec vocabulary (verb-registry phrasing, D-numbers, ADR references,
-  lifecycle/enum/composite/registry jargon) with rendered-context
-  filters. Zero true siblings — "four daily verbs" was the lone leak.
-  Every D-number/jargon hit is a comment, a telemetry `reason:` value,
-  or an aria id. Nearest borderline: the landing page's "One verdict per
-  sender covers everything they sent." — plain-English meaning,
-  founder-reviewed through the D250 rounds; left as-is.
-
-- **2026-08-06** · `/onboarding` step 5 (first triage) — the pinned-row
-  thresholds are unexplained cutoffs. `10 received` was an emergency proxy for
-  "enough cleanup to notice", picked to eliminate the 1–2-message rows; worse,
-  `received` counts INDEXED mail, not mail currently in Inbox, so it does not
-  measure what Archive/Later will actually move. `3 recent` at least has a
-  rationale (≈ one email/month over 90d = recurring, not one-off). Sorting
-  alone is not enough — the best sender with two messages still ranks first, so
-  we need both a ranking and a definition of "worth one user decision".
-  Proposed replacement, goal-specific outcome ranking: _reduce newsletters_ →
-  usable unsubscribe channel → recent cadence → low read rate → current Inbox
-  count → confidence; _clear promotions_ → Gmail Promotions category → current
-  Inbox count → low read rate → confidence; _protect important_ →
-  protection/reply evidence → high read rate → recency. Show fewer than five
-  rather than padding. Use the indexed current-Inbox count for immediate
-  cleanup value (the confirmation preview still re-checks Gmail live). Open
-  sub-question: keep "at least monthly" as an explicit product definition of
-  recurring, or use an exact rolling-30-day count. Deliberately not changed
-  yet — replacing one unexplained cutoff with another is not progress.
-  _(via Codex; arrives pre-analyzed, not yet verified against code by this
-  session. Note: `onboarding.service.ts` has uncommitted changes from another
-  session — triage this against whatever lands.)_
-
-- **2026-08-06** · infrastructure — **there is no staging environment.**
-  Verified: only the `declutrmail-ai-prod` GCP project exists, only the
-  `declutrmail-api` / `declutrmail-worker` production Cloud Run services exist,
-  and
-  [deploy-cloud-run.yml:50](.github/workflows/deploy-cloud-run.yml:50) deploys
-  `main` straight to production, stating outright that preview backends are not
-  configured. A Vercel Preview is not a substitute — production CORS, the OAuth
-  redirect, and `.declutrmail.com` session cookies stop it working as an
-  authenticated app. A real one needs: a `declutrmail-ai-staging` GCP project;
-  separate DB, Redis, KMS keys, Pub/Sub, secrets, API and worker; fixed origins
-  (`app.staging.declutrmail.com`, `api.staging.declutrmail.com`); a staging
-  Google OAuth client with its callback registered; a Vercel staging deployment
-  pointing `NEXT_PUBLIC_API_URL` at the staging API; billing disabled with
-  Paddle sandbox only and PostHog unset; and a staging GitHub deployment
-  workflow/environment. The same Gmail account can authorize staging, but Gmail
-  actions stay REAL — and `users.watch` sets or UPDATES the mailbox's watch, so
-  a staging watch can replace production's push destination. Keep Gmail Pub/Sub
-  disabled when reusing that account and rely on initial/manual sync for smoke
-  tests. Today's isolated-testing answer remains local OAuth via
-  [dev-auth.sh](scripts/dev-auth.sh), which resets only the local database —
-  but any Archive/Delete/Unsubscribe there still changes the real mailbox.
-  _(via Codex)_
-
-- **2026-08-27** · `scripts/check-vendor-limits.mjs` — **the one state that means GCP spend has no alerting net is graded WARN, and WARN exits 0.**
-  Surfaced by a `defect-class-sweeper` run and then narrowed by a `finding-refuter`
-  verdict of PARTIALLY REFUTED — the original claim was wrong and this is the half
-  that survived, restated. **Refuted half:** "budgets armed" is NOT an unverified
-  claim. Google's Budget API sends default notifications to Billing Account
-  Administrator and User IAM roles, with `disableDefaultIamRecipients` defaulting
-  false, so a budget carrying threshold rules and no explicit `notificationsRule`
-  genuinely is armed and the comment at `:195-196` is true as written. **Surviving
-  half:** `:215` grades zero budgets as `WARN`, and `main()` at `:713-715` fails the
-  run only on `BREACH`/`ERROR`, or on `WARN` when `WARN_IS_FAILURE === 'true'`.
-  `WARN_IS_FAILURE` is set in no workflow and in no repo variable — and more
-  decisively, GitHub Actions variables are never auto-injected into `process.env`
-  and the step's `env:` block does not map it, so no variable could turn it on
-  without a workflow edit. The result: if GCP spend alerting disappears entirely,
-  the watchdog announces it inside a green run that GitHub reports as success, with
-  no issue, no Slack, nothing but `GITHUB_STEP_SUMMARY`. Latent rather than active —
-  reaching it needs the founder deleting `declutrmail-pre-launch-30` or repointing
-  `GCP_BILLING_ACCOUNT_ID`. This is an unswept instance of the class already in
-  `MISTAKES.md` (2026-07-26), and the fix is a one-line status change on that row,
-  NOT a global `WARN_IS_FAILURE` flip, which the file's own comments at `:293-315`
-  explicitly and correctly reject. Proposed **P2**.
-
-- **2026-08-27** · `SnoozeWakeWorker` — **lead, not verified by me: a retryable failure may produce no signal anywhere at all.**
-  Reported by `finding-refuter` while refuting a different finding, so it has had no
-  independent confirmation and no reproduction — treat it as a question, not a
-  verdict. The claim: `snooze-wake.worker.ts:229-233` claims its cron run via
-  `onConflictDoNothing`, so when BullMQ retries a failed attempt the slot is already
-  taken and the retry returns `skippedDuplicateRun: true`, which counts as success.
-  Attempt 1 was non-terminal, so no `captureFailure` and no `recordDeadLetter` ever
-  fire. If that holds, a retryable SnoozeWake sweep failure leaves the `cron_runs`
-  row as its only trace in existence — which is what makes the 2026-08-27
-  `check-cron-stale.ts` fix (see `MISTAKES.md`) the sole detection path for this
-  worker rather than one of several. Worth reproducing before it is believed.
-
-- **2026-08-27** · `vendor-limits-watchdog` — **lead, not verified by me: the vendor table may be missing a row without saying so.**
-  Reported in passing by a `finding-refuter` run, unconfirmed. The claim is that the
-  latest workflow run's summary table prints eight vendor rows and contains no
-  `Vercel` row at all. If true it is the blind-guard shape again — a watchdog whose
-  coverage silently shrinks reports green on what is left. Needs one `gh run view`
-  against a current run to confirm or kill.
-
-- **2026-08-28** · `/activity` — **verified, survived `finding-refuter`: the page's own stat tiles disagree with each other about whether an undone action still counts.**
-  From `/ct-qa undo`, `QA-undo-20260828-01` in `docs/qa/qa-worklist.md`. The "This
-  week" metrics panel (`ARCHIVED`/`DELETED`/etc., `apps/api/src/activity/activity.read-service.ts:1071-1073`,
-  `summarizeActivity`'s `byVerb`) counts an action even after the user undoes it;
-  the "Your last 7 days" outcome tiles directly below (`persistedReviewOutcomeExpression`,
-  same file, `:1248-1291`) correctly exclude it — same page, same window, opposite
-  answers, no label on either tile saying which convention it follows. Live-verified
-  in a real account: 4 `activity_log` rows in the 7-day window, all 4 reverted, top
-  panel still read `ARCHIVED 3 / DELETED 1`. A `defect-class-sweeper` found the same
-  mechanism live in two more places that are public-facing benefit-accuracy claims
-  (Tier 1b per CLAUDE.md §2.0) — Triage's "handled N automatically" strip crediting
-  undone Autopilot batches, and "noise prevented per month" retaining a sender's full
-  volume after its archive is undone — plus two narrower instances (Autopilot
-  dismiss-reasons that reach no bucket; the `Protected` tile's own opacity). Detail,
-  siblings, and unmeasured per-instance SQL counts are all in the worklist row.
-  Proposed **P1**.
-
-- **2026-08-28** · `/senders` — **verified, survived `finding-refuter`: the app can assert something false about the user's own inbox during an active sync.**
-  From `/ct-qa onboarding`, `QA-onboarding-20260828-01` in `docs/qa/qa-worklist.md`.
-  A mailbox that is still `queued`/`syncing` — including on an ordinary returning
-  sign-in, since `markQueued` (`apps/api/src/sync/sync.service.ts:123`) re-queues
-  on every login, not only reconnect — has no readiness-aware rendering anywhere in
-  the app shell except a collapsed account-menu dropdown
-  (`apps/web/src/features/mailboxes/account-menu.tsx:309-313`). A fresh `/senders`
-  load either flatly denies data exists ("No active senders — No sender has mailed
-  you recently", `senders-screen.tsx:2450-2466`) or, if the pre-disconnect sender
-  index survived, presents a stale snapshot under a "Synced through &lt;asOf&gt;"
-  freshness strip whose timestamp is server-compute time, not a measured currency
-  check (`senders.read-service.ts:1087,1413`). The sender index is torn down and
-  rebuilt in one transaction only at the END of sync
-  (`initial-sync.worker.ts:1015-1027`), so the mid-resync list is never partial —
-  it is stale-complete and labelled as fresh. `STALE_SYNCING_AFTER_MS = 15min`
-  (the system's own statement of how long a legitimate sync can run) sets the
-  floor on how long this window stays open. Proposed **P0** (CLAUDE.md's own
-  definition: the app states something false about the user's own data).
-
-- **2026-08-28** · Auth session (D155) — **verified, survived two `finding-refuter` passes with a corrected, narrower claim: `AuthProvider`'s 401→OAuth redirect fires more than once per session-expiry event, against a real external endpoint.**
-  From `/ct-qa onboarding`, `QA-onboarding-20260828-02` in `docs/qa/qa-worklist.md`.
-  `apps/web/src/features/auth/auth-provider.tsx:63-69` calls
-  `window.location.assign` directly in the component's render body — no
-  `useEffect`, no ref/module guard — duplicating an already-guarded sibling one
-  file away (`client.ts:310-315`'s `redirectToLogin`, which has exactly the
-  `redirecting` latch this call site lacks). A live incident this run (network
-  log: 401 on `/api/auth/me` and `/api/auth/refresh`, then 3× real requests to
-  `/api/auth/google/start`, 2 aborted + 1 rate-limited) was independently
-  corroborated in real time by a concurrent peer QA session hitting the same
-  shape. A `defect-class-sweeper` proved the repeat-fire is a PRODUCTION path —
-  `use-me.ts`'s 15s error-retry poll and `refetchOnWindowFocus: true` both
-  re-render `AuthProvider` while the 401 persists, not only React StrictMode's
-  dev double-invoke — and found zero sibling instances elsewhere (one isolated
-  defect). A `finding-refuter` narrowed the severity: the observed 429 needed
-  prior rate-limit consumption this QA session itself generated, so "locks a
-  legitimate user out" is unmeasured — the provable claim is 2 real navigations
-  in production per incident (3 in dev), burning a rate-limit bucket meant for 1.
-  Proposed **P1**.
-
-- **2026-08-28** · Auth session (D155) — **verified, survived two `finding-refuter` passes and a `defect-class-sweeper`: concurrent refresh from the same account (two tabs) can revoke the whole session, and the schema has no column that could hold a fix.**
-  From `/ct-qa onboarding`, `QA-onboarding-20260828-03` in `docs/qa/qa-worklist.md`.
-  `sessions.service.ts`'s `rotate()` doc comment (lines 130-132) promises the
-  loser of a concurrent refresh race "either gets the SAME tokens (grace) or
-  trips the reuse-defense revoke path" — the code (lines 149-214) has exactly
-  one branch, and it always revokes. `sessions.service.spec.ts:220-225` states
-  this is the intended defensive posture, and no `reuse detected` log line
-  exists anywhere on this machine tying it to this run's own live incident
-  (see the companion `-02` finding) — so causal attribution to THIS run's
-  incident does not hold. What survives independently: a real, reachable
-  window (two tabs of the same user, both refreshing inside one ~15-minute
-  access-token TTL round-trip — the FE's `pendingRefresh` single-flight is
-  per-tab, not cross-tab), corroborated by a concurrent peer QA session's own
-  independent live repro of the identical shape. The sweeper proved the
-  "grace" the comment promises is structurally unrepresentable today —
-  `active_sessions` has exactly one `refresh_token_hash` column, no slot for a
-  prior value a grace branch could compare against — so a real fix needs a
-  schema migration, not a code-only patch. _(Tier 1 — CLAUDE.md §9 token/
-  session handling. Surfacing per §9, not deciding; the founder sets any grace
-  window.)_ Proposed **P1**.
+_Empty. Append here._
 
 ## P0 — launch blockers
 
@@ -537,8 +63,120 @@ sweep drove it to zero.
 
 ## P1 — launch week
 
-_None open._ F013 was filed here 2026-08-23 and closed 2026-08-24 when #625
-generalised the auto-protection demotion and the production sweep caught up.
+F013 was filed here 2026-08-23 and closed 2026-08-24 when #625 generalised
+the auto-protection demotion and the production sweep caught up. Three items
+from the 2026-08-30 inbox triage are open here now.
+
+### F020 — Paddle refund-reconciliation read gate recovered, but the money half is still unconfirmed and the detection half has no durable cap
+
+**Found:** 2026-08-25 · prod-sweep; updated 2026-08-26 by a second prod-sweep
+pass
+**Observed:** The prod Paddle key was missing `adjustment.read` from
+2026-08-17 to 2026-08-25 (1,230 consecutive 403s), during which the
+refund-settlement gate `continue`d on every pass
+(`apps/api/src/billing/billing-reconciliation.service.ts:693`) and the
+outbound cancel (`verdict_enforced`) never fired. The 2026-08-26 follow-up
+confirmed the read scope was restored (an untraced grant between the last
+403 and the next success — no code change explains it) and that
+`subscriptions.status` flipped to `canceled` in the DB, but that write
+happens in a purely local transaction with no outbound Paddle call, so it is
+NOT proof Paddle itself was told to cancel; the only way to be sure is to
+check `scheduled_change` on `sub_01kzt82fegvpt8w1rnqbsz3mtg` in the Paddle
+dashboard before the account's `current_period_end` (2026-09-12).
+
+**Verdict — the structural gap this finding's surviving half turns on is
+still present, unchanged on current `origin/main`.** `consecutiveErrors`
+(`billing-reconciliation.service.ts:538,624,977`) is still declared fresh
+inside each sweep-pass method — `const consecutiveErrors: Record<...> =
+{ paddle: 0, razorpay: 0 }` — so `DRIFT_SWEEP_TRIP_AFTER` (`:123`, still
+`3`) is a within-pass breaker only; nothing persists an attempt count across
+passes, so D253's "a row that exhausts its attempts is logged for support
+rather than retried silently" is still unimplemented. No commit has touched
+`billing-reconciliation.service.ts` since the 08-26 sweep.
+`FOUNDER-FOLLOWUPS.md:395-427`'s "Create the billing-verdict alert" item is
+still `Status: Open` — so a repeat of the same 8-day-silent-outage shape (a
+billing-provider read failing continuously with no alert, distinguishable
+from routine chatter only by a human reading logs) remains exactly as
+reachable as it was on 2026-08-25.
+
+**Priority:** P1 — Tier 1 billing (CLAUDE.md §9). Already correctly
+downgraded from the filer's original P0 once the read gate was confirmed
+cleared; the founder-hands actions (verify `scheduled_change` in the Paddle
+dashboard before 2026-09-12; run `scripts/setup-billing-verdict-alert.sh`)
+belong in launch week given the demonstrated 8-day blind spot, not backlog.
+**Status:** Open — both founder-hands actions are logged in
+`FOUNDER-FOLLOWUPS.md` (2026-08-25 entry, still Open); the code-side durable
+attempt cap (D253) is unbuilt.
+
+---
+
+### F021 — The daily infra-drift monitor has no fallback when its data branch is missing, and it has failed this exact way once already
+
+**Found:** 2026-08-25 · prod-sweep; a regression of a defect fixed once
+already (MISTAKES.md, 2026-08-10)
+**Observed:** Every scheduled run since 2026-08-13 failed at "Check out the
+snapshot branch" (`ref: infra-snapshots`) because that branch had been
+deleted again after the 08-10 fix (an orphan branch push, not a code
+change). Because the drift diff and the branch commit both live inside that
+now-skipped step, and no `actions/upload-artifact` exists in the file, the
+snapshot JSON is silently discarded on every failed run. No other scheduled
+workflow reads Cloud Run revisions, Secret Manager versions, runtime-SA IAM
+bindings, the Atlas head, or GH secret names.
+
+**Verdict — the structural gap is unchanged in the workflow file; live CI
+status was not independently re-checked this pass (no `gh`/network access
+from this session).** `.github/workflows/infra-snapshot.yml:94-98`'s "Check
+out the snapshot branch" step is still a bare `actions/checkout@v7` with
+`ref: infra-snapshots` and no `continue-on-error`, no branch-existence
+check, and no bootstrap-on-missing logic — the exact gap the original
+finding names. The step's own comment (`:88-93`) explicitly documents that
+this is "why the workflow failed even after the snapshot script was fixed,"
+which confirms the prior fix (2026-08-10) was a one-time branch push, not a
+durable code fix — so if the branch has been deleted again since, or ever
+is, the monitor goes red-forever exactly as observed before. The
+recommended fix (bootstrap the branch inline when the checkout fails rather
+than hard-failing) has not been applied.
+
+**Priority:** P1 — a regression of a previously-fixed defect (MISTAKES.md
+2026-08-10), on the sole workflow covering infra drift, with no sibling
+coverage.
+**Status:** Open — the bootstrap-on-missing fix has not been applied to
+`.github/workflows/infra-snapshot.yml`; whether the `infra-snapshots`
+branch is currently present was not re-verified live this pass.
+
+---
+
+### F034 — Concurrent refresh from two tabs of the same account can revoke the whole session; no schema slot exists for a grace-period fix
+
+**Found:** 2026-08-28 · `/ct-qa onboarding`, QA-onboarding-20260828-03,
+survived two `finding-refuter` passes and a `defect-class-sweeper`
+**Observed:** `sessions.service.ts`'s `rotate()` doc comment promises the
+loser of a concurrent refresh race either gets the same tokens (grace) or
+trips the reuse-defense revoke — the code has exactly one branch, and it
+always revokes. A real, reachable window exists: two tabs of the same user,
+both refreshing inside one ~15-minute access-token TTL round trip — the
+FE's `pendingRefresh` single-flight is per-tab, not cross-tab. `active_sessions`
+has exactly one `refresh_token_hash` column, so a grace branch has nowhere
+to store the prior value it would need to compare against — a real fix
+needs a schema migration, not a code-only patch.
+
+**Verdict — unchanged, still live on current `origin/main`. This is the one
+item in this batch the founder deliberately deferred rather than fixed.**
+`sessions.service.ts`'s `rotate()` (`:149-214`) still has exactly one
+outcome branch — `{ kind: 'reuse'; revokedJti: string }` — that always
+revokes, confirmed at `:170-176`. `active_sessions.refresh_token_hash`
+(`packages/db/src/schema/active-sessions.ts:49`) is still the sole
+token-hash column. The #673 PR body — which shipped this finding's sibling
+items (see F032, F033) — states explicitly: "QA-onboarding-20260828-03 (P1,
+Tier 1 — auth/session posture) stays Open, founder-deferred: a real fix
+needs a schema migration, not a code-only patch." This finding was never
+resolved in code; it was consciously deferred.
+
+**Priority:** P1 — Tier 1 (CLAUDE.md §9 token/session handling). Surfacing
+per §9, not deciding — a schema migration and the shape of any grace window
+are the founder's call.
+**Status:** Open — founder-deferred 2026-08-29 (per #673's PR body); needs a
+`packages/db` migration decision before any code fix is possible.
 
 ---
 
@@ -560,6 +198,231 @@ excluded from PR #471/#472 rather than stubbed.
 
 **Priority:** P2
 **Status:** Open
+
+---
+
+### F018 — `SendersCounterReconciliationWorker` fires on every deploy, not once a day; timeout headroom is thinner than the interval suggests
+
+**Found:** 2026-08-26 · prod-sweep, while chasing a slow-query trend that
+turned out not to exist
+**Observed:** `SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS = 24h`
+(`packages/workers/src/senders-counter-reconciliation.queue.ts:31`), but
+`worker.ts` enqueues a tick at boot with a fresh `scheduledAtMinute()` and
+every push to `main` redeploys — so the D225 `(worker, minute)` idempotency
+key never collapses two deploys in the same day. Measured live: 4.1
+calls/day against a designed 1/day. `cronPolicy.timeoutMs = 60_000`; the
+worst observed pass in `pg_stat_statements` was 34.2s (1.75× off the
+ceiling, not 10×) — nothing timing out today, but three consecutive
+timeouts would leave `wrote_to_count`/`read_count` stale with no alert (the
+reconcile moved off the push path in #625, per F013's resolution).
+
+**Verdict — unchanged; still live on current `origin/main`.**
+`apps/api/src/worker.ts:1512` still calls
+`await enqueueSendersCounterReconciliation()` unconditionally at boot,
+immediately before `setInterval(..., SENDERS_COUNTER_RECONCILIATION_INTERVAL_MS)`
+(`:1513-1516`) — so the "24h" constant only governs the steady-state gap
+between ticks inside one long-lived process; a deploy still resets the
+clock. `worker-policies.ts`'s `cronPolicy.timeoutMs` is still `60_000`.
+Neither fact from the original prod-sweep has changed. Harmless today per
+the original measurement (headroom is thin, not gone), and the fix is small
+(skip the boot-time enqueue if a tick landed inside the last
+`INTERVAL_MS`, or key idempotency on a coarser boundary than "every
+deploy").
+
+**Priority:** P2 — a real, fully diagnosed defect with a small fix and
+currently zero user impact; not urgent enough for launch week, but "worth
+doing" rather than merely an idea. Raised from the filer's proposed P3 —
+the mechanism and fix are already fully specified, not awaiting evidence.
+**Status:** Open
+
+---
+
+### F019 — The loudest standing prod ERROR is intentional, and it is camouflage for the ones that are not
+
+**Found:** 2026-08-25 · prod-sweep
+**Observed:** `RESEND_API_KEY is not set — transactional email is DISABLED
+(fail-closed)` has logged at ERROR 139+ times since 2026-07-26 and is
+expected — `deploy-cloud-run.yml` binds `RESEND_API_KEY` to the worker
+deployment only, on purpose, so the API's construction-time refusal is
+working as designed. The concern is not correctness, it's that a reviewer
+trained to skim past the top standing ERROR cluster is trained to skim past
+exactly the shape that hid the 8-day Paddle outage (see F020).
+
+**Verdict — unchanged; still live on current `origin/main`.**
+`apps/api/src/notifications/email.service.ts:64-75` still logs via
+`this.logger.error(...)` once per `EmailService` construction when
+`RESEND_API_KEY` is absent, and `deploy-cloud-run.yml:451`'s API
+`--update-secrets` list still does not include `RESEND_API_KEY` (it is set
+on the worker's deploy step only, per the comment at `:313`). Both facts
+from the original finding hold exactly as described. Cheap fix: drop to
+`warn`, or log once at process start rather than per-`EmailService`
+instantiation.
+
+**Priority:** P2 — real signal-to-noise cost on the one surface (prod ERROR
+logs) a genuine incident needs to be visible on, but not itself a defect
+with user impact. Raised from the filer's proposed P3 for the same reason
+as F018.
+**Status:** Open
+
+---
+
+### F022 — `lapse-reengagement.worker.ts` binds a raw JS `Date` into a `sql` fragment; every candidate throws, masked by a per-candidate catch and a zeroed feature gate
+
+**Found:** 2026-08-25 · Sentry `DECLUTRMAIL-WEB-1A`,
+`kind: lapse_reengagement.user_failed`
+**Observed:** `notDecidedRecently(now: Date)` builds
+`AND al.occurred_at >= ${now}::timestamptz - make_interval(...)` with a raw
+`Date`, which `postgres-js` throws on — the same file's `.toISOString()`
+call 138 lines below does the equivalent comparison correctly. The failure
+is swallowed by a per-candidate `catch`, so the cron reports success while
+doing nothing. Currently masked because `BUSINESS_POSTAL_ADDRESS = []`
+makes `EmailSendWorker` refuse every commercial-kind send anyway (CAN-SPAM),
+independent of this bug.
+
+**Verdict — unchanged; still live on current `origin/main`, still masked by
+the same gate.** `notDecidedRecently` at
+`packages/workers/src/lapse-reengagement.worker.ts:113-122` still
+interpolates `${now}` (a `Date`) directly, and it is still called with the
+raw `Date` from `deps.now()` at `:414`.
+`packages/shared/src/copy/postal-address.ts:43` still defines
+`BUSINESS_POSTAL_ADDRESS: readonly string[] = []`. Both halves of the
+finding hold exactly as described: the defect is real and will surface the
+moment a postal address is configured, and the cron will keep reporting
+green when it does.
+
+**Priority:** P2 (as filed — real defect, zero live impact today, but the
+masking gate is a business/legal prerequisite that could be flipped at any
+time with no other change)
+**Status:** Open
+
+---
+
+### F026 — Onboarding step 5's original threshold critique is mostly superseded by the shipped outcome-ranking design (see F023); one narrow nuance is unconfirmed
+
+**Found:** 2026-08-06 · via Codex, one day before the founder's live
+observation of the same screen (F023)
+**Observed:** `10 received` / `3 recent` were unexplained, arbitrary
+cutoffs — worse, `received` counted indexed mail rather than current Inbox
+mail, so it didn't measure what Archive/Later would actually move. The
+finding proposed goal-specific outcome ranking (usable unsubscribe channel
+→ cadence → read rate → inbox count → confidence, varying by goal) as the
+real fix, over a second arbitrary cutoff.
+
+**Verdict — the core complaint is resolved by shipped code (see F023 for
+the detailed verdict); one specific sub-claim is confirmed still open.** No
+threshold constants exist on current `main`, and the shipped design
+(`onboarding.service.ts:495-610`, D112/D246) is a goal-aware ranking, not a
+floor — matching the shape this finding asked for (rank AND define "worth a
+decision," don't just filter). The one piece NOT confirmed resolved: this
+finding specifically flagged that `received` counted indexed mail rather
+than current-Inbox mail. The shipped cleanup orderings' `payoffPriority`
+still ranks by `desc(senders.totalReceived)` (`onboarding.service.ts:537`
+via `triage.read-service.ts`), which is lifetime indexed volume, not
+current-inbox volume — so that specific nuance from the original finding
+appears to still be open. Low-stakes: the confirmation preview re-checks
+Gmail live regardless (the original finding's own mitigating note), so this
+affects lineup ORDER, not what gets acted on.
+
+**Priority:** P2 — the substantial complaint (arbitrary, unexplained
+cutoffs) is resolved; the narrower "indexed vs. current-inbox count" nuance
+is confirmed present but low-stakes.
+**Status:** Open — the residual `totalReceived`-vs-current-inbox nuance is
+unresolved; everything else this finding raised was folded into F023's
+resolution (#477 + D112/D246 amendments).
+
+---
+
+### F027 — No staging environment exists; production is the only deploy target
+
+**Found:** 2026-08-06 · via Codex
+**Observed:** Only `declutrmail-ai-prod` exists (GCP project, Cloud Run
+services); `deploy-cloud-run.yml` deploys `main` straight to prod. A Vercel
+Preview isn't a substitute (prod CORS/OAuth redirect/session cookies block
+it). Local OAuth via `dev-auth.sh` is today's isolated-testing answer, but
+any Archive/Delete/Unsubscribe exercised through it still hits the real
+Gmail mailbox.
+
+**Verdict — still accurate; nothing has changed.** No staging references
+exist anywhere in `.github/workflows/*.yml` (grepped for `staging`, zero
+hits) or in `deploy-cloud-run.yml`. The gap and its cost (a real staging
+GCP project, DB, Redis, KMS, Pub/Sub, OAuth client, Vercel deployment,
+GitHub environment — all itemized in the original finding) are unchanged.
+CLAUDE.md §8 has since formalized the workaround this finding already named
+as insufficient for full isolation: the D206 dev test-login is now the
+documented way to smoke authed flows, but it explicitly still touches the
+real Gmail account for any mail-changing action.
+
+**Priority:** P2 — real, substantial infra gap with genuine engineering
+cost, but the dev-login + local-OAuth workaround (now codified in
+CLAUDE.md §8) covers most smoke-testing needs; nothing in this pass found
+evidence it is currently blocking shipped work.
+**Status:** Open
+
+---
+
+### F028 — `check-vendor-limits.mjs` grades "no GCP budgets configured" as WARN, and WARN exits 0 with no workflow variable able to flip that
+
+**Found:** 2026-08-27 · `defect-class-sweeper`, narrowed by a
+`finding-refuter` to PARTIALLY REFUTED
+**Observed:** The "budgets armed" comment is accurate (Google's Budget API
+defaults to notifying Billing Account Admin/User IAM roles). What survives:
+zero budgets configured grades `WARN`, and `main()` only fails on
+`BREACH`/`ERROR` or `WARN` with `WARN_IS_FAILURE === 'true'` — which no
+workflow or repo variable sets, and GitHub Actions variables aren't
+auto-injected into `process.env` regardless. So total loss of GCP spend
+alerting reads as a green run.
+
+**Verdict — unchanged; still live on current `origin/main`.**
+`scripts/check-vendor-limits.mjs:220` still returns
+`{ status: 'WARN', detail: 'no budgets configured — GCP spend has no
+alerting net' }` for zero budgets. No `.github/workflows/*.yml` sets
+`WARN_IS_FAILURE` (grepped, zero hits). The file's own comments (`:300,320`)
+still explicitly reject flipping `WARN_IS_FAILURE` globally, agreeing with
+the original finding's own recommendation of a one-line status change
+scoped to this row alone. Latent — reaching it needs the founder deleting
+the pre-launch budget or repointing `GCP_BILLING_ACCOUNT_ID` — but the fix
+is small and the finding is a real, unswept instance of the "guard that
+cannot fail" class already logged in MISTAKES.md (2026-07-26).
+
+**Priority:** P2 (as filed)
+**Status:** Open
+
+---
+
+### F029 — A retried `SnoozeWakeWorker` sweep can report success with no failure ever recorded
+
+**Found:** 2026-08-27 · reported in passing by a `finding-refuter`,
+explicitly unverified at filing ("a question, not a verdict")
+**Observed claim:** `onConflictDoNothing` on `cron_runs.run_key` means a
+BullMQ retry of a non-terminal attempt-1 failure finds the slot already
+claimed and returns `skippedDuplicateRun: true`, which counts as success —
+no `captureFailure`, no `recordDeadLetter`.
+
+**Verdict — the claim is correct; traced against current code, not merely
+repeated.** `runSweep` (`packages/workers/src/snooze-wake.worker.ts:217-241`)
+inserts the `cronRuns` claim row via
+`.onConflictDoNothing({ target: cronRuns.runKey })` BEFORE entering the
+`try { result = await this.sweep(now) }` block that follows. If that
+`sweep()` call throws — a real possibility, since the worker declares
+`policy = 'cronPolicy'` (`:159`, `maxAttempts: 3` per
+`worker-policies.ts:83-89`) — BullMQ retries the same job. On retry,
+`claimed.length === 0` (the row from attempt 1 already committed), so the
+function returns the `skippedDuplicateRun: true` branch (`:229-241`) — a
+success result — with no path to `captureFailure`/`recordDeadLetter` for
+the attempt that actually threw. The `cron_runs` row becomes the sole trace
+of a real failure, detectable only via `check-cron-stale.ts`'s staleness
+heuristic rather than a direct failure signal. This is specifically the
+mid-sweep-crash case — a throw between claim-insert and completion; a
+failure before the insert commits retries normally.
+
+**Priority:** P2 — real, code-verified mechanism, but requires a specific
+narrow window (a retryable in-sweep failure after the claim commits) to
+trigger, and `check-cron-stale.ts` is a working, if indirect, backstop.
+**Status:** Open — upgraded from "lead, unreproduced" to a code-verified
+defect this pass; live reproduction (forcing a mid-sweep throw in a real
+environment) still not performed.
+
+---
 
 ## P3 — ideas (need evidence)
 
@@ -602,6 +465,307 @@ separable P2 if it keeps nagging.
 **Status:** Open
 
 ## Done
+
+### F014 — Entitlements cap arithmetic: `used` is now coerced through a dedicated, unit-tested function
+
+**Found:** 2026-08-27 · `defect-class-sweeper` pass of `/ct-qa triage`
+(filed as QA-triage-20260827-04)
+**Observed:** `assertCleanupCapacityForWorkspace`'s
+`used + unitsNeeded > limit` gate depended on the `::int` cast inside
+`cleanupUnitsUsed`'s raw `sql` fragment being present; drop that cast and
+postgres.js decodes a bare bigint (OID 20) as a string, `"5" + 1` becomes
+`"51"`, and a Free user is 402'd at 6 of 50 actions. The regression spec ran
+on PGlite, which decodes bigint as a real number regardless, so it could
+not have caught the class.
+
+**Verdict — fixed, and fixed at the right layer.** `cleanupUnitsUsed` now
+returns `coerceUsedCount(row?.used)`
+(`apps/api/src/common/entitlements/entitlements.service.ts:78,227`), a
+standalone `Number(raw ?? 0)` wrapper with its own docblock naming this
+exact failure mode. `entitlements.service.spec.ts:183-201` unit-tests
+`coerceUsedCount` directly against a string input (`'5'` → `5`), independent
+of which decode path postgres.js or PGlite happens to take — so the `::int`
+cast is no longer load-bearing for correctness, only for query efficiency.
+`assertCleanupCapacityForWorkspace`'s `used + unitsNeeded > limit` (`:330`)
+now always compares two real numbers. The qa-worklist's own round-1 review
+(`docs/qa/qa-worklist.md:491-498`) records that the first cut of this fix
+didn't actually have a red-before-green test — the `::int` cast already
+made `typeof used === 'number'` pass pre-fix — and that Codex review caught
+it, fixed by extracting `coerceUsedCount` as a pure, directly-testable
+function.
+
+**Priority:** P2 (latent — not currently broken at filing time)
+**Status:** Done 2026-08-30 — shipped in #671, verified against current
+`origin/main`.
+
+---
+
+### F015 — Triage Today panel now states what it measures, not what it promises
+
+**Found:** 2026-08-27 · `/ct-qa triage` (QA-triage-20260827-03)
+**Observed:** "12 sender decisions can reduce future noise by ~10%"
+described a trailing-90-day share of mail already received, rendered as a
+claim about the future — while Archive, Later and Keep all leave future
+delivery unchanged and only Unsubscribe (and only if honoured) actually
+reduces incoming mail.
+
+**Verdict — fixed, and fixed correctly: both the tense error and a second,
+subtler one.** `today-strip.tsx:140-184` no longer says "reduce future
+noise." The rendered sentence is now "N sender decisions. `<count>` of them
+sent ~`<pct>`% of the email you received in the last 90 days" — exactly what
+`noiseSharePct` (`triage.read-service.ts:377-382`) computes. The inline
+comment at `today-strip.tsx:143-159` records a second defect the original
+finding didn't name and the fix also closed: the percentage's numerator
+excludes Keep rows while `queuedDecisions` counts them, so the sentence
+used to overstate whenever a Keep row was queued — the fix now says "N of
+them sent ~X%" whenever the two counts diverge, and only collapses to
+"These senders sent ~X%" when they're equal.
+
+**Priority:** P1 (as filed — a public-facing benefit-accuracy claim, Tier
+1b)
+**Status:** Done 2026-08-30 — shipped in #663, verified against current
+`origin/main`.
+
+---
+
+### F016 — Triage daily queue now has a total order; `senderKey` tiebreaks every path
+
+**Found:** 2026-08-27 · `/ct-qa triage` (QA-triage-20260827-01)
+**Observed:** `queueGoalPriority` returned `null` for the daily
+(`actionable`) route, so the live `ORDER BY` was
+`[verdictPriority, desc(confidence)]` with no tiebreak. Measured on the dev
+mailbox, 33 decisions tied at `confidence 0.87`, so which senders filled
+the last 4 of 12 `LIMIT` slots was undefined and reshuffled on any write to
+`triage_decisions` — including a card the user was mid-decision on.
+
+**Verdict — fixed at the root: the tiebreak is now unconditional.**
+`listQueue`'s `queueOrder` (`triage.read-service.ts:548-553`) is built as
+one array — `[...goalPriority, ...payoffPriority, verdictPriority,
+desc(confidence), triageDecisions.senderKey]` — with `senderKey` appended
+on every path rather than inside a per-ordering branch. The surrounding
+comment (`:539-547`) names the exact prior failure mode (a per-ordering
+branch that omitted the tiebreak on the `actionable` path) and states the
+fix is deliberately structural: one shared tail, not a repeated clause.
+This is a real total order now — Postgres can no longer return an
+arbitrary member of a tied group.
+
+**Priority:** P1 (as filed — queue membership, not just order, was
+undefined)
+**Status:** Done 2026-08-30 — shipped in #663, verified against current
+`origin/main`.
+
+---
+
+### F017 — "LAST SEEN today" now derives from the real timestamp, both server and client side
+
+**Found:** 2026-08-27 · `/ct-qa triage` (QA-triage-20260827-02 /
+QA-triage-20260828-01) — the open back-end half of PR #258
+**Observed:** `GET /api/triage/queue` returned `lastDays: 0` for every row
+because a raw `sql<Date | null>` projection was a type assertion postgres.js
+does not honour (it decodes OID 1184 as text); the resulting string
+shadowed a correctly-typed `Date`. 849 of 954 rows that asserted a recency
+were measurably wrong.
+
+**Verdict — fixed on both ends, and the fix is more defensive than the
+original request.** Server side, the projection is now honestly typed
+`sql<unknown>` (`triage.read-service.ts:693`) rather than lying with
+`Date | null`, and a dedicated `toDate()` helper (`:385-392`) coerces either
+a real `Date` or a string into a `Date`, returning `null` on anything
+unparseable — so the driver's actual decode behavior no longer matters.
+Client side, `lastSeenLabel`
+(`apps/web/src/features/triage/data.ts:1112-1130`) was changed to derive
+"today"/"1d"/"Nd" from the real `lastSeenAt` ISO timestamp and
+`Date.now()` in the reader's own clock, rather than trusting a
+server-computed `lastDays` integer at all — closing the whole class, not
+just this instance. The old pinned-wrong-output test this finding warned
+about is gone; `triage-row.test.tsx:96-117` now asserts calendar-day math
+against `lastSeenAt` directly.
+
+**Priority:** P1 (as filed — a false statement about the user's own mail,
+display-only blast radius)
+**Status:** Done 2026-08-30 — shipped across #663/#670/#671, verified
+against current `origin/main`.
+
+---
+
+### F023 — Onboarding step 5's payoff floor and outcome ranking: three states resolved into one shipped design
+
+**Found:** 2026-08-07 · founder, live on a real beta-user first run — five
+pinned senders all had single-digit lifetime email counts after the user
+picked "reduce newsletters"
+**Observed:** At filing, `origin/main` had no payoff floor at all (any
+eligible sender, including one-message senders, could be pinned); a
+separate uncommitted change in the working tree added an arbitrary
+`FIRST_TRIAGE_MIN_RECEIVED = 10` / `FIRST_TRIAGE_MIN_RECENT = 3` floor; and
+a third, proposed design (outcome ranking, tracked separately — see F026)
+argued a floor alone doesn't fix "worth one decision," ranking does.
+
+**Verdict — outcome ranking shipped; the arbitrary floor was never
+merged.** `apps/api/src/onboarding/onboarding.service.ts` has no
+`FIRST_TRIAGE_MIN_RECEIVED`/`FIRST_TRIAGE_MIN_RECENT` anywhere in current
+`origin/main` (grepped, zero hits). In their place, `firstTriageQueueOrdering`
+(`:495-504`) maps each onboarding goal to a goal-aware `TriageQueueOrdering`
+(`newsletter-first` / `promotions-first` / `actionable`), and the
+D112/D246-amended candidate-selection logic (`:506-589`) picks one row per
+"teaching slot" (payoff / trust / judgment) rather than three
+near-identical highest-confidence rows, then thins to one row per
+registrable brand domain (`pickTopDistinctBrands`, `:584-610`) so a mailbox
+with a dozen same-brand sender addresses doesn't fill the lineup with
+duplicates.
+
+**Priority:** P0 at filing (a real, live first-run defect on the screen
+the product has to prove itself on) — correctly resolved.
+**Status:** Done 2026-08-08 — shipped in #477, re-verified against current
+`origin/main` 2026-08-30.
+
+---
+
+### F024 — `/settings/senders` now names the exact protection reason, per CLAUDE.md §2.6
+
+**Found:** 2026-08-07 · founder, while fixing copy that wrongly called
+every protected row "senders you've told us to leave alone"
+**Observed:** Three of the four `protection_reason` values are automatic
+(`replied`/`starred`/`gmail_important`); the list rendered
+avatar/name/email/Manage with no reason, in direct conflict with CLAUDE.md
+§2.6's "show the exact reason and preserve a manual Unprotect as a sticky
+override."
+
+**Verdict — fixed as specified.** `senders-policies-screen.tsx:33,364`
+imports and renders `protectionReasonLabel` per row, sourced from
+`sender_policies.protection_reason`, with the D245 sticky-Unprotect caveat
+carried alongside.
+
+**Priority:** P1 (a direct CLAUDE.md §2.6 conflict, on a settings surface a
+user would check to verify the product's own claims)
+**Status:** Done 2026-08-09 — shipped in #483, re-verified against current
+`origin/main` 2026-08-30.
+
+---
+
+### F025 — "Four daily verbs" spec vocabulary is gone from product UI; the broader copy audit found no other siblings
+
+**Found:** 2026-08-07 · founder, hit in production: "Looking for Delete?
+Triage keeps to the four daily verbs…"
+**Observed:** Two problems — the phrase leaked ADR-0019's internal
+vocabulary into product copy, and it described a stale constraint (Delete
+not available in Triage) that a same-day founder amendment to ADR-0019 had
+already retired.
+
+**Verdict — fixed, and independently audited.** `why-no-delete.tsx` and
+every reference to it are gone from current `origin/main` (zero grep hits
+across `apps/web`/`apps/api`/`packages/shared`). The 2026-08-10 audit
+recorded inline in this finding swept every string literal under
+`apps/web/src/features` + `packages/shared/src/{copy,components}` for spec
+vocabulary and found zero further true siblings — the one borderline case
+(a landing-page sentence using plain-English phrasing that happens to echo
+the verb registry's structure) was founder-reviewed and left as-is.
+
+**Priority:** P1 (as filed)
+**Status:** Done 2026-08-08 (Delete shipped in #476; copy audit completed
+2026-08-10), re-verified against current `origin/main` 2026-08-30.
+
+---
+
+### F031 — `/activity`'s own stat tiles agree now: undone actions no longer count in the credited totals
+
+**Found:** 2026-08-28 · `/ct-qa undo`, QA-undo-20260828-01, survived
+`finding-refuter`
+**Observed:** The "This week" metrics panel (`byVerb`, via
+`aggregateStats`) counted an action even after the user undid it; "Your
+last 7 days" outcome tiles directly below correctly excluded it.
+Live-verified: 4 `activity_log` rows in a 7-day window, all 4 reverted, top
+panel still read `ARCHIVED 3 / DELETED 1`. A `defect-class-sweeper` found
+the identical mechanism in two more places: Triage's "handled N
+automatically" Today strip (crediting undone Autopilot batches) and "noise
+prevented per month" (retaining a sender's full volume after its archive is
+undone).
+
+**Verdict — the filed defect is fixed; one of its two named siblings
+shipped in the same change, the other did not.** `aggregateStats`
+(`apps/api/src/activity/activity.read-service.ts:1027` — confirmed via its
+own comment as "the aggregate the LIVE `/activity` metrics header actually
+reads") now filters `isNull(activityLog.revertedAt)` on both its `byVerb`
+count (`:1035`) and its "noise prevented" projection (`:1058-1060`), with an
+inline comment naming this exact QA id and recording that an earlier fix
+landed on the wrong function (`summarizeActivity`, a DQ16 endpoint with no
+web caller) before Codex review caught it. **Not fixed:** Triage's
+autopilot-credit strip. `triage.read-service.ts:1211-1222`'s
+`autopilotPromise` — `SUM(activity_log.affected_count) WHERE source =
+'autopilot' AND occurred_at >= todayStartUtc` — still carries no
+`reverted_at` filter, so "DeclutrMail handled N automatically" still
+credits undone Autopilot batches. This is a Tier 1b public benefit-accuracy
+claim, same mechanism, confirmed still live.
+
+**Priority:** P1 at filing (verified, survived refutation) — correctly
+assessed; the `/activity` page itself (what this finding specifically
+named) is resolved.
+**Status:** Done 2026-08-30 for `/activity`'s own tiles — shipped in #671
+(`activity.read-service.ts:1023-1065`), re-verified against current
+`origin/main`. **The Triage "handled N automatically" sibling
+(`triage.read-service.ts:1211-1222`) is confirmed still open** — not
+separately filed as its own F-number in this pass, since it was recorded
+as a sibling of this finding rather than a distinct Inbox item; worth its
+own row if a future `/ct-finding` or `/ct-qa` pass wants to track it
+explicitly.
+
+---
+
+### F032 — `/senders` no longer asserts something false about the user's mail during an active sync
+
+**Found:** 2026-08-28 · `/ct-qa onboarding`, QA-onboarding-20260828-01,
+survived `finding-refuter`
+**Observed:** A mailbox still `queued`/`syncing` (including on an ordinary
+returning sign-in, since `markQueued` re-queues on every login) had no
+readiness-aware rendering anywhere except a collapsed account-menu
+dropdown. `/senders` either flatly denied data existed ("No active senders
+— No sender has mailed you recently") or presented a stale pre-disconnect
+snapshot under a freshness strip that measured server-compute time, not
+actual currency.
+
+**Verdict — fixed.** `senders-screen.tsx:535` now derives a
+`queued`/`syncing` readiness flag from the active mailbox and branches the
+render on it — the surrounding comment at `:2512` explicitly names
+"mailbox is still `queued`/`syncing` is NOT 'no active [senders]'" as the
+corrected framing. This matches the fix description in commit `39f58cc`
+(#673): "`/senders` no longer claims senders don't exist, or presents a
+stale pre-disconnect snapshot as freshly synced, while the active mailbox
+is still queued/syncing."
+
+**Priority:** P0 at filing (CLAUDE.md's own definition: the app states
+something false about the user's own data) — correctly assessed.
+**Status:** Done 2026-08-29 — shipped in #673, re-verified against current
+`origin/main` 2026-08-30. Negative-control-verified regression test per the
+PR body.
+
+---
+
+### F033 — `AuthProvider`'s duplicate 401→OAuth redirect is gone; the guarded `redirectToLogin` is now the only path
+
+**Found:** 2026-08-28 · `/ct-qa onboarding`, QA-onboarding-20260828-02,
+survived two `finding-refuter` passes with a narrowed claim
+**Observed:** `auth-provider.tsx` called `window.location.assign` directly
+in the component's render body, with no guard, duplicating `client.ts`'s
+already-guarded `redirectToLogin` (which has the `redirecting` latch this
+call site lacked). A live incident showed 3 real requests to
+`/api/auth/google/start` (2 aborted, 1 rate-limited) per session-expiry
+event, corroborated by a concurrent peer QA session.
+
+**Verdict — fixed.** `auth-provider.tsx:63-65` no longer calls
+`window.location.assign`; its own comment now reads "a second, unguarded
+`window.location.assign` here duplicated [`redirectToLogin`] ... was
+removed in favor of trusting this one." `client.ts:316-327`'s
+`redirectToLogin` — with its `redirecting` module-level latch — is
+confirmed the sole redirect path. Per the #673 commit body, round 1 of
+Codex review on this fix found a real dead-end the first cut introduced (a
+successful-refresh-then-still-401 replay case) and it was fixed before
+merge.
+
+**Priority:** P1 at filing (survived refutation to "2 real navigations per
+incident, burning a rate-limit bucket meant for 1") — correctly assessed.
+**Status:** Done 2026-08-29 — shipped in #673, re-verified against current
+`origin/main` 2026-08-30.
+
+---
 
 ### F013 — 135 senders are still Protected on a rule the product retired
 
@@ -1530,4 +1694,33 @@ Merged, deployed, production-verified.
 
 ## Won't do
 
-_None yet._
+### F030 — `vendor-limits-watchdog`'s per-vendor loop cannot silently drop a row; the "missing Vercel row" lead does not reproduce against current code
+
+**Found:** 2026-08-27 · reported in passing by a `finding-refuter`,
+explicitly unverified ("needs one `gh run view` to confirm or kill")
+**Observed claim:** A specific workflow run's summary table printed eight
+vendor rows with no `Vercel` row.
+
+**Verdict — refuted against current code; a live run was not independently
+checked (no `gh`/network access this pass).**
+`scripts/check-vendor-limits.mjs`'s `VENDORS` array (`:600-647`) includes
+`{ name: 'Vercel', ..., check: checkVercel }`, and every entry is processed
+through `runVendor` (`:649-707`) inside
+`Promise.all(VENDORS.map(runVendor))` (`:746`) — `runVendor` always returns
+`{ name, status, ... }`, whether the vendor is unconfigured, errors, times
+out twice, or succeeds; there is no code path in the current file where a
+`VENDORS` entry produces zero rows in `results`. The file's own extensive
+comments around the Vercel timeout-retry logic (`:665-705`) describe
+exactly this class of defect being fixed already ("Vercel timed out on
+EIGHT consecutive runs... while the table reported a reassuring yellow" /
+"[a status] that could not distinguish a real state from a null one") —
+strongly suggesting the specific hardening this lead would have called for
+already shipped, even if the particular observed run predates it.
+
+**Priority:** N/A — could not be reproduced against current source, and the
+structural guarantee (one row per `VENDORS` entry, no silent-drop code
+path) makes the originally observed shape implausible on current code.
+**Status:** Won't do 2026-08-30 — not reproducible against current
+`origin/main`; if a future watchdog run is observed missing a row, re-open
+with the specific `gh run view` output, since this verdict rests on static
+analysis of the current script, not a live run.
