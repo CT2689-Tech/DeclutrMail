@@ -31,10 +31,12 @@ export {
   staticActionPreviewCopy,
 } from './action-semantics';
 export {
+  DEFAULT_DELETE_WINDOW_DAYS,
   describeInboxScope,
   inboxScopeNoticeCopy,
   mailLocationCopy,
   tiedWindowNoticeCopy,
+  WINDOW_PRESET_LABELS,
 } from './inbox-scope';
 export type { InboxScopeInput, InboxScopeNotice, MailLocationInput } from './inbox-scope';
 export {

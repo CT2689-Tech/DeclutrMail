@@ -218,3 +218,79 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(screen.getByText(/Delete only acts on email still in the inbox\./)).toBeInTheDocument();
   });
 });
+
+describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () => {
+  it('names the active window next to the live count, and only for Delete', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={2}
+        inboxTotal={9}
+        windowDays={180}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText(/in Inbox now \(older than 6 months\+\)/i)).toBeInTheDocument();
+  });
+
+  it('stays silent when no window is active (every non-Delete verb)', () => {
+    render(
+      <DecidePreview
+        verb="archive"
+        row={row}
+        inboxCount={2}
+        windowDays={null}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/older than/i)).toBeNull();
+  });
+
+  it('gives the same empty-window notice the senders confirm modal gives, instead of a silent 0', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={0}
+        inboxTotal={9}
+        windowDays={180}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    // Not the empty-INBOX wording ("Nothing from ... is in your inbox
+    // right now") — 9 messages ARE in the inbox, just none inside the
+    // window. A reader seeing a bare "0" with no explanation is exactly
+    // the bug this fixes.
+    expect(screen.queryByText(/is in your inbox right now/i)).toBeNull();
+    expect(
+      screen.getByText(/9 emails from this sender are in your inbox, but none are older than/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/the 6 months\+ window/i)).toBeInTheDocument();
+  });
+
+  it('applies no window qualifier or empty-window notice at all-mail reach', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={0}
+        inboxTotal={9}
+        windowDays={180}
+        allMailCount={3}
+        reach="all_mail"
+        onReachChange={() => {}}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/older than/i)).toBeNull();
+  });
+});

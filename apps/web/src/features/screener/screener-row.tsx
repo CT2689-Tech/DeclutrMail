@@ -44,6 +44,8 @@ export function ScreenerRow({
   busy = false,
   pendingVerb = null,
   previewInboxCount = 'loading',
+  previewInboxTotal = null,
+  previewWindowDays = null,
   previewAllMailCount = null,
   pendingReach = 'inbox_only',
   onReachChange,
@@ -60,6 +62,13 @@ export function ScreenerRow({
   /** Verb awaiting confirmation in this row's preview (D226). */
   pendingVerb?: ScreenerDecideVerb | null;
   previewInboxCount?: DecidePreviewCount;
+  /**
+   * QA-delete-20260829-01 — the TRUE un-windowed inbox count, for the
+   * empty-window notice when Delete's default window excludes everything.
+   */
+  previewInboxTotal?: number | null;
+  /** QA-delete-20260829-01 — the window days active on `previewInboxCount`, if any. */
+  previewWindowDays?: number | null;
   /** ADR-0028 all-mail count — `null` hides the Delete reach chips. */
   previewAllMailCount?: number | null;
   /** ADR-0028 — the pending Delete's selected reach. */
@@ -371,6 +380,8 @@ export function ScreenerRow({
               verb={pendingVerb}
               row={row}
               inboxCount={previewInboxCount}
+              inboxTotal={previewInboxTotal}
+              windowDays={previewWindowDays}
               allMailCount={previewAllMailCount}
               reach={pendingReach}
               onReachChange={onReachChange}

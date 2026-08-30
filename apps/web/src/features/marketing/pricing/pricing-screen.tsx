@@ -98,12 +98,11 @@ export function PricingScreen() {
             color: color.fgSoft,
           }}
         >
-          Free includes every manual cleanup action, with a monthly limit. Reaching the limit pauses
-          Archive, Unsubscribe, Later, and Delete until the next month or an upgrade — Keep keeps
-          working. Plus removes the limit and adds the Screener, Autopilot rules that keep working
-          on their own, and Quiet hours. Pro adds the Daily Brief, Follow-ups, and more connected
-          inboxes. Keep, Archive, Unsubscribe, Later, and Delete work the same way on every plan.{' '}
-          {ACTION_SAFETY_SUMMARY}
+          Free includes every manual cleanup action, capped monthly — reaching the cap pauses
+          Archive, Unsubscribe, Later, and Delete until the next month or an upgrade; Keep always
+          keeps working. Plus removes the cap and adds Screener, Autopilot, and Quiet hours. Pro
+          adds the Daily Brief, Follow-ups, and more inboxes. Every plan gets the same Keep,
+          Archive, Unsubscribe, Later, and Delete. {ACTION_SAFETY_SUMMARY}
         </p>
       </header>
 

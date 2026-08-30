@@ -2,7 +2,10 @@
 
 > **What this is.** Gmail cleanup SaaS. V2 in active build. Solo founder + AI agents.
 >
-> **Full plan:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (235 numbered decisions, locked).
+> **Full plan:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (locked; decision count
+> grows — see IMPLEMENTATION-LOG.md's auto-generated summary for the current total,
+> never a number hardcoded here; a stale "235" sat in this banner for weeks per
+> FOUNDER-FOLLOWUPS 2026-08-02).
 >
 > **Read this file at the start of every session before writing code.**
 
@@ -191,7 +194,12 @@ Enforced by `webhook-security-auditor` subagent.
 - **Prelaunch means no hypothetical compatibility** (D245) — DeclutrMail is not
   live and has no production users or production data. Remove superseded
   routes, columns, contracts, fixtures, and docs directly unless a current
-  technical invariant—not an imagined legacy user—requires them.
+  technical invariant—not an imagined legacy user—requires them. This has a
+  water line, though: it applies only up to what a long-lived database has
+  already applied. Atlas tracks migrations by version number, not content —
+  once prod or a persistent dev DB has run migration vN, editing vN in place
+  never reaches that database; ship vN+1 instead (2026-07-15, PR #333/#335/
+  #336, a ~15h production sync-transaction rollback from exactly this).
 - **Quiet governs Autopilot, so it can never sit above it** — no tier may
   grant `autopilot` without `quiet`. Pinned by an invariant in
   `packages/shared/src/entitlements/entitlements.test.ts`. Violating it
@@ -206,6 +214,47 @@ Enforced by `webhook-security-auditor` subagent.
   shipped: the Brief cron sent Gmail subject lines and snippets to
   Anthropic daily, in production, for Free and Plus workspaces, for a
   Pro-only feature.
+- **No network call, queue publish, or session-scoped Postgres primitive
+  inside an open transaction.** A BullMQ publish before commit, a Gmail HTTP
+  call holding row locks across both sync workers, and an 8-minute
+  production hang from a leaked session-scoped advisory lock are three
+  separate incidents of the same shape — resolve external values first and
+  pass them in; route session-scoped state (`SET`, `LISTEN`, advisory locks)
+  to the session pooler, never a transaction-mode pooled connection
+  (2026-06-05; 2026-08-12 PR #509; 2026-08-23 architecture-drift audit — the
+  second and third hit after the first fix had already updated the gate).
+- **A REQUIRED key added to a shared contract must be defaulted at every
+  consuming call site**, unless the read is genuinely runtime-validated.
+  Adding `briefPrefs.hour` to `MeSettings` without a runtime parse
+  white-screened the whole Settings route — mailbox management, account
+  deletion, and data export included — the moment a web deploy landed ahead
+  of the matching API deploy (2026-08-25). One card's data assumption should
+  never decide whether the page exists.
+- **A cron worker that loops over `mailbox_accounts` ships with bounded
+  concurrency from its first PR.** Three workers (AutopilotApply,
+  BriefSnapshot, FollowupCheck) shipped the same serial
+  `for (const mb of mailboxes)` loop in one sweep before this was caught
+  (2026-05-25). Wrap the per-mailbox body with the existing `createLimiter(n)`
+  (`packages/workers/src/reasoning.ts`), default cap 8, env-clamped
+  `[1, 32]`, try/catch still per-mailbox.
+- **Provider event timestamps are not a total order.** Same-second ties
+  exist between webhook deliveries; a symmetric timestamp comparison on a
+  billing transition can clobber either direction and has — an 11-day
+  customer lockout after a settled refund (2026-08-25). Protect
+  money-critical state transitions with a domain invariant (terminal states
+  stay terminal) instead of a timestamp tiebreak, and treat
+  entitlement-affecting concurrency changes as needing an independent
+  adversarial review pass before merge — one billing PR alone produced 11
+  distinct defects that green CI and the author's own smoke both missed
+  (2026-07-20 PR #364).
+- **Never interpolate a JS `Date`/`BigInt` directly into a raw `sql`
+  template.** PGlite (the test driver) serializes them silently; postgres.js
+  (production) throws or corrupts the query — this shipped as a
+  production-shaped bug on its third occurrence despite two prior fixes
+  (2026-05-27 PR #117 D86; 2026-07-15 PR #334). Use a typed column reference
+  or cast explicitly (`.toISOString()`/`::timestamptz`, `.toString()`); any
+  spec exercising a raw template needs a driver-parity check, not just a
+  PGlite pass.
 
 ---
 
@@ -257,6 +306,15 @@ When a D-body contradicts
 the truth and the plan needs a marker** — say so rather than
 implementing the stale body.
 
+**Cite the D's own body, not the topic-index table.** §4's topic table and
+keyword proximity in the plan text are navigation aids, not citations —
+reading only those has re-opened an already-decided question, cited an
+unrelated D as authority for a fix, and repeated the exact D38 umbrella
+mis-tag this file had already flagged, on five more PRs (2026-05-21 PR #14;
+2026-07-17 PRs #339–#346; 2026-08-13 PR #517). Before writing `Closes D###`
+or citing a D as authority, open that `### D<N> —` line and its patches,
+every time.
+
 ---
 
 ## 4. Plan navigation
@@ -287,7 +345,9 @@ founder asks what was decided and when.
 If both exist, the repo mirror wins unless explicitly marked stale.
 If only the local path exists (pre-PR 1), use it.
 
-**Plan stats:** 235 decisions + 33 inline patches + 3 reversal markers across 5 phases.
+**Plan stats:** see IMPLEMENTATION-LOG.md's auto-generated summary for the
+current decision count — do not hardcode a number here, it drifts (this line
+read "235" for weeks after the plan had grown well past it).
 
 | Topic | D-numbers | Why it matters |
 |---|---|---|
@@ -607,6 +667,40 @@ window size and belongs in review, not a regex (`.claude/hooks/
 check-microcopy.sh`'s T3 rule, removed after seven rounds of fixes to
 fixes for exactly this reason).
 
+### A claim is only as true as what backs it (2026-08-30)
+
+The single most recurring defect class in this codebase, cutting across
+senders, triage, screener, billing, telemetry, and ops sweeps: a surface
+states a cause, a count, a scope, or a guarantee it never actually checked.
+A 409 handler guessed "Protected" from a bare status code. Four drafts of
+one preview sentence each asserted an atomicity no worker guarantees. A
+counter labeled "Total ever" had no floor. A prod-data sweep cited our own
+DB write as proof a third-party provider had been told something — the
+ops-team instance of the same bug. An optimistic intent row said
+"Unsubscribed" before the one-click request had even resolved, so a failed
+unsubscribe read as a success with no way to tell (2026-07-08; 2026-07-25;
+2026-07-26 PR #393/#394; 2026-08-08; 2026-08-27 PR #660; 2026-08-26 prod
+sweep).
+
+**Rule:** before any user-facing or ops-facing sentence names a cause, a
+count, a scope, or a guarantee, name the exact field, error code, or
+component that proves it. If none exists, say "unverified" — never round up
+to a confident claim. This is the general form of Tier 1b (§2.0): Tier 1b
+governs published claims about the product; this rule governs every other
+sentence a surface renders about its own state.
+
+### Fix the class, not the instance (2026-08-30)
+
+When a reviewer or a smoke reports one instance of a defect, name the shape
+it belongs to and grep the whole diff for that shape before calling the fix
+done — not after writing it up. This has recurred across unrelated features
+with the same signature: round 1 fixes exactly the case shown, round 2
+finds the sibling one function away (2026-07-26 archive-window branch,
+three entries; 2026-07-31 PR #454; 2026-08-08 protection-review branch,
+twice; 2026-08-18 PR #548; 2026-08-24 scoped-sender-sweeps branch). The
+`defect-class-sweeper` agent (§7) exists for exactly this — run it on any
+confirmed defect before marking the fix complete, not just when asked.
+
 ### Flow & state completeness (the gap structural gates miss)
 
 Gate agents (§7) review STRUCTURE — module boundaries, types, design
@@ -624,7 +718,7 @@ consequence is enumerated and handled. Write the table first:
 `| state / transition | UI shows | cache effect | tested? |`. The
 `flow-completeness-auditor` agent (§7) does this enumeration on PRs.
 
-Two invariants this codebase keeps relearning (both shipped green, broke live):
+Three invariants this codebase keeps relearning (all shipped green, broke live):
 - **Scope change ⇒ reset scoped cache.** Any mutation changing a
   server-resolved scope (active mailbox) MUST reset the scoped client
   cache (`resetMailboxScopedCache`), not just invalidate `me` — feature
@@ -633,6 +727,15 @@ Two invariants this codebase keeps relearning (both shipped green, broke live):
   `CurrentMailboxGuard` can 409 (`SELECT_MAILBOX` / `NO_ACTIVE_MAILBOX`);
   the FE MUST render a real state (picker / reconnect gate), and reads must
   NOT retry 4xx (the 409-storm class; `makeQueryClient` default).
+- **A shared grammar or fact that changes on one surface and not its
+  sibling ships green.** Each surface passes every structural gate
+  individually — ADR-0016's verb popover landed on the card and never the
+  table (2026-07-03), Sender Detail and Activity disagreed because they
+  read different tables for the same fact (2026-08-19), and a brand-logo
+  sweep missed a third consumer because it trusted the ADR's own memory of
+  its consumers instead of a grep (2026-08-19). Derive "every surface" by
+  grepping the code for the old markup/selector/table, not the design
+  doc's Context section.
 
 OAuth/session-gated flows MUST be smoked via the D206 dev test-login —
 "needs the founder's hands / OAuth grant" is NOT an excuse for an authed
@@ -651,6 +754,20 @@ no-active) out of the box. Force edge states reversibly via SQL
 (`UPDATE mailbox_accounts SET status=…`, `UPDATE users SET preferences=…`)
 and RESTORE afterward. Only the real Google token-revoke disconnect +
 the real OAuth connect genuinely need the founder's hands.
+
+### Performance measurement discipline (2026-08-30)
+
+A performance claim is only as good as the layer it measured. `next dev`
+timings, a single `EXPLAIN`, and a benchmark whose result is never consumed
+(a `count(*)` that elides the scalar subqueries actually under test) have
+all read as evidence and were not (2026-05-20; 2026-08-22). Measure at the
+layer you actually suspect, in a loop, before claiming a fix: pin the
+client floor at 0ms API latency, or split a HAR by whether each request
+touches the dependency in question, before profiling any query — a flat
+per-request connection-pool penalty on Cloud Run was invisible to every
+query benchmark run against it (2026-08-15; 2026-08-21 ×2). Loop-measure
+medians AND maxima — on a shared or small instance the max is what the
+user feels.
 
 ### Smoke before merge
 
@@ -687,6 +804,34 @@ the founder's hands rather than guessing.
 If the smoke fails, the agent reports the failure and does NOT recommend
 merge. CI passing alongside a failed local smoke is itself a signal
 worth flagging (CI gap to close).
+
+**Known false-positive/negative traps** (each cost a session before being
+recognized as the tool, not the product, lying):
+- A headless preview tab reports `document.visibilityState === 'hidden'` —
+  TanStack's `refetchInterval`/retry backoff, `IntersectionObserver`, and
+  posthog-js's `navigator.webdriver` bot filter all stay dormant or blocked
+  there. A stuck skeleton or unreachable error state is a visibility
+  artifact until checked against served HTML or DB state — forcing
+  synthetic `visibilitychange` events does not unstick it.
+- Before trusting any local smoke, confirm the server's actual PID and cwd
+  match the checkout under test (`lsof`/`ps` + cwd) — a stale worker from a
+  prior session or a sibling worktree has silently intercepted jobs and
+  served stale wire shapes at least three times, each first read as a
+  product bug.
+- A dependency major-version bump can make a config key silently inert
+  rather than invalid (Vite 8/Oxc dropped `esbuild: {...}` with only a
+  one-line "will be ignored" notice near the top of the run, 2026-08-24 —
+  same shape as Cloud Run's `--set-env-vars` full-replace). Grep the run's
+  first output lines for "ignored"/"deprecated"/"no longer used" before
+  debugging the result as a logic bug.
+- A content-derived matcher (a regex built from a title string, a
+  copy-sweep term) silently over- or under-matches until escaped/anchored —
+  a title ending in `?` compiled to an optional trailing character and
+  stayed green for weeks (2026-08-13); a `mail`/`email` copy sweep left an
+  unanchored `getByText(/mail from.../)` passing against both words
+  (2026-08-26). Escape any content string used to build a matcher, and when
+  a copy sweep touches a word, grep tests for the shorter form and check
+  each hit for containment.
 
 PR-type-specific additions:
 
@@ -972,4 +1117,5 @@ pnpm --filter @declutrmail/web dev      # web (:3000), foreground
 - **Agent definitions:** `./.claude/agents/`
 - **Hooks:** `./.claude/hooks/`
 - **Settings:** `./.claude/settings.json`
-- **Plan stats:** 235 decisions + 33 inline patches + 3 reversal markers across 5 phases
+- **Plan stats:** see IMPLEMENTATION-LOG.md's auto-generated summary — do not
+  hardcode a count in this file (§4 explains why)

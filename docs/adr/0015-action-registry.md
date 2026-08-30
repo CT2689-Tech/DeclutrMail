@@ -1,6 +1,8 @@
 # ADR-0015: Action Registry
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0019 (partial — narrower scope, single action
+  descriptor; ADR-0019's Verb Registry generalizes it; kept on disk per ADR
+  housekeeping policy, never deleted)
 - **Date:** 2026-05-31
 - **Deciders:** founder, Claude (design session 2026-05-30), Codex (review round)
 - **Related D-decisions:** D226 (action lifecycle: sheet → preview → mutation → undo), D227 (canonical verbs K/A/U/L + shortcuts), D208 (preview mandatory), D17–D21 + D77/D81 (tier gating + undo windows), D35/D58 (undo journal + tray), D42 (sender policies / protect), D203/D225 (worker policies), D7/D228 (privacy allowlist), D222 (no category prediction), D230 (mailto unsubscribe manual)

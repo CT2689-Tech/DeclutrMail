@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
-import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
 // — only the keys cross the boundary, never behavior (same precedent
@@ -222,19 +222,34 @@ export function ScreenerScreen({
       reason: 'composite_preview',
     });
   }, [compositePreview.isError, compositePreview.error, previewSenderId]);
+  // QA-delete-20260829-01 (2026-08-30) — Delete defaults to the same
+  // safer DEFAULT_DELETE_WINDOW_DAYS window the senders confirm modal
+  // applies; every other windowed verb keeps acting on the whole
+  // inbox. Screener offers no chip to widen it (unlike the modal) —
+  // narrower scope only, never a silent behavior change the reader
+  // cannot see (the title + notice below say so).
+  const isPendingDelete = pending?.verb === 'delete';
   // isFetching keeps a reopened preview in 'loading' while cached data
   // refetches — a cached count must never arm confirm (D226).
   const previewInboxCount = compositePreview.isError
     ? ('unavailable' as const)
     : compositePreview.isFetching || compositePreview.data == null
       ? ('loading' as const)
-      : compositePreview.data.counts.all;
-  // ADR-0028 — the widened Delete count from the SAME settled preview.
+      : isPendingDelete
+        ? compositePreview.data.counts.olderThan180d
+        : compositePreview.data.counts.all;
+  // The TRUE un-windowed inbox count, for the empty-window notice (the
+  // same `inboxTotal` the senders confirm modal reconciles against).
+  const previewInboxTotal = compositePreview.data?.counts.all ?? null;
+  // ADR-0028 — the widened Delete count from the SAME settled preview,
+  // itself windowed identically to `previewInboxCount`.
   // `null` = the API predates the field (deploy skew) or the preview
   // has not resolved: the reach chips simply do not render.
   const previewAllMailCount =
     typeof previewInboxCount === 'number'
-      ? (compositePreview.data?.allMail?.counts.all ?? null)
+      ? isPendingDelete
+        ? (compositePreview.data?.allMail?.counts.olderThan180d ?? null)
+        : (compositePreview.data?.allMail?.counts.all ?? null)
       : null;
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
@@ -404,6 +419,11 @@ export function ScreenerScreen({
         {
           senderId: row.senderId,
           verb,
+          // QA-delete-20260829-01 — Delete's default window travels with
+          // the mutation exactly as it did in the preview that armed
+          // this confirm; the two can never show one count and act on
+          // another.
+          ...(verb === 'delete' ? { olderThanDays: DEFAULT_DELETE_WINDOW_DAYS } : {}),
           // ADR-0028 — only the non-default reach travels, and only on
           // Delete (the one verb the chips render for; the server
           // rejects it anywhere else). Gated on the same all-mail block
@@ -609,6 +629,8 @@ export function ScreenerScreen({
                 busy={busyRowId === row.id || parkedRowId === row.id}
                 pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                 previewInboxCount={previewInboxCount}
+                previewInboxTotal={previewInboxTotal}
+                previewWindowDays={isPendingDelete ? DEFAULT_DELETE_WINDOW_DAYS : null}
                 previewAllMailCount={previewAllMailCount}
                 pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}
                 onReachChange={(reach) =>
