@@ -220,12 +220,13 @@ export function ComparisonIndexScreen() {
             first.
           </p>
           <div className="dm-compare-card-grid">
-            {ALTERNATIVES_SLUGS.map((slug) => {
+            {ALTERNATIVES_SLUGS.map((slug, index) => {
               const subject = comparisonBySlug(slug);
               if (!subject) return null;
               return (
                 <article className="dm-compare-card" key={slug}>
                   <div className="dm-compare-card-topline">
+                    <span>0{index + 1}</span>
                     <span>{subject.category}</span>
                   </div>
                   <h3>Alternatives to {subject.name}</h3>

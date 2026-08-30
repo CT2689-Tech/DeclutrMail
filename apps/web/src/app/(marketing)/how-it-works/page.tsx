@@ -162,15 +162,15 @@ export default function HowItWorksPage() {
       <StorySection
         id="beyond-manual"
         number="07"
-        title="Manual cleanup is the floor, not the whole product."
+        title="There's more once manual cleanup isn't enough."
         intro={
           <p>
-            Free covers everything above. Plus adds the Screener, which collects new senders for
-            review instead of dropping them straight in your inbox, the whole Autopilot system for
-            rules you turn on yourself, and Quiet hours, which decide when those rules are allowed
-            to run. Pro adds the Daily Brief, a once-a-day summary of what actually needs your
-            attention, and Follow-ups, a queue for the senders you replied to but haven&rsquo;t
-            heard back from.
+            Free covers every action above, up to a monthly cleanup limit. Plus adds the Screener,
+            which collects new senders for review instead of dropping them straight in your inbox,
+            the whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
+            when those rules are allowed to run. Pro adds the Daily Brief, a once-a-day summary of
+            what actually needs your attention, and Follow-ups, a queue for the senders you replied
+            to but haven&rsquo;t heard back from.
           </p>
         }
       >
