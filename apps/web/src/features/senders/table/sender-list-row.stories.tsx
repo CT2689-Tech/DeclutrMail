@@ -279,6 +279,34 @@ export const MobileNarrow: Story<typeof SenderListRow> = {
 };
 
 /**
+ * D54 (ADR-0018) phone dialect, collapsed — checkbox and primary CTA
+ * both hide (freeing the row for identity + volume); they return via
+ * swipe-right (CTA) or a long-press → select-mode (checkbox), not on
+ * this collapsed render. Chevron stays as the tap-to-expand affordance.
+ */
+export const MobileCollapsed: Story<typeof SenderListRow> = {
+  args: { ...baseArgs, s: sender({ monthlyVolume: 47, volumeTrend: 'up' }) },
+  render: (args: RowArgs) => frame(args, 375),
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+};
+
+/**
+ * D54 (ADR-0018) phone dialect, select mode — entered by a long-press
+ * on any row; the checkbox reappears and a tap toggles selection
+ * instead of expanding.
+ */
+export const MobileSelectMode: Story<typeof SenderListRow> = {
+  args: {
+    ...baseArgs,
+    s: sender({ monthlyVolume: 47, volumeTrend: 'up' }),
+    selectMode: true,
+    selected: true,
+  },
+  render: (args: RowArgs) => frame(args, 375),
+  parameters: { viewport: { defaultViewport: 'mobile1' } },
+};
+
+/**
  * Bucket grid — every trend bucket at once, side-by-side.
  * Founder-eyeball aid for the chip vocabulary review.
  */

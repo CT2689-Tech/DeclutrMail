@@ -9,6 +9,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  useIsAtMost,
 } from '@declutrmail/shared';
 import {
   buildActionReceiptResult,
@@ -74,6 +75,10 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
 import { DensityToggle, ViewToggle } from './view-toggle';
 import { SenderTable, type SenderTableVerb } from './sender-table';
+// Aliased — `@/lib/api/senders` already exports the wire `SenderListRow`
+// TYPE that this file imports below; this is the mobile ROW COMPONENT.
+import { SenderListRow as SenderRowMobile } from './table/sender-list-row';
+import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
 import { SendersLoadingState } from './senders-loading-state';
@@ -792,6 +797,24 @@ function SendersScreenContent({
     () => senders.filter((s) => selected.has(s.id)),
     [selected, senders],
   );
+
+  // D54 (ADR-0018) — phone dialect: hairline row list + swipe/long-press
+  // gestures replace the Grid/Table toggle outright (a 4-column card
+  // grid and an 11-column fixed table both fail at phone width). Tablet
+  // widths (`xs` false) keep the existing Grid/Table choice untouched.
+  const isPhone = useIsAtMost('xs');
+  // Entered by a row long-press; exited once the selection empties (an
+  // action fired, or the user cleared it) so a stale "selecting" mode
+  // never survives its own selection.
+  const [mobileSelectMode, setMobileSelectMode] = useState(false);
+  useEffect(() => {
+    if (selected.size === 0) setMobileSelectMode(false);
+  }, [selected.size]);
+  // Expand/collapse state for the mobile row list — owned here exactly
+  // like `SenderGrid`/`SenderTable` own their own expand state, since
+  // this list bypasses both.
+  const [mobileExpanded, setMobileExpanded] = useState<Set<string>>(() => new Set());
+  const mobileOrderedIds = useMemo(() => senders.map((s) => s.id), [senders]);
 
   // D52 — shift-click range selection, shared by Grid + Table. The
   // anchor is the last row whose checkbox was clicked; a shift-click
@@ -2246,10 +2269,12 @@ function SendersScreenContent({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
           {/* Table-only: row density (the grid has one density). */}
-          {view === 'table' && <DensityToggle />}
+          {!isPhone && view === 'table' && <DensityToggle />}
           {/* D49 — segmented [Grid | Table] switch at top right.
-              Per-session, non-persistent (each visit starts in grid). */}
-          <ViewToggle />
+              Per-session, non-persistent (each visit starts in grid).
+              D54 — the phone dialect replaces both outright, so the
+              toggle would offer a choice the screen no longer honors. */}
+          {!isPhone && <ViewToggle />}
         </div>
       </div>
 
@@ -2594,6 +2619,36 @@ function SendersScreenContent({
             title="No senders yet"
             body="Once your mailbox finishes syncing, the senders who email you will appear here."
           />
+        ) : isPhone ? (
+          // D54 (ADR-0018) — phone dialect: hairline-divided rows, no
+          // card chrome, no fixed-width table. Reuses the same
+          // `SenderListRow` the desktop Grid renders inside an expanded
+          // domain group, plus its own swipe/long-press gestures.
+          <div data-dm-component="sender-mobile-list">
+            {senders.map((s) => (
+              <SenderRowMobile
+                key={s.id}
+                s={s}
+                selected={selected.has(s.id)}
+                selectMode={mobileSelectMode}
+                onToggleSelect={(evt) => toggleWithRange(mobileOrderedIds, s.id, evt.shiftKey)}
+                onLongPress={() => {
+                  setMobileSelectMode(true);
+                  if (!selected.has(s.id)) toggleWithRange(mobileOrderedIds, s.id, false);
+                }}
+                expanded={mobileExpanded.has(s.id)}
+                onToggleExpand={() =>
+                  setMobileExpanded((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(s.id)) next.delete(s.id);
+                    else next.add(s.id);
+                    return next;
+                  })
+                }
+                onAction={requestAction}
+              />
+            ))}
+          </div>
         ) : view === 'grid' ? (
           // D49 default — grid of cards. `senders` arrives already
           // BE-filtered for the active compose (D38); D51 brand rollup
@@ -2673,17 +2728,28 @@ function SendersScreenContent({
         )}
       </fieldset>
 
-      {selectedSenders.length > 0 && !showingStaleRows && (
-        <SelectionBar
-          senders={selectedSenders}
-          onClear={() => setSelected(new Set())}
-          onAct={requestBulkAction}
-          tier={tier}
-          busy={enqueueBulk.isPending}
-        />
-      )}
+      {selectedSenders.length > 0 &&
+        !showingStaleRows &&
+        (isPhone ? (
+          <SelectionFab
+            senders={selectedSenders}
+            onClear={() => setSelected(new Set())}
+            onAct={requestBulkAction}
+            tier={tier}
+            busy={enqueueBulk.isPending}
+          />
+        ) : (
+          <SelectionBar
+            senders={selectedSenders}
+            onClear={() => setSelected(new Set())}
+            onAct={requestBulkAction}
+            tier={tier}
+            busy={enqueueBulk.isPending}
+          />
+        ))}
 
       <ConfirmActionModal
+        variant={isPhone ? 'sheet' : 'modal'}
         request={showingStaleRows ? null : pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}

@@ -1,6 +1,8 @@
 # ADR-0018: Senders mobile dialect
 
-- **Status:** Proposed (Phase 4 — post-launch acceptable)
+- **Status:** Accepted — core dialect shipped 2026-08-30 (see
+  "Implementation status" at the end of this document for what landed
+  vs. what remains open follow-up work).
 - **Date:** 2026-06-03
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D37 (Triage mobile vertical-card + swipe), D54 (Senders mobile vertical-card + bottom-sheet drawer + horizontal-scroll chips)
@@ -17,7 +19,16 @@ Phase 4 in spec v1.2 (acceptable post-launch) — this ADR is a placeholder that
 
 ### Breakpoint
 
-Mobile dialect applies when viewport `< 600px` (existing `useIsAtMost('sm')` breakpoint). Tablet (600–1100) uses desktop layout w/ touch targets bumped.
+Mobile dialect applies when viewport `< 600px`. **Amendment (2026-08-30):**
+`tokens.breakpoint` has since moved to `{ xs: 480, sm: 900, md: 1100, lg:
+1280 }` — `sm` is 900px today, not the 600px it was when this ADR was
+written, so `useIsAtMost('sm')` is no longer the right gate for a
+phone-only dialect (it would also catch small tablets). The shipped
+implementation gates on `useIsAtMost('xs')` (480px) instead — the
+nearest existing token to this ADR's original 600px intent, and the
+ceiling `SenderListRow` already used for its pre-existing `sm`
+(tablet-narrow) tightening. Tablet widths (`xs` false) keep the desktop
+Grid/Table choice untouched, matching this section's original intent.
 
 ### Layout
 
@@ -137,3 +148,47 @@ PR shape:
 - Storybook mobile stories per row state (collapsed, expanded, selected, empty)
 - `design-system-agent` review
 - `flow-completeness-auditor` review on swipe state-machine
+
+## Implementation status (2026-08-30, closes D54)
+
+**Shipped in this PR:**
+
+- Phone dialect gate: `useIsAtMost('xs')` (480px) — see the Breakpoint
+  amendment above.
+- Hairline row list (no card chrome) replaces the Grid/Table toggle
+  outright at phone width, extending the existing (previously
+  unreachable — see LEARNINGS.md 2026-08-30) `SenderListRow` in place
+  rather than a new `sender-row-mobile.tsx` file.
+- Swipe-right → this row's derived primary verb (same `onAction`/D226
+  preview path the button uses — a gesture can never bypass the
+  preview); swipe-left → tap-expand; long-press → enter multi-select and
+  select that row. Live drag-hint overlay mirrors the D37 triage card.
+- Checkbox hides on a collapsed phone row until `selectMode`; the
+  primary CTA + `⋯` overflow move into the expanded `SenderRowDetailLive`
+  panel instead of the collapsed row (matches the "hidden on collapsed
+  row" rules table above).
+- `ConfirmActionModal` gained `variant="sheet"` — the same D226 preview
+  content, pinned to the bottom edge and full-width on phone, in place of
+  a new bottom-sheet copy.
+- Bulk mode: `SelectionFab` ("N selected" pill, bottom-right) replaces
+  the desktop `SelectionBar` at phone width; tapping it opens the K/A/U/L/D
+  set as a full-width stacked list inside a new generic `BottomSheet`
+  shared primitive.
+- New shared primitives: `useLongPress` (touch-only, drift-cancelled) and
+  `BottomSheet` (`packages/shared`).
+
+**Deferred (not in this PR — filed as follow-up, not stubbed):**
+
+- Chip row (activity/filter chips) horizontal snap-scroll — `ComposeStrip`
+  still wraps on phone today rather than scrolling. Functional, not to
+  this ADR's exact mock.
+- Dedicated sort bottom-sheet drawer — no sort control ships in the
+  phone dialect list in this PR; sort defaults to the same order the
+  BE returns. A future PR can add a sort trigger.
+- Playwright mobile-viewport (375×812) specs for the gesture flows named
+  above — this codebase's convention (see `triage/use-swipe-verb.test.ts`)
+  tests the pure pointer-delta resolver rather than simulating real
+  `PointerEvent`s in Playwright/RTL for gesture wiring, which this PR
+  follows (`sender-list-row.test.tsx`); the gesture pipeline was smoke-
+  verified end-to-end in a real browser (Storybook + Playwright, touch
+  pointer dispatch) during review, but no such spec is checked in.

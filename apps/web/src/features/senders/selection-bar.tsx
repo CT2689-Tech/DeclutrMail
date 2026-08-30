@@ -33,6 +33,7 @@ export function SelectionBar({
   onAct,
   tier,
   busy = false,
+  variant = 'bar',
 }: {
   senders: Sender[];
   onClear: () => void;
@@ -45,6 +46,14 @@ export function SelectionBar({
    * visible until the server confirms.
    */
   busy?: boolean;
+  /**
+   * D54 (ADR-0018) — 'sheet' renders the same verb set as a full-width
+   * stacked list for the phone `SelectionFab`'s bottom sheet, instead of
+   * the desktop's sticky horizontal bar (five inline buttons don't fit
+   * a 375px viewport). Business logic (eligibility, entitlement, counts)
+   * is identical either way.
+   */
+  variant?: 'bar' | 'sheet';
 }) {
   if (senders.length === 0) return null;
 
@@ -63,6 +72,140 @@ export function SelectionBar({
   const selector = senders.length > 1 ? 'multi-sender' : 'sender';
   const multiSenderLocked =
     selector === 'multi-sender' && !canUseActionSelector(tier, 'Archive', selector);
+
+  const multiSenderNote = multiSenderLocked ? (
+    <span
+      role="note"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        color: color.fgInverseSoft,
+        fontSize: 12,
+      }}
+    >
+      Multi-sender actions require {multiSenderPlanName()}.
+      <Link
+        href="/billing"
+        style={{ color: color.fgInverse, fontWeight: 700, textUnderlineOffset: 3 }}
+      >
+        See plans
+      </Link>
+    </span>
+  ) : null;
+
+  const verbButton = (verb: SelectionBarVerb, stretch: boolean) => {
+    const n = eligible[verb];
+    const entitled = canUseActionSelector(tier, verb, selector);
+    const disabled = n === 0 || busy || !entitled;
+    const primary = verb === 'Unsubscribe';
+    // Delete carries the destructive treatment — same `color.danger`
+    // the single-sender Delete confirm uses (spec v1.2 Decision 1).
+    const danger = verb === 'Delete';
+    // Label + shortcut from the Action Registry (ADR-0015) — the
+    // shortcut stays invisible inline (§3.1), surfaced only via the
+    // hover tooltip + the `?` cheatsheet. `aria-keyshortcuts` advertises
+    // the binding the senders-screen handler honors for the selection.
+    const { label, shortcut } = verbDisplay(verb);
+    // The number is SENDERS, never emails — the D226 preview modal
+    // is what counts emails (finding 5.13). When protection (D245)
+    // excludes some of the selection, say "n of m" so the shrink is
+    // visible instead of reading like a different count of the same
+    // thing.
+    const countLabel = n === senders.length ? `${n}` : `${n} of ${senders.length}`;
+    const unitTitle =
+      n === senders.length
+        ? `${label} ${n} sender${n === 1 ? '' : 's'}`
+        : `${label} ${n} of ${senders.length} selected senders (protected senders are excluded from bulk actions)`;
+    return (
+      <button
+        key={verb}
+        onClick={() => !disabled && onAct(verb)}
+        disabled={disabled}
+        aria-label={unitTitle}
+        title={
+          !entitled
+            ? `${label} — ${multiSenderPlanName()} required for multi-sender actions`
+            : shortcut
+              ? `${unitTitle} (${shortcut})`
+              : unitTitle
+        }
+        aria-keyshortcuts={entitled ? (shortcut ?? undefined) : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: stretch ? 'space-between' : undefined,
+          gap: 6,
+          height: stretch ? 44 : 32,
+          padding: stretch ? '0 16px' : '0 14px',
+          width: stretch ? '100%' : undefined,
+          background: danger ? color.danger : primary ? color.amber : color.lineInverse,
+          color: color.fgInverse,
+          border: `1px solid ${danger ? color.danger : primary ? color.amber : color.lineInverse}`,
+          borderRadius: stretch ? 10 : 7,
+          fontFamily: font.sans,
+          fontSize: stretch ? 14 : 12.5,
+          fontWeight: 600,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: disabled ? 0.4 : 1,
+        }}
+      >
+        {label}
+        <span style={{ fontFamily: font.mono, fontSize: stretch ? 12 : 11, opacity: 0.8 }}>
+          {countLabel}
+        </span>
+      </button>
+    );
+  };
+
+  if (variant === 'sheet') {
+    return (
+      <div
+        data-dm-selection-bar="sheet"
+        style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <strong
+            style={{
+              fontFamily: font.mono,
+              fontSize: 16,
+              fontWeight: 700,
+              color: color.fg,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {senders.length}
+          </strong>
+          <span style={{ fontSize: 13.5, color: color.fgSoft, flex: 1 }}>
+            sender{senders.length === 1 ? '' : 's'} selected
+          </span>
+          <button
+            onClick={onClear}
+            style={{
+              background: 'transparent',
+              border: `1px solid ${color.line}`,
+              borderRadius: 7,
+              padding: '6px 12px',
+              color: color.fgSoft,
+              fontFamily: font.mono,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.08em',
+              cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+        {multiSenderNote}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) =>
+            verbButton(verb, true),
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -118,86 +261,11 @@ export function SelectionBar({
 
       <span style={{ flex: 1 }} />
 
-      {multiSenderLocked ? (
-        <span
-          role="note"
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 8,
-            color: color.fgInverseSoft,
-            fontSize: 12,
-          }}
-        >
-          Multi-sender actions require {multiSenderPlanName()}.
-          <Link
-            href="/billing"
-            style={{ color: color.fgInverse, fontWeight: 700, textUnderlineOffset: 3 }}
-          >
-            See plans
-          </Link>
-        </span>
-      ) : null}
+      {multiSenderNote}
 
-      {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) => {
-        const n = eligible[verb];
-        const entitled = canUseActionSelector(tier, verb, selector);
-        const disabled = n === 0 || busy || !entitled;
-        const primary = verb === 'Unsubscribe';
-        // Delete carries the destructive treatment — same `color.danger`
-        // the single-sender Delete confirm uses (spec v1.2 Decision 1).
-        const danger = verb === 'Delete';
-        // Label + shortcut from the Action Registry (ADR-0015) — the
-        // shortcut stays invisible inline (§3.1), surfaced only via the
-        // hover tooltip + the `?` cheatsheet. `aria-keyshortcuts` advertises
-        // the binding the senders-screen handler honors for the selection.
-        const { label, shortcut } = verbDisplay(verb);
-        // The number is SENDERS, never emails — the D226 preview modal
-        // is what counts emails (finding 5.13). When protection (D245)
-        // excludes some of the selection, say "n of m" so the shrink is
-        // visible instead of reading like a different count of the same
-        // thing.
-        const countLabel = n === senders.length ? `${n}` : `${n} of ${senders.length}`;
-        const unitTitle =
-          n === senders.length
-            ? `${label} ${n} sender${n === 1 ? '' : 's'}`
-            : `${label} ${n} of ${senders.length} selected senders (protected senders are excluded from bulk actions)`;
-        return (
-          <button
-            key={verb}
-            onClick={() => !disabled && onAct(verb)}
-            disabled={disabled}
-            aria-label={unitTitle}
-            title={
-              !entitled
-                ? `${label} — ${multiSenderPlanName()} required for multi-sender actions`
-                : shortcut
-                  ? `${unitTitle} (${shortcut})`
-                  : unitTitle
-            }
-            aria-keyshortcuts={entitled ? (shortcut ?? undefined) : undefined}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              height: 32,
-              padding: '0 14px',
-              background: danger ? color.danger : primary ? color.amber : color.lineInverse,
-              color: color.fgInverse,
-              border: `1px solid ${danger ? color.danger : primary ? color.amber : color.lineInverse}`,
-              borderRadius: 7,
-              fontFamily: font.sans,
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: disabled ? 'not-allowed' : 'pointer',
-              opacity: disabled ? 0.4 : 1,
-            }}
-          >
-            {label}
-            <span style={{ fontFamily: font.mono, fontSize: 11, opacity: 0.8 }}>{countLabel}</span>
-          </button>
-        );
-      })}
+      {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) =>
+        verbButton(verb, false),
+      )}
     </div>
   );
 }
