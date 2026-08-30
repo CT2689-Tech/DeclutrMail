@@ -898,13 +898,13 @@ help of `ct-qa-mailbox-switch-173132-64`, an independent peer QA session
 running `/ct-qa mailbox-switch` concurrently on the same shared dev stack —
 cited per row below.
 
-|     | id                        | sev | one line                                                                                                                                                                                                                                                                                                                       | status                                                                                                                               | PR   |
-| --- | ------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ---- |
-| 🟡  | QA-onboarding-20260828-01 | P0  | `/senders` can assert something false about the user's own inbox during an active sync — it either denies any senders exist, or shows a stale pre-disconnect snapshot labelled with a "Synced through" time it never measured — reachable on ANY ordinary returning login mid-resync, not only reconnect                       | PR #673 — Codex 2 rounds (cap), both applied                                                                                         | #673 |
-| 🟡  | QA-onboarding-20260828-02 | P1  | `AuthProvider`'s 401→OAuth redirect runs in the render body with no fire-once guard, duplicating an already-guarded sibling (`client.ts`'s `redirectToLogin`) — every session-expiry event fires 2 real navigations to Google's live OAuth start in production (3 in dev), burning the app's own rate-limit bucket meant for 1 | PR #673 — Codex round 1 found a real dead-end this fix introduced, fixed in `client.ts`, round 2 CLEAN on this row                   | #673 |
-| 🔴  | QA-onboarding-20260828-03 | P1  | Refresh-token rotation revokes the whole session on any concurrent same-account refresh collision (two tabs racing the ~15-min access-token TTL edge) — no code path returns the same fresh tokens to the loser, and the DB schema has no column that could hold the value such a path would need                              | Open — founder deferred (Tier 1, needs a migration/grace-window design call, not folded into this batch)                             |      |
-| 🟡  | QA-onboarding-20260828-04 | P1  | The `?mailbox=` secondary-connect gate shows a fake, never-resolving "Reading your inbox… 0%" scan instead of the reconnect gate when its target mailbox goes inactive out-of-band with no other active mailbox to escape to                                                                                                   | PR #673 — Codex round 1 found the guard was too broad (any sync error, not just NO_ACTIVE_MAILBOX), fixed, round 2 CLEAN on this row | #673 |
-| 🟡  | QA-onboarding-20260828-05 | P2  | The no-active-mailbox gate's plain "Connect a Gmail account" button (not Reconnect) silently swallows a connect failure — same gate re-renders with no explanation and a stale `connect_error` param stuck in the URL; two dead copy keys exist for codes no path can emit, and one real code has no copy entry at all         | PR #673 — Codex round 2 found a history-state overwrite this fix's broadened reach exposed, fixed                                    | #673 |
+|     | id                        | sev | one line                                                                                                                                                                                                                                                                                                                       | status                                                                                                                                                     | PR   |
+| --- | ------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 🟡  | QA-onboarding-20260828-01 | P0  | `/senders` can assert something false about the user's own inbox during an active sync — it either denies any senders exist, or shows a stale pre-disconnect snapshot labelled with a "Synced through" time it never measured — reachable on ANY ordinary returning login mid-resync, not only reconnect                       | PR #673 — Codex 2 rounds (cap), both applied                                                                                                               | #673 |
+| 🟡  | QA-onboarding-20260828-02 | P1  | `AuthProvider`'s 401→OAuth redirect runs in the render body with no fire-once guard, duplicating an already-guarded sibling (`client.ts`'s `redirectToLogin`) — every session-expiry event fires 2 real navigations to Google's live OAuth start in production (3 in dev), burning the app's own rate-limit bucket meant for 1 | PR #673 — Codex round 1 found a real dead-end this fix introduced, fixed in `client.ts`, round 2 CLEAN on this row                                         | #673 |
+| 🟡  | QA-onboarding-20260828-03 | P1  | Refresh-token rotation revokes the whole session on any concurrent same-account refresh collision (two tabs racing the ~15-min access-token TTL edge) — no code path returns the same fresh tokens to the loser, and the DB schema has no column that could hold the value such a path would need                              | Founder approved a server-side grace window 2026-08-30; implemented + adversarially security-reviewed, its own PR (Tier 1, never bundled) — see note below |      |
+| 🟡  | QA-onboarding-20260828-04 | P1  | The `?mailbox=` secondary-connect gate shows a fake, never-resolving "Reading your inbox… 0%" scan instead of the reconnect gate when its target mailbox goes inactive out-of-band with no other active mailbox to escape to                                                                                                   | PR #673 — Codex round 1 found the guard was too broad (any sync error, not just NO_ACTIVE_MAILBOX), fixed, round 2 CLEAN on this row                       | #673 |
+| 🟡  | QA-onboarding-20260828-05 | P2  | The no-active-mailbox gate's plain "Connect a Gmail account" button (not Reconnect) silently swallows a connect failure — same gate re-renders with no explanation and a stale `connect_error` param stuck in the URL; two dead copy keys exist for codes no path can emit, and one real code has no copy entry at all         | PR #673 — Codex round 2 found a history-state overwrite this fix's broadened reach exposed, fixed                                                          | #673 |
 
 **QA-onboarding-20260828-01.** Filed from a `flow-completeness-auditor` GAP,
 adversarially confirmed (`SURVIVES`, no refutation ground applied) by a
@@ -1000,6 +1000,34 @@ session row, presenting the SAME (still-valid) refresh token — today one
 wins and one revokes the whole session; a fix should let both succeed (or
 the loser get the winner's fresh tokens) without either being treated as
 theft. Must go RED against current code.
+
+**Implemented 2026-08-30 (founder-approved design: server-side grace
+window).** `active_sessions` gained two nullable columns —
+`previous_refresh_token_hash` / `previous_hash_expires_at` (migration
+`0078_session_refresh_grace_window`) — that shift forward on EVERY
+rotation, winner or grace-hit alike, so the recognized window is always
+exactly one generation, never a standing bypass. The loser of a genuine
+race gets its OWN fresh rotation (not the winner's literal tokens — the
+raw refresh token is never stored to hand back, only its hash) instead of
+the reuse-defense revoke. `REFRESH_GRACE_WINDOW_MS = 30_000`.
+
+Adversarially security-reviewed (no live Codex access this session;
+substituted a dedicated review agent). One MEDIUM finding, addressed: a
+collision between an ALREADY-STOLEN token and a legitimate request now
+rotates instead of revoking, so the automatic kill-switch that used to
+bound a compromised token's lifetime no longer fires on that one
+collision. Mitigated with a distinct structured log line on the grace-hit
+path (`SessionsService.rotate()`) so this is no longer invisible to an
+operator — deliberately did NOT add IP/UA-binding or a per-session grace
+cap, since both are real design tradeoffs (network-switch false positives;
+denying a legitimate SECOND race later in a long-lived session) that
+belong to the founder, not a unilateral call. Flagged as follow-up
+options in the PR, not implemented.
+
+Every new/changed assertion negative-control verified (revert → RED →
+restore), including the new log line itself and the full grace-window
+logic via a targeted mutation test. Own PR — Tier 1 items are never
+bundled (this file's own Rules, above).
 
 **QA-onboarding-20260828-04.** Filed from a `flow-completeness-auditor` GAP,
 narrowed hard by a `finding-refuter`: three of the four originally-claimed

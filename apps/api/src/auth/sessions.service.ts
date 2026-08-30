@@ -29,6 +29,19 @@ const REVOKE_CACHE_TTL_SEC = 60;
 const LAST_USED_WRITE_INTERVAL_MS = 5 * 60 * 1_000;
 const LAST_USED_WRITE_CACHE_MAX = 10_000;
 
+/**
+ * How long a superseded refresh-token hash is still honored as a benign
+ * concurrent-race loser rather than reuse (QA-onboarding-20260828-03,
+ * FINDINGS.md F034). 30s comfortably covers two browser tabs racing the
+ * same token boundary — real request latency, not a standing bypass: an
+ * attacker replaying a captured hash must do so within 30s of ITS OWN
+ * legitimate use, a far narrower window than the "any time before the
+ * refresh JWT's own expiry" surface reuse-detection has always had, and
+ * usable at most once (the grace slot itself shifts forward on every
+ * rotation — see `rotate()`).
+ */
+const REFRESH_GRACE_WINDOW_MS = 30_000;
+
 /** What the JwtGuard hangs off `req.user` after a successful verify. */
 export interface SessionPrincipal {
   userId: string;
@@ -128,11 +141,19 @@ export class SessionsService implements OnModuleDestroy {
    * second writer would otherwise win the row and the first browser's
    * cookies would carry a `jti` that no longer matches the DB,
    * causing immediate 401s. The row lock serialises rotation; the
-   * loser sees the now-rotated hash and either gets the SAME tokens
-   * (grace) or trips the reuse-defense revoke path.
+   * loser sees the now-rotated hash and, within
+   * `REFRESH_GRACE_WINDOW_MS` (QA-onboarding-20260828-03), gets a FRESH
+   * rotation of its own rather than the reuse-defense revoke — not the
+   * SAME tokens the winner got (the raw token is never stored to hand
+   * back; only its hash), but an equally valid new pair under the same
+   * session id. `previous_refresh_token_hash` / `previous_hash_expires_at`
+   * shift forward on every rotation, winner or grace, so the recognized
+   * window is always exactly one generation — a hash from two rotations
+   * back still trips the destructive path exactly as before this existed.
    *
-   * Verifies the presented refresh hash matches the row, refusing
-   * rotation on a stale/leaked refresh.
+   * Verifies the presented refresh hash matches the row's current OR
+   * still-in-grace previous hash, refusing rotation on anything older
+   * or unrelated (stale/leaked refresh).
    *
    * REUSE PATH RETURNS, IT DOES NOT THROW (audit 2026-08-21). The
    * revoke belongs inside the tx — that part was always right — but
@@ -150,7 +171,7 @@ export class SessionsService implements OnModuleDestroy {
     const presented = hashRefreshToken(input.presentedRefreshToken);
 
     type RotateOutcome =
-      | { kind: 'rotated'; issued: IssuedTokens; oldJti: string }
+      | { kind: 'rotated'; issued: IssuedTokens; oldJti: string; viaGrace: boolean }
       | { kind: 'reuse'; revokedJti: string };
 
     const outcome = await this.db.transaction(async (tx): Promise<RotateOutcome> => {
@@ -164,11 +185,27 @@ export class SessionsService implements OnModuleDestroy {
         // Nothing to persist on this branch, so a throw is correct here.
         throw new Error('Session not found or revoked.');
       }
-      if (row.refreshTokenHash !== presented) {
-        // Refresh token reuse: someone tried to use an older refresh.
-        // Revoke the session entirely — defensive posture (D155).
-        // Inside the SAME tx so the revoke is atomic with the
-        // detection; returned rather than thrown so it COMMITS.
+
+      const isCurrent = row.refreshTokenHash === presented;
+      // QA-onboarding-20260828-03 — the loser of a genuine concurrent
+      // race presents the hash that WAS current an instant ago. Accept
+      // it as benign only if it matches the row's own record of what it
+      // just superseded, and only inside that record's own grace
+      // deadline — never a caller-supplied window, so this can't be
+      // widened by presenting an old token with a manufactured claim.
+      const isGraceHit =
+        !isCurrent &&
+        row.previousRefreshTokenHash !== null &&
+        row.previousRefreshTokenHash === presented &&
+        row.previousHashExpiresAt !== null &&
+        row.previousHashExpiresAt.getTime() > Date.now();
+
+      if (!isCurrent && !isGraceHit) {
+        // Refresh token reuse: matches neither the current hash nor a
+        // still-in-grace previous one. Revoke the session entirely —
+        // defensive posture (D155). Inside the SAME tx so the revoke is
+        // atomic with the detection; returned rather than thrown so it
+        // COMMITS.
         await tx
           .update(activeSessions)
           .set({ isRevoked: true, revokedAt: new Date() })
@@ -186,10 +223,15 @@ export class SessionsService implements OnModuleDestroy {
         .set({
           jti: issued.jti,
           refreshTokenHash: issued.refreshTokenHash,
+          // Shift current -> previous on EVERY rotation (winner or grace
+          // hit alike), so the recognized window stays exactly one
+          // generation wide no matter who is rotating.
+          previousRefreshTokenHash: row.refreshTokenHash,
+          previousHashExpiresAt: new Date(Date.now() + REFRESH_GRACE_WINDOW_MS),
           lastUsedAt: new Date(),
         })
         .where(eq(activeSessions.id, row.id));
-      return { kind: 'rotated', issued, oldJti: row.jti };
+      return { kind: 'rotated', issued, oldJti: row.jti, viaGrace: isGraceHit };
     });
 
     if (outcome.kind === 'reuse') {
@@ -199,6 +241,24 @@ export class SessionsService implements OnModuleDestroy {
       // catches this, clears cookies and answers 401 — unchanged.
       await this.markRevokedInCache(outcome.revokedJti);
       throw new Error('Refresh token reuse detected — session revoked.');
+    }
+
+    if (outcome.viaGrace) {
+      // Security-review finding (2026-08-30): the grace window's cost is
+      // that a collision between an ALREADY-STOLEN token and a legitimate
+      // request now rotates instead of revoking, so the automatic
+      // kill-switch that used to bound a compromised token's lifetime no
+      // longer fires on this path. It fires at most once per generation
+      // (the grace slot always shifts forward — see the write above), but
+      // that one miss is enough to matter, and nothing distinguished this
+      // from an ordinary rotation before this log line. A session that
+      // grace-hits more than once, or grace-hits shortly after a security
+      // event on the same user, is the pattern worth alerting on — this is
+      // the signal that makes that pattern visible; it does not itself
+      // decide what a legitimate rate looks like.
+      this.logger.warn(
+        `Refresh rotated via grace window (session ${input.sessionId}, superseded jti ${outcome.oldJti}) — a benign concurrent race and a same-window collision with an already-stolen token look identical from here; repeated grace-hits on one session warrant a look.`,
+      );
     }
 
     // Old jti is gone — clear its cache key if any. Done outside the

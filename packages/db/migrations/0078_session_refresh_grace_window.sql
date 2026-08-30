@@ -1,0 +1,29 @@
+-- Session refresh-token grace window (QA-onboarding-20260828-03,
+-- FINDINGS.md F034).
+--
+-- A concurrent refresh race (two browser tabs sharing one cookie jar,
+-- both presenting the same refresh token within the same rotation) was
+-- indistinguishable from genuine token-theft replay: the loser's
+-- presented hash no longer matched `active_sessions.refresh_token_hash`
+-- (the winner had already overwritten it), so `SessionsService.rotate()`
+-- treated the loser as reuse and revoked the WHOLE session — winner's
+-- brand-new tokens included. Both tabs ended up logged out from having
+-- two tabs open near a token boundary.
+--
+-- `previous_refresh_token_hash` + `previous_hash_expires_at` let
+-- `rotate()` recognize "this exact hash was the immediately-prior
+-- generation, still within a short grace window" as a benign race
+-- rather than theft, and issue a fresh rotation for the loser instead
+-- of revoking. Both columns get shifted forward on every rotation
+-- (current -> previous), so the recognized window is always exactly one
+-- generation — never a standing bypass. A hash matching neither the
+-- current nor a still-in-window previous value is unchanged: still a
+-- full revoke, same defensive posture as before this migration.
+--
+-- Nullable, no default: every existing row starts with no grace history,
+-- which is exactly correct (nothing has ever been rotated into that
+-- slot for it). NEVER the raw token, same discipline as
+-- `refresh_token_hash` itself.
+ALTER TABLE "active_sessions" ADD COLUMN "previous_refresh_token_hash" text;
+--> statement-breakpoint
+ALTER TABLE "active_sessions" ADD COLUMN "previous_hash_expires_at" timestamp with time zone;
