@@ -11,10 +11,10 @@ fresh pass if it's been more than a few sessions.
 
 Two different things live here, on two different clocks:
 
-| | Tracks | Priority scale |
-|---|---|---|
-| **QA findings** (`docs/qa/qa-worklist.md`) | Bugs a `/ct-qa` run found and is fixing | P0–P3, severity |
-| **Product findings** (`FINDINGS.md`) | Open questions about the product, not tied to a QA run | P0–P3, same scale, different meaning — see below |
+|                                            | Tracks                                                 | Priority scale                                   |
+| ------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------ |
+| **QA findings** (`docs/qa/qa-worklist.md`) | Bugs a `/ct-qa` run found and is fixing                | P0–P3, severity                                  |
+| **Product findings** (`FINDINGS.md`)       | Open questions about the product, not tied to a QA run | P0–P3, same scale, different meaning — see below |
 
 ## Needs you right now
 
@@ -47,13 +47,13 @@ Glyphs match `IMPLEMENTATION-LOG.md`'s vocabulary (CLAUDE.md §8): ⬜ not
 started · 🟡 being worked · 🔵 merged, not yet re-checked · 🟢 confirmed
 fixed · 🔴 needs you · ⏸️ won't do.
 
-| Priority | ⬜ open | 🟡 fixing | 🔵 merged | 🟢 confirmed | 🔴 needs you | ⏸️ won't do | Total |
-|---|---|---|---|---|---|---|---|
-| **P0** — launch blocker | 0 | 0 | 1 | 0 | 0 | 0 | 1 |
-| **P1** — real friction | 0 | 0 | 6 | 0 | 1 | 0 | 7 |
-| **P2** — worth doing | 2 | 0 | 17 | 0 | 2 | 0 | 21 |
-| **P3** — polish/idea | 6 | 0 | 4 | 0 | 4 | 0 | 14 |
-| **All** | 8 | 0 | 28 | 0 | 7 | 0 | 43 |
+| Priority                | ⬜ open | 🟡 fixing | 🔵 merged | 🟢 confirmed | 🔴 needs you | ⏸️ won't do | Total |
+| ----------------------- | ------- | --------- | --------- | ------------ | ------------ | ----------- | ----- |
+| **P0** — launch blocker | 0       | 0         | 1         | 0            | 0            | 0           | 1     |
+| **P1** — real friction  | 0       | 0         | 6         | 0            | 1            | 0           | 7     |
+| **P2** — worth doing    | 2       | 0         | 17        | 0            | 2            | 0           | 21    |
+| **P3** — polish/idea    | 6       | 0         | 4         | 0            | 4            | 0           | 14    |
+| **All**                 | 8       | 0         | 28        | 0            | 7            | 0           | 43    |
 
 **Nothing has reached `🟢 Fixed` yet.** 28 rows are merged and waiting on a
 live re-check by a future `/ct-qa` run on the same job — that's the single
@@ -62,13 +62,13 @@ would very likely flip most of those 28 straight to green.
 
 ## QA findings — by job
 
-| Job | Total | ⬜ open | 🔵 merged | 🔴 needs you | Furthest state |
-|---|---|---|---|---|---|
-| **triage** | 19 | 3 (all P3) | 16 | 0 | Merged; awaiting a confirming `/ct-qa triage` run |
-| **undo** | 4 | 1 (P3) | 3 | 0 | Merged; awaiting a confirming `/ct-qa undo` run |
-| **archive** | 6 | 0 | 5 | 1 (P3) | Merged; awaiting a confirming `/ct-qa archive` run |
-| **onboarding** | 5 | 0 | 4 (incl. the P0) | 1 (P1, Tier 1) | Merged; awaiting a confirming `/ct-qa onboarding` run |
-| **delete** | 9 | 4 (P2/P3) | 0 | 5 (P2/P3, at review cap) | Least progressed — nothing merged yet |
+| Job            | Total | ⬜ open    | 🔵 merged        | 🔴 needs you             | Furthest state                                        |
+| -------------- | ----- | ---------- | ---------------- | ------------------------ | ----------------------------------------------------- |
+| **triage**     | 19    | 3 (all P3) | 16               | 0                        | Merged; awaiting a confirming `/ct-qa triage` run     |
+| **undo**       | 4     | 1 (P3)     | 3                | 0                        | Merged; awaiting a confirming `/ct-qa undo` run       |
+| **archive**    | 6     | 0          | 5                | 1 (P3)                   | Merged; awaiting a confirming `/ct-qa archive` run    |
+| **onboarding** | 5     | 0          | 4 (incl. the P0) | 1 (P1, Tier 1)           | Merged; awaiting a confirming `/ct-qa onboarding` run |
+| **delete**     | 9     | 4 (P2/P3)  | 0                | 5 (P2/P3, at review cap) | Least progressed — nothing merged yet                 |
 
 ## Product findings — by priority (`FINDINGS.md`)
 
@@ -76,13 +76,13 @@ This priority scale answers a different question than the QA table above:
 not "is the fix in," but "is this still an open question." P0/P1 here mean
 launch-blocking or launch-week; P2/P3 mean backlog or needs-evidence.
 
-| Priority | Open | Done | Won't do |
-|---|---|---|---|
-| **P0** — launch blocker | 0 | 5 (F008–F012, closed 2026-08-19/23) | 0 |
-| **P1** — launch week | 0 | 1 (F013, closed 2026-08-24) | 0 |
-| **P2** — backlog | 1 (F003 — API sourcemaps missing) | 5 | 0 |
-| **P3** — needs evidence | 1 (F001 — onboarding picker multi-select?) | 0 | 0 |
-| **Inbox** — untriaged | **21** | — | — |
+| Priority                | Open                                       | Done                                | Won't do |
+| ----------------------- | ------------------------------------------ | ----------------------------------- | -------- |
+| **P0** — launch blocker | 0                                          | 5 (F008–F012, closed 2026-08-19/23) | 0        |
+| **P1** — launch week    | 0                                          | 1 (F013, closed 2026-08-24)         | 0        |
+| **P2** — backlog        | 1 (F003 — API sourcemaps missing)          | 5                                   | 0        |
+| **P3** — needs evidence | 1 (F001 — onboarding picker multi-select?) | 0                                   | 0        |
+| **Inbox** — untriaged   | **21**                                     | —                                   | —        |
 
 `FINDINGS.md`'s P0/P1 sections read "_None open_" — that's real, not a gap:
 every historical P0/P1 there has already shipped and been re-verified. The
@@ -91,16 +91,17 @@ turned into a verdict yet, any of which could become a P0/P1 on triage.
 
 ## Where to look for detail
 
-| Question | File |
-|---|---|
-| What happened in a specific `/ct-qa` run? | `docs/qa/launch-qa.md` |
-| What's being fixed, by whom, how far along? | `docs/qa/qa-worklist.md` |
-| Is this product question still open? | `FINDINGS.md` |
+| Question                                                     | File                                               |
+| ------------------------------------------------------------ | -------------------------------------------------- |
+| What happened in a specific `/ct-qa` run?                    | `docs/qa/launch-qa.md`                             |
+| What's being fixed, by whom, how far along?                  | `docs/qa/qa-worklist.md`                           |
+| Is this product question still open?                         | `FINDINGS.md`                                      |
 | Is a Section 2 guardrail or a recurring pattern behind this? | `CLAUDE.md` §2 / §8, `MISTAKES.md`, `LEARNINGS.md` |
 
 ---
-*Corrected on 2026-08-30: 9 `qa-worklist.md` rows (`QA-archive-20260828-{01,02,03,04,06}`,
+
+_Corrected on 2026-08-30: 9 `qa-worklist.md` rows (`QA-archive-20260828-{01,02,03,04,06}`,
 `QA-onboarding-20260828-{01,02,04,05}`) were still marked `🟡 PR #nnn`
 though PR #670 and #673 had already merged to `main` (verified via
 `git log`). Flipped to `🔵 Merged #nnn`; left at merged-not-confirmed rather
-than promoting to `🟢 Fixed`, since no live re-check has happened yet.*
+than promoting to `🟢 Fixed`, since no live re-check has happened yet._
