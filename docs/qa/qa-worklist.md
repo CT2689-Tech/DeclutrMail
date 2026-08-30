@@ -1072,17 +1072,17 @@ ledger. First filed 2026-08-29 (9 survivors; 1 candidate REFUTED and 1
 PARTIALLY REFUTED-then-refiled-corrected before filing — see the ledger's
 Refuted table for the grounds on each). All P2/P3 — none in `FINDINGS.md`.
 
-|     | id                    | sev | one line                                                                                                                                                                                                                                           | status                                                                                 | PR  |
-| --- | --------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --- |
-| ⬜  | QA-delete-20260829-01 | P2  | Delete's "safer" 180-day default window applies only to the Senders/sender-detail confirm modal, not to Screener's sibling Delete preview, so the identical fresh-mail delete is dead-on-open through one door and friction-free through the other | Open — design question, not offered for a copy fix                                     |     |
-| 🔴  | QA-delete-20260829-02 | P2  | The Senders Delete confirm modal's title ("Delete email from 1 sender") never says Trash, unlike Triage's equivalent header                                                                                                                        | At review cap — round 1 clean, round 2 clean                                           |     |
-| 🔴  | QA-delete-20260829-03 | P2  | Empty-window notice states an age in days ("not older than 6 days") beside a control labelled in months ("6 months+")                                                                                                                              | At review cap — round 1 clean, round 2 clean                                           |     |
-| ⬜  | QA-delete-20260829-04 | P2  | Post-delete Undo deadline renders in UTC while every other timestamp on the same surfaces renders in the viewer's local clock                                                                                                                      | Approved, NOT fixed — see note below                                                   |     |
-| 🔴  | QA-delete-20260829-05 | P3  | Senders receipt strip doesn't observe an undo performed via the global Undo tray and keeps asserting stale "Moved to Gmail Trash" state (all verbs, not Delete-specific)                                                                           | At review cap — round 1 found 2 (fixed `4dab8f68`), round 2 found 1 (fixed `fb4a8e39`) |     |
-| ⬜  | QA-delete-20260829-06 | P3  | The same 30-day undo window is named three different ways across surfaces                                                                                                                                                                          | Approved, NOT fixed — see note below                                                   |     |
-| ⬜  | QA-delete-20260829-07 | P3  | Delete preview body is verbose — its last sentence restates the one before it                                                                                                                                                                      | Approved, NOT fixed — see note below                                                   |     |
-| 🔴  | QA-delete-20260829-08 | P3  | A zero-match Delete preview's header still reads as an active move ("Move inbox email from X to Gmail Trash" above a "0 matching emails" body)                                                                                                     | At review cap — round 1 clean, round 2 clean                                           |     |
-| 🔴  | QA-delete-20260829-09 | P3  | Mail-location sentence mixes a singular subject ("this email") with a four-digit population and drops the unit noun on one side of the split                                                                                                       | At review cap — round 1 found 1 (fixed `4dab8f68`), round 2 clean                      |     |
+|     | id                    | sev | one line                                                                                                                                                                                                                                           | status                                                                                                            | PR   |
+| --- | --------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---- |
+| ⬜  | QA-delete-20260829-01 | P2  | Delete's "safer" 180-day default window applies only to the Senders/sender-detail confirm modal, not to Screener's sibling Delete preview, so the identical fresh-mail delete is dead-on-open through one door and friction-free through the other | Open — design question, not offered for a copy fix                                                                |      |
+| 🔵  | QA-delete-20260829-02 | P2  | The Senders Delete confirm modal's title ("Delete email from 1 sender") never says Trash, unlike Triage's equivalent header                                                                                                                        | Merged #674 — round 1 clean, round 2 clean, awaiting confirming run                                               | #674 |
+| 🔵  | QA-delete-20260829-03 | P2  | Empty-window notice states an age in days ("not older than 6 days") beside a control labelled in months ("6 months+")                                                                                                                              | Merged #674 — round 1 clean, round 2 clean, awaiting confirming run                                               | #674 |
+| ⬜  | QA-delete-20260829-04 | P2  | Post-delete Undo deadline renders in UTC while every other timestamp on the same surfaces renders in the viewer's local clock                                                                                                                      | Approved, NOT fixed — see note below                                                                              |      |
+| 🔵  | QA-delete-20260829-05 | P3  | Senders receipt strip doesn't observe an undo performed via the global Undo tray and keeps asserting stale "Moved to Gmail Trash" state (all verbs, not Delete-specific)                                                                           | Merged #674 — round 1 found 2 (fixed `4dab8f68`), round 2 found 1 (fixed `fb4a8e39`), awaiting confirming run     | #674 |
+| 🟢  | QA-delete-20260829-06 | P3  | The same 30-day undo window is named three different ways across surfaces                                                                                                                                                                          | Gone 2026-08-30 — the live hedge no longer reproduces (fixed by #646, 2 days before this job ran); see note above |      |
+| 🟢  | QA-delete-20260829-07 | P3  | Delete preview body is verbose — its last sentence restates the one before it                                                                                                                                                                      | Refuted 2026-08-30 — the two sentences are independently-sourced facts, not a duplicate to merge; see note above  |      |
+| 🔵  | QA-delete-20260829-08 | P3  | A zero-match Delete preview's header still reads as an active move ("Move inbox email from X to Gmail Trash" above a "0 matching emails" body)                                                                                                     | Merged #674 — round 1 clean, round 2 clean, awaiting confirming run                                               | #674 |
+| 🔵  | QA-delete-20260829-09 | P3  | Mail-location sentence mixes a singular subject ("this email") with a four-digit population and drops the unit noun on one side of the split                                                                                                       | Merged #674 — round 1 found 1 (fixed `4dab8f68`), round 2 clean, awaiting confirming run                          | #674 |
 
 **Founder approved 02–09 (plus 05) as one copy/staleness PR on 2026-08-29,
 declining 01 as a design question. Implementing 04, 06 and 07 surfaced that
@@ -1140,6 +1140,38 @@ follow-up` job for -06/-07 (four verb entries, one file, one clear pattern to
 copy) rather than an ad-hoc fix riding this PR, and a founder call on whether
 -04 is worth the hydration-gating work for a P2 that only ever reads
 differently by a few hours.
+
+**-06/-07 investigated 2026-08-30 — the premise was already fixed; the real
+gap was test coverage, not code.** Before implementing "derive
+`action-semantics.ts` from `UNIFORM_UNDO_WINDOW_DAYS` the way `action-
+sheet.tsx` already does," checked empirically whether the hedge is still
+live: `buildActionPresentation({verb:'delete', liveCount:5,
+planUndoDeadline:null, ...}).primary.activityUndo.summary` returns `"Undo
+from Activity for 30 days."`, not the hedge. `presentAction` →
+`presentationActivityUndo` already calls `activityUndoSummary(
+UNIFORM_UNDO_WINDOW_DAYS, ...)` for every plan-window verb (archive, later,
+unarchive, delete) — fixed by PR #646 (merged 2026-08-27, 2 days before this
+job ran), which this note's own -06 finding didn't catch because it read the
+registry's SOURCE (a static string sitting in `ACTION_SEMANTICS`) rather than
+the RESOLVED value a live preview actually renders — the same distinction
+`undo-window-copy-guard.test.ts`'s own header warns about for a different
+reason. -07's "sentence 5 restates sentence 4" is real but is `providerRecovery
+.summary` restating `activityUndo.summary`'s day count from a SEPARATE,
+correctly-independent source (Gmail's own ~30-day Trash retention policy,
+not a DeclutrMail entitlement) — currently the same number by coincidence,
+not a bug to merge away.
+
+What WAS missing, confirmed by a mutation test (reverted `presentationActivityUndo`
+to read the raw hedge, watched the assertion go RED, restored, seen GREEN):
+no test locked in that the INTERACTIVE live-preview path (Triage, the senders
+confirm modal, the Screener decide preview, the Autopilot approve modal — all
+`buildActionPresentation` callers) derives correctly; `undo-window-copy-guard
+.test.ts` scans only public/marketing copy, and the existing `buildActionPresentation`
+test asserted `activityUndo.kind`/`deadline` but never `.summary`'s text. Added
+`packages/shared/src/actions/action-semantics.test.ts`'s "interactive
+live-preview surfaces never show the raw registry hedge" describe block,
+covering all 4 plan-window verbs. -04 is untouched — still a real founder
+call on the hydration-gating tradeoff, unrelated to this.
 
 **QA-delete-20260829-01, -05 — sourced from `finding-refuter`, corrected from the
 driver's original candidates; -02/-03/-04/-06/-07/-08/-09 — sourced from

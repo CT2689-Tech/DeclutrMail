@@ -5,6 +5,7 @@ import {
   buildActionPresentation,
   describeInboxScope,
   inboxScopeNoticeCopy,
+  WINDOW_PRESET_LABELS,
 } from '@declutrmail/shared/actions';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { ActionReach } from '@/lib/api/actions';
@@ -45,6 +46,8 @@ export function DecidePreview({
   verb,
   row,
   inboxCount,
+  inboxTotal = null,
+  windowDays = null,
   allMailCount = null,
   reach = 'inbox_only',
   onReachChange,
@@ -57,6 +60,18 @@ export function DecidePreview({
   verb: ScreenerDecideVerb;
   row: ScreenerQueueRow;
   inboxCount: DecidePreviewCount;
+  /**
+   * QA-delete-20260829-01 — the TRUE un-windowed inbox count
+   * (`counts.all`), for the empty-window reconciliation notice.
+   * `null` while the preview hasn't resolved.
+   */
+  inboxTotal?: number | null;
+  /**
+   * QA-delete-20260829-01 — the day-window currently applied to
+   * `inboxCount`, if any (Delete defaults to `DEFAULT_DELETE_WINDOW_DAYS`;
+   * every other verb passes `null` — no window, acts on the whole inbox).
+   */
+  windowDays?: number | null;
   /**
    * ADR-0028 — the sender's all-mail count (inbox + archived) from the
    * same composite preview. `null` = the API predates the field or the
@@ -262,6 +277,8 @@ export function DecidePreview({
         <ImpactFigure
           moves={moves}
           count={effectiveCount}
+          inboxTotal={inboxTotal}
+          windowDays={windowDays}
           verbLabel={VERB_LABEL[verb]}
           allMailReach={activeReach === 'all_mail'}
           reachAvailable={reachAvailable}
@@ -327,6 +344,8 @@ function liveInboxNumber(count: DecidePreviewCount): number | null {
 function ImpactFigure({
   moves,
   count,
+  inboxTotal,
+  windowDays,
   verbLabel,
   allMailReach,
   reachAvailable,
@@ -334,6 +353,10 @@ function ImpactFigure({
   moves: boolean;
   /** Live count under the SELECTED reach (ADR-0028). */
   count: DecidePreviewCount;
+  /** QA-delete-20260829-01 — the TRUE un-windowed inbox count. */
+  inboxTotal: number | null;
+  /** QA-delete-20260829-01 — the day-window active on `count`, if any. */
+  windowDays: number | null;
   verbLabel: string;
   /** True when the widened `all_mail` reach is active. */
   allMailReach: boolean;
@@ -370,34 +393,47 @@ function ImpactFigure({
   }
   // A bare "0" beside the row's "Messages received" count reads as lost
   // mail. Same reconciliation the senders confirm modal does, from the
-  // same helper. The screener has no windowing and no 30-day arrival
-  // figure on its row, so `recentArrivals` is null and the copy omits
-  // that clause rather than passing off an all-labels received count as a
-  // 30-day arrival count. At all-mail reach the notice stays silent —
-  // archived mail IS in scope, so an inbox reconciliation would narrate
-  // a scope the action no longer has (same suppression as the senders
-  // modal). With the chips on screen, `verbActsBeyondInbox` swaps
-  // "only acts on" for "acts on inbox mail by default" (ADR-0028).
+  // same helper. QA-delete-20260829-01 (2026-08-30): the screener now
+  // carries Delete's default window (`windowDays`) and the TRUE
+  // un-windowed total (`inboxTotal`) exactly like the modal does, so an
+  // all-older-than-the-window sender gets the same "0 email now, but N
+  // are outside the window" notice instead of a silent, unexplained
+  // zero. Every other verb still passes `windowDays: null` — no window,
+  // no notice beyond the plain empty-inbox case, unchanged from before.
+  // `recentArrivals` stays null — the screener has no 30-day arrival
+  // figure on its row to name. At all-mail reach the notice stays
+  // silent — archived mail IS in scope, so an inbox reconciliation would
+  // narrate a scope the action no longer has (same suppression as the
+  // senders modal). With the chips on screen, `verbActsBeyondInbox`
+  // swaps "only acts on" for "acts on inbox mail by default" (ADR-0028).
   const scopeCopy = allMailReach
     ? null
     : inboxScopeNoticeCopy(
         describeInboxScope({
-          inboxTotal: count,
+          inboxTotal: inboxTotal ?? count,
           windowCount: count,
-          olderThanDays: null,
+          olderThanDays: windowDays,
           recentArrivals: null,
         }),
         verbLabel,
         'this sender',
         { verbActsBeyondInbox: reachAvailable },
       );
+  // Same "(older than N days)" qualifier the senders confirm modal
+  // renders beside its own live count when a window is active
+  // (confirm-action-modal.tsx) — Delete's default window here is
+  // otherwise invisible next to a plain "N emails … now."
+  const windowQualifier =
+    !allMailReach && windowDays !== null
+      ? ` (older than ${WINDOW_PRESET_LABELS[windowDays] ?? `${windowDays} days`})`
+      : '';
 
   return (
     <>
       <strong style={strongStyle}>{count.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
-        email{count === 1 ? '' : 's'} {allMailReach ? 'across inbox + archived' : 'in Inbox'} now.
-        Rechecked when it runs, so the final count can differ.
+        email{count === 1 ? '' : 's'} {allMailReach ? 'across inbox + archived' : 'in Inbox'} now
+        {windowQualifier}. Rechecked when it runs, so the final count can differ.
       </span>
       {scopeCopy && (
         <span role="status" style={{ ...captionStyle, flexBasis: '100%' }}>

@@ -134,10 +134,14 @@ function previewHandler(row: (typeof SCREENER_QUEUE)[number], all: number) {
           },
           counts: {
             all,
-            olderThan30d: 0,
-            olderThan90d: 0,
-            olderThan180d: 0,
-            olderThan365d: 0,
+            olderThan30d: all,
+            olderThan90d: all,
+            // QA-delete-20260829-01 (2026-08-30) — Delete now reads THIS
+            // bucket by default, not `all`. Matching it to `all` keeps
+            // this fixture realistic instead of silently testing
+            // Delete's empty-window edge case.
+            olderThan180d: all,
+            olderThan365d: all,
           },
           recentMessages: {
             all: [row.sampleSubject],

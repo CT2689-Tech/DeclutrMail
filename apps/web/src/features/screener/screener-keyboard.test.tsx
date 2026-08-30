@@ -52,10 +52,15 @@ function livePreviewHandler(all: number, allMailTotal?: number) {
           },
           counts: {
             all,
-            olderThan30d: 0,
-            olderThan90d: 0,
-            olderThan180d: 0,
-            olderThan365d: 0,
+            olderThan30d: all,
+            olderThan90d: all,
+            // QA-delete-20260829-01 (2026-08-30) — Delete now reads THIS
+            // bucket by default, not `all`. Matching it to `all` keeps
+            // these fixtures realistic (a sender whose mail is all older
+            // than 6 months); a fixture that left this at 0 would now
+            // silently test Delete's empty-window edge case instead.
+            olderThan180d: all,
+            olderThan365d: all,
           },
           recentMessages: {
             all: [],
@@ -71,10 +76,10 @@ function livePreviewHandler(all: number, allMailTotal?: number) {
                 allMail: {
                   counts: {
                     all: allMailTotal,
-                    olderThan30d: 0,
-                    olderThan90d: 0,
-                    olderThan180d: 0,
-                    olderThan365d: 0,
+                    olderThan30d: allMailTotal,
+                    olderThan90d: allMailTotal,
+                    olderThan180d: allMailTotal,
+                    olderThan365d: allMailTotal,
                   },
                   recentMessages: {
                     all: [],
