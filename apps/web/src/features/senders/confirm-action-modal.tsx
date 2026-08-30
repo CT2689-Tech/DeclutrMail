@@ -6,6 +6,7 @@ import {
   buildActionPresentation,
   composeRecoveryFacts,
   countUnsubscribeCapabilities,
+  DEFAULT_DELETE_WINDOW_DAYS,
   defaultLaterWakeAtIso,
   describeInboxScope,
   inboxScopeNoticeCopy,
@@ -157,7 +158,7 @@ function pickBucketSubjects(
 
 /** Default time-window per primary verb (spec v1.2 Decision 15 table). */
 function defaultWindow(verb: ActionVerb): number | null {
-  return verb === 'Delete' ? 180 : null;
+  return verb === 'Delete' ? DEFAULT_DELETE_WINDOW_DAYS : null;
 }
 
 /**

@@ -220,6 +220,53 @@ describe('D245 action semantics', () => {
       expect(activityUndoSummary(null, null, planDependentFallback)).toBe(planDependentFallback);
     });
   });
+
+  describe('interactive live-preview surfaces never show the raw registry hedge', () => {
+    // QA-delete-20260829-06/07 (2026-08-30): the copy-guard test
+    // (undo-window-copy-guard.test.ts) only scans PUBLIC/marketing copy
+    // modules, `staticActionPreviewCopy` has its own assertion above, but
+    // nothing previously locked in that `buildActionPresentation` — the
+    // path Triage, the senders confirm modal, the Screener decide
+    // preview, and the Autopilot approve modal all actually render from —
+    // derives `activityUndo.summary` through `activityUndoSummary` rather
+    // than reading each verb's hardcoded `ActionSemantics.activityUndo.
+    // summary` raw. Investigation found the derivation itself was already
+    // correct (fixed by #646, merged 2026-08-27, two days before this
+    // finding was filed) — this closes the coverage gap the finding
+    // correctly named, without changing behavior that was already right.
+    const PLAN_WINDOW_VERBS = ['archive', 'later', 'unarchive', 'delete'] as const;
+
+    it('has a raw registry hedge to guard against for every plan-window verb', () => {
+      // Starve check (CLAUDE.md §8, "a guard that cannot fail is not a
+      // guard"): if this ever comes back empty, the test below would pass
+      // vacuously and certify nothing.
+      expect(PLAN_WINDOW_VERBS.length).toBeGreaterThan(0);
+      for (const verb of PLAN_WINDOW_VERBS) {
+        expect(ACTION_SEMANTICS[verb].activityUndo.kind).toBe('plan-window');
+      }
+    });
+
+    it.each(PLAN_WINDOW_VERBS)(
+      "%s's live preview states the window, never the raw registry hedge",
+      (verb) => {
+        expect(UNIFORM_UNDO_WINDOW_DAYS).not.toBeNull();
+        const presentation = buildActionPresentation({
+          verb,
+          liveCount: 3,
+          planUndoDeadline: null,
+          wakeAt: verb === 'later' ? '2026-07-21T16:00:00.000Z' : null,
+          unsubscribeChannel: null,
+        });
+        const summary = presentation.primary.activityUndo.summary;
+        expect(summary).toBe(`Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`);
+        // The raw registry entry for this verb, unread — proves the
+        // assertion above is checking the DERIVED value, not coincidentally
+        // matching a hedge that happens to contain the same day count.
+        const rawHedge = ACTION_SEMANTICS[verb].activityUndo.summary;
+        expect(summary).not.toBe(rawHedge);
+      },
+    );
+  });
 });
 
 function actionSnapshot(): ActionStatusSnapshot {

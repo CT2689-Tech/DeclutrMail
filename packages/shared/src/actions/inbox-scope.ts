@@ -30,6 +30,18 @@
 // finding 5.14 and systemic cause 5.
 
 /**
+ * Default time-window for Delete (spec v1.2 Decision 15): "6 months+",
+ * the one primary verb whose default is a safer, narrower scope rather
+ * than the whole inbox. Single source of truth — every Delete surface
+ * (the senders confirm modal, the Screener decide preview) applies this
+ * same default so the two cannot drift out of sync on what "Delete"
+ * does when nobody has touched a window control (QA-delete-20260829-01,
+ * 2026-08-30: Screener had no default at all, so identical fresh mail
+ * was dead-on-open through Senders and friction-free through Screener).
+ */
+export const DEFAULT_DELETE_WINDOW_DAYS = 180;
+
+/**
  * Which reconciliation, if any, the preview owes the reader. `none` is
  * the common case — the selected window matches mail, so the count
  * speaks for itself.
@@ -197,7 +209,7 @@ export function inboxScopeNoticeCopy(
 }
 
 /** Day-count → the same preset label every window chip renders for it. */
-const WINDOW_PRESET_LABELS: Record<number, string> = {
+export const WINDOW_PRESET_LABELS: Record<number, string> = {
   30: '30 days+',
   90: '3 months+',
   180: '6 months+',
