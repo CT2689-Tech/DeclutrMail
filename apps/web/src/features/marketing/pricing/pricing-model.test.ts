@@ -114,7 +114,7 @@ describe('compareRows — derived from the manifest', () => {
     // splitting a label later does not need this line edited — and a
     // capability added with no label is still a compile error.
     const distinctLabels = new Set(CAPABILITIES.map((c) => CAPABILITY_LABELS[c]));
-    expect(rows).toHaveLength(distinctLabels.size + 2);
+    expect(rows).toHaveLength(distinctLabels.size + 3);
     const comparableCount = TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable).length;
     for (const row of rows) {
       expect(row.values).toHaveLength(comparableCount);
@@ -146,6 +146,16 @@ describe('compareRows — derived from the manifest', () => {
       expect(inboxRow?.values[i]).toBe(String(TIER_MANIFEST[id].inboxLimit));
       expect(undoRow?.values[i]).toBe(`${TIER_MANIFEST[id].undoWindowDays} days`);
     });
+  });
+
+  it('discloses the Pro-only all-matching selector as its own row', () => {
+    const rows = compareRows();
+    const selectorRow = rows.find((r) => r.label === 'All-matching cleanup');
+    expect(selectorRow).toBeDefined();
+    const compareIds = TIER_IDS.filter((id) => TIER_MANIFEST[id].purchasable);
+    expect(selectorRow?.values[compareIds.indexOf('free')]).toBeNull();
+    expect(selectorRow?.values[compareIds.indexOf('plus')]).toBeNull();
+    expect(selectorRow?.values[compareIds.indexOf('pro')]).toBe('Included');
   });
 });
 

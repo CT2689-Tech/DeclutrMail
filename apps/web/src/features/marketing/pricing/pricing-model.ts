@@ -15,6 +15,7 @@
 
 import {
   CAPABILITIES,
+  SELECTOR_TIERS,
   TIER_IDS,
   TIER_MANIFEST,
   type Capability,
@@ -324,5 +325,14 @@ export function compareRows(): readonly CompareRow[] {
     },
   ];
 
-  return [...capabilityRows, ...quotaRows];
+  const selectorRows: CompareRow[] = [
+    {
+      label: 'All-matching cleanup',
+      values: tiers.map((tier) =>
+        SELECTOR_TIERS['sender-filter'] === tier.id ? 'Included' : null,
+      ),
+    },
+  ];
+
+  return [...capabilityRows, ...quotaRows, ...selectorRows];
 }
