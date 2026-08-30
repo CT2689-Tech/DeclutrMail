@@ -147,6 +147,13 @@ describe('the simulator carries its own share card — playbook G7', () => {
   });
 });
 
+describe("meta description length — stays inside Google's display limit", () => {
+  it('keeps /pricing and /compare descriptions at 160 characters or fewer', () => {
+    expect(pricing.description!.length).toBeLessThanOrEqual(160);
+    expect(compare.description!.length).toBeLessThanOrEqual(160);
+  });
+});
+
 describe.each(PAGES)('$name page metadata — D132', ({ metadata, path, routeOwnCard }) => {
   it('declares the canonical path', () => {
     expect(metadata.alternates?.canonical).toBe(path);
