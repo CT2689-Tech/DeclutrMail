@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import HowItWorksPage, { metadata } from './page';
@@ -68,6 +68,28 @@ describe('/how-it-works', () => {
 
     expect(copy).not.toMatch(/every action (?:is |stays |remains )?(?:reversible|undoable)/i);
     expect(copy).not.toMatch(/all actions (?:are |stay |remain )?(?:reversible|undoable)/i);
+  });
+
+  it('names Screener, Autopilot, Quiet hours, Daily Brief, and Follow-ups before the final CTA', () => {
+    const { container } = render(<HowItWorksPage />);
+
+    // "Autopilot" already appears elsewhere on this page (the hero lede,
+    // and the GmailBridgeTable/AutomationBoundaryFigure diagrams in
+    // sections 03/05), so a page-wide getByText(/autopilot/i) would pass
+    // even if section 07 itself never mentioned it. Scope to section 07
+    // ("beyond-manual") so this assertion actually exercises this task's
+    // new prose.
+    const section07 = container.querySelector('#beyond-manual');
+    expect(section07).not.toBeNull();
+    const withinSection07 = within(section07 as HTMLElement);
+
+    expect(screen.getByText(/screener/i)).toBeInTheDocument();
+    expect(
+      withinSection07.getByText(/the whole Autopilot system for rules you turn on yourself/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/quiet hours/i)).toBeInTheDocument();
+    expect(screen.getByText(/daily brief/i)).toBeInTheDocument();
+    expect(screen.getByText(/follow-ups/i)).toBeInTheDocument();
   });
 
   it('publishes canonical social metadata', () => {

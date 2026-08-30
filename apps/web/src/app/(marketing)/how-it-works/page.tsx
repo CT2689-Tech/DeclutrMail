@@ -159,6 +159,26 @@ export default function HowItWorksPage() {
         </div>
       </StorySection>
 
+      <StorySection
+        id="beyond-manual"
+        number="07"
+        title="Manual cleanup is the floor, not the whole product."
+        intro={
+          <p>
+            Free covers everything above. Plus adds the Screener, which collects new senders for
+            review instead of dropping them straight in your inbox, the whole Autopilot system for
+            rules you turn on yourself, and Quiet hours, which decide when those rules are allowed
+            to run. Pro adds the Daily Brief, a once-a-day summary of what actually needs your
+            attention, and Follow-ups, a queue for the senders you replied to but haven&rsquo;t
+            heard back from.
+          </p>
+        }
+      >
+        <p className="dm-story-callout">
+          See exactly what each plan includes on <a href="/pricing">the pricing page</a>.
+        </p>
+      </StorySection>
+
       <FinalStoryCta
         title="Bring the sender view to your Gmail."
         body="Connect Gmail, let the first scan finish, and make your first decision with the affected emails visible before anything changes."
