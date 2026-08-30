@@ -13,7 +13,7 @@ export const metadata: Metadata = marketingPageMetadata({
   // themselves at number one.
   title: 'Gmail cleanup tools compared side by side — DeclutrMail',
   description:
-    'DeclutrMail, Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail, side by side on what each actually does. Official sources, unknowns left unknown, no rankings.',
+    'DeclutrMail vs. Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail — what each actually does. Official sources, unknowns left unknown.',
   path: '/compare',
 });
 

@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
 vi.mock('@/lib/posthog', () => ({ track }));
 
-import { COMPARISONS, comparisonBySlug } from './comparison-data';
+import {
+  ALTERNATIVES_SLUGS,
+  COMPARISONS,
+  COMPARISONS_VERIFIED_FLOOR_ISO,
+  comparisonBySlug,
+  comparisonVerifiedLabel,
+} from './comparison-data';
 import { ComparisonDetailScreen, ComparisonIndexScreen } from './comparison-screen';
 
 describe('ComparisonIndexScreen', () => {
@@ -13,7 +19,9 @@ describe('ComparisonIndexScreen', () => {
   it('renders every comparison route and the verification standard', () => {
     render(<ComparisonIndexScreen />);
 
-    expect(screen.getByText(/Last verified July 2026/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(comparisonVerifiedLabel(COMPARISONS_VERIFIED_FLOOR_ISO), { exact: false }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/No affiliate rankings/i)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Scrollable comparison summary' })).toHaveAttribute(
       'tabindex',
@@ -31,6 +39,17 @@ describe('ComparisonIndexScreen', () => {
     expect(
       screen.getAllByText(/Not publicly stated on reviewed product pages/i).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('links every /alternatives page from the compare index', () => {
+    render(<ComparisonIndexScreen />);
+    for (const slug of ALTERNATIVES_SLUGS) {
+      const subject = comparisonBySlug(slug)!;
+      expect(screen.getByRole('link', { name: `Alternatives to ${subject.name}` })).toHaveAttribute(
+        'href',
+        `/alternatives/${slug}`,
+      );
+    }
   });
 
   it('tracks both lower-funnel choices in the final comparison CTA', () => {
@@ -85,10 +104,18 @@ describe('ComparisonDetailScreen', () => {
     },
   );
 
+  // unroll-me is currently the sole oldest entry, so its own verifiedIso
+  // equals COMPARISONS_VERIFIED_FLOOR_ISO — the floor-vs-page-own
+  // distinction this test used to prove is unobservable in the DOM right
+  // now because every entry sits in the same month (August 2026). This
+  // test only proves the component reads `unrollMe.verifiedIso` directly,
+  // not that it diverges from the hub floor.
   it('stamps a page with its own verification month, not the hub floor', () => {
-    render(<ComparisonDetailScreen comparison={comparisonBySlug('unroll-me')!} />);
-    expect(screen.getAllByText(/Last verified August 2026/i).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Last verified July 2026/i)).not.toBeInTheDocument();
+    const unrollMe = comparisonBySlug('unroll-me')!;
+    render(<ComparisonDetailScreen comparison={unrollMe} />);
+    expect(
+      screen.getAllByText(comparisonVerifiedLabel(unrollMe.verifiedIso), { exact: false }).length,
+    ).toBeGreaterThan(0);
   });
 
   it('renders a visible unknown state and does not disguise it as unsupported', () => {

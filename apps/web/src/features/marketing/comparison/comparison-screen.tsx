@@ -5,6 +5,8 @@ import { JsonLd } from '../json-ld';
 import { TrackedCta } from '../landing/tracked-cta';
 import { oauthStartUrl, siteUrl } from '../landing/urls';
 import {
+  ALTERNATIVES_SLUGS,
+  comparisonBySlug,
   COMPARISONS,
   COMPARISONS_VERIFIED_FLOOR_ISO,
   comparisonVerifiedLabel,
@@ -201,6 +203,40 @@ export function ComparisonIndexScreen() {
                 </a>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section
+          className="dm-mkt-shell dm-compare-index-section"
+          aria-labelledby="alternatives-list-title"
+        >
+          <p className="dm-mkt-eyebrow">Looking for a roundup instead</p>
+          <h2 id="alternatives-list-title" className="dm-mkt-h2">
+            Every tool, from the other tool&rsquo;s side.
+          </h2>
+          <p className="dm-compare-matrix-lede">
+            Each page below starts from a specific tool and lists what every alternative — including
+            DeclutrMail — is actually for, using that tool&rsquo;s own words. No page ranks itself
+            first.
+          </p>
+          <div className="dm-compare-card-grid">
+            {ALTERNATIVES_SLUGS.map((slug, index) => {
+              const subject = comparisonBySlug(slug);
+              if (!subject) return null;
+              return (
+                <article className="dm-compare-card" key={slug}>
+                  <div className="dm-compare-card-topline">
+                    <span>0{index + 1}</span>
+                    <span>{subject.category}</span>
+                  </div>
+                  <h3>Alternatives to {subject.name}</h3>
+                  <p>What to use instead of {subject.name}, and when to stay.</p>
+                  <a href={`/alternatives/${slug}`} aria-label={`Alternatives to ${subject.name}`}>
+                    See the alternatives <span aria-hidden="true">→</span>
+                  </a>
+                </article>
+              );
+            })}
           </div>
         </section>
 

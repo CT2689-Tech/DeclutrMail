@@ -166,7 +166,7 @@ const cleanEmail: ComparisonDefinition = {
   slug: 'clean-email',
   name: 'Clean Email',
   category: 'Broad cleanup suite',
-  verifiedIso: '2026-07-11',
+  verifiedIso: '2026-08-30',
   title: 'DeclutrMail vs Clean Email',
   description:
     'A source-backed comparison of DeclutrMail and Clean Email for Gmail cleanup, automation, unsubscribe, privacy, and pricing.',
@@ -297,7 +297,7 @@ const trimbox: ComparisonDefinition = {
   slug: 'trimbox',
   name: 'Trimbox',
   category: 'In-inbox unsubscriber',
-  verifiedIso: '2026-07-11',
+  verifiedIso: '2026-08-30',
   title: 'DeclutrMail vs Trimbox',
   description:
     'A source-backed comparison of DeclutrMail and Trimbox for Gmail unsubscribe, past-email deletion, automation, privacy, and pricing.',
@@ -428,7 +428,7 @@ const sanebox: ComparisonDefinition = {
   slug: 'sanebox',
   name: 'SaneBox',
   category: 'Importance sorting',
-  verifiedIso: '2026-07-11',
+  verifiedIso: '2026-08-30',
   title: 'DeclutrMail vs SaneBox',
   description:
     'A source-backed comparison of DeclutrMail and SaneBox for sender cleanup, importance sorting, training, privacy, providers, and pricing.',
@@ -438,7 +438,7 @@ const sanebox: ComparisonDefinition = {
     'Choose between learned importance sorting for incoming mail and explicit sender decisions you approve one at a time.',
   primaryUnit: 'Learned sender importance and training folders',
   providerScope: 'Most IMAP/Exchange-style providers',
-  publicEntryPoint: '14-day trial; plans limit accounts and enabled features',
+  publicEntryPoint: '7-day trial; plans limit accounts and enabled features',
   chooseCompetitor: {
     headline: 'Choose SaneBox for continuous sorting',
     points: [
@@ -526,7 +526,7 @@ const sanebox: ComparisonDefinition = {
       label: 'Public starting point',
       declutrMail: DECLUTR.price,
       competitor: {
-        summary: '14-day trial; paid plans by accounts and feature slots',
+        summary: '7-day trial; paid plans by accounts and feature slots',
         detail: 'Official pricing lists 1/2/4 accounts with 2/6/all selectable Sane features.',
         state: 'supported',
       },
@@ -560,7 +560,7 @@ const leaveMeAlone: ComparisonDefinition = {
   slug: 'leave-me-alone',
   name: 'Leave Me Alone',
   category: 'Subscription control',
-  verifiedIso: '2026-07-11',
+  verifiedIso: '2026-08-30',
   title: 'DeclutrMail vs Leave Me Alone',
   description:
     'A source-backed comparison of DeclutrMail and Leave Me Alone for unsubscribe, newsletter rollups, sender cleanup, privacy, providers, and pricing.',
@@ -861,7 +861,7 @@ const gmailFilters: ComparisonDefinition = {
   slug: 'gmail-filters',
   name: 'Gmail filters',
   category: 'Native rules',
-  verifiedIso: '2026-07-11',
+  verifiedIso: '2026-08-30',
   title: 'DeclutrMail vs Gmail filters',
   description:
     'A source-backed comparison of DeclutrMail and native Gmail filters for sender cleanup, future-mail rules, unsubscribe, preview, recovery, and cost.',
@@ -998,7 +998,7 @@ const gmailNative: ComparisonDefinition = {
   slug: 'gmail',
   name: "Gmail's built-in cleanup",
   category: 'Native tools',
-  verifiedIso: '2026-07-11',
+  verifiedIso: '2026-08-30',
   title: "DeclutrMail vs Gmail's built-in cleanup",
   description:
     "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",

@@ -160,4 +160,9 @@ describe('PricingScreen (D19)', () => {
     const link = screen.getByRole('link', { name: 'Contact sales' });
     expect(link).toHaveAttribute('href', expect.stringMatching(/^mailto:/));
   });
+
+  it('explains what happens when the Free monthly cap is reached', () => {
+    render(<PricingScreen />);
+    expect(screen.getByText(/until the next month or an upgrade/i)).toBeInTheDocument();
+  });
 });

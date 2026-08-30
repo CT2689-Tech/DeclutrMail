@@ -12,6 +12,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
+import { Hero } from '@/features/marketing/landing/hero';
 
 // No edge geo outside Vercel — the header is genuinely absent locally,
 // in CI, and on any self-hosted deployment, so the empty set IS the
@@ -199,5 +200,13 @@ describe('landing page — D134', () => {
       const plain = question.acceptedAnswer.text.replace(/ <a href=[^>]*>.*<\/a>$/, '');
       expect(rendered[i]?.querySelector('.dm-mkt-faq-a')?.textContent).toContain(plain);
     });
+  });
+});
+
+describe('Hero subhead — names the tier for a Plus-only claim', () => {
+  it('names Plus when describing Autopilot rules (bypasses renderLanding — Hero has no server data dependency)', () => {
+    render(<Hero />);
+    const subhead = screen.getByText(/turn on a rule/i);
+    expect(subhead.textContent).toMatch(/plus/i);
   });
 });

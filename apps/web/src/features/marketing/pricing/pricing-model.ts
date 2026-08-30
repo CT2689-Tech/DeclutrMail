@@ -15,6 +15,7 @@
 
 import {
   CAPABILITIES,
+  SELECTOR_TIERS,
   TIER_IDS,
   TIER_MANIFEST,
   type Capability,
@@ -174,7 +175,7 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'Review and act on senders yourself.',
   plus: 'Remove the monthly limit and let rules keep it clean.',
-  pro: 'See what matters, across every account.',
+  pro: 'Get the Daily Brief and Follow-ups, across every account.',
   team: 'Review and manage email together.',
   enterprise: 'Manage more inboxes with organizational controls.',
 };
@@ -324,5 +325,14 @@ export function compareRows(): readonly CompareRow[] {
     },
   ];
 
-  return [...capabilityRows, ...quotaRows];
+  const selectorRows: CompareRow[] = [
+    {
+      label: 'All-matching cleanup',
+      values: tiers.map((tier) =>
+        SELECTOR_TIERS['sender-filter'] === tier.id ? 'Included' : null,
+      ),
+    },
+  ];
+
+  return [...capabilityRows, ...quotaRows, ...selectorRows];
 }
