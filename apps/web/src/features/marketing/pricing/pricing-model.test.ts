@@ -18,6 +18,7 @@ import {
   foundingProPromo,
   priceLineFor,
   pricingTiers,
+  TIER_JOBS,
 } from './pricing-model';
 
 /**
@@ -282,5 +283,12 @@ describe('shared capability labels', () => {
       const bullets = cardBullets(TIER_MANIFEST[tierId]);
       expect(new Set(bullets).size, `${tierId} card repeats a bullet`).toBe(bullets.length);
     }
+  });
+});
+
+describe('TIER_JOBS — one-line pitch per tier', () => {
+  it('names a concrete Pro capability instead of restating the tagline', () => {
+    expect(TIER_JOBS.pro).not.toBe('See what matters, across every account.');
+    expect(TIER_JOBS.pro.toLowerCase()).toMatch(/brief|follow-up/);
   });
 });
