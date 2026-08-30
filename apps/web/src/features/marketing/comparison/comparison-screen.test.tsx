@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
 vi.mock('@/lib/posthog', () => ({ track }));
 
-import { COMPARISONS, comparisonBySlug } from './comparison-data';
+import { ALTERNATIVES_SLUGS, COMPARISONS, comparisonBySlug } from './comparison-data';
 import { ComparisonDetailScreen, ComparisonIndexScreen } from './comparison-screen';
 
 describe('ComparisonIndexScreen', () => {
@@ -31,6 +31,17 @@ describe('ComparisonIndexScreen', () => {
     expect(
       screen.getAllByText(/Not publicly stated on reviewed product pages/i).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('links every /alternatives page from the compare index', () => {
+    render(<ComparisonIndexScreen />);
+    for (const slug of ALTERNATIVES_SLUGS) {
+      const subject = comparisonBySlug(slug)!;
+      expect(screen.getByRole('link', { name: `Alternatives to ${subject.name}` })).toHaveAttribute(
+        'href',
+        `/alternatives/${slug}`,
+      );
+    }
   });
 
   it('tracks both lower-funnel choices in the final comparison CTA', () => {
