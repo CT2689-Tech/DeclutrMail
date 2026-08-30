@@ -11,6 +11,10 @@ finding is **an open question about the product or the code** — it has no
 verdict yet. Once it has one, it either becomes work (PR / D-candidate),
 a followup (founder's hands), or a documented no.
 
+For a rolled-up view of this file's priority counts alongside
+`docs/qa/qa-worklist.md`'s, see `docs/qa/at-a-glance.md` — a hand-refreshed
+snapshot, not a live one.
+
 ## How to use this
 
 **Founder:** say `/ct-finding <what you saw>` in any session. Nothing to format,
