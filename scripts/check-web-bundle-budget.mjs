@@ -88,7 +88,15 @@ const OVERRIDES_KB = {
   // The three heaviest surfaces in the product. Each is above the authed
   // default for a reason worth naming, so a future reader can tell an
   // earned cost from an accident.
-  '/(app)/senders/page': 210, // 206.5 — grid + table + compose strip + saved views
+  '/(app)/senders/page': 216, // 212.0 — grid + table + compose strip + saved views + mobile dialect
+  // Raised 210 -> 216 on 2026-08-30 (D54): measured 212.0, up from 206.5
+  // on main. The phone dialect (ADR-0018) added a third row-rendering
+  // path — swipe/long-press gestures on `SenderListRow`, the
+  // `ConfirmActionModal` sheet variant, and `SelectionFab` — all real,
+  // user-reached code on this route, none of it behind a lazy boundary
+  // (the phone/desktop branch is a runtime `useIsAtMost` check, not a
+  // route split, so both ship in the same chunk). 216 restores the
+  // same ~4 kB headroom the prior raise left, not more.
   // Raised 200 -> 206 on 2026-08-27; measured 202.2, up from 198.2 on
   // main (the 195.9 in the old comment was stale). The D226 preview
   // gained the verification detail the senders confirm modal already
