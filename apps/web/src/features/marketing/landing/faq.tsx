@@ -48,7 +48,7 @@ const FAQS: ReadonlyArray<{ q: string; a: string; link?: { href: string; label: 
   },
   {
     q: 'How is this different from Gmail filters?',
-    a: 'Filters are rules you write directly in Gmail. DeclutrMail groups email by sender, shows the affected count and a sample before you confirm, and records the result in Activity. The final count can change if new email arrives before the action runs. Archive, Later, and Delete do not create rules for future email. Autopilot is separate: only rules you deliberately turn on handle future email, you see what a rule would do before turning it on, and you can have one collect matches for your approval instead.',
+    a: 'Filters are rules you write directly in Gmail. DeclutrMail groups email by sender and shows the affected count and a sample before you confirm — the count can shift if new mail arrives first. Archive, Later, and Delete don’t create rules for future email; that’s Autopilot, which is opt-in and always previews before it goes live.',
   },
   {
     q: 'What happens if I disconnect or delete my account?',
