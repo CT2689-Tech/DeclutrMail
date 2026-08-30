@@ -7,7 +7,16 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import { useRevertUndo } from '@/lib/api/use-action';
 
 const mockAuth = vi.hoisted(() => ({
   tier: 'plus' as 'free' | 'plus' | 'pro' | 'team' | 'enterprise',
@@ -863,6 +872,100 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(undoBtn);
     await waitFor(() => expect(screen.queryByText(/archived 1 sender/i)).toBeNull());
     expect(undoPosted).toBe(true);
+  });
+
+  // QA-delete-20260829-05 — the same staleness gap `sender-detail-page.tsx`
+  // had: this screen's `receipt` is local state that only heard about a
+  // revert ITS OWN Undo click performed. The global undo tray reverts the
+  // identical token through a SEPARATE `useRevertUndo()` instance, mounted
+  // in a different component tree — simulated here the same way, sharing
+  // only the QueryClient, never touching this screen's React tree.
+  it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo)", async () => {
+    let archivePosted = false;
+    let undoPosted = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+      compositePreviewHandler(12),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () => {
+          archivePosted = true;
+          return jsonOk({ data: { actionId: 'act-1', requestedCount: 12, status: 'queued' } });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: (_req, url) =>
+          jsonOk({
+            data: archiveStatus({
+              actionId: url.pathname.endsWith('rev-ext') ? 'rev-ext' : 'act-1',
+              undoToken: url.pathname.endsWith('rev-ext') ? null : 'tok-1',
+              undoExpiresAt: url.pathname.endsWith('rev-ext') ? null : '2027-06-16T14:35:00.000Z',
+            }),
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/tok-1',
+        respond: () => {
+          undoPosted = true;
+          return jsonOk({
+            data: {
+              token: 'tok-1',
+              actionKind: 'archive',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'rev-ext',
+            },
+          });
+        },
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
+    fireEvent.click(checkbox);
+    fireEvent.keyDown(document.body, { key: 'a' });
+    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByText(/currently match.*Archive/i);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+    await screen.findByRole('status');
+    expect(archivePosted).toBe(true);
+    screen.getByRole('button', { name: /^undo$/i });
+
+    // Simulate the tray: a SEPARATE `useRevertUndo()` instance.
+    const { result } = renderHook(() => useRevertUndo(), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+    await act(async () => {
+      result.current.mutate({ token: 'tok-1' });
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    });
+
+    expect(undoPosted).toBe(true);
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
+    );
   });
 
   it('carries the chosen time window into a SINGLE-sender archive enqueue (D226)', async () => {
@@ -2279,7 +2382,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreen();
     await selectBothAndPress('d');
     // Destructive treatment — same Trash copy as single-sender Delete.
-    await screen.findByText(/delete email from 2 senders/i);
+    await screen.findByText(/move email from 2 senders to gmail trash/i);
     await screen.findByText(/moves to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
     await screen.findByText(/couldn't load the live preview/i);
@@ -2298,7 +2401,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(deleteBtn).toHaveAttribute('aria-keyshortcuts', 'D');
     fireEvent.click(deleteBtn);
     // The click routes through the SAME mandatory preview.
-    expect(await screen.findByText(/delete email from 1 sender/i)).toBeInTheDocument();
+    expect(await screen.findByText(/move email from 1 sender to gmail trash/i)).toBeInTheDocument();
   });
 
   const PROTECTED_B = {

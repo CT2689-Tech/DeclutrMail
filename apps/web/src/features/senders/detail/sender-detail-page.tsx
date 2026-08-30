@@ -308,6 +308,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const actionStatus = useActionStatus(activeAction?.actionId ?? null);
   const revertStatus = useActionStatus(revertActionId);
   const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
+  // QA-delete-20260829-05, Codex round 2 — a revert this page did NOT
+  // initiate (the global tray's own `useRevertUndo()`) is polled here too
+  // (see the `externalRevertActionId` effect below), but through a
+  // SEPARATE, quiet handle. Reusing `revertActionId` made the tray's own
+  // completion toast ("Restored to your inbox") fire a SECOND time from
+  // this page, and re-invalidate caches the tray's own
+  // `invalidateAfterUndo` had already invalidated — both harmless except
+  // the duplicate toast, which is real and user-visible.
+  const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
+  const externalRevertStatus = useActionStatus(externalRevertActionId);
   // Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident). A
   // handle that stays non-terminal past the deadline moves here; the
   // parked poll keeps running and its terminal side effects still land
@@ -913,6 +923,60 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       },
     );
   }, [receipt, revert, qc]);
+
+  // QA-delete-20260829-05 — `receipt` is local component state, so it only
+  // knows about a revert THIS page's own `onUndo` performed. The global
+  // undo tray (`ProductUndoTray`) reverts the identical token through its
+  // own `useRevertUndo()` instance, mounted in a different component tree,
+  // and this page never heard about it — the receipt strip kept asserting
+  // "Moved to Gmail Trash" for mail the tray had already restored. Every
+  // `useRevertUndo()` call shares one `MutationCache` regardless of which
+  // component owns the hook, so a successful revert of THIS receipt's own
+  // token — from any source — is caught here.
+  //
+  // Codex round 1 caught that the FIRST cut only handled `reverted: true`
+  // (the already-reverted / idempotent-repeat response) — the normal path
+  // for a fresh token returns `reverted: false` plus an `actionId` to poll.
+  // Codex round 2 caught that threading it into the page's OWN
+  // `revertActionId` (its poll-to-terminal effect toasts and re-invalidates)
+  // made an external, tray-driven revert toast TWICE — once from the tray,
+  // once from here. `externalRevertActionId` polls the SAME actionId
+  // through its own quiet effect below, which only clears `receipt`.
+  useEffect(() => {
+    const token = receipt?.activityUndo.token;
+    if (!token) return;
+    return qc.getMutationCache().subscribe((event) => {
+      if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
+      const variables = event.mutation.state.variables as { token?: string } | undefined;
+      const result = event.mutation.state.data as
+        { reverted?: boolean; actionId?: string | null } | undefined;
+      if (variables?.token !== token) return;
+      if (result?.reverted) {
+        setReceipt(null);
+      } else if (result?.actionId) {
+        setExternalRevertActionId(result.actionId);
+      }
+    });
+  }, [receipt, qc]);
+
+  // Quiet poll-to-terminal for an EXTERNALLY-triggered revert (see above) —
+  // no toast, no cache invalidation: the tray's own completion already
+  // toasts and its own `invalidateAfterUndo` already covers Senders/Activity.
+  // This effect's only job is to stop the receipt strip lying once the
+  // reverse job the tray enqueued actually finishes.
+  useEffect(() => {
+    if (!externalRevertActionId) return;
+    const data = externalRevertStatus.data;
+    if (externalRevertStatus.isError) {
+      setExternalRevertActionId(null);
+      return;
+    }
+    if (!data || !isTerminalStatus(data.status)) return;
+    if (data.status === 'done') {
+      setReceipt(null);
+    }
+    setExternalRevertActionId(null);
+  }, [externalRevertActionId, externalRevertStatus.data, externalRevertStatus.isError]);
 
   /** Protect is the sole standing safety state. */
   const toggleProtect = useCallback(() => {

@@ -689,7 +689,7 @@ export function ConfirmActionModal({
   });
 
   const title = isDeleteVerb
-    ? `Delete email from ${n} sender${plural}`
+    ? `Move email from ${n} sender${plural} to Gmail Trash`
     : isArchiveVerb
       ? `Archive email from ${n} sender${plural}`
       : isLaterVerb

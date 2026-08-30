@@ -13,7 +13,7 @@ const row = TRIAGE_QUEUE[0]!;
 
 const detail: ActionPreviewDetail = {
   mailLocationLine:
-    'Where this email is now: 17 in your inbox · 885 emails elsewhere in Gmail (archived or under a label).',
+    "Where this sender's mail is now: 17 emails in your inbox · 885 emails elsewhere in Gmail (archived or under a label).",
   matchSample: {
     rows: [
       { subject: 'Your weekly digest', date: '2026-08-20' },
@@ -69,7 +69,9 @@ function renderPreview(
 describe('ActionPreviewPresentation — verification detail (D226 parity)', () => {
   it('states where the sender mail actually is', () => {
     renderPreview();
-    expect(screen.getByTestId('mail-location-line').textContent).toContain('17 in your inbox');
+    expect(screen.getByTestId('mail-location-line').textContent).toContain(
+      '17 emails in your inbox',
+    );
     expect(screen.getByTestId('mail-location-line').textContent).toContain(
       '885 emails elsewhere in Gmail',
     );
@@ -181,5 +183,43 @@ describe('ActionPreviewPresentation — reasoning age label (D25, QA-archive-202
     expect(screen.queryByText(/^Scored /)).toBeNull();
     // The reasoning itself still renders — only the age label is gated.
     expect(screen.getByText('Why we suggested this:')).toBeInTheDocument();
+  });
+});
+
+// QA-delete-20260829-08 — a header that always promises a move ("Move inbox
+// email from X to Gmail Trash") read as active even when the live count is
+// 0, one line above a body reading "0 matching emails."
+describe('ActionPreviewPresentation — zero-match header', () => {
+  it.each(['Archive', 'Later', 'Delete'] as const)(
+    "titles %s's empty-inbox preview as nothing-to-move, not an active move",
+    (verb) => {
+      render(
+        <ActionPreviewPresentation
+          verb={verb}
+          row={row}
+          archiveHistoric={false}
+          inboxCount={0}
+          mode="modal"
+        />,
+      );
+      expect(
+        screen.getByRole('heading', { level: 3, name: new RegExp(`Nothing to move from`, 'i') }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('still promises the move when the live count is non-zero', () => {
+    render(
+      <ActionPreviewPresentation
+        verb="Delete"
+        row={row}
+        archiveHistoric={false}
+        inboxCount={1}
+        mode="modal"
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { level: 3, name: /Move inbox email from .* to Gmail Trash/i }),
+    ).toBeInTheDocument();
   });
 });

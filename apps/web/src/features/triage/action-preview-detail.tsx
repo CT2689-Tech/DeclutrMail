@@ -25,7 +25,7 @@ const { color, font } = tokens;
  */
 export interface ActionPreviewDetail {
   /**
-   * "Where this email is now" — the inbox/elsewhere split, ALREADY
+   * "Where this sender's mail is now" — the inbox/elsewhere split, ALREADY
    * rendered by the caller via `mailLocationCopy`.
    *
    * Passed as a finished string rather than its inputs so this module
@@ -66,7 +66,7 @@ export function actionMovesMail(verb: ActionVerb, archiveHistoric: boolean): boo
 }
 
 /**
- * "Where this email is now", the Gmail cross-check, and the current-match
+ * "Where this sender's mail is now", the Gmail cross-check, and the current-match
  * sample — omitted individually when the caller has no data for them, so
  * the compact preview renders nothing at all.
  */

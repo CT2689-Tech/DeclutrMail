@@ -680,7 +680,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     expect(screen.getByRole('radiogroup', { name: /How far back/i })).toBeTruthy();
     expect(
       screen.getByText(
-        /30 emails from this sender are in your inbox, but none are older than 180 days\. Widen the window to include them\./,
+        /30 emails from this sender are in your inbox, but none are older than the 6 months\+ window\. Widen the window to include them\./,
       ),
     ).toBeTruthy();
   });
@@ -1355,8 +1355,8 @@ describe('ConfirmActionModal — where the sender’s mail actually is', () => {
     );
     // 4 in inbox + 973 elsewhere + 23 binned = 1,000 received.
     expect(screen.getByTestId('mail-location-line')).toHaveTextContent(
-      'Where this email is now: 4 in your inbox · 973 emails elsewhere in Gmail ' +
-        '(archived or under a label) · 23 in Trash or Spam.',
+      "Where this sender's mail is now: 4 emails in your inbox · 973 emails elsewhere in Gmail " +
+        '(archived or under a label) · 23 emails in Trash or Spam.',
     );
   });
 
@@ -1698,5 +1698,24 @@ describe('ConfirmActionModal — the sample panel covers only mail that moves (D
     );
     fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
     expect(screen.getByRole('button', { name: /Show what currently matches/ })).toBeInTheDocument();
+  });
+});
+
+// QA-delete-20260829-02 — the title a reader sees before every other line on
+// the surface named Delete without naming its actual destination, unlike
+// Triage's equivalent header ("Move inbox email from X to Gmail Trash").
+describe('ConfirmActionModal — Delete title names its destination', () => {
+  it('says the mail moves to Gmail Trash, not just "Delete"', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { name: /move email from 1 sender to gmail trash/i }),
+    ).toBeInTheDocument();
   });
 });

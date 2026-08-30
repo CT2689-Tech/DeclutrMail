@@ -1059,3 +1059,144 @@ applied directly (small, well-scoped, verified by re-running the full
 affected-area suite — 551/551 green — plus typecheck and lint) rather than
 sending a third round, per the two-round cap. Founder sees this record
 rather than a third Codex pass.
+
+## delete
+
+Rows accumulate across every `/ct-qa delete` run. Per-run counts are in the
+ledger. First filed 2026-08-29 (9 survivors; 1 candidate REFUTED and 1
+PARTIALLY REFUTED-then-refiled-corrected before filing — see the ledger's
+Refuted table for the grounds on each). All P2/P3 — none in `FINDINGS.md`.
+
+|     | id                    | sev | one line                                                                                                                                                                                                                                           | status                                                                                 | PR  |
+| --- | --------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | --- |
+| ⬜  | QA-delete-20260829-01 | P2  | Delete's "safer" 180-day default window applies only to the Senders/sender-detail confirm modal, not to Screener's sibling Delete preview, so the identical fresh-mail delete is dead-on-open through one door and friction-free through the other | Open — design question, not offered for a copy fix                                     |     |
+| 🔴  | QA-delete-20260829-02 | P2  | The Senders Delete confirm modal's title ("Delete email from 1 sender") never says Trash, unlike Triage's equivalent header                                                                                                                        | At review cap — round 1 clean, round 2 clean                                           |     |
+| 🔴  | QA-delete-20260829-03 | P2  | Empty-window notice states an age in days ("not older than 6 days") beside a control labelled in months ("6 months+")                                                                                                                              | At review cap — round 1 clean, round 2 clean                                           |     |
+| ⬜  | QA-delete-20260829-04 | P2  | Post-delete Undo deadline renders in UTC while every other timestamp on the same surfaces renders in the viewer's local clock                                                                                                                      | Approved, NOT fixed — see note below                                                   |     |
+| 🔴  | QA-delete-20260829-05 | P3  | Senders receipt strip doesn't observe an undo performed via the global Undo tray and keeps asserting stale "Moved to Gmail Trash" state (all verbs, not Delete-specific)                                                                           | At review cap — round 1 found 2 (fixed `4dab8f68`), round 2 found 1 (fixed `fb4a8e39`) |     |
+| ⬜  | QA-delete-20260829-06 | P3  | The same 30-day undo window is named three different ways across surfaces                                                                                                                                                                          | Approved, NOT fixed — see note below                                                   |     |
+| ⬜  | QA-delete-20260829-07 | P3  | Delete preview body is verbose — its last sentence restates the one before it                                                                                                                                                                      | Approved, NOT fixed — see note below                                                   |     |
+| 🔴  | QA-delete-20260829-08 | P3  | A zero-match Delete preview's header still reads as an active move ("Move inbox email from X to Gmail Trash" above a "0 matching emails" body)                                                                                                     | At review cap — round 1 clean, round 2 clean                                           |     |
+| 🔴  | QA-delete-20260829-09 | P3  | Mail-location sentence mixes a singular subject ("this email") with a four-digit population and drops the unit noun on one side of the split                                                                                                       | At review cap — round 1 found 1 (fixed `4dab8f68`), round 2 clean                      |     |
+
+**Founder approved 02–09 (plus 05) as one copy/staleness PR on 2026-08-29,
+declining 01 as a design question. Implementing 04, 06 and 07 surfaced that
+the approved fix would have been wrong, so those three were pulled back out
+before any code changed — see "Approved, held back" below. -02/-03/-05/-08/-09
+shipped as scoped.**
+
+### Approved, held back — 04, 06, 07 need a founder call, not a copy tweak
+
+All three looked like independent wording nits at filing time. Implementing
+them showed they are the SAME defect, already named and actively hunted by
+D245 (`packages/shared/src/entitlements/undo-window.ts`,
+`apps/web/src/app/(marketing)/undo-window-copy-guard.test.ts`): the Undo
+window ladder went uniform at 30 days on 2026-08-23, and the guard test's own
+header says three prior sweeps each declared every hedged site fixed and each
+was wrong.
+
+- **-06's "three different names"** aren't three arbitrary spellings of one
+  idea — two are a pre-action policy statement ("Undo from Activity during
+  your plan's Undo window") and a post-action deadline ("Activity Undo
+  until Sep 26…"), which are legitimately different information and should
+  NOT collapse to one string. The real defect is narrower and worse:
+  `action-semantics.ts`'s `delete` entry hardcodes
+  `"DeclutrMail Undo is available from Activity during your plan's Undo
+window."` — a **static string**, never re-evaluated against
+  `UNIFORM_UNDO_WINDOW_DAYS` — while `action-sheet.tsx:429-430` (same
+  feature area) already does this correctly with a ternary on that exact
+  constant. `action-semantics.ts` is not in the copy-guard test's scanned
+  module list (its own comment enumerates what IS covered), so this is a
+  live, unguarded hedge on the highest-traffic preview surfaces
+  (Triage + Senders + Screener), for Archive/Later/Unarchive too, not only
+  Delete.
+- **-07's "sentence 5 restates sentence 4"** are `providerRecovery.summary`
+  and `finality.summary` in that SAME `delete` entry — fixing verbosity
+  there means rewriting text in the identical hardcoded, unguarded object
+  the -06 finding lives in.
+- **-04's UTC timestamp** (`packages/shared/src/components/undo-tray/undo-tray.tsx:337-345`)
+  is very likely a DELIBERATE hydration-safety choice, not an oversight:
+  `undo-tray.test.tsx`'s own header says rendering is SSR-only, and a
+  locale-dependent `Intl.DateTimeFormat` render would put the server and the
+  viewer's browser on different clocks on first paint — exactly the
+  hydration-mismatch class this codebase has been bitten by before
+  (QA-archive-20260828-03). Switching it to local time without a
+  `useNow()`-style post-hydration gate (the pattern already used for this
+  exact problem elsewhere) risks reintroducing that bug, not fixing a typo.
+
+None of the three is a copy tweak: -06/-07 need `action-semantics.ts` to
+derive its Undo-window and Trash-retention text from `UNIFORM_UNDO_WINDOW_DAYS`
+the way `action-sheet.tsx` already does (a real code change to a static
+`Record`, touching Archive/Later/Delete/Unarchive), and -04 needs the same
+hydration-gating pattern `action-preview-presentation.tsx` already uses for
+its age label, applied to a component explicitly documented as SSR-only. Each
+carries real regression risk if rushed. Recommend: found a separate `D245
+follow-up` job for -06/-07 (four verb entries, one file, one clear pattern to
+copy) rather than an ad-hoc fix riding this PR, and a founder call on whether
+-04 is worth the hydration-gating work for a P2 that only ever reads
+differently by a few hours.
+
+**QA-delete-20260829-01, -05 — sourced from `finding-refuter`, corrected from the
+driver's original candidates; -02/-03/-04/-06/-07/-08/-09 — sourced from
+`usability-editor` on copy driven and captured live this run, same
+scope/budget precedent as `QA-archive-20260828-01/-04/-05/-06`; none of the
+seven put through a dedicated second `finding-refuter` pass.**
+
+-01's window-inconsistency claim was verified live twice more after the
+refuter's report: `members.wayfair.com` (Screener, 6 real inbox messages, 6
+days old) opened its Delete preview with the full count shown and ready to
+confirm immediately; the identical freshness on `noreply@thinq-email-lge.com`
+and `updates@simplilearnmailer.com` (Senders confirm modal) opened disabled
+with "0 emails currently match" until manually widened to "All inbox."
+
+-05's root cause (`sender-detail-page.tsx:274`'s `receipt` `useState` never
+invalidated by a tray-performed revert) has no data-safety consequence — the
+DB (`action_jobs`) confirmed a second click on the stale control never fires a
+second mutation — so severity is P3, not higher, despite reading first as a
+functional bug.
+
+**Regression test:** -02/-03/-05/-08/-09 each got one, every one negative-
+controlled (fix reverted via `git stash`, assertion seen RED, fix restored,
+seen GREEN again) — `confirm-action-modal.test.tsx` ("names its destination"),
+`inbox-scope.test.ts` (window-preset labels + mail-location unit noun/opener),
+`sender-detail-page.test.tsx` ("clears the receipt when a DIFFERENT
+component's useRevertUndo() reverts the same token" — a second `useRevertUndo()`
+instance sharing only the QueryClient, proving the fix without rendering the
+tray itself), `action-preview-detail.test.tsx` (zero-match header, all three
+count-based verbs). Full `apps/web` + `packages/shared` suites green
+(2360 + 614 tests), typecheck and lint clean on every touched file. 01/04/06/07
+have none — 01 is a design question, and 04/06/07 were pulled before any code
+changed (see "Approved, held back" above).
+
+### Review rounds — QA-02 / QA-03 / QA-05 / QA-08 / QA-09
+
+One diff, reviewed as one unit (all five ride the same PR).
+
+| round | ran against | verdict         | what it returned                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----- | ----------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `28a415fa`  | **substantive** | -05 was not actually fixed for the normal case — a fresh token's revert returns `reverted: false` + an `actionId` to poll, not the immediate `reverted: true` shape the first cut only handled; and the same fix was entirely missing on `senders-screen.tsx`'s own local `receipt`. -09 missed the Trash/Spam segment's unit noun (only the inbox segment got one). Both fixed in `4dab8f68`, each with its own negative-controlled test. Declined (on record): Screener's `DecidePreview` has the same zero-count title bug as -08 — a real sibling, but a new, undriven instance out of this PR's approved scope, not fixed here; disagreement that -06/-07 might be narrower than judged (live preview builders may already derive from `UNIFORM_UNDO_WINDOW_DAYS`, only the raw registry entries look hardcoded) — noted, still a founder call, not resolved inside this round.                  |
+| 2     | `4dab8f68`  | **substantive** | Routing an externally-triggered revert's pending `actionId` through the page's own `revertActionId` (round 1's fix) made that page's own poll-to-terminal effect ALSO toast "Restored to your inbox" — a duplicate of the tray's own completion toast for the identical revert, on both `sender-detail-page.tsx` and `senders-screen.tsx`. Fixed in `fb4a8e39` with a separate, quiet `externalRevertActionId` handle that clears the receipt without toasting or re-invalidating. Also surfaced, NOT fixed: a real, pre-existing cross-receipt-clobbering race in both files' completion handlers (a stale poll unconditionally clears/updates whatever receipt is CURRENT on terminal, not necessarily the one it started for) — this fix's new external-revert path makes it reachable one more way but did not create it; too large a redesign for this pass, recorded below for a separate pass. |
+| —     | —           | **at cap**      | Two substantive rounds reached. Per the pipeline's own rule, a third round is not run automatically — this record and the diff at `fb4a8e39` go to the founder to ship or send back for a targeted look, rather than looping again on the session's own judgment of when to stop.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+
+### Discovered, not filed — Codex round 2's two out-of-scope findings
+
+Neither is a copy nit; neither was approved; neither is touched by this PR.
+Recorded here (not as new `QA-delete-*` rows) because they were found
+reviewing this diff, not by driving a fresh `/ct-qa` walk — the next run of
+whichever job actually reaches these screens should file and drive them
+properly rather than inheriting an untested Codex claim as a row.
+
+- **Screener's `DecidePreview` has the same zero-live-count title bug as
+  QA-delete-20260829-08** (`apps/web/src/features/screener/decide-preview.tsx:98-109`)
+  — a zero-count Archive/Later/Delete preview still headlines an active
+  move. Same fix shape as -08's `movesCurrentInbox` guard would apply here.
+- **Cross-receipt clobbering in `sender-detail-page.tsx` and
+  `senders-screen.tsx`'s revert-completion handlers.** Neither the
+  `revertActionId` nor the new `externalRevertActionId` completion effect
+  checks that the receipt it is about to clear/update is still the one it
+  started for — a stale reversal completing after a newer action has
+  installed a new receipt clears the newer one instead. The busy-guard
+  gating new actions (`sender-detail-page.tsx` ~line 489) does not include
+  `revertActionId`, so this is reachable pre-existing, not new. A correct
+  fix needs the completion handlers to compare token/actionId identity
+  before acting, on both files.
