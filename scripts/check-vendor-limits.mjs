@@ -30,8 +30,12 @@
  *   GOOGLE_APPLICATION_CREDENTIALS +
  *     GCP_BILLING_ACCOUNT_ID                budget config via gcloud
  *   UPSTASH_EMAIL + UPSTASH_API_KEY         daily commands + storage
- *   (Anthropic spend: monitor via console.anthropic.com/cost — Admin API
- *    requires Teams/Enterprise plan, not available on individual orgs)
+ *   ANTHROPIC_ADMIN_KEY                     MTD cost via cost_report (added
+ *                                           2026-08-29 — Admin API is
+ *                                           documented as unavailable for
+ *                                           individual accounts; an ERROR
+ *                                           saying so is a real answer, not
+ *                                           a bug)
  *   VERCEL_TOKEN + VERCEL_TEAM_ID           MTD billed charges
  *   SENTRY_AUTH_TOKEN + SENTRY_ORG          accepted error events / day
  *   POSTHOG_API_KEY + POSTHOG_PROJECT_ID    quota limits + MTD events
@@ -45,6 +49,7 @@
  *   UPSTASH_BUDGET_WARN_FRACTION  default 0.8 (of the database's own
  *                                 Upstash budget, gauged against the
  *                                 PROJECTED month-end spend)
+ *   ANTHROPIC_MTD_COST_WARN_USD   default 50
  *   VERCEL_MTD_COST_WARN_USD      default 20
  *   SENTRY_DAILY_EVENTS_WARN      default 1000
  *   POSTHOG_MTD_EVENTS_WARN       default 1000000
@@ -338,6 +343,38 @@ async function checkUpstash() {
   };
 }
 
+async function checkAnthropic() {
+  // Cost API: GET /v1/organizations/cost_report, daily buckets only
+  // (bucket_width=1d), max 31 buckets/page — a full month-to-date fits in
+  // one page without group_by, so has_more should always be false; if it
+  // isn't, the sum below would silently undercount, so that's an ERROR,
+  // not a WARN.
+  const warnUsd = envNum('ANTHROPIC_MTD_COST_WARN_USD', 50);
+  const url = new URL('https://api.anthropic.com/v1/organizations/cost_report');
+  url.searchParams.set('starting_at', monthStartIso());
+  url.searchParams.set('ending_at', new Date().toISOString());
+  url.searchParams.set('limit', '31');
+  const res = await httpJson(url.toString(), {
+    headers: {
+      'x-api-key': process.env.ANTHROPIC_ADMIN_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+  });
+  if (res.has_more) {
+    throw new Error('cost_report has_more=true — one page cannot cover the full month');
+  }
+  let usd = 0;
+  for (const bucket of res.data ?? []) {
+    for (const r of bucket.results ?? []) {
+      usd += Number(r.amount) || 0;
+    }
+  }
+  return {
+    ...gauge(usd, warnUsd),
+    detail: `MTD cost $${usd.toFixed(2)} (warn $${warnUsd}) across 3 key slots (see secrets-inventory.md)`,
+  };
+}
+
 async function checkVercel() {
   const warnUsd = envNum('VERCEL_MTD_COST_WARN_USD', 20);
   const url = new URL('https://api.vercel.com/v1/billing/charges');
@@ -579,6 +616,11 @@ const VENDORS = [
     check: checkGcpBudgets,
   },
   { name: 'Upstash Redis', requires: ['UPSTASH_EMAIL', 'UPSTASH_API_KEY'], check: checkUpstash },
+  {
+    name: 'Anthropic',
+    requires: ['ANTHROPIC_ADMIN_KEY'],
+    check: checkAnthropic,
+  },
   {
     // VERCEL_TEAM_ID is required (not just forwarded): the billing
     // endpoint is team-scoped, so without it the check would ERROR

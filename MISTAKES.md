@@ -21,6 +21,89 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-29 — Asserted a Vercel console setting was off with no way to check it — it was on
+
+**PR:** #676 (docs-only, branch `claude/infra-cost-capture-gap-wsqdhz`)
+**Caught by:** founder, who pasted a screenshot of Vercel's own Billing
+settings — same investigation as the entry directly below this one, one
+correction later
+**What happened:** immediately after correcting the first wrong claim
+(that Vercel's watchdog secrets were never wired — they were), this
+session wrote a second claim into the same PR, `billing-guardrails.md`,
+and `FOUNDER-FOLLOWUPS.md`: that Vercel's Spend Management hard cap had
+"never been turned on." That claim had no evidence behind it at all —
+`check-vendor-limits.mjs`'s `checkVercel()` only reads spend
+(`/v1/billing/charges`), it has no API call anywhere that reads Spend
+Management's on/off state, and this session has no Vercel dashboard
+login. The claim was pattern-matched from "nobody mentioned it," not
+observed. The founder's screenshot showed it was already fully
+configured: $40 on-demand budget, notifications on, Pause Production
+Deployments on.
+**Correct approach:** the previous entry's rule ("verify against the
+live system before the doc that describes it") has a gap this exposes:
+some system state has NO available live check from inside this session
+at all — a vendor console setting behind a login this session doesn't
+have. For that class, the honest move is to say "I cannot verify this,
+please check" and ask, not to write down a guess as a finding.
+**Rule:** before asserting any vendor-side or console-only configuration
+state as fact, first confirm there IS a way to check it (API call,
+script output, or existing evidence). If there is not, say so explicitly
+and ask the founder to check, instead of stating the unverified guess
+as fact in a runbook, FOUNDER-FOLLOWUPS entry, or chat reply.
+**Enforcement update:** PR #676 corrected again (billing-guardrails.md
+§5(b), the guardrail matrix, and the Vercel FOUNDER-FOLLOWUPS entry now
+marked Done); no code change — this is a process rule, not a check the
+watchdog script could itself enforce (it has no path to Vercel's Spend
+Management config).
+
+## 2026-08-29 — A session shipped a wrong root-cause (and nearly a wrong PR) by trusting stale runbook prose instead of checking live secrets and CI run history
+
+**PR:** #676 (docs-only, branch `claude/infra-cost-capture-gap-wsqdhz`) —
+self-caught and corrected within the same session, before merge
+**Caught by:** re-investigation prompted by the founder escalating "I want
+proactive visibility into my ENTIRE infra spend" — that ask is what led to
+actually pulling `vendor-limits-watchdog`'s run history instead of stopping
+at the runbook's prose
+**What happened:** given a forwarded $59.99 Vercel receipt, the first pass
+read `billing-guardrails.md` (which said "Hobby plan, skip until Pro, wire
+`VERCEL_TOKEN`/`VERCEL_TEAM_ID` when Pro lands") and `secrets-inventory.md`
+(which had no row for those two secrets at all), concluded they were never
+wired, and wrote that conclusion into a PR, `FOUNDER-FOLLOWUPS.md`, and a
+chat reply to the founder — all before checking whether the secrets
+actually existed in GitHub. They did. Pulling the actual
+`vendor-limits-watchdog` job logs showed `VERCEL_TOKEN`/`VERCEL_TEAM_ID`
+populated in the run env back to at least 2026-08-23, the check correctly
+returning real dollar figures, WARN on 2026-08-23, and BREACH (failing the
+job, red X) on every run since 2026-08-28 — the watchdog had been doing
+exactly its job for a week. The real gaps were narrower and different: the
+runbook and secrets inventory had drifted from what was actually
+configured (nobody documented the secrets when they were created), no
+vendor-side hard cap existed, and — while investigating — a second, larger
+gap surfaced: `check-vendor-limits.mjs` had never implemented an Anthropic
+cost check at all, despite `billing-guardrails.md` describing one in detail
+for months.
+**Correct approach:** "the runbook says X" and "the doc has no row for Y"
+are not evidence of the system's actual state — they're evidence of the
+runbook's and secrets-inventory's state, which this codebase's own
+`MISTAKES.md` has already documented drifting from reality (a regex bug
+demoting seven verified decisions on 2026-08-26; the 2026-08-19 CLAUDE.md
+correction admitting a hook claim that "read as automated and did
+nothing"). Before writing a root-cause into a PR, check the thing itself:
+here, that meant reading the daily watchdog's actual run history and job
+logs — a five-minute check that would have prevented the wrong PR
+entirely.
+**Rule:** for any "is X configured / does X work" claim headed into a PR,
+FOUNDER-FOLLOWUPS, or a reply to the founder, verify against the live
+system (a real run, a real secret list, a real query) before the doc that
+describes it — a runbook is a claim about the system, not the system.
+**Enforcement update:** PR #676 corrected in place (not force-pushed over —
+the wrong claims were superseded by a follow-up commit) across
+`billing-guardrails.md`, `secrets-inventory.md`, and
+`FOUNDER-FOLLOWUPS.md`; the Anthropic tracking gap this investigation
+surfaced is now implemented in `check-vendor-limits.mjs` +
+`vendor-limits-watchdog.yml`, with its own FOUNDER-FOLLOWUPS entry for the
+`ANTHROPIC_ADMIN_KEY` the founder still needs to create.
+
 ## 2026-08-26 — A regex demoted seven verified decisions and blamed the missing file on them
 
 **PR:** branch `claude/brief-billing-polish-bzpitp` — found because it rejected

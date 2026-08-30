@@ -65,6 +65,21 @@ gcloud run services update declutrmail-worker \
 **Spend caps:** Anthropic console → Plans & Billing → Set spend limit
 per workspace. Caps are vendor-side hard limits, not advisory.
 
+**Billing-watchdog token (new 2026-08-29)** — a fourth, distinct
+Anthropic key, an Admin key (`sk-ant-admin...`), NOT one of the three
+slots above:
+
+| Slot                       | Vendor label    | Storage           | Env var               | Rotated | Owner   |
+| -------------------------- | --------------- | ----------------- | --------------------- | ------- | ------- |
+| Billing-watchdog Admin key | not yet created | GH Actions secret | `ANTHROPIC_ADMIN_KEY` | —       | founder |
+
+`check-vendor-limits.mjs` had no Anthropic check at all until
+2026-08-29 despite `billing-guardrails.md` describing one — see
+FOUNDER-FOLLOWUPS 2026-08-29. Requires an org/Console Anthropic account;
+the Admin API is documented as unavailable for individual accounts, so
+the first watchdog run after this key is created will itself confirm
+whether that applies here.
+
 ### Sentry
 
 | Slot                         | Vendor label                                                                                                                                     | Storage                                                                           | Env var                               | Rotated                 | Owner   |
@@ -130,6 +145,25 @@ have to be remembered on every query.
 the browser. Like a Sentry DSN, it is NOT a hard secret in the strict
 sense (a leaked phc\_ key lets attackers send events to your project,
 not read data). Inventory it for rotation triage.
+
+### Vercel (billing watchdog)
+
+| Slot                   | Vendor label                         | Storage           | Env var          | Rotated | Owner   |
+| ---------------------- | ------------------------------------ | ----------------- | ---------------- | ------- | ------- |
+| Billing-watchdog token | unknown — not previously inventoried | GH Actions secret | `VERCEL_TOKEN`   | unknown | founder |
+| Team ID                | n/a (identifier)                     | GH Actions secret | `VERCEL_TEAM_ID` | n/a     | founder |
+
+**Corrected 2026-08-29:** both secrets ARE already set — confirmed by
+`vendor-limits-watchdog` job logs, which show `VERCEL_TOKEN`/
+`VERCEL_TEAM_ID` populated in the run env and the check returning real
+`$` figures on every run back to at least 2026-08-23 (this row simply
+never existed in this file before now — a documentation gap, not a
+wiring gap). Who created them and when is unknown; the founder should
+fill in the vendor label / rotation date next time they touch this row.
+The team is on Pro with real usage-based billing, and the daily
+watchdog has been correctly BREACHing on Vercel spend since 2026-08-28
+— see `docs/runbooks/billing-guardrails.md` §5 and FOUNDER-FOLLOWUPS
+2026-08-29 for what's actually still open (a vendor-side hard cap).
 
 ### Google OAuth (Gmail)
 
@@ -288,13 +322,13 @@ the WIF pool/provider.
 These will become real entries when the corresponding feature ships.
 Listed here so a missing row is a known gap, not an oversight.
 
-| Slot                                          | Status    | Trigger to wire                                |
-| --------------------------------------------- | --------- | ---------------------------------------------- |
-| Paddle live API key + webhook secret          | Not wired | Billing go-live §9 (D117; runbook 2026-07-17)  |
-| Razorpay live key pair + webhook secret       | Not wired | Same go-live sequence (D117)                   |
-| Vercel deploy token (CI)                      | Not wired | First Cloud Run + Vercel pairing PR (D160)     |
-| GCP service account JSON for Cloud Run deploy | Not wired | Same PR                                        |
-| Atlas Cloud token                             | Not wired | If Atlas Cloud is adopted post-migration count |
+| Slot                                                                      | Status    | Trigger to wire                                |
+| ------------------------------------------------------------------------- | --------- | ---------------------------------------------- |
+| Paddle live API key + webhook secret                                      | Not wired | Billing go-live §9 (D117; runbook 2026-07-17)  |
+| Razorpay live key pair + webhook secret                                   | Not wired | Same go-live sequence (D117)                   |
+| Vercel deploy token (CI) — distinct from the billing-watchdog token above | Not wired | First Cloud Run + Vercel pairing PR (D160)     |
+| GCP service account JSON for Cloud Run deploy                             | Not wired | Same PR                                        |
+| Atlas Cloud token                                                         | Not wired | If Atlas Cloud is adopted post-migration count |
 
 ## Rotation cadence
 

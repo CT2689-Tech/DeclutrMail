@@ -23,6 +23,78 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-29 — Confirm GitHub's failed-workflow-run notifications are actually reaching you
+
+**Source:** session 2026-08-29 — founder forwarded a Vercel receipt and
+asked why it wasn't caught. Two earlier drafts of this entry were wrong
+in sequence: first claiming Vercel's watchdog secrets were never wired
+(they were — see Done below), then claiming Spend Management was never
+turned on (it was — the founder's own dashboard screenshot on
+2026-08-29 shows On-Demand Budget $40, Notifications: On, Pause
+Projects: On, Pause Production Deployments: On). Both corrections are
+in `MISTAKES.md` 2026-08-29.
+
+**Why:** with Spend Management confirmed on, the one thing this session
+could not verify either way is whether GitHub's own "failed workflow
+run" emails are actually reaching an inbox. `vendor-limits-watchdog`
+BREACHed (failed, red X) on Vercel overage every day from 2026-08-28
+through this session with no visible response — worth a quick check in
+case those emails are being missed or filtered, independent of the
+Vercel spend question itself (which now has real vendor-side
+protection and needs no further action here).
+
+**How:** github.com → Settings → Notifications → **Actions** — confirm
+"Send notifications for failed workflows" (or the current equivalent)
+is on for this account, so a future `vendor-limits-watchdog` BREACH
+(on any vendor, not just Vercel) actually surfaces.
+
+**Verifies by:** a deliberate `workflow_dispatch` re-run of
+`vendor-limits-watchdog` with a low threshold produces a visible
+notification.
+
+**Status:** Open
+
+### 2026-08-29 — Create an Anthropic Admin API key so the watchdog can see LLM spend at all
+
+**Source:** session 2026-08-29, prompted by the same "monitor my entire
+infra spend" ask that surfaced the Vercel gap above.
+
+**Why:** `docs/runbooks/billing-guardrails.md` has described an
+Anthropic watchdog check (`GET /v1/organizations/cost_report` ·
+`ANTHROPIC_ADMIN_KEY`) since it was written, but
+`scripts/check-vendor-limits.mjs` never actually implemented it — no
+`checkAnthropic()` function existed, and Anthropic was absent from the
+`VENDORS` registry entirely. Anthropic is the single most
+usage-variable cost in the stack (LLM tokens, driven by triage volume
+and Brief generation) and had **zero** automated tracking of any kind —
+not even a BREACH-worthy gap like Vercel's, just total silence. This
+session implemented the check to match what was already documented
+(now live in `check-vendor-limits.mjs` + wired into
+`vendor-limits-watchdog.yml`), but it needs a real Admin API key to run
+— it currently reports `UNCONFIGURED`.
+
+**How:**
+
+1. `https://platform.claude.com/settings/admin-keys` (Console →
+   Settings → Admin keys — needs the admin role) → create
+   `declutrmail-watchdog-202608`.
+2. ```bash
+   gh secret set ANTHROPIC_ADMIN_KEY
+   ```
+3. Watch the next `vendor-limits-watchdog` run. Two possible outcomes,
+   both informative: it reports a real MTD dollar figure (works), or it
+   `ERROR`s citing "unavailable for individual accounts" (the Anthropic
+   Admin API's own documented restriction) — if the latter, this
+   confirms the account tier and the entry should be updated to say
+   Anthropic spend cannot be automated at all under the current account
+   type, with console.anthropic.com/cost as the only option.
+
+**Verifies by:** the watchdog table shows a Anthropic row with a real
+status (not `UNCONFIGURED`), or a clear `ERROR` explaining exactly why
+not.
+
+**Status:** Open
+
 ### 2026-08-29 — `Build — Web + bundle budget` doesn't gate the merge queue
 
 **Source:** session 2026-08-29 — PR #677 shipped a Sender Detail preview in
@@ -2356,6 +2428,31 @@ the shipped design; a fresh session reading them finds no contradiction with
 **Status:** Open
 
 ## Done
+
+### 2026-08-29 — Vercel watchdog secrets + Spend Management hard cap — both already in place
+
+**Source:** session 2026-08-29 — founder forwarded a Vercel receipt
+($59.99, real Pro-tier overage) asking why infra-cost tracking missed
+it. Two things this session initially got wrong, in sequence:
+1. First draft claimed `VERCEL_TOKEN`/`VERCEL_TEAM_ID` were never
+   wired and the watchdog silently skipped Vercel. Wrong — job logs
+   showed both populated since at least 2026-08-23, with the check
+   correctly WARNing since 2026-08-23 and BREACHing (failing the daily
+   job, red X) since 2026-08-28 on the closed Jul29–Aug28 cycle.
+2. Second draft, after correcting (1), claimed Vercel's Spend
+   Management hard cap had never been turned on. Also wrong — founder
+   screenshot confirmed On-Demand Budget $40, Notifications: On, Pause
+   Projects: On, Pause Production Deployments: On, all already
+   configured. This was asserted with no way to check it (the watchdog
+   script has no API call that reads Spend Management config), which
+   is itself the mistake — see `MISTAKES.md` 2026-08-29.
+
+**Why it's Done:** both the watchdog wiring and the vendor-side hard
+cap that a founder would otherwise need to go set up already exist.
+Nothing to configure. `docs/runbooks/billing-guardrails.md` and
+`docs/runbooks/secrets-inventory.md` corrected accordingly.
+
+**Status:** Done 2026-08-29
 
 ### 2026-08-27 — No dev-only kill switch for real unsubscribe sends
 
