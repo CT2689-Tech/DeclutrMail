@@ -101,6 +101,21 @@ describe('SenderTable', () => {
     expect(nameHeader.getAttribute('aria-sort')).toBe('none');
   });
 
+  it('scrolls horizontally instead of clipping columns on a narrow viewport', () => {
+    // The table has 11 fixed columns (checkbox, sender, total, 90d,
+    // trend, read 90d, you wrote, last seen, unsub, verbs, chevron) —
+    // its natural content width far exceeds a phone viewport. The
+    // wrapper must let the table scroll (overflowX: 'auto'), never
+    // clip it (overflow: 'hidden'), or content becomes invisible with
+    // no way to reach it (reported live 2026-08-31: a real mailbox's
+    // Senders table on mobile showed content cut off at the screen
+    // edge with no scroll).
+    const { container } = render(<Harness {...{}} />);
+    const wrapper = container.querySelector('[data-dm-component="sender-table"]');
+    expect(wrapper).toBeTruthy();
+    expect(wrapper).toHaveStyle({ overflowX: 'auto' });
+  });
+
   it('toggles direction when the active sortable header is clicked', () => {
     render(<Harness sort="total" direction="desc" />);
     const totalButton = screen.getByRole('button', { name: /^total/i });

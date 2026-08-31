@@ -186,7 +186,8 @@ export function SenderTable(props: SenderTableProps) {
         background: color.card,
         borderRadius: radius.lg,
         border: `1px solid ${color.line}`,
-        overflow: 'hidden',
+        overflowX: 'auto',
+        overflowY: 'hidden',
       }}
     >
       <table
