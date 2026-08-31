@@ -1265,3 +1265,56 @@ properly rather than inheriting an untested Codex claim as a row.
   `revertActionId`, so this is reachable pre-existing, not new. A correct
   fix needs the completion handlers to compare token/actionId identity
   before acting, on both files.
+
+## sign-in
+
+Rows accumulate across every `/ct-qa sign-in` run. Per-run counts are in the
+ledger. First filed 2026-08-29 (10 survivors; 3 candidates refuted before
+filing — all three original candidates turned out to be deliberate,
+documented design: a narrow `returnTo` allowlist + fixed post-login home
+(`parseBillingReturnTo`), a session-blind marketing shell by design (D134
+public split, `hasLiveSession` short-circuit), and the pricing page's tier
+CTA as an intentional universal plan-selector with the D226 preview already
+satisfied).
+
+7 of the 10 survivors were fixed via
+`docs/superpowers/plans/2026-08-31-signin-cta-findings-fixes.md`, executed
+subagent-driven (fresh implementer + reviewer per task, 1 final whole-branch
+review round that found 4 additional Important defects the per-task reviews
+could not see — see that plan's own commit history for detail).
+
+|     | id                     | sev | one line                                                                                                                                                                                    | status                                                                                                                                                                                                                                |
+| --- | ---------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🟡  | QA-sign-in-20260829-01 | P1  | Homepage trust-strip copy claimed exact precision ("you see exactly which emails are affected"), contradicting the product's own `ACTION_PREVIEW_CLAIM` two lines below it in the same file | Fixing — see plan above                                                                                                                                                                                                               |
+| 🟡  | QA-sign-in-20260829-02 | P1  | Pre-consent disclosure undersold the `gmail.modify` grant as "organize your Gmail" when the scope covers send/compose too                                                                   | Fixing — see plan above                                                                                                                                                                                                               |
+| 🟡  | QA-sign-in-20260829-03 | P2  | Pricing tier CTA / `?plan=X` deep link auto-expanded the plan-change confirm panel without checking the visitor's `currentTier`                                                             | Fixing — see plan above                                                                                                                                                                                                               |
+| ⬜  | QA-sign-in-20260829-04 | P2  | "Connect your Gmail" CTA copy renders identically for an already-connected visitor across 10+ marketing surfaces                                                                            | Open — deliberately excluded (see plan header): fixing this needs marketing pages to become session-aware, conflicting with D134's deliberate session-blind design; destination already redirects correctly, so this is cosmetic-only |
+| 🟡  | QA-sign-in-20260829-05 | P2  | Homepage disclaimer omitted the 50 cleanup-action/month Free-tier cap at the exact point a visitor decides if Free fits                                                                     | Fixing — see plan above                                                                                                                                                                                                               |
+| 🟡  | QA-sign-in-20260829-06 | P3  | `/sign-in`'s pre-consent explanation page was unreachable from any nav or homepage link                                                                                                     | Fixing — see plan above                                                                                                                                                                                                               |
+| 🟡  | QA-sign-in-20260829-07 | P3  | `/sign-in` step 2 promised a scan duration ("a few minutes") the sync gate deliberately never states elsewhere                                                                              | Fixing — see plan above                                                                                                                                                                                                               |
+| 🟢  | QA-sign-in-20260829-08 | P3  | Claimed `/sign-in` step 3 was a 52-word paraphrase of `ACTION_PREVIEW_CLAIM`                                                                                                                | Gone 2026-08-31 — `git log` shows step 3 has directly interpolated `{ACTION_PREVIEW_CLAIM}` since PR #637, predating this finding's filing date; nothing to fix                                                                       |
+| 🟡  | QA-sign-in-20260829-09 | P3  | `/sign-in`'s `inbox_limit` alert was a 3-instruction run-on sentence leaking internal terms ("workspace", "inbox slot")                                                                     | Fixing — see plan above                                                                                                                                                                                                               |
+| ⬜  | QA-sign-in-20260829-10 | P3  | Founding Pro promo re-lock UI is reachable but currently unhit — 0 live founding-member subscribers as of this run                                                                          | Open — no live instance to reproduce against; not worth prioritizing per the finding's own text                                                                                                                                       |
+
+**4 additional defects found only by the plan's final whole-branch review**
+(none of the 7 per-task reviews could see them, since each reviewed only its
+own diff): the `inbox_limit` alert's fix initially hardcoded "one Gmail
+account", false for Pro/team/enterprise (`inboxLimit=5`); the OAuth
+disclosure's fix said "one permission" when 3 scopes (`gmail.modify`,
+`openid`, `userinfo.email`) are actually requested; the QA-03 guard also
+blocked a legitimate same-tier cycle switch (monthly→annual); and `/sign-in`
+step 1 still carried the pre-fix undersell text because it never rendered
+the shared `OAUTH_SCOPE_DISCLOSURE` constant Task 2 fixed. All 4 fixed in
+one additional round, independently re-verified with negative controls.
+
+**Parked, not fixed this round** (logged for a founder call or a future
+sweep, none load-bearing): the cycle-aware guard re-opens for a Pro-monthly
+subscriber visiting `/pricing` with no toggle interaction, since the pricing
+page's cycle default is `'annual'` — not a regression against the pre-branch
+baseline, but a founder call on whether auto-open should also require an
+explicit cycle choice; the same "exact"/"exactly" precision-overclaim defect
+class QA-01 fixed still lives in `site-json-ld-description.ts:20-21`,
+`pricing.md/route.ts:142`, and `comparison-data.ts:730`; and no test ties
+`OAUTH_SCOPE_DISCLOSURE`'s scope count to `google-oauth.service.ts`'s
+`SCOPES` array, so the exact drift that caused the finding could recur
+silently.
