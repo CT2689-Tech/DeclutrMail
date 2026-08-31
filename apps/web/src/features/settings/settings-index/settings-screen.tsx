@@ -336,8 +336,7 @@ export function SettingsScreen({
         display: 'flex',
         alignItems: 'flex-start',
         gap: 28,
-        maxWidth: 980,
-        margin: '0 auto',
+        maxWidth: 1180,
         padding: '20px 24px 28px',
         fontFamily: font.sans,
       }}

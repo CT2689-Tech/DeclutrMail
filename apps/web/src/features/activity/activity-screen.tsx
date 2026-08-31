@@ -323,7 +323,7 @@ export function ActivityScreen() {
         display: 'flex',
         flexDirection: 'column',
         gap: 14,
-        maxWidth: 980,
+        maxWidth: 1180,
         fontFamily: font.sans,
       }}
     >
@@ -3403,7 +3403,7 @@ function LoadingState() {
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
-        maxWidth: 980,
+        maxWidth: 1180,
       }}
     >
       {[48, 56, 56, 56, 56, 56].map((h, i) => (

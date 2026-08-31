@@ -1270,7 +1270,6 @@ export function TriageScreen({
         flexDirection: 'column',
         gap: 16,
         maxWidth: 1180,
-        margin: '0 auto',
         fontFamily: font.sans,
       }}
     >

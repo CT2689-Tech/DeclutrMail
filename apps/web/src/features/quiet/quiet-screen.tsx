@@ -46,7 +46,7 @@ export function QuietRoute() {
         padding: '20px 24px 28px',
         display: 'grid',
         gap: 16,
-        maxWidth: 920,
+        maxWidth: 1180,
         fontFamily: font.sans,
       }}
     >
