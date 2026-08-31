@@ -23,6 +23,38 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-31 — Production has not deployed anything in 2 days — Vercel "Ignored Build Step" is canceling every build
+
+**Source:** session 2026-08-31 — founder reported PR #693's layout fix
+(merged, confirmed present on `origin/main`) still not visible at
+`app.declutrmail.com`.
+
+**Why:** every commit merged to `main` since 2026-08-29T22:33Z has its
+Vercel check land as `state: success` / `description: "Canceled by
+Ignored Build Step"` — checked directly via
+`gh api repos/.../commits/<sha>/status`, not inferred. That is a
+false-green: the GitHub commit status reads success, but no build ever
+ran and nothing deployed. Confirmed against
+`repos/.../deployments`: the last real deployment (any environment) is
+`c3f5be2f` at 2026-08-29T22:28Z — Production has been frozen on that
+SHA through at least 5 subsequent merges (#689, #691, #692, #688, #693),
+including a horizontal-scroll fix, an ADR-0028 reach widening, and this
+session's layout fix. None of that is live. This is the exact
+"guard that cannot fail" shape CLAUDE.md §8 warns about: a status check
+that reads green regardless of whether it actually built anything.
+**How:** Vercel dashboard → `declutr-mail` project → Settings → Git →
+**Ignored Build Step**. Read the configured command (likely a
+`turbo-ignore` invocation or a custom script) and figure out why it is
+now short-circuiting on every commit — a comparison against a stale
+base SHA is the common cause. This session has no Vercel MCP
+authorization to read or fix the setting directly.
+**Verifies by:** the next merge to `main` produces a Vercel deployment
+whose commit status says `"Deployment has completed"`, and
+`app.declutrmail.com` reflects that commit's content
+(`view-source:` or a hard-refresh + the Quiet screen's width is the
+fastest visual check right now).
+**Status:** Open
+
 ### 2026-08-27 — Guard against bundler-only copy defects
 **Source:** PR #651 / MISTAKES.md 2026-08-27
 **Why:** a literal `undefined` shipped inside D226 preview copy and no
