@@ -174,14 +174,25 @@ export function PrivacyDataView({
                   style={{
                     display: 'flex',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                     gap: 10,
                     padding: '8px 0',
                     borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
                     fontSize: 13,
                   }}
                 >
-                  <span style={{ flex: 1, fontFamily: font.mono, fontSize: 12.5 }}>{m.email}</span>
-                  <span style={{ fontSize: 11, color: color.fgMuted }}>
+                  <span
+                    style={{
+                      flex: '1 1 190px',
+                      minWidth: 0,
+                      fontFamily: font.mono,
+                      fontSize: 12.5,
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {m.email}
+                  </span>
+                  <span style={{ fontSize: 11, color: color.fgMuted, flex: '0 1 auto' }}>
                     {m.status === 'disconnected' ? 'disconnected — sync stopped' : 'data saved'}
                   </span>
                 </li>

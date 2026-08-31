@@ -103,10 +103,14 @@ describe('AuthProvider', () => {
 
   it('shows the skeleton, not a failure, while the first read is in flight', () => {
     apiGet.mockReturnValue(new Promise(() => {}));
-    mount();
+    const { container } = mount();
 
     expect(screen.getByTestId('auth-skeleton')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+    // The loading rail and real AppShell must switch at the same width;
+    // otherwise 768–900px tablets jump from a desktop rail to a hamburger.
+    expect(container.innerHTML).not.toContain('min-width: 768px');
+    expect(container.innerHTML).toContain('min-width: 901px');
   });
 
   it('drops a revoked session even though one is cached, without navigating itself', async () => {

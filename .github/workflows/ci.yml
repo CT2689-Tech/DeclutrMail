@@ -689,9 +689,11 @@ jobs:
           sed -n '1,240p' api-e2e.log
           sed -n '1,240p' web-e2e.log
           exit 1
-      # Runs BOTH a11y lanes — a11y-smoke (5 authed screens) and
-      # a11y-public (11 public routes) — because the projects' testMatch
-      # selects a11y-*.spec.ts and this script no longer names a file.
+      # Runs both WCAG lanes — a11y-smoke (5 authed screens) and
+      # a11y-public (representative public renderers) — plus the 320px
+      # responsive lane covering every authenticated destination. Project
+      # testMatch keeps the suites disjoint while one JSON report proves the
+      # whole release gate ran.
       # The job's own `name:` still says "Authenticated" and is left
       # alone deliberately: it is a required status check, and renaming
       # it would make the requirement match nothing.

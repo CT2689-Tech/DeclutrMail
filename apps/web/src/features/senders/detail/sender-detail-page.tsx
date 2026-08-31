@@ -1043,8 +1043,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
   return (
     <div
+      className="dm-sender-detail-page"
       style={{
-        padding: '20px 24px 28px',
+        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
@@ -1086,11 +1087,12 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
       {/* 1. Editorial hero card — identity, observed facts, actions, optional suggestion */}
       <section
+        className="dm-sender-detail-hero"
         style={{
           background: color.card,
           border: `1px solid ${color.line}`,
           borderRadius: 20,
-          padding: '28px 32px',
+          padding: 'clamp(18px, 5vw, 32px)',
           boxShadow: shadow.pop,
           position: 'relative',
           overflow: 'hidden',
@@ -1107,16 +1109,38 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         />
         {/* Avatar + identity strip */}
         <div
+          className="dm-sender-detail-identity-row"
           style={{
             display: 'flex',
             gap: 22,
             alignItems: 'center',
+            flexWrap: 'wrap',
             marginBottom: 22,
             position: 'relative',
           }}
         >
-          <Avatar name={sender.name} domain={sender.domain} size={72} hasMark={sender.brandMark} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <span
+            className="dm-sender-detail-avatar"
+            style={{ display: 'inline-flex', flexShrink: 0 }}
+          >
+            <Avatar
+              name={sender.name}
+              domain={sender.domain}
+              size={72}
+              hasMark={sender.brandMark}
+            />
+          </span>
+          <div
+            className="dm-sender-detail-identity"
+            style={{
+              display: 'flex',
+              flex: '1 1 180px',
+              flexDirection: 'column',
+              gap: 4,
+              minWidth: 0,
+              overflow: 'hidden',
+            }}
+          >
             <span
               style={{
                 fontSize: 10,
@@ -1135,7 +1159,12 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 on a consistent display-numeric scale. Was ad-hoc
                 28px/600 w/ system default font fallback. */}
             <h1 style={{ margin: 0 }}>
-              <NumericDisplay value={sender.name} variant="display" />
+              <NumericDisplay
+                className="dm-sender-detail-name"
+                value={sender.name}
+                variant="display"
+                style={{ maxWidth: '100%' }}
+              />
             </h1>
             <span
               // Address, not domain — the header has to name WHICH
@@ -1152,6 +1181,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             </span>
           </div>
           <div
+            className="dm-sender-detail-header-actions"
             style={{
               marginLeft: 'auto',
               display: 'flex',
@@ -1250,6 +1280,25 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             </Button>
           </div>
         </div>
+
+        <style>{`@media (max-width: 600px) {
+          .dm-sender-detail-identity-row {
+            column-gap: 12px !important;
+            row-gap: 14px !important;
+          }
+          .dm-sender-detail-avatar > * {
+            width: 56px !important;
+            height: 56px !important;
+          }
+          .dm-sender-detail-header-actions {
+            width: 100% !important;
+            margin-left: 0 !important;
+            justify-content: flex-start !important;
+          }
+          .dm-sender-detail-name {
+            width: 100% !important;
+          }
+        }`}</style>
 
         {/* Fraunces narrative — ADR-0011 hero-surface editorial relaxation */}
         <p

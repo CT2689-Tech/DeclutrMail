@@ -68,16 +68,17 @@ import { E2E_ENV, loadRootEnvLocal } from './helpers/env';
  * Each runtime-probes the stack via `requireLiveStack()` and skips
  * with an explicit reason when the stack/mailbox is absent.
  *
- * `billing-upgrade.spec.ts` and `a11y-smoke.spec.ts` are the exceptions:
- * both run GMAIL-FREE.
+ * `billing-upgrade.spec.ts`, the accessibility specs, and
+ * `responsive-layout.spec.ts` are the exceptions: all run GMAIL-FREE.
  * `global-setup` applies an idempotent synthetic-workspace seed
  * (helpers/seed-billing.ts — fixed `e2eb…` ids, never the founder's
  * rows). The billing spec drives paywall → signed Paddle webhook →
  * tier flip → gates open; the accessibility projects scan representative
- * authenticated routes at desktop and 375×812/reduced-motion. The CI lane
- * runs only the accessibility spec against postgres+redis+api+web and sets
- * `E2E_LOGIN_EMAIL` to the synthetic user, so no founder account, Gmail
- * credential, Gmail API call, or worker is involved.
+ * authenticated routes at desktop and 375×812/reduced-motion; the responsive
+ * project covers the complete signed-in route set at 320×568. The CI lane
+ * runs those specs against postgres+redis+api+web and sets `E2E_LOGIN_EMAIL`
+ * to the synthetic user, so no founder account, Gmail credential, Gmail API
+ * call, or worker is involved.
  */
 loadRootEnvLocal();
 
@@ -103,7 +104,7 @@ export default defineConfig({
   projects: [
     {
       name: 'default',
-      testIgnore: /(a11y|render)-[a-z-]+\.spec\.tsx?/,
+      testIgnore: /(a11y|render|responsive)-[a-z-]+\.spec\.tsx?/,
     },
     /* Real-browser paint assertions for shared components. These serve
      * their own SSR'd page and stub endpoint, so they need no stack, no
@@ -125,6 +126,16 @@ export default defineConfig({
       testMatch: /a11y-[a-z-]+\.spec\.ts/,
       use: {
         viewport: { width: 375, height: 812 },
+        contextOptions: { reducedMotion: 'reduce' },
+      },
+    },
+    {
+      name: 'responsive-phone',
+      testMatch: /responsive-[a-z-]+\.spec\.ts/,
+      use: {
+        // 320px remains a real lower bound for compact phones and
+        // embedded browser panes. The 375px a11y project complements it.
+        viewport: { width: 320, height: 568 },
         contextOptions: { reducedMotion: 'reduce' },
       },
     },
