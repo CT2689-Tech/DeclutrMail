@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Card, ScreenIntro, tokens } from '@declutrmail/shared';
+import { Card, ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
 
 import { GlossaryContextualHelp } from './contextual-help';
 import { GLOSSARY_GROUPS, GLOSSARY_TERMS, type GlossaryTermId } from './glossary-content';
@@ -134,6 +134,7 @@ export function ProductGlossary() {
 
 function GlossaryEntry({ id, divided }: { id: GlossaryTermId; divided: boolean }) {
   const entry = GLOSSARY_TERMS[id];
+  const isPhone = useIsAtMost('xs');
   return (
     <div
       id={id}
@@ -141,7 +142,7 @@ function GlossaryEntry({ id, divided }: { id: GlossaryTermId; divided: boolean }
         borderTop: divided ? `1px solid ${color.lineSoft}` : undefined,
         display: 'grid',
         gap: 4,
-        gridTemplateColumns: 'minmax(130px, 0.34fr) minmax(0, 1fr)',
+        gridTemplateColumns: isPhone ? '1fr' : 'minmax(130px, 0.34fr) minmax(0, 1fr)',
         padding: divided ? '13px 0 0' : 0,
         marginTop: divided ? 13 : 0,
         scrollMarginTop: 20,

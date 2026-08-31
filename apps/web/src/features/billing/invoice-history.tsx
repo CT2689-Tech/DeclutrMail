@@ -26,6 +26,7 @@ import {
   Eyebrow,
   ErrorState as RecoverableErrorState,
   tokens,
+  useIsAtMost,
 } from '@declutrmail/shared';
 import type { BillingInvoice } from '@declutrmail/shared/contracts';
 
@@ -62,6 +63,7 @@ const STATUS_LABEL: Record<BillingInvoice['status'], string | null> = {
 export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const invoices = useInvoices({ enabled });
   const mint = useInvoiceDocument();
+  const isPhone = useIsAtMost('xs');
 
   if (!enabled) return null;
 
@@ -137,20 +139,21 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                 key={`${invoice.provider}:${invoice.id}`}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: 12,
+                  flexDirection: isPhone ? 'column' : 'row',
+                  alignItems: isPhone ? 'flex-start' : 'center',
+                  gap: isPhone ? 6 : 12,
                   flexWrap: 'wrap',
                   padding: '10px 0',
                   borderBottom: `1px solid ${color.lineSoft}`,
                   fontSize: 13,
                 }}
               >
-                <span style={{ color: color.fg, minWidth: 120 }}>{date ?? '—'}</span>
+                <span style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>{date ?? '—'}</span>
                 <span
                   style={{
                     color: color.fg,
                     fontVariantNumeric: 'tabular-nums',
-                    minWidth: 90,
+                    minWidth: isPhone ? 0 : 90,
                   }}
                 >
                   {/* An unformattable amount shows the currency and no
@@ -158,11 +161,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                   {amount ?? invoice.currencyCode}
                 </span>
                 {label ? (
-                  <span style={{ color: color.fgMuted, minWidth: 70 }}>{label}</span>
-                ) : (
+                  <span style={{ color: color.fgMuted, minWidth: isPhone ? 0 : 70 }}>{label}</span>
+                ) : isPhone ? null : (
                   <span style={{ minWidth: 70 }} />
                 )}
-                <span style={{ marginLeft: 'auto' }}>
+                <span style={{ marginLeft: isPhone ? 0 : 'auto' }}>
                   {invoice.hostedUrl ? (
                     <a
                       href={invoice.hostedUrl}

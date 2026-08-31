@@ -43,7 +43,43 @@ afterEach(() => {
   useUpgradeGateStore.getState().dismiss();
 });
 
+// ─── matchMedia stub (mirrors triage-row.test.tsx) ──────────────────
+const originalMatchMedia = window.matchMedia;
+function setViewportWidth(width: number): void {
+  window.matchMedia = ((query: string) => {
+    const limit = /\(max-width:\s*(\d+(?:\.\d+)?)px\)/.exec(query);
+    const matches = limit != null && width <= Number(limit[1]);
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+  }) as typeof window.matchMedia;
+}
+
 describe('UpgradeModal', () => {
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('renders as a bottom sheet at phone width', () => {
+    setViewportWidth(375);
+    render(<UpgradeModal />);
+    act(() => {
+      useUpgradeGateStore.getState().report({
+        reason: 'free_cap',
+        details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+      });
+    });
+    const dialog = screen.getByTestId('upgrade-modal');
+    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+  });
+
   it('renders nothing without a gate hit', () => {
     render(<UpgradeModal />);
     expect(screen.queryByTestId('upgrade-modal')).not.toBeInTheDocument();

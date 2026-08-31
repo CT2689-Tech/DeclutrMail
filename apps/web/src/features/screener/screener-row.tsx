@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Avatar, Pill, tokens } from '@declutrmail/shared';
+import { Avatar, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
@@ -87,6 +87,7 @@ export function ScreenerRow({
   const scoredAt = row.recommendation?.scoredAt;
   const ageLabel =
     scoredAt !== undefined && now !== null ? scoredAgeLabel(scoredAt, new Date(now)) : null;
+  const isPhone = useIsAtMost('xs');
 
   return (
     <div
@@ -119,8 +120,10 @@ export function ScreenerRow({
         aria-label={`${row.senderName} — ${expanded ? 'collapse' : 'expand'} new-sender detail`}
         style={{
           display: 'grid',
-          gridTemplateColumns: '32px minmax(0, 1fr) auto auto 18px',
-          gap: 12,
+          gridTemplateColumns: isPhone
+            ? '32px minmax(0, 1fr) auto 18px'
+            : '32px minmax(0, 1fr) auto auto 18px',
+          gap: isPhone ? 8 : 12,
           alignItems: 'center',
           padding: '12px 14px',
           cursor: 'pointer',
@@ -176,17 +179,21 @@ export function ScreenerRow({
           </span>
         </div>
 
-        {/* First seen — relative (D71). */}
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            color: color.fgMuted,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {firstSeenLabel(row.firstSeenAt)}
-        </span>
+        {/* First seen — relative (D71). Hidden in the collapsed header at
+            phone width to fit the grid; still shown in the expanded
+            detail body below. */}
+        {!isPhone && (
+          <span
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10.5,
+              color: color.fgMuted,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {firstSeenLabel(row.firstSeenAt)}
+          </span>
+        )}
 
         {/* Engine recommendation pip — verdict + confidence (D71).
             No category labels here, ever (D71 honours D22).

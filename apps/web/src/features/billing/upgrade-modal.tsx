@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 
-import { Button, Eyebrow, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
@@ -65,6 +65,7 @@ export function UpgradeModal() {
   // `if (!hit) return null` fired a hook-order violation the moment a
   // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
   const regionProvider = useRegionProvider();
+  const isPhone = useIsAtMost('xs');
 
   if (!hit) return null;
 
@@ -104,21 +105,41 @@ export function UpgradeModal() {
         aria-modal="true"
         aria-labelledby="dm-upgrade-title"
         data-testid="upgrade-modal"
-        style={{
-          position: 'fixed',
-          top: '18vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(460px, calc(100vw - 32px))',
-          maxHeight: '70vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
+        style={
+          isPhone
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '88vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: '16px 16px 0 0',
+                border: `1px solid ${color.border}`,
+                borderBottom: 'none',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '18vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(460px, calc(100vw - 32px))',
+                maxHeight: '70vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: 14,
+                border: `1px solid ${color.border}`,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+              }
+        }
       >
         <div style={{ padding: '20px 24px 16px' }}>
           <Eyebrow>

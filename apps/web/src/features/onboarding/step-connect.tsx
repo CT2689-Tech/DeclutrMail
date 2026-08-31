@@ -93,8 +93,9 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
 
       <Button
         tone="primary"
+        size="lg"
         onClick={() => window.location.assign(startUrl)}
-        style={{ minWidth: 220 }}
+        style={{ minWidth: 220, height: 44 }}
       >
         Continue to Google
       </Button>

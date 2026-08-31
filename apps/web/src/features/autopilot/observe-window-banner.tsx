@@ -128,6 +128,7 @@ export function ObserveWindowBanner({
               style={{
                 display: 'flex',
                 alignItems: 'center',
+                flexWrap: 'wrap',
                 gap: 10,
                 fontSize: 12.5,
               }}

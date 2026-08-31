@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, Eyebrow, tokens, useIsAtMost } from '@declutrmail/shared';
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
@@ -239,6 +239,7 @@ export function PlanPicker({
    *  unresolved lock (target matching is not unique). */
   onPlanChangeFailedKnown: (attemptId: string) => void;
 }) {
+  const isPhone = useIsAtMost('xs');
   const [cycle, setCycle] = useState<BillingCycle>(initialIntent?.cycle ?? 'annual');
   const [selected, setSelected] = useState<StripTierId | null>(null);
   const [provider, setProvider] = useState<BillingProviderId>(initialProvider);
@@ -509,7 +510,15 @@ export function PlanPicker({
         <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
       </div>
 
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'stretch' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: isPhone ? 'column' : 'row',
+          gap: 10,
+          flexWrap: 'wrap',
+          alignItems: 'stretch',
+        }}
+      >
         {STRIP_TIER_IDS.map((id) => (
           <PlanCard
             key={id}

@@ -29,6 +29,7 @@ import {
   Eyebrow,
   toast,
   tokens,
+  useIsAtMost,
 } from '@declutrmail/shared';
 import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
 import { useSenders } from '@/features/senders/api/use-senders';
@@ -165,6 +166,8 @@ export function SendersPoliciesScreen() {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'baseline',
+            flexWrap: 'wrap',
+            gap: space[2],
             padding: `${space[4]}px ${space[5]}px`,
             borderBottom: `1px solid ${color.lineSoft}`,
           }}
@@ -317,12 +320,13 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
   const reason = normalizeProtectionReason(sender.protectionFlags.protectionReason);
   const evidenceStale = sender.protectionFlags.protectionEvidenceCurrent === false;
   const shielded = sender.unreadInboxCount;
+  const isPhone = useIsAtMost('xs');
 
   return (
     <li
       style={{
         display: 'grid',
-        gridTemplateColumns: '40px minmax(0, 1fr) auto',
+        gridTemplateColumns: isPhone ? '40px minmax(0, 1fr)' : '40px minmax(0, 1fr) auto',
         gap: space[3],
         alignItems: 'center',
         padding: `${space[3]}px ${space[5]}px`,
@@ -387,7 +391,16 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
           {sender.monthlyVolume != null && ` · ${sender.monthlyVolume} in last 90d`}
         </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: space[2], flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: space[2],
+          flexWrap: 'wrap',
+          gridColumn: isPhone ? '1 / -1' : undefined,
+          marginTop: isPhone ? space[1] : 0,
+        }}
+      >
         {/* Unprotect IN PLACE. Sending the user to the detail page to
             toggle a chip made correcting a wrong protection a
             per-sender errand — on a mailbox with 55 of them that is 55

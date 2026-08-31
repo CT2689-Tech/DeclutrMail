@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { tokens, useFocusTrap } from '@declutrmail/shared';
+import { tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
 
 import { useMarkVerbTourSeen, useVerbTourState } from './use-verb-tour';
 import { VerbTourPanel } from './verb-tour-panel';
@@ -43,6 +43,7 @@ export function OnboardingVerbTour() {
 export function VerbTourDialog({ onClose }: { onClose: () => void }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   const markSeen = useMarkVerbTourSeen();
+  const isPhone = useIsAtMost('xs');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -77,19 +78,36 @@ export function VerbTourDialog({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-verb-tour-replay-title"
-        style={{
-          position: 'fixed',
-          top: '12vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(620px, calc(100vw - 32px))',
-          maxHeight: '76vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 201,
-        }}
+        style={
+          isPhone
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '88vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: '16px 16px 0 0',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+                zIndex: 201,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '12vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(620px, calc(100vw - 32px))',
+                maxHeight: '76vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: 14,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+                zIndex: 201,
+              }
+        }
       >
         <VerbTourPanel
           headingId="dm-verb-tour-replay-title"

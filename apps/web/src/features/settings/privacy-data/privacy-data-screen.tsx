@@ -439,6 +439,7 @@ const mutedTextStyle = {
 const exitRowStyle = {
   display: 'flex',
   alignItems: 'center',
+  flexWrap: 'wrap',
   gap: 12,
   padding: '10px 0',
   borderTop: `1px solid ${color.lineSoft}`,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
-import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, Kbd, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
 import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 
 const { color, font } = tokens;
@@ -100,6 +100,7 @@ export function ConfirmModalFrame({
   }, [open, isBusy, onCancel, onConfirm, confirmEnabled]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const isPhone = useIsAtMost('xs');
 
   if (!open) return null;
 
@@ -122,21 +123,41 @@ export function ConfirmModalFrame({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        style={{
-          position: 'fixed',
-          top: '14vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(520px, calc(100vw - 32px))',
-          maxHeight: '76vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
+        style={
+          isPhone
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '88vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: '16px 16px 0 0',
+                border: `1px solid ${color.border}`,
+                borderBottom: 'none',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '14vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(520px, calc(100vw - 32px))',
+                maxHeight: '76vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: 14,
+                border: `1px solid ${color.border}`,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+              }
+        }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
           <Eyebrow>Preview · before anything changes</Eyebrow>
@@ -174,7 +195,8 @@ export function ConfirmModalFrame({
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: isPhone ? 'column' : 'row',
+            alignItems: isPhone ? 'stretch' : 'center',
             justifyContent: 'space-between',
             gap: 12,
             padding: '14px 24px 18px',
@@ -182,7 +204,7 @@ export function ConfirmModalFrame({
           }}
         >
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>{footnote}</span>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Button tone="default" onClick={onCancel} disabled={isBusy}>
               Cancel
             </Button>

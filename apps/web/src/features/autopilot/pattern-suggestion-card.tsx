@@ -1,4 +1,4 @@
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, Eyebrow, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { AutopilotPatternSuggestionDto } from '@/lib/api/autopilot';
 
 const { color, font } = tokens;
@@ -17,6 +17,7 @@ export function PatternSuggestionCard({
   const action = suggestion.actionKind === 'archive' ? 'Archive' : 'Unsubscribe';
   const pastAction =
     suggestion.actionKind === 'archive' ? 'archived' : 'requested unsubscribe from';
+  const isPhone = useIsAtMost('xs');
   return (
     <section
       aria-labelledby="pattern-suggestion-heading"
@@ -43,8 +44,8 @@ export function PatternSuggestionCard({
       <dl
         style={{
           display: 'grid',
-          gridTemplateColumns: 'max-content 1fr',
-          gap: '6px 12px',
+          gridTemplateColumns: isPhone ? '1fr' : 'max-content 1fr',
+          gap: isPhone ? '2px 12px' : '6px 12px',
           margin: 0,
           fontSize: 12.5,
         }}
