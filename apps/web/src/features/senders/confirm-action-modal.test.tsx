@@ -1200,6 +1200,102 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
   });
 });
 
+// 2026-08-31 — the Unsubscribe composite's "Delete them" secondary
+// re-dispatches as its own single-sender Delete on the wire
+// (senders-screen.tsx / sender-detail-page.tsx enqueue it as
+// `primary: {type: 'delete', ...}`), so it can carry the same ADR-0028
+// reach the direct Delete modal offers. Before this, the secondary was
+// silently pinned to inbox-only with no chip to explain why — a sender
+// with 753 total mail and 2 in the inbox showed "2 emails currently
+// match" with no way to reach the other 751 (founder report
+// 2026-08-31).
+describe('ConfirmActionModal — ADR-0028 reach on the Unsubscribe+Delete secondary', () => {
+  it('offers no reach choice while the secondary is Leave alone or Archive', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
+  });
+
+  it('offers the reach chip once "Delete them" is chosen, and reads the all-mail count', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'Delete them' }));
+
+    const inboxChip = screen.getByRole('radio', { name: /Inbox only/ });
+    const archivedChip = screen.getByRole('radio', { name: /Inbox \+ archived/ });
+    expect(inboxChip).toHaveAttribute('aria-checked', 'true');
+    // Defaults to inbox-only, same safe default as primary Delete. The
+    // secondary's window defaults to "All" (unwindowed), so this is the
+    // full inbox bucket (`buckets.all` = 4), not a 180d-narrowed figure.
+    expect(screen.getByText(/emails currently match for Trash/)).toBeInTheDocument();
+    expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(2);
+
+    fireEvent.click(archivedChip);
+    expect(archivedChip).toHaveAttribute('aria-checked', 'true');
+    // "977" appears twice — the headline and the chip's own badge.
+    expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('forwards secondary.reach only when Delete them is the active secondary at all-mail reach', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'Delete them' }));
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
+
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reach: 'all_mail',
+        secondary: expect.objectContaining({ type: 'delete' }),
+      }),
+    );
+  });
+
+  it('drops the reach choice again once the secondary switches away from Delete', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Unsubscribe')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreviewWithAllMail}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'Delete them' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+    expect(screen.queryByRole('radiogroup', { name: /Where it applies/i })).toBeNull();
+    // The count shown for Archive is the inbox-only bucket (`buckets.all`
+    // = 4), not a stale all-mail figure left over from the Delete chip
+    // choice.
+    expect(screen.getByText(/emails currently match for Archive/)).toBeInTheDocument();
+    expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 // ─────────────── D248 — per-channel unsubscribe preview ────────────────
 describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () => {
   function unsubRequest(methods: Array<'one_click' | 'mailto' | 'none' | null>): ActionRequest {

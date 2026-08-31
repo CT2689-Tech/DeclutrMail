@@ -29,8 +29,9 @@ match").
    (`action_jobs_reach_verb_check`). Archive of archived mail is a
    no-op by definition; Later/bulk/Autopilot widening would each be a
    separate product decision (D245 keeps automatic actions
-   inbox-scoped). The composite _secondary_ Delete also stays
-   inbox-only at this build.
+   inbox-scoped). ~~The composite secondary Delete also stays
+   inbox-only at this build.~~ **Superseded 2026-08-31** — see
+   amendment below.
 3. **Persisted on the row** (`action_jobs.reach`, migration 0050),
    like `older_than_days`: the worker resolves exactly the set the
    preview counted. Reverse and recovery rows copy the forward value.
@@ -109,3 +110,42 @@ documents.
   every non-raced retry without new schema.
 - **Widening all verbs / bulk now**: blast-radius and product
   questions (D245) each deserve their own decision.
+
+## Amendment 2026-08-31 — widen reach to the Unsubscribe composite's Delete secondary
+
+**Trigger.** Founder report: the direct single-sender Delete modal and
+the Unsubscribe modal's "Delete them" secondary showed different match
+counts for the same sender (2 vs 753) with no explanation on screen —
+the secondary had no reach chip at all, so a sender whose mail is
+Gmail-filtered past the inbox (exactly this ADR's motivating case)
+could never have its backlog reached through the Unsubscribe flow.
+
+**Why this was safe to widen, not a new build.** The composite
+secondary Delete was never its own code path: `senders-screen.tsx` /
+`sender-detail-page.tsx` re-dispatch it as a genuine single-sender
+Delete **primary** (`enqueueCompositeAction({ primary: { type:
+secondary.type, ... } })`) after the unsubscribe intent records —
+D248's routing note in the Decision section above. That call already
+passes through the exact same Zod branch, `INVALID_REACH` assert, and
+DB CHECK this ADR built for the primary Delete case, and
+`previewComposite` already resolves both the `inbox` and `allMail`
+buckets for every verb (not just Delete) — so the `all_mail` counts
+were already computed and sitting unused on the wire response. The gap
+was purely `confirm-action-modal.tsx`'s `reachAvailable` flag gating
+the chip on the OUTER verb (`Delete` primary) instead of on which call
+is actually going to be a Delete primary on the wire.
+
+**Change.** `reachAvailable` now also turns on when the composite
+secondary is `'delete'` (single-sender only — bulk stays inbox-only,
+since the wire selector for a multi-sender secondary is `senders`,
+which the server still 400s at `all_mail`). No Zod, service, DB CHECK,
+or worker change — item 2's three-layer enforcement and the undo
+partitioning in item 5 already cover this shape because it always was
+a primary Delete underneath.
+
+**Scope not touched.** The `secondary` sub-object inside
+`enqueueComposite`'s OWN composite call (Archive/Later primary +
+secondary in one round trip, still hardcoded `inbox_only` in
+`actions.service.ts`) is untouched — no live caller sends a real
+value there (`showSecondaryRow` is Unsubscribe-only), so widening it
+would be speculative.
