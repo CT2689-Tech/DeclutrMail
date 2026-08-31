@@ -75,6 +75,9 @@ export function Hero() {
           {/* Connect CTAs link straight to Google's consent screen, so the
               permission explanation stays beside the click. */}
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">{OAUTH_SCOPE_DISCLOSURE}</p>
+          <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
+            <a href="/sign-in">See what DeclutrMail can and can&rsquo;t access →</a>
+          </p>
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
           <LedgerDemo

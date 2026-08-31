@@ -218,3 +218,11 @@ describe('Hero disclaimer — states the Free-tier cap (QA-sign-in-05)', () => {
     expect(disclaimer.textContent).toMatch(/50 cleanup actions a month/i);
   });
 });
+
+describe('Hero — links to the pre-consent explanation page (QA-sign-in-06)', () => {
+  it('offers a low-key link to /sign-in beside the OAuth disclosure', () => {
+    render(<Hero />);
+    const link = screen.getByRole('link', { name: /what DeclutrMail can and can.t access/i });
+    expect(link).toHaveAttribute('href', '/sign-in');
+  });
+});

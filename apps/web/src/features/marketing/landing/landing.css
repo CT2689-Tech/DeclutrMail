@@ -331,6 +331,17 @@
   margin: 14px 0 0;
 }
 
+.dm-mkt-hero-note a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.dm-mkt-hero-note a:hover,
+.dm-mkt-hero-note a:focus-visible {
+  color: var(--mkt-ink);
+}
+
 /* Staggered load reveal — opacity/transform only (zero layout shift). */
 .dm-mkt-reveal {
   animation: dm-mkt-reveal 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both;
