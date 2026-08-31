@@ -210,3 +210,11 @@ describe('Hero subhead — names the tier for a Plus-only claim', () => {
     expect(subhead.textContent).toMatch(/plus/i);
   });
 });
+
+describe('Hero disclaimer — states the Free-tier cap (QA-sign-in-05)', () => {
+  it('mentions the monthly cleanup-action cap alongside the undo window', () => {
+    render(<Hero />);
+    const disclaimer = screen.getByText(/no card/i);
+    expect(disclaimer.textContent).toMatch(/50 cleanup actions a month/i);
+  });
+});

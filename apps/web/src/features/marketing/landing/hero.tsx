@@ -10,7 +10,7 @@ import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 import { LedgerDemo } from './ledger-demo';
 import { oauthStartUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 /**
  * Hero (D250 locked headline — reverses D223; decision record in
@@ -69,7 +69,8 @@ export function Hero() {
             </TrackedCta>
           </div>
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free · no card · {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
+            Free · no card · {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month ·{' '}
+            {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
           </p>
           {/* Connect CTAs link straight to Google's consent screen, so the
               permission explanation stays beside the click. */}
