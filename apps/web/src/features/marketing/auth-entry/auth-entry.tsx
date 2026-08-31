@@ -22,11 +22,10 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
 
           {authResult === 'inbox_limit' ? (
             <div className="dm-auth-entry-alert" role="alert">
-              <strong>This Gmail can’t reconnect yet.</strong>
+              <strong>This Gmail can't reconnect yet.</strong>
               <p>
-                This Gmail is disconnected, and its workspace’s inbox limit is already in use. Sign
-                in with another Gmail that is still connected, then free an inbox slot or review
-                your plan options before reconnecting this one.
+                Your plan connects one Gmail account, and another one is using it. Sign in with that
+                connected account to disconnect it, or upgrade to connect more.
               </p>
               <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
                 Compare plans →
