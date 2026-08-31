@@ -44,3 +44,11 @@ describe('AuthEntry step copy (QA-sign-in-07)', () => {
     expect(screen.getByText(/we email you when your inbox is ready/i)).toBeInTheDocument();
   });
 });
+
+describe('AuthEntry step 1 — the real OAuth disclosure (final-review finding)', () => {
+  it('renders the shared OAUTH_SCOPE_DISCLOSURE instead of a separate paraphrase', () => {
+    render(<AuthEntry />);
+    expect(screen.getByText(/words it more broadly than DeclutrMail uses it/i)).toBeInTheDocument();
+    expect(screen.queryByText(/organize your Gmail/i)).not.toBeInTheDocument();
+  });
+});

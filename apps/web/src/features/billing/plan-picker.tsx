@@ -277,18 +277,27 @@ export function PlanPicker({
   // A pricing-page/gate-nudge CTA lands with an exact plan+cycle — open
   // the confirm panel directly (the deep link IS the plan click).
   const intentPlan = initialIntent?.plan ?? null;
+  const intentCycle = initialIntent?.cycle ?? null;
   useEffect(() => {
-    // QA-sign-in-20260829-03: a deep link naming the tier the visitor is
-    // already on (e.g. a stale bookmarked/shared pricing link) must not
-    // auto-open a "confirm your plan" panel for the plan they already
-    // have — nothing changed, so there is nothing to confirm. A deep link
-    // naming a DIFFERENT tier still opens normally; that's the intended
-    // upgrade/downgrade flow.
-    if (intentPlan && intentPlan !== currentTier && !disabled && !consumedIntent.current) {
+    // QA-sign-in-20260829-03: a deep link naming the tier AND cycle the
+    // visitor is already on (e.g. a stale bookmarked/shared pricing link)
+    // must not auto-open a "confirm your plan" panel for the plan they
+    // already have — nothing would change, so there is nothing to confirm.
+    // A deep link naming a DIFFERENT tier, OR the same tier at a DIFFERENT
+    // cycle (a real monthly<->annual switch), still opens normally; both
+    // are the intended change flow.
+    const intentCycleDiffers =
+      intentCycle !== null && grantingSub !== null && intentCycle !== grantingSub.cycle;
+    if (
+      intentPlan &&
+      (intentPlan !== currentTier || intentCycleDiffers) &&
+      !disabled &&
+      !consumedIntent.current
+    ) {
       consumedIntent.current = true;
       setSelected(intentPlan);
     }
-  }, [intentPlan, currentTier, disabled]);
+  }, [intentPlan, intentCycle, currentTier, disabled, grantingSub]);
 
   // A lock landing mid-session (pending action started in THIS tab or
   // ANOTHER via the storage event) must disarm any already-open confirm

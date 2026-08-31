@@ -1,5 +1,6 @@
 import {
   ACTION_PREVIEW_CLAIM,
+  OAUTH_SCOPE_DISCLOSURE,
   PrivacyBadge,
   PRIVACY_NEVER_ITEMS,
   PRIVACY_STORAGE_ITEMS,
@@ -22,10 +23,10 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
 
           {authResult === 'inbox_limit' ? (
             <div className="dm-auth-entry-alert" role="alert">
-              <strong>This Gmail can't reconnect yet.</strong>
+              <strong>This Gmail can’t reconnect yet.</strong>
               <p>
-                Your plan connects one Gmail account, and another one is using it. Sign in with that
-                connected account to disconnect it, or upgrade to connect more.
+                Every Gmail connection your plan allows is already in use. Sign in with any
+                connected Gmail to disconnect it, or upgrade to connect more.
               </p>
               <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
                 Compare plans →
@@ -38,7 +39,7 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
               <span>1</span>
               <p>
                 <strong>Google shows the consent screen.</strong>
-                Review the permission that lets DeclutrMail organize your Gmail.
+                {OAUTH_SCOPE_DISCLOSURE}
               </p>
             </div>
             <div>

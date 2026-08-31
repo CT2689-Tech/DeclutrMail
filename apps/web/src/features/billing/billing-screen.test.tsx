@@ -1756,6 +1756,17 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
 
+  it('a deep link naming the same tier at a DIFFERENT cycle (monthly->annual) still auto-opens the confirm panel', async () => {
+    mockTier = 'pro';
+    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    renderScreen({ plan: 'pro', cycle: 'annual' });
+
+    // PRO_SUB/SUB is a paddle-granting Pro subscription on the MONTHLY
+    // cycle — a deep link naming Pro+annual is a genuine cycle switch on
+    // the same tier and must still open the change-plan panel.
+    expect(await screen.findByTestId('change-plan-panel')).toBeInTheDocument();
+  });
+
   it('founding member: banner with the locked manifest price', async () => {
     mockTier = 'pro';
     stubSubscription(() =>

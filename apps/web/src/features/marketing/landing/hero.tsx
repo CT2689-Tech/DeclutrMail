@@ -43,8 +43,8 @@ export function Hero() {
             Clear thousands of emails by <em>sender</em> — and see exactly what moves.
           </h1>
           <p className="dm-mkt-hero-sub dm-mkt-reveal-2 dm-mkt-reveal">
-            One decision per sender clears thousands of emails at once — you see the count and the
-            exact Gmail changes first. On Plus, turn on a rule and it keeps doing it, only after
+            One decision per sender clears thousands of emails at once — you see the count and what
+            changes in Gmail first. On Plus, turn on a rule and it keeps doing it, only after
             showing you what it would do.
           </p>
           <div className="dm-mkt-hero-ctas dm-mkt-reveal-3 dm-mkt-reveal">
