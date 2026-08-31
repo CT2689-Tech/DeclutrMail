@@ -1,5 +1,6 @@
 import {
   ACTION_PREVIEW_CLAIM,
+  OAUTH_SCOPE_DISCLOSURE,
   PrivacyBadge,
   PRIVACY_NEVER_ITEMS,
   PRIVACY_STORAGE_ITEMS,
@@ -24,9 +25,8 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
             <div className="dm-auth-entry-alert" role="alert">
               <strong>This Gmail can’t reconnect yet.</strong>
               <p>
-                This Gmail is disconnected, and its workspace’s inbox limit is already in use. Sign
-                in with another Gmail that is still connected, then free an inbox slot or review
-                your plan options before reconnecting this one.
+                Every Gmail connection your plan allows is already in use. Sign in with any
+                connected Gmail to disconnect it, or upgrade to connect more.
               </p>
               <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
                 Compare plans →
@@ -39,14 +39,14 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
               <span>1</span>
               <p>
                 <strong>Google shows the consent screen.</strong>
-                Review the permission that lets DeclutrMail organize your Gmail.
+                {OAUTH_SCOPE_DISCLOSURE}
               </p>
             </div>
             <div>
               <span>2</span>
               <p>
                 <strong>DeclutrMail groups your email by sender.</strong>
-                The first scan can take a few minutes for an older mailbox.
+                The first scan runs on its own — we email you when your inbox is ready.
               </p>
             </div>
             <div>

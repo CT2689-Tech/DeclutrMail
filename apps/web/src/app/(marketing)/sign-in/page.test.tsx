@@ -15,9 +15,10 @@ describe('/sign-in OAuth recovery', () => {
     await renderPage({ auth_result: 'inbox_limit' });
 
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(/this Gmail can’t reconnect yet/i);
-    expect(alert).toHaveTextContent(/sign in with another Gmail that is still connected/i);
-    expect(alert).toHaveTextContent(/free an inbox slot or review your plan options/i);
+    expect(alert).toHaveTextContent(/this Gmail can.t reconnect yet/i);
+    expect(alert).toHaveTextContent(/every Gmail connection your plan allows is already in use/i);
+    expect(alert).toHaveTextContent(/sign in with any connected Gmail to disconnect it/i);
+    expect(alert).toHaveTextContent(/upgrade to connect more/i);
     expect(screen.getByRole('link', { name: /compare plans/i })).toHaveAttribute(
       'href',
       '/pricing',

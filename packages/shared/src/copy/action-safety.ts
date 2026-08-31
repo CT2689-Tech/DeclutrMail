@@ -5,7 +5,7 @@
 // (D58), so broad phrases such as "every action is reversible" are false.
 
 export const ACTION_SAFETY_SUMMARY =
-  'Before a manual action moves email, you see exactly which emails are affected. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox; you choose whether it acts or collects matches for your approval.';
+  'Before a manual action moves email, you see the count and what changes in Gmail. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox; you choose whether it acts or collects matches for your approval.';
 
 export const ACTION_PREVIEW_CLAIM =
   'Before a manual action moves email, DeclutrMail shows how many emails are affected, a sample when available, and what will change in Gmail. DeclutrMail checks Gmail again when the action runs, so the final number can change if new email arrives first.';

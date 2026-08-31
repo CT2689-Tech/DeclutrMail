@@ -12,6 +12,13 @@ describe('canonical public product-truth copy', () => {
   it('does not promise that unsubscribe can be undone', () => {
     expect(ACTION_SAFETY_SUMMARY).toContain('cannot be taken back');
     expect(ACTION_SAFETY_SUMMARY).toContain('Before a manual action moves email');
+    // QA-sign-in-20260829-01: this sentence used to say "you see exactly
+    // which emails are affected", contradicting ACTION_PREVIEW_CLAIM's own
+    // "a sample when available ... the final number can change" two lines
+    // below it in this same file. Both are canonical product-truth copy;
+    // they must not disagree on precision.
+    expect(ACTION_SAFETY_SUMMARY).not.toMatch(/exactly which/i);
+    expect(ACTION_SAFETY_SUMMARY).toContain('the count and what changes in Gmail');
     // Plan names deliberately absent from this sentence. It used to
     // read "On Plus, Autopilot finds matches … On Pro, rules you turn on
     // can handle future matches automatically", which pinned a Plus/Pro
