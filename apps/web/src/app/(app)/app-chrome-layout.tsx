@@ -251,7 +251,7 @@ function AppChrome({ children }: { children: ReactNode }) {
     <>
       <HeardFromPrompt />
       <SyncNowAnimationStyle />
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      <div className="dm-app-viewport" style={{ display: 'flex', flexDirection: 'column' }}>
         <GracePeriodBanner />
         {/* Passive incremental-sync failure surface (D224). Active-mailbox
             ONLY — its session-scoped status poll 409-storms without one, so

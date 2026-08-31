@@ -66,74 +66,88 @@ export interface KpiStripProps {
 export function KpiStrip({ cells }: KpiStripProps) {
   const cellCount = cells.length;
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: `repeat(${cellCount}, minmax(0, 1fr))`,
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.lg,
-        boxShadow: shadow.card,
-        marginBottom: space[4],
-        overflow: 'hidden',
-        fontFamily: font.sans,
-      }}
-    >
-      {cells.map((cell, i) => (
-        <div
-          key={i}
-          style={{
-            padding: `${space[4]}px ${space[5]}px`,
-            borderRight: i < cellCount - 1 ? `1px solid ${color.lineSoft}` : 'none',
-          }}
-        >
+    <>
+      <style>{`@media (max-width: 600px) {
+        .dm-kpi-strip {
+          grid-template-columns: repeat(auto-fit, minmax(min(132px, 100%), 1fr)) !important;
+        }
+        .dm-kpi-strip-cell {
+          padding: ${space[3]}px ${space[4]}px !important;
+          border-right: 1px solid ${color.lineSoft};
+          border-bottom: 1px solid ${color.lineSoft};
+        }
+      }`}</style>
+      <div
+        className="dm-kpi-strip"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${cellCount}, minmax(0, 1fr))`,
+          background: color.card,
+          border: `1px solid ${color.line}`,
+          borderRadius: radius.lg,
+          boxShadow: shadow.card,
+          marginBottom: space[4],
+          overflow: 'hidden',
+          fontFamily: font.sans,
+        }}
+      >
+        {cells.map((cell, i) => (
           <div
+            className="dm-kpi-strip-cell"
+            key={i}
             style={{
-              fontSize: text['2xs'],
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              color: color.fgMuted,
-              fontWeight: 500,
+              padding: `${space[4]}px ${space[5]}px`,
+              borderRight: i < cellCount - 1 ? `1px solid ${color.lineSoft}` : 'none',
             }}
           >
-            {cell.label}
-          </div>
-          {/* ADR-0016 §A1 — KPI value uses `NumericDisplay
+            <div
+              style={{
+                fontSize: text['2xs'],
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                color: color.fgMuted,
+                fontWeight: 500,
+              }}
+            >
+              {cell.label}
+            </div>
+            {/* ADR-0016 §A1 — KPI value uses `NumericDisplay
               variant="display"` (Fraunces 28/400/-0.025em). Was
               ad-hoc 26px/600 system sans. Now consistent w/
               SenderDetail h1, SenderTable total cell. */}
-          <div style={{ marginTop: space[2], display: 'flex', alignItems: 'baseline', gap: 3 }}>
-            <NumericDisplay value={cell.value} variant="display" />
-            {cell.unit != null && (
-              <span
+            <div style={{ marginTop: space[2], display: 'flex', alignItems: 'baseline', gap: 3 }}>
+              <NumericDisplay value={cell.value} variant="display" />
+              {cell.unit != null && (
+                <span
+                  style={{
+                    fontFamily: font.sans,
+                    fontSize: text.sm,
+                    color: color.fgMuted,
+                    fontWeight: 500,
+                    letterSpacing: 0,
+                  }}
+                >
+                  {cell.unit}
+                </span>
+              )}
+            </div>
+            {cell.micro != null && (
+              <div
                 style={{
-                  fontFamily: font.sans,
-                  fontSize: text.sm,
+                  marginTop: space[2],
+                  minHeight: 14,
+                  opacity: 0.7,
+                  fontSize: text['2xs'],
                   color: color.fgMuted,
-                  fontWeight: 500,
-                  letterSpacing: 0,
+                  fontFamily: font.mono,
                 }}
               >
-                {cell.unit}
-              </span>
+                {cell.micro}
+              </div>
             )}
           </div>
-          {cell.micro != null && (
-            <div
-              style={{
-                marginTop: space[2],
-                minHeight: 14,
-                opacity: 0.7,
-                fontSize: text['2xs'],
-                color: color.fgMuted,
-                fontFamily: font.mono,
-              }}
-            >
-              {cell.micro}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }

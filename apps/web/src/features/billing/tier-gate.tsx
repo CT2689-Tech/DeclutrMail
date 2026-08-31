@@ -89,7 +89,7 @@ export function TierGate({
     <div
       data-testid="tier-gate-placeholder"
       style={{
-        padding: '20px 24px 28px',
+        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
         maxWidth: 920,
         fontFamily: font.sans,
       }}
@@ -98,7 +98,7 @@ export function TierGate({
         style={{
           maxWidth: 560,
           margin: '48px auto 0',
-          padding: '28px 30px 26px',
+          padding: 'clamp(20px, 6vw, 30px)',
           background: color.card,
           border: `1px solid ${color.border}`,
           borderRadius: radius.lg,
@@ -158,7 +158,15 @@ export function TierGate({
           </ul>
         ) : null}
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            marginTop: 4,
+            flexWrap: 'wrap',
+          }}
+        >
           <Link
             href={upgradeHref}
             style={{

@@ -222,6 +222,10 @@ body {
   height: 100%;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   /* Warm-newsprint base + a faint desaturated grain so the paper
      metaphor is literal, not just named. Tune the rect opacity in the
@@ -236,6 +240,45 @@ body {
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
   font-feature-settings: 'ss01', 'cv11';
+  overflow-wrap: break-word;
+}
+
+/* Intrinsic media and native controls must be allowed to shrink with
+   their containing card. Most product layout is flex/grid based; the
+   browser defaults (`min-width: auto` on controls and an image's native
+   width) can otherwise punch through a narrow track even when the
+   surrounding screen is responsive. */
+img,
+picture,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+input,
+select,
+textarea {
+  min-width: 0;
+  max-width: 100%;
+}
+
+pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Authenticated chrome uses the dynamic viewport when available so the
+   bottom of a screen follows mobile browser bars and the on-screen
+   keyboard instead of being trapped behind the old 100vh box. */
+.dm-app-viewport {
+  height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .dm-app-viewport {
+    height: 100dvh;
+  }
 }
 
 /* Theme flip is a whole-canvas change — ease the swap so it reads as
