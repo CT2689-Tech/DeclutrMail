@@ -672,7 +672,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
-        maxWidth: 980,
+        maxWidth: 1180,
         fontFamily: font.sans,
       }}
     >

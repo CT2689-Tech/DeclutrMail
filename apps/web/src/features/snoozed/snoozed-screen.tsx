@@ -116,7 +116,7 @@ export function SnoozedScreen() {
         display: 'flex',
         flexDirection: 'column',
         gap: 18,
-        maxWidth: 920,
+        maxWidth: 1180,
         fontFamily: font.sans,
       }}
     >
@@ -654,7 +654,7 @@ function LoadingState() {
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
-        maxWidth: 920,
+        maxWidth: 1180,
       }}
     >
       {[56, 56, 56, 56].map((h, i) => (

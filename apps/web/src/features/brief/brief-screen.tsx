@@ -225,7 +225,7 @@ function BriefBody({
         display: 'flex',
         flexDirection: 'column',
         gap: 18,
-        maxWidth: 920,
+        maxWidth: 1180,
         fontFamily: font.sans,
       }}
     >
@@ -430,7 +430,7 @@ function Narrative({ text }: { text: string }) {
         color: color.fg,
         fontStyle: 'normal',
         // Cap the reading measure. Without this the paragraph stretches
-        // to the 920px screen width — ~110 characters a line at 14px,
+        // to the 1180px screen width — ~140 characters a line at 14px,
         // against the ~65-75 the eye tracks comfortably. The card still
         // spans the column; only the text column is bounded, so the
         // narrative doesn't read as a wall above the lists.
@@ -1078,7 +1078,7 @@ function LoadingState() {
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
-        maxWidth: 920,
+        maxWidth: 1180,
       }}
     >
       {[64, 56, 56, 56, 56].map((h, i) => (
