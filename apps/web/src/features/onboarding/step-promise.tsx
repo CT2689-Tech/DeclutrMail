@@ -28,7 +28,7 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
     >
       <PrivacyBadge style={{ width: '100%', textAlign: 'left', marginBottom: 24 }} />
 
-      <Button tone="primary" onClick={onConnect} style={{ minWidth: 220 }}>
+      <Button tone="primary" size="lg" onClick={onConnect} style={{ minWidth: 220, height: 44 }}>
         Connect Gmail →
       </Button>
 

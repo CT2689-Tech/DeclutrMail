@@ -9,7 +9,7 @@
  * keeping the date copy deterministic on any machine.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 
 import type { AccountDeletionProjection } from '@declutrmail/shared/contracts';
@@ -57,7 +57,42 @@ function advanceToStep2() {
   fireEvent.click(screen.getByRole('button', { name: /review deletion timing/i }));
 }
 
+// ─── matchMedia stub (mirrors triage-row.test.tsx) ──────────────────
+const originalMatchMedia = window.matchMedia;
+function setViewportWidth(width: number): void {
+  window.matchMedia = ((query: string) => {
+    const limit = /\(max-width:\s*(\d+(?:\.\d+)?)px\)/.exec(query);
+    const matches = limit != null && width <= Number(limit[1]);
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+  }) as typeof window.matchMedia;
+}
+
 describe('DeleteAccountModal', () => {
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('renders as a bottom sheet at phone width, both steps still reachable', () => {
+    setViewportWidth(375);
+    renderModal();
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();
+    advanceToStep2();
+    expect(
+      screen.getByRole('button', { name: /schedule deletion/i, hidden: false }),
+    ).toBeDisabled();
+  });
+
   it('step 1 gates Continue behind the acknowledgment checkbox', () => {
     renderModal();
     expect(screen.getByText(/what gets permanently deleted/i)).toBeInTheDocument();

@@ -50,6 +50,7 @@ export function PendingSuggestionRow({
       style={{
         display: 'flex',
         alignItems: 'center',
+        flexWrap: 'wrap',
         gap: 12,
         padding: '12px 14px',
         background: color.card,

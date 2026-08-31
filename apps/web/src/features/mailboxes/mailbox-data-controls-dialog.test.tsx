@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import {
   GMAIL_DISCONNECT_DATA_INVENTORY,
@@ -38,7 +38,40 @@ function renderDialog(overrides: Partial<Parameters<typeof MailboxDataControlsDi
   return { onDisconnect, onDeleteIndexedData, onCancel };
 }
 
+// ─── matchMedia stub (mirrors triage-row.test.tsx) ──────────────────
+const originalMatchMedia = window.matchMedia;
+function setViewportWidth(width: number): void {
+  window.matchMedia = ((query: string) => {
+    const limit = /\(max-width:\s*(\d+(?:\.\d+)?)px\)/.exec(query);
+    const matches = limit != null && width <= Number(limit[1]);
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+  }) as typeof window.matchMedia;
+}
+
 describe('MailboxDataControlsDialog', () => {
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('renders as a bottom sheet at phone width without dropping the inventory', () => {
+    setViewportWidth(375);
+    renderDialog();
+    const dialog = screen.getByRole('dialog', { name: /disconnect person@example\.com/i });
+    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    expect(
+      screen.getByRole('heading', { name: /disconnect and keep saved data/i }),
+    ).toBeInTheDocument();
+  });
+
   it('shows both active-mailbox outcomes and generated inventory counts', () => {
     renderDialog();
 

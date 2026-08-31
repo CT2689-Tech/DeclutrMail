@@ -555,7 +555,7 @@ export function ScreenerScreen({
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
         gap: 16,

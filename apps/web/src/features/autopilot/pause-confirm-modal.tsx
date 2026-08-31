@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, Kbd, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { presetDisplayName } from './preset-labels';
 
@@ -52,6 +52,7 @@ export function PauseConfirmModal({
   }, [open, onCancel, onConfirm, canConfirm]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const isPhone = useIsAtMost('xs');
 
   if (!open) return null;
 
@@ -79,21 +80,41 @@ export function PauseConfirmModal({
         aria-modal="true"
         aria-labelledby="dm-pause-title"
         aria-describedby="dm-pause-lead"
-        style={{
-          position: 'fixed',
-          top: '14vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(500px, calc(100vw - 32px))',
-          maxHeight: '76vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
+        style={
+          isPhone
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '88vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: '16px 16px 0 0',
+                border: `1px solid ${color.border}`,
+                borderBottom: 'none',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '14vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(500px, calc(100vw - 32px))',
+                maxHeight: '76vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: 14,
+                border: `1px solid ${color.border}`,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+              }
+        }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
           <Eyebrow>Preview · before anything changes</Eyebrow>
@@ -171,7 +192,8 @@ export function PauseConfirmModal({
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            flexDirection: isPhone ? 'column' : 'row',
+            alignItems: isPhone ? 'stretch' : 'center',
             justifyContent: 'space-between',
             gap: 12,
             padding: '14px 24px 18px',
@@ -181,7 +203,7 @@ export function PauseConfirmModal({
           <span style={{ fontSize: 11.5, color: color.fgMuted }}>
             Re-enable each rule from the rules list.
           </span>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Button tone="default" onClick={onCancel} disabled={isPausing}>
               Cancel
             </Button>

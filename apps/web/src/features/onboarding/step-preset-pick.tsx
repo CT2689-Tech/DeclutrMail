@@ -251,9 +251,10 @@ export function StepPresetPick({
 
       <Button
         tone="primary"
+        size="lg"
         onClick={onContinue}
         disabled={submit.isPending || goal === null}
-        style={{ minWidth: 220 }}
+        style={{ minWidth: 220, height: 44 }}
       >
         {submit.isPending
           ? 'Saving…'
@@ -316,9 +317,10 @@ export function StepFirstSenderReview({
       <GoalSelector value={goal} onChange={setGoal} />
       <Button
         tone="primary"
+        size="lg"
         onClick={onContinue}
         disabled={submit.isPending || goal === null}
-        style={{ minWidth: 220 }}
+        style={{ minWidth: 220, height: 44 }}
       >
         {submit.isPending
           ? 'Getting it ready…'

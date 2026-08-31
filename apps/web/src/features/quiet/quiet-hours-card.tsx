@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Card, Pill, Skeleton, tokens } from '@declutrmail/shared';
+import { Button, Card, Pill, Skeleton, tokens, useIsAtMost } from '@declutrmail/shared';
 import {
   parseTimeToMinutes,
   QuietHoursConfigSchema,
@@ -151,6 +151,7 @@ function QuietHoursForm({
   const [draft, setDraft] = useState<QuietHoursConfig>(initial);
   const [zones, setZones] = useState<string[]>([initial.timezone]);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const isPhone = useIsAtMost('xs');
 
   useEffect(() => {
     if (!useBrowserDefault) return;
@@ -200,7 +201,7 @@ function QuietHoursForm({
     border: `1px solid ${color.line}`,
     borderRadius: 7,
     padding: '6px 8px',
-    height: 32,
+    height: isPhone ? 44 : 32,
     boxSizing: 'border-box',
   } as const;
 
@@ -216,6 +217,7 @@ function QuietHoursForm({
           color: color.fg,
           width: 'fit-content',
           cursor: saving ? 'default' : 'pointer',
+          minHeight: isPhone ? 44 : undefined,
         }}
       >
         <input
@@ -223,12 +225,24 @@ function QuietHoursForm({
           checked={draft.enabled}
           disabled={saving}
           onChange={(e) => set({ enabled: e.target.checked })}
-          style={{ width: 16, height: 16, accentColor: color.primary }}
+          style={{
+            width: isPhone ? 20 : 16,
+            height: isPhone ? 20 : 16,
+            accentColor: color.primary,
+          }}
         />
         Quiet hours on
       </label>
 
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'end' }}>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: isPhone ? 'column' : 'row',
+          gap: 12,
+          flexWrap: 'wrap',
+          alignItems: isPhone ? 'stretch' : 'end',
+        }}
+      >
         <label style={labelStyle}>
           Start
           <input

@@ -20,6 +20,34 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-08-31 — `useIsAtMost` after an early loading/error return breaks Rules of Hooks
+
+**Context:** Rolling the D54 mobile-dialect pattern (`useIsAtMost` + a
+`variant?: 'modal'|'sheet'` style ternary) out to Billing, Settings,
+Autopilot, Screener, and Quiet in one pass. `BillingScreen` has three
+early returns (`LoadingState`, `BillingErrorState`, `BillingUnknownState`)
+above its main render. Adding `const isPhone = useIsAtMost('xs')`
+directly above the main `return (` — the natural drop-in point next to
+the JSX it drives — put the hook call AFTER those early returns.
+
+**Finding:** Vitest caught it immediately as "Rendered more hooks than
+during the previous render" (React's Rules-of-Hooks check), because a
+state transition between an early-return branch and the main-render
+branch changes the hook count between renders. Every other component
+this pass touched either had its early return happen inside a nested
+sub-component (safe) or had no early return at all — `BillingScreen` was
+the one case where the pattern's obvious drop-in spot was wrong.
+
+**Rule (provisional):** Before adding a new unconditional hook (`useIsAtMost`
+included) to an existing component, grep that component's function body
+for an `if (...) return` above the insertion point. If one exists, hoist
+the new hook next to the component's other top-of-function hooks instead
+of next to the JSX that consumes it.
+
+**Distillation trigger:** promote to CLAUDE.md §8 (test-verification
+rules) if a `useIsAtMost`/hook-ordering regression like this recurs on a
+future screen's mobile-responsive pass.
+
 ## 2026-08-26 — "No import edge" needs a transitive check, and one constant drags its whole module
 
 **Context:** Plan 1 of the inbox-simulator rebuild (D133) split

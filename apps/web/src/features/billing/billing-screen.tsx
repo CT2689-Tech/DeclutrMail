@@ -10,6 +10,7 @@ import {
   ScreenIntro,
   tokens,
   toast,
+  useIsAtMost,
 } from '@declutrmail/shared';
 import type {
   BillingCycle,
@@ -165,6 +166,7 @@ export function BillingScreen({
   const reconcileCheckout = useReconcileCheckout();
   const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
+  const isPhone = useIsAtMost('xs');
 
   useEffect(() => {
     void track('page_viewed', { page: 'billing', mailbox_id: me.activeMailboxId });
@@ -500,7 +502,7 @@ export function BillingScreen({
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
         gap: 18,
@@ -702,6 +704,7 @@ export function BillingScreen({
 
       <CancelModal
         open={cancelOpen}
+        variant={isPhone ? 'sheet' : 'modal'}
         sub={backingSub ?? plan.nonBacking?.sub ?? null}
         backsEntitlement={backingSub !== null}
         entitlementTier={plan.entitlementTier}

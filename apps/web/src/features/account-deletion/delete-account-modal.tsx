@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Eyebrow, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
 import {
   DELETION_CONFIRM_PHRASE,
   DELETION_WAIVER_PHRASE,
@@ -56,6 +56,7 @@ export function DeleteAccountModal({
   const [mode, setMode] = useState<'scheduled' | 'immediate'>('scheduled');
   const [typed, setTyped] = useState('');
   const timeZone = useUserTimeZone();
+  const isPhone = useIsAtMost('xs');
 
   // Reset on every open so an abandoned attempt never leaves a
   // half-acknowledged state behind.
@@ -103,21 +104,41 @@ export function DeleteAccountModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-delete-account-title"
-        style={{
-          position: 'fixed',
-          top: '12vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(520px, calc(100vw - 32px))',
-          maxHeight: '78vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
+        style={
+          isPhone
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '88vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: '16px 16px 0 0',
+                border: `1px solid ${color.border}`,
+                borderBottom: 'none',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '12vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(520px, calc(100vw - 32px))',
+                maxHeight: '78vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: 14,
+                border: `1px solid ${color.border}`,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+              }
+        }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
           <Eyebrow>Account · step {step} of 2</Eyebrow>

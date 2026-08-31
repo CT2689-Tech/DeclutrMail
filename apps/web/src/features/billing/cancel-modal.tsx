@@ -52,6 +52,7 @@ export function CancelModal({
   onPause,
   isPausing,
   pauseError,
+  variant = 'modal',
 }: {
   open: boolean;
   /** The record this cancel targets — backing or non-backing (A6). */
@@ -70,6 +71,9 @@ export function CancelModal({
   onPause: () => void;
   isPausing: boolean;
   pauseError: string | null;
+  /** 'sheet' renders the same content pinned to the bottom edge for
+   *  phone-width callers, mirroring ADR-0018's confirm-action-modal. */
+  variant?: 'modal' | 'sheet';
 }) {
   const [reason, setReason] = useState<CancelReason | ''>('');
 
@@ -112,21 +116,41 @@ export function CancelModal({
         aria-modal="true"
         aria-labelledby="dm-cancel-title"
         data-testid="cancel-modal"
-        style={{
-          position: 'fixed',
-          top: '14vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(480px, calc(100vw - 32px))',
-          maxHeight: '76vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
+        style={
+          variant === 'sheet'
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '88vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: '16px 16px 0 0',
+                border: `1px solid ${color.border}`,
+                borderBottom: 'none',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '14vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(480px, calc(100vw - 32px))',
+                maxHeight: '76vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: 14,
+                border: `1px solid ${color.border}`,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+              }
+        }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
           <Eyebrow>Preview · before anything changes</Eyebrow>

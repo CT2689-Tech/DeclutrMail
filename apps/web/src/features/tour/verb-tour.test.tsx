@@ -10,7 +10,7 @@
 
 import type { ReactElement } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { installFetchStub, jsonOk } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -146,7 +146,41 @@ describe('OnboardingVerbTour', () => {
   });
 });
 
+// ─── matchMedia stub (mirrors triage-row.test.tsx) ──────────────────
+// D54-style phone dialect: `useIsAtMost('xs')` queries `(max-width:
+// 480px)`. Simulated by stubbing matchMedia per test.
+const originalMatchMedia = window.matchMedia;
+function setViewportWidth(width: number): void {
+  window.matchMedia = ((query: string) => {
+    const limit = /\(max-width:\s*(\d+(?:\.\d+)?)px\)/.exec(query);
+    const matches = limit != null && width <= Number(limit[1]);
+    return {
+      matches,
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    } as unknown as MediaQueryList;
+  }) as typeof window.matchMedia;
+}
+
 describe('VerbTourDialog (the Settings replay)', () => {
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('renders as a bottom sheet at phone width without dropping the preview content', async () => {
+    setViewportWidth(375);
+    mount(<VerbTourDialog onClose={() => {}} />);
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    expect(screen.getByText('Five decisions, one sender at a time')).toBeInTheDocument();
+  });
+
   it('brings the tour back after it was dismissed', async () => {
     serverState.verbTourCompletedAt = '2026-08-01T00:00:00.000Z';
 

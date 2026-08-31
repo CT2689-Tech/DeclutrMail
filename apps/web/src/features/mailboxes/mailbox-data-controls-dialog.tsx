@@ -10,6 +10,7 @@ import {
   mailboxDataDeletionConfirmPhrase,
   tokens,
   useFocusTrap,
+  useIsAtMost,
 } from '@declutrmail/shared';
 
 import type { MeMailbox } from '@/features/auth/api/use-me';
@@ -63,6 +64,7 @@ export function MailboxDataControlsDialog({
   }, [open, busy, onCancel]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const isPhone = useIsAtMost('xs');
   if (!mailbox) return null;
 
   const requiredPhrase = mailboxDataDeletionConfirmPhrase(mailbox.email);
@@ -88,21 +90,41 @@ export function MailboxDataControlsDialog({
         aria-modal="true"
         aria-labelledby="dm-mailbox-data-controls-title"
         aria-describedby="dm-mailbox-data-controls-lead"
-        style={{
-          position: 'fixed',
-          top: '7vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(660px, calc(100vw - 28px))',
-          maxHeight: '86vh',
-          overflow: 'auto',
-          background: color.card,
-          border: `1px solid ${color.border}`,
-          borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.32)',
-          zIndex: 181,
-          fontFamily: font.sans,
-        }}
+        style={
+          isPhone
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '90vh',
+                overflow: 'auto',
+                background: color.card,
+                border: `1px solid ${color.border}`,
+                borderRadius: '16px 16px 0 0',
+                borderBottom: 'none',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.32)',
+                zIndex: 181,
+                fontFamily: font.sans,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '7vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(660px, calc(100vw - 28px))',
+                maxHeight: '86vh',
+                overflow: 'auto',
+                background: color.card,
+                border: `1px solid ${color.border}`,
+                borderRadius: 14,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.32)',
+                zIndex: 181,
+                fontFamily: font.sans,
+              }
+        }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
           <Eyebrow>Gmail account data controls</Eyebrow>
