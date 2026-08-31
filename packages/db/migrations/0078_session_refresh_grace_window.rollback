@@ -1,0 +1,16 @@
+-- Reverse 0078 — drop the grace-window columns.
+--
+-- LOSSY only for in-flight grace state (a session mid-race at the exact
+-- moment of rollback loses its "previous" slot and the next collision
+-- for it reverts to the pre-0078 full-revoke behavior) — not lossy for
+-- anything durable: no other table or read path references these two
+-- columns, and `active_sessions.refresh_token_hash` (the row's current,
+-- authoritative hash) is untouched.
+--
+-- `SessionsService.rotate()` (apps/api/src/auth/sessions.service.ts)
+-- must be rolled back to before this migration's companion code change
+-- FIRST — it reads/writes both columns and will error on a missing
+-- column otherwise.
+ALTER TABLE "active_sessions" DROP COLUMN IF EXISTS "previous_hash_expires_at";
+--> statement-breakpoint
+ALTER TABLE "active_sessions" DROP COLUMN IF EXISTS "previous_refresh_token_hash";

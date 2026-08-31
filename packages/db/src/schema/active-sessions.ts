@@ -47,6 +47,33 @@ export const activeSessions = pgTable(
     jti: uuid('jti').notNull(),
     /** SHA-256 hex of the rotating refresh token (NEVER the raw token). */
     refreshTokenHash: text('refresh_token_hash').notNull(),
+    /**
+     * SHA-256 hex of the immediately-superseded refresh token — one
+     * generation behind `refresh_token_hash`, never more (QA-onboarding-
+     * 20260828-03 / FINDINGS.md F034).
+     *
+     * A concurrent refresh race (two browser tabs presenting the same
+     * refresh token within the same rotation) used to be indistinguishable
+     * from genuine token-theft replay: the loser's presented hash no
+     * longer matched the row (the winner had already overwritten it), so
+     * `SessionsService.rotate()` treated it as reuse and revoked the whole
+     * session out from under BOTH tabs. This column lets `rotate()` accept
+     * a presented hash that matches the PREVIOUS generation, within
+     * `previous_hash_expires_at`, as a benign race rather than theft — and
+     * itself gets shifted forward on every rotation, so the recognized
+     * window is always exactly one generation, never a standing bypass.
+     *
+     * A hash that matches neither the current nor a still-in-window
+     * previous value is unchanged: still full revoke, same as before this
+     * column existed. NEVER the raw token, same discipline as
+     * `refresh_token_hash` above.
+     */
+    previousRefreshTokenHash: text('previous_refresh_token_hash'),
+    /** Grace deadline for `previous_refresh_token_hash`; NULL = no grace live. */
+    previousHashExpiresAt: timestamp('previous_hash_expires_at', {
+      withTimezone: true,
+      mode: 'date',
+    }),
     /** IP at session start — surfaces in D116 "active sessions" list. */
     ipAddress: inet('ip_address'),
     /** Best-effort UA at session start — surfaces in D116 list. */
