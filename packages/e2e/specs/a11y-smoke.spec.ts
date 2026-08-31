@@ -116,24 +116,23 @@ for (const route of ROUTES) {
 }
 
 test('keyboard shortcut dialog traps and restores focus', async ({ page }, testInfo) => {
-  // D54's phone dialect (ADR-0018) replaces the Grid/Table ViewToggle
-  // outright at <=480px — this project's 375px viewport is inside that
-  // range, so the 'Table' trigger below never renders there. The dialog's
-  // focus-trap mechanism this test exercises is breakpoint-independent
-  // (it's the same KeyboardShortcutDialog regardless of which page/control
-  // opened it), so the desktop project's coverage is sufficient; skip here
-  // rather than chase a mobile-dialect-specific trigger for no added signal.
-  test.skip(
-    testInfo.project.name === MOBILE_PROJECT,
-    "D54's phone dialect removes the Table button this test focuses; the focus-trap behavior itself is covered on desktop",
-  );
-
   await page.goto('/senders');
   await expect(page.getByRole('heading', { name: 'Your senders' })).toBeVisible({
     timeout: 60_000,
   });
 
-  const trigger = page.getByRole('button', { name: 'Table', exact: true });
+  // D54's phone dialect (ADR-0018) replaces the Grid/Table ViewToggle
+  // outright at <=480px, so the 'Table' trigger doesn't exist on this
+  // project's 375px viewport. The shortcut mechanism under test is global
+  // and focus-independent of WHICH non-input element is focused, so the
+  // per-row expand control (always rendered in the phone dialect's row
+  // list) is an equally valid trigger there — never `test.skip()` here:
+  // this repo's `assert-e2e-ran.mjs` CI gate fails loudly on any skip
+  // (a prior `test.skip` precondition shipped a permanently-green no-op).
+  const trigger =
+    testInfo.project.name === MOBILE_PROJECT
+      ? page.getByRole('button', { name: /— expand detail$/ }).first()
+      : page.getByRole('button', { name: 'Table', exact: true });
   await trigger.focus();
   await expect(trigger).toBeFocused();
   await page.keyboard.press('?');
