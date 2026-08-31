@@ -647,6 +647,13 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                     primary: {
                       type: secondary.type,
                       olderThanDays: secondary.olderThanDays ?? null,
+                      // ADR-0028 — this call's primary IS the "Delete
+                      // them" secondary, so the reach the user picked
+                      // in the modal travels the same way it would on
+                      // a direct single-sender Delete.
+                      ...(secondary.type === 'delete' && opts?.reach === 'all_mail'
+                        ? { reach: opts.reach }
+                        : {}),
                     },
                     // The SAME acknowledgement the preview collected.
                     // Unsubscribe has no Protected guard, so the intent

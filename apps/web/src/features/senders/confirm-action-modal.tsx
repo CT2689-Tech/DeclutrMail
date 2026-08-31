@@ -82,8 +82,12 @@ export interface ConfirmOptions {
   archiveHistoric?: boolean;
   /**
    * ADR-0028 — set to `all_mail` when the user chose "Inbox + archived"
-   * on a single-sender Delete. Omitted otherwise (the wire default is
-   * inbox-only, and the server rejects the value on any other shape).
+   * on a single-sender Delete, or on an Unsubscribe's "Delete them"
+   * secondary. Omitted otherwise (the wire default is inbox-only, and
+   * the server rejects the value on any other shape). The caller applies
+   * this to whichever call is the actual Delete primary on the wire —
+   * for the composite secondary that is the re-dispatched historic
+   * action, not the unsubscribe-intent call.
    */
   reach?: ActionReach;
 }
@@ -310,10 +314,20 @@ export function ConfirmActionModal({
   const isBulk = (request?.senders.length ?? 0) > 1;
 
   // ADR-0028 reach. Offered only where the server accepts it — a
-  // single-sender Delete — and only when the preview actually carries
-  // the all-mail block (`allMail` is null against an API predating the
+  // single-sender Delete, whether it is the primary verb or the
+  // Unsubscribe composite's "Delete them" secondary (2026-08-31
+  // amendment: the secondary re-dispatches as its own single-sender
+  // Delete primary — `enqueueCompositeAction` already accepts `reach`
+  // on that call, so the only gap was this flag never offering the
+  // chip). Bulk stays inbox-only either way (the wire selector for a
+  // multi-sender secondary is `senders`, which the server 400s at
+  // `all_mail`) — and only when the preview actually carries the
+  // all-mail block (`allMail` is null against an API predating the
   // field, so during a deploy skew the choice simply does not appear).
-  const reachAvailable = isDeleteVerb && !isBulk && compositePreview?.allMail != null;
+  const reachAvailable =
+    (isDeleteVerb || (hasSecondaryAction && secondaryVerb === 'delete')) &&
+    !isBulk &&
+    compositePreview?.allMail != null;
   const activeReach: ActionReach = reachAvailable ? reach : 'inbox_only';
 
   const bucketCounts = isBulk
@@ -1204,9 +1218,12 @@ export function ConfirmActionModal({
               );
             })()}
 
-          {/* ADR-0028 reach chip pair — Delete only. Rendered even when
-              the window chips are suppressed for an empty inbox: it is
-              exactly then that "Inbox + archived" is the escape hatch. */}
+          {/* ADR-0028 reach chip pair — Delete only, primary or the
+              Unsubscribe composite's "Delete them" secondary (both
+              resolve to a single-sender Delete on the wire). Rendered
+              even when the window chips are suppressed for an empty
+              inbox: it is exactly then that "Inbox + archived" is the
+              escape hatch. */}
           {reachAvailable && (
             <div
               role="radiogroup"
