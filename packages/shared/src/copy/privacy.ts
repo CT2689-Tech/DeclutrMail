@@ -61,7 +61,7 @@ export const GMAIL_PREVIEW_FIELD_LABEL = 'Gmail preview snippet' as const;
  * explains the permission in user language and carries the privacy promise.
  */
 export const OAUTH_SCOPE_DISCLOSURE =
-  `Google will ask permission for DeclutrMail to organize your Gmail. ${PRIVACY_BADGE_HEADLINE}` as const;
+  `Google's screen asks for one permission, gmail.modify, and words it more broadly than DeclutrMail uses it: DeclutrMail moves and labels email and never sends email as you. ${PRIVACY_BADGE_HEADLINE}` as const;
 
 /**
  * The date Google approved DeclutrMail's OAuth verification for the single
