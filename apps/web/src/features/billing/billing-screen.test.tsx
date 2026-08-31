@@ -1743,6 +1743,19 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(card).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
   });
 
+  it("a deep link naming the subscriber's own current tier does not auto-open the confirm panel", async () => {
+    mockTier = 'pro';
+    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    renderScreen({ plan: 'pro', cycle: 'monthly' });
+
+    await screen.findByTestId('current-plan-card');
+    // PRO_SUB is a paddle-granting subscription, so the "already on this
+    // plan" path (if it wrongly opened) would render the change-plan
+    // panel, not the checkout panel — assert on the one that actually
+    // renders for this scenario, not the new-purchase one.
+    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
+  });
+
   it('founding member: banner with the locked manifest price', async () => {
     mockTier = 'pro';
     stubSubscription(() =>

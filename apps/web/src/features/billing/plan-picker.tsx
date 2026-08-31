@@ -278,11 +278,17 @@ export function PlanPicker({
   // the confirm panel directly (the deep link IS the plan click).
   const intentPlan = initialIntent?.plan ?? null;
   useEffect(() => {
-    if (intentPlan && !disabled && !consumedIntent.current) {
+    // QA-sign-in-20260829-03: a deep link naming the tier the visitor is
+    // already on (e.g. a stale bookmarked/shared pricing link) must not
+    // auto-open a "confirm your plan" panel for the plan they already
+    // have — nothing changed, so there is nothing to confirm. A deep link
+    // naming a DIFFERENT tier still opens normally; that's the intended
+    // upgrade/downgrade flow.
+    if (intentPlan && intentPlan !== currentTier && !disabled && !consumedIntent.current) {
       consumedIntent.current = true;
       setSelected(intentPlan);
     }
-  }, [intentPlan, disabled]);
+  }, [intentPlan, currentTier, disabled]);
 
   // A lock landing mid-session (pending action started in THIS tab or
   // ANOTHER via the storage event) must disarm any already-open confirm
