@@ -43,11 +43,29 @@ session's layout fix. None of that is live. This is the exact
 "guard that cannot fail" shape CLAUDE.md §8 warns about: a status check
 that reads green regardless of whether it actually built anything.
 **How:** Vercel dashboard → `declutr-mail` project → Settings → Git →
-**Ignored Build Step**. Read the configured command (likely a
-`turbo-ignore` invocation or a custom script) and figure out why it is
-now short-circuiting on every commit — a comparison against a stale
-base SHA is the common cause. This session has no Vercel MCP
-authorization to read or fix the setting directly.
+**Ignored Build Step** shows the actual configured command (founder
+confirmed 2026-08-31):
+```
+git diff --quiet HEAD^ HEAD -- apps/web packages/shared tsconfig.base.json pnpm-lock.yaml pnpm-workspace.yaml
+```
+This is logically correct — `git diff --quiet` exits `1` (proceed, per
+Vercel's convention) when the listed paths changed, `0` (skip) when
+they didn't. Verified directly against the real repo: replayed this
+exact command for the last 5 merged SHAs (#689/#691/#692/#688/#693,
+all of which touch `apps/web`) against their true parents — every one
+exits `1`. So the command is provably correct against full git
+history; the break is environmental. The prime suspect is Vercel's
+default **shallow clone**: if the checkout used to evaluate this step
+doesn't include the parent commit, `HEAD^` fails to resolve
+(`fatal: ambiguous argument 'HEAD^'`) and the step's exit code stops
+matching what a full clone produces — this repo is not a Turborepo
+(no `turbo.json`), so the usual `npx turbo-ignore` fix (which sources
+the correct base commit from Vercel's own API instead of assuming
+`HEAD^`) isn't a drop-in option here. Fix: add project env var
+`VERCEL_DEEP_CLONE=1` (Settings → Environment Variables — this forces
+a full clone before the Ignored Build Step runs, per Vercel's own
+docs) and re-test. This session has no Vercel MCP authorization to set
+the env var or watch the next build directly.
 **Verifies by:** the next merge to `main` produces a Vercel deployment
 whose commit status says `"Deployment has completed"`, and
 `app.declutrmail.com` reflects that commit's content
