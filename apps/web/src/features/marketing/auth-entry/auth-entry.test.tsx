@@ -36,3 +36,11 @@ describe('AuthEntry CTA tracking', () => {
     });
   });
 });
+
+describe('AuthEntry step copy (QA-sign-in-07)', () => {
+  it('does not promise a scan duration the sync gate withholds elsewhere', () => {
+    render(<AuthEntry />);
+    expect(screen.queryByText(/a few minutes/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/we email you when your inbox is ready/i)).toBeInTheDocument();
+  });
+});

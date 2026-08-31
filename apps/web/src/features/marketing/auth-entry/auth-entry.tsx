@@ -46,7 +46,7 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
               <span>2</span>
               <p>
                 <strong>DeclutrMail groups your email by sender.</strong>
-                The first scan can take a few minutes for an older mailbox.
+                The first scan runs on its own — we email you when your inbox is ready.
               </p>
             </div>
             <div>
