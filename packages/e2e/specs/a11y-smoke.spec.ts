@@ -115,7 +115,19 @@ for (const route of ROUTES) {
   });
 }
 
-test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
+test('keyboard shortcut dialog traps and restores focus', async ({ page }, testInfo) => {
+  // D54's phone dialect (ADR-0018) replaces the Grid/Table ViewToggle
+  // outright at <=480px — this project's 375px viewport is inside that
+  // range, so the 'Table' trigger below never renders there. The dialog's
+  // focus-trap mechanism this test exercises is breakpoint-independent
+  // (it's the same KeyboardShortcutDialog regardless of which page/control
+  // opened it), so the desktop project's coverage is sufficient; skip here
+  // rather than chase a mobile-dialect-specific trigger for no added signal.
+  test.skip(
+    testInfo.project.name === MOBILE_PROJECT,
+    "D54's phone dialect removes the Table button this test focuses; the focus-trap behavior itself is covered on desktop",
+  );
+
   await page.goto('/senders');
   await expect(page.getByRole('heading', { name: 'Your senders' })).toBeVisible({
     timeout: 60_000,
