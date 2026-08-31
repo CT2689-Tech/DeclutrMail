@@ -41,7 +41,15 @@ export function QuietRoute() {
   }, []);
 
   return (
-    <div style={{ display: 'grid', gap: 16, maxWidth: 720 }}>
+    <div
+      style={{
+        padding: '20px 24px 28px',
+        display: 'grid',
+        gap: 16,
+        maxWidth: 920,
+        fontFamily: font.sans,
+      }}
+    >
       <ScreenIntro
         id="quiet"
         title="Quiet hours"
