@@ -179,7 +179,10 @@ function AuthSkeleton() {
         }}
         className="dm-skeleton-sidebar"
       />
-      <style>{`@media (min-width: 768px) { .dm-skeleton-sidebar { display: flex !important; } }`}</style>
+      {/* Keep first paint on the exact same breakpoint as AppShell. A
+          tablet between 768px and 900px used to receive a desktop rail
+          while loading, then jump to the mobile hamburger after auth. */}
+      <style>{`@media (min-width: 901px) { .dm-skeleton-sidebar { display: flex !important; } }`}</style>
       <div
         aria-hidden
         style={{

@@ -41,3 +41,13 @@ describe('avatar tonal theme contract', () => {
     expect(dark).not.toMatch(/--dm-avatar-[^:]*-s:/);
   });
 });
+
+describe('responsive foundation contract', () => {
+  it('uses the dynamic mobile viewport with a legacy fallback', () => {
+    const css = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8');
+
+    expect(css).toMatch(/\.dm-app-viewport\s*\{\s*height: 100vh;/);
+    expect(css).toMatch(/@supports \(height: 100dvh\)/);
+    expect(css).toMatch(/\.dm-app-viewport\s*\{\s*height: 100dvh;/);
+  });
+});

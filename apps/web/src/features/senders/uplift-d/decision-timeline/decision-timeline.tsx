@@ -77,6 +77,7 @@ export interface DecisionTimelineProps {
 export function DecisionTimeline({ heading, action, items, empty }: DecisionTimelineProps) {
   return (
     <section
+      className="dm-decision-timeline"
       style={{
         background: color.card,
         border: `1px solid ${color.line}`,
@@ -87,6 +88,18 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
         fontFamily: font.sans,
       }}
     >
+      <style>{`@media (max-width: 600px) {
+        .dm-decision-timeline {
+          padding: ${space[4]}px !important;
+        }
+        .dm-decision-timeline-item {
+          grid-template-columns: 62px 18px minmax(0, 1fr) !important;
+          gap: ${space[2]}px !important;
+        }
+        .dm-decision-timeline-connector {
+          left: 70px !important;
+        }
+      }`}</style>
       {(heading != null || action != null) && (
         <div
           style={{
@@ -120,6 +133,7 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
           const isLast = i === items.length - 1;
           return (
             <li
+              className="dm-decision-timeline-item"
               key={item.id}
               style={{
                 display: 'grid',
@@ -157,6 +171,7 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
               {/* connector line drawn from this node down to the next */}
               {!isLast && (
                 <span
+                  className="dm-decision-timeline-connector"
                   aria-hidden
                   style={{
                     position: 'absolute',

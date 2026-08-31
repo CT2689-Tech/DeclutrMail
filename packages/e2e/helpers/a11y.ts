@@ -53,3 +53,70 @@ export async function expectNoViewportOverflow(page: Page): Promise<void> {
     `document width ${overflow.documentWidth}px exceeds viewport ${overflow.viewportWidth}px`,
   ).toBeLessThanOrEqual(overflow.viewportWidth + 1);
 }
+
+/**
+ * No visible element may escape the viewport unless an explicit
+ * horizontal scroller contains it.
+ *
+ * `documentElement.scrollWidth` is not sufficient for the authenticated
+ * app: AppShell intentionally clips its main column, so an oversized child
+ * can be cut off without making the document itself wider. This catches the
+ * clipped-child class while allowing semantic tables inside `overflow-x:
+ * auto` wrappers. Screen-reader-only nodes parked far off-canvas are ignored.
+ */
+export async function expectNoUncontainedViewportEscape(page: Page): Promise<void> {
+  const result = await page.evaluate(() => {
+    const viewportWidth = window.innerWidth;
+    const outliers: Array<{
+      tag: string;
+      text: string;
+      left: number;
+      right: number;
+      width: number;
+    }> = [];
+
+    for (const element of Array.from(document.querySelectorAll<HTMLElement>('body *'))) {
+      const style = window.getComputedStyle(element);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 1 || rect.height <= 1 || rect.left < -1_000) continue;
+      if (rect.left >= -1 && rect.right <= viewportWidth + 1) continue;
+
+      let ancestor = element.parentElement;
+      let hasHorizontalScroller = false;
+      while (ancestor && ancestor !== document.body) {
+        const ancestorStyle = window.getComputedStyle(ancestor);
+        if (
+          (ancestorStyle.overflowX === 'auto' || ancestorStyle.overflowX === 'scroll') &&
+          ancestor.scrollWidth > ancestor.clientWidth + 1
+        ) {
+          hasHorizontalScroller = true;
+          break;
+        }
+        ancestor = ancestor.parentElement;
+      }
+      if (hasHorizontalScroller) continue;
+
+      outliers.push({
+        tag: element.tagName.toLowerCase(),
+        text: (element.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 100),
+        left: Math.round(rect.left),
+        right: Math.round(rect.right),
+        width: Math.round(rect.width),
+      });
+      if (outliers.length === 12) break;
+    }
+
+    return { viewportWidth, outliers };
+  });
+
+  expect(
+    result.outliers,
+    `visible elements escape the ${result.viewportWidth}px viewport:\n${JSON.stringify(
+      result.outliers,
+      null,
+      2,
+    )}`,
+  ).toEqual([]);
+}

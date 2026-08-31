@@ -43,11 +43,22 @@ export function RecentMessages({
         gap: 12,
       }}
     >
+      <style>{`@media (max-width: 600px) {
+        .dm-recent-message-row {
+          grid-template-columns: auto minmax(0, 1fr) auto !important;
+        }
+        .dm-recent-message-size {
+          grid-column: 2 / -1;
+          justify-self: end;
+        }
+      }`}</style>
       <div
         style={{
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'baseline',
+          flexWrap: 'wrap',
+          gap: 8,
         }}
       >
         <div>
@@ -141,6 +152,7 @@ function MessageRow({
 
   return (
     <div
+      className="dm-recent-message-row"
       style={{
         display: 'grid',
         gridTemplateColumns: 'auto 1fr auto auto',
@@ -247,6 +259,7 @@ function MessageRow({
         {relative}
       </time>
       <span
+        className="dm-recent-message-size"
         style={{
           display: 'inline-flex',
           alignItems: 'center',

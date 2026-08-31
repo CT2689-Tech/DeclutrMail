@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "e2e": "playwright test",
-    "e2e:a11y": "playwright test --project=a11y-desktop --project=a11y-mobile-reduced-motion",
+    "e2e:a11y": "playwright test --project=a11y-desktop --project=a11y-mobile-reduced-motion --project=responsive-phone",
     "e2e:billing": "playwright test billing-upgrade.spec.ts --project=default",
     "e2e:render": "E2E_SKIP_STACK_SETUP=1 playwright test --project=render",
     "e2e:ui": "playwright test --ui",

@@ -58,17 +58,23 @@ export function AdminSecurityEventsScreen(): ReactElement {
   // mounting at all. See `admin-allowlist.guard.ts` for the rationale.
   if (query.error instanceof ApiError && query.error.status === 404) {
     return (
-      <main style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto' }}>
+      <div
+        style={{
+          padding: 'clamp(12px, 4vw, 24px)',
+          maxWidth: '1280px',
+          margin: '0 auto',
+        }}
+      >
         <EmptyState
           title="Not found"
           description="This page does not exist or is not available for your account."
         />
-      </main>
+      </div>
     );
   }
 
   return (
-    <main style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto' }}>
+    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: '1280px', margin: '0 auto' }}>
       <ScreenIntro
         id="admin-security-intro"
         title="Security events"
@@ -85,7 +91,7 @@ export function AdminSecurityEventsScreen(): ReactElement {
         onTo={setTo}
       />
       <Body query={query} rows={rows} />
-    </main>
+    </div>
   );
 }
 
