@@ -44,7 +44,7 @@ plan:
   the finding's own text says it needs "evidence (a real founding member)
   before this is worth prioritizing," and a fresh check
   (`select count(*) from subscriptions where founding_member=true and
-  status='active'`) still returns 0. Nothing to fix without a live instance.
+status='active'`) still returns 0. Nothing to fix without a live instance.
   Left `Open`.
 
 The 7 tasks below cover every remaining open, in-scope finding:
@@ -75,10 +75,12 @@ QA-01, QA-02, QA-03, QA-05, QA-06, QA-07, QA-09.
 ### Task 1: Fix `ACTION_SAFETY_SUMMARY`'s precision-claim contradiction (QA-sign-in-20260829-01)
 
 **Files:**
+
 - Modify: `packages/shared/src/copy/action-safety.ts:7-8`
 - Modify: `packages/shared/src/copy/action-safety.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: nothing new. `ACTION_SAFETY_SUMMARY`'s exported shape (a
   `string`) is unchanged; only its content changes. Every existing consumer
@@ -102,13 +104,13 @@ inside the existing first `it` block (the one already testing
 `expect(ACTION_SAFETY_SUMMARY).toContain('Before a manual action moves email')` line:
 
 ```typescript
-    // QA-sign-in-20260829-01: this sentence used to say "you see exactly
-    // which emails are affected", contradicting ACTION_PREVIEW_CLAIM's own
-    // "a sample when available ... the final number can change" two lines
-    // below it in this same file. Both are canonical product-truth copy;
-    // they must not disagree on precision.
-    expect(ACTION_SAFETY_SUMMARY).not.toMatch(/exactly which/i);
-    expect(ACTION_SAFETY_SUMMARY).toContain('the count and what changes in Gmail');
+// QA-sign-in-20260829-01: this sentence used to say "you see exactly
+// which emails are affected", contradicting ACTION_PREVIEW_CLAIM's own
+// "a sample when available ... the final number can change" two lines
+// below it in this same file. Both are canonical product-truth copy;
+// they must not disagree on precision.
+expect(ACTION_SAFETY_SUMMARY).not.toMatch(/exactly which/i);
+expect(ACTION_SAFETY_SUMMARY).toContain('the count and what changes in Gmail');
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -123,13 +125,13 @@ In `packages/shared/src/copy/action-safety.ts`, change the first sentence of
 `ACTION_SAFETY_SUMMARY` from:
 
 ```typescript
-  'Before a manual action moves email, you see exactly which emails are affected. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox; you choose whether it acts or collects matches for your approval.';
+'Before a manual action moves email, you see exactly which emails are affected. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox; you choose whether it acts or collects matches for your approval.';
 ```
 
 to:
 
 ```typescript
-  'Before a manual action moves email, you see the count and what changes in Gmail. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox; you choose whether it acts or collects matches for your approval.';
+'Before a manual action moves email, you see the count and what changes in Gmail. You can undo Archive, Later, and Delete from Activity until the deadline shown there. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. A sent unsubscribe request cannot be taken back. Before an Autopilot rule starts, you see what it would do to email already in your inbox; you choose whether it acts or collects matches for your approval.';
 ```
 
 Only that clause changes. Every other sentence in the constant is untouched.
@@ -158,9 +160,11 @@ git commit -m "fix(marketing): stop claiming exact affected-email precision (QA-
 ### Task 2: Fix the OAuth scope disclosure undersell (QA-sign-in-20260829-02)
 
 **Files:**
+
 - Modify: `packages/shared/src/copy/privacy.ts:63-64`
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: nothing new. `OAUTH_SCOPE_DISCLOSURE` stays a `string` export;
   every consumer (`beta/page.tsx`, `footer.tsx`, `story-shell.tsx` ×2,
@@ -218,10 +222,12 @@ git commit -m "fix(marketing): disclose the real gmail.modify grant before conse
 ### Task 3: Don't auto-open the plan-change panel for the plan a subscriber already has (QA-sign-in-20260829-03)
 
 **Files:**
+
 - Modify: `apps/web/src/features/billing/plan-picker.tsx:279-284`
 - Modify: `apps/web/src/features/billing/billing-screen.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `PlanPickerProps.currentTier: TierId` (already a prop, already
   threaded into this component — no new prop).
 - Produces: nothing new.
@@ -257,14 +263,14 @@ In `apps/web/src/features/billing/billing-screen.test.tsx`, inside the
 using `mockTier = 'pro'` and `PRO_SUB`), add:
 
 ```typescript
-  it('a deep link naming the subscriber\'s own current tier does not auto-open the confirm panel', async () => {
-    mockTier = 'pro';
-    stubSubscription(() => jsonOk({ data: PRO_SUB }));
-    renderScreen({ plan: 'pro', cycle: 'monthly' });
+it("a deep link naming the subscriber's own current tier does not auto-open the confirm panel", async () => {
+  mockTier = 'pro';
+  stubSubscription(() => jsonOk({ data: PRO_SUB }));
+  renderScreen({ plan: 'pro', cycle: 'monthly' });
 
-    await screen.findByTestId('current-plan-card');
-    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-  });
+  await screen.findByTestId('current-plan-card');
+  expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -278,29 +284,29 @@ the subscriber's existing Pro tier.
 In `apps/web/src/features/billing/plan-picker.tsx`, change:
 
 ```typescript
-  useEffect(() => {
-    if (intentPlan && !disabled && !consumedIntent.current) {
-      consumedIntent.current = true;
-      setSelected(intentPlan);
-    }
-  }, [intentPlan, disabled]);
+useEffect(() => {
+  if (intentPlan && !disabled && !consumedIntent.current) {
+    consumedIntent.current = true;
+    setSelected(intentPlan);
+  }
+}, [intentPlan, disabled]);
 ```
 
 to:
 
 ```typescript
-  useEffect(() => {
-    // QA-sign-in-20260829-03: a deep link naming the tier the visitor is
-    // already on (e.g. a stale bookmarked/shared pricing link) must not
-    // auto-open a "confirm your plan" panel for the plan they already
-    // have — nothing changed, so there is nothing to confirm. A deep link
-    // naming a DIFFERENT tier still opens normally; that's the intended
-    // upgrade/downgrade flow.
-    if (intentPlan && intentPlan !== currentTier && !disabled && !consumedIntent.current) {
-      consumedIntent.current = true;
-      setSelected(intentPlan);
-    }
-  }, [intentPlan, currentTier, disabled]);
+useEffect(() => {
+  // QA-sign-in-20260829-03: a deep link naming the tier the visitor is
+  // already on (e.g. a stale bookmarked/shared pricing link) must not
+  // auto-open a "confirm your plan" panel for the plan they already
+  // have — nothing changed, so there is nothing to confirm. A deep link
+  // naming a DIFFERENT tier still opens normally; that's the intended
+  // upgrade/downgrade flow.
+  if (intentPlan && intentPlan !== currentTier && !disabled && !consumedIntent.current) {
+    consumedIntent.current = true;
+    setSelected(intentPlan);
+  }
+}, [intentPlan, currentTier, disabled]);
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -323,10 +329,12 @@ git commit -m "fix(billing): stop auto-opening the confirm panel for a subscribe
 ### Task 4: State the Free-tier cleanup cap where visitors decide if Free fits (QA-sign-in-20260829-05)
 
 **Files:**
+
 - Modify: `apps/web/src/features/marketing/landing/hero.tsx`
 - Modify: `apps/web/src/app/(marketing)/page.test.tsx`
 
 **Interfaces:**
+
 - Consumes: `TIER_MANIFEST.free.cleanupActionsPerMonth: number` (already
   exported from `@declutrmail/shared/entitlements`).
 - Produces: nothing new.
@@ -375,18 +383,18 @@ import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitle
 Then change:
 
 ```jsx
-          <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free · no card · {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
-          </p>
+<p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
+  Free · no card · {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
+</p>
 ```
 
 to:
 
 ```jsx
-          <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free · no card · {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month ·{' '}
-            {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
-          </p>
+<p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
+  Free · no card · {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month ·{' '}
+  {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
+</p>
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -406,11 +414,13 @@ git commit -m "fix(marketing): state the Free cleanup cap beside the homepage di
 ### Task 5: Add a low-key link from the homepage to `/sign-in`'s pre-consent explanation (QA-sign-in-20260829-06)
 
 **Files:**
+
 - Modify: `apps/web/src/features/marketing/landing/hero.tsx`
 - Modify: `apps/web/src/features/marketing/landing/landing.css`
 - Modify: `apps/web/src/app/(marketing)/page.test.tsx`
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: nothing new.
 
@@ -446,9 +456,11 @@ Expected: FAIL — no such link exists yet.
 In `apps/web/src/features/marketing/landing/hero.tsx`, change:
 
 ```jsx
-          {/* Connect CTAs link straight to Google's consent screen, so the
-              permission explanation stays beside the click. */}
-          <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">{OAUTH_SCOPE_DISCLOSURE}</p>
+{
+  /* Connect CTAs link straight to Google's consent screen, so the
+              permission explanation stays beside the click. */
+}
+<p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">{OAUTH_SCOPE_DISCLOSURE}</p>;
 ```
 
 to:
@@ -497,10 +509,12 @@ git commit -m "feat(marketing): link the homepage to /sign-in's pre-consent deta
 ### Task 6: Stop promising a scan duration the sync gate deliberately withholds (QA-sign-in-20260829-07)
 
 **Files:**
+
 - Modify: `apps/web/src/features/marketing/auth-entry/auth-entry.tsx`
 - Modify: `apps/web/src/features/marketing/auth-entry/auth-entry.test.tsx`
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: nothing new.
 
@@ -534,25 +548,25 @@ Expected: FAIL — the current copy still promises "a few minutes".
 In `apps/web/src/features/marketing/auth-entry/auth-entry.tsx`, change:
 
 ```jsx
-            <div>
-              <span>2</span>
-              <p>
-                <strong>DeclutrMail groups your email by sender.</strong>
-                The first scan can take a few minutes for an older mailbox.
-              </p>
-            </div>
+<div>
+  <span>2</span>
+  <p>
+    <strong>DeclutrMail groups your email by sender.</strong>
+    The first scan can take a few minutes for an older mailbox.
+  </p>
+</div>
 ```
 
 to:
 
 ```jsx
-            <div>
-              <span>2</span>
-              <p>
-                <strong>DeclutrMail groups your email by sender.</strong>
-                The first scan runs on its own — we email you when your inbox is ready.
-              </p>
-            </div>
+<div>
+  <span>2</span>
+  <p>
+    <strong>DeclutrMail groups your email by sender.</strong>
+    The first scan runs on its own — we email you when your inbox is ready.
+  </p>
+</div>
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -572,10 +586,12 @@ git commit -m "fix(marketing): stop promising a scan duration the sync gate with
 ### Task 7: Rewrite the `inbox_limit` recovery alert in plain language (QA-sign-in-20260829-09)
 
 **Files:**
+
 - Modify: `apps/web/src/features/marketing/auth-entry/auth-entry.tsx`
 - Modify: `apps/web/src/app/(marketing)/sign-in/page.test.tsx`
 
 **Interfaces:**
+
 - Consumes: nothing new.
 - Produces: nothing new.
 
@@ -592,37 +608,31 @@ component's contract.
 In `apps/web/src/app/(marketing)/sign-in/page.test.tsx`, change:
 
 ```typescript
-  it('explains the closed inbox-limit recovery without requiring a session', async () => {
-    await renderPage({ auth_result: 'inbox_limit' });
+it('explains the closed inbox-limit recovery without requiring a session', async () => {
+  await renderPage({ auth_result: 'inbox_limit' });
 
-    const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(/this Gmail can’t reconnect yet/i);
-    expect(alert).toHaveTextContent(/sign in with another Gmail that is still connected/i);
-    expect(alert).toHaveTextContent(/free an inbox slot or review your plan options/i);
-    expect(screen.getByRole('link', { name: /compare plans/i })).toHaveAttribute(
-      'href',
-      '/pricing',
-    );
-  });
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveTextContent(/this Gmail can’t reconnect yet/i);
+  expect(alert).toHaveTextContent(/sign in with another Gmail that is still connected/i);
+  expect(alert).toHaveTextContent(/free an inbox slot or review your plan options/i);
+  expect(screen.getByRole('link', { name: /compare plans/i })).toHaveAttribute('href', '/pricing');
+});
 ```
 
 to:
 
 ```typescript
-  it('explains the closed inbox-limit recovery without requiring a session', async () => {
-    await renderPage({ auth_result: 'inbox_limit' });
+it('explains the closed inbox-limit recovery without requiring a session', async () => {
+  await renderPage({ auth_result: 'inbox_limit' });
 
-    const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(/this Gmail can’t reconnect yet/i);
-    expect(alert).toHaveTextContent(/your plan connects one Gmail account/i);
-    expect(alert).toHaveTextContent(/another one is using it/i);
-    expect(alert).toHaveTextContent(/sign in with that connected account to disconnect it/i);
-    expect(alert).toHaveTextContent(/upgrade to connect more/i);
-    expect(screen.getByRole('link', { name: /compare plans/i })).toHaveAttribute(
-      'href',
-      '/pricing',
-    );
-  });
+  const alert = screen.getByRole('alert');
+  expect(alert).toHaveTextContent(/this Gmail can’t reconnect yet/i);
+  expect(alert).toHaveTextContent(/your plan connects one Gmail account/i);
+  expect(alert).toHaveTextContent(/another one is using it/i);
+  expect(alert).toHaveTextContent(/sign in with that connected account to disconnect it/i);
+  expect(alert).toHaveTextContent(/upgrade to connect more/i);
+  expect(screen.getByRole('link', { name: /compare plans/i })).toHaveAttribute('href', '/pricing');
+});
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -635,36 +645,40 @@ Expected: FAIL — the current alert copy doesn't match the new assertions.
 In `apps/web/src/features/marketing/auth-entry/auth-entry.tsx`, change:
 
 ```jsx
-          {authResult === 'inbox_limit' ? (
-            <div className="dm-auth-entry-alert" role="alert">
-              <strong>This Gmail can’t reconnect yet.</strong>
-              <p>
-                This Gmail is disconnected, and its workspace’s inbox limit is already in use. Sign
-                in with another Gmail that is still connected, then free an inbox slot or review
-                your plan options before reconnecting this one.
-              </p>
-              <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
-                Compare plans →
-              </TrackedCta>
-            </div>
-          ) : null}
+{
+  authResult === 'inbox_limit' ? (
+    <div className="dm-auth-entry-alert" role="alert">
+      <strong>This Gmail can’t reconnect yet.</strong>
+      <p>
+        This Gmail is disconnected, and its workspace’s inbox limit is already in use. Sign in with
+        another Gmail that is still connected, then free an inbox slot or review your plan options
+        before reconnecting this one.
+      </p>
+      <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
+        Compare plans →
+      </TrackedCta>
+    </div>
+  ) : null;
+}
 ```
 
 to:
 
 ```jsx
-          {authResult === 'inbox_limit' ? (
-            <div className="dm-auth-entry-alert" role="alert">
-              <strong>This Gmail can’t reconnect yet.</strong>
-              <p>
-                Your plan connects one Gmail account, and another one is using it. Sign in with
-                that connected account to disconnect it, or upgrade to connect more.
-              </p>
-              <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
-                Compare plans →
-              </TrackedCta>
-            </div>
-          ) : null}
+{
+  authResult === 'inbox_limit' ? (
+    <div className="dm-auth-entry-alert" role="alert">
+      <strong>This Gmail can’t reconnect yet.</strong>
+      <p>
+        Your plan connects one Gmail account, and another one is using it. Sign in with that
+        connected account to disconnect it, or upgrade to connect more.
+      </p>
+      <TrackedCta href="/pricing" cta="see_pricing" placement="hero">
+        Compare plans →
+      </TrackedCta>
+    </div>
+  ) : null;
+}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
