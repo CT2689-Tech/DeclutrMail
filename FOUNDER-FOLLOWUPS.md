@@ -23,6 +23,90 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-08-31 — Production has not deployed anything in 2 days — Vercel "Ignored Build Step" is canceling every build
+
+**Source:** session 2026-08-31 — founder reported PR #693's layout fix
+(merged, confirmed present on `origin/main`) still not visible at
+`app.declutrmail.com`.
+
+**Why:** every commit merged to `main` since 2026-08-29T22:33Z has its
+Vercel check land as `state: success` / `description: "Canceled by
+Ignored Build Step"` — checked directly via
+`gh api repos/.../commits/<sha>/status`, not inferred. That is a
+false-green: the GitHub commit status reads success, but no build ever
+ran and nothing deployed. Confirmed against
+`repos/.../deployments`: the last real deployment (any environment) is
+`c3f5be2f` at 2026-08-29T22:28Z — Production has been frozen on that
+SHA through at least 5 subsequent merges (#689, #691, #692, #688, #693),
+including a horizontal-scroll fix, an ADR-0028 reach widening, and this
+session's layout fix. None of that is live. This is the exact
+"guard that cannot fail" shape CLAUDE.md §8 warns about: a status check
+that reads green regardless of whether it actually built anything.
+**How:** Vercel dashboard → `declutr-mail` project → Settings → Git →
+**Ignored Build Step** shows the actual configured command (founder
+confirmed 2026-08-31):
+```
+git diff --quiet HEAD^ HEAD -- apps/web packages/shared tsconfig.base.json pnpm-lock.yaml pnpm-workspace.yaml
+```
+This is logically correct — `git diff --quiet` exits `1` (proceed, per
+Vercel's convention) when the listed paths changed, `0` (skip) when
+they didn't. Verified directly against the real repo: replayed this
+exact command for the last 5 merged SHAs (#689/#691/#692/#688/#693,
+all of which touch `apps/web`) against their true parents — every one
+exits `1`. So the command is provably correct against full git
+history; the break is environmental. The prime suspect is Vercel's
+default **shallow clone**: if the checkout used to evaluate this step
+doesn't include the parent commit, `HEAD^` fails to resolve
+(`fatal: ambiguous argument 'HEAD^'`) and the step's exit code stops
+matching what a full clone produces — this repo is not a Turborepo
+(no `turbo.json`), so the usual `npx turbo-ignore` fix (which sources
+the correct base commit from Vercel's own API instead of assuming
+`HEAD^`) isn't a drop-in option here. Fix: add project env var
+`VERCEL_DEEP_CLONE=1` (Settings → Environment Variables — this forces
+a full clone before the Ignored Build Step runs, per Vercel's own
+docs) and re-test. This session has no Vercel MCP authorization to set
+the env var or watch the next build directly.
+
+**Update 2026-08-31 (later same day):** founder set `VERCEL_DEEP_CLONE=1`
+and redeployed. Re-tested against `#694` (`b371738`, touches
+`apps/web` + `packages/shared` extensively, confirmed `exit 1` against
+real git history the same way as the first 5) — still
+`"Canceled by Ignored Build Step"`. The founder pulled the raw build
+log for that deployment:
+```
+Cloning github.com/CT2689-Tech/DeclutrMail (Branch: main, Commit: b371738)
+Skipping build cache, deployment was triggered without cache.
+Cloning completed: 2.648s
+Running "git diff --quiet HEAD^ HEAD -- apps/web packages/shared tsconfig.base.json pnpm-lock.yaml pnpm-workspace.yaml"
+The Deployment has been canceled as a result of running the command...
+```
+2.6s is too fast for a full-history clone of this monorepo, so
+`VERCEL_DEEP_CLONE=1` does not appear to have taken effect on this
+build (env var name/scoping may be wrong, or a var change needs a
+fresh git push rather than a dashboard "Redeploy" of an existing
+commit to take effect — unconfirmed either way). The log line between
+the `Running "..."` line and the cancellation (the actual git
+stdout/stderr, which would show the real exit reason) was not
+captured — worth pulling directly from the Vercel deployment page for
+full certainty.
+
+**Recommendation — stop debugging, unblock now:** clear the Ignored
+Build Step field entirely (Settings → Git → Ignored Build Step → blank
+→ Save). Production has been frozen 2+ days over what was meant to be
+a minor build-cost optimization. CI (typecheck/lint/tests, `#7`) already
+gates correctness; every commit building is strictly safer than a skip
+condition that silently fails closed. Revisit the optimization later,
+outside an active incident, if Vercel build-minute cost actually
+becomes a concern — check current plan/usage before re-adding any skip
+condition, since unlike GitHub Actions on this public repo, Vercel
+build minutes are a real metered cost.
+**Verifies by:** the next merge to `main` produces a Vercel deployment
+whose commit status says `"Deployment has completed"`, and
+`app.declutrmail.com` reflects that commit's content
+(`view-source:` or a hard-refresh + the Quiet screen's width is the
+fastest visual check right now).
+**Status:** Open
+
 ### 2026-08-27 — Guard against bundler-only copy defects
 **Source:** PR #651 / MISTAKES.md 2026-08-27
 **Why:** a literal `undefined` shipped inside D226 preview copy and no
