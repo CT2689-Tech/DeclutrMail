@@ -115,13 +115,24 @@ for (const route of ROUTES) {
   });
 }
 
-test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
+test('keyboard shortcut dialog traps and restores focus', async ({ page }, testInfo) => {
   await page.goto('/senders');
   await expect(page.getByRole('heading', { name: 'Your senders' })).toBeVisible({
     timeout: 60_000,
   });
 
-  const trigger = page.getByRole('button', { name: 'Table', exact: true });
+  // D54's phone dialect (ADR-0018) replaces the Grid/Table ViewToggle
+  // outright at <=480px, so the 'Table' trigger doesn't exist on this
+  // project's 375px viewport. The shortcut mechanism under test is global
+  // and focus-independent of WHICH non-input element is focused, so the
+  // per-row expand control (always rendered in the phone dialect's row
+  // list) is an equally valid trigger there — never `test.skip()` here:
+  // this repo's `assert-e2e-ran.mjs` CI gate fails loudly on any skip
+  // (a prior `test.skip` precondition shipped a permanently-green no-op).
+  const trigger =
+    testInfo.project.name === MOBILE_PROJECT
+      ? page.getByRole('button', { name: /— expand detail$/ }).first()
+      : page.getByRole('button', { name: 'Table', exact: true });
   await trigger.focus();
   await expect(trigger).toBeFocused();
   await page.keyboard.press('?');
