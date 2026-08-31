@@ -31,3 +31,25 @@ describe('<SelectionBar /> floating-surface contract', () => {
     expect(html).toContain(`z-index:${floatingSurfaceLayout.selectionBarZIndex}`);
   });
 });
+
+describe('<SelectionBar variant="sheet" /> — D54 phone bottom-sheet content', () => {
+  it('renders the same K/A/U/L/D verb set as a full-width stacked list, not the sticky bar', () => {
+    const html = renderToStaticMarkup(
+      <SelectionBar
+        variant="sheet"
+        senders={[SENDER]}
+        onClear={() => undefined}
+        onAct={() => undefined}
+        tier="pro"
+      />,
+    );
+
+    // Not the desktop sticky-bar footprint.
+    expect(html).not.toContain(`bottom:${floatingSurfaceLayout.selectionBarBottom}px`);
+    expect(html).toContain('data-dm-selection-bar="sheet"');
+    for (const label of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
+      expect(html).toContain(`>${label}<`);
+    }
+    expect(html).toContain('Cancel');
+  });
+});

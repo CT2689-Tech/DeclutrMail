@@ -32,7 +32,7 @@ mirror to be created at `docs/execution/Implementation-Plan.md`).
 
 <!-- AUTO:SUMMARY:START -->
 
-249 decisions — ⬜ Not started 71 · 🔵 Shipped 113 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
+249 decisions — ⬜ Not started 70 · 🔵 Shipped 114 · 🟢 Verified 62 · 🟡 In progress 1 · 🚫 Retired 2
 
 <!-- AUTO:SUMMARY:END -->
 
@@ -102,7 +102,7 @@ falls back to the local plan (`~/.claude/plans/i-want-you-to-smooth-kahn.md`).
 | D51 | Filter UI: **Hybrid — 4 quick-filter chips + "More filters" drawer | ⬜ |  |  | Reclaimed 2026-07-28 (D158): #294/#340/#341 were rollup/parity work, trailers rewritten at source — the chips+drawer this row describes is unbuilt |
 | D52 | Bulk operations: **Shift-click range + Ctrl/Cmd-click individual + sticky bottom action bar | 🔵 | #183 |  | Evidence note 2026-06-11: multi-select + sticky bulk bar shipped in #183; shift-click range select shipped in #198 |
 | D53 | Search: **Live by name + domain (metadata only) | ⬜ |  |  |  |
-| D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | ⬜ |  |  |  |
+| D54 | Mobile: **Vertical card list + bottom-sheet drawer + horizontal-scroll chips | 🔵 | #687 |  |  |
 | D55 | Time window default: **Last 30 days; picker for All time / 7d / 90d | 🔵 | #138 |  |  |
 | D56 | Filter set: **Bundle's 5 (source) + Doc 06's additions (action, sender, status, undo-available) | 🔵 | #292 |  |  |
 | D57 | Row expansion: **Accordion pattern matching Triage/Senders | 🔵 | #214 |  |  |

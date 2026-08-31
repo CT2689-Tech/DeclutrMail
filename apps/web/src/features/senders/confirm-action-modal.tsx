@@ -194,10 +194,18 @@ export function ConfirmActionModal({
   onRefreshSenders,
   mailboxEmail,
   cleanupQuota,
+  variant = 'modal',
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
   onConfirm: (opts: ConfirmOptions) => void;
+  /**
+   * D54 (ADR-0018) — 'sheet' renders the SAME preview content pinned to
+   * the bottom edge instead of centered, for phone-width callers. The
+   * mandatory D226 preview content and gating are identical either way;
+   * only the container's position/shape changes.
+   */
+  variant?: 'modal' | 'sheet';
   /**
    * Composite preview (ADR-0020). Drives the sender context strip's real
    * domain/monthly/lastSeenDays values + the per-bucket counts the chip
@@ -828,21 +836,41 @@ export function ConfirmActionModal({
         aria-modal="true"
         aria-labelledby="dm-confirm-title"
         aria-describedby="dm-confirm-lead"
-        style={{
-          position: 'fixed',
-          top: '12vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(540px, calc(100vw - 32px))',
-          maxHeight: '78vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
+        style={
+          variant === 'sheet'
+            ? {
+                position: 'fixed',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                width: '100%',
+                maxHeight: '88vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: '16px 16px 0 0',
+                border: `1px solid ${color.border}`,
+                borderBottom: 'none',
+                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+                paddingBottom: 'env(safe-area-inset-bottom)',
+              }
+            : {
+                position: 'fixed',
+                top: '12vh',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: 'min(540px, calc(100vw - 32px))',
+                maxHeight: '78vh',
+                overflow: 'auto',
+                background: color.card,
+                borderRadius: 14,
+                border: `1px solid ${color.border}`,
+                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+                zIndex: 151,
+                fontFamily: font.sans,
+              }
+        }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
           <Eyebrow tone={danger ? 'amber' : 'primary'}>Preview · before anything changes</Eyebrow>

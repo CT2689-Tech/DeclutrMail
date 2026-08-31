@@ -36,8 +36,10 @@ export type { LabelKey, LabelMode, LabelSet } from './hooks/use-labels';
 export { useFocusTrap } from './hooks/use-focus-trap';
 export { useExpandableRow, nextExpandedRowId } from './hooks/use-expandable-row';
 export type { UseExpandableRowResult } from './hooks/use-expandable-row';
+export { useLongPress, LONG_PRESS_MS, LONG_PRESS_DRIFT_PX } from './hooks/use-long-press';
 
 export { Kbd } from './components/kbd';
+export { BottomSheet } from './components/bottom-sheet';
 export { Tooltip } from './components/tooltip';
 export { Eyebrow } from './components/eyebrow';
 export type { EyebrowTone } from './components/eyebrow';

@@ -2099,3 +2099,34 @@ schedule: "All of them share that one return time."
 number is found asserting something the surface cannot know — it would
 join null→0, page-count-as-total and unknown→"Ready" in the UI-truth
 class, which is already the dominant defect here.
+
+## 2026-08-30 — The "already mobile-responsive" row component was dead code
+**Context:** Implementing D54 (Senders mobile dialect, ADR-0018). Initial
+recon found `table/sender-list-row.tsx`'s `SenderListRow` — a hairline
+row with an existing `useIsAtMost('sm')` responsive layout, a
+`MobileNarrow` Storybook story, and no test file — and read it as partial
+mobile coverage already in place for Senders.
+**Finding:** That component is unreachable from the live app. It's
+consumed only by `table/sender-group.tsx`'s `SenderGroup`, a
+Gmail-category grouping component that predates the D51 brand-rollup
+grid and is itself never imported anywhere — `senders-screen.tsx` renders
+`SenderGrid` (cards) or `SenderTable` (an 11-column fixed-width
+`<table>`) exclusively. So the "responsive treatment" was real code,
+exercised only by Storybook, sitting downstream of a superseded grouping
+component nobody mounts. A repo-wide grep for a component's *consumers*
+(not just its existence) would have caught this in one step instead of
+after reading three render trees.
+**Rule (provisional):** before crediting a component with covering a
+surface, grep for where it's actually imported from the app's real
+render tree (`app/`, screen files), not just where its test/story lives.
+A component reachable only from Storybook or from another orphan is not
+in production, no matter how complete it looks.
+**Resolution:** rather than write a new row from scratch, D54 extends
+this existing (if orphaned) `SenderListRow` in place — adding the D54
+phone dialect (hide-until-select-mode checkbox, swipe-right/left,
+long-press) — and wires it directly into `senders-screen.tsx` for
+`useIsAtMost('xs')`, finally giving it a live consumer. `SenderGroup`
+itself stays untouched and still orphaned (pre-existing dead code, out of
+this PR's scope per CLAUDE.md §1.3 — noted, not removed).
+**Distillation trigger:** promote to CLAUDE.md if a second "already
+covered" surface turns out to be Storybook-only dead code.
