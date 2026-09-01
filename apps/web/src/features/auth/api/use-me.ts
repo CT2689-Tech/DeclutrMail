@@ -29,13 +29,30 @@ import { ME_QUERY_KEY, type Me } from './me-contract';
 
 export { ME_QUERY_KEY, type Me, type MeMailbox, type MeUser, type Tier } from './me-contract';
 
-/** Non-terminal readiness states — a mailbox here is still syncing. */
-const SYNCING_READINESS: ReadonlyArray<SyncReadiness> = ['queued', 'syncing'];
+/**
+ * Readiness values that keep `me` polling — a mailbox here is still
+ * syncing, OR has terminally failed and may recover without a page
+ * reload (a retry, or the server-side `cursorTooOld` recovery).
+ *
+ * QA-sync-20260831-05: this widens the ORIGINAL `['queued', 'syncing']`
+ * set with `'failed'`. It does not close the full gap — a mailbox that
+ * is already `ready` and silently transitions server-side (e.g. a
+ * reconnect re-queues it) is still not observed until the next window
+ * focus, because nothing is polling while every mailbox reads `ready`.
+ * Fixing that fully means either polling permanently at low frequency or
+ * reading `/sync/status` (which DOES poll at `ready`) instead of `me` for
+ * every readiness-derived surface — a bigger cost/architecture call left
+ * for the founder, not made here. What this DOES fix: once any mailbox
+ * is known to be `failed`, the poll keeps running, so a subsequent
+ * recovery (retry succeeds, or a second failure) is observed promptly
+ * instead of only on the next manual reload or window focus.
+ */
+const SYNCING_READINESS: ReadonlyArray<SyncReadiness> = ['queued', 'syncing', 'failed'];
 
 /** Poll cadence for `me` while a mailbox's initial sync is in flight. */
 export const ME_SYNC_POLL_MS = 4_000;
 
-/** True when any active mailbox is still doing its initial sync. */
+/** True when any active mailbox is still doing its initial sync, or has failed and may recover. */
 export function meHasSyncingMailbox(data: Me | undefined): boolean {
   if (!data) return false;
   return data.mailboxes.some(
@@ -93,10 +110,19 @@ export const ME_ERROR_RETRY_MS = 15_000;
  * `retry: false` so the unauthenticated state surfaces immediately
  * instead of looping.
  *
- * While any mailbox is still syncing (e.g. a freshly-connected second
+ * While any mailbox is `queued`/`syncing` (e.g. a freshly-connected second
  * account), `me` polls every {@link ME_SYNC_POLL_MS} so the account
  * switcher's "Syncing…→Ready" badge + the ready toast update without a
- * manual refresh (D116). Polling stops once every mailbox is terminal.
+ * manual refresh (D116). `failed` is ALSO in that set (QA-sync-20260831-05)
+ * — deliberately, so the toast + every surface reading `readiness` off
+ * `me` can still notice a later recovery — which means polling does NOT
+ * stop once a mailbox reaches `failed`: nothing re-queues it
+ * automatically, so this keeps polling indefinitely until the user acts
+ * (retries, reconnects) or disconnects the mailbox. A pre-existing,
+ * separate gap (design-system-agent review): this only starts polling
+ * again once `me` has ALREADY observed the failure — a `ready→failed`
+ * transition while every cached mailbox reads `ready` still isn't
+ * caught without a manual refresh/focus.
  */
 export function useMe() {
   const queryClient = useQueryClient();

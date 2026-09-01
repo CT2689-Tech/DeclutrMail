@@ -34,14 +34,14 @@ const MAILBOXES = [
   },
 ] as never;
 
-function renderCard() {
+function renderCard(healthById: Record<string, unknown> = {}) {
   return render(
     <QueryWrapper client={createTestQueryClient()}>
       <MailboxesCard
         mailboxes={MAILBOXES}
         activeMailboxId={ACTIVE_ID}
         inboxLimit={3}
-        healthById={{}}
+        healthById={healthById as never}
         onConnect={() => undefined}
         onReactivate={() => undefined}
       />
@@ -53,7 +53,7 @@ describe('MailboxesCard — failed-sync retry', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it('renders Try again on the failed row and targets THAT mailbox', async () => {
+  it('renders Scan again on the failed row and targets THAT mailbox', async () => {
     let seenHeader: string | null = null;
     installFetchStub([
       {
@@ -67,13 +67,30 @@ describe('MailboxesCard — failed-sync retry', () => {
     ]);
 
     renderCard();
-    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Scan again' }));
     await waitFor(() => expect(seenHeader).toBe(FAILED_ID));
   });
 
   it('offers no retry on rows that are not failed', () => {
     renderCard();
     // Exactly one failed row → exactly one retry control.
-    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Scan again' })).toHaveLength(1);
+  });
+
+  it('does not read "Ready" for a mailbox whose background sync is persistently broken (QA-sync-20260831-04)', () => {
+    // The negative control: reverting the `health?.hasSyncError` branch
+    // makes this assertion fail — `readiness` stays `'ready'` for a
+    // failed INCREMENTAL sync by the worker's own design, so this card
+    // used to render a plain "Ready" tag for a mailbox that had not
+    // actually synced in days.
+    renderCard({
+      [ACTIVE_ID]: {
+        lastSyncedAt: '2026-08-01T00:00:00.000Z',
+        needsReconnect: false,
+        hasSyncError: true,
+      },
+    });
+    expect(screen.getByText('Not syncing')).toBeInTheDocument();
+    expect(screen.queryByText('Ready')).not.toBeInTheDocument();
   });
 });

@@ -4354,3 +4354,53 @@ Filing to `FOUNDER-FOLLOWUPS.md` as a companion to the existing
 `merge-queue-posture` gap: a bundle-budget regression on an authenticated
 route with heavy daily traffic is exactly the kind of check whose absence
 from `merge_group` should not be silent.
+
+## 2026-08-31 — `check-microcopy.sh`'s docs-exemption path match silently disables it for every file in a harness-created worktree
+
+**PR:** none yet — caught mid-session during `/ct-qa sync` fix work, not
+shipped code
+**Caught by:** manual starve-test of the hook while verifying new copy
+(CLAUDE.md §8's own "starve any new guard before trusting it" rule, applied
+retroactively to an EXISTING guard rather than a new one)
+**What happened:** `.claude/hooks/check-microcopy.sh`'s docs/config
+exemption case is `*/.claude/*|*/CLAUDE.md|...) exit 0 ;;` — a plain
+substring match against the tool call's `file_path`. This repo's own
+documented worktree convention (CLAUDE.md §6, `git wt new`) places
+worktrees at `../wt-<branch>`, a sibling of the repo — outside `.claude/`,
+so the exemption is correct for that path shape. But this specific
+harness's own auto-worktree feature creates worktrees at
+`.claude/worktrees/<session-id>/` — INSIDE the `.claude/` directory — so
+every absolute path to every file in every such worktree contains the
+literal substring `/.claude/` as part of `.claude/worktrees/...`, and the
+hook exits 0 before ever reading file content. Confirmed directly: a
+probe file at `apps/web/src/features/sync/probe-microcopy-DELETE-ME.tsx`
+inside this session's worktree, containing the literal banned string
+`<button>Screen</button>`, produced no violation and exit code 0; `bash -x`
+tracing showed the script exiting at the docs-exemption case, never
+reaching the canonical-verbs check at all. This session's own copy fixes
+this run (senders/triage/sync/settings/mailboxes/onboarding surfaces) were
+verified some other way (manual re-read against the documented ban list,
+plus ESLint and unit tests, none of which cover microcopy content) — but
+every `/ct-qa` run that has operated inside a `.claude/worktrees/*` path
+this project has logged (mailbox-switch, archive, delete, onboarding, this
+sync run) has been editing product copy with this specific guard
+silently inert the whole time. It is unknown whether any of their shipped
+copy actually violates the canonical-verbs or truth-constraint rules —
+nothing has checked.
+**Correct approach:** A path-based exemption meant to mean "this file lives
+in the project's own `.claude/` config directory" must anchor the match
+(e.g. reject the exemption unless `.claude/` is followed by one of the
+hook's own known subpaths — `hooks/`, `agents/`, `commands/`, `settings*`
+— or better, resolve the path relative to the repo root found via
+`git rev-parse --show-toplevel` and check THAT relative path, which cannot
+contain a worktree's own container directory). A substring match against an
+absolute path is exactly the shape CLAUDE.md §8 already warns about: it
+cannot distinguish "this file is repo config" from "this file merely lives
+somewhere under a directory that happens to be named `.claude`".
+**Enforcement update:** None yet — not fixed in this session (out of scope
+for the `/ct-qa sync` diff in flight; touching `.claude/hooks/` deserves its
+own reviewed change, not a rider on an unrelated fix). Flagged to the
+founder via `spawn_task` and this entry. Until fixed, no PostToolUse
+microcopy enforcement should be trusted for any session whose worktree path
+contains `.claude/worktrees/` — verify canonical-verb and truth-constraint
+compliance by hand for those sessions' copy changes.

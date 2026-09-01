@@ -46,14 +46,44 @@ export interface MailboxHealth {
   lastSyncedAt: string | null;
   /** True when the OAuth grant is gone and re-consent is the only fix. */
   needsReconnect: boolean;
+  /**
+   * QA-sync-20260831-04: true when the mailbox's most recent INCREMENTAL
+   * sync failed for a reason OTHER than a revoked grant (`needsReconnect`
+   * already covers that), and no later success has cleared it. Before
+   * this field existed, `readiness` stayed `'ready'` for exactly this
+   * case (the incremental worker deliberately never flips it — see
+   * `packages/workers/src/incremental-sync.worker.ts`), so a mailbox
+   * whose background sync had been dead for days read as plain "Ready"
+   * in Settings and carried no tag at all in the account menu.
+   *
+   * Optional (not `boolean`): existing fixtures/stories construct this
+   * shape directly, and CLAUDE.md's own rule against a required key
+   * silently breaking every consuming call site applies here — every
+   * read is `health?.hasSyncError`, which treats a missing field the
+   * same as `false`.
+   */
+  hasSyncError?: boolean;
 }
 
 /** Project a SyncStatus payload into the card's health shape. */
 export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
   const syncedAt = status.last_synced_at ?? null;
+  const needsReconnect = syncStatusNeedsReconnect(status);
+  const errorAt = status.last_sync_error_at ?? null;
+  const hasSyncError =
+    !needsReconnect &&
+    errorAt !== null &&
+    // Codex adversarial review: strict `>` read an error stamped in the
+    // same instant as the last success as healthy. The two are written
+    // by mutually exclusive worker outcomes, so a genuine tie should
+    // never happen — `>=` means a coincidental tie still surfaces the
+    // error instead of silently hiding it, matching this codebase's
+    // "never quietly report healthy when unsure" posture.
+    (syncedAt === null || new Date(errorAt).getTime() >= new Date(syncedAt).getTime());
   return {
     lastSyncedAt: syncedAt,
-    needsReconnect: syncStatusNeedsReconnect(status),
+    needsReconnect,
+    hasSyncError,
   };
 }
 

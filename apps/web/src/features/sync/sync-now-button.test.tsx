@@ -18,6 +18,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 import { toast } from '@declutrmail/shared';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { SyncNowButton } from './sync-now-button';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
@@ -62,7 +63,19 @@ vi.mock('./api/use-sync-now', () => ({
   }),
 }));
 
-function Harness() {
+const retryInitialSyncMutate = vi.fn();
+vi.mock('./api/use-retry-initial-sync', () => ({
+  useRetryInitialSync: () => ({
+    isPending: false,
+    mutate: retryInitialSyncMutate,
+  }),
+}));
+
+vi.mock('@/features/mailboxes/connect-mailbox-url', () => ({
+  startMailboxConnect: vi.fn(),
+}));
+
+function Harness({ mailboxId }: { mailboxId?: string | undefined } = {}) {
   // Rerender lever — the mocked useSyncStatus reads statusCell fresh on
   // every render, so bumping this state re-runs the watch effects.
   const [, bump] = useState(0);
@@ -71,16 +84,16 @@ function Harness() {
       <button type="button" onClick={() => bump((n) => n + 1)}>
         rerender
       </button>
-      <SyncNowButton />
+      {mailboxId !== undefined ? <SyncNowButton mailboxId={mailboxId} /> : <SyncNowButton />}
     </>
   );
 }
 
-function renderButton() {
+function renderButton(mailboxId?: string) {
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
-      <Harness />
+      <Harness mailboxId={mailboxId} />
     </QueryWrapper>,
   );
 }
@@ -183,4 +196,99 @@ describe('SyncNowButton completion watch', () => {
     pushStatus(statusOf({ last_synced_at: '2026-07-07T09:31:00.000Z' }));
     expect(vi.mocked(toast)).toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
   });
+});
+
+describe('SyncNowButton — readiness_status=failed (QA-sync-20260831-03)', () => {
+  beforeEach(() => {
+    retryInitialSyncMutate.mockClear();
+    vi.mocked(startMailboxConnect).mockClear();
+  });
+
+  it('does not silently disappear when the initial sync has terminally failed', () => {
+    // The negative control: reverting the `failed` branch in
+    // `SyncNowButton` makes this assertion fail — the button used to
+    // return `null` for every non-`ready` readiness value, including
+    // `failed`, leaving the app-shell with no visible sync indicator at
+    // all for an already-onboarded user whose mailbox re-enters this
+    // state (a re-queued reconnect, or the server-side `cursorTooOld`
+    // recovery).
+    statusCell.data = statusOf({ readiness_status: 'failed', current_stage: 'failed' });
+
+    renderButton('mailbox-1');
+
+    const label = screen.getByText(/scan failed/i);
+    expect(label).toBeInTheDocument();
+    // design-system-agent review: `dm-topbar-collapse` is `display:none`
+    // below 900px. Every OTHER label that class hides is redundant with
+    // a nearby icon or its own button text; "Scan failed" is the only
+    // thing that says something is wrong, so hiding it left an
+    // unexplained red button on mobile.
+    expect(label).not.toHaveClass('dm-topbar-collapse');
+    expect(
+      screen.queryByRole('button', { name: /check gmail for new emails/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers "Scan again", wired to the initial-sync retry mutation, for a non-auth failure', async () => {
+    statusCell.data = statusOf({ readiness_status: 'failed', current_stage: 'failed' });
+
+    renderButton('mailbox-1');
+    const retryButton = screen.getByRole('button', { name: /scan again/i });
+    await act(async () => {
+      fireEvent.click(retryButton);
+    });
+
+    expect(retryInitialSyncMutate).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /reconnect gmail/i })).not.toBeInTheDocument();
+  });
+
+  it.each(['InvalidGrantError', 'AuthExpiredError'] as const)(
+    'offers "Reconnect Gmail" instead of a doomed retry when the failure needs reauthorization (%s)',
+    async (errorCode) => {
+      // The negative control for `AuthExpiredError`: reverting
+      // `FailedSyncIndicator`'s `needsReconnect` to the plain
+      // `InvalidGrantError`-only `syncStatusNeedsReconnect` makes this
+      // case fail — the onboarding gate's own failure screen already
+      // reconnects for `AuthExpiredError` (QA-sync-20260831-07); this
+      // indicator didn't, offering "Scan again" against the same dead
+      // token instead (Codex adversarial review).
+      statusCell.data = statusOf({
+        readiness_status: 'failed',
+        current_stage: 'failed',
+        error_code: errorCode,
+      });
+
+      renderButton('mailbox-1');
+      const reconnectButton = screen.getByRole('button', { name: /reconnect gmail/i });
+      await act(async () => {
+        fireEvent.click(reconnectButton);
+      });
+
+      // Also asserts the mailbox id the button reconnects: the retry
+      // route requires the id being DISPLAYED, never a server-resolved
+      // "active" mailbox — the same requirement `useRetryInitialSync`
+      // documents for its own POST (Codex adversarial review).
+      expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledWith('mailbox-1');
+      expect(retryInitialSyncMutate).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: /scan again/i })).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(['queued', 'syncing'] as const)(
+    'still hides Sync now for pre-ready states (`queued`/`syncing`) — the onboarding gate owns those (%s)',
+    (readiness) => {
+      statusCell.data = statusOf({
+        readiness_status: readiness,
+        current_stage: 'fetching_metadata',
+      });
+
+      renderButton('mailbox-1');
+
+      expect(screen.queryByText(/scan failed/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /check gmail for new emails/i }),
+      ).not.toBeInTheDocument();
+    },
+  );
 });

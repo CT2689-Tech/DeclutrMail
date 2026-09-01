@@ -7,6 +7,8 @@ import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
 
 const { color, font } = tokens;
 
@@ -85,6 +87,23 @@ function activeStageIndex(status: SyncStatus): number {
  * waiting for a retry that never came (first-run flow audit,
  * 2026-07-28). Every string here now points at the button instead.
  */
+/**
+ * Error codes whose `ERROR_COPY` above already diagnoses a revoked/
+ * expired Gmail grant. QA-sync-20260831-07: the gate used to offer only
+ * "Try again" for these — re-queuing a full scan against the SAME dead
+ * token, which fails again at `getClient` and burns one of the retry
+ * route's rate-limited attempts, with no reconnect action anywhere on
+ * screen. Display-only: this does NOT touch `syncStatusNeedsReconnect`
+ * or the backend's `INVALID_GRANT_ERROR`/`notNeedingReconnect` sweep
+ * contract (packages/workers/src/mailbox-reconnect.ts), which govern
+ * periodic-sweep eligibility and are a separate, wider change.
+ *
+ * Shared with `SyncNowButton`'s failed-indicator (Codex adversarial
+ * review of this QA round) — both surfaces read the one set exported
+ * from mailbox-health.ts so this classification can't drift between
+ * them again.
+ */
+
 const ERROR_COPY: Record<string, string> = {
   RateLimitError:
     'Gmail was rate-limiting the scan, so we stopped. Waiting a minute before trying again usually clears it.',
@@ -303,6 +322,8 @@ function SyncFailed({
   // server considers active, which is exactly the mailbox this screen
   // cannot vouch for.
   const canRetry = mailboxId != null && mailboxId !== '';
+  const needsReconnect =
+    status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code);
   const copy =
     (status.error_code && ERROR_COPY[status.error_code]) ??
     'Something interrupted the scan and it stopped. Your Gmail is untouched — starting it again is safe.';
@@ -324,17 +345,32 @@ function SyncFailed({
         {copy}
       </p>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-        {/* A REAL retry: re-queues the failed sync server-side. This
-            was `window.location.reload()`, which re-rendered the same
-            dead screen — the reconciler sweeps `queued` rows only, so
-            nothing re-queued a `failed` one. */}
-        <Button
-          tone="primary"
-          onClick={() => canRetry && retry.mutate()}
-          disabled={!canRetry || retry.isPending}
-        >
-          {retry.isPending ? 'Starting…' : 'Try again'}
-        </Button>
+        {needsReconnect ? (
+          // QA-sync-20260831-07: "Try again" here would re-queue a full
+          // scan against the SAME revoked/expired token, fail again at
+          // `getClient`, and burn a rate-limited retry attempt for
+          // nothing — the copy above already tells the user the real
+          // fix is reconnecting.
+          <Button
+            tone="primary"
+            onClick={() => canRetry && startMailboxConnect(mailboxId ?? undefined)}
+            disabled={!canRetry}
+          >
+            Reconnect Gmail
+          </Button>
+        ) : (
+          // A REAL retry: re-queues the failed sync server-side. This
+          // was `window.location.reload()`, which re-rendered the same
+          // dead screen — the reconciler sweeps `queued` rows only, so
+          // nothing re-queued a `failed` one.
+          <Button
+            tone="primary"
+            onClick={() => canRetry && retry.mutate()}
+            disabled={!canRetry || retry.isPending}
+          >
+            {retry.isPending ? 'Starting…' : 'Try again'}
+          </Button>
+        )}
         {/* Don't strand a secondary connect on a failed gate — let them
             hop back to their (working) primary mailbox (D116). */}
         {escape && (

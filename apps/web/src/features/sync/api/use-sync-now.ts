@@ -155,7 +155,16 @@ export function useSyncNow(source: Source) {
       });
       switch (err.code) {
         case 'SYNC_NOT_READY':
-          toast('Initial sync is still in progress — give it a minute.', 'info');
+          // QA-sync-20260831-10 item 2: the old copy ("Initial sync is
+          // still in progress — give it a minute") promises self-recovery
+          // that never happens for a `failed` mailbox — the guard this
+          // error comes from covers `queued`/`syncing`/`failed`/a
+          // cursorless-`ready` mailbox, and only the first two are
+          // "in progress". This wording holds for all four.
+          toast(
+            "Can't check for new email — this inbox's scan hasn't finished. See Settings → Gmail accounts.",
+            'info',
+          );
           break;
         case 'RATE_LIMITED':
           toast(`Slow down — try again in ${err.retryAfterSec ?? 60} seconds.`, 'warn');
