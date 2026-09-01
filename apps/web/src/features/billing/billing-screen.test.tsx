@@ -2337,17 +2337,23 @@ describe('BillingScreen — paid subscriber', () => {
     // Codex round 1 (QA-billing-20260901-10): without provider truth the
     // direction (charge vs. credit) is unknown too — a bolded "Charged
     // today." here asserted a direction the screen doesn't actually have.
+    // Codex round 2: the replacement wording had picked a credit
+    // destination ("applies to your existing payment method") that
+    // contradicted the confirmed branch's "credited to your balance" —
+    // this full-sentence match pins the corrected, agreeing wording
+    // directly rather than via a negative check on the old phrasing
+    // (round 3: a negative check here would not have caught the round-1
+    // regression, since the old and new sentences never shared this
+    // exact substring either way).
     await waitFor(() =>
       expect(panel).toHaveTextContent(
-        'as a charge to your existing payment method, or a credit to your balance, whichever the difference favors',
+        'the prorated difference for the rest of this period settles automatically — as a charge to your existing payment method, or a credit to your balance, whichever the difference favors',
       ),
     );
     expect(panel).not.toHaveTextContent('Charged today.');
-    // Codex round 2: a credit destination that contradicted the confirmed
-    // branch's "credited to your balance" — the fallback must not claim a
-    // credit "applies to your existing payment method".
-    expect(panel).not.toHaveTextContent('a credit applies to your existing payment method');
-    expect(panel).toHaveTextContent('the prorated difference for the rest of this period');
+    // Codex round 3: the conditional "If you confirm:" framing applies to
+    // this branch too, not just the resolved charge/credit ones.
+    expect(panel).toHaveTextContent('If you confirm:');
     // No quoted amount without provider truth — the mechanics sentence
     // stays numberless (the header's $190/yr is a list price, not a
     // proration claim).
