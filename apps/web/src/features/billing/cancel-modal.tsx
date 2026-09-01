@@ -338,7 +338,12 @@ export function CancelModal({
             onClick={onClose}
             disabled={isCanceling}
           >
-            Keep current plan
+            {/* Codex round 1 (QA-billing-20260901-06): "Keep current
+                plan" is wrong for a non-backing row — the subscription
+                under review here is NOT the current plan (the preview
+                above says so explicitly), so a dismiss that reads as
+                "keep [this]" claims the opposite of backsEntitlement. */}
+            {backsEntitlement ? 'Keep current plan' : 'Never mind'}
           </Button>
           <Button
             tone="danger"

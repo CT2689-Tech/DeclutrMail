@@ -160,9 +160,21 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               const date = formatBillingDate(invoice.issuedAt);
               const label = STATUS_LABEL[invoice.status];
               const busy = mint.isPending && mint.variables === invoice.id;
+              // Codex round 1 (QA-billing-20260901-07): the new header
+              // row is `aria-hidden` (decorative, sighted-only), so a
+              // screen-reader user got the same unlabeled date/amount/
+              // status/document sequence as before — worse, since the
+              // header now visually implies a relationship the a11y
+              // tree still doesn't carry. State it directly on the row.
+              const rowLabel = [
+                date ?? 'date unknown',
+                amount ?? invoice.currencyCode,
+                label ?? 'status unknown',
+              ].join(', ');
               return (
                 <li
                   key={`${invoice.provider}:${invoice.id}`}
+                  aria-label={rowLabel}
                   style={{
                     display: 'flex',
                     flexDirection: isPhone ? 'column' : 'row',
@@ -174,10 +186,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     fontSize: 13,
                   }}
                 >
-                  <span style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>
+                  <span aria-hidden="true" style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>
                     {date ?? '—'}
                   </span>
                   <span
+                    aria-hidden="true"
                     style={{
                       color: color.fg,
                       fontVariantNumeric: 'tabular-nums',
@@ -189,11 +202,14 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     {amount ?? invoice.currencyCode}
                   </span>
                   {label ? (
-                    <span style={{ color: color.fgMuted, minWidth: isPhone ? 0 : 70 }}>
+                    <span
+                      aria-hidden="true"
+                      style={{ color: color.fgMuted, minWidth: isPhone ? 0 : 70 }}
+                    >
                       {label}
                     </span>
                   ) : isPhone ? null : (
-                    <span style={{ minWidth: 70 }} />
+                    <span aria-hidden="true" style={{ minWidth: 70 }} />
                   )}
                   <span style={{ marginLeft: isPhone ? 0 : 'auto' }}>
                     {invoice.hostedUrl ? (

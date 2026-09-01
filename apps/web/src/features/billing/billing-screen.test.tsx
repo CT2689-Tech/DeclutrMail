@@ -2127,6 +2127,12 @@ describe('BillingScreen — paid subscriber', () => {
     // The stale "still active, still cancelable" affordance must not
     // render alongside the confirming state.
     expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
+    // Codex round 1 (QA-billing-20260901-03): the price line alone
+    // ("Pro · $190/yr") next to a "confirming your pause" note is fine —
+    // nothing has changed yet — but a *future renewal date* claim next
+    // to that same note asserts a fate ("this will renew") the pause
+    // request has put in question.
+    expect(card).not.toHaveTextContent('Next renewal');
   });
 
   // Offering a control the API would refuse is the assert-what-we-don't-
@@ -2328,7 +2334,13 @@ describe('BillingScreen — paid subscriber', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
     const panel = screen.getByTestId('change-plan-panel');
-    expect(await within(panel).findByText('Charged today.')).toBeInTheDocument();
+    // Codex round 1 (QA-billing-20260901-10): without provider truth the
+    // direction (charge vs. credit) is unknown too — a bolded "Charged
+    // today." here asserted a direction the screen doesn't actually have.
+    await waitFor(() =>
+      expect(panel).toHaveTextContent('as a charge or a credit, whichever the difference favors'),
+    );
+    expect(panel).not.toHaveTextContent('Charged today.');
     expect(panel).toHaveTextContent('The prorated difference for the rest of this period');
     // No quoted amount without provider truth — the mechanics sentence
     // stays numberless (the header's $190/yr is a list price, not a
@@ -2975,7 +2987,13 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('non-backing-subscription-notice');
-    expect(notice).toHaveTextContent('You’ve already canceled it');
+    // Codex round 1 (QA-billing-20260901-01): the picker stays locked
+    // regardless of cancelAtPeriodEnd, so this state must still name the
+    // support route — not just "nothing further to do".
+    expect(notice).toHaveTextContent('It won’t renew');
+    expect(notice).toHaveTextContent(
+      'If your plan picker doesn’t unlock on its own, email support@declutrmail.com.',
+    );
     expect(notice).not.toHaveTextContent('cancel if you’re done with it');
     expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
   });
@@ -3005,6 +3023,15 @@ describe('BillingScreen — paid subscriber', () => {
       'href',
       'mailto:support@declutrmail.com',
     );
+
+    // Codex round 1 (QA-billing-20260901-06): "Keep current plan" is
+    // wrong here — the subscription under review (Plus) is NOT the
+    // current plan (Free); the modal's own preview says so. The dismiss
+    // must not claim the opposite.
+    fireEvent.click(within(notice).getByRole('button', { name: 'Review cancellation' }));
+    const modal = screen.getByTestId('cancel-modal');
+    expect(within(modal).getByRole('button', { name: 'Never mind' })).toBeInTheDocument();
+    expect(within(modal).queryByRole('button', { name: 'Keep current plan' })).toBeNull();
   });
 
   // QA-billing-20260901-02 end-to-end: confirming cancel on a
@@ -3055,7 +3082,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
 
     await waitFor(() => expect(cancelPosted).toBe(true));
-    await waitFor(() => expect(notice).toHaveTextContent('You’ve already canceled it'));
+    await waitFor(() => expect(notice).toHaveTextContent('It won’t renew'));
     expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
     expect(screen.queryByText(/stays active/)).not.toBeInTheDocument();
   });

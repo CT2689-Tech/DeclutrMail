@@ -1062,10 +1062,15 @@ function ChangePlanPanel({
                 </>
               ) : (
                 // Preview still loading, failed, or unparsable — state
-                // the mechanics without inventing a number.
+                // the mechanics without inventing a number. Codex round 1
+                // (QA-billing-20260901-10): this branch does not know
+                // charge vs. credit (the provider preview is exactly
+                // what would tell it), so a bolded "Charged today."
+                // header here asserted a direction — and an amount — the
+                // screen does not actually have.
                 <>
-                  <strong style={{ fontWeight: 600, color: color.fg }}>Charged today.</strong> The
-                  prorated difference for the rest of this period, to your existing payment method.{' '}
+                  The prorated difference for the rest of this period applies to your existing
+                  payment method — as a charge or a credit, whichever the difference favors.{' '}
                   {TIER_MANIFEST[target].name} starts as soon as your payment provider confirms,
                   usually within a minute.
                 </>

@@ -1197,8 +1197,14 @@ function CurrentPlanCard({
   // directly below states the real outcome, so the card stays silent
   // rather than contradict it — the same reason `cancel_scheduled`
   // already suppresses this line.
+  // Codex round 1 (QA-billing-20260901-03): a pause in flight makes this
+  // claim false the same way a scheduled change does — the confirming
+  // note below says the plan's fate is unresolved, so this line must not
+  // simultaneously assert a future renewal date for it.
   const renewal =
-    (backing.state === 'active' || backing.state === 'past_due') && plan.scheduledChange === null
+    (backing.state === 'active' || backing.state === 'past_due') &&
+    plan.scheduledChange === null &&
+    !pauseConfirming
       ? formatBillingDate(backing.sub.currentPeriodEnd)
       : null;
 
@@ -1674,7 +1680,23 @@ function NonBackingSubscriptionNotice({
                 // repeating "cancel it if you're done with it" over a
                 // now-inert Cancel button implies a click that changes
                 // nothing did nothing. Say what's actually true instead.
-                `You’ve already canceled it — it won’t renew, and there’s nothing further to do.`
+                //
+                // Codex round 1 (QA-billing-20260901-01): "nothing
+                // further to do" was false — the plan picker stays
+                // locked regardless of cancelAtPeriodEnd
+                // (nonBackingBlocksNewCheckout keys on status, not this
+                // flag), and this is the ONLY branch a chargeback can
+                // reach (a chargeback pins cancelAtPeriodEnd immediately
+                // and never runs through the mismatch/paused branches
+                // below). Losing the support-route sentence here is
+                // exactly the gap the original finding named.
+                <>
+                  It won&rsquo;t renew. If your plan picker doesn&rsquo;t unlock on its own, email{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    support@declutrmail.com
+                  </a>
+                  .
+                </>
               ) : isPaused ? (
                 <>
                   {`Resuming makes ${tierName} your paid subscription again; your plan is then recomputed from your subscriptions, which can move your account off ${entitlementName}. Cancel it if you’re done with it.`}{' '}
@@ -1710,7 +1732,13 @@ function NonBackingSubscriptionNotice({
               While it&rsquo;s paused you aren&rsquo;t billed, and your account is on{' '}
               {entitlementName}.{' '}
               {sub.cancelAtPeriodEnd ? (
-                `You’ve already canceled it — it won’t renew, and there’s nothing further to do.`
+                <>
+                  It won&rsquo;t renew. If your plan picker doesn&rsquo;t unlock on its own, email{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    support@declutrmail.com
+                  </a>
+                  .
+                </>
               ) : (
                 <>
                   Resume to reactivate {tierName}, or cancel if you&rsquo;re done with it — email{' '}
