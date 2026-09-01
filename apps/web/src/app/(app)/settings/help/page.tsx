@@ -1,3 +1,4 @@
+import { ContactSupportForm } from '@/features/help/contact-support-form';
 import { ProductGlossary } from '@/features/help/product-glossary';
 
 export const metadata = {
@@ -5,5 +6,12 @@ export const metadata = {
 };
 
 export default function SettingsHelpPage() {
-  return <ProductGlossary />;
+  return (
+    <>
+      <ProductGlossary />
+      <div style={{ width: '100%', maxWidth: 860, margin: '0 auto', padding: '0 24px 40px' }}>
+        <ContactSupportForm />
+      </div>
+    </>
+  );
 }
