@@ -40,17 +40,26 @@ if [ -z "$branch" ]; then
   exit 1
 fi
 
-# Bootstrap branches are exempt (CLAUDE.md §6)
-if echo "$branch" | grep -qE "^chore/bootstrap-"; then
+# Bootstrap/distill branches are exempt (CLAUDE.md §6/§11)
+if echo "$branch" | grep -qE "^chore/(bootstrap|distill)-"; then
   exit 0
 fi
 
-# Branch name convention — KEEP THIS LIST IN SYNC with CLAUDE.md §6.
-# If you add a type here, update the table in §6 too.
-# Pattern: <type>/d<NNN>-<kebab-description> OR chore/bootstrap-<topic>
-if ! echo "$branch" | grep -qE "^(feat|fix|chore|docs|refactor|test|perf|security)/(d[0-9]{3}-|bootstrap-)"; then
+# Branch name convention — KEEP THIS LIST IN SYNC with pre-push.sh and
+# .github/workflows/branch-name.yml (both authoritative; this is only the
+# local fail-fast copy). This list had drifted from both: codex/<kebab>
+# (sanctioned 2026-07-15) and claude/<kebab> (sanctioned 2026-08-11,
+# FOUNDER-FOLLOWUPS) — Claude Code on the web assigns the branch name and
+# the session cannot rename it — were allowed by both of those but not
+# here, so a `gh pr create` from a claude/ or codex/ branch was blocked by
+# this hook alone even though the PR itself would have passed CI (caught
+# 2026-09-01 while creating a PR from a claude/ branch).
+# Pattern: <type>/d<NNN>-<kebab>, chore/bootstrap-<topic>,
+# chore/distill-<topic>, or (codex|claude)/<kebab>.
+if ! echo "$branch" | grep -qE "^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude)/[a-z0-9][a-z0-9-]*$)"; then
   echo "❌ require-pr-template: branch '$branch' does not match naming convention." >&2
-  echo "   Expected: <type>/d<NNN>-<kebab-description> or chore/bootstrap-<topic>" >&2
+  echo "   Expected: <type>/d<NNN>-<kebab-description>, chore/bootstrap-<topic>," >&2
+  echo "   chore/distill-<topic>, or (codex|claude)/<kebab>" >&2
   echo "   Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2
   echo "   See CLAUDE.md §6 for the full pattern." >&2
   exit 1

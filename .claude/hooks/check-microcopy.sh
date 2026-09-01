@@ -33,9 +33,30 @@ case "$file_path" in
     ;;
 esac
 
-# Documentation / config / agent surfaces are exempt — they discuss the rule
-case "$file_path" in
-  */.claude/*|*/CLAUDE.md|*/LEARNINGS.md|*/MISTAKES.md|*/IMPLEMENTATION-LOG.md|*/docs/*|*/.github/*)
+# Docs/config exemption matches the REPO-RELATIVE path, not file_path
+# directly. file_path is whatever absolute path the harness reports, and
+# the harness's own auto-worktree feature checks worktrees out at
+# .claude/worktrees/<session-id>/ — INSIDE the project's own .claude/ dir,
+# unlike the documented ../wt-<branch> sibling convention (CLAUDE.md §6).
+# That puts ".claude/" in every file's path in such a worktree, so a
+# substring match against file_path exempted everything, always (MISTAKES
+# 2026-08-31). Stripping the file's own git worktree toplevel first
+# removes that prefix, leaving the same repo-relative path regardless of
+# which worktree — or none — the file lives in.
+repo_root=$(git -C "$(dirname "$file_path")" rev-parse --show-toplevel 2>/dev/null || true)
+rel_path="$file_path"
+if [ -n "$repo_root" ] && [[ "$file_path" == "$repo_root"/* ]]; then
+  rel_path="${file_path#"$repo_root"/}"
+fi
+
+# Documentation / config / agent surfaces are exempt — they discuss the rule.
+# Both the bare (repo-root-anchored) and */-prefixed forms are listed: the
+# git-relative resolution above already strips any harness worktree segment
+# from rel_path, so the */-prefixed form can no longer match a worktree
+# container — it only helps rel_path stay equivalent to file_path when git
+# resolution isn't available (e.g. a file outside any git repo).
+case "$rel_path" in
+  .claude/*|*/.claude/*|*/CLAUDE.md|CLAUDE.md|*/LEARNINGS.md|LEARNINGS.md|*/MISTAKES.md|MISTAKES.md|*/IMPLEMENTATION-LOG.md|IMPLEMENTATION-LOG.md|*/docs/*|docs/*|*/.github/*|.github/*)
     exit 0
     ;;
 esac

@@ -50,7 +50,14 @@ expect() {
 }
 
 tmp="$(mktemp -d)"
-trap 'rm -rf "$tmp"' EXIT
+probe_worktree=""
+cleanup() {
+  if [ -n "$probe_worktree" ]; then
+    git worktree remove --force "$probe_worktree" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
 
 # 1. Test files are exempt even if the banned verb appears verbatim — that
 #    is the WHOLE POINT of a "never renders the word" assertion.
@@ -83,5 +90,28 @@ expect "$tmp/packages/db/src/schema/triage.ts" \
 expect "$tmp/docs/adr/0009-canonical-verbs.md" \
   $'# Why "Screen" is banned from product UI\n' \
   0
+
+# 6. Harness auto-worktrees check out INSIDE the project's own .claude/ dir
+#    (.claude/worktrees/<session-id>/, not the documented ../wt-<branch>
+#    sibling — CLAUDE.md §6). A product file living there contains the
+#    substring "/.claude/" in its path but is NOT a docs/config surface and
+#    must still block (2026-08-31 fix — see MISTAKES.md).
+#
+#    This needs a REAL nested `git worktree`, not a plain subdirectory: the
+#    fix resolves `git rev-parse --show-toplevel` for the file's own
+#    worktree, and that only returns a different (worktree) root for an
+#    actual `git worktree add` checkout — an ordinary subdirectory of the
+#    current worktree resolves to the SAME root and would wrongly still
+#    match the bare ".claude/*" exemption, which would make this case a
+#    false pass even with the bug still live.
+probe_worktree="$repo_root/.claude/worktrees/regression-probe-$$"
+git worktree add --detach --quiet "$probe_worktree" HEAD >/dev/null 2>&1
+
+expect "$probe_worktree/apps/web/src/features/triage/triage-page.tsx" \
+  $'export function Page() { return <button>Screen</button>; }\n' \
+  1
+
+git worktree remove --force "$probe_worktree" >/dev/null 2>&1 || true
+probe_worktree=""
 
 echo "OK — all check-microcopy.sh regression cases pass"
