@@ -166,11 +166,13 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               // status/document sequence as before — worse, since the
               // header now visually implies a relationship the a11y
               // tree still doesn't carry. State it directly on the row.
-              const rowLabel = [
-                date ?? 'date unknown',
-                amount ?? invoice.currencyCode,
-                label ?? 'status unknown',
-              ].join(', ');
+              // Codex round 2: raw values alone ("May 1, $19, Due") kept
+              // the same ambiguity in a different form — "Due" still
+              // reads as an amount owed without the field name in front
+              // of it. Name each field.
+              const rowLabel = `Date ${date ?? 'unknown'}, amount ${
+                amount ?? invoice.currencyCode
+              }, status ${label ?? 'unknown'}`;
               return (
                 <li
                   key={`${invoice.provider}:${invoice.id}`}

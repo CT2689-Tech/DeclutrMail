@@ -1041,38 +1041,43 @@ function ChangePlanPanel({
             </p>
           ) : (
             <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
-              {/* QA-billing-20260901-10: "Effective immediately" named the
-                  CHARGE, but the plan itself doesn't flip until the
-                  webhook confirms — this same panel's own pending state
-                  says so a screen later ("confirming your plan"). Charged
-                  today is true now; state the plan's real timing too. */}
+              {/* QA-billing-20260901-10, Codex round 2: this whole panel is
+                  labeled "Preview · before anything changes" — nothing has
+                  been charged or credited yet, Confirm hasn't been clicked.
+                  A present-tense "Charged today." here asserted a completed
+                  action inside a screen that promises it hasn't acted; the
+                  same defect the confirmed and unconfirmed branches share,
+                  named the same way, so all three read as previews of an
+                  outcome, not the outcome. Also: a credit lands in the
+                  account balance, never "on the payment method" — the
+                  fallback previously claimed the latter for both
+                  directions, contradicting the confirmed credit branch. */}
               {quotedCharge && quoteResult?.action === 'charge' ? (
                 <>
-                  <strong style={{ fontWeight: 600, color: color.fg }}>Charged today.</strong>{' '}
-                  {quotedCharge} — the prorated difference for the rest of this period.{' '}
-                  {TIER_MANIFEST[target].name} starts as soon as your payment provider confirms,
-                  usually within a minute.
+                  <strong style={{ fontWeight: 600, color: color.fg }}>If you confirm:</strong>{' '}
+                  {quotedCharge} is charged today — the prorated difference for the rest of this
+                  period. {TIER_MANIFEST[target].name} starts as soon as your payment provider
+                  confirms, usually within a minute.
                 </>
               ) : quotedCharge && quoteResult?.action === 'credit' ? (
                 <>
-                  <strong style={{ fontWeight: 600, color: color.fg }}>No new charge today.</strong>{' '}
-                  The unused value of your current plan covers it, and {quotedCharge} is credited to
-                  your balance. {TIER_MANIFEST[target].name} starts as soon as your payment provider
-                  confirms, usually within a minute.
+                  <strong style={{ fontWeight: 600, color: color.fg }}>If you confirm:</strong> no
+                  new charge today. The unused value of your current plan covers it, and{' '}
+                  {quotedCharge} is credited to your balance. {TIER_MANIFEST[target].name} starts as
+                  soon as your payment provider confirms, usually within a minute.
                 </>
               ) : (
                 // Preview still loading, failed, or unparsable — state
-                // the mechanics without inventing a number. Codex round 1
-                // (QA-billing-20260901-10): this branch does not know
-                // charge vs. credit (the provider preview is exactly
-                // what would tell it), so a bolded "Charged today."
-                // header here asserted a direction — and an amount — the
-                // screen does not actually have.
+                // the mechanics without inventing a number. This branch
+                // does not know charge vs. credit (the provider preview is
+                // exactly what would tell it), so it names both possible
+                // destinations rather than picking one.
                 <>
-                  The prorated difference for the rest of this period applies to your existing
-                  payment method — as a charge or a credit, whichever the difference favors.{' '}
-                  {TIER_MANIFEST[target].name} starts as soon as your payment provider confirms,
-                  usually within a minute.
+                  <strong style={{ fontWeight: 600, color: color.fg }}>If you confirm:</strong> the
+                  prorated difference for the rest of this period settles automatically — as a
+                  charge to your existing payment method, or a credit to your balance, whichever the
+                  difference favors. {TIER_MANIFEST[target].name} starts as soon as your payment
+                  provider confirms, usually within a minute.
                 </>
               )}
               {nextBilledDate && toLabel ? (

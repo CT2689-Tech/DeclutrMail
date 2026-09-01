@@ -1160,9 +1160,11 @@ function CurrentPlanCard({
   cleanupResetsAt: string | null;
   billingDark: boolean;
   /** QA-billing-20260901-03 — a pause was requested but the webhook that
-   *  actually changes `status` hasn't landed yet. The card must not go
-   *  on asserting the pre-pause active plan (price, renewal, a live
-   *  Cancel button) while that's true. */
+   *  actually changes `status` hasn't landed yet. The plan is still
+   *  active and billing at its current price until that confirms, so
+   *  the price stays; what the card must not do is assert a FUTURE fact
+   *  the pause may falsify — a "Next renewal" date, or a Cancel button
+   *  for a subscription whose own fate is still unresolved. */
   pauseConfirming: boolean;
   onCancel: () => void;
   /** D118 — revoke a scheduled cancel and go back on renewal. */

@@ -2297,17 +2297,17 @@ describe('BillingScreen — paid subscriber', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
     const panel = screen.getByTestId('change-plan-panel');
-    // QA-billing-20260901-10: "Effective immediately" named the CHARGE,
-    // not the plan — the plan itself doesn't flip until the webhook
-    // confirms. "Charged today" is true now; the entitlement timing gets
-    // its own honest sentence.
-    expect(await within(panel).findByText('Charged today.')).toBeInTheDocument();
+    // Codex round 2 (QA-billing-20260901-10): the panel is a PREVIEW
+    // ("before anything changes") — nothing is charged until Confirm is
+    // clicked, so the copy names it conditionally rather than asserting
+    // a completed charge.
+    expect(await within(panel).findByText('If you confirm:')).toBeInTheDocument();
     // The provider's own number, lowest-denomination → formatted; the
     // date is the post-change renewal from the same preview. Text is
     // split across inline nodes, so assert on the panel's textContent.
     await waitFor(() =>
       expect(panel).toHaveTextContent(
-        '$181.01 — the prorated difference for the rest of this period',
+        '$181.01 is charged today — the prorated difference for the rest of this period',
       ),
     );
     expect(panel).toHaveTextContent(
@@ -2338,14 +2338,57 @@ describe('BillingScreen — paid subscriber', () => {
     // direction (charge vs. credit) is unknown too — a bolded "Charged
     // today." here asserted a direction the screen doesn't actually have.
     await waitFor(() =>
-      expect(panel).toHaveTextContent('as a charge or a credit, whichever the difference favors'),
+      expect(panel).toHaveTextContent(
+        'as a charge to your existing payment method, or a credit to your balance, whichever the difference favors',
+      ),
     );
     expect(panel).not.toHaveTextContent('Charged today.');
-    expect(panel).toHaveTextContent('The prorated difference for the rest of this period');
+    // Codex round 2: a credit destination that contradicted the confirmed
+    // branch's "credited to your balance" — the fallback must not claim a
+    // credit "applies to your existing payment method".
+    expect(panel).not.toHaveTextContent('a credit applies to your existing payment method');
+    expect(panel).toHaveTextContent('the prorated difference for the rest of this period');
     // No quoted amount without provider truth — the mechanics sentence
     // stays numberless (the header's $190/yr is a list price, not a
     // proration claim).
     expect(panel).not.toHaveTextContent(/\$\d+(\.\d+)? is charged now/);
+  });
+
+  it('upgrade panel states a credit outcome as landing in the account balance, conditional on confirm', async () => {
+    mockTier = 'plus';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'credit', amount: '450', currencyCode: 'USD' },
+              nextBilledAt: '2027-07-30T18:00:27.060Z',
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const panel = screen.getByTestId('change-plan-panel');
+    // Codex round 2 (QA-billing-20260901-10): a credit branch had no test
+    // — the panel is a preview, so the credit outcome must read as
+    // conditional on Confirm, and land in the account balance (never "the
+    // payment method", which is the charge destination).
+    expect(await within(panel).findByText('If you confirm:')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(panel).toHaveTextContent('no new charge today. The unused value of your current plan'),
+    );
+    expect(panel).toHaveTextContent('$4.50 is credited to your balance');
+    expect(panel).not.toHaveTextContent('credited to your existing payment method');
   });
 
   it('Pro→Plus schedules the downgrade without a charge or a weeks-long processing lock', async () => {
@@ -3032,6 +3075,44 @@ describe('BillingScreen — paid subscriber', () => {
     const modal = screen.getByTestId('cancel-modal');
     expect(within(modal).getByRole('button', { name: 'Never mind' })).toBeInTheDocument();
     expect(within(modal).queryByRole('button', { name: 'Keep current plan' })).toBeNull();
+  });
+
+  // QA-billing-20260901-01, Codex round 2: the two tests above both
+  // fixture `status: 'paused'`, which `nonBackingReason` resolves to
+  // `paused` here (entitlement 'free' does not outrank sub tier 'plus') —
+  // NOT the `tier_mismatch` branch a chargeback actually reaches. Per the
+  // component's own comment, an active row naming a different tier than
+  // the entitlement, already `cancelAtPeriodEnd` (the chargeback
+  // projector pins it immediately), is the ONLY shape a chargeback
+  // produces. A fix applied only to the plain-paused branch would stay
+  // green against the tests above and still ship broken for this one.
+  it('a chargeback-shaped mismatch row (active, wrong tier, already canceled) still names support', async () => {
+    mockTier = 'free';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'free',
+          foundingMember: false,
+          pendingCheckout: null,
+          complimentary: null,
+          subscription: {
+            ...SUB,
+            tier: 'plus',
+            status: 'active',
+            cancelAtPeriodEnd: true,
+            cancelSource: 'chargeback',
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('It won’t renew');
+    expect(notice).toHaveTextContent(
+      'If your plan picker doesn’t unlock on its own, email support@declutrmail.com.',
+    );
+    expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
   });
 
   // QA-billing-20260901-02 end-to-end: confirming cancel on a
