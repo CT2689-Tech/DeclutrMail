@@ -12,7 +12,9 @@
 //   • Density toggle compact vs comfortable — column geometry stable.
 //   • Loading skeleton preserves column count (no horizontal jump).
 //   • Error row renders + offers retry.
-//   • Empty: no senders, no filter match, no search match (3 copies).
+//   • Empty: one generic message (QA-senders-filtering-20260901-01 —
+//     was 3 copies, deleted as dead code: the parent Senders screen's
+//     own empty-state ternary always fires first in production).
 //   • Mixed-state row: protected sender, unknown trend, never-read, etc.
 //   • Long display name and very long domain truncate without breaking
 //     the column grid.

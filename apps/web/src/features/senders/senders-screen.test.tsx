@@ -570,6 +570,18 @@ describe('SendersScreen — edge states', () => {
     expect(
       freshness.querySelector('time[datetime="2026-05-29T12:00:00.000Z"]'),
     ).toBeInTheDocument();
+    // QA-senders-filtering-20260901-07, Codex round-1 review: the
+    // `datetime` attribute check above only proves the ISO value is
+    // present — it says nothing about which timezone the VISIBLE label
+    // renders in, which is the entire fix. Computed rather than
+    // hardcoded (e.g. "PDT") so this passes under whatever TZ the test
+    // runner's own environment resolves — the fix is "reader's own
+    // zone", not "always this one".
+    const expectedZoneName = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
+      .formatToParts(new Date('2026-05-29T12:00:00.000Z'))
+      .find((p) => p.type === 'timeZoneName')?.value;
+    expect(expectedZoneName).toBeTruthy();
+    expect(freshness).toHaveTextContent(expectedZoneName!);
     // One responsive line serves both desktop and mobile; it wraps instead
     // of being hidden behind either view's layout breakpoint.
     expect(freshness).toHaveStyle({ display: 'flex', flexWrap: 'wrap' });

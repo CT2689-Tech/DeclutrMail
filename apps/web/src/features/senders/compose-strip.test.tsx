@@ -193,4 +193,40 @@ describe('ComposeStrip · chip negation (QA-senders-filtering-20260901-02)', () 
     expect(negated).toHaveTextContent('−3');
     expect(screen.queryByRole('radio', { name: /only active senders/i })).not.toBeInTheDocument();
   });
+
+  // Codex round-1 review: an explicit `aria-label` REPLACES the whole
+  // accessible name a screen reader computes from visible text — the
+  // first version of this fix set `aria-label="Only active senders"` /
+  // `"Exclude: protected"` with no count in it at all, silently
+  // dropping a number the un-labelled button used to announce (e.g.
+  // "active 508"). The counts test above uses `counts={undefined}`, so
+  // it can't catch this — this one supplies real counts.
+  it('keeps the count in the accessible name for both ActivityChip and ToggleChip, included and excluded', () => {
+    render(
+      <ComposeStrip
+        state={{ ...EMPTY_COMPOSE, activity: 'active', unsubReady: false }}
+        counts={{
+          total: 10,
+          active: 508,
+          quiet: 4,
+          dormant: 3,
+          unsubReady: 2368,
+          wroteTo: 0,
+          protected: 0,
+          unsubIgnored: 0,
+        }}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+        sort="total"
+        direction="desc"
+        onSortChange={vi.fn()}
+        domainSuggestions={[]}
+      />,
+    );
+
+    expect(screen.getByRole('radio', { name: /only active senders.*508/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /exclude: has unsubscribe.*2,368/i }),
+    ).toBeInTheDocument();
+  });
 });

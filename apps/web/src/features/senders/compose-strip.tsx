@@ -24,7 +24,7 @@
  * compose object.
  */
 
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import { tokens } from '@declutrmail/shared';
 import { WINDOWS } from '@declutrmail/shared/senders';
 import type {
@@ -329,7 +329,15 @@ function ActivityChip({
       // QA-senders-filtering-20260901-02: `aria-checked` alone can't
       // distinguish "only active" from "not active" — both read
       // "checked". A screen reader needs the label to say which.
-      aria-label={isNegated ? `Exclude ${bucket} senders` : `Only ${bucket} senders`}
+      // Codex round-1 review: an `aria-label` REPLACES the whole
+      // accessible name computed from visible text — the first version
+      // of this fix silently dropped the count the un-labelled button
+      // used to announce (e.g. "active 508"). Folded back in explicitly.
+      aria-label={
+        isNegated
+          ? `Exclude ${bucket} senders${count !== undefined ? `, ${count.toLocaleString('en-US')} excluded` : ''}`
+          : `Only ${bucket} senders${count !== undefined ? `, ${count.toLocaleString('en-US')}` : ''}`
+      }
       title={`${ACTIVITY_BUCKET_TITLE[bucket]} · alt-click to exclude`}
       onClick={(e) => cycle(e.altKey)}
       onContextMenu={(e) => {
@@ -405,9 +413,15 @@ function ToggleChip({
       // QA-senders-filtering-20260901-02: the ✓/✕ glyph below is
       // aria-hidden, so a screen reader previously announced only
       // `label`, identically whether included or excluded — same gap
-      // as `ActivityChip`, same fix.
+      // as `ActivityChip`, same fix. Codex round-1 review: an
+      // `aria-label` replaces the WHOLE computed accessible name, so
+      // this dropped the count in all three states (not just the two
+      // named in the original fix) — folded back in explicitly.
       aria-pressed={active || negated}
-      aria-label={negated ? `Exclude: ${label}` : label}
+      aria-label={
+        (negated ? `Exclude: ${label}` : label) +
+        (count !== undefined ? `, ${count.toLocaleString('en-US')}` : '')
+      }
       title={negated ? (negatedHint ?? `Excluding ${label}`) : `${label} · alt-click to exclude`}
     >
       <span
@@ -741,21 +755,45 @@ function DomainMenu({
 /* ─── popover primitive ────────────────────────────────────────── */
 
 function Popover({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  // QA-senders-filtering-20260901-08, Codex round-1 review: a blind
+  // `right: 0` only fixes overflow past the RIGHT edge — a chip near
+  // the LEFT edge (common once the strip wraps at 375px) opens a
+  // right-anchored 220px popover that runs off the LEFT edge instead,
+  // and nothing here ever checked the BOTTOM edge. Measures its own
+  // rendered position once (menus are short-lived — opened, used,
+  // closed on the next click/Escape — so a resize/scroll listener
+  // would be tracking a target that's about to unmount anyway) and
+  // clamps whichever edges actually overflow.
+  const [edgeFix, setEdgeFix] = useState<React.CSSProperties>({});
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const fix: React.CSSProperties = {};
+    if (rect.left < 8) {
+      fix.left = 0;
+      fix.right = 'auto';
+    }
+    if (rect.bottom > window.innerHeight - 8) {
+      fix.top = 'auto';
+      fix.bottom = 'calc(100% + 8px)';
+    }
+    setEdgeFix(fix);
+  }, []);
   return (
     <span
+      ref={ref}
       role="menu"
       style={{
         position: 'absolute',
         top: 'calc(100% + 8px)',
-        // QA-senders-filtering-20260901-08: was `left: 0` with no
-        // viewport clamp — a chip late in the strip's wrapped row at
-        // 375px could open a popover past the right edge of the screen.
-        // Right-anchoring plus a viewport-relative max-width keeps every
-        // popover on screen regardless of which chip opened it.
         right: 0,
         zIndex: 60,
         minWidth: 'min(220px, calc(100vw - 32px))',
         maxWidth: 'calc(100vw - 32px)',
+        maxHeight: 'calc(100vh - 32px)',
+        overflowY: 'auto',
         background: color.card,
         border: `1px solid ${color.line}`,
         borderRadius: 9,
@@ -763,6 +801,7 @@ function Popover({ children }: { children: React.ReactNode }) {
         padding: 6,
         display: 'block',
         fontFamily: font.sans,
+        ...edgeFix,
       }}
     >
       {children}
@@ -1000,10 +1039,19 @@ function ViewsMenu({
 }: ViewsMenuProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  // Codex round-1 review of QA-senders-filtering-20260901-06: a bigger
+  // hit target plus a toast made an irreversible delete more visible,
+  // not less accidental — the click itself was still one click, same
+  // as before. Arm-then-confirm: the first click on a view's `×` marks
+  // it armed (the button becomes an explicit "Delete?"); a second click
+  // on that SAME button, or the menu closing/reopening, is what it
+  // takes to actually delete.
+  const [armedDelete, setArmedDelete] = useState<string | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (!open) return;
     setDraft('');
+    setArmedDelete(null);
     const onDoc = (e: Event) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
@@ -1053,8 +1101,15 @@ function ViewsMenu({
               {/* QA-senders-filtering-20260901-06: taught nothing — a
                   user opening this menu with no filters set had no path
                   forward, since the save row below only appears once
-                  `canSaveCurrent` is true. */}
-              No saved views yet — set a filter, then save it here.
+                  `canSaveCurrent` is true. Codex round-1 review: the
+                  first version of this fix ALWAYS said "set a filter",
+                  even when one was already set (the default 'active'
+                  chip makes `canSaveCurrent` true from a pristine URL)
+                  — telling the user to do the one thing they'd already
+                  done, right above the input that proves it. */}
+              {canSaveCurrent
+                ? 'No saved views yet.'
+                : 'No saved views yet — set a filter, then save it here.'}
             </span>
           )}
           {names.map((name) => (
@@ -1072,23 +1127,36 @@ function ViewsMenu({
               </span>
               <button
                 type="button"
-                aria-label={`Delete view ${name}`}
+                aria-label={
+                  armedDelete === name ? `Confirm delete view ${name}` : `Delete view ${name}`
+                }
                 // QA-senders-filtering-20260901-06: was `padding: '0 8px'`
                 // with no explicit height — an ~12px-tall hit target
                 // immediately beside the row that applies the view.
-                onClick={() => onDelete(name)}
+                onClick={() => {
+                  if (armedDelete === name) {
+                    onDelete(name);
+                    setArmedDelete(null);
+                  } else {
+                    setArmedDelete(name);
+                  }
+                }}
                 style={{
                   background: 'transparent',
-                  border: 'none',
+                  border: armedDelete === name ? `1px solid ${color.danger}` : 'none',
+                  borderRadius: 6,
                   cursor: 'pointer',
-                  color: color.fgMuted,
-                  fontSize: 12,
+                  color: armedDelete === name ? color.danger : color.fgMuted,
+                  fontFamily: font.sans,
+                  fontSize: armedDelete === name ? 11 : 12,
+                  fontWeight: armedDelete === name ? 600 : 400,
                   minWidth: 32,
                   minHeight: 32,
+                  padding: armedDelete === name ? '0 8px' : 0,
                   flex: '0 0 auto',
                 }}
               >
-                ×
+                {armedDelete === name ? 'Delete?' : '×'}
               </button>
             </span>
           ))}
