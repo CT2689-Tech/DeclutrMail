@@ -184,6 +184,10 @@ describe('AccountMenu Gmail reconnect health', () => {
       name: `Reconnect ${MAILBOX_C.email}`,
     });
 
+    // -06: "data kept" read as "your Gmail is untouched" — this file's own
+    // wording, not the Settings-page duplicate `mailboxes-card.tsx` already
+    // asserts elsewhere.
+    expect(within(row).getByText('Disconnected · history kept')).toBeInTheDocument();
     expect(reconnect).toBeDisabled();
     expect(reconnect).toHaveAttribute('aria-describedby', 'account-menu-inbox-limit-gate');
     expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(/2 of 2 inboxes connected/i);
