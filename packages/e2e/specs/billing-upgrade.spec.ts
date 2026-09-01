@@ -347,7 +347,10 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // Provider name is plumbing, not a plan fact — asserted ABSENT.
   await expect(proCard).not.toContainText('via Paddle');
   await expect(proCard).toContainText('Next renewal');
-  await expect(proCard.getByRole('button', { name: 'Cancel subscription' })).toBeVisible();
+  // QA-billing-20260901-06: the opener button was renamed from "Cancel
+  // subscription" so the two clicks (open preview vs. the modal's own
+  // destructive confirm) read as two different things.
+  await expect(proCard.getByRole('button', { name: 'Review cancellation' })).toBeVisible();
   const sub = await api.get<SubscriptionView>('/api/billing/subscription');
   expect(sub.tier).toBe('pro');
   expect(sub.foundingMember, 'pro_monthly is not the founding price').toBe(false);
