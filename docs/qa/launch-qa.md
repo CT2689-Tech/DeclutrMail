@@ -1076,6 +1076,27 @@ sweep for the same stale phrase found no other gaps — every other
 untouched surface (quota-shortfall/action-gating copy, out of QA-04's
 scope per the PR body).
 
+The SAME job caught a second, independent instance of the same class one
+push later: the same spec asserted the pre-QA-06 "Cancel subscription"
+opener-button label on the current-plan card, renamed to "Review
+cancellation" in round 1 so the opener and the modal's own destructive
+confirm read as two different actions — again, only the unit tests had
+been updated. Fixed in `7e57ce6e`; the full spec file was then read
+end-to-end (not just grepped) to rule out a third instance, and every
+other assertion in it targets copy this PR never touched.
+
+**The pattern, named:** this PR's own negative-control discipline was
+scoped to unit tests only — every substantive behavior change got a
+revert-and-watch-red unit test, but the money-path E2E spec, which
+independently re-asserts a subset of the same rendered strings against a
+real seeded browser session, was never in that loop. Two of its
+assertions went stale across two separate QA fixes (QA-04, QA-06) before
+CI's "Authenticated accessibility smoke" job — the only check in this
+repo that actually runs this spec — caught them. Worth a standing note
+for future button-label or copy renames touching `/billing`,
+`/senders`, or `/screener`: grep `packages/e2e/specs/*.ts` alongside the
+unit tests, not after.
+
 All 11 rows are now clean. Every Codex round's findings were fixed and
 verified before the next; nothing shipped on an unresolved finding.
 
