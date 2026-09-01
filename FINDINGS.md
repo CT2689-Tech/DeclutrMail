@@ -47,7 +47,39 @@ the point.
 
 ## Inbox (untriaged)
 
-_Empty. Append here._
+**Found:** 2026-08-31 · `/ct-qa mailbox-switch`, QA-mailbox-switch-20260831-01,
+survived `finding-refuter`.
+
+`/senders` throws a client-side `TypeError: useLongPress is not a function`
+inside `<SenderListRow>`, caught by an error boundary. At mobile viewport
+(375px) this takes down the ENTIRE list — "We couldn't load your senders."
+At desktop it's narrower and silent: 2 rows failed on a plain fresh load of
+the default 510-sender view with no visible crash UI (exact trigger not
+pinned down — the call is unconditional at `sender-list-row.tsx:252`, not
+gated by viewport, per the refuter's read of the source). Reproduced 3× incl.
+against a freshly-restarted `next dev` process (rules out stale HMR).
+Root cause: `useLongPress` (from D54's new mobile row gestures, PR #687,
+`cde42bbb`) resolves to `undefined` in the browser bundle under Next's
+`optimizePackageImports`, which `apps/web/next.config.ts` deliberately
+enables for `@declutrmail/shared`. This is the SECOND live occurrence of
+this exact mechanism — `MISTAKES.md:4129` (PR #651, fix for #646) documents
+the first (`UNIFORM_UNDO_WINDOW_DAYS` shipped `undefined` into real D226
+preview copy). That entry's proposed remedy — a build-output guard grepping
+`.next` route chunks for `undefined` appearing in rendered copy — is still
+`Open` in `FOUNDER-FOLLOWUPS.md` (~line 112-124) and would have caught this
+before it shipped; this is now live evidence the guard is needed, not
+hypothetical.
+
+A `defect-class-sweeper` pass found 2 further UNMEASURED sibling candidates
+sharing the exact shape (a `use client` hook re-exported through the same
+barrel, called unconditionally): `useFocusTrap` (15 consumer sites incl.
+`billing/cancel-modal.tsx:90`, `account-deletion/delete-account-modal.tsx:81`,
+`triage/action-sheet.tsx:189`, `activity-screen.tsx` ×3) and `useLocalState`
+(`senders/table/sender-group.tsx:28`). Neither confirmed live — needs a
+re-drive of `/billing`, `/settings` (account deletion), `/triage` (open an
+action sheet), and the Senders group-toggle before either is filed as its
+own row. Full detail: `docs/qa/qa-worklist.md` § mailbox-switch,
+`QA-mailbox-switch-20260831-01`.
 
 ## P0 — launch blockers
 

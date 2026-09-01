@@ -2158,3 +2158,39 @@ itself stays untouched and still orphaned (pre-existing dead code, out of
 this PR's scope per CLAUDE.md §1.3 — noted, not removed).
 **Distillation trigger:** promote to CLAUDE.md if a second "already
 covered" surface turns out to be Storybook-only dead code.
+
+## 2026-08-31 — Two stacked traps while verifying a barrel-import fix in the browser pane
+**Context:** Verifying a fix for `useLongPress` resolving to `undefined` under
+Next's `optimizePackageImports` (`/ct-qa mailbox-switch`, QA-mailbox-switch-
+20260831-01). Changed `sender-list-row.tsx`'s import to a direct module path
+and re-tested on the same long-lived browser-pane tab used to find the bug.
+**Finding:** Two independent traps stacked, each individually already
+half-documented elsewhere in this codebase's lore, but not together:
+(1) editing `package.json`'s `exports` map is NOT picked up by Next dev's
+webpack persistent disk cache the way a source-file edit is — a full
+kill-and-restart of `next dev` was not enough; the fix only took effect
+after also moving `.next` aside (`mv .next .next-stale` — `rm -rf` on a
+git-ignored build directory was refused by the permission layer, so a
+non-destructive move was the workaround). (2) After a correct cold
+restart, the SAME browser-pane tab still showed the identical 3 old error
+messages via `read_console_messages` — the tool does not clear its
+console buffer on same-tab `navigate`, so it was returning stale entries
+from the original bug-finding session, not fresh ones. Opening a genuinely
+new tab (`tabs_create`) and reloading showed zero errors immediately —
+the fix had actually worked the whole time; the second "still broken"
+signal was pure tooling artifact. Screenshots are not subject to this —
+a rendered crash UI in a screenshot is real evidence either way — but a
+console read after a fix, on a tab that was open before the fix, is not.
+**Rule (provisional):** (a) after any change to a workspace package's
+`package.json` `exports`/`main`/`imports` fields, do a full dev-server
+restart AND clear `.next` (or move it aside) before trusting a "still
+broken" result — a plain process kill+restart is insufficient for this
+class of change specifically, unlike ordinary source edits. (b) When
+re-testing a fix for a client-side console error, open a fresh browser
+tab rather than reusing the tab the bug was originally found on — do not
+trust `read_console_messages` on a reused tab as evidence the fix did or
+didn't work; either open a new tab or corroborate with something that
+can't accumulate stale state (a screenshot of current DOM content, or
+`get_page_text`).
+**Distillation trigger:** promote to CLAUDE.md §8's "known false-positive
+traps" list if either trap recurs on a future QA or fix-verification run.
