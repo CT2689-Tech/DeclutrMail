@@ -217,10 +217,19 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
       // asserted the button's presence for `AuthExpiredError`, never
       // that clicking it actually wires to `startMailboxConnect` rather
       // than falling through to the retry mutation.
+      //
+      // `mockClear()` first (Codex adversarial review round 2): this
+      // file has no global `clearMocks`/`beforeEach`, and the module
+      // mock is one shared fn across every test in the file — without
+      // this, the `InvalidGrantError` iteration's call could make the
+      // `AuthExpiredError` iteration's assertion pass even if THAT
+      // click made no call at all.
+      vi.mocked(startMailboxConnect).mockClear();
       render(
         withClient(<SyncGate status={{ ...FAILED, error_code: errorCode }} mailboxId="mb-1" />),
       );
       fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+      expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledTimes(1);
       expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledWith('mb-1');
     },
   );

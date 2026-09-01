@@ -590,6 +590,15 @@ describe('SendersScreen — edge states', () => {
     // QA-sync-20260831-09: "senders indexed" is a banned phrase
     // (check-microcopy.sh) — "scan" is the sanctioned term.
     expect(freshness).not.toHaveTextContent(/senders indexed/i);
+    // Codex adversarial review round 2 (of QA-sync-20260831-02): the
+    // negative control for the sibling fact this branch itself used to
+    // get wrong — initial-sync flushes sender identity rows in batches
+    // DURING fetching, not in one transaction only at the end, so
+    // claiming the rows are all "from before this scan started" is a
+    // false single-provenance claim, same class as the `syncFailed`
+    // branch's fixed copy.
+    expect(freshness).not.toHaveTextContent(/from before this scan started/i);
+    expect(freshness).toHaveTextContent(/may be incomplete or stale/i);
   });
 
   it('does not claim "Results as of" a time it never measured while the mailbox scan has failed (QA-sync-20260831-02)', async () => {

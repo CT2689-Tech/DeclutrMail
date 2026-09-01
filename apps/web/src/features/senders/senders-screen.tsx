@@ -2904,10 +2904,18 @@ function SenderResultsFreshness({
         // QA-onboarding-20260828-01: `asOf` is the server's compute time
         // for THIS request, not a measured sync-completion timestamp —
         // "Synced through <now>" on a mailbox that is still `queued`/
-        // `syncing` asserted a currency the app never checked, over
-        // rows that (if any) are a pre-resync snapshot, not partial
-        // results (the sender index is rebuilt in one transaction only
-        // at the end of sync).
+        // `syncing` asserted a currency the app never checked.
+        //
+        // Codex adversarial review round 2 (of QA-sync-20260831-02):
+        // this branch's own prior claim that rows are "a pre-resync
+        // snapshot, not partial results (the sender index is rebuilt in
+        // one transaction only at the end of sync)" is itself false —
+        // initial-sync.worker.ts's flushBatch writes sender identity
+        // rows in batches DURING metadata fetching, well before the
+        // final aggregate rebuild, so a still-syncing mailbox can show a
+        // mix of an old snapshot and partially-written, not-yet-
+        // aggregated rows. Same fix as the `syncFailed` branch above,
+        // now applied to its sibling.
         <>
           <strong style={{ fontWeight: 600 }}>Still syncing…</strong>
           <span>
@@ -2920,8 +2928,8 @@ function SenderResultsFreshness({
                 sanctioned term for this event, same as the empty-state
                 copy above and the onboarding gate's own vocabulary. */}
             {totalSenders !== null
-              ? `Showing ${totalSenders.toLocaleString('en-US')} senders from before this scan started for ${mailboxEmail} — this may change once it finishes.`
-              : `Showing senders from before this scan started for ${mailboxEmail} — this may change once it finishes.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
+              : `Senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
           </span>
         </>
       ) : updating ? (

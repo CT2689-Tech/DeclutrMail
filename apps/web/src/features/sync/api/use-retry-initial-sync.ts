@@ -79,8 +79,16 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       // clicking "Scan again" makes the button silently vanish with no
       // confirmation anything happened. `not_failed`/`no_state` are
       // designed no-ops (nothing new started), not toasted.
+      //
+      // "Scan queued", not "Scan started" (round 2 of the same review):
+      // `requeued` only proves the durable readiness row moved to
+      // `queued` — the actual BullMQ enqueue behind it is best-effort
+      // (`SyncService.schedule`'s own doc comment) and can fail
+      // silently, with the reconciler materializing the job on its next
+      // tick. "Started" claims an in-flight worker this response never
+      // confirmed.
       if (data.outcome === 'requeued') {
-        toast('Scan started — this can take a few minutes.', 'success');
+        toast('Scan queued — this can take a few minutes.', 'success');
       }
     },
     // QA-sync-20260831-10 item 4: this is the user's ONLY recovery

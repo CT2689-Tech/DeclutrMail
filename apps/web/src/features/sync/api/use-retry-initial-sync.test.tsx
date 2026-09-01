@@ -49,8 +49,13 @@ describe('useRetryInitialSync', () => {
     const { result } = renderRetry();
     act(() => result.current.mutate());
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    // "Queued", not "started" (Codex adversarial review round 2): the
+    // response only proves the durable readiness row moved to `queued` —
+    // the BullMQ enqueue behind it is best-effort and can fail silently,
+    // with the reconciler picking it up later. "Started" would claim an
+    // in-flight worker this response never confirmed.
     expect(vi.mocked(toast)).toHaveBeenCalledWith(
-      'Scan started — this can take a few minutes.',
+      'Scan queued — this can take a few minutes.',
       'success',
     );
   });
