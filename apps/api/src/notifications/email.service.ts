@@ -87,6 +87,7 @@ export class EmailService implements EmailDeliveryPort {
     idempotencyKey: string;
     html?: string;
     headers?: Record<string, string>;
+    replyTo?: string;
   }): Promise<EmailDeliveryOutcome> {
     if (!this.client) {
       this.logger.error(
@@ -103,8 +104,11 @@ export class EmailService implements EmailDeliveryPort {
     // Ships dormant: FOUNDER-FOLLOWUPS.md records that
     // support@declutrmail.com .com delivery is still pending the
     // domain-alias add. A bouncing Reply-To is worse than none, so the
-    // header appears only once the founder sets this variable.
-    const replyTo = process.env.EMAIL_REPLY_TO;
+    // env fallback only applies once the founder sets this variable.
+    // A caller can still pass `input.replyTo` explicitly regardless of
+    // that fallback — e.g. the in-app support form replies to the user
+    // who filed the request, not the founder's inbox.
+    const replyTo = input.replyTo ?? process.env.EMAIL_REPLY_TO;
 
     try {
       const { data, error } = await this.client.emails.send(
