@@ -301,8 +301,15 @@ function FailedSyncIndicator({
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      {/* No `dm-topbar-collapse` here (design-system-agent review): that
+          class is for labels a nearby icon or button text already makes
+          redundant on mobile ("synced Xm ago" beside the sync icon,
+          "Sync now"/"Syncing…" beside its own icon). "Scan failed" is
+          the ONLY thing that says something is wrong — the action
+          button's own text ("Reconnect Gmail"/"Scan again") explains
+          what to do, not why, so collapsing this left an unexplained
+          red button below 900px. */}
       <span
-        className="dm-topbar-collapse"
         style={{
           fontFamily: font.mono,
           fontSize: 10.5,

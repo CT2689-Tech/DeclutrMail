@@ -9,6 +9,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useRetryInitialSync } from './use-retry-initial-sync';
 
 vi.mock('@declutrmail/shared', async (importOriginal) => {
@@ -27,9 +28,10 @@ describe('useRetryInitialSync', () => {
 
   function renderRetry(mailboxId: string | null = 'mb-1') {
     const client = createTestQueryClient();
-    return renderHook(() => useRetryInitialSync(mailboxId), {
+    const hook = renderHook(() => useRetryInitialSync(mailboxId), {
       wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
     });
+    return { ...hook, client };
   }
 
   it('toasts confirmation on a successful requeue (Codex adversarial review of QA-sync-20260831-03)', async () => {
@@ -58,6 +60,28 @@ describe('useRetryInitialSync', () => {
       'Scan queued — this can take a few minutes.',
       'success',
     );
+  });
+
+  it('invalidates `me`, not just the per-mailbox sync-status query, on success (design-system-agent review)', async () => {
+    // The negative control: dropping the `ME_QUERY_KEY` invalidation
+    // makes this fail. Every surface this branch added (Triage's header
+    // + empty state, Senders' freshness + empty state, the account
+    // menu, the mailboxes card) reads readiness off `me`, not
+    // `SYNC_STATUS_KEY` — without this they'd sit on the pre-retry
+    // snapshot until the next poll tick instead of updating the moment
+    // the retry lands.
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/v1/sync/initial/retry',
+        respond: () => jsonOk({ data: { outcome: 'requeued' } }),
+      },
+    ]);
+    const { result, client } = renderRetry();
+    client.setQueryData(ME_QUERY_KEY, { fake: 'me-snapshot' });
+    act(() => result.current.mutate());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(client.getQueryState(ME_QUERY_KEY)?.isInvalidated).toBe(true);
   });
 
   it.each(['not_failed', 'no_state'] as const)(

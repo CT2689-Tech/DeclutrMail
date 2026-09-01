@@ -110,10 +110,19 @@ export const ME_ERROR_RETRY_MS = 15_000;
  * `retry: false` so the unauthenticated state surfaces immediately
  * instead of looping.
  *
- * While any mailbox is still syncing (e.g. a freshly-connected second
+ * While any mailbox is `queued`/`syncing` (e.g. a freshly-connected second
  * account), `me` polls every {@link ME_SYNC_POLL_MS} so the account
  * switcher's "Syncing…→Ready" badge + the ready toast update without a
- * manual refresh (D116). Polling stops once every mailbox is terminal.
+ * manual refresh (D116). `failed` is ALSO in that set (QA-sync-20260831-05)
+ * — deliberately, so the toast + every surface reading `readiness` off
+ * `me` can still notice a later recovery — which means polling does NOT
+ * stop once a mailbox reaches `failed`: nothing re-queues it
+ * automatically, so this keeps polling indefinitely until the user acts
+ * (retries, reconnects) or disconnects the mailbox. A pre-existing,
+ * separate gap (design-system-agent review): this only starts polling
+ * again once `me` has ALREADY observed the failure — a `ready→failed`
+ * transition while every cached mailbox reads `ready` still isn't
+ * caught without a manual refresh/focus.
  */
 export function useMe() {
   const queryClient = useQueryClient();

@@ -216,7 +216,14 @@ describe('SyncNowButton — readiness_status=failed (QA-sync-20260831-03)', () =
 
     renderButton('mailbox-1');
 
-    expect(screen.getByText(/scan failed/i)).toBeInTheDocument();
+    const label = screen.getByText(/scan failed/i);
+    expect(label).toBeInTheDocument();
+    // design-system-agent review: `dm-topbar-collapse` is `display:none`
+    // below 900px. Every OTHER label that class hides is redundant with
+    // a nearby icon or its own button text; "Scan failed" is the only
+    // thing that says something is wrong, so hiding it left an
+    // unexplained red button on mobile.
+    expect(label).not.toHaveClass('dm-topbar-collapse');
     expect(
       screen.queryByRole('button', { name: /check gmail for new emails/i }),
     ).not.toBeInTheDocument();

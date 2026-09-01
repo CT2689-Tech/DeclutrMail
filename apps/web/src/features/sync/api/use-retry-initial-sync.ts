@@ -5,6 +5,7 @@ import { toast } from '@declutrmail/shared';
 
 import { apiPost } from '@/lib/api/client';
 import { addBreadcrumb } from '@/lib/sentry';
+import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { SYNC_STATUS_KEY } from '@/features/onboarding/api/use-sync-status';
 
 /**
@@ -70,6 +71,13 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       // screen is already stale and should re-render from server truth.
       // Key prefix, so the per-mailbox entry the gate reads is included.
       void qc.invalidateQueries({ queryKey: SYNC_STATUS_KEY });
+      // design-system-agent review: every surface this branch added
+      // (Triage's header + empty state, Senders' freshness + empty
+      // state, the account menu, the mailboxes card) reads readiness
+      // from `me`, not `SYNC_STATUS_KEY` — without this they'd sit on
+      // the pre-retry snapshot until the next poll tick instead of
+      // updating the moment the retry lands.
+      void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
       // Codex adversarial review: `SyncNowButton`'s failed-indicator is
       // the only chrome an already-onboarded user sees for this retry
       // (the onboarding gate that WOULD show live progress doesn't

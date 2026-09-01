@@ -144,6 +144,22 @@ describe('SyncErrorBanner', () => {
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
   });
 
+  it('keeps the banner visible on an exact tie between the error and success stamps (design-system-agent review)', () => {
+    // The negative control: reverting `>` back to `>=` makes this fail.
+    // `use-mailbox-health.ts`'s `hasSyncError` (same underlying fields,
+    // sibling surface) treats a tie as still broken — this banner used
+    // to treat the identical tie as recovered, the exact "same fact
+    // disagreeing across surfaces" shape CLAUDE.md §8 warns about.
+    const tie = minutesAgo(5);
+    statusCell.data = statusOf({
+      last_synced_at: tie,
+      last_sync_error_at: tie,
+      last_sync_error_code: 'GMAIL_HISTORY_GONE',
+    });
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
+  });
+
   it('hides the banner when the error is older than 60 minutes', () => {
     statusCell.data = statusOf({
       last_synced_at: null,
