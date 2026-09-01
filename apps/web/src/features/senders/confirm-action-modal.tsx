@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Button, Eyebrow, Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   buildActionPresentation,
   composeRecoveryFacts,

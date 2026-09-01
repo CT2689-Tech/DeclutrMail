@@ -2,7 +2,8 @@
 
 import type { MouseEvent } from 'react';
 import { useEffect, useState } from 'react';
-import { Button, tokens, useLocalState } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
+import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
 import type { ActionRequest, GroupMeta, Sender } from '../data';
 import { SenderListRow } from './sender-list-row';
 

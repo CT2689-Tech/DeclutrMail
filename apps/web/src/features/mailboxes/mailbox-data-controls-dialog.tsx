@@ -9,10 +9,9 @@ import {
   GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY,
   mailboxDataDeletionConfirmPhrase,
   tokens,
-  useFocusTrap,
   useIsAtMost,
 } from '@declutrmail/shared';
-
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { ContextualHelp } from '@/features/help/contextual-help';
 

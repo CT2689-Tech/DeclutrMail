@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
-
+import { tokens, useIsAtMost } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { useMarkVerbTourSeen, useVerbTourState } from './use-verb-tour';
 import { VerbTourPanel } from './verb-tour-panel';
 
