@@ -2,12 +2,12 @@ import {
   ACTION_PREVIEW_CLAIM,
   CASA_VERIFICATION_APPROVED_MONTH,
   CASA_VERIFICATION_APPROVED_ON,
-  OAUTH_SCOPE_DISCLOSURE,
-  PrivacyBadge,
+  PRIVACY_BADGE_HEADLINE,
 } from '@declutrmail/shared';
 import { VERB_REGISTRY } from '@declutrmail/shared/actions';
 
 import { LedgerDemo } from './ledger-demo';
+import { ScopeDisclosure } from './scope-disclosure';
 import { oauthStartUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -16,12 +16,12 @@ import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitle
  * Hero (D250 locked headline — reverses D223; decision record in
  * docs/execution/packaging-2026-08-02.md and the spec's DECISIONS
  * LOCKED block) + animated ledger card (D135 adapted) + trust strip
- * (D138 reverbed by D228 — PrivacyBadge copy only).
+ * (D138 reverbed by D228 — shared privacy copy only, no restated list).
  *
  * Copy contracts (do not edit casually):
  *   - The kicker carries NO privacy claim — its job is recognition in
  *     the buyer's own language. Privacy lives in the generated
- *     PrivacyBadge below; never paraphrase it upward.
+ *     PrivacyBadge in PrivacyDesk (§03) below; never paraphrase it upward.
  *   - The H1 must stay true for a FREE user (the CTA signs up Free) —
  *     "rules find it for you" claims are Plus-only and live in the
  *     subhead with the tier named.
@@ -74,10 +74,9 @@ export function Hero() {
           </p>
           {/* Connect CTAs link straight to Google's consent screen, so the
               permission explanation stays beside the click. */}
-          <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">{OAUTH_SCOPE_DISCLOSURE}</p>
-          <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            <a href="/sign-in">See what DeclutrMail can and can&rsquo;t access →</a>
-          </p>
+          <div className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
+            <ScopeDisclosure />
+          </div>
         </div>
         <div className="dm-mkt-reveal-3 dm-mkt-reveal">
           <LedgerDemo
@@ -92,18 +91,20 @@ export function Hero() {
 }
 
 /**
- * Trust strip (D134 §2). The privacy claim is EXCLUSIVELY the shared
- * PrivacyBadge (D228 locked copy via packages/shared/src/copy/privacy.ts).
+ * Trust strip (D134 §2). The privacy claim is the shared PRIVACY_BADGE_HEADLINE
+ * (D228 locked copy via packages/shared/src/copy/privacy.ts), linking to the
+ * full PrivacyBadge + generated storage list in PrivacyDesk (§03) rather than
+ * restating the list here.
  */
 function TrustStrip() {
   return (
     <div className="dm-mkt-trust">
-      {/* The chip matches the marketing surface token, so it re-resolves
-          with `.dm-mkt`'s dark block (landing.css) rather than pinning a
-          light background under a badge whose own palette already flips. */}
-      <span style={{ background: 'var(--mkt-bg)', borderRadius: 8, display: 'inline-flex' }}>
-        <PrivacyBadge variant="inline" />
-      </span>
+      {/* The full generated storage list lives once on this page, in
+          PrivacyDesk (§03) — linking there instead of repeating it inline
+          keeps the hero's own trust claim to a single line. */}
+      <a className="dm-mkt-trust-item" href="#privacy">
+        {PRIVACY_BADGE_HEADLINE}
+      </a>
       <span className="dm-mkt-trust-item">30-day money-back guarantee</span>
       <span className="dm-mkt-trust-item" title={ACTION_PREVIEW_CLAIM}>
         See which emails will move before you confirm
