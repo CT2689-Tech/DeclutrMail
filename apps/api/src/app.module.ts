@@ -15,6 +15,7 @@ import { IconsModule } from './icons/icons.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { ProductFeedbackModule } from './product-feedback/product-feedback.module.js';
+import { SupportRequestModule } from './support/support-request.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { RateLimitModule } from './common/rate-limit/index.js';
 import { ResendWebhookModule } from './webhooks/resend/resend-webhook.module.js';
@@ -86,6 +87,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     FollowupModule,
     ActivityModule,
     ProductFeedbackModule,
+    SupportRequestModule,
     AccountModule,
     // U23 settings — GET /api/me/settings + D34 action-sheet prefs.
     SettingsModule,
