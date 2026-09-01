@@ -1040,17 +1040,44 @@ fixture (`status: 'active'`, mismatched tier, `cancelAtPeriodEnd: true`,
 test; the stale doc-comment was corrected to describe what the code actually
 does.
 
-**At the review cap.** Per the worklist's own rule (`docs/qa/qa-worklist.md`
-§States), two substantive Codex rounds ran (round 1: 5 findings, fixed;
-round 2: 2 partial + 1 carried-over real defect, fixed) — a third round is
-capped. `6050ec1a`'s changes to QA-07 and QA-10 are themselves unreviewed
-(the row-level disposition lives in `qa-worklist.md`); the row for each is
-`At review cap`, naming `6050ec1a`, for the founder to ship as-is or
-explicitly authorize continued review. All other rows (QA-02, -04, -05,
--06, -08, -09, -11) closed clean through round 2 and are untouched by
-`6050ec1a`; QA-01 and QA-03 had round-2 follow-up but neither was a
-behavior change (a test addition and a comment fix, respectively), so their
-round-2 CLOSED verdict still describes the shipped behavior.
+**At the review cap, then past it — founder-authorized.** Per the
+worklist's own rule (`docs/qa/qa-worklist.md` §States), two substantive
+Codex rounds ran (round 1: 5 findings, fixed; round 2: 2 partial + 1
+carried-over real defect, fixed) — a third round is normally capped. Rather
+than merge with `6050ec1a`'s changes to QA-07/-10 unreviewed, this was
+brought to the founder with what each round found; the founder chose to
+request round 3 rather than merge as-is or review the diff personally.
+
+**Round 3** (`6050ec1a` vs `131994e2`, the exact diff round 2 flagged)
+came back CLEAN: all 5 of round 2's findings confirmed resolved by direct
+source and fixture tracing — the invoice `aria-label` is field-labeled,
+the fallback's credit destination agrees with the confirmed-credit branch,
+all three preview branches read conditionally ("If you confirm: …"), the
+QA-01 fixture reaches the actual chargeback-shaped branch, and the
+`pauseConfirming` doc-comment is accurate. One test-hardening gap
+survived: the no-preview fallback's test asserted a negative check that
+would not have caught the round-1 regression either way (the old and new
+sentences never shared that substring), and didn't assert the new
+conditional framing. Applied in `2da85a4c` — a full-sentence positive
+match plus the "If you confirm:" assertion — with zero source change, so
+it did not warrant a fourth round.
+
+Also caught post-merge: CI's "Authenticated accessibility smoke" job (the
+first run to actually exercise the money-path E2E spec against this
+branch) failed on a real, missed gap — `packages/e2e/specs/
+billing-upgrade.spec.ts` asserted the exact pre-QA-04 quota copy ("N of M
+cleanup actions left this month.") against the live billing screen, a
+second, independent assertion of the same rendered text the unit test had
+already been updated for. Fixed in `00bd0c3d`: asserts the stable prefix
+plus a date-shaped pattern, since the E2E seed creates the workspace at
+`now()` so the actual reset date is not fixed run-to-run. A repo-wide
+sweep for the same stale phrase found no other gaps — every other
+"cleanup action(s) left this month" occurrence is a different, deliberately
+untouched surface (quota-shortfall/action-gating copy, out of QA-04's
+scope per the PR body).
+
+All 11 rows are now clean. Every Codex round's findings were fixed and
+verified before the next; nothing shipped on an unresolved finding.
 
 ## Refuted
 
