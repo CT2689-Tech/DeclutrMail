@@ -174,6 +174,26 @@ describe('InvoiceHistory', () => {
     expect(screen.getByText(/2 invoices couldn’t\s+be displayed/i)).toBeInTheDocument();
   });
 
+  it('names each field in the row accessible name, so a due invoice never reads as a bare "Due"', async () => {
+    // QA-billing-20260901-07, Codex round 2: the visual column header is
+    // decorative (aria-hidden), and an unlabeled a11y-tree value list
+    // ("May 1, $19, Due") kept the exact ambiguity the header was meant
+    // to fix, in a different form. The accessible name must carry the
+    // field names themselves, not just their values.
+    apiGet.mockResolvedValue({
+      data: {
+        invoices: [{ ...PAID_ROW, status: 'due' as const }],
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 0,
+      },
+    });
+    wrap(<InvoiceHistory />);
+    expect(
+      await screen.findByLabelText('Date May 1, 2026, amount $19.00, status Due'),
+    ).toBeInTheDocument();
+  });
+
   it('fetches nothing when disabled (billing dark / never subscribed)', () => {
     wrap(<InvoiceHistory enabled={false} />);
     expect(apiGet).not.toHaveBeenCalled();

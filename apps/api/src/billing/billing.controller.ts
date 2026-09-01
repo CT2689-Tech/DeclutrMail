@@ -29,6 +29,7 @@ import {
   type BillingSubscription,
   type CheckoutSession,
   type Envelope,
+  type FoundingAvailability,
   type PaymentMethodSession,
   type PlanChangePreview,
 } from '@declutrmail/shared/contracts';
@@ -169,6 +170,21 @@ export class BillingController {
   async subscription(@CurrentUser() principal: Principal): Promise<Envelope<BillingSubscription>> {
     assertBillingEnabled();
     return ok(await this.billing.getSubscription(principal.workspaceId));
+  }
+
+  /**
+   * GET /api/billing/founding-remaining — QA-billing-20260901-09/-05.
+   * `foundingRemaining()` previously backed only the checkout guard's
+   * advisory pre-check (`createCheckout`'s own read is still the
+   * AUTHORITATIVE, race-safe gate — this route is for disclosure, not
+   * enforcement). Read-only; no principal-scoped data, so no workspace
+   * check beyond authentication.
+   */
+  @Get('founding-remaining')
+  @RateLimit('default')
+  async foundingRemaining(): Promise<Envelope<FoundingAvailability>> {
+    assertBillingEnabled();
+    return ok({ remaining: await this.billing.foundingRemaining() });
   }
 
   /**

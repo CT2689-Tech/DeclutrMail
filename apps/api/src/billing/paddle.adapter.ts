@@ -137,7 +137,22 @@ interface PaddleTransaction {
   created_at?: string | null;
   currency_code?: string | null;
   details?: { totals?: { grand_total?: string | null } | null } | null;
+  /** What minted this transaction. Read only to filter the
+   *  `subscription_payment_method_change` verification artifact below —
+   *  QA-billing-20260901-07. */
+  origin?: string | null;
 }
+
+/**
+ * QA-billing-20260901-07 — Paddle mints a $0, `ready`-status transaction
+ * with this origin every time a customer updates their card through the
+ * `paymentMethodSession` portal this adapter also opens. It never bills,
+ * never carries a document, and — before this filter — rendered under
+ * the same "Due" label a genuine past-due dunning invoice gets, sorted
+ * to the top of the list (its `billed_at` is null). It is a card-
+ * verification artifact, not a billing document.
+ */
+const NON_BILLING_ORIGINS = new Set(['subscription_payment_method_change']);
 
 /**
  * Paddle transaction statuses → the normalized invoice status.
@@ -1107,6 +1122,7 @@ export class PaddleAdapter implements BillingProvider {
     for (const row of rows) {
       const status = row.status ?? '';
       if (!row.id || status === 'draft') continue;
+      if (row.origin && NON_BILLING_ORIGINS.has(row.origin)) continue;
       const issuedAt = row.billed_at ?? row.created_at ?? null;
       const amount = row.details?.totals?.grand_total ?? null;
       const currencyCode = row.currency_code ?? null;

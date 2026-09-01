@@ -282,3 +282,57 @@ describe('the current-plan headline makes no price claim without a backing sub (
     expect(card).not.toHaveTextContent('$19/mo');
   });
 });
+
+// QA-billing-20260901-05/-09 — the Founding Pro price/checkbox is now
+// gated on live availability (`GET /api/billing/founding-remaining`),
+// not offered unconditionally until a 409 at confirm.
+describe('Founding Pro availability gate', () => {
+  it('shows the founding price on the Pro card, and the checkbox, while spots remain', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: subscriptionBody }),
+      },
+      {
+        method: 'GET',
+        path: '/api/billing/founding-remaining',
+        respond: () => jsonOk({ data: { remaining: 12 } }),
+      },
+    ]);
+    renderScreen();
+
+    const proCard = await screen.findByTestId('plan-option-pro');
+    expect(await within(proCard).findByText(/Founding Pro:/)).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+    expect(within(panel).getByRole('checkbox')).toBeInTheDocument();
+  });
+
+  it('hides the founding price and the checkbox once the 250 slots are gone', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: subscriptionBody }),
+      },
+      {
+        method: 'GET',
+        path: '/api/billing/founding-remaining',
+        respond: () => jsonOk({ data: { remaining: 0 } }),
+      },
+    ]);
+    renderScreen();
+
+    const proCard = await screen.findByTestId('plan-option-pro');
+    // `waitFor` retries until the availability read resolves — a
+    // one-shot `queryByText` here could pass on "hasn't loaded yet"
+    // rather than on the confirmed sold-out state.
+    await waitFor(() => expect(within(proCard).queryByText(/Founding Pro:/)).toBeNull());
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const panel = screen.getByTestId('checkout-panel');
+    expect(within(panel).queryByRole('checkbox')).toBeNull();
+  });
+});

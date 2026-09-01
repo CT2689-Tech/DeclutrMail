@@ -41,6 +41,7 @@ export function Button({
   ariaLabel,
   ariaPressed,
   ariaDescribedBy,
+  id,
   style,
 }: {
   children?: ReactNode;
@@ -57,6 +58,8 @@ export function Button({
   ariaPressed?: boolean;
   /** Id of a describing element — e.g. a `Tooltip`'s bubble (D38). */
   ariaDescribedBy?: string;
+  /** Plain passthrough — e.g. an `initialFocusSelector` target for `useFocusTrap`. */
+  id?: string;
   style?: CSSProperties;
 }) {
   const t = TONES[tone];
@@ -64,6 +67,7 @@ export function Button({
   return (
     <button
       type={type}
+      id={id}
       onClick={onClick}
       disabled={disabled}
       title={title}
