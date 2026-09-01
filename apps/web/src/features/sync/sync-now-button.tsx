@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNow } from '@/lib/use-now';
 import { useQueryClient } from '@tanstack/react-query';
-import { toast, tokens } from '@declutrmail/shared';
+import { Button, toast, tokens } from '@declutrmail/shared';
 
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
 import { SYNC_STATUS_KEY, useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { useRetryInitialSync } from './api/use-retry-initial-sync';
 import { useSyncNow } from './api/use-sync-now';
 
 const { color, font, radius } = tokens;
@@ -21,12 +23,18 @@ const { color, font, radius } = tokens;
  * naturally safe to spam.
  *
  * States the button can be in:
- *   - **Hidden** — initial sync is in flight (`readiness_status !== 'ready'`).
- *     The sync-gate progress card carries the "we're working on it" UI;
- *     a secondary button would be redundant + confusing.
- *   - **Hidden** — the current Gmail grant needs reconnection. Retrying
- *     cannot repair a revoked token; the persistent reconnect banner owns
- *     the recovery action.
+ *   - **Hidden** — initial sync is queued or in flight
+ *     (`readiness_status` is `queued`/`syncing`). The sync-gate progress
+ *     card carries the "we're working on it" UI while a user is still
+ *     onboarding; a secondary button would be redundant + confusing.
+ *   - **Failed indicator** (QA-sync-20260831-03) — `readiness_status ===
+ *     'failed'`. An already-onboarded user whose mailbox re-enters this
+ *     state (a re-queued reconnect, or the server-side `cursorTooOld`
+ *     recovery) is NOT on the onboarding gate — `derive-step.ts` routes
+ *     any onboarded user straight past it — so this is the only chrome
+ *     surface left standing. Renders "Scan failed" + a "Scan again"
+ *     button wired to `useRetryInitialSync`, or "Reconnect Gmail" when
+ *     the failure needs reauthorization — never a doomed Sync-now CTA.
  *   - **Idle** — ready + not in-flight. Click → mutation fires. A muted
  *     "synced Xm ago" label sits beside the button (hover = absolute
  *     time) so the user always knows data freshness.
@@ -117,10 +125,11 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
     }, WATCH_POLL_MS);
     const timeout = setTimeout(() => {
       setWatching(false);
-      toast(
-        'Sync is taking longer than expected — the “synced” time above will update when it completes.',
-        'info',
-      );
+      // QA-sync-20260831-10 item 5: the freshness label this toast used
+      // to point at (`dm-topbar-collapse`) is `display: none` below
+      // 900px, so a phone toast referenced a control the viewport had
+      // hidden. Say what will happen instead of where to look for it.
+      toast('Still checking Gmail. New email will appear when it finishes.', 'info');
     }, WATCH_TIMEOUT_MS);
     return () => {
       clearInterval(poll);
@@ -155,11 +164,25 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
     void qc.invalidateQueries({ queryKey: ['sender-detail'] });
   }, [watching, lastSyncedAt, lastErrorAt, qc]);
 
-  // Only render when the mailbox is past initial-sync. Pre-ready states
-  // (`queued` / `syncing`) already render the sync-gate. A current invalid
-  // grant gets the banner's reconnect action, never a doomed Sync-now CTA.
-  const ready = status.data?.readiness_status === 'ready';
-  if (!ready || syncStatusNeedsReconnect(status.data)) return null;
+  const readinessStatus = status.data?.readiness_status;
+  const ready = readinessStatus === 'ready';
+  const failed = readinessStatus === 'failed';
+  const needsReconnect = syncStatusNeedsReconnect(status.data);
+
+  if (failed) {
+    // An already-onboarded user whose mailbox re-enters `failed` (a
+    // re-queued reconnect, or the server-side `cursorTooOld` recovery)
+    // is NOT on the onboarding gate — `derive-step.ts` routes any
+    // onboarded user past it — so this is the only chrome surface left
+    // standing (QA-sync-20260831-03).
+    return <FailedSyncIndicator mailboxId={mailboxId} needsReconnect={needsReconnect} />;
+  }
+
+  // Pre-ready states (`queued` / `syncing`) already render the sync-gate
+  // for a user still onboarding. A `ready` mailbox with a live incremental
+  // auth error gets the persistent reconnect banner's action instead of a
+  // doomed Sync-now CTA.
+  if (!ready || needsReconnect) return null;
 
   const busy = arming || sync.isPending || watching;
 
@@ -239,6 +262,57 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
             The `aria-label` above keeps it accessible when text is hidden. */}
         <span className="dm-topbar-collapse">{busy ? 'Syncing…' : 'Sync now'}</span>
       </button>
+    </span>
+  );
+}
+
+/**
+ * Renders in `SyncNowButton`'s slot when `readiness_status === 'failed'`
+ * (QA-sync-20260831-03). Only reachable state is a genuine INITIAL-sync
+ * terminal failure — `readiness_status='failed'` has exactly one writer
+ * in the codebase, `initial-sync.worker.ts`'s `recordTerminalFailure`.
+ *
+ * `needsReconnect` routes to the same OAuth restart the persistent
+ * reconnect banner uses for a non-active mailbox; otherwise offers the
+ * same retry the onboarding gate's own failure screen would.
+ */
+function FailedSyncIndicator({
+  mailboxId,
+  needsReconnect,
+}: {
+  mailboxId: string | undefined;
+  needsReconnect: boolean;
+}) {
+  const retry = useRetryInitialSync(mailboxId);
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+      <span
+        className="dm-topbar-collapse"
+        style={{
+          fontFamily: font.mono,
+          fontSize: 10.5,
+          letterSpacing: '0.06em',
+          color: color.danger,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Scan failed
+      </span>
+      {needsReconnect ? (
+        <Button tone="danger" size="sm" onClick={() => startMailboxConnect(mailboxId)}>
+          Reconnect Gmail
+        </Button>
+      ) : (
+        <Button
+          tone="danger"
+          size="sm"
+          disabled={retry.isPending || !mailboxId}
+          onClick={() => retry.mutate()}
+        >
+          {retry.isPending ? 'Starting…' : 'Scan again'}
+        </Button>
+      )}
     </span>
   );
 }

@@ -187,6 +187,11 @@ export function TriageScreen({
   const qc = useQueryClient();
   const auth = useOptionalAuth();
   const activeEmail = auth ? getActiveMailboxEmail(auth.me) : undefined;
+  // QA-sync-20260831-01: Triage otherwise has zero sync awareness — the
+  // resting-queue empty state must not claim "nothing to do" while the
+  // active mailbox's initial sync has terminally failed.
+  const mailboxSyncFailed =
+    auth?.me.mailboxes.find((m) => m.id === auth.me.activeMailboxId)?.readiness === 'failed';
   const pendingAction = useTriageStore((s) => s.pendingAction);
   const rememberPreference = useTriageStore((s) => s.rememberPreference);
   const openPending = useTriageStore((s) => s.openPending);
@@ -1359,10 +1364,18 @@ export function TriageScreen({
           group; the modal checkout flow lands with the billing FE
           (U13). Replaces the prior "Upgrade flow opens here" stub. */}
       {state.kind === 'empty' && (
-        <TriageEmptyState stats={state.stats} onOpenUpgrade={openPricing} />
+        <TriageEmptyState
+          stats={state.stats}
+          onOpenUpgrade={openPricing}
+          syncFailed={mailboxSyncFailed}
+        />
       )}
       {state.kind === 'ready' && state.rows.length === 0 && (
-        <TriageEmptyState stats={state.stats} onOpenUpgrade={openPricing} />
+        <TriageEmptyState
+          stats={state.stats}
+          onOpenUpgrade={openPricing}
+          syncFailed={mailboxSyncFailed}
+        />
       )}
       {state.kind === 'ready' &&
         state.rows.length > 0 &&

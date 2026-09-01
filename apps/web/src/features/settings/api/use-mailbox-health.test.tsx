@@ -6,7 +6,7 @@ import type { SyncStatus } from '@declutrmail/shared/contracts';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { useMailboxesHealth } from './use-mailbox-health';
+import { deriveMailboxHealth, useMailboxesHealth } from './use-mailbox-health';
 
 const MAILBOX: MeMailbox = {
   id: 'mailbox-a',
@@ -98,5 +98,53 @@ describe('useMailboxesHealth', () => {
     });
     unmount();
     client.clear();
+  });
+});
+
+describe('deriveMailboxHealth — hasSyncError (QA-sync-20260831-04)', () => {
+  it('flags a persistent incremental failure that readiness never surfaces', () => {
+    // The negative control: reverting `hasSyncError`'s derivation makes
+    // this assertion fail — `readiness_status` stays `'ready'` for an
+    // incremental failure by the worker's own design, so before this
+    // field existed a persistently-broken mailbox was indistinguishable
+    // from a healthy one in this projection.
+    const health = deriveMailboxHealth({
+      readiness_status: 'ready',
+      current_stage: 'ready',
+      progress_pct: 100,
+      is_ready_for_triage: true,
+      last_synced_at: '2026-08-01T00:00:00.000Z',
+      last_sync_error_at: '2026-08-20T00:00:00.000Z',
+      last_sync_error_code: 'RateLimitError',
+    });
+    expect(health.hasSyncError).toBe(true);
+    expect(health.needsReconnect).toBe(false);
+  });
+
+  it('clears once a later success supersedes the failure', () => {
+    const health = deriveMailboxHealth({
+      readiness_status: 'ready',
+      current_stage: 'ready',
+      progress_pct: 100,
+      is_ready_for_triage: true,
+      last_synced_at: '2026-08-20T00:00:00.000Z',
+      last_sync_error_at: '2026-08-01T00:00:00.000Z',
+      last_sync_error_code: 'RateLimitError',
+    });
+    expect(health.hasSyncError).toBe(false);
+  });
+
+  it('does not double-count an InvalidGrantError as a plain sync error — needsReconnect already owns it', () => {
+    const health = deriveMailboxHealth({
+      readiness_status: 'ready',
+      current_stage: 'ready',
+      progress_pct: 100,
+      is_ready_for_triage: true,
+      last_synced_at: '2026-08-01T00:00:00.000Z',
+      last_sync_error_at: '2026-08-20T00:00:00.000Z',
+      last_sync_error_code: 'InvalidGrantError',
+    });
+    expect(health.needsReconnect).toBe(true);
+    expect(health.hasSyncError).toBe(false);
   });
 });

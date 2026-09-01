@@ -574,7 +574,12 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Initial sync has not completed for this mailbox yet.',
+    // QA-sync-20260831-10 item 1: this covers `queued`/`syncing`/`failed`/
+    // a ready-but-cursorless mailbox — "has not completed... yet" is
+    // false for `failed`, which does not self-recover. Kept in step
+    // with the actual wire message in apps/api/src/sync/sync.service.ts.
+    message:
+      'This mailbox has no finished scan to sync from — the scan is still running, or it stopped before completing.',
   },
   // not found — scoped to the current mailbox
   SENDER_NOT_FOUND: {

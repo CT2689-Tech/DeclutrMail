@@ -1,6 +1,7 @@
 'use client';
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from '@declutrmail/shared';
 
 import { apiPost } from '@/lib/api/client';
 import { addBreadcrumb } from '@/lib/sentry';
@@ -69,6 +70,23 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       // screen is already stale and should re-render from server truth.
       // Key prefix, so the per-mailbox entry the gate reads is included.
       void qc.invalidateQueries({ queryKey: SYNC_STATUS_KEY });
+    },
+    // QA-sync-20260831-10 item 4: this is the user's ONLY recovery
+    // control on a failed initial sync. Before this handler existed, a
+    // 429 (the route is capped at 3/60s) or a 5xx silently flipped
+    // "Starting…" back to "Try again"/"Scan again" with no message — a
+    // button that silently does nothing is indistinguishable from a
+    // broken app.
+    onError: (err) => {
+      addBreadcrumb({
+        category: 'sync',
+        message: `initial-sync-retry failed: ${err instanceof Error ? err.message : String(err)}`,
+        level: 'error',
+      });
+      toast(
+        "Couldn't start the scan. Wait a minute and try again — nothing in Gmail changed.",
+        'danger',
+      );
     },
   });
 }

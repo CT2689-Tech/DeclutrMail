@@ -11,6 +11,11 @@ import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 import { SyncGate, activeStageIndex, UI_STAGES } from './sync-gate';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+
+vi.mock('@/features/mailboxes/connect-mailbox-url', () => ({
+  startMailboxConnect: vi.fn(),
+}));
 
 /**
  * The failed gate mounts `useRetryInitialSync` (its "Try again" is a
@@ -176,6 +181,48 @@ describe('SyncGate render', () => {
   it('never renders the word "Screen" anywhere (D227 hard rule)', () => {
     const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
     expect(html).not.toMatch(/\bScreen\b/);
+  });
+});
+
+describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-sync-20260831-07)', () => {
+  it('offers "Reconnect Gmail" instead of "Try again" for InvalidGrantError', () => {
+    // The negative control: reverting the `needsReconnect` branch makes
+    // this assertion fail — the only button used to re-queue a full
+    // scan against the SAME revoked token, which fails again at
+    // `getClient` and burns a rate-limited retry attempt.
+    render(
+      withClient(
+        <SyncGate status={{ ...FAILED, error_code: 'InvalidGrantError' }} mailboxId="mb-1" />,
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('offers "Reconnect Gmail" for AuthExpiredError too', () => {
+    render(
+      withClient(
+        <SyncGate status={{ ...FAILED, error_code: 'AuthExpiredError' }} mailboxId="mb-1" />,
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('clicking "Reconnect Gmail" starts OAuth targeted at the mailbox on screen', () => {
+    render(
+      withClient(
+        <SyncGate status={{ ...FAILED, error_code: 'InvalidGrantError' }} mailboxId="mb-1" />,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+    expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledWith('mb-1');
+  });
+
+  it('still offers a real retry for a non-auth failure (e.g. RateLimitError)', () => {
+    render(withClient(<SyncGate status={FAILED} mailboxId="mb-1" />));
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
   });
 });
 

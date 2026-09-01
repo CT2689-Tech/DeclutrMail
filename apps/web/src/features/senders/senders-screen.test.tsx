@@ -390,6 +390,41 @@ describe('SendersScreen — edge states', () => {
     },
   );
 
+  it('does not claim "no active senders" while the mailbox scan has failed (QA-sync-20260831-02)', async () => {
+    // The negative control: reverting the `mailboxSyncFailed` branch in
+    // `senders-screen.tsx` makes this assertion fail — an empty result
+    // while `readiness === 'failed'` fell through to "No active senders",
+    // the same completed-but-empty false claim QA-onboarding-20260828-01
+    // was fixed to prevent for `queued`/`syncing`, left open for `failed`.
+    mockAuth.readiness = 'failed';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    // "Scan failed" renders twice — the freshness strip AND the
+    // empty-state heading — so disambiguate on the heading role.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /scan failed/i })).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByText(/last scan didn.t finish, so this list may be incomplete/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/no senders yet/i)).not.toBeInTheDocument();
+  });
+
   it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {
     // The founder's bug: searching "dealskhoj" returned nothing because the
     // FE filtered only the loaded ≤50-row page. With server-side search the
@@ -446,9 +481,12 @@ describe('SendersScreen — edge states', () => {
     await screen.findAllByText(/Sender A/);
     const freshness = screen.getByTestId('sender-results-freshness');
     // Coverage line answers "am I looking at everything?" — indexed
-    // total + synced-through time (2026-07-16 founder smoke).
+    // total + a results-as-of time (2026-07-16 founder smoke).
     expect(freshness).toHaveTextContent(/senders found for me@example\.com/i);
-    expect(freshness).toHaveTextContent(/synced through/i);
+    // QA-sync-20260831-10 item 3: `asOf` is a request-compute timestamp,
+    // not a measured sync completion, even in this healthy branch —
+    // "Results as of" describes what the value actually is.
+    expect(freshness).toHaveTextContent(/results as of/i);
     expect(
       freshness.querySelector('time[datetime="2026-05-29T12:00:00.000Z"]'),
     ).toBeInTheDocument();
@@ -457,12 +495,12 @@ describe('SendersScreen — edge states', () => {
     expect(freshness).toHaveStyle({ display: 'flex', flexWrap: 'wrap' });
   });
 
-  it('does not claim "Synced through" a time it never measured while the mailbox is still syncing (QA-onboarding-20260828-01)', async () => {
+  it('does not claim "Results as of" a time it never measured while the mailbox is still syncing (QA-onboarding-20260828-01)', async () => {
     // The negative control: reverting the `stillSyncing` branch in
     // `SenderResultsFreshness` makes this assertion fail — `asOf` is the
     // server's compute time for THIS request, not a measured sync-
     // completion timestamp, so labelling a mid-resync, possibly
-    // pre-disconnect snapshot "Synced through <now>" asserts a currency
+    // pre-disconnect snapshot "Results as of <now>" asserts a currency
     // the app never checked.
     mockAuth.readiness = 'syncing';
     installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
@@ -472,7 +510,24 @@ describe('SendersScreen — edge states', () => {
     await screen.findAllByText(/Sender A/);
     const freshness = screen.getByTestId('sender-results-freshness');
     expect(freshness).toHaveTextContent(/still syncing/i);
-    expect(freshness).not.toHaveTextContent(/synced through/i);
+    expect(freshness).not.toHaveTextContent(/results as of/i);
+    // QA-sync-20260831-09: "senders indexed" is a banned phrase
+    // (check-microcopy.sh) — "scan" is the sanctioned term.
+    expect(freshness).not.toHaveTextContent(/senders indexed/i);
+  });
+
+  it('does not claim "Results as of" a time it never measured while the mailbox scan has failed (QA-sync-20260831-02)', async () => {
+    // Same negative control as the `syncing` case above, for the
+    // readiness value that fix's own guard didn't cover.
+    mockAuth.readiness = 'failed';
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+
+    renderScreen();
+
+    await screen.findAllByText(/Sender A/);
+    const freshness = screen.getByTestId('sender-results-freshness');
+    expect(freshness).toHaveTextContent(/scan failed/i);
+    expect(freshness).not.toHaveTextContent(/results as of/i);
   });
 
   it('makes placeholder rows read-only and announces the query transition', async () => {
