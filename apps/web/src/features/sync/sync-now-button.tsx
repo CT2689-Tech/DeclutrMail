@@ -6,7 +6,10 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Button, toast, tokens } from '@declutrmail/shared';
 
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
-import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
+import {
+  AUTH_RECOVERY_ERROR_CODES,
+  syncStatusNeedsReconnect,
+} from '@/features/mailboxes/mailbox-health';
 import { SYNC_STATUS_KEY, useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { useRetryInitialSync } from './api/use-retry-initial-sync';
 import { useSyncNow } from './api/use-sync-now';
@@ -175,7 +178,18 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
     // is NOT on the onboarding gate — `derive-step.ts` routes any
     // onboarded user past it — so this is the only chrome surface left
     // standing (QA-sync-20260831-03).
-    return <FailedSyncIndicator mailboxId={mailboxId} needsReconnect={needsReconnect} />;
+    //
+    // `needsReconnect` above is `InvalidGrantError`-only (matches the
+    // backend's `me.needsReconnect` sweep contract). The onboarding
+    // gate's own failure screen also reconnects for `AuthExpiredError`
+    // (QA-sync-20260831-07); Codex adversarial review found this
+    // indicator didn't, offering a doomed "Scan again" retry against the
+    // same dead token instead. Read the INITIAL-sync `error_code`
+    // directly against the shared recovery set so both surfaces agree.
+    const failedNeedsReconnect =
+      needsReconnect ||
+      (status.data?.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.data.error_code));
+    return <FailedSyncIndicator mailboxId={mailboxId} needsReconnect={failedNeedsReconnect} />;
   }
 
   // Pre-ready states (`queued` / `syncing`) already render the sync-gate

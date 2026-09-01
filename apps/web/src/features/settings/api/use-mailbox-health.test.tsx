@@ -134,6 +134,24 @@ describe('deriveMailboxHealth — hasSyncError (QA-sync-20260831-04)', () => {
     expect(health.hasSyncError).toBe(false);
   });
 
+  it('flags a tie between the error and success stamps, instead of reading it as healthy (Codex adversarial review)', () => {
+    // The negative control: reverting `>=` back to strict `>` makes this
+    // fail. The two stamps are written by mutually exclusive worker
+    // outcomes, so a genuine tie should never happen in practice — but
+    // if it did, this codebase's posture is to surface a possible
+    // problem rather than silently call it healthy.
+    const health = deriveMailboxHealth({
+      readiness_status: 'ready',
+      current_stage: 'ready',
+      progress_pct: 100,
+      is_ready_for_triage: true,
+      last_synced_at: '2026-08-20T00:00:00.000Z',
+      last_sync_error_at: '2026-08-20T00:00:00.000Z',
+      last_sync_error_code: 'RateLimitError',
+    });
+    expect(health.hasSyncError).toBe(true);
+  });
+
   it('does not double-count an InvalidGrantError as a plain sync error — needsReconnect already owns it', () => {
     const health = deriveMailboxHealth({
       readiness_status: 'ready',

@@ -70,6 +70,18 @@ export function useRetryInitialSync(mailboxId: string | null | undefined) {
       // screen is already stale and should re-render from server truth.
       // Key prefix, so the per-mailbox entry the gate reads is included.
       void qc.invalidateQueries({ queryKey: SYNC_STATUS_KEY });
+      // Codex adversarial review: `SyncNowButton`'s failed-indicator is
+      // the only chrome an already-onboarded user sees for this retry
+      // (the onboarding gate that WOULD show live progress doesn't
+      // render for them — `derive-step.ts` routes past it). Readiness
+      // moves to `queued`/`syncing` right after a `requeued` outcome, at
+      // which point that indicator returns `null` — so without this,
+      // clicking "Scan again" makes the button silently vanish with no
+      // confirmation anything happened. `not_failed`/`no_state` are
+      // designed no-ops (nothing new started), not toasted.
+      if (data.outcome === 'requeued') {
+        toast('Scan started — this can take a few minutes.', 'success');
+      }
     },
     // QA-sync-20260831-10 item 4: this is the user's ONLY recovery
     // control on a failed initial sync. Before this handler existed, a

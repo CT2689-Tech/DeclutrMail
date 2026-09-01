@@ -8,6 +8,7 @@ import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync'
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
+import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
 
 const { color, font } = tokens;
 
@@ -96,8 +97,12 @@ function activeStageIndex(status: SyncStatus): number {
  * or the backend's `INVALID_GRANT_ERROR`/`notNeedingReconnect` sweep
  * contract (packages/workers/src/mailbox-reconnect.ts), which govern
  * periodic-sweep eligibility and are a separate, wider change.
+ *
+ * Shared with `SyncNowButton`'s failed-indicator (Codex adversarial
+ * review of this QA round) — both surfaces read the one set exported
+ * from mailbox-health.ts so this classification can't drift between
+ * them again.
  */
-const AUTH_RECOVERY_ERROR_CODES = new Set(['InvalidGrantError', 'AuthExpiredError']);
 
 const ERROR_COPY: Record<string, string> = {
   RateLimitError:

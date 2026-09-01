@@ -13,10 +13,11 @@
 //   - No bulk-action chrome leaks into the screen (D32 — no select-all,
 //     no multi-select bar).
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import type { Me } from '@/features/auth/api/me-contract';
 import {
   TRIAGE_QUEUE,
   TRIAGE_SESSION_STATS,
@@ -29,8 +30,35 @@ import { findDomainBatches } from './domain-batch';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
 
+// QA-sync-20260831-01 (Codex adversarial review): the header lives in
+// `triage-screen.tsx` itself, reading `useOptionalAuth()` directly — a
+// blind spot the child-only `empty-state.test.tsx` coverage can't see.
+// Mocked at the module `useOptionalAuth` reads from (not `useMe`/
+// `AuthProvider`) so a static render doesn't need a real query result.
+const authCell: { me: Me | null } = { me: null };
+vi.mock('@/features/auth/auth-provider', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    useOptionalAuth: () => (authCell.me ? { me: authCell.me } : null),
+  };
+});
+
+function meWithMailboxReadiness(readiness: 'ready' | 'failed'): Me {
+  return {
+    user: { id: 'u1', email: 'me@example.com', workspaceId: 'w1', timezone: null },
+    mailboxes: [
+      { id: 'mb-1', email: 'me@example.com', status: 'active', connectedAt: null, readiness },
+    ],
+    activeMailboxId: 'mb-1',
+    tier: 'plus',
+    cleanupRemaining: null,
+  };
+}
+
 beforeEach(() => {
   resetTriageStore();
+  authCell.me = null;
 });
 
 /**
@@ -143,6 +171,32 @@ describe('TriageScreen — empty / loading branches', () => {
   it('renders the empty state when state.kind=ready but rows is []', () => {
     const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS });
     expect(html).toContain('New decisions appear as previously-scored senders resurface');
+  });
+
+  it('does not contradict the sync-failed body with a "Nothing waiting." header (Codex adversarial review of QA-sync-20260831-01)', () => {
+    // The negative control: reverting the header ternary's `mailboxSyncFailed`
+    // branch makes this fail — `empty-state.test.tsx` only exercises
+    // `TriageEmptyState` in isolation and can't see this: the PARENT
+    // header rendered a confident "Nothing waiting." right above the
+    // child's "This mailbox's last scan didn't finish." — the exact
+    // self-contradiction QA-sync-20260831-01 was supposed to remove.
+    authCell.me = meWithMailboxReadiness('failed');
+    const html = render(
+      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET }} />,
+    );
+    // `renderToStaticMarkup` HTML-escapes the straight apostrophe.
+    expect(html).toContain('Last scan didn&#x27;t finish.');
+    expect(html).not.toContain('Nothing waiting.');
+    expect(html).toContain('This mailbox&#x27;s last scan didn&#x27;t finish.');
+  });
+
+  it('keeps the ordinary "Nothing waiting." header when the mailbox synced fine', () => {
+    authCell.me = meWithMailboxReadiness('ready');
+    const html = render(
+      <TriageScreen state={{ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET }} />,
+    );
+    expect(html).toContain('Nothing waiting.');
+    expect(html).not.toContain('Last scan didn&#x27;t finish.');
   });
 
   it('surfaces the Plus upgrade nudge only when free tier and freeRemaining <= 5 (D33)', () => {

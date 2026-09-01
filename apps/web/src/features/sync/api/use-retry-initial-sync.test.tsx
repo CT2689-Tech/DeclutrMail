@@ -32,7 +32,13 @@ describe('useRetryInitialSync', () => {
     });
   }
 
-  it('does not toast on a successful requeue', async () => {
+  it('toasts confirmation on a successful requeue (Codex adversarial review of QA-sync-20260831-03)', async () => {
+    // The negative control: reverting the `outcome === 'requeued'` toast
+    // makes this assertion fail. `SyncNowButton`'s failed-indicator is the
+    // only chrome an already-onboarded user sees for this retry, and it
+    // renders `null` again the moment readiness moves to queued/syncing —
+    // without this toast, clicking "Scan again" made the button silently
+    // vanish with no confirmation anything happened.
     installFetchStub([
       {
         method: 'POST',
@@ -43,8 +49,28 @@ describe('useRetryInitialSync', () => {
     const { result } = renderRetry();
     act(() => result.current.mutate());
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(vi.mocked(toast)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast)).toHaveBeenCalledWith(
+      'Scan started — this can take a few minutes.',
+      'success',
+    );
   });
+
+  it.each(['not_failed', 'no_state'] as const)(
+    'does not toast a start confirmation for the designed no-op outcome %s',
+    async (outcome) => {
+      installFetchStub([
+        {
+          method: 'POST',
+          path: '/api/v1/sync/initial/retry',
+          respond: () => jsonOk({ data: { outcome } }),
+        },
+      ]);
+      const { result } = renderRetry();
+      act(() => result.current.mutate());
+      await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      expect(vi.mocked(toast)).not.toHaveBeenCalled();
+    },
+  );
 
   it('toasts a real message on failure, instead of silently doing nothing (QA-sync-20260831-10 item 4)', async () => {
     // The negative control: reverting the `onError` handler makes this

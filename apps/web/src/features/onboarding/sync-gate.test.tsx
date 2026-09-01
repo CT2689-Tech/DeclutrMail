@@ -209,15 +209,21 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 
-  it('clicking "Reconnect Gmail" starts OAuth targeted at the mailbox on screen', () => {
-    render(
-      withClient(
-        <SyncGate status={{ ...FAILED, error_code: 'InvalidGrantError' }} mailboxId="mb-1" />,
-      ),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
-    expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledWith('mb-1');
-  });
+  it.each(['InvalidGrantError', 'AuthExpiredError'] as const)(
+    'clicking "Reconnect Gmail" starts OAuth targeted at the mailbox on screen (%s)',
+    (errorCode) => {
+      // The negative control for `AuthExpiredError`: this closes a test
+      // gap Codex adversarial review found — the prior test only
+      // asserted the button's presence for `AuthExpiredError`, never
+      // that clicking it actually wires to `startMailboxConnect` rather
+      // than falling through to the retry mutation.
+      render(
+        withClient(<SyncGate status={{ ...FAILED, error_code: errorCode }} mailboxId="mb-1" />),
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+      expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledWith('mb-1');
+    },
+  );
 
   it('still offers a real retry for a non-auth failure (e.g. RateLimitError)', () => {
     render(withClient(<SyncGate status={FAILED} mailboxId="mb-1" />));
@@ -261,6 +267,25 @@ describe('SyncGate escape hatch (D116 — secondary connect)', () => {
         <SyncGate status={FAILED} escape={{ returnToEmail: 'primary@example.com', onReturn }} />,
       ),
     );
+    fireEvent.click(screen.getByRole('button', { name: /Go back to primary@example\.com/ }));
+    expect(onReturn).toHaveBeenCalledOnce();
+  });
+
+  it('failed-needing-reauth + escape: "Go back" is still reachable beside "Reconnect Gmail" (Codex adversarial review)', () => {
+    // Closes a test gap Codex found — the failed+escape case above only
+    // used the generic failure fixture; an auth-recovery error code
+    // swaps the primary button to "Reconnect Gmail", so this proves the
+    // escape hatch wasn't accidentally coupled to that branch choice.
+    const onReturn = vi.fn();
+    render(
+      withClient(
+        <SyncGate
+          status={{ ...FAILED, error_code: 'AuthExpiredError' }}
+          escape={{ returnToEmail: 'primary@example.com', onReturn }}
+        />,
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Go back to primary@example\.com/ }));
     expect(onReturn).toHaveBeenCalledOnce();
   });

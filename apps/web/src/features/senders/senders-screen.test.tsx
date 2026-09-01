@@ -425,6 +425,82 @@ describe('SendersScreen — edge states', () => {
     expect(screen.queryByText(/no senders yet/i)).not.toBeInTheDocument();
   });
 
+  it.each(['queued', 'syncing'] as const)(
+    'does not claim "no senders match" for a search while the mailbox is still %s (Codex adversarial review of QA-sync-20260831-02)',
+    async (readiness) => {
+      // The negative control: reverting the widened `mailboxStillSyncing`
+      // guard back to its old `!query && isDefaultCompose(compose)` scope
+      // makes this assertion fail — a search over an unfinished scan used
+      // to fall through to "No senders match", a stronger false claim
+      // than the unfiltered case the original QA-onboarding fix covered.
+      mockAuth.readiness = readiness;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: () =>
+            jsonOk({
+              data: [],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+              },
+            }),
+        },
+      ]);
+
+      renderScreen();
+      await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
+
+      fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+        target: { value: 'anything' },
+      });
+
+      await waitFor(() =>
+        expect(
+          screen.getByText(/still syncing, so this search can.t be answered/i),
+        ).toBeInTheDocument(),
+      );
+      expect(screen.queryByText(/no senders match/i)).not.toBeInTheDocument();
+    },
+  );
+
+  it('does not claim "no senders match" for a search while the mailbox scan has failed (Codex adversarial review of QA-sync-20260831-02)', async () => {
+    // Same negative control as the queued/syncing case above, for the
+    // `mailboxSyncFailed` guard.
+    mockAuth.readiness = 'failed';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /scan failed/i })).toBeInTheDocument(),
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+      target: { value: 'anything' },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText(/last scan didn.t finish, so this search can.t be answered/i),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(/no senders match/i)).not.toBeInTheDocument();
+  });
+
   it('searches server-side — finds a sender that is NOT on the first page (#145)', async () => {
     // The founder's bug: searching "dealskhoj" returned nothing because the
     // FE filtered only the loaded ≤50-row page. With server-side search the
@@ -528,6 +604,14 @@ describe('SendersScreen — edge states', () => {
     const freshness = screen.getByTestId('sender-results-freshness');
     expect(freshness).toHaveTextContent(/scan failed/i);
     expect(freshness).not.toHaveTextContent(/results as of/i);
+    // Codex adversarial review: initial-sync flushes sender identity rows
+    // in batches, before its final aggregate rebuild, so a mid-fetch
+    // failure can leave a MIX of a pre-failure snapshot and partially
+    // written, not-yet-aggregated rows — "from before this scan started"
+    // overclaimed a single, known provenance the backend can't guarantee.
+    // The negative control: reverting to that phrasing makes this fail.
+    expect(freshness).not.toHaveTextContent(/from before this scan started/i);
+    expect(freshness).toHaveTextContent(/may be incomplete or stale/i);
   });
 
   it('makes placeholder rows read-only and announces the query transition', async () => {

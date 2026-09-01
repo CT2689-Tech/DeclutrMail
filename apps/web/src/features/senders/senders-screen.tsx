@@ -2545,17 +2545,16 @@ function SendersScreenContent({
           transition: 'opacity 120ms ease',
         }}
       >
-        {senders.length === 0 && !query && isDefaultCompose(compose) && mailboxStillSyncing ? (
-          // QA-onboarding-20260828-01: an empty result on the default
-          // (unfiltered-from-the-user's-view) compose while the active
+        {senders.length === 0 && mailboxStillSyncing ? (
+          // QA-onboarding-20260828-01, widened by QA-sync-20260831-02's
+          // adversarial review round: an empty result while the active
           // mailbox is still `queued`/`syncing` is NOT "no active
-          // senders" — that asserts a completed-but-empty conclusion the
-          // app has not earned. Checked BEFORE the default-compose branch
-          // below (`isDefaultCompose(DEFAULT)` is active-only, which
-          // `hasAnyFilter` — correctly, for the "clear filters" affordance
-          // — counts as a filter, so this case would otherwise fall into
-          // the "no senders match these filters" branch, an even worse
-          // false claim).
+          // senders" or "no matches" — that asserts a completed
+          // conclusion (of the whole mailbox, or of a search over it)
+          // the app has not earned. Checked BEFORE the compose- and
+          // query-specific branches below, and unconditional on
+          // query/filters — a search over an unfinished scan is just as
+          // unanswerable as the unfiltered view.
           <EmptyState
             title="No senders yet"
             // Codex adversarial review, round 2: "will appear here"
@@ -2564,17 +2563,36 @@ function SendersScreenContent({
             // this active-only default even after the scan finishes.
             // Say what's true (the scan is still running), not what
             // will happen.
-            body="Your mailbox is still syncing. This list will update as the scan finishes."
+            body={
+              // `hasAnyFilter(compose)` is true even for the untouched
+              // DEFAULT compose (its active-only setting counts, on
+              // purpose, so "Clear filters" is offered on first visit —
+              // see the branch below). Checking it here would show the
+              // search-specific copy on every plain first-visit empty
+              // state. `!isDefaultCompose(compose)` is the actual "user
+              // narrowed something" signal.
+              query || !isDefaultCompose(compose)
+                ? "Your mailbox is still syncing, so this search can't be answered yet. Try again once the scan finishes."
+                : 'Your mailbox is still syncing. This list will update as the scan finishes.'
+            }
           />
-        ) : senders.length === 0 && !query && isDefaultCompose(compose) && mailboxSyncFailed ? (
+        ) : senders.length === 0 && mailboxSyncFailed ? (
           // QA-sync-20260831-02: same shape as the `mailboxStillSyncing`
           // branch above, for the one readiness value that guard didn't
-          // cover. An empty result here is either "no senders yet" or a
-          // pre-failure snapshot that emptied for an unrelated reason —
-          // either way, not a completed, caught-up scan.
+          // cover — widened the same way, on Codex adversarial review,
+          // to also cover a search/filtered view (which otherwise fell
+          // through to "no senders match", an even worse false claim
+          // about a search that never really ran to completion).
           <EmptyState
             title="Scan failed"
-            body="This mailbox's last scan didn't finish, so this list may be incomplete. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+            body={
+              // Same `!isDefaultCompose` reasoning as the `stillSyncing`
+              // branch above — `hasAnyFilter(compose)` alone would also
+              // match the plain default view.
+              query || !isDefaultCompose(compose)
+                ? "This mailbox's last scan didn't finish, so this search can't be answered. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+                : "This mailbox's last scan didn't finish, so this list may be incomplete. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+            }
           />
         ) : senders.length === 0 && !query && isDefaultCompose(compose) ? (
           // First-visit default is active-only (launch-audit B2). A
@@ -2867,14 +2885,19 @@ function SenderResultsFreshness({
         // QA-sync-20260831-02: same false-currency mechanism as the
         // `stillSyncing` branch below, for the readiness value that
         // guard didn't cover — a failed scan is neither "synced" nor
-        // "still syncing"; the rows shown (if any) are a pre-failure
-        // snapshot.
+        // "still syncing". Deliberately does NOT claim the rows are
+        // "from before this scan started" (Codex adversarial review):
+        // initial-sync flushes sender identity rows in batches, before
+        // its final aggregate rebuild, so a mid-fetch failure can leave
+        // a mix of a pre-failure snapshot AND partially-written,
+        // not-yet-aggregated rows from the failed attempt — "may be
+        // incomplete or stale" is true either way.
         <>
           <strong style={{ fontWeight: 600 }}>Scan failed</strong>
           <span>
             {totalSenders !== null
-              ? `Showing ${totalSenders.toLocaleString('en-US')} senders from before this scan started for ${mailboxEmail} — see Settings to try again.`
-              : `Showing senders from before this scan started for ${mailboxEmail} — see Settings to try again.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
+              : `Senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
           </span>
         </>
       ) : stillSyncing ? (

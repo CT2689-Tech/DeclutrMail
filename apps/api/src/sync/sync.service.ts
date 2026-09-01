@@ -489,12 +489,11 @@ export type InitialSyncRetryOutcome = 'requeued' | 'not_failed' | 'no_state';
 
 export function syncNotReady(): ConflictException {
   // QA-sync-20260831-10 item 1: `enqueueManualIncrementalSync`'s
-  // `not_ready` guard fires for FOUR distinct states — `queued`,
-  // `syncing`, `failed`, and a `ready`-but-cursorless mailbox — and the
-  // old message ("has not completed... yet") is only true for the
+  // `not_ready` guard fires for `queued`, `syncing`, and `failed` — and
+  // the old message ("has not completed... yet") is only true for the
   // first two. For `failed` specifically it is false: the mailbox's
   // scan did not merely fail to finish yet, it stopped, and nothing
-  // re-queues it automatically. This wording holds for all four.
+  // re-queues it automatically. This wording holds for all three.
   return new ConflictException({
     code: 'SYNC_NOT_READY',
     message:

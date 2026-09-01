@@ -1305,7 +1305,9 @@ export function TriageScreen({
               {state.kind === 'ready'
                 ? `${state.rows.length} decisions, one at a time.`
                 : state.kind === 'empty'
-                  ? 'Nothing waiting.'
+                  ? mailboxSyncFailed && state.stats.decidedToday === 0
+                    ? "Last scan didn't finish."
+                    : 'Nothing waiting.'
                   : state.kind === 'error'
                     ? "Couldn't load your decisions."
                     : 'Loading your decisions…'}

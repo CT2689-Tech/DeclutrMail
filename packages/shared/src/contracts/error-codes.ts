@@ -573,11 +573,21 @@ export const ERROR_CODES = {
   SYNC_NOT_READY: {
     status: 409,
     severityTier: 'inline_recoverable',
-    retryable: true,
-    // QA-sync-20260831-10 item 1: this covers `queued`/`syncing`/`failed`/
-    // a ready-but-cursorless mailbox — "has not completed... yet" is
-    // false for `failed`, which does not self-recover. Kept in step
-    // with the actual wire message in apps/api/src/sync/sync.service.ts.
+    // Codex adversarial review: `retryable` means "the SAME request
+    // might succeed if retried" (error-envelope.ts's own doc comment),
+    // and `classifyHttpError(409)` already treats a bare 409 as
+    // non-retryable for exactly that reason (error-envelope.test.ts).
+    // This entry overrode that to `true` with no stated reason — the
+    // mailbox's readiness has to CHANGE first (a worker finishing, or a
+    // manual retry succeeding); resubmitting the identical request
+    // 409s again every time. The controller test's own comment already
+    // says the intended behavior: "A retry would just re-throw — the FE
+    // must not loop."
+    retryable: false,
+    // QA-sync-20260831-10 item 1: this covers `queued`/`syncing`/`failed`
+    // — "has not completed... yet" is false for `failed`, which does not
+    // self-recover. Kept in step with the actual wire message in
+    // apps/api/src/sync/sync.service.ts.
     message:
       'This mailbox has no finished scan to sync from — the scan is still running, or it stopped before completing.',
   },

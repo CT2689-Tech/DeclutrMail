@@ -109,6 +109,15 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
     );
   }
 
+  // A `failed` (terminal INITIAL-sync) readiness is a different error
+  // family from the incremental failure this banner reads `errorAt` for
+  // — `markQueued` preserves a prior incremental error stamp across an
+  // initial-sync retry (Codex adversarial review), so the two can be
+  // simultaneously true. `SyncNowButton`'s failed-indicator already owns
+  // this state with the correct action; retrying here would 409 (the
+  // sync-now endpoint requires `readiness_status === 'ready'`).
+  if (status.data?.readiness_status === 'failed') return null;
+
   if (errorAt === null) return null;
 
   const errorMs = new Date(errorAt).getTime();

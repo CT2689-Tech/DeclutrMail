@@ -73,7 +73,13 @@ export function deriveMailboxHealth(status: SyncStatus): MailboxHealth {
   const hasSyncError =
     !needsReconnect &&
     errorAt !== null &&
-    (syncedAt === null || new Date(errorAt).getTime() > new Date(syncedAt).getTime());
+    // Codex adversarial review: strict `>` read an error stamped in the
+    // same instant as the last success as healthy. The two are written
+    // by mutually exclusive worker outcomes, so a genuine tie should
+    // never happen — `>=` means a coincidental tie still surfaces the
+    // error instead of silently hiding it, matching this codebase's
+    // "never quietly report healthy when unsure" posture.
+    (syncedAt === null || new Date(errorAt).getTime() >= new Date(syncedAt).getTime());
   return {
     lastSyncedAt: syncedAt,
     needsReconnect,

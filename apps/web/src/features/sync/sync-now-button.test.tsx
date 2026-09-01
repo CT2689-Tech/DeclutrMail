@@ -235,32 +235,53 @@ describe('SyncNowButton — readiness_status=failed (QA-sync-20260831-03)', () =
     expect(screen.queryByRole('button', { name: /reconnect gmail/i })).not.toBeInTheDocument();
   });
 
-  it('offers "Reconnect Gmail" instead of a doomed retry when the failure needs reauthorization', async () => {
-    statusCell.data = statusOf({
-      readiness_status: 'failed',
-      current_stage: 'failed',
-      error_code: 'InvalidGrantError',
-    });
+  it.each(['InvalidGrantError', 'AuthExpiredError'] as const)(
+    'offers "Reconnect Gmail" instead of a doomed retry when the failure needs reauthorization (%s)',
+    async (errorCode) => {
+      // The negative control for `AuthExpiredError`: reverting
+      // `FailedSyncIndicator`'s `needsReconnect` to the plain
+      // `InvalidGrantError`-only `syncStatusNeedsReconnect` makes this
+      // case fail — the onboarding gate's own failure screen already
+      // reconnects for `AuthExpiredError` (QA-sync-20260831-07); this
+      // indicator didn't, offering "Scan again" against the same dead
+      // token instead (Codex adversarial review).
+      statusCell.data = statusOf({
+        readiness_status: 'failed',
+        current_stage: 'failed',
+        error_code: errorCode,
+      });
 
-    renderButton('mailbox-1');
-    const reconnectButton = screen.getByRole('button', { name: /reconnect gmail/i });
-    await act(async () => {
-      fireEvent.click(reconnectButton);
-    });
+      renderButton('mailbox-1');
+      const reconnectButton = screen.getByRole('button', { name: /reconnect gmail/i });
+      await act(async () => {
+        fireEvent.click(reconnectButton);
+      });
 
-    expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledTimes(1);
-    expect(retryInitialSyncMutate).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: /scan again/i })).not.toBeInTheDocument();
-  });
+      // Also asserts the mailbox id the button reconnects: the retry
+      // route requires the id being DISPLAYED, never a server-resolved
+      // "active" mailbox — the same requirement `useRetryInitialSync`
+      // documents for its own POST (Codex adversarial review).
+      expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(startMailboxConnect)).toHaveBeenCalledWith('mailbox-1');
+      expect(retryInitialSyncMutate).not.toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: /scan again/i })).not.toBeInTheDocument();
+    },
+  );
 
-  it('still hides Sync now for pre-ready states (`queued`/`syncing`) — the onboarding gate owns those', () => {
-    statusCell.data = statusOf({ readiness_status: 'syncing', current_stage: 'fetching_metadata' });
+  it.each(['queued', 'syncing'] as const)(
+    'still hides Sync now for pre-ready states (`queued`/`syncing`) — the onboarding gate owns those (%s)',
+    (readiness) => {
+      statusCell.data = statusOf({
+        readiness_status: readiness,
+        current_stage: 'fetching_metadata',
+      });
 
-    renderButton('mailbox-1');
+      renderButton('mailbox-1');
 
-    expect(screen.queryByText(/scan failed/i)).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: /check gmail for new emails/i }),
-    ).not.toBeInTheDocument();
-  });
+      expect(screen.queryByText(/scan failed/i)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /check gmail for new emails/i }),
+      ).not.toBeInTheDocument();
+    },
+  );
 });
