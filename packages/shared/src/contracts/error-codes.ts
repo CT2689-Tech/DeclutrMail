@@ -573,21 +573,31 @@ export const ERROR_CODES = {
   SYNC_NOT_READY: {
     status: 409,
     severityTier: 'inline_recoverable',
-    // Codex adversarial review: `retryable` means "the SAME request
-    // might succeed if retried" (error-envelope.ts's own doc comment),
-    // and `classifyHttpError(409)` already treats a bare 409 as
-    // non-retryable for exactly that reason (error-envelope.test.ts).
-    // This entry overrode that to `true` with no stated reason — the
-    // mailbox's readiness has to CHANGE first (a worker finishing, or a
-    // manual retry succeeding); resubmitting the identical request
-    // 409s again every time. The controller test's own comment already
-    // says the intended behavior: "A retry would just re-throw — the FE
-    // must not loop."
+    // `enqueueManualIncrementalSync`'s `not_ready` guard fires for THREE
+    // different readiness states this one boolean can't fully capture:
+    // `queued`/`syncing` self-recover with no user action (a worker
+    // finishing is enough — the same criterion `SUBSCRIPTION_REFUND_
+    // SETTLING`'s comment states for ITS `retryable: true` below), but
+    // `failed` does not — nothing re-queues it automatically, and the
+    // controller test's own comment already names the intended
+    // behavior: "A retry would just re-throw — the FE must not loop."
+    // `false` is chosen for the worse case (retrying `failed` is
+    // actively pointless), not because every covered state agrees with
+    // it — a state-accurate value needs `enqueueManualIncrementalSync`
+    // to return WHICH state it saw, not just `not_ready`, which is a
+    // real but separate follow-up (architecture-guardian + Codex
+    // adversarial review both independently flagged this; blast radius
+    // today is zero — no `apps/web` code reads `error.retryable` for
+    // this code, only `err.code`).
     retryable: false,
     // QA-sync-20260831-10 item 1: this covers `queued`/`syncing`/`failed`
     // — "has not completed... yet" is false for `failed`, which does not
     // self-recover. Kept in step with the actual wire message in
-    // apps/api/src/sync/sync.service.ts.
+    // apps/api/src/sync/sync.service.ts (duplicated there rather than
+    // read from this registry — `syncNotReady()` throws a raw
+    // `ConflictException`, not `AppException`, so the registry's
+    // `message` never reaches the wire; also flagged by
+    // architecture-guardian as a real but separate follow-up).
     message:
       'This mailbox has no finished scan to sync from — the scan is still running, or it stopped before completing.',
   },
