@@ -304,8 +304,23 @@ export function SendersScreen() {
   // search key it can be `isPlaceholderData: true` — showing the PRIOR
   // search's rows/count under this search's own notice. Wait for the
   // real response before trusting it.
+  //
+  // Codex round-2 review: that guard alone still misses a narrower
+  // window. `query` (raw, updated as soon as `SenderSearch`'s own
+  // internal debounce settles) can already read the NEW search term
+  // while `debouncedQuery` — this hook's OWN extra 150ms debounce,
+  // which is what actually keys `widenProbe`'s query — is still on the
+  // OLD term. In that window react-query correctly reports the old
+  // term's response as fresh (not a placeholder — nothing has asked it
+  // to fetch the new term yet), so the `isPlaceholderData` check above
+  // passes while the notice interpolates the NEW `query` text over the
+  // OLD term's rows/count. Only trust it once the two agree.
   const showingWidened =
-    searchNarrowedToNothing && !keepNarrow && !widenProbe.isPlaceholderData && widenedCount > 0;
+    searchNarrowedToNothing &&
+    !keepNarrow &&
+    !widenProbe.isPlaceholderData &&
+    query.trim() === debouncedQuery &&
+    widenedCount > 0;
 
   const allSenders = useMemo<Sender[]>(() => {
     const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
@@ -423,11 +438,17 @@ export function SendersScreen() {
       // `isPending`/`isError`. Without this, a second starved search
       // could report "N sender matches outside these filters" using a
       // count that actually belongs to the first search.
+      // Codex round-2 review: same `query.trim() === debouncedQuery` gap
+      // as `showingWidened` above — this value feeds the empty-state
+      // BODY TEXT ("N sender matches outside these filters"), so it
+      // needs the identical guard against the raw-vs-debounced query
+      // mismatch window, not just the placeholder/pending/error cases.
       matchesOutsideFilters={
         searchNarrowedToNothing &&
         !widenProbe.isPending &&
         !widenProbe.isError &&
-        !widenProbe.isPlaceholderData
+        !widenProbe.isPlaceholderData &&
+        query.trim() === debouncedQuery
           ? widenedCount
           : null
       }
@@ -2543,6 +2564,9 @@ function SendersScreenContent({
             onDelete: deleteSavedView,
             canSaveCurrent: hasAnyFilter(compose),
             capReached: savedViews.length >= SENDER_VIEWS_CAP,
+            // Codex round-2 review — see ViewsMenuProps.mutating's own
+            // comment for why this matters.
+            mutating: saveViews.isPending,
           }}
         />
       )}
@@ -2641,15 +2665,20 @@ function SendersScreenContent({
                  (singular) is only reached when activity really was the
                  only one. */}
           <span>
+            {/* Codex round-2 review: "1 do without…" — subject/verb
+                agreement broke at exactly the count (1) this notice is
+                least likely to be skimmed past. */}
             {widenedFrom === 'filtered' ? (
               <>
                 No senders match &ldquo;{query}&rdquo; under your filters —{' '}
-                {widenedCount.toLocaleString('en-US')} do without them.
+                {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'} without
+                them.
               </>
             ) : (
               <>
                 No {widenedFrom} senders match &ldquo;{query}&rdquo; —{' '}
-                {widenedCount.toLocaleString('en-US')} do without that filter.
+                {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'} without
+                that filter.
               </>
             )}
           </span>
@@ -2706,7 +2735,12 @@ function SendersScreenContent({
               // search-specific copy on every plain first-visit empty
               // state. `!isDefaultCompose(compose)` is the actual "user
               // narrowed something" signal.
-              query || !isDefaultCompose(compose)
+              //
+              // Codex round-2 review: was raw `query` — the same
+              // whitespace-only-search-box inconsistency the sibling
+              // filter-only branch further down was fixed for, one
+              // branch over.
+              hasQuery || !isDefaultCompose(compose)
                 ? "Your mailbox is still syncing, so this search can't be answered yet. Try again once the scan finishes."
                 : 'Your mailbox is still syncing. This list will update as the scan finishes.'
             }
@@ -2724,7 +2758,7 @@ function SendersScreenContent({
               // Same `!isDefaultCompose` reasoning as the `stillSyncing`
               // branch above — `hasAnyFilter(compose)` alone would also
               // match the plain default view.
-              query || !isDefaultCompose(compose)
+              hasQuery || !isDefaultCompose(compose)
                 ? "This mailbox's last scan didn't finish, so this search can't be answered. Your Gmail is untouched — see Settings → Gmail accounts to try again."
                 : "This mailbox's last scan didn't finish, so this list may be incomplete. Your Gmail is untouched — see Settings → Gmail accounts to try again."
             }

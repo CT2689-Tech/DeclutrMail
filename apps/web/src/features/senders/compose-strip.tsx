@@ -761,10 +761,22 @@ function Popover({ children }: { children: React.ReactNode }) {
   // the LEFT edge (common once the strip wraps at 375px) opens a
   // right-anchored 220px popover that runs off the LEFT edge instead,
   // and nothing here ever checked the BOTTOM edge. Measures its own
-  // rendered position once (menus are short-lived — opened, used,
-  // closed on the next click/Escape — so a resize/scroll listener
-  // would be tracking a target that's about to unmount anyway) and
-  // clamps whichever edges actually overflow.
+  // rendered position once and clamps whichever edges actually
+  // overflow.
+  //
+  // Codex round-2 review, known remaining gap (not fixed — see below):
+  // measuring once on mount misses content that grows AFTER mount
+  // while the same popover instance stays open — Domain's suggestion
+  // list as the draft changes, or Views' saved-view list once a fetch
+  // resolves after the menu was already opened. A short popover could
+  // pass the bottom-edge check at open time, then grow past it with no
+  // remeasurement. A `ResizeObserver` re-running this same clamp on
+  // every size change would close this, but doing that safely needs
+  // the flip decision anchored to the TRIGGER's stable position (this
+  // component's `ref` is on the popover itself, which the flip already
+  // repositions — recomputing from ITS OWN rect on every resize risks
+  // oscillating between the two states) — a real fix, not attempted
+  // here without a further review pass to catch that class of mistake.
   const [edgeFix, setEdgeFix] = useState<React.CSSProperties>({});
   useLayoutEffect(() => {
     const el = ref.current;
@@ -778,6 +790,18 @@ function Popover({ children }: { children: React.ReactNode }) {
     if (rect.bottom > window.innerHeight - 8) {
       fix.top = 'auto';
       fix.bottom = 'calc(100% + 8px)';
+      // Codex round-2 review: flipping to open ABOVE the trigger used
+      // the same full-viewport `maxHeight` as the un-flipped case,
+      // which only bounds the popover's OWN size — nothing stopped a
+      // popover taller than the space actually available above a
+      // trigger sitting near the top of a short viewport from pushing
+      // past `top: 0` regardless. Cap it to the space that's really
+      // there (trigger's own top edge, minus the 8px gap, minus an 8px
+      // margin) instead of the whole viewport, so the flipped popover
+      // physically cannot extend above the visible area — content that
+      // doesn't fit scrolls via the existing `overflowY: auto`.
+      const availableAbove = rect.top - 8 - 8;
+      fix.maxHeight = Math.max(80, availableAbove);
     }
     setEdgeFix(fix);
   }, []);
@@ -1021,6 +1045,17 @@ export interface ViewsMenuProps {
   canSaveCurrent: boolean;
   /** True at the 10-view cap — save affordance disabled with copy. */
   capReached: boolean;
+  /**
+   * True while a save/delete PATCH is in flight. Codex round-2 review:
+   * the underlying mutation (`useSaveSenderViews`) is a plain
+   * full-replace write with no serialization — building the next
+   * payload from a stale `savedViews` snapshot if a second write fires
+   * before the first resolves can resurrect a view just deleted, or
+   * lose an unrelated change. Disabling the mutating controls while
+   * one write is in flight makes that race unreachable from the UI
+   * without touching the mutation hook itself.
+   */
+  mutating?: boolean;
 }
 
 /**
@@ -1036,6 +1071,7 @@ function ViewsMenu({
   onDelete,
   canSaveCurrent,
   capReached,
+  mutating = false,
 }: ViewsMenuProps) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
@@ -1068,7 +1104,7 @@ function ViewsMenu({
 
   const saveDraft = () => {
     const name = draft.trim();
-    if (name.length === 0 || capReached) return;
+    if (name.length === 0 || capReached || mutating) return;
     onSave(name);
     setDraft('');
   };
@@ -1133,6 +1169,12 @@ function ViewsMenu({
                 // QA-senders-filtering-20260901-06: was `padding: '0 8px'`
                 // with no explicit height — an ~12px-tall hit target
                 // immediately beside the row that applies the view.
+                //
+                // Codex round-2 review: `disabled` while a write is in
+                // flight closes the rapid-double-delete race described
+                // on `mutating` above, purely by making a second click
+                // unreachable until the first PATCH has settled.
+                disabled={mutating}
                 onClick={() => {
                   if (armedDelete === name) {
                     onDelete(name);
@@ -1145,7 +1187,8 @@ function ViewsMenu({
                   background: 'transparent',
                   border: armedDelete === name ? `1px solid ${color.danger}` : 'none',
                   borderRadius: 6,
-                  cursor: 'pointer',
+                  cursor: mutating ? 'default' : 'pointer',
+                  opacity: mutating ? 0.5 : 1,
                   color: armedDelete === name ? color.danger : color.fgMuted,
                   fontFamily: font.sans,
                   fontSize: armedDelete === name ? 11 : 12,
@@ -1201,17 +1244,23 @@ function ViewsMenu({
               <button
                 type="button"
                 onClick={saveDraft}
-                disabled={capReached || draft.trim().length === 0}
+                // Codex round-2 review: same in-flight-write guard as the
+                // Delete button above, on the OTHER mutating action this
+                // menu offers.
+                disabled={capReached || draft.trim().length === 0 || mutating}
                 style={{
                   fontFamily: font.mono,
                   fontSize: 11,
                   letterSpacing: '0.04em',
                   color:
-                    capReached || draft.trim().length === 0 ? color.fgMuted : 'var(--color-amber)',
+                    capReached || draft.trim().length === 0 || mutating
+                      ? color.fgMuted
+                      : 'var(--color-amber)',
                   background: 'transparent',
                   border: 'none',
                   padding: '0 4px',
-                  cursor: capReached || draft.trim().length === 0 ? 'not-allowed' : 'pointer',
+                  cursor:
+                    capReached || draft.trim().length === 0 || mutating ? 'not-allowed' : 'pointer',
                 }}
               >
                 save
