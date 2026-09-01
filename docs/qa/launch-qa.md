@@ -756,6 +756,54 @@ history-retention expiry without waiting out the real window); two literal
 concurrent browser tabs; unsubscribe execution and `U` (Safety §, never
 pressed).
 
+**Founder-approved fix + Codex review outcome.** The founder approved 3
+groups (P0: 01/02/04; P1 shell/UX: 03/05/07; P2: 08/09/10) — explicitly
+NOT 06 (OAuth-reconnect-adjacent, flagged for sizing). 08 was deferred to
+its own change; the rest landed as `2925b5e5`, then went through Codex
+adversarial review at the skill's 2-round cap:
+
+- **Round 1** (`0b675112`) fixed 5 real defects the first pass missed:
+  Triage's parent header still contradicted its fixed child body; Senders'
+  new guards only covered the default unfiltered view (search/filtered
+  views fell through) and its failed-state copy overclaimed a single
+  provenance for partially-written rows; `SyncNowButton` didn't recognize
+  `AuthExpiredError` the onboarding gate already did, `SyncErrorBanner`
+  could co-render a doomed retry beside the fix, and a successful "Scan
+  again" left the button silently vanishing; `SYNC_NOT_READY.retryable`
+  was `true` despite 409ing on an identical retry. Also tightened an
+  error/success timestamp-tie edge case and closed 2 test-coverage-only
+  findings.
+- **Round 2** (`7da14596`, closing the cap) found one sibling defect round
+  1 missed applying the same fix to — Senders' `stillSyncing` freshness
+  copy still claimed the false single provenance already fixed for
+  `syncFailed` — plus 2 non-blocking test-quality/wording issues (a
+  retry-success toast overclaiming "started" vs. the response's actual
+  "queued" guarantee; a new parameterized test sharing one mock across
+  both cases with no clear between them). All fixed, each with a verified
+  negative control.
+- Round 2 also **withdrew, then corrected**, round 1's own "ready-but-
+  cursorless is unreachable" claim: right that no _production-runtime_
+  writer can produce it, but two _repository_ writers can —
+  `scripts/cloud-seed.sql` and `packages/e2e/helpers/seed-billing.ts`
+  insert `ready` rows without a cursor for local/e2e seeding, and the DB
+  schema doesn't enforce the invariant. Neither is user-reachable, so no
+  message change followed — recorded as a claim-precision correction, not
+  a product defect.
+- Non-blocking findings left open, recorded in `qa-worklist.md` for the
+  founder: Triage's queued/syncing awareness gap and the `decidedToday>0`
+  completion-state overlap; Senders' filter-only wording and the lost
+  "Clear search & filters" escape hatch during a failure/sync; the
+  `SYNC_NOT_READY.retryable` value being correct for `failed` but not
+  fully accurate for the `queued`/`syncing` states the same guard also
+  covers (currently inert — nothing reads `err.retryable` for this code);
+  and QA-04's health-query loading/error fallthrough plus its status-dot
+  color mismatch.
+
+Both commits pass `pnpm typecheck`/`lint`/targeted `vitest` across
+`@declutrmail/web`, `@declutrmail/api`, `@declutrmail/shared`. Per the
+2-round cap, no third Codex round was dispatched — the founder decides
+whether/how to propose this for merge from here.
+
 ## Outstanding restores
 
 **Check this section before starting any run, and clear it first.**
