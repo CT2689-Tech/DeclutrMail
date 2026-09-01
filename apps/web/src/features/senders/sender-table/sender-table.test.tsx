@@ -82,7 +82,6 @@ function Harness(initial: Partial<SenderTableProps>) {
         loading={initial.loading}
         error={initial.error}
         onRetry={initial.onRetry}
-        emptyKind={initial.emptyKind}
         density={initial.density}
       />
     </QueryWrapper>
@@ -417,13 +416,15 @@ describe('SenderTable', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('renders distinct empty copy per emptyKind', () => {
-    const { rerender } = render(<Harness rows={[]} emptyKind="no-senders" />);
-    expect(screen.getByText(/no senders yet/i)).toBeTruthy();
-    rerender(<Harness rows={[]} emptyKind="no-filter-match" />);
-    expect(screen.getByText(/no senders match this filter/i)).toBeTruthy();
-    rerender(<Harness rows={[]} emptyKind="no-search-match" />);
-    expect(screen.getByText(/no matches/i)).toBeTruthy();
+  // QA-senders-filtering-20260901-01: was 'renders distinct empty copy
+  // per emptyKind', asserting a 3-way discriminator the parent Senders
+  // screen could never actually pass — its own empty-state ternary
+  // always renders first, so `rows.length === 0` never reached this
+  // table in production. Down to the one generic message it actually
+  // shows in its only reachable defensive case.
+  it('renders a generic empty row when given zero rows', () => {
+    render(<Harness rows={[]} />);
+    expect(screen.getByText(/no senders to show/i)).toBeTruthy();
   });
 
   it('falls back to email when displayName is empty', () => {

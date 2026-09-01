@@ -2318,3 +2318,46 @@ two came back with something real (A, D).
 the founder decides whether to ship as-is or request a human-reviewed
 round 3. A's and D's fixes are in the working tree pending the founder's
 call.
+
+## senders-filtering
+
+Rows accumulate across every `/ct-qa senders-filtering` run. First filed
+2026-09-01 (9 survivors; 1 candidate refuted before filing — the run's own
+tooling mistake, see the ledger's Refuted table). No P0/P1 this run, so
+nothing here also lives in `FINDINGS.md`.
+
+|     | id                               | sev | one line                                                                                                                                                                                                                                                                                                                                                                                                                                                    | status   | PR  |
+| --- | -------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --- |
+| ⬜  | QA-senders-filtering-20260901-01 | P2  | A zero-result filter-only combo (no search term) hides the ENTIRE filter bar, leaving only a nuclear "Clear search & filters" that also wipes any search term — the same file already has a working, non-destructive rescue for the search-narrowed-to-nothing case; Table view loses its sort headers through the same gate, and `SenderTable`'s own 3-way empty-state copy is provably unreachable dead code with a passing test asserting behavior on it | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-02 | P2  | Chip negation (right-click/alt-click to exclude) is invisible: the negated chip shows the SAME label and count as the included state (color only), nothing on screen teaches the gesture, there is no touch/mobile equivalent at all, and `aria-checked` announces "checked" for both the included AND excluded state                                                                                                                                       | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-03 | P2  | Truth/grammar bundle: the search-widen notice claims "showing all N" when only 50 rows actually render; a literal `'filtered'` string leaks into "No filtered senders match…"; the negated "has unsubscribe" chip conflates a confirmed-none sender with one never yet checked (a real NULL-vs-false distinction the schema documents); "Keep {bucket} only" collides with the screen's own canonical Keep verb                                             | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-04 | P2  | Three different meanings of "quiet" live on one toolbar (a bounded 30–180d chip, an open-ended Nd+ window, and a sort direction); 2 of the 5 Quiet-for window options exactly duplicate chips already on the same strip, and 2 combinations (quiet + 6 months+, quiet + 1 year+) are permanently, structurally empty by construction                                                                                                                        | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-05 | P2  | The sender-search typeahead swaps units and populations mid-keystroke: a local-fallback suggestion shows "N in last 90d," then ~250ms later the remote result replaces it with "N emails · active" for the identical row, no explanation, can move by orders of magnitude                                                                                                                                                                                   | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-06 | P2  | The Saved Views popover's empty state teaches nothing ("No saved views yet.") and its Delete-view control is a silent, unconfirmed 12px `×` sitting immediately beside Apply — success fires no toast at all, only failure does                                                                                                                                                                                                                             | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-07 | P2  | The Senders count line hardcodes `timeZone: 'UTC'` instead of the reader's own timezone — a new instance of the same mechanism already fixed once on Triage's toast/preview (`QA-triage-20260827-09`, merged in #671), now found on a different surface                                                                                                                                                                                                     | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-08 | P3  | Mobile: popovers (Domain/Sort/Views/Quiet-for) have no viewport-edge clamp and can render off-screen at 375px for chips later in the wrapped row; the whole strip dims to 0.6 opacity during a background refetch, compounding with already-dimmed inactive-chip counts to read as "disabled" rather than "updating"                                                                                                                                        | Approved |     |
+| ⬜  | QA-senders-filtering-20260901-09 | P3  | Verbosity/hygiene bundle: empty-state body narrates search mechanism instead of stating the fact; the freshness caption repeats the mailbox email already shown in the eyebrow 3 lines above; the saved-views cap is duplicated as two separate constants (`SAVED_VIEWS_CAP` locally, `SENDER_VIEWS_CAP` from the shared contract) for the same limit, stated in two different sentences                                                                    | Approved |     |
+
+### QA-senders-filtering-20260901-01 — corrected mechanism note
+
+The seed (zero-result filter combo hides the whole `ComposeStrip`) was this
+run's own live find, sent to `finding-refuter` and SURVIVED — see the
+ledger's `senders-filtering` section for the refuter's strengthening
+argument (`clearSearchAndFilters` lands on `EMPTY_COMPOSE` not
+`DEFAULT_COMPOSE`; `router.replace` means no per-filter browser-Back undo;
+Saved Views is itself hidden by the same gate). The Table-view / dead-code
+half is entirely `defect-class-sweeper`-sourced, not independently
+live-driven this run — the sweeper gave an exact `curl .../senders/summary`-
+style repro and a concrete negative-control test (assert the strip's
+"clear filters" button is present at zero results — no such assertion
+exists today, so nothing currently regresses).
+
+**Regression test, once approved:** `senders-screen.test.tsx` — seed a
+filter combo that returns zero rows, assert `screen.getByRole('button',
+{ name: /clear filters/i })` (the ComposeStrip's own gentler `onClear`,
+NOT the EmptyState's "Clear search & filters") is present. For the Table
+view half: `sender-table.test.tsx`'s existing `'renders distinct empty
+copy per emptyKind'` test should be deleted only if the fix is "make
+`SenderTable` genuinely reachable" is rejected in favor of "delete the
+dead `emptyKind` prop" — the founder's call per the sweeper's note, not
+this run's.

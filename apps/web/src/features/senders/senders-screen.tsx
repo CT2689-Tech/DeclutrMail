@@ -2236,6 +2236,11 @@ function SendersScreenContent({
       saveViews.mutate(
         savedViews.filter((v) => v.name !== name),
         {
+          // QA-senders-filtering-20260901-06: this was silent on success —
+          // the only feedback for an irreversible delete sitting right
+          // beside Apply was failure. Save/Apply above both toast either
+          // way; Delete now matches.
+          onSuccess: () => toast(`Deleted view "${name}"`, 'success'),
           onError: (err) => {
             captureFeatureException(err, { surface: 'senders', reason: 'delete_view' });
             toast(`Couldn't delete the view "${name}"`, 'warn');
@@ -2436,8 +2441,20 @@ function SendersScreenContent({
       {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
           Counts on chips are mailbox-wide absolutes (filterCounts),
           NOT loaded-page derivations. URL state via useComposeState
-          makes the scope shareable + refresh-stable. */}
-      {senders.length > 0 && (
+          makes the scope shareable + refresh-stable.
+
+          QA-senders-filtering-20260901-01: stays mounted through a
+          filter-only zero-result too, not just senders.length > 0 — a
+          user who narrows themselves to nothing is the one person who
+          most needs to see and adjust a chip, not lose the whole strip.
+          Excludes the still-syncing/scan-failed states on purpose: those
+          empty states are "not answerable yet", not "your filters
+          excluded everything", and showing live filter counts against an
+          incomplete scan would be its own false claim. */}
+      {(senders.length > 0 ||
+        ((query.length > 0 || hasAnyFilter(compose)) &&
+          !mailboxStillSyncing &&
+          !mailboxSyncFailed)) && (
         <ComposeStrip
           state={compose}
           updating={countsMayBeStale}
@@ -2522,8 +2539,11 @@ function SendersScreenContent({
       {/* F011 — the widened-search notice.
           Announced, never silent: the rows below are NOT what the
           filters ask for, and a user who set those filters deliberately
-          is owed both that fact and a way back. "Keep <filter> only"
-          returns the honest empty result rather than clearing anything,
+          is owed both that fact and a way back. The "Show <filter> only" /
+          "Use my filters" button (QA-senders-filtering-20260901-03: was
+          "Keep <filter> only" — collided with the screen's own canonical
+          Keep verb) returns the honest empty result rather than clearing
+          anything,
           so the query survives either choice — the dead end the old
           "Clear search & filters" created was that it threw away the
           search along with the filter. */}
@@ -2546,12 +2566,31 @@ function SendersScreenContent({
             color: color.fgMuted,
           }}
         >
+          {/* QA-senders-filtering-20260901-03: two fixes.
+              1. "showing all N" claimed N rows were rendered; only a page
+                 (`limit`) ever is — "showing those" states the true fact
+                 (the widened set is now what's on screen) without a count
+                 claim about the DOM.
+              2. `describeNarrowedFilters` returning the literal string
+                 'filtered' for a non-activity narrowing (protected/
+                 has-unsub/domain) reads as a stray adjective, not a noun
+                 — "under your filters" says the same thing as a normal
+                 sentence instead of a magic-word sentinel. */}
           <span>
-            No {widenedFrom} senders match &ldquo;{query}&rdquo; — showing all{' '}
-            {widenedCount.toLocaleString('en-US')}.
+            {widenedFrom === 'filtered' ? (
+              <>
+                No senders match &ldquo;{query}&rdquo; under your filters.{' '}
+                {widenedCount.toLocaleString('en-US')} match without them — showing those.
+              </>
+            ) : (
+              <>
+                No {widenedFrom} senders match &ldquo;{query}&rdquo;.{' '}
+                {widenedCount.toLocaleString('en-US')} match without that filter — showing those.
+              </>
+            )}
           </span>
           <Button tone="ghost" onClick={onKeepNarrow}>
-            Keep {widenedFrom} only
+            {widenedFrom === 'filtered' ? 'Use my filters' : `Show ${widenedFrom} only`}
           </Button>
         </div>
       )}
@@ -2669,15 +2708,24 @@ function SendersScreenContent({
               query && matchesOutsideFilters !== null && matchesOutsideFilters > 0
                 ? `${matchesOutsideFilters.toLocaleString('en-US')} ${matchesOutsideFilters === 1 ? 'sender matches' : 'senders match'} outside these filters.`
                 : query && hasAnyFilter(compose) && matchesOutsideFilters === 0
-                  ? 'We also looked outside the filters and found nothing, so this is the whole answer.'
-                  : 'Try a different search or clear the filters.'
+                  ? // QA-senders-filtering-20260901-09: narrated the search
+                    // procedure instead of stating the fact the user acts on.
+                    'Nothing matches outside your filters either.'
+                  : query
+                    ? 'Try a different search or clear the filters.'
+                    : // QA-senders-filtering-20260901-03: no search was made
+                      // here — the widening probe only runs off a query
+                      // (searchNarrowedToNothing), so this is a pure filter
+                      // combination excluding everything. Naming a search
+                      // the user never made made them doubt what they did.
+                      'Nothing matches this combination of filters.'
             }
             action={
               query && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
                 // Widening keeps the query; clearing throws it away. Lead
                 // with the one that answers what the user asked.
-                <Button onClick={onWiden}>Show them</Button>
-              ) : (
+                <Button onClick={onWiden}>Show all matches</Button>
+              ) : query ? (
                 <Button
                   onClick={() => {
                     clearSearchAndFilters();
@@ -2685,6 +2733,8 @@ function SendersScreenContent({
                 >
                   Clear search &amp; filters
                 </Button>
+              ) : (
+                <Button onClick={clearCompose}>Clear filters</Button>
               )
             }
           />
@@ -2759,13 +2809,6 @@ function SendersScreenContent({
               const adapted = enrichSenderRow(sender);
               requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
             }}
-            emptyKind={
-              query.trim() !== ''
-                ? 'no-search-match'
-                : hasAnyFilter(compose)
-                  ? 'no-filter-match'
-                  : 'no-senders'
-            }
           />
         )}
 
@@ -3009,9 +3052,14 @@ function SenderResultsFreshness({
           </span>
           <span aria-hidden="true">·</span>
           <span>
+            {/* QA-senders-filtering-20260901-09: "for {mailboxEmail}" here
+                repeated the eyebrow 3 lines above verbatim
+                ("Senders · chintan.a.thakkar@gmail.com") — the eyebrow is
+                the one that answers "which mailbox", this line only
+                needs to answer "how many". */}
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail}`
-              : `Matching count and rows for ${mailboxEmail}`}
+              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox`
+              : 'Matching count and rows'}
           </span>
         </>
       )}
@@ -3022,12 +3070,16 @@ function SenderResultsFreshness({
 function formatSenderSnapshotTime(iso: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return 'time unavailable';
+  // QA-senders-filtering-20260901-07: was hardcoded `timeZone: 'UTC'` —
+  // the same false-currency-cue mechanism already fixed once on
+  // `QA-triage-20260827-09` (the undo toast/preview), now found on a
+  // different surface. Omitting `timeZone` renders the reader's own,
+  // matching `receipt-strip.tsx`/`undo-tray.tsx`/`quiet-screen.tsx`.
   return new Intl.DateTimeFormat('en-US', {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     month: 'short',
-    timeZone: 'UTC',
     timeZoneName: 'short',
     year: 'numeric',
   }).format(date);

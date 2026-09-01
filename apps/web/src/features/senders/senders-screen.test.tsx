@@ -559,7 +559,10 @@ describe('SendersScreen — edge states', () => {
     const freshness = screen.getByTestId('sender-results-freshness');
     // Coverage line answers "am I looking at everything?" — indexed
     // total + a results-as-of time (2026-07-16 founder smoke).
-    expect(freshness).toHaveTextContent(/senders in this mailbox for me@example\.com/i);
+    // QA-senders-filtering-20260901-09: no longer repeats "for
+    // {mailboxEmail}" — the eyebrow above already names the mailbox.
+    expect(freshness).toHaveTextContent(/senders in this mailbox/i);
+    expect(freshness).not.toHaveTextContent(/for me@example\.com/i);
     // QA-sync-20260831-10 item 3: `asOf` is a request-compute timestamp,
     // not a measured sync completion, even in this healthy branch —
     // "Results as of" describes what the value actually is.
@@ -967,7 +970,7 @@ describe('SendersScreen — edge states', () => {
       });
       await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE);
 
-      fireEvent.click(screen.getByRole('button', { name: /Keep active only/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Show active only/i }));
 
       expect(
         await screen.findByText(/No senders match .* under these filters/),
@@ -977,7 +980,7 @@ describe('SendersScreen — edge states', () => {
 
     it('never claims it looked outside the filters when matches are there', async () => {
       // The defect the reversal path exposed in the FIX itself: after
-      // "Keep active only" the empty state asserted nothing existed
+      // "Show active only" the empty state asserted nothing existed
       // outside the filter while the screen was holding the one sender
       // that did. Unknown and zero are different facts, and so are zero
       // and one.
@@ -988,13 +991,13 @@ describe('SendersScreen — edge states', () => {
         target: { value: 'TechGig Latest News' },
       });
       await screen.findByTestId('senders-widened-notice', undefined, AFTER_SEARCH_DEBOUNCE);
-      fireEvent.click(screen.getByRole('button', { name: /Keep active only/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Show active only/i }));
       await screen.findByText(/under these filters/);
 
       expect(screen.getByText(/1 sender matches outside these filters/)).toBeInTheDocument();
       expect(screen.queryByText(/found nothing/)).not.toBeInTheDocument();
       // And the way back is one click, with the query intact.
-      fireEvent.click(screen.getByRole('button', { name: /^Show them$/ }));
+      fireEvent.click(screen.getByRole('button', { name: /^Show all matches$/ }));
       expect(await screen.findByTestId('senders-widened-notice')).toBeInTheDocument();
     });
 
@@ -1030,7 +1033,7 @@ describe('SendersScreen — edge states', () => {
 
       expect(
         await screen.findByText(
-          /found nothing, so this is the whole answer/,
+          /Nothing matches outside your filters either/,
           undefined,
           AFTER_SEARCH_DEBOUNCE,
         ),
@@ -1071,7 +1074,7 @@ describe('SendersScreen — edge states', () => {
 
       // Off the default 'active' filter, onto 'protected' — the branch
       // `describeNarrowedFilters` has no activity bucket name for.
-      fireEvent.click(screen.getByRole('radio', { name: /^active/i }));
+      fireEvent.click(screen.getByRole('radio', { name: /only active/i }));
       fireEvent.click(screen.getByRole('button', { name: /^protected/i }));
 
       fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
@@ -1081,10 +1084,54 @@ describe('SendersScreen — edge states', () => {
       const notice = await screen.findByTestId('senders-widened-notice', undefined, {
         timeout: 3_000,
       });
-      expect(notice).toHaveTextContent(/No filtered senders match/);
+      expect(notice).toHaveTextContent(/No senders match .* under your filters/);
       expect(notice.textContent).not.toMatch(/matching senders match/);
-      expect(screen.getByRole('button', { name: /^Keep filtered only$/ })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /^Use my filters$/ })).toBeInTheDocument();
     });
+  });
+
+  // QA-senders-filtering-20260901-01: a filter-only zero result (no
+  // search term, so the F011 widen-probe never runs) used to hide the
+  // ENTIRE ComposeStrip along with the rows, leaving "Clear search &
+  // filters" as the only way out — which also threw away a search term
+  // that was never set. The strip must stay mounted so a single filter
+  // can be adjusted instead of the whole compose being nuked.
+  it('keeps the filter bar mounted when filters alone narrow to zero — no search term (QA-senders-filtering-20260901-01)', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          const narrowed = url.searchParams.get('protected') === 'true';
+          return jsonOk({
+            data: narrowed ? [] : [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: narrowed ? 0 : 1,
+                globalMaxTotal: 120,
+                asOf: '2026-05-29T12:00:00.000Z',
+              },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+
+    fireEvent.click(screen.getByRole('button', { name: /^protected/i }));
+
+    expect(
+      await screen.findByText('Nothing matches this combination of filters.'),
+    ).toBeInTheDocument();
+    // The gentle exit, not the search-shaped one — there was no search.
+    expect(screen.getByRole('button', { name: /^Clear filters$/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Clear search & filters/)).not.toBeInTheDocument();
+    // The load-bearing assertion: the filter chip itself is STILL there,
+    // so the user can turn "protected" back off directly instead of
+    // clearing everything.
+    expect(screen.getByRole('button', { name: /^protected/i })).toBeInTheDocument();
   });
 
   it('narrows the list server-side when the "you wrote to them" chip is toggled (D38)', async () => {

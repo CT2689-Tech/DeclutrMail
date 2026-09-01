@@ -153,9 +153,6 @@ export function ComposeStrip({
         padding: '14px 0',
         borderTop: `1px solid ${color.line}`,
         borderBottom: `1px solid ${color.line}`,
-        // QA-senders-20260901-01: signal that the counts on these chips
-        // may be a response behind — chips stay clickable either way.
-        opacity: updating ? 0.6 : 1,
       }}
     >
       <AxisLabel>activity</AxisLabel>
@@ -168,6 +165,19 @@ export function ComposeStrip({
           chips (pre-existing) under the strip's own `role="group"`;
           the underlying interaction-model gap is flagged as its own
           QA candidate, not fixed here. */}
+      {/* QA-senders-filtering-20260901-02: nothing on screen previously
+          taught alt-click/right-click-to-exclude — one hint, once, covers
+          every chip in the strip rather than repeating per-chip. */}
+      <span
+        style={{
+          fontFamily: font.mono,
+          fontSize: 10,
+          color: color.fgMuted,
+          marginRight: 2,
+        }}
+      >
+        (alt-click a chip to exclude it)
+      </span>
       <ActivityChip bucket="active" state={state} count={counts?.active} onChange={onChange} />
       <ActivityChip bucket="quiet" state={state} count={counts?.quiet} onChange={onChange} />
       <ActivityChip bucket="dormant" state={state} count={counts?.dormant} onChange={onChange} />
@@ -179,6 +189,7 @@ export function ComposeStrip({
         count={counts?.unsubReady}
         value={state.unsubReady}
         onChange={(unsubReady) => onChange({ ...state, unsubReady })}
+        negatedHint="No unsubscribe link found — or the sender hasn't been checked yet"
       />
       <ToggleChip
         label="you wrote to them"
@@ -315,7 +326,11 @@ function ActivityChip({
       type="button"
       role="radio"
       aria-checked={isActive || isNegated}
-      title={ACTIVITY_BUCKET_TITLE[bucket]}
+      // QA-senders-filtering-20260901-02: `aria-checked` alone can't
+      // distinguish "only active" from "not active" — both read
+      // "checked". A screen reader needs the label to say which.
+      aria-label={isNegated ? `Exclude ${bucket} senders` : `Only ${bucket} senders`}
+      title={`${ACTIVITY_BUCKET_TITLE[bucket]} · alt-click to exclude`}
       onClick={(e) => cycle(e.altKey)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -323,7 +338,10 @@ function ActivityChip({
       }}
       style={chipStyle({ active: isActive, negated: isNegated })}
     >
-      <span>{bucket}</span>
+      {/* Sighted users get the same ambiguity fixed visually: a negated
+          chip used to show the identical label+count as an included one,
+          with only background color telling them apart. */}
+      <span>{isNegated ? `not ${bucket}` : bucket}</span>
       {count !== undefined && (
         <span
           style={{
@@ -333,7 +351,7 @@ function ActivityChip({
             opacity: isActive || isNegated ? 0.85 : 0.6,
           }}
         >
-          {count.toLocaleString('en-US')}
+          {isNegated ? `−${count.toLocaleString('en-US')}` : count.toLocaleString('en-US')}
         </span>
       )}
     </button>
@@ -345,11 +363,21 @@ function ToggleChip({
   count,
   value,
   onChange,
+  negatedHint,
 }: {
   label: string;
   count: number | undefined;
   value: TriStateFilter;
   onChange: (next: TriStateFilter) => void;
+  /**
+   * QA-senders-filtering-20260901-03: the negated state of "has
+   * unsubscribe" reads as "confirmed none" but the predicate is
+   * `unsubscribe_method IS NULL OR = 'none'` — NULL means the sender
+   * hasn't been checked yet (`senders.ts` schema doc), not that it was
+   * checked and found absent. Lets one chip's negated title say so
+   * without a generic title-override API nobody else needs yet.
+   */
+  negatedHint?: string;
 }) {
   const active = value === true;
   const negated = value === false;
@@ -374,6 +402,13 @@ function ToggleChip({
         cycle({ altKey: true });
       }}
       style={chipStyle({ active, negated, withCheckbox: true })}
+      // QA-senders-filtering-20260901-02: the ✓/✕ glyph below is
+      // aria-hidden, so a screen reader previously announced only
+      // `label`, identically whether included or excluded — same gap
+      // as `ActivityChip`, same fix.
+      aria-pressed={active || negated}
+      aria-label={negated ? `Exclude: ${label}` : label}
+      title={negated ? (negatedHint ?? `Excluding ${label}`) : `${label} · alt-click to exclude`}
     >
       <span
         style={{
@@ -405,7 +440,7 @@ function ToggleChip({
             opacity: active || negated ? 0.85 : 0.6,
           }}
         >
-          {count.toLocaleString('en-US')}
+          {negated ? `−${count.toLocaleString('en-US')}` : count.toLocaleString('en-US')}
         </span>
       )}
     </button>
@@ -503,12 +538,15 @@ function chipStyle({
 
 /* ─── window menu ───────────────────────────────────────────────── */
 
+// QA-senders-filtering-20260901-04: "+" moved to the front of the number
+// so it reads as a floor ("30+ days" = 30 or more) rather than looking
+// like arithmetic tacked onto the unit ("30 days+").
 const WINDOW_OPTIONS: Array<{ label: string; value: number | null }> = [
   { label: 'any time', value: null },
-  { label: '30 days+', value: 30 },
-  { label: '90 days+', value: 90 },
-  { label: '6 months+', value: 180 },
-  { label: '1 year+', value: 365 },
+  { label: '30+ days', value: 30 },
+  { label: '90+ days', value: 90 },
+  { label: '6+ months', value: 180 },
+  { label: '1+ year', value: 365 },
 ];
 
 function WindowMenu({
@@ -547,7 +585,12 @@ function WindowMenu({
           gap: 4,
         }}
       >
-        <AxisLabel>quiet for</AxisLabel>
+        {/* QA-senders-filtering-20260901-04: "quiet for" was one of THREE
+            different meanings of "quiet" on this one toolbar — the
+            `quiet` Activity chip (a bounded 30-180d bucket), this
+            open-ended Nd+ floor, and the "Longest quiet" sort direction.
+            "no email for" doesn't collide with the other two. */}
+        <AxisLabel>no email for</AxisLabel>
         <span>{label}</span>
         <span style={{ fontSize: 9, color: color.fgMuted, marginLeft: 2 }}>▾</span>
       </button>
@@ -704,9 +747,15 @@ function Popover({ children }: { children: React.ReactNode }) {
       style={{
         position: 'absolute',
         top: 'calc(100% + 8px)',
-        left: 0,
+        // QA-senders-filtering-20260901-08: was `left: 0` with no
+        // viewport clamp — a chip late in the strip's wrapped row at
+        // 375px could open a popover past the right edge of the screen.
+        // Right-anchoring plus a viewport-relative max-width keeps every
+        // popover on screen regardless of which chip opened it.
+        right: 0,
         zIndex: 60,
-        minWidth: 220,
+        minWidth: 'min(220px, calc(100vw - 32px))',
+        maxWidth: 'calc(100vw - 32px)',
         background: color.card,
         border: `1px solid ${color.line}`,
         borderRadius: 9,
@@ -788,7 +837,11 @@ const SORT_OPTIONS: ReadonlyArray<{
   { sort: 'total', direction: 'desc', label: 'Most received', group: 'Volume' },
   { sort: 'total', direction: 'asc', label: 'Fewest received', group: 'Volume' },
   { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
-  { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
+  // QA-senders-filtering-20260901-04: was "Longest quiet" — a third,
+  // unrelated meaning of "quiet" sharing this toolbar with the Activity
+  // chip and the "no email for" window. This is a sort DIRECTION, not a
+  // bucket.
+  { sort: 'last_seen', direction: 'asc', label: 'Least recent', group: 'Last seen' },
   { sort: 'first_seen', direction: 'desc', label: 'Newest arrivals', group: 'First seen' },
   { sort: 'first_seen', direction: 'asc', label: 'Oldest arrivals', group: 'First seen' },
   { sort: 'name', direction: 'asc', label: 'A → Z', group: 'Name' },
@@ -931,9 +984,6 @@ export interface ViewsMenuProps {
   capReached: boolean;
 }
 
-/** Server-mirrored cap (senderViews contract) — 10 named views. */
-export const SAVED_VIEWS_CAP = 10;
-
 /**
  * `ViewsMenu` — persist named ComposeStrip filter combinations (D51;
  * spec v1.2 Decision 4's "Saved filters" resurrection). Same popover
@@ -1000,7 +1050,11 @@ function ViewsMenu({
                 color: color.fgMuted,
               }}
             >
-              No saved views yet.
+              {/* QA-senders-filtering-20260901-06: taught nothing — a
+                  user opening this menu with no filters set had no path
+                  forward, since the save row below only appears once
+                  `canSaveCurrent` is true. */}
+              No saved views yet — set a filter, then save it here.
             </span>
           )}
           {names.map((name) => (
@@ -1019,6 +1073,9 @@ function ViewsMenu({
               <button
                 type="button"
                 aria-label={`Delete view ${name}`}
+                // QA-senders-filtering-20260901-06: was `padding: '0 8px'`
+                // with no explicit height — an ~12px-tall hit target
+                // immediately beside the row that applies the view.
                 onClick={() => onDelete(name)}
                 style={{
                   background: 'transparent',
@@ -1026,7 +1083,8 @@ function ViewsMenu({
                   cursor: 'pointer',
                   color: color.fgMuted,
                   fontSize: 12,
-                  padding: '0 8px',
+                  minWidth: 32,
+                  minHeight: 32,
                   flex: '0 0 auto',
                 }}
               >
@@ -1052,7 +1110,11 @@ function ViewsMenu({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') saveDraft();
                 }}
-                placeholder={capReached ? `Cap of ${SAVED_VIEWS_CAP} reached` : 'Name this view…'}
+                // QA-senders-filtering-20260901-09: "cap" is schema
+                // vocabulary; also, this and the toast in
+                // senders-screen.tsx now both derive from the one shared
+                // `SENDER_VIEWS_CAP` constant instead of two.
+                placeholder={capReached ? 'Delete a view to save another' : 'Name this view…'}
                 disabled={capReached}
                 aria-label="New view name"
                 style={{

@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { ComposeStrip, EMPTY_COMPOSE } from './compose-strip';
@@ -67,15 +67,15 @@ describe('ComposeStrip · activity chip thresholds', () => {
 
     expect(screen.getByRole('radio', { name: /active/i })).toHaveAttribute(
       'title',
-      'Last email within 30 days',
+      'Last email within 30 days · alt-click to exclude',
     );
     expect(screen.getByRole('radio', { name: /quiet/i })).toHaveAttribute(
       'title',
-      'Last email more than 30 and up to 180 days ago',
+      'Last email more than 30 and up to 180 days ago · alt-click to exclude',
     );
     expect(screen.getByRole('radio', { name: /dormant/i })).toHaveAttribute(
       'title',
-      'Last email over 180 days ago',
+      'Last email over 180 days ago · alt-click to exclude',
     );
   });
 });
@@ -105,17 +105,23 @@ describe('ComposeStrip · updating (QA-senders-20260901-01)', () => {
       />,
     );
 
+    // QA-senders-filtering-20260901-08: the whole-strip 0.6 dim used to
+    // compound with an already-0.6-opacity inactive chip's OWN count
+    // span (0.6 × 0.6 = 0.36), reading as "disabled" rather than
+    // "updating". `SenderResultsFreshness` (senders-screen.tsx) already
+    // renders an explicit "Updating results…" status text for this same
+    // state — `aria-busy` here is the accessible signal now; the strip
+    // itself no longer dims.
     const group = screen.getByRole('group', { name: 'Filter and sort senders' });
     expect(group).toHaveAttribute('aria-busy', 'true');
-    expect(group).toHaveStyle({ opacity: '0.6' });
+    expect(group).not.toHaveStyle({ opacity: '0.6' });
   });
 
-  it('renders at full opacity when not updating (default)', () => {
+  it('stays at full opacity when not updating (default)', () => {
     renderStrip();
 
     const group = screen.getByRole('group', { name: 'Filter and sort senders' });
     expect(group).toHaveAttribute('aria-busy', 'false');
-    expect(group).toHaveStyle({ opacity: '1' });
   });
 });
 
@@ -127,5 +133,64 @@ describe('ComposeStrip · accessible name', () => {
     renderStrip();
 
     expect(screen.getByRole('group', { name: 'Filter and sort senders' })).toBeInTheDocument();
+  });
+});
+
+describe('ComposeStrip · chip negation (QA-senders-filtering-20260901-02)', () => {
+  // A negated chip used to render the SAME visible label and count as an
+  // included one — color was the only difference, invisible to a screen
+  // reader (`aria-checked` is true for both states) and to anyone
+  // colorblind. `ComposeStrip` is a controlled component (state lives in
+  // the caller), so these assert the emitted `onChange` shape and the
+  // chip's OWN pre-click rendering, not a re-render after the click.
+  it('right-click on an ActivityChip requests the negated state and is labeled/titled for exclusion', () => {
+    const { onChange } = renderStrip();
+    const activeChip = screen.getByRole('radio', { name: /only active senders/i });
+    expect(activeChip).toHaveTextContent('active');
+    expect(activeChip).not.toHaveTextContent('not active');
+
+    fireEvent.contextMenu(activeChip);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ activity: 'active', activityNegate: true }),
+    );
+  });
+
+  it('right-click on a ToggleChip requests the negated (false) state', () => {
+    const { onChange } = renderStrip();
+    const protectedChip = screen.getByRole('button', { name: 'protected' });
+
+    fireEvent.contextMenu(protectedChip);
+
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ protectedFlag: false }));
+  });
+
+  it("labels and announces an already-negated ActivityChip as 'not <bucket>', distinct from included", () => {
+    render(
+      <ComposeStrip
+        state={{ ...EMPTY_COMPOSE, activity: 'active', activityNegate: true }}
+        counts={{
+          total: 10,
+          active: 3,
+          quiet: 4,
+          dormant: 3,
+          unsubReady: 0,
+          wroteTo: 0,
+          protected: 0,
+          unsubIgnored: 0,
+        }}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+        sort="total"
+        direction="desc"
+        onSortChange={vi.fn()}
+        domainSuggestions={[]}
+      />,
+    );
+
+    const negated = screen.getByRole('radio', { name: /exclude active senders/i });
+    expect(negated).toHaveTextContent('not active');
+    expect(negated).toHaveTextContent('−3');
+    expect(screen.queryByRole('radio', { name: /only active senders/i })).not.toBeInTheDocument();
   });
 });

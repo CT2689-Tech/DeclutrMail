@@ -2246,6 +2246,32 @@ changed file through the fixed hook manually.
 PR fixing any violation the re-check surfaces.
 **Status:** Open
 
+### 2026-09-01 — Design a mobile equivalent for Senders filter-chip negation
+**Source:** `/ct-qa senders-filtering`, `QA-senders-filtering-20260901-02`
+**Why:** On `/senders`, excluding a filter (e.g. "not active") is only
+reachable via right-click or alt-click on a chip — desktop-only. Phone
+users have no gesture that maps to either, so roughly half the filter
+model (everything the AND-composed chips can express with a negated axis)
+is simply unavailable on mobile, with no on-screen indication that
+anything is missing. Founder-decided 2026-09-01 to fix the desktop-side
+bugs now (invisible negated-state label, missing `aria-checked`/
+`aria-label` distinction between "only X" and "not X") and defer the
+mobile interaction itself, rather than design a new touch gesture
+under QA-fix time pressure on a design-frozen surface (CLAUDE.md §5 —
+Storybook stories are the appearance source of truth post-PR-3).
+**How:** Design a mobile-reachable way to negate a Senders filter chip —
+candidates raised during triage: long-press to exclude (mirrors D54's
+existing long-press dialect on sender rows), a small per-chip toggle/
+affix visible at all viewport widths, or a "..." per-chip menu with
+Include/Exclude/Clear. Whatever is chosen needs its own Storybook story
+(`design-system-agent` gate) and a matching `aria-label`/`aria-pressed`
+pair so the fix doesn't regress the same accessibility gap it's meant to
+close.
+**Verifies by:** A future `/ct-qa senders-filtering` re-run can negate a
+chip at 375px and the interaction has a discoverable on-screen affordance
+(not just a code comment).
+**Status:** Open
+
 ## Done
 
 ### 2026-07-09 — Live authed smoke of the no-active-mailbox reachability fix (needs DB + OAuth)
