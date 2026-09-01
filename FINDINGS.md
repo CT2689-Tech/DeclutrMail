@@ -47,7 +47,52 @@ the point.
 
 ## Inbox (untriaged)
 
-_Empty. Append here._
+**Found:** 2026-08-31 · `/ct-qa mailbox-switch`, QA-mailbox-switch-20260831-01,
+survived `finding-refuter`.
+
+`/senders` threw a client-side `TypeError: useLongPress is not a function`
+inside `<SenderListRow>`, caught by an error boundary. At mobile viewport
+(375px) this took down the ENTIRE list — "We couldn't load your senders,"
+screenshot-confirmed, reproduced 3× including against a freshly-restarted
+`next dev` process (rules out stale HMR). **Correction (2026-08-31, after
+filing):** an earlier draft of this entry also claimed a narrower "2 rows
+fail silently at desktop" instance. That claim does not survive — it was
+read from a stale console-message buffer this session's own browser-
+automation tool does not clear on same-tab navigation, and a fresh tab
+showed zero errors at both viewports. Retracted; see
+`docs/qa/qa-worklist.md`'s own correction on this row and the
+`LEARNINGS.md` 2026-08-31 entry on the buffer trap. What stayed true
+regardless: the call is unconditional at `sender-list-row.tsx:252`, not
+gated by viewport, per the refuter's read of the source.
+
+Root cause: `useLongPress` (from D54's new mobile row gestures, PR #687,
+`cde42bbb`) resolved to `undefined` in the browser bundle under Next's
+`optimizePackageImports`, which `apps/web/next.config.ts` deliberately
+enables for `@declutrmail/shared`. This is the SECOND live occurrence of
+this exact mechanism — `MISTAKES.md:4129` (PR #651, fix for #646) documents
+the first (`UNIFORM_UNDO_WINDOW_DAYS` shipped `undefined` into real D226
+preview copy). That entry's proposed remedy — a build-output guard grepping
+`.next` route chunks for `undefined` appearing in rendered copy — is still
+`Open` in `FOUNDER-FOLLOWUPS.md` (~line 112-124) and would have caught this
+before it shipped; this was live evidence the guard is needed, not
+hypothetical.
+
+**Fixed** (`67d1ffa1`): `useLongPress` now imports from a real module path
+instead of the barrel. A `defect-class-sweeper` pass, confirmed by Codex's
+own adversarial review, found the same fix had left 2 sibling hooks sharing
+the identical shape (a `use client` hook re-exported through the same
+barrel, called unconditionally) still exposed: `useFocusTrap` (16 consumer
+sites, not 15 as first counted — incl. `billing/cancel-modal.tsx`,
+`billing/upgrade-modal.tsx`, `account-deletion/delete-account-modal.tsx`,
+`triage/action-sheet.tsx`, `activity-screen.tsx` ×3) and `useLocalState`
+(`senders/table/sender-group.tsx`, currently orphaned/unreachable dead
+code). **Also fixed** (`00e355fd`): all 17 migrated to their direct module
+paths, plus an eslint `no-restricted-imports` rule forbidding a barrel
+import of any of the three hooks going forward. Live-verified the two
+highest-stakes `useFocusTrap` consumers (billing cancel modal, account
+deletion modal) — both render and focus-trap correctly, zero console
+errors. Full detail: `docs/qa/qa-worklist.md` § mailbox-switch,
+`QA-mailbox-switch-20260831-01`.
 
 ## P0 — launch blockers
 

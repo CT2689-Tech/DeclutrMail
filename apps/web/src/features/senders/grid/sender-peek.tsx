@@ -26,7 +26,8 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
-import { Avatar, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
+import { Avatar, tokens, useIsAtMost } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { SenderRowDetailLive } from '../table/sender-row-detail';
 import { senderAddressLine } from '../data';
 import type { ActionRequest, Sender } from '../data';

@@ -903,13 +903,13 @@ help of `ct-qa-mailbox-switch-173132-64`, an independent peer QA session
 running `/ct-qa mailbox-switch` concurrently on the same shared dev stack —
 cited per row below.
 
-|     | id                        | sev | one line                                                                                                                                                                                                                                                                                                                       | status                                                                                                                                                     | PR   |
-| --- | ------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
-| 🔵  | QA-onboarding-20260828-01 | P0  | `/senders` can assert something false about the user's own inbox during an active sync — it either denies any senders exist, or shows a stale pre-disconnect snapshot labelled with a "Synced through" time it never measured — reachable on ANY ordinary returning login mid-resync, not only reconnect                       | Merged #673 — Codex 2 rounds (cap), both applied                                                                                                           | #673 |
-| 🔵  | QA-onboarding-20260828-02 | P1  | `AuthProvider`'s 401→OAuth redirect runs in the render body with no fire-once guard, duplicating an already-guarded sibling (`client.ts`'s `redirectToLogin`) — every session-expiry event fires 2 real navigations to Google's live OAuth start in production (3 in dev), burning the app's own rate-limit bucket meant for 1 | Merged #673 — Codex round 1 found a real dead-end this fix introduced, fixed in `client.ts`, round 2 CLEAN on this row                                     | #673 |
-| 🟡  | QA-onboarding-20260828-03 | P1  | Refresh-token rotation revokes the whole session on any concurrent same-account refresh collision (two tabs racing the ~15-min access-token TTL edge) — no code path returns the same fresh tokens to the loser, and the DB schema has no column that could hold the value such a path would need                              | Founder approved a server-side grace window 2026-08-30; implemented + adversarially security-reviewed, its own PR (Tier 1, never bundled) — see note below |      |
-| 🔵  | QA-onboarding-20260828-04 | P1  | The `?mailbox=` secondary-connect gate shows a fake, never-resolving "Reading your inbox… 0%" scan instead of the reconnect gate when its target mailbox goes inactive out-of-band with no other active mailbox to escape to                                                                                                   | Merged #673 — Codex round 1 found the guard was too broad (any sync error, not just NO_ACTIVE_MAILBOX), fixed, round 2 CLEAN on this row                   | #673 |
-| 🔵  | QA-onboarding-20260828-05 | P2  | The no-active-mailbox gate's plain "Connect a Gmail account" button (not Reconnect) silently swallows a connect failure — same gate re-renders with no explanation and a stale `connect_error` param stuck in the URL; two dead copy keys exist for codes no path can emit, and one real code has no copy entry at all         | Merged #673 — Codex round 2 found a history-state overwrite this fix's broadened reach exposed, fixed                                                      | #673 |
+|     | id                        | sev | one line                                                                                                                                                                                                                                                                                                                       | status                                                                                                                                   | PR   |
+| --- | ------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- | ---- |
+| 🔵  | QA-onboarding-20260828-01 | P0  | `/senders` can assert something false about the user's own inbox during an active sync — it either denies any senders exist, or shows a stale pre-disconnect snapshot labelled with a "Synced through" time it never measured — reachable on ANY ordinary returning login mid-resync, not only reconnect                       | Merged #673 — Codex 2 rounds (cap), both applied                                                                                         | #673 |
+| 🔵  | QA-onboarding-20260828-02 | P1  | `AuthProvider`'s 401→OAuth redirect runs in the render body with no fire-once guard, duplicating an already-guarded sibling (`client.ts`'s `redirectToLogin`) — every session-expiry event fires 2 real navigations to Google's live OAuth start in production (3 in dev), burning the app's own rate-limit bucket meant for 1 | Merged #673 — Codex round 1 found a real dead-end this fix introduced, fixed in `client.ts`, round 2 CLEAN on this row                   | #673 |
+| 🔵  | QA-onboarding-20260828-03 | P1  | Refresh-token rotation revokes the whole session on any concurrent same-account refresh collision (two tabs racing the ~15-min access-token TTL edge) — no code path returns the same fresh tokens to the loser, and the DB schema has no column that could hold the value such a path would need                              | Merged #686 — awaiting confirming run                                                                                                    | #686 |
+| 🔵  | QA-onboarding-20260828-04 | P1  | The `?mailbox=` secondary-connect gate shows a fake, never-resolving "Reading your inbox… 0%" scan instead of the reconnect gate when its target mailbox goes inactive out-of-band with no other active mailbox to escape to                                                                                                   | Merged #673 — Codex round 1 found the guard was too broad (any sync error, not just NO_ACTIVE_MAILBOX), fixed, round 2 CLEAN on this row | #673 |
+| 🔵  | QA-onboarding-20260828-05 | P2  | The no-active-mailbox gate's plain "Connect a Gmail account" button (not Reconnect) silently swallows a connect failure — same gate re-renders with no explanation and a stale `connect_error` param stuck in the URL; two dead copy keys exist for codes no path can emit, and one real code has no copy entry at all         | Merged #673 — Codex round 2 found a history-state overwrite this fix's broadened reach exposed, fixed                                    | #673 |
 
 **QA-onboarding-20260828-01.** Filed from a `flow-completeness-auditor` GAP,
 adversarially confirmed (`SURVIVES`, no refutation ground applied) by a
@@ -1285,15 +1285,15 @@ could not see — see that plan's own commit history for detail).
 
 |     | id                     | sev | one line                                                                                                                                                                                    | status                                                                                                                                                                                                                                |
 | --- | ---------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🟡  | QA-sign-in-20260829-01 | P1  | Homepage trust-strip copy claimed exact precision ("you see exactly which emails are affected"), contradicting the product's own `ACTION_PREVIEW_CLAIM` two lines below it in the same file | PR #694                                                                                                                                                                                                                               |
-| 🟡  | QA-sign-in-20260829-02 | P1  | Pre-consent disclosure undersold the `gmail.modify` grant as "organize your Gmail" when the scope covers send/compose too                                                                   | PR #694                                                                                                                                                                                                                               |
-| 🟡  | QA-sign-in-20260829-03 | P2  | Pricing tier CTA / `?plan=X` deep link auto-expanded the plan-change confirm panel without checking the visitor's `currentTier`                                                             | PR #694                                                                                                                                                                                                                               |
+| 🔵  | QA-sign-in-20260829-01 | P1  | Homepage trust-strip copy claimed exact precision ("you see exactly which emails are affected"), contradicting the product's own `ACTION_PREVIEW_CLAIM` two lines below it in the same file | Merged #694 — awaiting confirming run                                                                                                                                                                                                 |
+| 🔵  | QA-sign-in-20260829-02 | P1  | Pre-consent disclosure undersold the `gmail.modify` grant as "organize your Gmail" when the scope covers send/compose too                                                                   | Merged #694 — awaiting confirming run                                                                                                                                                                                                 |
+| 🔵  | QA-sign-in-20260829-03 | P2  | Pricing tier CTA / `?plan=X` deep link auto-expanded the plan-change confirm panel without checking the visitor's `currentTier`                                                             | Merged #694 — awaiting confirming run                                                                                                                                                                                                 |
 | ⬜  | QA-sign-in-20260829-04 | P2  | "Connect your Gmail" CTA copy renders identically for an already-connected visitor across 10+ marketing surfaces                                                                            | Open — deliberately excluded (see plan header): fixing this needs marketing pages to become session-aware, conflicting with D134's deliberate session-blind design; destination already redirects correctly, so this is cosmetic-only |
-| 🟡  | QA-sign-in-20260829-05 | P2  | Homepage disclaimer omitted the 50 cleanup-action/month Free-tier cap at the exact point a visitor decides if Free fits                                                                     | PR #694                                                                                                                                                                                                                               |
-| 🟡  | QA-sign-in-20260829-06 | P3  | `/sign-in`'s pre-consent explanation page was unreachable from any nav or homepage link                                                                                                     | PR #694                                                                                                                                                                                                                               |
-| 🟡  | QA-sign-in-20260829-07 | P3  | `/sign-in` step 2 promised a scan duration ("a few minutes") the sync gate deliberately never states elsewhere                                                                              | PR #694                                                                                                                                                                                                                               |
+| 🔵  | QA-sign-in-20260829-05 | P2  | Homepage disclaimer omitted the 50 cleanup-action/month Free-tier cap at the exact point a visitor decides if Free fits                                                                     | Merged #694 — awaiting confirming run                                                                                                                                                                                                 |
+| 🔵  | QA-sign-in-20260829-06 | P3  | `/sign-in`'s pre-consent explanation page was unreachable from any nav or homepage link                                                                                                     | Merged #694 — awaiting confirming run                                                                                                                                                                                                 |
+| 🔵  | QA-sign-in-20260829-07 | P3  | `/sign-in` step 2 promised a scan duration ("a few minutes") the sync gate deliberately never states elsewhere                                                                              | Merged #694 — awaiting confirming run                                                                                                                                                                                                 |
 | 🟢  | QA-sign-in-20260829-08 | P3  | Claimed `/sign-in` step 3 was a 52-word paraphrase of `ACTION_PREVIEW_CLAIM`                                                                                                                | Gone 2026-08-31 — `git log` shows step 3 has directly interpolated `{ACTION_PREVIEW_CLAIM}` since PR #637, predating this finding's filing date; nothing to fix                                                                       |
-| 🟡  | QA-sign-in-20260829-09 | P3  | `/sign-in`'s `inbox_limit` alert was a 3-instruction run-on sentence leaking internal terms ("workspace", "inbox slot")                                                                     | PR #694                                                                                                                                                                                                                               |
+| 🔵  | QA-sign-in-20260829-09 | P3  | `/sign-in`'s `inbox_limit` alert was a 3-instruction run-on sentence leaking internal terms ("workspace", "inbox slot")                                                                     | Merged #694 — awaiting confirming run                                                                                                                                                                                                 |
 | ⬜  | QA-sign-in-20260829-10 | P3  | Founding Pro promo re-lock UI is reachable but currently unhit — 0 live founding-member subscribers as of this run                                                                          | Open — no live instance to reproduce against; not worth prioritizing per the finding's own text                                                                                                                                       |
 
 **4 additional defects found only by the plan's final whole-branch review**
@@ -1318,3 +1318,396 @@ class QA-01 fixed still lives in `site-json-ld-description.ts:20-21`,
 `OAUTH_SCOPE_DISCLOSURE`'s scope count to `google-oauth.service.ts`'s
 `SCOPES` array, so the exact drift that caused the finding could recur
 silently.
+
+## mailbox-switch
+
+Rows accumulate across every `/ct-qa mailbox-switch` run. Per-run counts are
+in the ledger. First filed 2026-08-31 (1 survivor put through
+`finding-refuter`, corrected and widened rather than killed; 4 more filed
+directly from `usability-editor` per the same scope/budget precedent
+`QA-archive-20260828-01/-04/-05/-06` set — copy driven and captured live
+this run, not independently re-attacked by a refuter; 1 structural gap from
+`flow-completeness-auditor`, unmeasured).
+
+|     | id                            | sev | one line                                                                                                                                                                                                       | status                                                                                                            |
+| --- | ----------------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 🟡  | QA-mailbox-switch-20260831-01 | P1  | `/senders` throws `useLongPress is not a function` inside `SenderListRow`, catastrophic at mobile                                                                                                              | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean — also in `FINDINGS.md` Inbox |
+| 🟢  | QA-mailbox-switch-20260831-02 | P2  | Autopilot, Screener, and Brief's React Query keys carry no mailbox-id segment at all — correctness rests entirely on one global `invalidateQueries()` + same-window event firing on every switch               | Refuted 2026-08-31 — see note below                                                                               |
+| 🟡  | QA-mailbox-switch-20260831-03 | P2  | One state ("this is the mailbox you're viewing") gets three different names in the account menu — `Selected` (checkmark aria), `Active` (badge text), `"Selected mailbox"` (row aria-label)                    | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
+| 🟡  | QA-mailbox-switch-20260831-04 | P2  | The account menu never says what switching actually does — every screen's scope changes, not a display preference — anywhere in the component                                                                  | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
+| 🟡  | QA-mailbox-switch-20260831-05 | P3  | The two connected addresses (`chintan.a.thakkar@gmail.com` / `chintan.a.thakkar.crypt@gmail.com`) truncate identically in the dropdown rows with no `title` tooltip — the trigger pill has one, the rows don't | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
+| 🟡  | QA-mailbox-switch-20260831-06 | P3  | "Disconnected · data kept" doesn't say WHOSE data — reads as "your Gmail is untouched" when it means DeclutrMail's own retained history                                                                        | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
+
+### QA-mailbox-switch-20260831-01 — `useLongPress` throws in the browser bundle
+
+**Filed from live reproduction, sent to `finding-refuter`. Verdict: SURVIVES,
+corrected and widened, not killed.**
+
+Live-verified this run (real dev-linked mailbox, api :4001 / web :3003, both
+cwd-confirmed as this worktree): navigating to `/senders` and reaching a
+`SenderListRow` throws `TypeError: (0 ,
+_barrel_optimize_names_Avatar_tokens_useIsAtMost_useLongPress...) is not a
+function`, caught by `<ErrorBoundaryHandler>`. At a 375×812 mobile-emulated
+viewport this degrades the ENTIRE list to "THE LIST HIT A SNAG — We couldn't
+load your senders" — reproduced 3× across 2 page loads, including against a
+**freshly killed-and-restarted** `next dev` process (cold start, "Ready in
+2.1s", confirmed 200 OK before retest) — ruling out stale dev-server HMR
+state as the cause, a known false-positive class in this codebase.
+
+**The refuter's correction: this is not mobile-only.** `useLongPress` is
+called unconditionally at `sender-list-row.tsx:252` — `enabled:
+gesturesEnabled` gates _behaviour_, not the call itself — so viewport does
+not gate the throw. Confirmed independently this run, after the refuter's
+report: a plain, unfiltered, fresh reload of `/senders` at DESKTOP width
+(1280×720, the default Grid view, no interaction) logged the identical
+error TWICE with no visible page-level crash — the list rendered normally
+end to end (Bank of America, Robinhood, 12+ other cards all correct), which
+means at least 2 rows failed SILENTLY, with no fallback UI a user would
+ever notice. The exact rows and exact trigger condition were not pinned
+down this run (the refuter's hypothesis — an expanded brand/domain group —
+was tested live via the `amazon.com` group and did NOT reproduce the
+crash on that specific attempt, so the true trigger remains open). **This
+makes the desktop case arguably worse than the mobile one**: mobile fails
+loud (an honest "hit a snag" state, Try again works), desktop fails mute
+(the user never learns 1-2 senders silently didn't render).
+
+**Root cause.** `useLongPress` (`packages/shared/src/hooks/use-long-press.ts:19`,
+a `'use client'` file, exported at `packages/shared/src/index.ts:39`) is new
+this branch — added by `cde42bbb`, "feat(senders): add mobile row dialect
+with swipe/long-press gestures (D54) (#687)", 11 commits behind HEAD.
+`apps/web/next.config.ts` deliberately lists `@declutrmail/shared` under
+`experimental.optimizePackageImports` (own comment explains why — a real,
+documented bundle-size fix). The barrel-optimize name in the thrown error
+matches this mechanism exactly.
+
+**Not novel — the second live occurrence of this exact class.**
+`MISTAKES.md:4129` (PR #651, fix for #646) already documents `UNIFORM_UNDO_
+WINDOW_DAYS` shipping `undefined` into real users' D226 preview copy via
+the identical `optimizePackageImports` rewrite. That entry's own stated
+"safe" workaround — import a sibling binding alongside the broken one in
+the same statement — is DISPROVEN by this incident: `useLongPress` is
+imported alongside three siblings (`Avatar, tokens, useIsAtMost`), all in
+one statement, and still resolved to `undefined`. `useIsAtMost`, in that
+exact same statement, resolved fine. The prior entry's own rule warned
+this: _"a rule of the form 'safe unless it is the only named import from
+that barrel' is one nobody will remember, and the failure is silent."_
+The proposed remedy from that entry — extend
+`scripts/check-web-bundle-budget.mjs` with a build-output pass that greps
+`.next` route chunks for `undefined` inside rendered copy — is still
+**Open** in `FOUNDER-FOLLOWUPS.md` (~line 112-124), confirmed via this
+run's own sweep: `check-web-bundle-budget.mjs` has no such check yet
+(`undefined` appears only in an unrelated comment and cache-check line).
+This incident is live evidence the guard is needed, not a hypothetical.
+
+**Siblings, same mechanism, found by `defect-class-sweeper` — initially
+UNMEASURED, since fixed (see below):**
+
+- **`useFocusTrap`** (`packages/shared/src/hooks/use-focus-trap.ts:13`,
+  `'use client'`) — **16** consumer sites (corrected from an initial count
+  of 15), including `apps/web/src/features/billing/cancel-modal.tsx:90`,
+  `apps/web/src/features/billing/upgrade-modal.tsx`,
+  `apps/web/src/features/account-deletion/delete-account-modal.tsx:81`,
+  `apps/web/src/features/triage/action-sheet.tsx:189`, and three sites in
+  `activity-screen.tsx`. Highest-confidence sibling: same file shape, same
+  barrel, a hook (calls loudly if undefined) rather than a component or
+  const (could fail silently without ever throwing).
+- **`useLocalState`** (`packages/shared/src/hooks/use-local-state.ts:11`,
+  `'use client'`) — one consumer,
+  `apps/web/src/features/senders/table/sender-group.tsx:28` — confirmed via
+  repo-wide grep to be genuinely orphaned (no live import of `SenderGroup`
+  anywhere outside its own definition/test/story; matches
+  `LEARNINGS.md`'s prior note on this exact component).
+- The sweeper checked all 7 `optimizePackageImports`-listed subpath
+  barrels (`/actions`, `/contracts`, `/copy`, `/entitlements`, `/flags`,
+  `/observability`, `/senders`) and found none export hooks — the risk
+  surface is exactly the 7 hooks in the root `@declutrmail/shared` barrel.
+  `useLabels` and `useExpandableRow` have no current web consumers (low
+  risk by absence, not by safety); `useUiStore` likewise.
+
+**Regression test:** per the prior incident's own logged rule, a Node/Vitest
+assertion CANNOT catch this — it resolves correctly in Node and only breaks
+in the bundled client graph. The correct guard is the build-output check
+named above, not a unit test. A live re-drive (load the route, read the
+console) is the only thing that currently sees this class.
+
+**Fixed.** `useLongPress` now imports from a real module path
+(`@declutrmail/shared/hooks/use-long-press`, added to `packages/shared/
+package.json`'s `exports` map) instead of the barrel, mirroring the exact
+remedy MISTAKES.md's prior entry names. `useIsAtMost` (the sibling that
+resolved fine) was left importing from the barrel — minimum surgical diff,
+only the confirmed-broken symbol moved. `pnpm typecheck` clean on both
+`packages/shared` and `apps/web`.
+
+**Live-verified, with a methodology correction.** The web dev server
+needed a full kill-and-restart AND its `.next` directory moved aside
+(`mv .next .next-stale-precache`) before the fix took effect — a
+`package.json` exports-map edit is not picked up by Next's dev-mode
+webpack persistent disk cache the way a source-file edit is; a plain
+process restart alone (no cache clear) still served the old, broken
+module graph. Once truly cold-started, re-testing on the SAME long-lived
+browser tab still showed the identical 3 errors — which turned out to be
+a second, unrelated artifact: this session's browser-automation tool does
+not clear its console-message buffer on same-tab navigation, so
+`read_console_messages` was returning stale entries from earlier in the
+tab's life, not fresh ones. Opening a genuinely new tab and reloading
+`/senders` showed **zero console errors**, mobile (375px, scrolled through
+all 50 loaded rows via `get_page_text` — every row rendered, no crash UI,
+no "We couldn't load your senders") and desktop (general browsing plus
+the `amazon.com` brand-group expand the refuter's report flagged as a
+candidate desktop trigger). This is now logged as its own trap in
+`LEARNINGS.md` — always open a fresh tab (or otherwise confirm buffer
+freshness) before trusting a console read as evidence of a CURRENT-state
+error when re-testing a fix.
+
+**What this revises, honestly.** The "silent-partial at desktop" framing
+in this row's own one-line summary — 2 rows failing quietly on a plain
+fresh desktop load, no visible crash — was built on a console read that,
+in light of the artifact above, cannot be trusted as independent evidence;
+it may have been the same stale-buffer effect, not a second, distinct
+desktop-only failure mode. What remains solidly confirmed, unaffected by
+this correction: the MOBILE crash was real and screenshot-proven (the
+rendered "THE LIST HIT A SNAG" UI is not a console artifact), reproduced
+identically across a process restart, and the refuter's source-level
+finding that the call is unconditional (not viewport-gated) stands on its
+own regardless of which browser evidence is trusted. Summary line
+corrected above to drop the unverifiable desktop-silent-failure claim
+rather than carry it forward as fixed.
+
+**Siblings (`useFocusTrap`, `useLocalState`) — fixed too, after Codex's
+round-1 review flagged them.** Not part of the originally-approved scope,
+but the same demonstrated defect class, so extended per the standing
+"fix the class, not the instance" rule rather than left open one call
+away from the same crash. `00e355fd`: exports-map entries added for both,
+all 17 real consumers (16 `useFocusTrap` + 1 `useLocalState`) migrated to
+their direct module paths, plus an `eslint` `no-restricted-imports` rule
+(`eslint.config.mjs`) that now refuses a barrel import of any of the
+three hooks — proven to actually catch a regression, since a full-repo
+lint pass caught one migration this same pass had missed
+(`apps/web/src/lib/focus-trap-contract.test.tsx`). Live-verified the two
+highest-stakes consumers (billing cancel modal, account deletion modal):
+both render and focus-trap correctly, zero console errors, on a
+cold-started `next dev`. `useLocalState`'s sole consumer
+(`SenderGroup`) could not be live-driven — confirmed via repo-wide grep
+to be genuinely orphaned, matching `LEARNINGS.md`'s prior note; the fix
+there is correct but currently unreachable.
+
+### QA-mailbox-switch-20260831-02 — Refuted after implementation was attempted
+
+**Approved this session as a P2 fix, then REFUTED before any code shipped —
+the investigation done to implement it killed its own premise.** Recorded
+in full because the reasoning is the reusable part, not just the verdict.
+
+**Originally filed from `flow-completeness-auditor`, source-only (no
+shell/DB/browser access) — grep-confirmed structure, live behaviour
+UNMEASURED.**
+
+`useSetActiveMailbox.onSuccess` (`apps/web/src/features/mailboxes/api/
+use-set-active-mailbox.ts:22`) routes through a shared reset
+(`reset-mailbox-cache.ts:31`) that fires a bare, filterless
+`queryClient.invalidateQueries()` plus a `declutrmail:mailbox-scope-reset`
+window event on every switch — this IS the mechanism this run's own live
+switches rode, and it held up under every attack actually driven (see
+"Held up under attack" below). But three feature areas were never visited
+this run and carry no mailbox-id in their query keys at all, meaning
+correctness for them rests ENTIRELY on that one global invalidate firing
+correctly, with nothing partitioning the cache as a second line of
+defence — exactly the shape CLAUDE.md §8 already names as this codebase's
+own recurring trap ("feature query keys aren't partitioned by mailbox, so
+stale data survives a switch"):
+
+- **Autopilot** — `['autopilot','rules'|'pending-suggestions'|'pattern-suggestion']`
+  (`apps/web/src/features/autopilot/api/query-keys.ts:9-16`), no mailbox
+  segment.
+- **Screener** — `['screener','queue']` / `['screener','count']`
+  (`apps/web/src/features/screener/api/query-keys.ts:12`,
+  `.../query-options.ts:15`), no mailbox segment.
+- **Brief** — `['brief','today']`
+  (`apps/web/src/features/brief/api/query-keys.ts:10-20`), documented in
+  its own source as relying on the global reset.
+
+**Quiet is the control case and is fine**: `['quiet','hours',mailboxId]`
+IS partitioned (`apps/web/src/features/quiet/api/query-keys.ts:12`), and
+the screen renders one card per mailbox rather than scoping to "active" at
+all (`quiet-screen.tsx:69`), so a switch is a structural non-event there —
+this is the shape the other three would need if partitioning were the
+fix, though the global-reset approach is a legitimate alternative IF it
+can be shown to always fire before a stale read is possible.
+
+**What killed it.** Before writing a partitioning patch, read
+`apps/web/src/features/senders/api/query-keys.ts`'s own doc comment —
+Senders itself, the screen this run spent the most time driving and
+never caught leaking, states outright: _"Mailbox scope is still handled
+by `resetMailboxScopedCache` on mailbox switch (§8 invariant) — promoting
+mailbox into the key itself is a later cleanup."_ Senders is NOT
+partitioned either. Neither is Triage. Reading
+`apps/web/src/features/mailboxes/api/reset-mailbox-cache.ts` (the actual
+reset function) confirms why that's fine: `resetMailboxScopedCache` calls
+`qc.invalidateQueries()` with **no filter at all**, on every successful
+switch, unconditionally — its own doc comment names the exact 2026-05-28
+stale-screen incident this shape was built to fix, and explicitly chose
+`invalidateQueries()` over `clear()` because `clear()` doesn't force
+already-mounted observers to refetch. A filterless invalidate cannot
+selectively miss three specific features — it is structurally impossible
+for Autopilot/Screener/Brief to be exempt from a call that takes no
+argument.
+
+**Live-verified anyway**, since the doc comments alone shouldn't be trusted
+without a check: opened `/autopilot` on primary (rule "Later for new
+senders," real matched data), switched to `chintan.a.thakkar.crypt@gmail.com`
+via the account menu, and captured the network trace. Immediately after
+`PATCH /api/mailboxes/.../active → 200`: `GET /api/autopilot/rules`,
+`GET /api/autopilot/pending-suggestions`, and
+`GET /api/autopilot/pattern-suggestion` all fired and returned 200. The
+screen re-rendered with crypt's own rule set ("Long-dormant unsubscribe,"
+never seen on primary) — no leaked primary-mailbox data.
+
+**Verdict: REFUTED, not fixed.** Adding per-key mailbox partitioning to
+only these three features, on top of a mechanism that already covers them
+by construction, would have made the codebase LESS consistent (three
+screens on a different, redundant pattern from Senders/Triage/everything
+else) while fixing nothing — the premise ("correctness rests entirely on
+one global reset with nothing backing it up") was true but not a defect:
+that IS the deliberate, working, single mechanism this whole app uses,
+proven live. No code changed for this row.
+
+### QA-mailbox-switch-20260831-03 through -06 — filed from `usability-editor`, not put through a dedicated `finding-refuter`
+
+**Scope/budget call, same precedent as `QA-archive-20260828-01/-04/-05/-06`
+and `QA-undo-20260828-04`** — each item below is sourced from the actual
+rendered component this run identified live
+(`apps/web/src/features/mailboxes/account-menu.tsx`), not a raw screen
+impression; none independently re-attacked by a refuter. All P2/P3:
+comprehension friction, nothing unreachable, nothing false enough to block
+the job.
+
+- **-03, P2 — one state, three names.** The checkmark's aria-label says
+  `"Selected mailbox ${email}"` (`:226`), the row's own aria-label says
+  `Selected` (`:288`), and the visible badge text says `Active` (`:294`,
+  uppercased by CSS at `:551`). Propose: `Active` everywhere, aria-label
+  `"Active mailbox ${m.email}"`.
+- **-04, P2 — switching's actual effect is never stated.** Nothing in the
+  component — not the panel (`aria-label="Gmail accounts"`, `:159`), not
+  the header (`Accounts`, `:191`) — says that switching rescopes every
+  screen in the app, not just this menu. Propose a one-line subline under
+  the header: `Everything you see is scoped to the active account.`
+- **-05, P3 — lookalike addresses, truncated-only.** The trigger pill has
+  `title={activeLabel}` (`:113`, full email on hover); the dropdown rows
+  (`:272`, `textOverflow: 'ellipsis'`) do not. This account's own two
+  mailboxes — `chintan.a.thakkar@gmail.com` /
+  `chintan.a.thakkar.crypt@gmail.com` — are exactly the case where this
+  matters: the `.crypt` is the whole difference and it's what truncates
+  first. Propose: add `title={m.email}` at `:268`.
+- **-06, P3 — "data kept" doesn't say whose.** `'Disconnected · data
+kept'` (`:529`) reads as "your Gmail is untouched," when it means
+  DeclutrMail's own retained sender/decision history — the honest version
+  of this sentence already exists, just not here (the post-action toast,
+  `:467`). Propose: `Disconnected · history kept`.
+
+**Regression test:** none of the four — copy/labelling consistency, not
+logic defects with a clean red/green boundary.
+
+### Review rounds — QA-01 / QA-03 / QA-04 / QA-05 / QA-06
+
+Two diffs (`67d1ffa1`/`00e355fd` for QA-01, `22bd7866` for QA-03–06),
+reviewed together since both were in flight the same session.
+
+| round | ran against           | verdict                    | what it returned                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----- | --------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | `67d1ffa1`/`22bd7866` | **substantive**            | QA-01's fix left `useFocusTrap`/`useLocalState` on the same broken barrel path — same mechanism, unfixed. QA-06's negative control was unsound: the only test asserting the new wording covered the Settings-page duplicate, not `account-menu.tsx`'s own copy — reverting the approved file alone would have stayed green. Both fixed in `00e355fd` and `4359a8b8`.                                                                                                                                         |
+| 2     | `00e355fd`/`4359a8b8` | **substantive, docs only** | Code and tests confirmed clean on every point checked (migration completeness, eslint-rule scope and correctness, import placement, orphan-consumer claim independently re-verified, MAILBOX_C fixture trace confirmed). One real finding: `FINDINGS.md`'s Inbox entry still carried the retracted "silent desktop failure" claim and miscounted `useFocusTrap` consumers as 15 instead of 16 — both fixed directly in docs. Mechanical (no product code/behavior changed) — no round 3 per the Rules above. |
+
+Cap reached at two substantive rounds; round 2's only finding was
+documentation, not code, so it did not need a third pass.
+
+### Smoke before merge — 2026-09-01, PR #699, `98ed13a5`
+
+CI green on every check, including CI's own "Authenticated accessibility
+smoke" — plus a separate live browser pass on this worktree's own stack
+(api :4001, web :3003, both cwd-confirmed this checkout, on the exact
+commit CI ran against), fresh tab throughout:
+
+- `/senders` desktop: loads, 511 senders, zero console errors. Switched
+  primary → `chintan.a.thakkar.crypt@gmail.com` and back via the account
+  menu — re-scoped correctly both directions (511 ↔ 11 senders), zero
+  console errors on either side. Opened the `amazon.com` brand-group card
+  on the crypt mailbox — zero console errors.
+- `/senders` mobile (375px): all 50 loaded rows rendered via `get_page_text`
+  (the DOM check, not viewport-dependent) — zero console errors. This is
+  the exact crash's original reproduction path.
+- Account menu, live: "ACCOUNTS" header + "Everything you see is scoped to
+  the active account." subline (QA-04) present; `✓ …@gmail.com ACTIVE`
+  (QA-03, not "Selected"); both dropdown rows carry a `title` attribute
+  with the full email (QA-05, confirmed via `[title]` DOM query, not just
+  visual truncation).
+- `/settings` mobile (375px): `Gmail accounts` card renders `ACTIVE` badge
+  correctly at this width too; zero console errors.
+- Triage D226 preview modal (`confirm-action-modal.tsx`, a migrated
+  `useFocusTrap` consumer): opened, rendered, focus-trapped, zero console
+  errors. Combined with the billing cancel modal and account-deletion
+  modal already live-verified during the fix itself (see above), 3 of the
+  16 migrated `useFocusTrap` consumers are now live-confirmed across
+  three structurally different modal shapes (D226 preview, billing
+  confirm, multi-step account deletion).
+
+Not smoked this pass: the mobile account-switcher tap sequence itself
+(same browser-pane mobile-viewport click-timeout artifact logged on the
+`archive` and `delete` job runs — confirmed again this pass, unrelated to
+product state) and the remaining 13 `useFocusTrap` consumers (typecheck +
+lint + the new `no-restricted-imports` guard + 1248 passing unit tests
+cover them structurally; no further live drive attempted).
+
+**Held up under attack (what the probes would have caught):**
+
+- Switching mailboxes (primary ↔ `chintan.a.thakkar.crypt@gmail.com`) via
+  the real UI correctly re-scoped Senders (510 → 11 senders), Triage (12
+  decisions, correct sender names), and every app-shell query
+  (`auth/me`, `senders/summary`, `screener/count`, `sync/status`, `undo`,
+  `snoozed/recovery`) — no stale-count leak observed on either screen in
+  either direction.
+- A `Sender Detail` page left mounted for a sender from the mailbox just
+  switched AWAY from re-fetched on its own (network-captured: the
+  mounted page's own query refired for the stale id) and got a clean 404
+  — rendered "Sender not found," not a crash, not stale data.
+- **Two-tab race, proven at the API layer, not just observed in the UI**:
+  `GET /api/actions/preview?senderId=X` (the D226-mandatory composite
+  preview every action sheet depends on) is scoped by the request's
+  `CurrentMailbox` context, not the sender row's own permanent
+  `mailbox_account_id`. Direct test: previewed a sender that belongs to
+  mailbox A while active was flipped to mailbox B via the SAME session →
+  clean 404 `SENDER_NOT_FOUND`; flipped back to A → succeeded normally.
+  A stale tab cannot execute a mutation against the wrong mailbox's data —
+  it fails closed at the preview step, before D226's mutation gate is
+  even reached.
+- Switching to a `disconnected` target mailbox (forced via
+  `mailbox_accounts.status='disconnected'`, restored and re-verified
+  after) is blocked by a genuinely `disabled` native `<button>`
+  (`disabled=""` confirmed via DOM inspection) — not merely visually
+  hidden; native click/keyboard activation is inert.
+- `PATCH /api/mailboxes/:id/active` with a random non-owned UUID → clean
+  404 `NOT_FOUND`; with a malformed non-UUID → clean 400 `BAD_REQUEST`;
+  neither corrupts the account's actual active-mailbox state (`auth/me`
+  re-checked clean after both).
+
+**Not run, with reasons** (named by `flow-completeness-auditor`, not
+driven this run — time, not access):
+
+- The CURRENTLY active mailbox going `disconnected` out-of-band mid-session
+  (as opposed to a switch TARGET, which was tested) — no reset trigger
+  exists for this case by construction; unclear whether any screen
+  self-heals or traps.
+- Two literal concurrent browser tabs (this run's two-tab race was proven
+  via one session/two logical actors, not two real tabs) — the reset event
+  is same-window only; unknown whether a second real tab self-heals on
+  refocus or needs a manual reload.
+- Switching mailboxes while an action-sheet/preview MODAL is actually open
+  and rendered (as opposed to a mounted detail page, which was tested).
+- Switching mid-in-flight mutation (POST already sent, switch happens
+  before the response lands).
+- The mobile (375px) account-switcher control itself — the underlying
+  crash (QA-mailbox-switch-20260831-01) was found while attempting this,
+  but the switcher's OWN mobile behaviour was never reached; the
+  browser-pane's mobile-viewport tooling began hanging on further
+  interaction (the same class of harness artifact already logged on the
+  `archive` and `delete` job runs — not a product finding).
+- Autopilot/Screener/Brief screens with a mailbox switch actually visible
+  and driven (see QA-02 above — structural risk assessed, not reproduced).

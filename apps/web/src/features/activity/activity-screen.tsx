@@ -22,9 +22,9 @@ import {
   ScreenIntro,
   TechnicalDetails,
   tokens,
-  useFocusTrap,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 

@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Kbd, tokens } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   CANONICAL_SHORTCUTS,
   getActionDescriptor,

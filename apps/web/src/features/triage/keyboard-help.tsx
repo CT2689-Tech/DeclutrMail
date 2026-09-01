@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Kbd, tokens, useFocusTrap } from '@declutrmail/shared';
-
+import { Kbd, tokens } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 // Cross-feature helper import per ADR-0007's second-consumer rule —
 // the senders cheatsheet and this overlay must guard `?` identically
 // (a `?` typed into a search field is a literal, never a toggle).

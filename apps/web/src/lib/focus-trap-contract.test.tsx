@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { useFocusTrap } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { describe, expect, it } from 'vitest';
 
 function Trap({ active }: { active: boolean }) {

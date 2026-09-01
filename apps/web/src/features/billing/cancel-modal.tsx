@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 
-import { Button, Eyebrow, tokens, useFocusTrap } from '@declutrmail/shared';
+import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import type { CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 

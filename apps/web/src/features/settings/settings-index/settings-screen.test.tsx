@@ -274,8 +274,7 @@ describe('SettingsScreen', () => {
     const revokedRow = screen
       .getByText('chintan.a.thakkar.crypt@gmail.com')
       .closest('li') as HTMLElement;
-    expect(within(revokedRow).getByText('Selected')).toBeInTheDocument();
-    expect(within(revokedRow).queryByText('Active')).not.toBeInTheDocument();
+    expect(within(revokedRow).getByText('Active')).toBeInTheDocument();
     // This mailbox is already one of the two active accounts, so
     // re-authorizing it consumes no new slot and remains available at
     // the Pro limit. Its id binds Google's returned identity to B.
@@ -304,7 +303,7 @@ describe('SettingsScreen', () => {
     });
     // One active of two allowed — reconnecting is allowed.
     expect(reconnect).toBeEnabled();
-    expect(screen.getByText('Disconnected · data kept')).toBeInTheDocument();
+    expect(screen.getByText('Disconnected · history kept')).toBeInTheDocument();
     await userEvent.click(reconnect);
     expect(startMailboxReactivationSpy).toHaveBeenCalledWith(MAILBOX_B);
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();

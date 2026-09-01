@@ -178,17 +178,24 @@ export function AccountMenu() {
             zIndex: 90,
           }}
         >
-          <div
-            style={{
-              padding: '4px 8px',
-              fontFamily: font.mono,
-              fontSize: 9.5,
-              textTransform: 'uppercase',
-              letterSpacing: '0.14em',
-              color: color.fgMuted,
-            }}
-          >
-            Accounts
+          <div style={{ padding: '4px 8px' }}>
+            <div
+              style={{
+                fontFamily: font.mono,
+                fontSize: 9.5,
+                textTransform: 'uppercase',
+                letterSpacing: '0.14em',
+                color: color.fgMuted,
+              }}
+            >
+              Accounts
+            </div>
+            {/* -04: nothing else in this menu says switching rescopes every
+                screen, not just this pill — a first-timer switching by
+                accident had no way to know why their sender list changed. */}
+            <div style={{ fontSize: 11, color: color.fgMuted, marginTop: 2 }}>
+              Everything you see is scoped to the active account.
+            </div>
           </div>
           {me.mailboxes.length === 0 && (
             <div style={{ padding: '6px 8px', color: color.fgMuted }}>No mailboxes connected.</div>
@@ -223,7 +230,7 @@ export function AccountMenu() {
                   <button
                     type="button"
                     aria-pressed={isSelected}
-                    aria-label={`${isSelected ? 'Selected mailbox' : 'Switch to mailbox'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
+                    aria-label={`${isSelected ? 'Active mailbox' : 'Switch to mailbox'} ${m.email}${needsReconnect ? ', needs reconnect' : ''}`}
                     disabled={isDisconnected || setActive.isPending}
                     onClick={() => {
                       if (isSelected) return;
@@ -266,6 +273,7 @@ export function AccountMenu() {
                       }}
                     >
                       <span
+                        title={m.email}
                         style={{
                           display: 'block',
                           overflow: 'hidden',
@@ -285,7 +293,7 @@ export function AccountMenu() {
                             marginTop: 2,
                           }}
                         >
-                          {isSelected && <MenuStatus tone="primary">Selected</MenuStatus>}
+                          {isSelected && <MenuStatus tone="primary">Active</MenuStatus>}
                           <MenuStatus tone="danger">Needs reconnect</MenuStatus>
                         </span>
                       )}
@@ -526,7 +534,7 @@ export function mailboxDataLifecycleLabel(
     case 'deleted':
       return 'Data deleted';
     case 'retained':
-      return 'Disconnected · data kept';
+      return 'Disconnected · history kept';
     default:
       return null;
   }

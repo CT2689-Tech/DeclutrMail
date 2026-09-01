@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Button, Eyebrow, Kbd, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
+import { Button, Eyebrow, Kbd, tokens, useIsAtMost } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { presetDisplayName } from './preset-labels';
 

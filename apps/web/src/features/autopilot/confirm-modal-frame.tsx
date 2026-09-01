@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
-import { Button, Eyebrow, Kbd, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
+import { Button, Eyebrow, Kbd, tokens, useIsAtMost } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 
 const { color, font } = tokens;

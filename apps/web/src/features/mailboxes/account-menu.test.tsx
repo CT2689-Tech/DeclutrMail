@@ -125,13 +125,12 @@ describe('AccountMenu Gmail reconnect health', () => {
     const { user } = await renderOpenMenu();
     const row = screen.getByTestId(`account-mailbox-${MAILBOX_A.id}`);
 
-    expect(within(row).getByText('Selected')).toBeInTheDocument();
+    expect(within(row).getAllByText('Active')).toHaveLength(1);
     expect(within(row).getByText('Needs reconnect')).toBeInTheDocument();
-    expect(within(row).queryByText('Active')).not.toBeInTheDocument();
     expect(within(row).queryByText('Sync failed')).not.toBeInTheDocument();
     expect(
       within(row).getByRole('button', {
-        name: `Selected mailbox ${MAILBOX_A.email}, needs reconnect`,
+        name: `Active mailbox ${MAILBOX_A.email}, needs reconnect`,
       }),
     ).toBeEnabled();
 
@@ -185,6 +184,10 @@ describe('AccountMenu Gmail reconnect health', () => {
       name: `Reconnect ${MAILBOX_C.email}`,
     });
 
+    // -06: "data kept" read as "your Gmail is untouched" — this file's own
+    // wording, not the Settings-page duplicate `mailboxes-card.tsx` already
+    // asserts elsewhere.
+    expect(within(row).getByText('Disconnected · history kept')).toBeInTheDocument();
     expect(reconnect).toBeDisabled();
     expect(reconnect).toHaveAttribute('aria-describedby', 'account-menu-inbox-limit-gate');
     expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(/2 of 2 inboxes connected/i);
@@ -209,6 +212,9 @@ describe('AccountMenu Gmail reconnect health', () => {
 
     expect(within(healthyRow).getByText('Active')).toBeInTheDocument();
     expect(within(healthyRow).queryByText('Needs reconnect')).not.toBeInTheDocument();
+    // -05: two similarly-truncated addresses need the full value on hover —
+    // the pill trigger already has this; the dropdown row did not.
+    expect(within(healthyRow).getByText(MAILBOX_A.email)).toHaveAttribute('title', MAILBOX_A.email);
     expect(
       within(healthyRow).queryByRole('button', { name: `Reconnect ${MAILBOX_A.email}` }),
     ).not.toBeInTheDocument();
@@ -236,6 +242,11 @@ describe('AccountMenu Gmail reconnect health', () => {
     await user.keyboard('{Enter}');
     const dialog = screen.getByRole('dialog', { name: 'Gmail accounts' });
     expect(dialog).toHaveFocus();
+    // -04: a first-timer switching by accident should learn, right here,
+    // that it rescopes every screen — not just this menu.
+    expect(
+      within(dialog).getByText('Everything you see is scoped to the active account.'),
+    ).toBeInTheDocument();
     expect(useMailboxesHealthSpy).toHaveBeenLastCalledWith(me.mailboxes, { enabled: true });
     expect(dialog.getAttribute('style')).toContain('width: 300px');
     expect(dialog.getAttribute('style')).toContain('max-width: calc(100vw - 24px)');
@@ -244,9 +255,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(dialog.getAttribute('style')).toContain('overscroll-behavior: contain');
 
     await user.tab();
-    expect(
-      screen.getByRole('button', { name: `Selected mailbox ${MAILBOX_A.email}` }),
-    ).toHaveFocus();
+    expect(screen.getByRole('button', { name: `Active mailbox ${MAILBOX_A.email}` })).toHaveFocus();
     await user.tab();
     expect(
       screen.getByRole('button', {

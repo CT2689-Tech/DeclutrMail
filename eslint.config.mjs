@@ -97,6 +97,12 @@ export default tseslint.config(
               message:
                 "skipToken is written onto the SHARED query and disarms every other observer of that key (Missing queryFn — prod outage 2026-08-21). Use `enabled: false`, which is read per-observer, and spread the owning hook's query options so queryFn/retry cannot diverge.",
             },
+            {
+              name: '@declutrmail/shared',
+              importNames: ['useLongPress', 'useFocusTrap', 'useLocalState'],
+              message:
+                "This hook has shipped as `undefined` in the browser bundle when imported from the @declutrmail/shared barrel — Next's optimizePackageImports rewrite doesn't reliably resolve it, even alongside sibling imports in the same statement (MISTAKES.md 2026-08-27; QA-mailbox-switch-20260831-01). Import it from its real module path instead, e.g. `@declutrmail/shared/hooks/use-long-press`.",
+            },
           ],
         },
       ],

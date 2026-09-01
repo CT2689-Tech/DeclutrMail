@@ -3,7 +3,8 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 
-import { Button, Eyebrow, tokens, useFocusTrap, useIsAtMost } from '@declutrmail/shared';
+import { Button, Eyebrow, tokens, useIsAtMost } from '@declutrmail/shared';
+import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
