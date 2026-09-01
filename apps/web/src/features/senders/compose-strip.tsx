@@ -41,7 +41,10 @@ import type {
 // which WINDOWS has no single constant for.
 const ACTIVITY_BUCKET_TITLE: Record<ActivityBucket, string> = {
   active: `Last email within ${WINDOWS.ACTIVE_DAYS} days`,
-  quiet: `Last email ${WINDOWS.ACTIVE_DAYS}–${WINDOWS.DORMANT_DAYS} days ago`,
+  // Codex round-1 review: "30–180 days ago" overlapped Active's own
+  // inclusive 30-day boundary — a sender last seen exactly 30 days ago
+  // reads as Active, not Quiet.
+  quiet: `Last email more than ${WINDOWS.ACTIVE_DAYS} and up to ${WINDOWS.DORMANT_DAYS} days ago`,
   dormant: `Last email over ${WINDOWS.DORMANT_DAYS} days ago`,
 };
 
@@ -156,9 +159,16 @@ export function ComposeStrip({
       }}
     >
       <AxisLabel>activity</AxisLabel>
-      <ActivityChip bucket="active" state={state} count={counts?.active} onChange={onChange} />
-      <ActivityChip bucket="quiet" state={state} count={counts?.quiet} onChange={onChange} />
-      <ActivityChip bucket="dormant" state={state} count={counts?.dormant} onChange={onChange} />
+      {/* Codex round-1 review of QA-senders-20260901-07: three
+          `role="radio"` chips with no `radiogroup` ancestor is invalid
+          ARIA. `display: contents` keeps them as direct flex children
+          of the strip (same gap/wrap behaviour) while giving them a
+          real group for assistive tech. */}
+      <div role="radiogroup" aria-label="Activity" style={{ display: 'contents' }}>
+        <ActivityChip bucket="active" state={state} count={counts?.active} onChange={onChange} />
+        <ActivityChip bucket="quiet" state={state} count={counts?.quiet} onChange={onChange} />
+        <ActivityChip bucket="dormant" state={state} count={counts?.dormant} onChange={onChange} />
+      </div>
 
       <Divider />
 

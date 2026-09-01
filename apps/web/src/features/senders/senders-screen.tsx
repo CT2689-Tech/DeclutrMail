@@ -349,7 +349,12 @@ export function SendersScreen() {
   // refetch over already-fresh-enough rows should not do either; only
   // the two aggregates below (chips, freshness caption) that can render
   // a stale NUMBER with no cue need it.
-  const countsMayBeStale = showingWidened ? widenProbe.isFetching : sendersQuery.isFetching;
+  // Codex round-1 review: `isFetching` also covers `fetchNextPage()` —
+  // scrolling to load more rows was flagging the page-1 aggregates as
+  // stale even though nothing about them was being refetched. Excluded.
+  const countsMayBeStale = showingWidened
+    ? widenProbe.isFetching && !widenProbe.isFetchingNextPage
+    : sendersQuery.isFetching && !sendersQuery.isFetchingNextPage;
   // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
   // KPI strip, and intent chips so headline numbers reflect the WHOLE
   // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
@@ -2319,7 +2324,7 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Review every person, list, and service that emails you, grouped by sender. Archive, Later and Delete change only email you already have; Unsubscribe and Autopilot rules change what arrives next."
+        body="Review every person, list, and service that emails you, grouped by sender. Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches automatically."
         learnMore={{
           href: '/methodology#automation-method',
           label: 'Manual decisions vs automatic rules',
@@ -2422,6 +2427,7 @@ function SendersScreenContent({
           mailboxEmail={activeEmail}
           totalSenders={filterCounts?.total ?? null}
           updating={countsMayBeStale}
+          rowsReadOnly={showingStaleRows}
           stillSyncing={mailboxStillSyncing}
           syncFailed={mailboxSyncFailed}
         />
@@ -2877,6 +2883,7 @@ function SenderResultsFreshness({
   mailboxEmail,
   totalSenders,
   updating,
+  rowsReadOnly,
   stillSyncing,
   syncFailed,
 }: {
@@ -2884,6 +2891,14 @@ function SenderResultsFreshness({
   mailboxEmail: string;
   totalSenders: number | null;
   updating: boolean;
+  /**
+   * Codex round-1 review of QA-senders-20260901-01: `updating` now also
+   * fires for a same-key background refetch, where the rows stay fully
+   * interactive (only `showingStaleRows` disables the fieldset) — so
+   * "rows are read-only" is false in that case. True only when the
+   * fieldset is actually disabled.
+   */
+  rowsReadOnly: boolean;
   stillSyncing: boolean;
   /** QA-sync-20260831-02/04: the active mailbox's initial sync failed. */
   syncFailed: boolean;
@@ -2961,7 +2976,11 @@ function SenderResultsFreshness({
       ) : updating ? (
         <>
           <strong style={{ fontWeight: 600 }}>Updating results…</strong>
-          <span>Previous count and rows are read-only.</span>
+          <span>
+            {rowsReadOnly
+              ? 'Previous count and rows are read-only.'
+              : 'Counts may be a moment behind.'}
+          </span>
           <span>
             Previous snapshot <time dateTime={asOf}>{label}</time>.
           </span>
@@ -3070,9 +3089,12 @@ function BulkSelectButton({
       }}
     >
       {/* QA-senders-20260901-09: "loaded" is the infinite-query's own
-          vocabulary, not the reader's — "shown" says the same thing
-          (this page, not the whole filtered set) in plain language. */}
-      {allSelected ? `deselect ${senders.length} shown [⌫]` : `select ${senders.length} shown [+]`}
+          vocabulary, not the reader's. Codex round-1 review: "shown" is
+          FALSE in Grid mode once a domain group collapses 3+ senders
+          behind one card — this button still selects every one of
+          them, not just the visible cards. "all N" claims neither
+          loading state nor visibility, so it holds in both views. */}
+      {allSelected ? `deselect all ${senders.length} [⌫]` : `select all ${senders.length} [+]`}
     </button>
   );
 }

@@ -776,11 +776,18 @@ describe('SendersScreen — edge states', () => {
     // The prior response's row is still shown (this is NOT a placeholder
     // swap) — the read-only fieldset guard must NOT engage for this path,
     // only the two aggregates.
-    expect(screen.getByTestId('sender-results-region')).toHaveAttribute('aria-busy', 'false');
+    const region = screen.getByTestId('sender-results-region');
+    expect(region).toHaveAttribute('aria-busy', 'false');
     expect(screen.getByRole('group', { name: 'Filter and sort senders' })).toHaveAttribute(
       'aria-busy',
       'true',
     );
+    // Codex round-1 review: the caption must not claim the rows are
+    // read-only when they demonstrably aren't (the checkbox stays live).
+    expect(screen.getByTestId('sender-results-freshness')).not.toHaveTextContent(
+      /rows are read-only/,
+    );
+    expect(screen.getByRole('checkbox', { name: /select sender a/i })).not.toBeDisabled();
 
     await act(async () => {
       resolveRefetch?.(
@@ -2109,9 +2116,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     installFetchStub([TWO_SENDER_LIST]);
     renderScreen();
 
-    const selectLoaded = await screen.findByRole('button', { name: /select 2 shown/i });
+    const selectLoaded = await screen.findByRole('button', { name: /select all 2/i });
     fireEvent.click(selectLoaded);
-    expect(screen.getByRole('button', { name: /deselect 2 shown/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /deselect all 2/i })).toBeInTheDocument();
   });
 
   it('A3: Free multi-sender selections open the bulk flow — no gate, no note', async () => {

@@ -113,6 +113,12 @@ export function describeInboxScope(input: InboxScopeInput): InboxScopeNotice {
 export function tiedWindowNoticeCopy(
   counts: readonly { label: string; count: number | undefined }[],
   newestInboxDays: number | null,
+  // Codex round-1 review of QA-senders-20260901-06: the caller passes
+  // `newestInboxDays: null` for every bulk preview (a per-sender age has
+  // no single value across senders), which always fell through to a
+  // hardcoded singular "This sender has nothing newer" — false for a
+  // 5-sender tied row. Mirrors `inboxScopeNoticeCopy`'s subject param.
+  subject: 'this sender' | 'these senders' = 'this sender',
 ): string | null {
   const known = counts.filter(
     (c): c is { label: string; count: number } => typeof c.count === 'number',
@@ -128,7 +134,9 @@ export function tiedWindowNoticeCopy(
   // extent), 13 words instead of 24 — lead with the cause.
   const ageLead =
     newestInboxDays === null
-      ? 'This sender has nothing newer'
+      ? subject === 'this sender'
+        ? 'This sender has nothing newer'
+        : 'These senders have nothing newer'
       : `Nothing newer than ${newestInboxDays.toLocaleString('en-US')} day${newestInboxDays === 1 ? '' : 's'}`;
   return `${ageLead}, so every window through ${widest.label} matches the same ${top.count.toLocaleString('en-US')}.`;
 }

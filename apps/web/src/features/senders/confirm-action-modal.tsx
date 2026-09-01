@@ -548,6 +548,7 @@ export function ConfirmActionModal({
         // has a different denominator, so pass null and let the copy
         // state the tie without an inbox age it no longer describes.
         isBulk || activeReach === 'all_mail' ? null : newestInboxDays(compositePreview),
+        isBulk ? 'these senders' : 'this sender',
       )
     : null;
 

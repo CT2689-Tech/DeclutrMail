@@ -293,6 +293,30 @@ describe('tiedWindowNoticeCopy — age is caller-supplied, never inferred', () =
   });
 });
 
+// Codex round-1 review of QA-senders-20260901-06: the caller passes
+// `newestInboxDays: null` for every bulk preview, which fell through to a
+// hardcoded singular "This sender has nothing newer" — false for a
+// multi-sender tied row.
+describe('tiedWindowNoticeCopy — subject', () => {
+  const tied = [
+    { label: 'All inbox', count: 2908 },
+    { label: '30 days+', count: 2908 },
+    { label: '1 year+', count: 59 },
+  ];
+
+  it('defaults to the singular subject', () => {
+    expect(tiedWindowNoticeCopy(tied, null)).toBe(
+      'This sender has nothing newer, so every window through 30 days+ matches the same 2,908.',
+    );
+  });
+
+  it('pluralizes for a bulk preview', () => {
+    expect(tiedWindowNoticeCopy(tied, null, 'these senders')).toBe(
+      'These senders have nothing newer, so every window through 30 days+ matches the same 2,908.',
+    );
+  });
+});
+
 // Founder report 2026-08-25: a Later preview on `ealerts.bankofamerica.com`
 // read "0 emails currently match" beside a strip reading "200 in last 90d ·
 // 6,668 received". The numbers were all correct and the founder still had to

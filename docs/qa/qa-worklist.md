@@ -2172,3 +2172,100 @@ with a response whose `filterCounts` differ from a previous render's, assert
 — or, at the integration level, assert `ComposeStrip` receives a
 staleness-derived prop at all (it currently receives none, so this assertion
 would fail today by construction, not by racing a timer).
+
+### Review rounds — the 9-item fix bundle (01, 03–10)
+
+One diff, sent as one Codex review (the fixes for -01/-03/-04/-05/-06/-07/-08/
+-09/-10 landed together, `fd6b2d9a` on top of the run's own docs commit
+`96b00dad`).
+
+| round | ran against | verdict         | what it returned                                                                                                                                           |
+| ----- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `fd6b2d9a`  | **substantive** | 6 findings across 6 of the 9 items (01, 02-comment, 03, 04, 06, 07, 09), each a real defect in THIS diff, not the pre-existing baseline. Fixed; see below. |
+
+**Round 1's six findings.**
+
+1. **01 — the "read-only" caption lied on the path it was meant to cover.**
+   `countsMayBeStale` (→ `updating`) now also fires for a same-key background
+   refetch, where the row fieldset stays fully interactive
+   (`showingStaleRows` alone gates that). The freshness caption's fixed text
+   — "Previous count and rows are read-only" — is false on that path; the
+   checkbox a reviewer clicks right under that sentence still works. Fixed:
+   `SenderResultsFreshness` now takes a separate `rowsReadOnly` prop
+   (`showingStaleRows`) and only claims read-only rows when that's actually
+   true; otherwise "Counts may be a moment behind."
+2. **01 — `isFetching` also covers `fetchNextPage()`.** Scrolling to load
+   more rows was flagging the page-1 aggregates (chips, hero total) as
+   stale, though nothing about them was being refetched. Fixed:
+   `countsMayBeStale` now excludes `isFetchingNextPage`.
+3. **02 — a sibling of the false comment survived.** `senders.controller.ts`
+   separately claimed the list+meta aggregate "values are identical for
+   every page of one filter set" — true only absent a concurrent write
+   between page fetches. Fixed: qualified with "absent a concurrent write…
+   no shared snapshot" and cross-referenced to this row.
+4. **03 — the corrected banner overclaimed in the other direction.**
+   "Unsubscribe … change[s] what arrives next" states a guarantee the
+   product's own contract doesn't make (`action-semantics.ts`'s Unsubscribe
+   entry, and the screen's own terminal toast, both hedge: a request was
+   sent, delivery still depends on the sender). Fixed: "Unsubscribe asks the
+   sender to stop; Autopilot rules act on future matches automatically" —
+   the two verbs no longer share one verb of certainty they don't share in
+   reality.
+5. **04 — the Quiet tooltip's boundary overlapped Active's.** "30–180 days
+   ago" and Active's own "within 30 days" both claim a sender last seen
+   exactly 30 days ago. Fixed: "more than 30 and up to 180 days ago."
+6. **06 — `tiedWindowNoticeCopy`'s bulk case was always singular.** The
+   Senders caller passes `newestInboxDays: null` for every bulk preview (no
+   single per-sender age across senders), which fell straight into the
+   hardcoded "This sender has nothing newer" — false on a 5-sender tied row.
+   Fixed: added a `subject` param (mirrors `inboxScopeNoticeCopy`'s existing
+   pattern), caller passes `isBulk ? 'these senders' : 'this sender'`.
+
+**Also fixed, not separately numbered by the reviewer:**
+
+- **07 — no `radiogroup` around the three Activity `role="radio"` chips.**
+  Invalid ARIA once they have `role="radio"` at all (pre-existing) and now
+  matters more since this diff added the outer `role="group"`. Fixed:
+  wrapped in `<div role="radiogroup" aria-label="Activity" style={{display:
+'contents'}}>` — `display: contents` keeps them direct flex children of
+  the strip (same gap/wrap) while giving assistive tech a real group.
+- **09 — "select N shown" is false once Grid-mode domain grouping is
+  active.** 3+ same-domain senders collapse behind one `DomainGroupCard`;
+  the bulk-select-all button still selects every one of them, not just the
+  visible cards. "shown" claims visibility the button doesn't have. Fixed:
+  reverted to a word that claims neither loading state nor visibility —
+  "select all N" / "deselect all N".
+
+**Confirmed correct by the reviewer, no change:** 05 (naming), 08 (the
+duplicate toast+note text is judged intentional-and-fine, not a bug — the
+note explains a persistent disabled state, the toast confirms a rejected
+keyboard command), the `mailLocationCopy` cross-consumer check (safe in both
+Senders and Triage), and `describeNarrowedFilters`'s single call site (no
+collision left to find). The reviewer also corrected the run's own framing:
+`tiedWindowNoticeCopy` has exactly one production caller (Senders) — it is
+NOT shared with Triage, despite the fix brief claiming cross-consumer risk.
+
+**Sibling sweep, not fixed — flagged for a future QA pass.** The reviewer
+found two defects in code this diff did not touch, both pre-existing:
+`SelectionBar`'s per-verb `unitTitle` always says "protected senders are
+excluded" whenever a verb's eligible count is short, even when the true
+reason is Unsubscribe's separate people-gate (`canBulkUnsubscribe`) on an
+unprotected sender with no unsubscribe channel — a real reason exists, it's
+just the wrong one, printed with total confidence. And
+`confirm-action-modal.tsx` defaults to `variant="modal"`, and Sender Detail's
+own mobile-reachable usage never passes `variant="sheet"` — so the Esc/⌘⏎
+Kbd-hint fix in this diff (item 10) does not reach that consumer. Neither
+touched here; both are new candidates for whichever `/ct-qa` run picks up
+Sender Detail or the SelectionBar reason strings next.
+
+**On item 10's "partial" framing — the reviewer pushed back, correctly.**
+This row's status calls the D226-preview-too-long complaint "partial" for
+having dropped the Kbd hints plus inheriting 06's mail-location/tied-window
+trims. The reviewer's read: that's not reasonable to call even partially
+resolved on the "~110 words / 88vh" complaint specifically — the 4-sentence
+lead paragraph (the largest single contributor) is untouched, and the sheet
+is still `maxHeight: 88vh`. Standing correction, not disputed.
+
+Round 1's fixes land as a follow-up commit on the same branch/PR as the
+original 9-item bundle, rather than a separately-approved item — sent back
+to Codex for round 2 against the fixed diff.
