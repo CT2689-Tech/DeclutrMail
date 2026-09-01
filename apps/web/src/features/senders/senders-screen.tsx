@@ -414,8 +414,20 @@ export function SendersScreen() {
       // `widenedCount` defaults to 0 on missing data either way, so a
       // 500 from the probe rendered "Nothing matches outside your
       // filters either" as if the search had actually run.
+      //
+      // Codex round-2 review (partial trace, session stalled before a
+      // written verdict — applying directly since the mechanism is
+      // identical to `showingWidened`'s own fix above): `widenedCount`
+      // itself can still be the PRIOR search's placeholder value while
+      // `widenProbe.isPlaceholderData` is true, independent of
+      // `isPending`/`isError`. Without this, a second starved search
+      // could report "N sender matches outside these filters" using a
+      // count that actually belongs to the first search.
       matchesOutsideFilters={
-        searchNarrowedToNothing && !widenProbe.isPending && !widenProbe.isError
+        searchNarrowedToNothing &&
+        !widenProbe.isPending &&
+        !widenProbe.isError &&
+        !widenProbe.isPlaceholderData
           ? widenedCount
           : null
       }
