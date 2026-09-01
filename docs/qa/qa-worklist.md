@@ -1329,14 +1329,14 @@ directly from `usability-editor` per the same scope/budget precedent
 this run, not independently re-attacked by a refuter; 1 structural gap from
 `flow-completeness-auditor`, unmeasured).
 
-|     | id                            | sev | one line                                                                                                                                                                                                       | status                                                                            |
-| --- | ----------------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| 🟡  | QA-mailbox-switch-20260831-01 | P1  | `/senders` throws `useLongPress is not a function` inside `SenderListRow`, catastrophic at mobile                                                                                                              | Fixed, live-verified, Codex round 2 clean — PR #699 — also in `FINDINGS.md` Inbox |
-| 🟢  | QA-mailbox-switch-20260831-02 | P2  | Autopilot, Screener, and Brief's React Query keys carry no mailbox-id segment at all — correctness rests entirely on one global `invalidateQueries()` + same-window event firing on every switch               | Refuted 2026-08-31 — see note below                                               |
-| 🟡  | QA-mailbox-switch-20260831-03 | P2  | One state ("this is the mailbox you're viewing") gets three different names in the account menu — `Selected` (checkmark aria), `Active` (badge text), `"Selected mailbox"` (row aria-label)                    | Fixed, live-verified, Codex round 2 clean — PR #699                               |
-| 🟡  | QA-mailbox-switch-20260831-04 | P2  | The account menu never says what switching actually does — every screen's scope changes, not a display preference — anywhere in the component                                                                  | Fixed, live-verified, Codex round 2 clean — PR #699                               |
-| 🟡  | QA-mailbox-switch-20260831-05 | P3  | The two connected addresses (`chintan.a.thakkar@gmail.com` / `chintan.a.thakkar.crypt@gmail.com`) truncate identically in the dropdown rows with no `title` tooltip — the trigger pill has one, the rows don't | Fixed, live-verified, Codex round 2 clean — PR #699                               |
-| 🟡  | QA-mailbox-switch-20260831-06 | P3  | "Disconnected · data kept" doesn't say WHOSE data — reads as "your Gmail is untouched" when it means DeclutrMail's own retained history                                                                        | Fixed, live-verified, Codex round 2 clean — PR #699                               |
+|     | id                            | sev | one line                                                                                                                                                                                                       | status                                                                                                            |
+| --- | ----------------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 🟡  | QA-mailbox-switch-20260831-01 | P1  | `/senders` throws `useLongPress is not a function` inside `SenderListRow`, catastrophic at mobile                                                                                                              | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean — also in `FINDINGS.md` Inbox |
+| 🟢  | QA-mailbox-switch-20260831-02 | P2  | Autopilot, Screener, and Brief's React Query keys carry no mailbox-id segment at all — correctness rests entirely on one global `invalidateQueries()` + same-window event firing on every switch               | Refuted 2026-08-31 — see note below                                                                               |
+| 🟡  | QA-mailbox-switch-20260831-03 | P2  | One state ("this is the mailbox you're viewing") gets three different names in the account menu — `Selected` (checkmark aria), `Active` (badge text), `"Selected mailbox"` (row aria-label)                    | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
+| 🟡  | QA-mailbox-switch-20260831-04 | P2  | The account menu never says what switching actually does — every screen's scope changes, not a display preference — anywhere in the component                                                                  | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
+| 🟡  | QA-mailbox-switch-20260831-05 | P3  | The two connected addresses (`chintan.a.thakkar@gmail.com` / `chintan.a.thakkar.crypt@gmail.com`) truncate identically in the dropdown rows with no `title` tooltip — the trigger pill has one, the rows don't | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
+| 🟡  | QA-mailbox-switch-20260831-06 | P3  | "Disconnected · data kept" doesn't say WHOSE data — reads as "your Gmail is untouched" when it means DeclutrMail's own retained history                                                                        | Fixed, live-verified, Codex round 2 clean — PR #699, CI green + browser smoke clean                               |
 
 ### QA-mailbox-switch-20260831-01 — `useLongPress` throws in the browser bundle
 
@@ -1618,6 +1618,45 @@ reviewed together since both were in flight the same session.
 
 Cap reached at two substantive rounds; round 2's only finding was
 documentation, not code, so it did not need a third pass.
+
+### Smoke before merge — 2026-09-01, PR #699, `98ed13a5`
+
+CI green on every check, including CI's own "Authenticated accessibility
+smoke" — plus a separate live browser pass on this worktree's own stack
+(api :4001, web :3003, both cwd-confirmed this checkout, on the exact
+commit CI ran against), fresh tab throughout:
+
+- `/senders` desktop: loads, 511 senders, zero console errors. Switched
+  primary → `chintan.a.thakkar.crypt@gmail.com` and back via the account
+  menu — re-scoped correctly both directions (511 ↔ 11 senders), zero
+  console errors on either side. Opened the `amazon.com` brand-group card
+  on the crypt mailbox — zero console errors.
+- `/senders` mobile (375px): all 50 loaded rows rendered via `get_page_text`
+  (the DOM check, not viewport-dependent) — zero console errors. This is
+  the exact crash's original reproduction path.
+- Account menu, live: "ACCOUNTS" header + "Everything you see is scoped to
+  the active account." subline (QA-04) present; `✓ …@gmail.com ACTIVE`
+  (QA-03, not "Selected"); both dropdown rows carry a `title` attribute
+  with the full email (QA-05, confirmed via `[title]` DOM query, not just
+  visual truncation).
+- `/settings` mobile (375px): `Gmail accounts` card renders `ACTIVE` badge
+  correctly at this width too; zero console errors.
+- Triage D226 preview modal (`confirm-action-modal.tsx`, a migrated
+  `useFocusTrap` consumer): opened, rendered, focus-trapped, zero console
+  errors. Combined with the billing cancel modal and account-deletion
+  modal already live-verified during the fix itself (see above), 3 of the
+  16 migrated `useFocusTrap` consumers are now live-confirmed across
+  three structurally different modal shapes (D226 preview, billing
+  confirm, multi-step account deletion).
+
+Not smoked this pass: the mobile account-switcher tap sequence itself
+(same browser-pane mobile-viewport click-timeout artifact logged on the
+`archive` and `delete` job runs — confirmed again this pass, unrelated to
+product state) and the remaining 13 `useFocusTrap` consumers (typecheck +
+lint + the new `no-restricted-imports` guard + 1248 passing unit tests
+cover them structurally; no further live drive attempted).
+
+**Held up under attack (what the probes would have caught):**
 
 - Switching mailboxes (primary ↔ `chintan.a.thakkar.crypt@gmail.com`) via
   the real UI correctly re-scoped Senders (510 → 11 senders), Triage (12
