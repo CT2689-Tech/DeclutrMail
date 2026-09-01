@@ -55,4 +55,26 @@ describe('SupportRequestService', () => {
 
     await expect(service.submit(PRINCIPAL, PAYLOAD)).rejects.toThrow(AppException);
   });
+
+  it('derives the same idempotency key for a repeated identical submission (retry dedup)', async () => {
+    const email = fakeEmail({ ok: true, providerId: 'rsnd_1' });
+    const service = new SupportRequestService(fakeUsers('user@example.com'), email);
+
+    await service.submit(PRINCIPAL, PAYLOAD);
+    await service.submit(PRINCIPAL, PAYLOAD);
+
+    const calls = (email.deliver as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0].idempotencyKey).toBe(calls[1]![0].idempotencyKey);
+  });
+
+  it('derives a different idempotency key when the message content differs', async () => {
+    const email = fakeEmail({ ok: true, providerId: 'rsnd_1' });
+    const service = new SupportRequestService(fakeUsers('user@example.com'), email);
+
+    await service.submit(PRINCIPAL, PAYLOAD);
+    await service.submit(PRINCIPAL, { ...PAYLOAD, message: PAYLOAD.message + ' (edited)' });
+
+    const calls = (email.deliver as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls[0]![0].idempotencyKey).not.toBe(calls[1]![0].idempotencyKey);
+  });
 });
