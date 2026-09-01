@@ -1097,8 +1097,13 @@ for future button-label or copy renames touching `/billing`,
 `/senders`, or `/screener`: grep `packages/e2e/specs/*.ts` alongside the
 unit tests, not after.
 
-All 11 rows are now clean. Every Codex round's findings were fixed and
-verified before the next; nothing shipped on an unresolved finding.
+All 11 rows are clean, and PR #704 **merged to main 2026-09-01** as
+`adac73c4` (squash). Every Codex round's findings were fixed and verified
+before the next, and CI was fully green (including a genuine
+merge-queue re-run of the whole suite) before merge; nothing shipped on
+an unresolved finding. All 11 worklist rows now read `Merged #704`, not
+`Fixed` — that flip is earned by a later run re-confirming each symptom
+is actually gone against production/main, not by this session's own say-so.
 
 ## Refuted
 
