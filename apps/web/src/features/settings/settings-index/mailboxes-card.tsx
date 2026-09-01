@@ -159,9 +159,7 @@ export function MailboxesCard({
                       minWidth: 0,
                     }}
                   >
-                    {isSelected && (
-                      <StatusTag tone="primary">{needsReconnect ? 'Selected' : 'Active'}</StatusTag>
-                    )}
+                    {isSelected && <StatusTag tone="primary">Active</StatusTag>}
                     {m.status === 'disconnected' ? (
                       <StatusTag
                         tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}
@@ -268,7 +266,7 @@ function mailboxDataStatusLabel(state: NonNullable<MeMailbox['indexedDataState']
     case 'deleted':
       return 'Data deleted';
     case 'retained':
-      return 'Disconnected · data kept';
+      return 'Disconnected · history kept';
     default:
       return 'Disconnected';
   }
