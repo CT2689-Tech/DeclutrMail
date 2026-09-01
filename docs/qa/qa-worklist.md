@@ -1711,3 +1711,381 @@ driven this run — time, not access):
   `archive` and `delete` job runs — not a product finding).
 - Autopilot/Screener/Brief screens with a mailbox switch actually visible
   and driven (see QA-02 above — structural risk assessed, not reproduced).
+
+## sync
+
+Rows accumulate across every `/ct-qa sync` run. Per-run counts are in the
+ledger. First filed 2026-08-31 (10 survivors; 2 candidates refuted before
+filing — both because the DB state this run forced by hand
+(`readiness_status='failed'` on an already-`ready`, 7,967-sender mailbox
+after months of successful syncs) turned out to be **unreachable by any real
+code path**: `readiness_status='failed'` has exactly one writer in the whole
+repo, `initial-sync.worker.ts`'s `recordTerminalFailure`, and
+`incremental-sync.worker.ts` explicitly refuses to ever write it — its own
+comment says flipping an onboarded mailbox to `failed` would wrongly route
+the user back to `/onboarding`. See the ledger's Refuted table for both
+grounds).
+
+**What survived is sharper than what was filed.** The seed candidate
+("the header sync indicator vanishes when a mailbox fails") was built on an
+unreachable synthetic state, but three independent read-only agents —
+`finding-refuter`, a `defect-class-sweeper`, and `flow-completeness-auditor`
+— each re-derived, from source alone, that the SAME symptom is real for the
+one state the product genuinely reaches this way: a fresh mailbox (or a
+reconnect/reactivation) whose **initial** sync terminally fails. That is not
+a corner case — `auth-signup.orchestrator.ts`'s `markQueued` re-queues on
+every login, and the onboarding gate that would normally catch this is
+`onboarded_at`-gated, so it cannot rescue an already-onboarded user whose
+mailbox re-enters this state.
+
+|     | id                  | sev | one line                                                                                                                                                                                                                                                                                                                            | status |
+| --- | ------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| ⬜  | QA-sync-20260831-01 | P0  | Triage's empty state renders "Nothing needs a decision right now" — a confident positive claim — while the active mailbox's sync is `failed`, and Triage has zero sync awareness of any kind                                                                                                                                        | Open   |
+| ⬜  | QA-sync-20260831-02 | P0  | Senders' `mailboxStillSyncing` readiness guard covers `queued`/`syncing` only; `failed` falls through to the exact "Synced through &lt;now&gt;" false-currency bug F032 was filed and fixed to kill — for the one state that fix didn't enumerate                                                                                   | Open   |
+| ⬜  | QA-sync-20260831-03 | P1  | The app-shell header (`SyncNowButton`) and the banner whose job is "your sync is broken" (`SyncErrorBanner`) both render nothing for `readiness='failed'` — the banner keys on a different signal (`last_sync_error_at`) that an initial-sync failure never stamps                                                                  | Open   |
+| ⬜  | QA-sync-20260831-04 | P0  | A non-active connected mailbox's persistent incremental-sync failure renders an affirmative **"Ready"** in Settings and no tag at all in the account menu — worse than silence                                                                                                                                                      | Open   |
+| ⬜  | QA-sync-20260831-05 | P1  | No in-app signal ever fires for a background sync that fails (`useMailboxSyncToasts` only announces `→ready`), and `useMe`'s own poll is self-starving — it only refetches while a mailbox is already known to be syncing, so a `ready→failed` flip is never even fetched without a manual reload                                   | Open   |
+| ⬜  | QA-sync-20260831-06 | P1  | Reconnecting ANY previously-synced mailbox unconditionally nulls its history cursor and forces a full resync — bypassing both the cheap incremental-resume path and the codebase's own existing `cursorTooOld` escalation ladder, which already handles the genuinely-stale-cursor case                                             | Open   |
+| ⬜  | QA-sync-20260831-07 | P1  | The onboarding `SyncFailed` screen's copy names the real cause for an auth failure ("Google revoked our access... Reconnect the account") but its only button re-queues a full scan with the SAME dead token — no reconnect action exists in that file at all                                                                       | Open   |
+| ⬜  | QA-sync-20260831-08 | P2  | A single mid-pagination Gmail 404 (not necessarily a truly-expired cursor) is indistinguishable from `cursorTooOld` and silently triggers the same full-mailbox rescan, discarding pages already fetched — a BullMQ completion hook with no principal and no rate ceiling                                                           | Open   |
+| ⬜  | QA-sync-20260831-09 | P2  | The product calls this event "scan" in onboarding and in the retry endpoint's own semantics, "SYNC FAILED"/"Sync failed" in Settings and the account menu — and one Senders string literally matches `check-microcopy.sh`'s own banned "senders indexed" pattern, shipped anyway because the hook never sweeps existing files       | Open   |
+| ⬜  | QA-sync-20260831-10 | P2  | Five smaller copy/robustness defects on the same surface: a 409 message reused for 4 different states, a toast promising self-recovery that never happens, "Synced through" mislabelling a request-compute timestamp even when healthy, a silently-failing retry button, and a timeout toast pointing at a label hidden below 900px | Open   |
+
+### QA-sync-20260831-01 — Triage has zero sync awareness
+
+**Filed from `flow-completeness-auditor`'s state-table enumeration, not
+independently live-driven this run** (Triage was not part of this run's own
+walk; the auditor found it while enumerating every consumer of
+`provider_sync_state`/`me.mailboxes[].readiness`).
+
+`apps/web/src/features/triage/empty-state.tsx:58` renders the identical
+"Nothing needs a decision right now." for all four `readiness` values —
+`queued`, `syncing`, `ready`, and `failed` — because the component takes no
+sync input of any kind. Triage is this product's highest-dwell screen (per
+CLAUDE.md's own topic table, "the core ritual"), and this is the same class
+of defect QA-onboarding-20260828-01 was filed P0 for on `/senders`: a
+confident, positive claim about the user's own mail state that the app has
+not earned, rendered on the screen the user is most likely to be looking at
+when a background sync degrades.
+
+**Regression test:** a spec seeding `readiness='failed'` on the active
+mailbox and asserting the Triage empty state does NOT render the resting-
+queue copy — must go RED against today's code first.
+
+### QA-sync-20260831-02 — Senders' F032 fix has a live gap for `failed`
+
+**Filed from `defect-class-sweeper` and `usability-editor`, independently,
+each tracing the same lines.**
+
+`apps/web/src/features/senders/senders-screen.tsx:539-540`:
+
+```ts
+const mailboxStillSyncing =
+  activeMailbox?.readiness === 'queued' || activeMailbox?.readiness === 'syncing';
+```
+
+Two of four reachable values. `failed` (and `null`) fall through to the
+`ready`-branch at `:2846`/`:2877`, rendering "Synced through &lt;asOf&gt; · N
+senders found for you@gmail.com" over a pre-failure snapshot. This is
+**the identical defect F032 (`QA-onboarding-20260828-01`) was filed P0 for
+and shipped a fix for in #673** — fixed at the instance (`queued`/`syncing`),
+left open for the one state that fix's own guard didn't enumerate. The
+component's own existing test at `senders-screen.test.tsx:460` is literally
+named _"does not claim 'Synced through' a time it never measured while the
+mailbox is still syncing"_, sets `readiness='syncing'`, and is green — the
+exact same false claim renders for `readiness='failed'` and nothing catches
+it. The equivalent empty-state gap exists at `:2541`/`:2562`.
+
+**Separately, even in the healthy `ready` case:** the usability editor traced
+`asOf` to `apps/api/src/senders/senders.read-service.ts:915,1087` —
+documented in its own source comment as "server time at compute
+(observability)", computed as `new Date().toISOString()`. It is not a sync
+timestamp at all; the word "Synced" asserts a completion the value cannot
+back, even when nothing has failed. Smallest fix: rename the label to
+"Results as of" for the healthy case, and widen the guard to
+`readiness !== 'ready'` with distinct, honest copy for the failed case (see
+QA-sync-20260831-10 for the exact proposed strings).
+
+**Regression test:** extend the existing `senders-screen.test.tsx:460`
+pattern with a `readiness='failed'` case asserting the same non-claim — must
+go RED against today's code first.
+
+### QA-sync-20260831-03 — the shell's two failure surfaces both go silent
+
+**Filed from `finding-refuter` (SURVIVED, narrowed), `defect-class-sweeper`,
+and `flow-completeness-auditor` — three independent source traces converging
+on the same two files.**
+
+`apps/web/src/features/sync/sync-now-button.tsx:161-162` — `return null`
+unless `readiness_status === 'ready'` — takes the ONLY freshness/retry
+affordance in the global chrome with it, on every authenticated route,
+confirmed at both desktop and 375px this run (live, via a forced DB write +
+hard reload, not a stale-cache artifact).
+
+`apps/web/src/features/sync/sync-error-banner.tsx:88,112` — the component
+whose entire job is "tell the user their sync is broken" — reads
+`last_sync_error_at` only and returns `null` if it's unset. That column is
+stamped exclusively by `incremental-sync.worker.ts`'s failure path; a
+terminal **initial**-sync failure (the one state that genuinely produces
+`readiness='failed'`) never touches it, so the banner never fires for the
+exact state it exists to cover — including for `InvalidGrantError`, where
+its own `needsReconnect` computation is unreachable dead code, evaluated
+after the early return.
+
+`apps/web/src/features/mailboxes/mailbox-reconnect-banner.tsx:39-41`
+explicitly excludes the active mailbox on the documented premise that
+`SyncErrorBanner` "already owns it" — which, per the above, it does not for
+this shape. Net effect: a revoked grant on the mailbox the user is actually
+looking at has **zero** chrome surface anywhere in the product except a
+collapsed, default-hidden tag in the account-menu dropdown (confirmed to
+exist — this refutes the seed candidate's "only Settings shows it" claim —
+but it carries no retry action and requires the user to open a menu they
+have no reason to open).
+
+**Not filed as a separate row, folded in here:** `AccountMenu`'s "Sync
+failed" chip (`account-menu.tsx:317-320`) has only negative test coverage
+(two tests proving it's suppressed under `needsReconnect`, none proving it
+renders) and no recovery action of its own — flagged `UNVERIFIED` by the
+flow auditor, needs a positive render test.
+
+**Regression test:** a spec mounting the app-chrome layout with
+`readiness='failed'` on the active mailbox and asserting SOME visible,
+actionable chrome element renders (not `null` across the board) — must go
+RED against today's code first.
+
+### QA-sync-20260831-04 — a broken second mailbox reads "Ready"
+
+**Filed from `defect-class-sweeper`, source-traced, live-reachability
+unmeasured this run (this dev DB's mailboxes are all currently clean —
+confirmed via `assert-dev-db.sh --exec`, so this is a structural finding,
+not a currently-manifesting one).**
+
+`apps/web/src/features/settings/api/use-mailbox-health.ts:44-58` projects
+`MailboxHealth` as `{ lastSyncedAt, needsReconnect }` — it does not carry
+`last_sync_error_at`/`last_sync_error_code` at all, even though both exist on
+the wire contract (`packages/shared/src/contracts/sync-status.ts:80-81`).
+`needsReconnect` is `InvalidGrantError`-only
+(`apps/web/src/features/mailboxes/mailbox-health.ts:21-25`). So a
+non-active mailbox with a PERSISTENT incremental failure for any other
+reason — sustained quota, a poisoned history id — has `readiness` still
+`'ready'` (per `incremental-sync.worker.ts`'s own design, it never flips
+readiness) and `needsReconnect: false`, and:
+
+- `mailboxes-card.tsx:163-190` falls to `m.readiness === 'ready'` →
+  `<StatusTag tone="muted">Ready</StatusTag>` — an affirmative, wrong claim.
+- `account-menu.tsx:315-322` suppresses its failure chip for the same
+  reason — silence, not even the wrong-but-visible badge Settings shows.
+
+The drift-sweep cron re-enqueues every 5 minutes
+(`provider-sync-state.ts:79-83`), so a transient failure self-heals fast —
+but each failed re-enqueue re-stamps the error timestamp, so a _persistent_
+cause (the kind worth surfacing) holds this false "Ready" state indefinitely.
+The founder's own workspace (two connected mailboxes) is exactly the shape
+that exercises the active-vs-non-active split this bug lives in.
+
+**Regression test:** a spec seeding a non-active mailbox with
+`last_incremental_error_at` set (persistent, `error_code` not
+`InvalidGrantError`) and asserting Settings does NOT render "Ready" — must
+go RED against today's code first.
+
+### QA-sync-20260831-05 — failure is never announced, and the poll that would notice one is self-starving
+
+**Filed from `defect-class-sweeper` and `flow-completeness-auditor`,
+independently, converging on the same two files.**
+
+`apps/web/src/features/mailboxes/use-mailbox-sync-toasts.ts:28-29` has one
+branch: `→ ready`. A background mailbox flipping to `failed` produces no
+toast, matching D116's "we'll let you know when it's ready" promise for the
+success case only — its analytics sibling, `use-sync-funnel.ts:57`, already
+pairs `readiness === 'ready' || readiness === 'failed'`, proving the
+asymmetry was never a deliberate design choice.
+
+Compounding this: `apps/web/src/features/auth/api/use-me.ts:110-116`'s
+`refetchInterval` returns `false` **unless a mailbox is already known to be
+syncing** (`meHasSyncingMailbox`, which excludes `failed`). Every surface
+that reads `me.mailboxes[].readiness` — Senders, AccountMenu, Settings, and
+the toast hook itself — therefore never gets a fresh read to discover a
+`ready→failed` transition at all, without the user manually reloading or
+refocusing the tab. (The lower-level `/api/v1/sync/status` endpoint DOES
+poll correctly — 60s while `ready`, 10s while `failed` — so the true state
+reaches at least one part of the client within about a minute; every
+higher-level consumer of the `me`-derived projection still never asks.)
+
+Real, non-QA-forced trigger for this exact scenario, per `flow-completeness-
+auditor`: the fully server-side `cursorTooOld` recovery
+(`apps/api/src/worker.ts:929`) resets `readiness` to `queued` with zero user
+action — the "silent failure" case is not hypothetical.
+
+**Regression test:** a fake-timer spec asserting `useMe`'s query re-fetches
+within its interval when the server-side readiness value changes to
+`failed` between polls — must go RED against today's code first.
+
+### QA-sync-20260831-06 — every reconnect forces a full resync it doesn't need
+
+**Filed from `defect-class-sweeper`. Live-verified this run's own reachability
+count** (not the mechanism itself, which is source-traced): 4 of this dev
+DB's 5 mailbox rows are currently `ready` with a non-null `last_history_id` —
+exactly the shape that pays this cost on every future reconnect.
+
+`apps/api/src/sync/sync.service.ts:146`, inside `markQueued`'s conflict
+branch: `lastHistoryId: null, historyIdUpdatedAt: null`, alongside
+`readinessStatus: 'queued'` — unconditionally, for every caller:
+`auth-signup.orchestrator.ts:213` (add/reconnect/reactivate), `:253`
+(`persistMailbox`), and `:318` (first signup). Four structurally different
+causes share one remedy; only one of them (a genuinely brand-new mailbox)
+needs it. Nulling the cursor on an active, `ready`, fully-indexed mailbox
+that is merely re-authorizing defeats `InitialSyncWorker`'s own
+`skipped_already_ready` guard (`initial-sync.worker.ts:377`), so the full
+enumeration pipeline runs.
+
+The cheap remedy already exists and is bypassed by the same statement that
+discards the cursor: `SyncService.enqueueManualIncrementalSync`
+(`sync.service.ts:395`) resumes from `last_history_id`. And the argument
+"a long-lapsed grant might have a stale cursor anyway" does not rescue the
+current code, because the escalation ladder for exactly that case **already
+exists and already runs automatically**: `apps/api/src/worker.ts:915-941`
+catches `cursorTooOld` (a Gmail 404 past the ~7-day history retention
+window) and forces the full resync itself. Trying incremental first is
+free — a stale cursor costs one `history.list` 404 and lands in the
+identical remedy. The reconnect path skips straight to the top rung of a
+ladder the codebase already built.
+
+**Needs the founder** (per the sweeper's own flag): this touches the OAuth
+reconnect flow. Not a hard §9 stop condition (no scope/token-crypto change),
+but the founder should size the change before it ships, since it changes
+what happens to `last_history_id` on every reconnect.
+
+**Regression test:** a spec asserting that reconnecting a mailbox with a
+non-null, non-stale `last_history_id` enqueues an incremental sync, not an
+initial one — must go RED against today's code first.
+
+### QA-sync-20260831-07 — the onboarding failure screen retries with a token that will never work
+
+**Filed from `defect-class-sweeper`, source-traced.**
+
+`apps/web/src/features/onboarding/sync-gate.tsx:88-101` supplies
+reconnect-specific copy for `InvalidGrantError` ("Google revoked our access
+to this inbox, so the scan could not finish. Reconnect the account to grant
+it again.") and `AuthExpiredError`, but the `SyncFailed` screen renders one
+primary action for all six known terminal error codes
+(`:331-337` — `retry.mutate()`). There is no `startMailboxConnect` import in
+the file at all. Clicking the only button re-queues a full scan using the
+identical dead token, which fails again at `getClient`, writes `failed`
+again, and returns the user to the same screen — after consuming one of the
+3 attempts/minute the retry route is rate-limited to. The correct pattern
+already exists one directory over:
+`apps/web/src/features/sync/sync-error-banner.tsx:135` —
+`onClick={() => (needsReconnect ? startMailboxConnect(mailboxId) :
+sync.mutate(undefined))}`.
+
+The same collapse reaches Settings by a second route:
+`SyncService.getNeedsReconnectByMailbox` (`sync.service.ts:368`) tests only
+`errorCode === 'InvalidGrantError'` — `AuthExpiredError` (thrown on any
+Gmail 401, `gmail-client.service.ts:564`, and listed in the gate's own copy
+table as a known terminal code) is not in that test, so a mailbox that
+failed with `AuthExpiredError` shows "Sync failed + Try again" in Settings
+instead of "Needs reconnect + Reconnect".
+
+The only real exits from the onboarding gate's failure screen today are
+"Disconnect and start over" and "Sign out" — both work, but neither is
+signposted as _the_ fix for an auth failure the screen's own copy already
+diagnosed correctly one sentence earlier.
+
+**Regression test:** a spec asserting `SyncFailed` renders a reconnect
+action (not just retry) when `errorCode` is `InvalidGrantError` or
+`AuthExpiredError` — must go RED against today's code first.
+
+### QA-sync-20260831-08 — one bad page in a history walk triggers the same full rescan as a truly-expired cursor
+
+**Filed from `defect-class-sweeper`, source-traced, reachability
+UNMEASURED — flagged by the sweeper as "reachable-but-unhit," not proven to
+have fired in production.**
+
+`packages/workers/src/incremental-sync.worker.ts:400-415`'s
+`pageHistoryFrom` loop calls `client.listHistory(cursor, token)` per page and
+`if (page === null) return null` on ANY page — collapsing "404 on page 1"
+(genuine stale cursor) and "404 on page 5, after 4 pages already succeeded"
+(direct evidence the cursor WAS valid) into the identical signal. That
+`null` becomes `cursorTooOld: true`, and `apps/api/src/worker.ts:926-941`
+responds by nulling the cursor and forcing a full resync — discarding the
+pages already collected. This runs as a BullMQ `on('completed')` hook in the
+composition root with no principal and no rate ceiling, which is the shape
+CLAUDE.md §2.6 names for the Brief-cron incident: a producer-side gap a
+request-level guard cannot see.
+
+**Honest limit on the fix, per the sweeper:** unlike QA-06, no cheap
+alternative exists today — `GmailClientService.listMessageIds` has no
+bounded catch-up query parameter, so distinguishing "first-page 404" from
+"later-page 404" is the cheaper half of a real fix, not the whole one.
+
+**Not filed with a regression test** — reachability itself is unmeasured;
+the sweeper's suggested probe is a Cloud Logging count of
+`kind="sync.cursor_recovery_scheduled"` over 30 days, not a DB query.
+
+### QA-sync-20260831-09 — this event has four names, one of which the product's own hook already bans
+
+**Filed from `usability-editor`, source-verified against the actual copy
+each surface renders.**
+
+The onboarding gate calls it a **scan** ("Scan interrupted", "Your Gmail is
+untouched — starting it again is safe," `sync-gate.tsx:308,311,321`).
+Settings calls it **"SYNC FAILED"** (`mailboxes-card.tsx:175`). The account
+menu calls it **"Sync failed"** (`account-menu.tsx:320`). The wire/endpoint
+naming calls it "initial sync." `.claude/hooks/check-microcopy.sh:217-218`
+already rules on this vocabulary — it bans "senders indexed"/"finished
+indexing" and names "**first scan**" as the sanctioned term. Two live
+surfaces did not get that memo.
+
+Separately, `senders-screen.tsx:2862` renders "…senders indexed before this
+sync started…" — after the hook's own whitespace/`${}` flattening, this is a
+literal hit on its banned `senders indexed` pattern. It ships today only
+because the hook is PostToolUse-only and has never swept pre-existing files.
+
+**Proposed replacements** (from the editor pass):
+
+- Settings badge: `"SYNC FAILED"` → `"Scan failed"`
+- Account menu tag: `"Sync failed"` → `"Scan failed"`
+- Senders still-syncing line: `"…senders indexed before this sync
+started…"` → `"…senders from before this scan started…"`
+
+**Regression test:** none — copy consistency, not a logic defect.
+
+### QA-sync-20260831-10 — five smaller defects on the same surface, same editor pass
+
+**Filed from `usability-editor`, each independently source-traced.**
+
+1. **The 409 guard's message covers one state out of four it's actually
+   returned for.** `apps/api/src/sync/sync.service.ts:409` returns
+   `SYNC_NOT_READY` when `lastHistoryId === null` **or**
+   `readinessStatus !== 'ready'` — covering `queued`, `syncing`, `failed`,
+   and a ready-but-cursorless mailbox with one sentence ("Initial sync has
+   not completed for this mailbox yet") that's only true for the first two.
+   Worse: the response's `retryable: true` flag
+   (`packages/shared/src/contracts/error-codes.ts:576`) is wrong for
+   `failed` — per `sync.service.ts:472-479`'s own comment, nothing
+   re-queues a `failed` row; only the continuous reconciler sweeps
+   `'queued'`. Propose: `"This mailbox has no finished scan to sync from —
+the scan is still running, or it stopped before completing."`
+2. **The client toast promises self-recovery that can never happen for the
+   failed case.** `apps/web/src/features/sync/api/use-sync-now.ts:158` —
+   "Initial sync is still in progress — give it a minute." Propose:
+   `"Can't check for new email — this inbox's scan hasn't finished. See
+Settings → Gmail accounts."`
+3. **`asOf` mislabels a request-compute timestamp as a sync completion, even
+   when healthy** — see QA-sync-20260831-02 above for the full trace; the
+   two-word fix ("Synced through" → "Results as of") applies independently
+   of the `failed`-state gap.
+4. **The retry mutation has no `onError`.**
+   `apps/web/src/features/sync/api/use-retry-initial-sync.ts:35-73` handles
+   `onSuccess` only; a 429 (the route is capped at 3/60s) or a 5xx silently
+   flips "Starting…" back to "Try again" with no message, on the user's
+   only recovery control.
+5. **The 90-second timeout toast references a label hidden on mobile.**
+   `sync-now-button.tsx:121` says "the 'synced' time above will update" —
+   that label carries `className="dm-topbar-collapse"`
+   (`display: none` below 900px, `:298-300`). On a phone the toast points
+   at nothing.
+
+**Regression test:** none of the five — copy/robustness gaps with no clean
+red/green boundary except (4), which could assert a visible error message
+renders on a mocked mutation rejection.
