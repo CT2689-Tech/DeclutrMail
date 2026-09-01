@@ -13,6 +13,9 @@ export type {
   ProductFeedbackSurface,
 } from './product-feedback';
 
+export { SupportRequestSchema } from './support-request';
+export type { SupportRequestPayload, SupportRequestResult } from './support-request';
+
 // D245 cumulative Gmail-data lifecycle registry. This contract generates
 // privacy copy and the Gmail metadata-header allowlist.
 export {
