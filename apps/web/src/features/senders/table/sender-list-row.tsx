@@ -2,7 +2,14 @@
 
 import { useCallback, useRef, useState, type MouseEvent } from 'react';
 import type * as React from 'react';
-import { Avatar, tokens, useIsAtMost, useLongPress } from '@declutrmail/shared';
+import { Avatar, tokens, useIsAtMost } from '@declutrmail/shared';
+// Direct module path, not the barrel: `optimizePackageImports` rewrites the
+// barrel import to an uninitialised binding for this hook specifically
+// (same class as MISTAKES.md 2026-08-27, "A shipped `undefined` no test
+// could see" — PR #651). A sibling import in the same statement does NOT
+// protect against it, so import every barrel-covered value that breaks this
+// way from its real path instead of adding more siblings.
+import { useLongPress } from '@declutrmail/shared/hooks/use-long-press';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from '../action-row';
 import { isStandingProtected, type ActionRequest, type Sender } from '../data';
 import { RowCheckbox } from './row-checkbox';
