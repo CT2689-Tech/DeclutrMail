@@ -1,6 +1,6 @@
 'use client';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST, UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { useRegionProvider } from '@/features/billing/billing-currency';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
@@ -41,6 +41,18 @@ export function PricingTeaser() {
   const money = (point: { usdCents: number; inrPaise: number; razorpayPlanId: string | null }) =>
     formatMoney(point, currencyForPricePoint(point, provider));
 
+  // The undo sentence was rendering verbatim inside all three tier rows,
+  // identical every time — three copies of a line that distinguishes no
+  // tier from any other. While `UNIFORM_UNDO_WINDOW_DAYS` is a number the
+  // ladder genuinely agrees, so it states once under the grid. If a future
+  // packaging change re-splits the window the constant goes `null` and each
+  // tier states its own again: the copy follows the manifest rather than
+  // freezing today's answer into a hoisted line that would quietly lie.
+  const perTierUndo = (days: number) =>
+    UNIFORM_UNDO_WINDOW_DAYS === null
+      ? ` · ${days}-day Activity Undo for Archive, Later, and Delete`
+      : '';
+
   return (
     <section className="dm-mkt-section dm-mkt-shell">
       <p className="dm-mkt-eyebrow">№ 05 — Pricing</p>
@@ -57,8 +69,8 @@ export function PricingTeaser() {
             <li>{free.cleanupActionsPerMonth} cleanup actions every month</li>
             <li>Every sender listed, and a record of everything you did</li>
             <li>
-              {free.inboxLimit} inbox · {free.undoWindowDays}-day Activity Undo for Archive, Later,
-              and Delete
+              {free.inboxLimit} inbox
+              {perTierUndo(free.undoWindowDays)}
             </li>
           </ul>
         </div>
@@ -76,8 +88,8 @@ export function PricingTeaser() {
             <li>Screener collects first-time senders for your review</li>
             <li>Autopilot rules that keep working on their own · Quiet hours</li>
             <li>
-              {plus.inboxLimit} inbox · {plus.undoWindowDays}-day Activity Undo for Archive, Later,
-              and Delete
+              {plus.inboxLimit} inbox
+              {perTierUndo(plus.undoWindowDays)}
             </li>
           </ul>
         </div>
@@ -96,8 +108,8 @@ export function PricingTeaser() {
             <li>Everything in {plus.name}</li>
             <li>Daily Brief · Follow-ups</li>
             <li>
-              {pro.inboxLimit} inboxes · {pro.undoWindowDays}-day Activity Undo for Archive, Later,
-              and Delete
+              {pro.inboxLimit} inboxes
+              {perTierUndo(pro.undoWindowDays)}
             </li>
           </ul>
         </div>
@@ -115,7 +127,12 @@ export function PricingTeaser() {
       ) : null}
 
       <div className="dm-mkt-pricing-foot">
-        <span>30-day money-back guarantee on every paid plan</span>
+        <span>
+          {UNIFORM_UNDO_WINDOW_DAYS === null
+            ? ''
+            : `${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo for Archive, Later, and Delete on every plan · `}
+          30-day money-back guarantee on every paid plan
+        </span>
         <TrackedCta href="/pricing" cta="see_pricing" placement="pricing_teaser">
           See full pricing →
         </TrackedCta>

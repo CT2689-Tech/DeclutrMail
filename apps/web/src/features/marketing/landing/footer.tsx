@@ -1,5 +1,4 @@
-import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
-
+import { ScopeDisclosure } from './scope-disclosure';
 import { oauthStartUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 
@@ -28,7 +27,9 @@ export function FinalCta() {
         </TrackedCta>
       </div>
       <p className="dm-mkt-hero-note">Free tier · no card · preview before email moves</p>
-      <p className="dm-mkt-hero-note">{OAUTH_SCOPE_DISCLOSURE}</p>
+      <div className="dm-mkt-hero-note dm-mkt-scope-center">
+        <ScopeDisclosure />
+      </div>
     </section>
   );
 }

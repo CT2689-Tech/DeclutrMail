@@ -9,6 +9,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
@@ -44,13 +45,24 @@ describe('landing page — D134', () => {
     );
   });
 
-  it('mounts the D228 trust copy via the shared PrivacyBadge (trust strip + privacy section)', async () => {
+  it('mounts the D228 trust copy from the locked module (trust strip + privacy section)', async () => {
     const { container } = await renderLanding();
-    // Headline appears once per badge mount; the storage list rides along.
-    expect(
-      screen.getAllByText('We never fetch or store full email contents.').length,
-    ).toBeGreaterThanOrEqual(2);
-    expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(2);
+    // The claim appears in BOTH the hero trust strip and the privacy
+    // section, and `getAllByText` matches the full text of an element, so
+    // every occurrence has to be the locked string verbatim — a
+    // paraphrase in either place drops the count and fails here.
+    expect(screen.getAllByText(PRIVACY_BADGE_HEADLINE).length).toBeGreaterThanOrEqual(2);
+    // The badge itself is mounted ONCE, in the privacy section. It used to
+    // mount twice, with the hero restating the whole generated storage
+    // list inline — ~8 lines of the mobile viewport spent repeating a list
+    // that renders in full further down. The hero now carries the headline
+    // and links to it. So the count below is 1 by design; what actually
+    // needs guarding is that the generated list still reaches the page,
+    // which the loop asserts directly rather than via a mount count.
+    expect(container.querySelectorAll('[data-dm-privacy-badge]').length).toBeGreaterThanOrEqual(1);
+    for (const item of PRIVACY_STORAGE_ITEMS) {
+      expect(container.textContent).toContain(item);
+    }
   });
 
   it('never renders banned privacy phrasing (D228) or a user-facing "Screen" verb (D227)', async () => {

@@ -71,7 +71,12 @@ export function LedgerDemo({ verbs }: { verbs: readonly LedgerVerb[] }) {
             <div className="dm-mkt-ledger-preview">
               <b>Preview</b>
               <span>412 messages → All Mail</span>
-              <span>Existing email only · Undo in Activity</span>
+              {/* No "· Undo in Activity" here. The card is a timeline —
+                  preview, then receipt, then the Activity toast — and undo
+                  was stated at all three stages plus the caption beneath.
+                  The toast is where undo actually lives in the product, so
+                  it keeps the claim and the preview stops pre-announcing it. */}
+              <span>Existing email only</span>
             </div>
           </div>
           <div
