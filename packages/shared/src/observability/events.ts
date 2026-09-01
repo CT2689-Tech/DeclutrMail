@@ -91,7 +91,8 @@ export type EventName =
   // — Settings surface (U23 — D34/D116/D216) —
   | 'settings_pref_changed'
   | 'brief_hour_changed'
-  | 'data_export_requested';
+  | 'data_export_requested'
+  | 'support_request_submitted';
 
 /**
  * Canonical KAULD verb union. Mirrors the verb-registry literal in

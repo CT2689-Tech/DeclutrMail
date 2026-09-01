@@ -704,6 +704,17 @@ stream failed (`failed`). One event per attempt.
 **Retention / aggregation.** PostHog default. DPDP-export usage +
 failure-rate alarm (a spike in `failed` flags a broken export stream).
 
+### `support_request_submitted`
+
+**When fired.** From the Settings → Help & glossary "Contact support"
+form, after `POST /api/support-request` resolves successfully (the
+email was accepted for delivery) — never on a failed submit.
+
+**Payload.** None (`{}`) — no fields.
+
+**Retention / aggregation.** PostHog default. Usage signal for the
+in-app support form.
+
 ### `activity_support_bundle_exported`
 
 **When fired.** When an Activity support-bundle download reaches a terminal
