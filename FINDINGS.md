@@ -94,6 +94,73 @@ deletion modal) — both render and focus-trap correctly, zero console
 errors. Full detail: `docs/qa/qa-worklist.md` § mailbox-switch,
 `QA-mailbox-switch-20260831-01`.
 
+**Found:** 2026-09-01 · `/ct-qa billing`, QA-billing-20260901-03, filed by
+`flow-completeness-auditor` (source-only), survived `finding-refuter` —
+CONFIRMED STRONGER than filed.
+
+After a successful Pause, the billing screen keeps showing an active paid
+plan (price, renewal date, a live "Cancel subscription" button). The
+refuter found the mechanism is worse than originally described: the pause
+endpoint (`billing.service.ts:618-633`) writes NOTHING locally — not
+`status`, not even `pause_until` (an earlier revision did; a prior Codex
+review removed it) — so the immediate post-pause refetch is GUARANTEED to
+return pre-pause data, not merely likely to race a slow webhook. Corrected
+scope: not "indefinite" — a 60s TanStack `staleTime` plus `refetchOnMount`
+means the next navigation or reload self-corrects it, so the stale window is
+"for as long as the user stays on the billing screen after clicking Pause,"
+which is precisely the moment they'd click the still-visible Cancel button
+believing they have an active Pro plan. Full detail:
+`docs/qa/qa-worklist.md` § billing, `QA-billing-20260901-03`.
+
+**Found:** 2026-09-01 · `/ct-qa billing`, QA-billing-20260901-04, filed by
+`usability-editor`, survived `finding-refuter` — CONFIRMED STRONGER, via a
+live DB query the refuter ran against the account driven this run.
+
+The billing screen's quota card reads "38 of 50 cleanup actions left this
+month." The refuter queried this exact dev workspace: it signed up
+2026-05-27, its real cleanup period is 2026-08-27 → 2026-09-27, and all 12
+consumed units were spent in **August**. Today is 2026-09-01 — the user has
+spent zero actions "this month" and is told 12 are already gone. The
+number and its stated scope directly contradict each other, today, on the
+account driven — not a hypothetical edge case. The refuter also broadened
+the scope: "this month" is the product's canonical quota phrase, repeated
+across the server's own 402 message, `error-codes.ts`, an empty-state
+component, and — contrary to the original filing — the "correct" sibling
+(the upgrade modal) ALSO says "this month" and merely appends a date next to
+it. This is a copy defect class across several surfaces, not a single-line
+fix. Full detail: `docs/qa/qa-worklist.md` § billing, `QA-billing-20260901-04`.
+
+---
+
+**Three related P1 candidates were downgraded below the P1 bar after
+`finding-refuter` review and are NOT carried in this Inbox — tracked instead
+at their corrected severity in `docs/qa/qa-worklist.md` § billing:**
+
+- `QA-billing-20260901-01` (chargeback drift) — the missing "chargeback"
+  copy branch turned out to be DELIBERATE, test-pinned design ("a chargeback
+  row never unlocks, and the copy must not promise it"), not an oversight.
+  The real, narrower defect survives one layer down (P2): the plan picker is
+  disabled in this state, which suppresses the actual blocking-refusal
+  explanation and support route entirely — the same gap `-02` hits from a
+  different angle. Zero chargebacks have ever occurred in this product's
+  production history (verified 2026-08-13, `FOUNDER-FOLLOWUPS.md`).
+- `QA-billing-20260901-02` (cancel-on-paused) — "silent no-op" was wrong: the
+  cancellation genuinely IS booked at the provider (Paddle's cancel call
+  fires, `cancel_at_period_end` is written), and an in-product undo DOES
+  exist (Resume, then the normal un-cancel flow appears) — just
+  undiscoverable. This is the shipped, spec-pinned exit path for a paused
+  subscription, not a blind guard gap. What survives (P2): the notice has no
+  branch for "cancellation booked, still paused," so it re-renders
+  identically with a now-inert Cancel button, and the success toast wrongly
+  claims the plan "stays active" for a row granting nothing.
+- `QA-billing-20260901-05` (hidden Founding Pro price) — mostly refuted: the
+  $129 price IS disclosed, in bold, on the mandatory confirm panel one click
+  before checkout — the claim of "zero indication, charged more with no
+  disclosure" was simply false. The real, much narrower gap (P3): the
+  initial Pro card (before that click) shows only $190, while `/pricing`
+  leads with $129 — a prominence/consistency gap, not a hidden-overcharge
+  bug.
+
 ## P0 — launch blockers
 
 _None open._ The five that stood here — F008, F009, F010, F011, F012 — were

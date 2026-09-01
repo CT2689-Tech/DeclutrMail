@@ -175,7 +175,10 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'Review and act on senders yourself.',
   plus: 'Remove the monthly limit and let rules keep it clean.',
-  pro: 'Get the Daily Brief and Follow-ups, across every account.',
+  // QA-billing-20260901-10: "every account" overclaimed against the
+  // manifest's actual inboxLimit (5) — the /pricing Pro card already
+  // prints "5 connected inboxes" directly beneath this same sentence.
+  pro: 'Get the Daily Brief and Follow-ups, across your connected inboxes.',
   team: 'Review and manage email together.',
   enterprise: 'Manage more inboxes with organizational controls.',
 };

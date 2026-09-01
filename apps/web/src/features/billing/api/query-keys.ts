@@ -14,4 +14,8 @@ export const billingKeys = {
    * the payment-processing and refund-settling states run.
    */
   invoices: () => [...billingKeys.all, 'invoices'] as const,
+  /** QA-billing-20260901-09 — Founding Pro slot availability, its own
+   *  key: it's read-only workspace-agnostic data, not part of the
+   *  subscription payload and must not ride its poll. */
+  foundingRemaining: () => [...billingKeys.all, 'founding-remaining'] as const,
 };

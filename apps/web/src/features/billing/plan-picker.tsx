@@ -26,6 +26,7 @@ import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
+import { useFoundingRemaining } from './api/use-founding-remaining';
 import { usePlanChangePreview } from './api/use-plan-change-preview';
 import {
   formatBillingDate,
@@ -313,7 +314,19 @@ export function PlanPicker({
     // Reset fns are referentially stable — deps stay minimal on purpose.
   }, [disabled, selected]);
 
-  const foundingEligible = selected === 'pro' && cycle === 'annual' && grantingSub === null;
+  // QA-billing-20260901-09/-05: independent of `selected` — the Pro
+  // card's own disclosure needs this before the confirm panel is ever
+  // opened, not just once it is.
+  const foundingPossible = cycle === 'annual' && grantingSub === null;
+  const foundingAvailability = useFoundingRemaining(foundingPossible);
+  // Advisory only (the checkout guard's own read stays authoritative) —
+  // while the count hasn't loaded yet, do not claim sold-out.
+  const foundingSoldOut =
+    foundingPossible &&
+    foundingAvailability.data !== undefined &&
+    foundingAvailability.data.remaining <= 0;
+  const foundingEligible =
+    selected === 'pro' && cycle === 'annual' && grantingSub === null && !foundingSoldOut;
   const founding = foundingEligible && claimFounding;
   // Offering a provider and BILLING with it must read the same fact, or
   // a `provider` pick outlives the price point that offered it: the
@@ -547,6 +560,22 @@ export function PlanPicker({
             hasGrantingSubscription={grantingSub !== null}
             provider={stripProvider}
             onSelect={() => onSelect(id)}
+            // QA-billing-20260901-05: disclose the Founding Pro price on
+            // the card itself, not only one click later on the confirm
+            // panel — gated on the same live availability the checkbox
+            // uses, so the card never quotes a price the checkout can't
+            // honor.
+            showFoundingHint={
+              id === 'pro' && id !== currentTier && foundingPossible && !foundingSoldOut
+            }
+            // QA-billing-20260901-09: a founding member's price lock is
+            // otherwise discovered only after a click (a 409 on
+            // change-plan). Name it on their own current-plan card.
+            foundingMemberNote={
+              id === currentTier && grantingSub?.foundingMember === true
+                ? 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
+                : null
+            }
           />
         ))}
       </div>
@@ -718,6 +747,8 @@ function PlanCard({
   canSwitchCycle,
   hasGrantingSubscription,
   provider,
+  showFoundingHint,
+  foundingMemberNote,
   onSelect,
 }: {
   tierId: StripTierId;
@@ -733,10 +764,20 @@ function PlanCard({
   /** Rail the strip prices against — clamped per point, so the cards
    *  agree with the confirm panel one click later. */
   provider: BillingProviderId;
+  /** QA-billing-20260901-05 — show the Founding Pro price on this card,
+   *  gated by live availability (the parent already checked). */
+  showFoundingHint?: boolean;
+  /** QA-billing-20260901-09 — this card's own subscription carries the
+   *  founding price lock; name what canceling costs. */
+  foundingMemberNote?: string | null;
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
   const price = priceLineFor(tier, cycle, provider);
+  const foundingPrice =
+    showFoundingHint && tier.promo
+      ? formatMoney(tier.promo.annual, currencyForPricePoint(tier.promo.annual, provider))
+      : null;
   // The badge marks the plan you are ON — tier AND cycle. Tier alone
   // made it follow the cycle toggle: a Pro ANNUAL subscriber flipping
   // the strip to Monthly saw "Pro · $19/mo · CURRENT", i.e. the badge
@@ -816,6 +857,16 @@ function PlanCard({
       <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.4 }}>
         {TIER_JOBS[tierId]}
       </span>
+      {foundingPrice && tier.promo ? (
+        <span style={{ fontSize: 11, color: color.primary, lineHeight: 1.4 }}>
+          {tier.promo.name}: {foundingPrice}/yr for the first 250 — confirmed at checkout.
+        </span>
+      ) : null}
+      {foundingMemberNote ? (
+        <span style={{ fontSize: 11, color: color.fgMuted, lineHeight: 1.4 }}>
+          {foundingMemberNote}
+        </span>
+      ) : null}
       {cta && !disabled ? (
         // marginTop auto pins every CTA to the card's bottom edge so
         // the row of buttons sits on ONE line regardless of how much
@@ -990,23 +1041,33 @@ function ChangePlanPanel({
             </p>
           ) : (
             <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
-              <strong style={{ fontWeight: 600, color: color.fg }}>Effective immediately.</strong>{' '}
+              {/* QA-billing-20260901-10: "Effective immediately" named the
+                  CHARGE, but the plan itself doesn't flip until the
+                  webhook confirms — this same panel's own pending state
+                  says so a screen later ("confirming your plan"). Charged
+                  today is true now; state the plan's real timing too. */}
               {quotedCharge && quoteResult?.action === 'charge' ? (
                 <>
-                  {quotedCharge} is charged now to your existing payment method — the prorated
-                  difference for the rest of this period.
+                  <strong style={{ fontWeight: 600, color: color.fg }}>Charged today.</strong>{' '}
+                  {quotedCharge} — the prorated difference for the rest of this period.{' '}
+                  {TIER_MANIFEST[target].name} starts as soon as your payment provider confirms,
+                  usually within a minute.
                 </>
               ) : quotedCharge && quoteResult?.action === 'credit' ? (
                 <>
-                  No new charge today — the unused value of your current plan covers it, and{' '}
-                  {quotedCharge} is credited to your balance.
+                  <strong style={{ fontWeight: 600, color: color.fg }}>No new charge today.</strong>{' '}
+                  The unused value of your current plan covers it, and {quotedCharge} is credited to
+                  your balance. {TIER_MANIFEST[target].name} starts as soon as your payment provider
+                  confirms, usually within a minute.
                 </>
               ) : (
                 // Preview still loading, failed, or unparsable — state
                 // the mechanics without inventing a number.
                 <>
-                  The prorated difference for the rest of this period is charged now to your
-                  existing payment method.
+                  <strong style={{ fontWeight: 600, color: color.fg }}>Charged today.</strong> The
+                  prorated difference for the rest of this period, to your existing payment method.{' '}
+                  {TIER_MANIFEST[target].name} starts as soon as your payment provider confirms,
+                  usually within a minute.
                 </>
               )}
               {nextBilledDate && toLabel ? (

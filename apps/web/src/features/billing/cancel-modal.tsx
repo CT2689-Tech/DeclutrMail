@@ -88,7 +88,14 @@ export function CancelModal({
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  // QA-billing-20260901-11: the trap's DOM-order default landed initial
+  // focus on "Pause for 30 days" — a real, unconfirmed mutating action —
+  // because it renders before the footer's dismiss/confirm buttons.
+  // "Keep current plan" is the safe default for a modal opened to
+  // consider canceling.
+  const trapRef = useFocusTrap<HTMLDivElement>(open, {
+    initialFocusSelector: '#dm-cancel-keep-current-plan',
+  });
 
   if (!open || !sub) return null;
 
@@ -208,6 +215,17 @@ export function CancelModal({
               Canceling stops your renewal and takes effect at period end — on its own it
               isn&rsquo;t a refund.
             </li>
+            {sub.foundingMember ? (
+              // QA-billing-20260901-09: the founding price lock is
+              // otherwise discoverable only after re-subscribing fails
+              // with FOUNDING_PRO_SOLD_OUT once the 250 slots are gone —
+              // name the cost before the click that can make it
+              // permanent, not after.
+              <li>
+                You&rsquo;re a Founding Pro member — this locked price doesn&rsquo;t come back once
+                canceled and the 250 slots fill up.
+              </li>
+            ) : null}
           </ul>
 
           {/* D118's retention offer, finally built. It was specced in
@@ -314,8 +332,13 @@ export function CancelModal({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <Button tone="default" onClick={onClose} disabled={isCanceling}>
-            Keep my plan
+          <Button
+            id="dm-cancel-keep-current-plan"
+            tone="default"
+            onClick={onClose}
+            disabled={isCanceling}
+          >
+            Keep current plan
           </Button>
           <Button
             tone="danger"

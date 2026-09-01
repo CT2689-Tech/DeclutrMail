@@ -1711,3 +1711,401 @@ driven this run — time, not access):
   `archive` and `delete` job runs — not a product finding).
 - Autopilot/Screener/Brief screens with a mailbox switch actually visible
   and driven (see QA-02 above — structural risk assessed, not reproduced).
+
+## billing
+
+Rows accumulate across every `/ct-qa billing` run. Per-run counts are in the
+ledger. First filed 2026-09-01 (11 survivors; 1 candidate — an orphaned-active-
+subscription checkout lockout, reproduced only via a self-forced, unreachable
+DB state — was fully REFUTED before filing, see the ledger for the refuter's
+evidence; the SAME underlying mechanism turned out to be real and reachable via
+two independent, correctly-scoped paths, filed below as QA-billing-20260901-01
+and -02).
+
+**Second refuter pass, same day, on the 5 originally-filed P1s specifically**
+(dispatched after filing, since these were about to drive `FINDINGS.md`
+founder decisions and the run judged that consequence high enough to warrant
+it despite the extra round). Outcome: only 2 of 5 survive as P1
+(`-03`, `-04` — both CONFIRMED STRONGER than filed, with corrections noted on
+each row below). The other 3 (`-01`, `-02`, `-05`) were each PARTIALLY
+REFUTED — the filed mechanism/severity was wrong, but each had a real, narrower
+defect survive underneath; corrected severity and text below and in
+`FINDINGS.md`. None of the later `-06` through `-11` rows went through this
+second pass (see "Boundaries" caveat at the end of this section).
+
+|     | id                     | sev | one line                                                                                                                                                                                                                                                     | status                         | PR  |
+| --- | ---------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | --- |
+| 🟡  | QA-billing-20260901-01 | P2  | A chargeback (and any non-backing block) disables the plan picker entirely, which suppresses the only explanation/support-route the app has for the block — corrected from a filed "missing chargeback copy" claim, REFUTED as deliberate design             | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-02 | P2  | Canceling a PAUSED subscription genuinely books at the provider (not a no-op as filed — REFUTED) but the screen has no "cancellation booked" state, re-renders identically with an inert Cancel button, and the toast wrongly claims the plan "stays active" | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-03 | P1  | After a successful Pause, the billing screen keeps showing an active paid plan (price, renewal date, live Cancel button) — CONFIRMED, worse than filed: the endpoint writes nothing locally at all, so the stale read is guaranteed, not merely likely       | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-04 | P1  | The monthly cleanup-quota card says "resets this month" — CONFIRMED via live DB query on the account driven: 12/12 units spent in August, told to the user in September as "this month"; scope widened to a copy defect class across several surfaces        | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-05 | P3  | The initial `/billing` Pro card shows $190 with no $129 Founding Pro mention — REFUTED down from "never discloses, $61/yr more with zero indication": the $129 price IS shown, in bold, on the mandatory confirm panel one click later                       | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-06 | P2  | The "don't change anything" button carries 4 different labels across the billing surface, and "Cancel subscription" is reused for both the preview-opener and the destructive confirm                                                                        | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-07 | P2  | Updating your payment method mints a permanent $0/"Due"/no-document Paddle transaction the adapter can't distinguish from a real unpaid invoice; it sorts to the top of the list forever, and the invoice list has no column headers                         | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-08 | P2  | "Keep current plan instead" on a scheduled-downgrade notice 409s whenever the backing row is `past_due`, with one generic error string that falsely implies an unresolved outcome for what are actually deterministic refusals                               | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-09 | P2  | A founding member's plan-lock and cancel-forfeits-the-$129-price are both undisclosed until a click/409; a sold-out Founding Pro promo is still offered and only fails at confirm, since `foundingRemaining()` has no route or FE consumer                   | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-10 | P2  | "Effective immediately" upgrade-charge copy is contradicted by the same flow's own pending/unconfirmed-grant states one screen later; the Pro card claims coverage "across every account" against an actual 5-inbox cap shown on the same card               | Approved this session — Fixing |     |
+| 🟡  | QA-billing-20260901-11 | P3  | `useFocusTrap` on the Cancel-subscription modal puts initial keyboard focus on "Pause for 30 days" (a real, unconfirmed mutating action) rather than a neutral default — narrow population, self-serve recoverable via Resume                                | Approved this session — Fixing |     |
+
+### QA-billing-20260901-01 — chargeback drift traps the customer in a generic, partly-inert notice
+
+**Core mechanism.** A chargeback writes `entitlement_ends_at = now()` and pins
+`cancel_at_period_end = true` immediately (`apps/api/src/billing/billing-webhook.service.ts:882,961`),
+so the workspace drops to Free while the `subscriptions` row stays `status='active'`
+on the old tier — by founder decision (2026-08-13), chargebacks are deliberately
+excluded from the `refund_settling` grace branch and stay blocking until the
+provider's own period-end cancel arrives. That policy is correct and not in
+question. What is not designed: `billing-model.ts`'s `nonBackingReason`
+classification has no `chargeback` arm, so this state falls through to the
+generic `tier_mismatch` copy — _"A Pro subscription is on your account. Your
+account is on Free — this subscription isn't what grants it. Cancel it if
+you're done with it."_ All three clauses are wrong or inert for this cause: the
+cause is a chargeback, not a stray subscription; clicking Cancel is a no-op
+(`cancel_at_period_end` is already `true`, so `billing.service.ts:408`'s
+idempotency check skips the provider round-trip and returns an identical
+payload); and the locked plan picker carries no explanation anywhere on screen.
+The one chargeback-specific copy branch that exists (`billing-model.ts:522-527`)
+requires `sub.tier === entitlementTier`, which is unreachable once the tier has
+actually been revoked — the codebase's own test file calls it a "defensive arm"
+in a comment.
+**Evidence.** Found independently by `flow-completeness-auditor` reading
+`billing-webhook.service.ts` and `billing-model.ts` directly (not reproduced
+live — chargebacks aren't simulable without a real dispute). A _different_,
+DB-forced reproduction of the same downstream symptom (generic notice, inert
+Cancel, locked picker) was driven live this run and is reported accurately —
+see "What this is NOT" below for why that specific reproduction doesn't stand
+on its own.
+**What this is NOT.** The original candidate filed from this run's own live
+walk — forcing `workspaces.tier='free'` next to the real, healthy, active Pro
+subscription via a direct DB write — was independently REFUTED by
+`finding-refuter`: no production code path can ever produce that exact
+combination (both writers of `workspaces.tier` deterministically recompute
+`pro` from that row's shape), the missing plan-card CTA is the correct,
+already-shipped fix for a 2026-07-27 bug (`MISTAKES.md`), and the checkout 409
+that reproduction hit is the ordinary, correct one-subscription guard, not
+evidence of drift. See the ledger's Refuted table for the full grounds. This
+row exists because the _chargeback_ path — a real, reachable cause the refuter
+and the flow-auditor both independently surfaced — produces the identical
+customer-facing symptom for a real reason.
+**Siblings, same underlying gap** (the `nonBackingReason` classifier not
+covering a state it should): QA-billing-20260901-02 below (paused-row cancel)
+is the same shape — a real transition reaching `NonBackingSubscriptionNotice`
+with no correct branch.
+**Regression test (as originally filed — superseded, see correction below).**
+`billing-model.test.ts` — force `cancelSource='chargeback'`,
+`entitlementLapsed=true`, `sub.tier !== entitlementTier` and assert
+`nonBackingReason` returns a `'chargeback'` (not `'tier_mismatch'`) arm; assert
+the rendered copy names the chargeback and does not offer an inert Cancel as
+the only action. Must go RED against today's code (the classifier has no
+`chargeback` branch to select).
+
+**Refuter correction (2026-09-01) — PARTIALLY REFUTED, severity P1 → P2.**
+The cause above is wrong: `billing-model.test.ts:244` already has a PASSING
+test named _"a CHARGEBACK row keeps the old story — it never unlocks, so the
+copy must not promise it"_ asserting `nonBackingReason === 'tier_mismatch'`
+for exactly this row. The missing `chargeback` arm is deliberate, founder-
+intended, test-pinned design — not an oversight — and the regression test
+above would require deleting a test that encodes that intent. What survives:
+D253 itself says a blocked customer "contact[s] support to subscribe again,"
+and `billing.service.ts:141` says "the unchanged refusal is what tells them
+so" — but the FE **disables the picker** in this state, so that refusal
+message is never rendered at all, for chargeback OR any other non-backing
+block (same gap `-02` hits from the cancel-on-paused angle). Zero
+chargebacks have ever occurred in this product's production history
+(`FOUNDER-FOLLOWUPS.md`, verified 2026-08-13) — narrowing severity further.
+**Corrected regression test:** assert that whenever the plan picker is
+`disabled` for ANY non-backing reason, the on-screen notice names a support
+contact / next step — not that `nonBackingReason` grows a new enum member.
+
+### QA-billing-20260901-02 — canceling a paused subscription is a silent no-op
+
+**Core mechanism.** `cancelAtPeriodEnd()` (`billing.service.ts:384-403`) allows
+canceling any row with `status IN ('active','past_due','paused')` — including
+paused ones. The row stays `paused`, so `NonBackingSubscriptionNotice` keeps
+rendering its `paused` branch, which never reads `cancelAtPeriodEnd` anywhere in
+`billing-screen.tsx` (the only occurrence of that field in the whole file is a
+comment). After confirming the cancel, the screen renders **byte-identical** to
+before: "Your Plus subscription is paused until X. Resume to reactivate Plus,
+or cancel if you're done with it," with both "Review resume" and "Cancel
+subscription" still offered — nothing states a cancellation is booked. The
+success toast (`billing-screen.tsx:459-465`) makes it worse: it fires the same
+"your plan stays active until `<date>`" message for every cancel, including
+this one, where the workspace's actual entitlement may already be Free.
+**Evidence.** Found by `defect-class-sweeper` sweeping the seed mechanism
+(a status-only guard blind to `cancel_at_period_end`); code-read only, not yet
+live-driven (would require a real paused subscription, which this run's single
+real subscription — active, not paused — could not produce without forcing a
+state on the one live sandbox row, which this run declined to do without
+founder sign-off given it is billing/Tier 1).
+**Siblings, same mechanism** (asymmetric guards on the same pause/cancel
+collision, `defect-class-sweeper`, code-read only — not independently filed as
+separate rows, promote on live reconfirmation):
+
+- `pauseForThirtyDays` correctly refuses a `cancel_at_period_end` row
+  (`SUBSCRIPTION_CANCELING`, `billing.service.ts:602-610`), but `resume()` has
+  no matching refusal for a row with `cancel_at_period_end` set, and
+  `resumeCancellation` requires `status IN ('active','past_due')` — so a paused
+  row that gets canceled has NO in-product undo until the user resumes first.
+- Two-tab race: `plan-picker.tsx` invalidates on `STALE_BILLING_READ` codes;
+  `pauseErrorMessage`/`resumeCancellationErrorMessage`/`cancelErrorMessage` do
+  not, so a second tab can 409 on a control it still renders as available, with
+  no reconcile.
+  **Regression test.** `billing.service.spec.ts` — cancel a `paused` row, assert
+  `cancelAtPeriodEnd=true`, `status` unchanged; `billing-screen.test.tsx` — assert
+  `NonBackingSubscriptionNotice` renders a distinct "cancellation booked" state
+  when `sub.cancelAtPeriodEnd === true`, and that the confirm toast does not claim
+  the plan "stays active" for a non-backing row. Must go RED against today's code.
+
+**Refuter correction (2026-09-01) — PARTIALLY REFUTED, severity P1 → P2.**
+"Silent no-op" and "NO in-product undo" are both wrong. Cancel-on-paused is
+the DESIGNED exit path, spec-pinned (`billing.service.ts:668` comment "paused
+subs must resume (or cancel) first"; `billing.service.spec.ts:1046` is
+literally named "resume or cancel first"; `billing-screen.test.tsx:2843`
+asserts the paused notice renders a Cancel control on purpose). The
+cancellation genuinely IS booked at the provider — Paddle's `POST
+/subscriptions/{id}/cancel` fires, `cancel_at_period_end` is written under
+the webhook lock — and an undo path DOES exist: Resume clears it, then the
+normal "Keep my plan" un-cancel flow appears. It is undiscoverable, not
+absent. What survives: the toast's own violation of this codebase's own
+written rule — ADR-0027 says future "stays on X" claims were deliberately
+dropped from cancel copy for non-backing rows, and `CancelModal`'s preview
+correctly obeys that (`cancel-modal.tsx:182-206`), but `onConfirmCancel`'s
+toast does not — plus `NonBackingSubscriptionNotice` has no
+`cancelAtPeriodEnd` arm, so it re-renders identically (a real re-render off
+fresh cache data, not a stale read) with a now-inert Cancel button, the same
+defect class `-01` hits from the disabled-picker angle. **Unmeasured, gates
+severity further:** whether Paddle's API even accepts a cancel on an already-
+paused subscription without erroring — untested, since forcing a paused
+state on the one real sandbox subscription was declined without founder
+sign-off.
+
+### QA-billing-20260901-03 — Pause has no pending state; screen asserts active plan indefinitely
+
+**Core mechanism.** `onPause` fires a toast and closes the modal without calling
+`startPending` (unlike every other billing mutation on this screen).
+`usePauseSubscription` invalidates the billing query exactly once, immediately
+— before Paddle's `subscription.paused` webhook can possibly have landed.
+`refetchOnWindowFocus` is off client-wide, and `refetchInterval` is armed only
+for a pending lock or a refund state, neither of which pause sets. Result: the
+current-plan card keeps reading "Pro · $190/yr · Next renewal …" with a live,
+clickable "Cancel subscription" button, for an indefinite period, while the
+workspace's real entitlement may already be Free. Clicking that stale Cancel
+button is the entry point into QA-billing-20260901-02 above.
+**Evidence.** `flow-completeness-auditor`, code-read (`billing-screen.tsx:720-732`,
+`api/use-pause-subscription.ts:26-31`). Not live-driven — pausing the one real
+sandbox subscription this run had access to was declined without founder
+sign-off (billing/Tier 1, and it would have consumed the run's only live fixture).
+**Regression test.** Component test on the pause mutation hook/handler —
+assert a pending/confirming UI state renders immediately after a successful
+pause `POST`, and that the card does not continue rendering the pre-pause
+price/renewal/Cancel affordance. Must go RED against today's code (there is no
+pending branch to remove).
+
+**Refuter correction (2026-09-01) — SURVIVES, CONFIRMED STRONGER, P1 stands.**
+Checked whether the API writes pause state synchronously (which would have
+refuted this, since an immediate refetch would then see correct data): it
+does not. `billing.service.ts:618-633` writes NOTHING locally on pause — not
+`status`, not even `pause_until` (an earlier revision wrote it; a Codex
+stop-review removed it, and the mutation hook's own code comment claiming
+otherwise is now stale). So the stale read isn't a race the webhook might
+win — it's guaranteed every time. One correction: "indefinite" is
+overstated. `staleTime: 60s` plus TanStack's default `refetchOnMount` means
+any navigation away and back, or a reload, self-corrects it — the true
+window is "for as long as the user stays on the billing screen right after
+clicking Pause," which is exactly the moment they'd see and could click the
+still-live Cancel button. Also correct the "unlike every other mutation"
+framing: Cancel also skips `startPending`, but for a valid reason (it writes
+`cancel_at_period_end` synchronously, so its own immediate refetch IS
+correct) — pause is uniquely the one mutation whose result never arrives on
+its own by any path.
+
+### QA-billing-20260901-04 — quota reset date shown is wrong
+
+**Core mechanism.** The cleanup-quota card reads `"38 of 50 cleanup actions left
+this month."` The reset boundary is actually the user's **signup anniversary**
+(`apps/api/src/common/entitlements/entitlements.service.ts:104-107`,
+`cleanupPeriodFor`), not the calendar month — a user who signed up on the 17th
+sees "this month" and reasonably expects a reset on the 1st, not the 17th. The
+correct date (`cleanupResetsAt`) is already fetched by this exact component's
+own data hook (`use-tier.ts:20,53`) and sits unused right next to the number
+that IS rendered. Two sibling surfaces already render the true date correctly:
+the upgrade modal ("your quota resets on `<date>`") and onboarding ("the
+counter resets on your signup anniversary").
+**Evidence.** `usability-editor`, source-read (`billing-screen.tsx:1219-1220`
+vs `upgrade-modal.tsx:167-168`, `step-first-triage.tsx:140`). Live-confirmed the
+card's rendered text this run ("38 of 50 cleanup actions left this month.");
+did not independently verify this account's actual `cleanupResetsAt` value
+against its signup date.
+**Why P1, not P2.** This is a factual claim about the user's own billing state
+that the app already knows is false and already renders correctly two clicks
+away — the exact "claim only as true as what backs it" defect class this
+codebase has repeatedly shipped (CLAUDE.md §8).
+**Regression test.** `billing-screen.test.tsx` — seed a workspace whose signup
+date is NOT the 1st of the month, assert the quota card renders the actual
+`cleanupResetsAt` date, not the word "month". Must go RED against today's code.
+
+**Refuter correction (2026-09-01) — SURVIVES, CONFIRMED STRONGER, P1 stands.**
+The refuter ran a live, read-only DB query against the exact workspace this
+run drove (`fab42715…`): signed up 2026-05-27, current cleanup period
+2026-08-27 → 2026-09-27, all 12 consumed units spent in **August**. Today is
+2026-09-01 (September) — the user has spent zero cleanup actions "this
+month" and is told 12 are already gone. This is not a hypothetical edge
+case; it is visibly wrong, today, on the account driven. Two corrections to
+the original filing: (1) the illustrative example ("signed up the 17th,
+expects the 1st") was not this account and understated the problem — the
+real gap here is 3 days off a full month, not a few days; (2) the "two
+sibling screens already do this correctly" framing needs narrowing — the
+refuter found "this month" is the product's CANONICAL quota phrase, repeated
+verbatim in the server's own 402 message, `error-codes.ts`, an empty-state
+component, and the upgrade-modal sibling this row cited as "correct" —
+that modal also says "this month" and only appends the precise date next to
+it. Scope is therefore a copy defect class across several surfaces sharing
+one grammar, not a single-component fix — grep for the phrase before fixing
+just `billing-screen.tsx:1219`.
+
+### QA-billing-20260901-05 — in-app upgrade path hides the Founding Pro price
+
+**Core mechanism.** `/pricing` offers "$129/yr for the first 250 subscriptions"
+for an eligible account with a prominent banner and struck-through $190. The
+in-app `/billing` screen's Pro card shows only "$190/yr" with zero mention of
+$129 anywhere until the user clicks Upgrade and finds a Founding Pro checkbox
+that defaults OFF (a deliberate 2026-07-29 decision this finding does not
+contest). The result: the exact same eligible account is charged $190 or $129
+purely depending on which door they used to reach checkout, and the more
+expensive door (in-app nav, arguably the more common one) never discloses the
+cheaper option exists.
+**Evidence.** `usability-editor`, source-read (`plan-picker.tsx:763-773,1169-1195`
+vs `marketing/pricing/tier-card.tsx:155-186`). Live-confirmed the `/billing`
+Pro card's rendered text this run (no $129 mention); did not independently
+re-derive eligibility rules beyond what the manifest states.
+**Regression test (as originally filed — superseded, see correction below).**
+`plan-picker.test.tsx` — for an eligible (non-founding,
+promo-live) account, assert the `/billing` Pro card surfaces the Founding Pro
+price/eligibility, not only the confirm-panel checkbox. Must go RED against
+today's code.
+
+**Refuter correction (2026-09-01) — MOSTLY REFUTED, severity P1 → P3.** The
+central claim was false as filed: `plan-picker.tsx:1169-1195` DOES render a
+bold "Claim Founding Pro — $129/yr · First 250 members, price locked while
+you stay subscribed" checkbox, directly above the $190 line, inside the
+mandatory D226 confirm panel that is the only path to checkout — pinned by
+`plan-picker-provider-gate.test.tsx:141-145,196-197`. "Never discloses,"
+"$61/yr more with zero indication," and "charged $190 or $129 purely
+depending on which door" are all false — the price is disclosed, in bold,
+one click before the charge, on both doors alike; only the pre-tick default
+differs, which is the already-conceded, unappealed 2026-07-29 decision. Real
+residual gap, much smaller: the INITIAL Pro card (before that click) shows
+only $190 with no $129 mention, while `/pricing` leads with $129 — a
+prominence/consistency issue, not a disclosure or overcharge one. The
+refuter also flagged the originally-proposed regression test as unwritable
+honestly: the Pro card has no live availability data source
+(`foundingRemaining()` has no controller route or FE consumer — see `-09`),
+so quoting $129 there without one would ship the exact unbacked-claim class
+CLAUDE.md §8 warns against. **Corrected regression test:** none proposed
+pending `-09`'s availability-route fix; a prominence-only fix (show the
+struck price on the card, keep the confirm-panel default-off checkbox as the
+actual gate) needs no new backend data and could be tested as a pure
+rendering assertion instead.
+
+### QA-billing-20260901-06 through -10 — copy/usability findings (see `usability-editor` transcript for exact replacement text on each)
+
+Filed as one block since each is independently small; do not merge the FIXES
+into one PR without founder confirmation that a single PR is wanted for all
+five — they touch different components.
+
+- **-06 (button-label drift):** `cancel-modal.tsx:318` "Keep my plan" ·
+  `plan-picker.tsx:1060,1221,887` "Keep current plan"/"Keep current plan
+  instead" · `billing-screen.tsx:1294,1322,1421` "Keep my subscription" — four
+  spellings of one safe-exit button. Also `billing-screen.tsx:1243-1245,1688-1690`
+  and `cancel-modal.tsx:320-326`: "Cancel subscription" labels both the
+  preview-opener and the destructive confirm.
+- **-07 ($0 invoice + no headers):** `invoice-history.tsx:131-196`. Confirmed
+  via `finding-refuter`: the $0/`ready`/no-document row is not a stale test
+  artifact — Paddle mints this exact shape (`origin:
+"subscription_payment_method_change"`) every time a customer updates their
+  card via this same screen's own "Update payment method" button; the adapter
+  never reads `origin`, so it renders under the identical "Due" label a real
+  past-due dunning invoice gets, and sorts to the top (`billed_at` is null).
+- **-08 (scheduled-downgrade 409):** `billing-screen.tsx:1406-1430` vs
+  `billing.service.ts:714,772-796`. "Keep current plan instead" throws
+  `PLAN_CHANGE_UNSUPPORTED` for any non-`active` backing status; the one error
+  string covers three deterministic 409s with "it may or may not have
+  registered."
+- **-09 (founding-member disclosure):** `billing.service.ts:602-610,720-722,1307`
+  vs `plan-picker.tsx:316,1169`. `foundingRemaining()` has no controller route
+  and no FE consumer; `FOUNDING_PLAN_LOCKED` is discovered only after a
+  preview/confirm 409; `CancelModal` gives a founding member no warning that
+  canceling forfeits the $129 lock permanently once the 250-cap is hit.
+- **-10 (contradicted "immediately" + inbox-count overclaim):** `plan-picker.tsx:993`
+  "Effective immediately" vs the same flow's own `"confirming your
+plan"`/"taking longer than usual" states; Pro card "across every account"
+  vs the manifest's actual `inboxLimit: 5`, printed as "5 connected inboxes"
+  on the very same `/pricing` card.
+
+**Regression tests.** Each is a copy/rendered-string assertion in its
+respective `*.test.tsx` — see the `usability-editor` transcript (this run,
+2026-09-01) for the exact before/after text per item.
+
+### QA-billing-20260901-11 — Cancel-modal focus-trap lands on "Pause for 30 days"
+
+**Core mechanism.** `useFocusTrap` (`packages/shared/src/hooks/use-focus-trap.ts:23`)
+unconditionally focuses the first focusable DOM element in the trap on open,
+with no caller override. `cancel-modal.tsx`'s first focusable element (when
+`canPause` is true: `sub.provider === 'paddle' && sub.status === 'active' &&
+!sub.cancelAtPeriodEnd`) is the "Pause for 30 days" button — a real,
+unconfirmed mutating action — rather than "Keep my plan" or the reason
+dropdown.
+**Evidence.** Live-verified twice this run via browser automation
+(`document.activeElement` immediately after open, both times "Pause for 30
+days"); Escape closes cleanly with correct focus-return and zero mutation
+(DB-confirmed). `finding-refuter` on this candidate returned **partially
+refuted**: the hook itself is working as designed (WAI-ARIA-APG default
+first-focusable, has its own passing contract test) and is NOT the defect; the
+defect is scoped to this one file's DOM order. Severity corrected from the
+originally-filed P2 down to P3 — recoverable via self-serve Resume, mouse
+users unaffected, a deliberate keystroke is required, and this is exactly the
+Paddle-active-not-already-cancelling population (unmeasured size).
+**IMPORTANT — this is a distinct defect from an already-fixed one on the same
+hook.** `useFocusTrap` had a real, different, already-FIXED defect
+(`useLongPress is not a function` — a barrel-import crash, PR merged per this
+file's `mailbox-switch` section, `00e355fd`/`4359a8b8`) whose fix's own
+live-verification explicitly checked that `cancel-modal.tsx` and
+`delete-account-modal.tsx` "render and focus-trap correctly, zero console
+errors" — that check is about the trap not crashing, not about which element
+receives initial focus, so it does not cover this finding.
+**Siblings, same mechanism, found by `defect-class-sweeper` sweeping all 21
+production `useFocusTrap` call sites — NOT filed as separate rows under this
+job (they belong to other jobs' surfaces); recorded here per finding, flagged
+to the founder for those jobs' own follow-up:**
+
+- **`mailbox-data-controls-dialog.tsx:65`** (Disconnect Gmail account) —
+  first focusable is "Disconnect and keep data" (revokes the stored Google
+  credential immediately on Space/Enter, no further confirm). **LIVE-VERIFIED
+  this run** (`document.activeElement` = "Disconnect and keep data" on open;
+  closed via Escape, zero mutation). Belongs to the `mailbox-switch` /
+  `disconnect-reconnect` job's worklist — flagged, not filed here, since this
+  run's scope is billing only.
+- **`triage/action-sheet.tsx:190`** (Delete preview on a Protected sender) —
+  the Delete verb's preview body renders zero matched focusables, so focus
+  falls through to `ProtectedActionNotice`'s "Unprotect" button, which mutates
+  sender policy directly `onClick` with no preview/undo. Code-confirmed only
+  (trust 7/10) — not live-driven this run (would require reaching Triage's
+  Delete-on-Protected-sender surface, outside this run's job scope). Belongs
+  to the `triage` / `protect` job's worklist.
+- **`account-deletion/delete-account-modal.tsx:82`** — ruled OUT for this
+  specific mechanism (step 1's first focusable is an inert acknowledgment
+  checkbox). A DIFFERENT, adjacent defect was spotted on the same file: the
+  trap's effect dependency array is `[active]` only, and `active` does not
+  change across the step 1 → step 2 transition, so focus may fall to
+  `<body>`, outside the `aria-modal` dialog, when "Review deletion timing" is
+  clicked. Unmeasured — not live-driven. Belongs to the `delete-account` job's
+  worklist.
+- Second band (lower consequence — all still behind a D226 confirm step, not
+  filed as rows): Triage Unsubscribe preview focuses "Also archive the N
+  emails already in the inbox"; Triage Archive preview focuses the "Skip this
+  dialog for Archive" (D34 remember-preference) toggle; Senders single-sender
+  Delete confirm may focus the widest ("All inbox") time-window chip while the
+  preview is still in flight.
+  **Regression test.** `cancel-modal.test.tsx` — assert initial focus (when
+  `canPause` is true) lands on "Keep my plan" or the dialog container, not
+  "Pause for 30 days". Must go RED against today's code.

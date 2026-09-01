@@ -128,72 +128,103 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           />
         )
       ) : (
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
-          {data.invoices.map((invoice) => {
-            const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
-            const date = formatBillingDate(invoice.issuedAt);
-            const label = STATUS_LABEL[invoice.status];
-            const busy = mint.isPending && mint.variables === invoice.id;
-            return (
-              <li
-                key={`${invoice.provider}:${invoice.id}`}
-                style={{
-                  display: 'flex',
-                  flexDirection: isPhone ? 'column' : 'row',
-                  alignItems: isPhone ? 'flex-start' : 'center',
-                  gap: isPhone ? 6 : 12,
-                  flexWrap: 'wrap',
-                  padding: '10px 0',
-                  borderBottom: `1px solid ${color.lineSoft}`,
-                  fontSize: 13,
-                }}
-              >
-                <span style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>{date ?? '—'}</span>
-                <span
+        <>
+          {/* QA-billing-20260901-07: with no column labels, "Due" on the
+              top row reads as "you owe this", immediately above rows
+              marked Paid — a header turns an alarm into a status. Phone
+              rows already stack vertically (each field labels itself via
+              layout order), so the header only helps at desktop width. */}
+          {!isPhone ? (
+            <div
+              aria-hidden="true"
+              style={{
+                display: 'flex',
+                gap: 12,
+                padding: '0 0 4px',
+                fontSize: 10.5,
+                fontWeight: 600,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: color.fgMuted,
+              }}
+            >
+              <span style={{ minWidth: 120 }}>Date</span>
+              <span style={{ minWidth: 90 }}>Amount</span>
+              <span style={{ minWidth: 70 }}>Status</span>
+              <span style={{ marginLeft: 'auto' }}>Invoice</span>
+            </div>
+          ) : null}
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
+            {data.invoices.map((invoice) => {
+              const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
+              const date = formatBillingDate(invoice.issuedAt);
+              const label = STATUS_LABEL[invoice.status];
+              const busy = mint.isPending && mint.variables === invoice.id;
+              return (
+                <li
+                  key={`${invoice.provider}:${invoice.id}`}
                   style={{
-                    color: color.fg,
-                    fontVariantNumeric: 'tabular-nums',
-                    minWidth: isPhone ? 0 : 90,
+                    display: 'flex',
+                    flexDirection: isPhone ? 'column' : 'row',
+                    alignItems: isPhone ? 'flex-start' : 'center',
+                    gap: isPhone ? 6 : 12,
+                    flexWrap: 'wrap',
+                    padding: '10px 0',
+                    borderBottom: `1px solid ${color.lineSoft}`,
+                    fontSize: 13,
                   }}
                 >
-                  {/* An unformattable amount shows the currency and no
+                  <span style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>
+                    {date ?? '—'}
+                  </span>
+                  <span
+                    style={{
+                      color: color.fg,
+                      fontVariantNumeric: 'tabular-nums',
+                      minWidth: isPhone ? 0 : 90,
+                    }}
+                  >
+                    {/* An unformattable amount shows the currency and no
                       number rather than a wrong one (never-fabricate). */}
-                  {amount ?? invoice.currencyCode}
-                </span>
-                {label ? (
-                  <span style={{ color: color.fgMuted, minWidth: isPhone ? 0 : 70 }}>{label}</span>
-                ) : isPhone ? null : (
-                  <span style={{ minWidth: 70 }} />
-                )}
-                <span style={{ marginLeft: isPhone ? 0 : 'auto' }}>
-                  {invoice.hostedUrl ? (
-                    <a
-                      href={invoice.hostedUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: color.primary }}
-                    >
-                      View invoice
-                    </a>
-                  ) : invoice.documentAvailable ? (
-                    <Button
-                      tone="default"
-                      disabled={mint.isPending}
-                      onClick={() => mint.mutate(invoice.id)}
-                    >
-                      {busy ? 'Preparing…' : 'Download'}
-                    </Button>
-                  ) : (
-                    // Neither a hosted page nor a mintable document —
-                    // say nothing is available rather than render a
-                    // control that cannot work.
-                    <span style={{ color: color.fgMuted, fontSize: 12 }}>No document</span>
+                    {amount ?? invoice.currencyCode}
+                  </span>
+                  {label ? (
+                    <span style={{ color: color.fgMuted, minWidth: isPhone ? 0 : 70 }}>
+                      {label}
+                    </span>
+                  ) : isPhone ? null : (
+                    <span style={{ minWidth: 70 }} />
                   )}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+                  <span style={{ marginLeft: isPhone ? 0 : 'auto' }}>
+                    {invoice.hostedUrl ? (
+                      <a
+                        href={invoice.hostedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: color.primary }}
+                      >
+                        View invoice
+                      </a>
+                    ) : invoice.documentAvailable ? (
+                      <Button
+                        tone="default"
+                        disabled={mint.isPending}
+                        onClick={() => mint.mutate(invoice.id)}
+                      >
+                        {busy ? 'Preparing…' : 'Download'}
+                      </Button>
+                    ) : (
+                      // Neither a hosted page nor a mintable document —
+                      // say nothing is available rather than render a
+                      // control that cannot work.
+                      <span style={{ color: color.fgMuted, fontSize: 12 }}>No document</span>
+                    )}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
 
       {partial && data.invoices.length > 0 ? (

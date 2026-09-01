@@ -24,6 +24,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 let mockTier = 'free';
 let mockCleanupRemaining: number | null = 3;
+// QA-billing-20260901-04 — the real anniversary reset date, distinct
+// from a calendar-month one so the fixture actually exercises the fix
+// rather than coincidentally matching the old "this month" copy.
+const mockCleanupResetsAt: string | null = '2026-09-17T00:00:00.000Z';
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
@@ -40,6 +44,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
       ],
       tier: mockTier,
       cleanupRemaining: mockCleanupRemaining,
+      cleanupResetsAt: mockCleanupResetsAt,
     },
   }),
 }));
@@ -273,13 +278,16 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // "No card on file" may render ONLY with no subscription record at
     // all (a paused/ended row means the provider may hold one).
     expect(within(card).getByText(/Free forever — no card on file/)).toBeInTheDocument();
+    // QA-billing-20260901-04: the real signup-anniversary reset date,
+    // not "this month" — the fixture's reset (Sep 17) is not the 1st,
+    // so the old copy would have been visibly wrong.
     expect(
       within(card).getByText(
-        `3 of ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left this month.`,
+        `3 of ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions left · resets Sep 17, 2026`,
       ),
     ).toBeInTheDocument();
     expect(
-      within(card).queryByRole('button', { name: 'Cancel subscription' }),
+      within(card).queryByRole('button', { name: 'Review cancellation' }),
     ).not.toBeInTheDocument();
     // Picker marks Free as current — no CTA on the current plan.
     const freeOption = screen.getByTestId('plan-option-free');
@@ -1157,7 +1165,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // The refetch is the fix; the message alone would leave the user stuck.
     await waitFor(() => expect(subscriptionReads).toBeGreaterThan(1));
     // And the reconciled state brings a real control with it.
-    expect(await screen.findByRole('button', { name: /Cancel subscription/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Review cancellation/i })).toBeInTheDocument();
   });
 
   it('the pending lock survives a reload: a stored record locks a fresh mount', async () => {
@@ -1740,7 +1748,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(card).getByText('· Next renewal Jul 1, 2026')).toBeInTheDocument();
     // The provider is plumbing, not plan facts — never on the card.
     expect(within(card).queryByText(/via Paddle/)).not.toBeInTheDocument();
-    expect(within(card).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
   });
 
   it("a deep link naming the subscriber's own current tier does not auto-open the confirm panel", async () => {
@@ -1811,7 +1819,7 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
     const modal = screen.getByTestId('cancel-modal');
     // D120 downgrade terms + D121 money-back route (all paid tiers).
     expect(
@@ -1839,7 +1847,7 @@ describe('BillingScreen — paid subscriber', () => {
         "Cancellation scheduled — your plan stays active until Jul 1, 2026, then you'll switch to Free.",
       ),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Cancel subscription' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Review cancellation' })).not.toBeInTheDocument();
   });
 
   // Founder screenshot 2026-07-31: on Pro ANNUAL with a downgrade booked,
@@ -2017,7 +2025,7 @@ describe('BillingScreen — paid subscriber', () => {
     await waitFor(() =>
       expect(screen.queryByText(/Cancellation scheduled/)).not.toBeInTheDocument(),
     );
-    expect(await screen.findByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
   });
 
   it('un-cancel: "Never mind" disarms without sending anything', async () => {
@@ -2073,7 +2081,7 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
     const offer = within(screen.getByTestId('cancel-modal')).getByTestId('pause-offer');
     expect(within(offer).getByText(/Pause instead\?/)).toBeInTheDocument();
 
@@ -2082,6 +2090,43 @@ describe('BillingScreen — paid subscriber', () => {
     // The modal closes on success; the paused STATE arrives by webhook,
     // so nothing here claims the subscription is already paused.
     await waitFor(() => expect(screen.queryByTestId('cancel-modal')).not.toBeInTheDocument());
+  });
+
+  // QA-billing-20260901-03: `pauseForThirtyDays` writes nothing locally
+  // (status flips only on the provider webhook), so the immediate
+  // post-pause read is guaranteed pre-pause. The card must show a
+  // confirming state instead of continuing to assert the active plan
+  // with a live Cancel affordance.
+  it('pause requested: the current-plan card enters a confirming state, not the stale active one', async () => {
+    mockTier = 'pro';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        // Every read (including the post-pause refetch) still answers
+        // pre-pause state — exactly what the real service does before
+        // the webhook lands.
+        respond: () => jsonOk({ data: PRO_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/pause',
+        respond: () => jsonOk({ data: PRO_SUB }),
+      },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
+    const offer = within(screen.getByTestId('cancel-modal')).getByTestId('pause-offer');
+    fireEvent.click(within(offer).getByRole('button', { name: 'Pause for 30 days' }));
+
+    const card = await screen.findByTestId('current-plan-card');
+    expect(await within(card).findByTestId('pause-confirming-note')).toHaveTextContent(
+      'Confirming your pause',
+    );
+    // The stale "still active, still cancelable" affordance must not
+    // render alongside the confirming state.
+    expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
   });
 
   // Offering a control the API would refuse is the assert-what-we-don't-
@@ -2106,7 +2151,7 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
     expect(within(screen.getByTestId('cancel-modal')).queryByTestId('pause-offer')).toBeNull();
   });
 
@@ -2121,7 +2166,7 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
     const modal = screen.getByTestId('cancel-modal');
     expect(
       within(modal).getByText('Your Plus features stay active until Jul 1, 2026.'),
@@ -2149,7 +2194,7 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     // Open → confirm → the POST fails → inline error renders.
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
     let modal = screen.getByTestId('cancel-modal');
     fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
     expect(await within(modal).findByRole('alert')).toHaveTextContent(
@@ -2157,8 +2202,8 @@ describe('BillingScreen — paid subscriber', () => {
     );
 
     // Close ("Keep my plan") then reopen — the stale error must be gone.
-    fireEvent.click(within(modal).getByRole('button', { name: 'Keep my plan' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Cancel subscription' }));
+    fireEvent.click(within(modal).getByRole('button', { name: 'Keep current plan' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
     modal = screen.getByTestId('cancel-modal');
     expect(within(modal).queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -2246,13 +2291,22 @@ describe('BillingScreen — paid subscriber', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
     const panel = screen.getByTestId('change-plan-panel');
-    // Immediate effect stated up front — the old copy read as deferred
-    // ("applies after your payment provider confirms it").
-    expect(await within(panel).findByText('Effective immediately.')).toBeInTheDocument();
+    // QA-billing-20260901-10: "Effective immediately" named the CHARGE,
+    // not the plan — the plan itself doesn't flip until the webhook
+    // confirms. "Charged today" is true now; the entitlement timing gets
+    // its own honest sentence.
+    expect(await within(panel).findByText('Charged today.')).toBeInTheDocument();
     // The provider's own number, lowest-denomination → formatted; the
     // date is the post-change renewal from the same preview. Text is
     // split across inline nodes, so assert on the panel's textContent.
-    await waitFor(() => expect(panel).toHaveTextContent('$181.01 is charged now'));
+    await waitFor(() =>
+      expect(panel).toHaveTextContent(
+        '$181.01 — the prorated difference for the rest of this period',
+      ),
+    );
+    expect(panel).toHaveTextContent(
+      'Pro starts as soon as your payment provider confirms, usually within a minute.',
+    );
     expect(panel).toHaveTextContent('from Jul 30, 2027.');
     // Money moves today, so the guarantee is reassurance and belongs here
     // — unlike the $0 downgrade branch, where it contradicts.
@@ -2274,7 +2328,7 @@ describe('BillingScreen — paid subscriber', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
     const panel = screen.getByTestId('change-plan-panel');
-    expect(await within(panel).findByText('Effective immediately.')).toBeInTheDocument();
+    expect(await within(panel).findByText('Charged today.')).toBeInTheDocument();
     expect(panel).toHaveTextContent('The prorated difference for the rest of this period');
     // No quoted amount without provider truth — the mechanics sentence
     // stays numberless (the header's $190/yr is a list price, not a
@@ -2333,11 +2387,47 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
 
-    fireEvent.click(within(notice).getByRole('button', { name: 'Keep current plan instead' }));
+    fireEvent.click(within(notice).getByRole('button', { name: 'Keep current plan' }));
     await waitFor(() =>
       expect(screen.queryByTestId('scheduled-plan-change-notice')).not.toBeInTheDocument(),
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
+  });
+
+  // QA-billing-20260901-08: `changePlan` (what "Keep current plan" calls)
+  // refuses with a deterministic `PLAN_CHANGE_UNSUPPORTED` 409 for any
+  // backing status other than `active` — offering the button on a
+  // `past_due` row was a guaranteed dead end.
+  it('a scheduled downgrade on a past_due backing row withholds the dead-end "Keep current plan" button', async () => {
+    mockTier = 'pro';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...PRO_SUB,
+          subscription: {
+            ...SUB,
+            status: 'past_due',
+            scheduledChange: {
+              tier: 'plus',
+              cycle: 'annual',
+              effectiveAt: SUB.currentPeriodEnd!,
+              state: 'scheduled',
+            },
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('scheduled-plan-change-notice');
+    expect(within(notice).queryByRole('button', { name: 'Keep current plan' })).toBeNull();
+    expect(notice).toHaveTextContent(
+      'Plan changes aren’t available on this subscription right now',
+    );
+    expect(within(notice).getByRole('link', { name: 'support@declutrmail.com' })).toHaveAttribute(
+      'href',
+      'mailto:support@declutrmail.com',
+    );
   });
 
   it('an ambiguous provider error on an IMMEDIATE upgrade enters the lock+poll — no armed retry', async () => {
@@ -2838,7 +2928,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(card).queryByText(/\$9/)).not.toBeInTheDocument();
     expect(within(card).queryByText(/no card on file/)).not.toBeInTheDocument();
     expect(
-      within(card).queryByRole('button', { name: 'Cancel subscription' }),
+      within(card).queryByRole('button', { name: 'Review cancellation' }),
     ).not.toBeInTheDocument();
 
     // The paused notice owns the story + both exits.
@@ -2847,7 +2937,7 @@ describe('BillingScreen — paid subscriber', () => {
     // The entitlement claim is DERIVED from the server read, never
     // hardcoded — this fixture's tier is free, so the copy may say so.
     expect(notice).toHaveTextContent('your account is on Free');
-    expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
+    expect(within(notice).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
 
     // Plan changes stay locked while paused.
     expect(screen.queryByRole('button', { name: /Upgrade to|Switch to/ })).not.toBeInTheDocument();
@@ -2862,6 +2952,112 @@ describe('BillingScreen — paid subscriber', () => {
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Resume accepted — confirming your plan.',
     );
+  });
+
+  // QA-billing-20260901-02: canceling a paused row is booked at the
+  // provider (`cancel_at_period_end`) but the notice previously kept
+  // repeating "cancel if you're done with it" over a now-inert button,
+  // and the toast (tested separately below) claimed the plan "stays
+  // active" for a row granting nothing.
+  it('a paused subscription that is already canceled says so, and drops the redundant cancel button', async () => {
+    mockTier = 'free';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'free',
+          foundingMember: false,
+          pendingCheckout: null,
+          complimentary: null,
+          subscription: { ...SUB, tier: 'plus', status: 'paused', cancelAtPeriodEnd: true },
+        },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('You’ve already canceled it');
+    expect(notice).not.toHaveTextContent('cancel if you’re done with it');
+    expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
+  });
+
+  // QA-billing-20260901-01: the plan picker is locked whenever a
+  // non-backing row is not yet `canceled` (paused, mismatched — the
+  // same predicate the checkout guard uses) — name the support route,
+  // since Cancel isn't always the fast unlock (a chargeback stays
+  // blocking for the rest of the period).
+  it('a locked non-backing state names support as a route when canceling might not free it up right away', async () => {
+    mockTier = 'free';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          tier: 'free',
+          foundingMember: false,
+          pendingCheckout: null,
+          complimentary: null,
+          subscription: { ...SUB, tier: 'plus', status: 'paused', cancelAtPeriodEnd: false },
+        },
+      }),
+    );
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(within(notice).getByRole('link', { name: 'support@declutrmail.com' })).toHaveAttribute(
+      'href',
+      'mailto:support@declutrmail.com',
+    );
+  });
+
+  // QA-billing-20260901-02 end-to-end: confirming cancel on a
+  // non-backing (paused) row round-trips through the real POST and the
+  // mutation's own cache write-back, and the notice picks up the
+  // cancelAtPeriodEnd branch live — proving the transition, not just a
+  // static fixture already in that state (see the test above).
+  it('confirming cancel on a paused row updates the notice in place, with no "stays active" claim anywhere on screen', async () => {
+    mockTier = 'free';
+    let cancelPosted = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () =>
+          jsonOk({
+            data: {
+              tier: 'free',
+              foundingMember: false,
+              pendingCheckout: null,
+              complimentary: null,
+              subscription: { ...SUB, tier: 'plus', status: 'paused' },
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/cancel',
+        respond: () => {
+          cancelPosted = true;
+          return jsonOk({
+            data: {
+              tier: 'free',
+              foundingMember: false,
+              pendingCheckout: null,
+              complimentary: null,
+              subscription: { ...SUB, tier: 'plus', status: 'paused', cancelAtPeriodEnd: true },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    fireEvent.click(within(notice).getByRole('button', { name: 'Review cancellation' }));
+    const modal = screen.getByTestId('cancel-modal');
+    fireEvent.click(within(modal).getByRole('button', { name: 'Cancel subscription' }));
+
+    await waitFor(() => expect(cancelPosted).toBe(true));
+    await waitFor(() => expect(notice).toHaveTextContent('You’ve already canceled it'));
+    expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
+    expect(screen.queryByText(/stays active/)).not.toBeInTheDocument();
   });
 });
 
@@ -2893,7 +3089,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
     expect(within(card).getByText('Included with your account')).toBeInTheDocument();
     expect(
-      within(card).queryByRole('button', { name: 'Cancel subscription' }),
+      within(card).queryByRole('button', { name: 'Review cancellation' }),
     ).not.toBeInTheDocument();
 
     // The notice describes the row as a paused subscription record,
@@ -2905,7 +3101,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(notice).toHaveTextContent('Your account is on Pro');
     expect(notice).not.toHaveTextContent('Resume to reactivate Plus');
     expect(notice).toHaveTextContent(/can move your account off Pro/);
-    expect(within(notice).getByRole('button', { name: 'Cancel subscription' })).toBeInTheDocument();
+    expect(within(notice).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
 
     // The paused row still occupies the server's one-live-subscription
     // slot (SUBSCRIPTION_EXISTS keys on STATUS, not backing) — a new
@@ -2971,7 +3167,7 @@ describe('BillingScreen — one billing story (A6)', () => {
       'Pro is complimentary on this account',
     );
     // No subscription exists, so nothing here may offer to manage one.
-    expect(within(card).queryByRole('button', { name: 'Cancel subscription' })).toBeNull();
+    expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
   });
 

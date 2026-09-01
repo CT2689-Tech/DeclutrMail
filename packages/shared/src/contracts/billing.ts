@@ -453,3 +453,16 @@ export const PlanChangePreviewSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
 ]);
 export type PlanChangePreview = z.infer<typeof PlanChangePreviewSchema>;
+
+/**
+ * QA-billing-20260901-09/-05 — the founding-slot count backing the
+ * "Claim Founding Pro" checkbox and card price. Previously advisory-only
+ * server-side (`BillingService.foundingRemaining`, checked at checkout
+ * time): the FE had no route to read it before then, so a sold-out promo
+ * stayed offered on the plan card and the checkbox, discovered only at
+ * confirm (`FOUNDING_PRO_SOLD_OUT`).
+ */
+export const FoundingAvailabilitySchema = z.object({
+  remaining: z.number().int().nonnegative(),
+});
+export type FoundingAvailability = z.infer<typeof FoundingAvailabilitySchema>;
