@@ -26,12 +26,24 @@
 
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { tokens } from '@declutrmail/shared';
+import { WINDOWS } from '@declutrmail/shared/senders';
 import type {
   ActivityBucket,
   SenderListDirection,
   SenderListSort,
   TriStateFilter,
 } from '@/lib/api/senders';
+
+// QA-senders-20260901-04: the active/quiet/dormant thresholds these chips
+// filter by were stated nowhere on screen. Mirrors the exact cutoffs
+// `filterCountsQuery` uses (senders.read-service.ts) — active/dormant ride
+// the shared WINDOWS constants directly; "quiet" is everything between,
+// which WINDOWS has no single constant for.
+const ACTIVITY_BUCKET_TITLE: Record<ActivityBucket, string> = {
+  active: `Last email within ${WINDOWS.ACTIVE_DAYS} days`,
+  quiet: `Last email ${WINDOWS.ACTIVE_DAYS}–${WINDOWS.DORMANT_DAYS} days ago`,
+  dormant: `Last email over ${WINDOWS.DORMANT_DAYS} days ago`,
+};
 
 const { color, font } = tokens;
 
@@ -91,6 +103,7 @@ export interface ComposeCounts {
 export function ComposeStrip({
   state,
   counts,
+  updating = false,
   onChange,
   onClear,
   domainSuggestions,
@@ -102,6 +115,13 @@ export function ComposeStrip({
   state: ComposeState;
   /** Mailbox-wide absolute counts per axis. May be undefined while loading. */
   counts: ComposeCounts | undefined;
+  /**
+   * QA-senders-20260901-01 — true while `counts` may be one response
+   * behind (an in-flight refetch of the active query). Dims the chip
+   * counts so a background-refreshed number is not mistaken for a
+   * current one; the chips themselves stay clickable.
+   */
+  updating?: boolean;
   onChange: (next: ComposeState) => void;
   onClear: () => void;
   /** Active sort column — surfaced as a Sort chip alongside the filter axes. */
@@ -119,7 +139,9 @@ export function ComposeStrip({
 }) {
   return (
     <div
-      aria-label="Senders included in this message"
+      role="group"
+      aria-label="Filter and sort senders"
+      aria-busy={updating}
       style={{
         display: 'flex',
         flexWrap: 'wrap',
@@ -128,6 +150,9 @@ export function ComposeStrip({
         padding: '14px 0',
         borderTop: `1px solid ${color.line}`,
         borderBottom: `1px solid ${color.line}`,
+        // QA-senders-20260901-01: signal that the counts on these chips
+        // may be a response behind — chips stay clickable either way.
+        opacity: updating ? 0.6 : 1,
       }}
     >
       <AxisLabel>activity</AxisLabel>
@@ -138,7 +163,7 @@ export function ComposeStrip({
       <Divider />
 
       <ToggleChip
-        label="has unsub"
+        label="has unsubscribe"
         count={counts?.unsubReady}
         value={state.unsubReady}
         onChange={(unsubReady) => onChange({ ...state, unsubReady })}
@@ -156,7 +181,7 @@ export function ComposeStrip({
         onChange={(protectedFlag) => onChange({ ...state, protectedFlag })}
       />
       <OnOffChip
-        label="unsub'd, still emailing"
+        label="unsubscribed, still emailing"
         count={counts?.unsubIgnored}
         active={state.unsubIgnored}
         onToggle={() => onChange({ ...state, unsubIgnored: !state.unsubIgnored })}
@@ -278,6 +303,7 @@ function ActivityChip({
       type="button"
       role="radio"
       aria-checked={isActive || isNegated}
+      title={ACTIVITY_BUCKET_TITLE[bucket]}
       onClick={(e) => cycle(e.altKey)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -747,8 +773,8 @@ const SORT_OPTIONS: ReadonlyArray<{
   // worker), so it is neither "ever" nor a cumulative "seen" — it is
   // what we currently hold. This group has no competing option, so the
   // sort needs no scope word at all (findings doc 7).
-  { sort: 'total', direction: 'desc', label: 'Most emails', group: 'Volume' },
-  { sort: 'total', direction: 'asc', label: 'Fewest emails', group: 'Volume' },
+  { sort: 'total', direction: 'desc', label: 'Most received', group: 'Volume' },
+  { sort: 'total', direction: 'asc', label: 'Fewest received', group: 'Volume' },
   { sort: 'last_seen', direction: 'desc', label: 'Most recent', group: 'Last seen' },
   { sort: 'last_seen', direction: 'asc', label: 'Longest quiet', group: 'Last seen' },
   { sort: 'first_seen', direction: 'desc', label: 'Newest arrivals', group: 'First seen' },

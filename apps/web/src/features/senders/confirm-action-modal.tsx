@@ -1523,7 +1523,8 @@ export function ConfirmActionModal({
                             {compositeCount.toLocaleString('en-US')}
                           </strong>
                           <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                            email{compositeCount === 1 ? '' : 's'} currently match
+                            email{compositeCount === 1 ? '' : 's'} currently{' '}
+                            {compositeCount === 1 ? 'matches' : 'match'}
                             {activeReach === 'all_mail' ? ' across inbox + archived' : ''}
                             {showWindowQualifier
                               ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
@@ -1544,7 +1545,8 @@ export function ConfirmActionModal({
                             {compositeCount.toLocaleString('en-US')}
                           </strong>
                           <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                            email{compositeCount === 1 ? '' : 's'} currently match for{' '}
+                            email{compositeCount === 1 ? '' : 's'} currently{' '}
+                            {compositeCount === 1 ? 'matches' : 'match'} for{' '}
                             {secondaryVerb === 'delete' ? 'Trash' : 'Archive'}
                             {showWindowQualifier
                               ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
@@ -1784,7 +1786,14 @@ export function ConfirmActionModal({
             <Button
               tone="default"
               onClick={onCancel}
-              iconRight={<Kbd style={{ fontSize: 9, color: color.fgMuted }}>Esc</Kbd>}
+              // QA-senders-20260901-10: the shortcut can't be pressed on a
+              // touch sheet, so the hint only adds to what's between the
+              // reader and the confirm button at 375px.
+              iconRight={
+                variant === 'sheet' ? undefined : (
+                  <Kbd style={{ fontSize: 9, color: color.fgMuted }}>Esc</Kbd>
+                )
+              }
             >
               Cancel
             </Button>
@@ -1801,15 +1810,17 @@ export function ConfirmActionModal({
                 disabled={confirmDisabled}
                 onClick={() => onConfirm(buildConfirmOpts())}
                 iconRight={
-                  <Kbd
-                    style={{
-                      background: color.lineInverse,
-                      border: 'none',
-                      color: color.fgInverse,
-                    }}
-                  >
-                    ⌘⏎
-                  </Kbd>
+                  variant === 'sheet' ? undefined : (
+                    <Kbd
+                      style={{
+                        background: color.lineInverse,
+                        border: 'none',
+                        color: color.fgInverse,
+                      }}
+                    >
+                      ⌘⏎
+                    </Kbd>
+                  )
                 }
               >
                 {confirmLabel}

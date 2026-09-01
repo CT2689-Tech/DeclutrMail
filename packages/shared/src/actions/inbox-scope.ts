@@ -124,11 +124,13 @@ export function tiedWindowNoticeCopy(
   const tied = known.filter((c) => c.count === top.count);
   if (tied.length < 2 || top.count === 0) return null;
   const widest = tied[tied.length - 1]!;
-  const age =
+  // QA-senders-20260901-06: same two facts (the tie's cause, and its
+  // extent), 13 words instead of 24 — lead with the cause.
+  const ageLead =
     newestInboxDays === null
-      ? 'this sender has nothing newer'
-      : `this sender's newest inbox email is ${newestInboxDays.toLocaleString('en-US')} day${newestInboxDays === 1 ? '' : 's'} old`;
-  return `Every window through ${widest.label} matches the same ${top.count.toLocaleString('en-US')} — ${age}, so those windows exclude nothing.`;
+      ? 'This sender has nothing newer'
+      : `Nothing newer than ${newestInboxDays.toLocaleString('en-US')} day${newestInboxDays === 1 ? '' : 's'}`;
+  return `${ageLead}, so every window through ${widest.label} matches the same ${top.count.toLocaleString('en-US')}.`;
 }
 
 /**
@@ -305,8 +307,10 @@ export function mailLocationCopy(input: MailLocationInput): string | null {
   if (binned > 0) {
     parts.push(`${n(binned)} ${plural(binned)} in Trash or Spam`);
   }
-  if (parts.length === 1) {
-    return `Where this sender's mail is now: ${parts[0]} — that is everything the mailbox holds for this sender.`;
-  }
+  // QA-senders-20260901-06: a single part has nothing to reconcile — it
+  // just restates the headline count two lines above it. Say nothing,
+  // the same way an unresolved reach or a genuinely empty mailbox does
+  // above, rather than dressing up "no gap" as a sentence.
+  if (parts.length === 1) return null;
   return `Where this sender's mail is now: ${parts.join(' \u00b7 ')}.`;
 }

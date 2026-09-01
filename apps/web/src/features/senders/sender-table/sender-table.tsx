@@ -149,7 +149,7 @@ const COLUMNS: ReadonlyArray<{
 }> = [
   { key: null, label: '' }, // checkbox
   { key: 'name', label: 'Sender' },
-  { key: 'total', label: 'Total', alignRight: true },
+  { key: 'total', label: 'Received', alignRight: true },
   // Monthly cadence — the number the grid card leads with. Present on
   // both views so the Grid↔Table toggle never drops a fact (2026-07-03
   // consistency pass). Not sortable: the wire `SenderListSort` union
@@ -167,7 +167,7 @@ const COLUMNS: ReadonlyArray<{
   // (grid↔table parity, 2026-07-16).
   { key: null, label: 'You wrote', alignRight: true },
   { key: 'last_seen', label: 'Last seen', alignRight: true },
-  { key: null, label: 'Unsub' },
+  { key: null, label: 'Unsubscribe' },
   { key: null, label: '' }, // verbs
   { key: null, label: '' }, // expand chevron
 ];

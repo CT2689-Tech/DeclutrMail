@@ -2089,3 +2089,86 @@ Settings → Gmail accounts."`
 **Regression test:** none of the five — copy/robustness gaps with no clean
 red/green boundary except (4), which could assert a visible error message
 renders on a mocked mutation rejection.
+
+## senders
+
+Rows accumulate across every `/ct-qa senders` run. First filed 2026-09-01 (10
+survivors; 2 candidates refuted before filing — see the ledger's Refuted
+table). Both refuted candidates were the run's own; every filed row below is
+sourced from the read-only agent wave (`defect-class-sweeper` ×2,
+`usability-editor` ×8), not independently live-verified beyond what each
+row's evidence line states.
+
+|     | id                     | sev | one line                                                                                                                                                                                                                                                                                                 | status                                                                                            | PR  |
+| --- | ---------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | --- |
+| 🟡  | QA-senders-20260901-01 | P1  | Filter chips and the hero total show a stale count with zero visual cue whenever the list query background-refetches on the same key (staleTime expiry, or post-action `invalidateQueries`) — `showingStaleRows`/`isPlaceholderData` only covers a _new_-key placeholder swap, never this path           | Fixing — countsMayBeStale (isFetching) now drives ComposeStrip + freshness caption                |     |
+| 🟡  | QA-senders-20260901-02 | P2  | `GET /api/senders`'s list + summary meta run as an unwrapped concurrent `Promise.all` with no transaction, so the chips/total/rows in one response can reflect different DB snapshots under a concurrent write; a code comment falsely claims a single observational snapshot                            | Fixing — false single-snapshot comment removed; transaction wrap deferred (perf-critical path)    |     |
+| 🟡  | QA-senders-20260901-03 | P2  | The intro banner says "only an Autopilot rule changes future matches" — Unsubscribe is a manual decision that also changes future mail, by the product's own `action-semantics.ts` contract                                                                                                              | Fixing — banner copy corrected                                                                    |     |
+| 🟡  | QA-senders-20260901-04 | P2  | Three differently-scoped sender counts render within ~60px ("7,968 senders found" reads as this search's result but is always the whole unfiltered mailbox); the Activity chip thresholds (30d/180d) are never stated and their counts silently ignore the search box                                    | Fixing — freshness line reworded + activity chip thresholds added as titles                       |     |
+| 🟡  | QA-senders-20260901-05 | P3  | Naming inconsistency sweep: Unsubscribe wears 4 spellings on one screen, "received" wears 3 names, "brand group" vs. a filter chip labelled "domain" name the same grouping differently, and the mobile bulk sheet's "Cancel" silently wipes the selection instead of just closing                       | Fixing — unsub/received naming, domain-group naming, sheet Clear selection corrected              |     |
+| 🟡  | QA-senders-20260901-06 | P3  | Verbosity sweep: the D226 Archive preview's lead paragraph, its mail-location line, its tied-window notice, the brand-group card's stat strip, and the post-action receipt (toast + strip + tray all restate one fact, two identical Undo buttons) — ~80 words trimmable, exact replacement text on file | Fixing — mail-location/tied-window trims + sheet Kbd hints dropped; lead-paragraph merge deferred |     |
+| 🟡  | QA-senders-20260901-07 | P2  | The compose/filter strip's `aria-label` reads "Senders included in this message" — describes a recipient list, not the filter-and-sort row it actually is; a screen-reader user is told the opposite of what the control does                                                                            | Fixing — aria-label corrected, role=group added                                                   |     |
+| 🟡  | QA-senders-20260901-08 | P2  | A bulk selection that is all-Protected shows 4 natively-disabled action buttons with the reason visible only in a hover title/`aria-label` — a mouse user who doesn't hover gets zero explanation, though the identical sentence already exists and fires on the keyboard path                           | Fixing — visible protectedLockNote added to both bar variants                                     |     |
+| 🟡  | QA-senders-20260901-09 | P3  | Grammar/wording nits: "1 email currently match" (verb agreement), the widened-search fallback branch produces "No matching senders match X" + a "Keep matching only" button (doubled word), and "select loaded 50" leaks internal pagination jargon to the reader                                        | Fixing — verb agreement + widened-filter collision + select-shown corrected                       |     |
+| 🟡  | QA-senders-20260901-10 | P2  | Senders' own D226 preview (`confirm-action-modal.tsx`, `variant="sheet"`) reaches its confirm button only after ~110 words + a 5-option radio group in an 88vh sheet at 375px — same shape as `QA-triage-20260827-11` (merged in #671) but a DIFFERENT, un-shared component                              | Fixing — Kbd hints dropped in sheet variant; benefits from 06's shared-copy trims                 |     |
+
+**Siblings, not filed here — belong to a future `/ct-qa activity` run.** The
+`defect-class-sweeper` pass, working from the same seed mechanism as -01,
+independently found the identical missing-staleness-cue shape on `/activity`:
+`MetricsHeader` (`apps/web/src/features/activity/activity-screen.tsx:350-362`)
+renders the OLD time-window's label next to numbers from the query's
+`keepPreviousData` snapshot while a sibling region 60 lines down IS gated on
+`showingStaleRows` — and the card is `role="status" aria-live="polite"`, so a
+screen reader announces mismatched window/numbers together. Not driven this
+run (out of job scope per the one-job-per-run boundary); also added to
+`FINDINGS.md`'s Inbox so it isn't lost before Activity gets its own run.
+
+### QA-senders-20260901-01 — the corrected mechanism, and why the run's own first guess was wrong
+
+The run's own live observation (repeatedly watched the "protected" chip show
+`588` immediately after a fresh nav/view-toggle, then silently correct to
+`508` — DB-verified as the true, ~48h-stable value — within a couple seconds,
+with no loading cue) was real, but its own attributed cause —
+`keepPreviousData`/`isPlaceholderData` — was **refuted**: a `finding-refuter`
+traced `filterCountsQuery` (`apps/api/src/senders/senders.read-service.ts:1013-1060`)
+and found it scoped ONLY by `mailboxAccountId` (ignores compose/search/sort),
+so for a fixed mailbox every valid response computes the identical numbers —
+`keepPreviousData`'s placeholder can never differ from the incoming fresh
+value on this screen, and a live DB requery found no code path that could
+have computed `588` during the session at all. That refutation stands; see
+the ledger's Refuted table.
+
+A `defect-class-sweeper`, working from the same seed description independently
+of the refuter, found the ACTUAL mechanism: `showingStaleRows` is defined as
+`sendersQuery.isPlaceholderData` (`senders-screen.tsx:340`), and in TanStack
+Query v5 that flag is true only while a _new_ query key is being served
+placeholder data — it is `false` during an ordinary _same-key_ background
+refetch. `apps/web/src/lib/query-client.ts:150-151` sets `staleTime: 30_000`
+with `refetchOnWindowFocus: false`, so `refetchOnMount` on any &gt;30s-old
+cache entry, and the post-action `qc.invalidateQueries({queryKey:['senders']})`
+at `senders-screen.tsx:2830`, both refetch the SAME key — `isPlaceholderData`
+never fires, `showingStaleRows` stays `false`, and `ComposeStrip`
+(`senders-screen.tsx:2409-2425`, receives `counts` with no staleness prop at
+all) and the hero total (`:2378`/`:2468`, ungated — contrast the adjacent
+`BulkSelectButton` on the same row, which IS gated at `:2483`) both keep
+rendering the previous response's numbers with zero visual difference from a
+fresh one, while `SenderResultsFreshness` (`:2394-2402`, which DOES receive
+`updating={showingStaleRows}`) has no reason to flag anything either, since
+its own flag is equally blind to this path.
+
+Net: the specific "588" the run watched cannot be explained by either
+account and its exact provenance is unresolved (the refuter's "no code path
+computed 588" stands) — but the CLASS of bug the run's raw observation was
+reaching for (stale sender counts, zero visual cue, live on ordinary use) is
+real, code-proven, and reachable by every user on every return visit &gt;30s
+and after every bulk action, via a different, corrected mechanism. Filed as
+such. **Unmeasured:** an actual before/after chip value pinned to a
+&gt;30s-idle repro, to close the loop the run's own flawed observation left
+open.
+
+**Regression test:** mock `useSenders` to return `isPlaceholderData: false`
+with a response whose `filterCounts` differ from a previous render's, assert
+`ComposeStrip`'s rendered chip text updates with no intermediate stale paint
+— or, at the integration level, assert `ComposeStrip` receives a
+staleness-derived prop at all (it currently receives none, so this assertion
+would fail today by construction, not by racing a timer).

@@ -59,6 +59,7 @@ import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useSendersStore } from './store';
+import { sendersKeys } from './api/query-keys';
 import type { SenderListRow } from '@/lib/api/senders';
 
 // Typed against the wire contract so a field the API always sends cannot
@@ -558,7 +559,7 @@ describe('SendersScreen — edge states', () => {
     const freshness = screen.getByTestId('sender-results-freshness');
     // Coverage line answers "am I looking at everything?" — indexed
     // total + a results-as-of time (2026-07-16 founder smoke).
-    expect(freshness).toHaveTextContent(/senders found for me@example\.com/i);
+    expect(freshness).toHaveTextContent(/senders in this mailbox for me@example\.com/i);
     // QA-sync-20260831-10 item 3: `asOf` is a request-compute timestamp,
     // not a measured sync completion, even in this healthy branch —
     // "Results as of" describes what the value actually is.
@@ -707,6 +708,115 @@ describe('SendersScreen — edge states', () => {
         .getByTestId('sender-results-freshness')
         .querySelector('time[datetime="2026-06-02T09:30:00.000Z"]'),
     ).toBeInTheDocument();
+  });
+
+  // QA-senders-20260901-01: the case above is a NEW-key placeholder swap
+  // (`isPlaceholderData`). The other real trigger — a SAME-key background
+  // refetch, e.g. the `invalidateQueries(['senders'])` every bulk action
+  // fires on completion — left the old `showingStaleRows` flag `false`
+  // throughout, so the chips and freshness caption kept asserting the
+  // PREVIOUS response's numbers as current with no cue at all.
+  it('flags the chip counts and freshness caption as updating during a same-key background refetch', async () => {
+    let resolveRefetch: ((response: Response) => void) | null = null;
+    let fetchCount = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () => {
+          fetchCount += 1;
+          if (fetchCount === 1) {
+            return jsonOk({
+              data: [ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                query: {
+                  totalMatching: 1,
+                  globalMaxTotal: 120,
+                  asOf: '2026-05-29T12:00:00.000Z',
+                  filterCounts: {
+                    total: 1,
+                    active: 1,
+                    quiet: 0,
+                    dormant: 0,
+                    unsubReady: 0,
+                    wroteTo: 0,
+                    protected: 0,
+                    unsubIgnored: 0,
+                  },
+                },
+              },
+            });
+          }
+          return new Promise<Response>((resolve) => {
+            resolveRefetch = resolve;
+          });
+        },
+      },
+      sendersSummaryHandler(),
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    await screen.findAllByText(/Sender A/);
+
+    // Same key, no filter/search/sort change — exactly what a post-
+    // action `invalidateQueries(['senders'])` does.
+    await act(async () => {
+      void client.invalidateQueries({ queryKey: sendersKeys.all });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sender-results-freshness')).toHaveTextContent(/Updating results…/),
+    );
+    // The prior response's row is still shown (this is NOT a placeholder
+    // swap) — the read-only fieldset guard must NOT engage for this path,
+    // only the two aggregates.
+    expect(screen.getByTestId('sender-results-region')).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByRole('group', { name: 'Filter and sort senders' })).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+
+    await act(async () => {
+      resolveRefetch?.(
+        jsonOk({
+          data: [ROW],
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 50 },
+            query: {
+              totalMatching: 1,
+              globalMaxTotal: 120,
+              asOf: '2026-05-29T12:05:00.000Z',
+              filterCounts: {
+                total: 1,
+                active: 1,
+                quiet: 0,
+                dormant: 0,
+                unsubReady: 0,
+                wroteTo: 0,
+                protected: 0,
+                unsubIgnored: 0,
+              },
+            },
+          },
+        }),
+      );
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId('sender-results-freshness')).not.toHaveTextContent(
+        /Updating results…/,
+      ),
+    );
+    expect(screen.getByRole('group', { name: 'Filter and sort senders' })).toHaveAttribute(
+      'aria-busy',
+      'false',
+    );
   });
 
   describe('F011 — a search the default filter starves', () => {
@@ -862,6 +972,54 @@ describe('SendersScreen — edge states', () => {
         ),
       ).toBeInTheDocument();
       expect(screen.queryByTestId('senders-widened-notice')).not.toBeInTheDocument();
+    });
+
+    // QA-senders-20260901-09: a non-activity filter (protected/has-unsub/
+    // domain) fell through `describeNarrowedFilters`'s generic 'matching'
+    // fallback, which then collided with the template's own "senders
+    // match" a few words later — "No matching senders match ...".
+    it('names a non-activity filter without repeating the word "matching"', async () => {
+      const FOUND_ROW = { ...ROW, id: 'found-1', displayName: 'Widened Sender' };
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/senders',
+          respond: (_req, url) => {
+            const q = url.searchParams.get('q');
+            const narrowed = url.searchParams.get('protected') === 'true';
+            const hit = q !== null && q.length > 0 && !narrowed;
+            return jsonOk({
+              data: hit ? [FOUND_ROW] : q ? [] : [ROW],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 50 },
+                query: {
+                  totalMatching: hit ? 1 : q ? 0 : 1,
+                  globalMaxTotal: 120,
+                  asOf: '2026-05-29T12:00:00.000Z',
+                },
+              },
+            });
+          },
+        },
+      ]);
+      renderScreen();
+      await screen.findAllByText(/Sender A/);
+
+      // Off the default 'active' filter, onto 'protected' — the branch
+      // `describeNarrowedFilters` has no activity bucket name for.
+      fireEvent.click(screen.getByRole('radio', { name: /^active/i }));
+      fireEvent.click(screen.getByRole('button', { name: /^protected/i }));
+
+      fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
+        target: { value: 'Widened Sender' },
+      });
+
+      const notice = await screen.findByTestId('senders-widened-notice', undefined, {
+        timeout: 3_000,
+      });
+      expect(notice).toHaveTextContent(/No filtered senders match/);
+      expect(notice.textContent).not.toMatch(/matching senders match/);
+      expect(screen.getByRole('button', { name: /^Keep filtered only$/ })).toBeInTheDocument();
     });
   });
 
@@ -1675,9 +1833,12 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
     expect(screen.queryByText(/unsubscribe from/i)).toBeNull();
-    expect(
-      await screen.findByText(/protected co is protected — unprotect it first/i),
-    ).toBeInTheDocument();
+    // QA-senders-20260901-08 added a persistent SelectionBar note with the
+    // same wording for mouse users who never see this toast — scope to
+    // the toast specifically, since that is what this test covers.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /protected co is protected — unprotect it first/i,
+    );
   });
 
   it('releases a stuck action latch at ACTION_OVERDUE_MS — screen frees, hung sender stays locked, parked terminal effects still run (2026-08-12 incident)', async () => {
@@ -1948,9 +2109,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     installFetchStub([TWO_SENDER_LIST]);
     renderScreen();
 
-    const selectLoaded = await screen.findByRole('button', { name: /select loaded 2/i });
+    const selectLoaded = await screen.findByRole('button', { name: /select 2 shown/i });
     fireEvent.click(selectLoaded);
-    expect(screen.getByRole('button', { name: /deselect loaded 2/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /deselect 2 shown/i })).toBeInTheDocument();
   });
 
   it('A3: Free multi-sender selections open the bulk flow — no gate, no note', async () => {

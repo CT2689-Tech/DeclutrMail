@@ -210,7 +210,7 @@ describe('tiedWindowNoticeCopy', () => {
 
   it('explains a run of tied windows and names the widest one', () => {
     expect(tiedWindowNoticeCopy(github, 182)).toBe(
-      "Every window through 6 months+ matches the same 2,908 — this sender's newest inbox email is 182 days old, so those windows exclude nothing.",
+      'Nothing newer than 182 days, so every window through 6 months+ matches the same 2,908.',
     );
   });
 
@@ -255,7 +255,7 @@ describe('tiedWindowNoticeCopy', () => {
 
   it('omits the age clause rather than inventing one', () => {
     expect(tiedWindowNoticeCopy(github, null)).toBe(
-      'Every window through 6 months+ matches the same 2,908 — this sender has nothing newer, so those windows exclude nothing.',
+      'This sender has nothing newer, so every window through 6 months+ matches the same 2,908.',
     );
   });
 
@@ -272,9 +272,7 @@ describe('tiedWindowNoticeCopy', () => {
         ],
         33,
       ),
-    ).toBe(
-      "Every window through 30 days+ matches the same 1,707 — this sender's newest inbox email is 33 days old, so those windows exclude nothing.",
-    );
+    ).toBe('Nothing newer than 33 days, so every window through 30 days+ matches the same 1,707.');
   });
 });
 
@@ -290,8 +288,8 @@ describe('tiedWindowNoticeCopy — age is caller-supplied, never inferred', () =
       { label: '30 days+', count: 4 },
       { label: '3 months+', count: 1 },
     ];
-    expect(tiedWindowNoticeCopy(counts, 5269)).toContain('5,269 days old');
-    expect(tiedWindowNoticeCopy(counts, 0)).toContain('0 days old');
+    expect(tiedWindowNoticeCopy(counts, 5269)).toContain('5,269 days');
+    expect(tiedWindowNoticeCopy(counts, 0)).toContain('0 days');
   });
 });
 
@@ -340,11 +338,10 @@ describe('mailLocationCopy', () => {
     );
   });
 
-  it('says so plainly when the inbox holds everything', () => {
-    const copy = mailLocationCopy({ inboxNow: 9, allMailNow: 9, receivedTotal: 9 })!;
-    expect(copy).toContain('9 emails in your inbox');
-    expect(copy).toContain('everything the mailbox holds');
-    expect(copy).not.toContain('elsewhere');
+  // QA-senders-20260901-06: a lone part reconciles nothing — it restates
+  // the headline count already on screen. Say nothing instead.
+  it('stays silent when the inbox holds everything (nothing to reconcile)', () => {
+    expect(mailLocationCopy({ inboxNow: 9, allMailNow: 9, receivedTotal: 9 })).toBeNull();
   });
 
   it('never claims anyone archived the mail — only that it is not in the inbox', () => {
@@ -372,10 +369,10 @@ describe('mailLocationCopy', () => {
   it('clamps rather than rendering a negative segment', () => {
     // Counter drift is bounded and reconciled nightly, but a nonsense
     // number rendered confidently is the failure mode this file exists
-    // to prevent — degrade to omission, never to "-5 in Trash".
-    const copy = mailLocationCopy({ inboxNow: 9, allMailNow: 4, receivedTotal: 1 })!;
-    expect(copy).toContain('everything the mailbox');
-    expect(copy).not.toContain('-');
+    // to prevent — degrade to omission, never to "-5 in Trash". Clamping
+    // collapses this to a single part, which is now silence rather than
+    // a sentence (QA-senders-20260901-06) — still never a negative.
+    expect(mailLocationCopy({ inboxNow: 9, allMailNow: 4, receivedTotal: 1 })).toBeNull();
   });
 
   it('singularizes one message', () => {

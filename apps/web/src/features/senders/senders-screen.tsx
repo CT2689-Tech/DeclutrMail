@@ -333,11 +333,23 @@ export function SendersScreen() {
   // (the BE-honest "X senders match"). Falls back to the loaded length
   // while page 1 is in flight.
   const totalMatching = queryMeta?.totalMatching ?? undefined;
-  // D245 — the server computes counts + rows against one observational
-  // snapshot. Surface that scope and make keepPreviousData transitions
-  // explicitly read-only so prior-query rows cannot receive actions.
+  // D245 — surface the response's scope and make keepPreviousData
+  // transitions explicitly read-only so prior-query rows cannot receive
+  // actions.
   const asOf = queryMeta?.asOf;
   const showingStaleRows = sendersQuery.isPlaceholderData;
+  // QA-senders-20260901-01: `showingStaleRows` only covers a NEW filter/
+  // search/sort key being served placeholder data — it stays false during
+  // an ordinary SAME-key background refetch (staleTime expiry +
+  // refetchOnMount, or a post-action `invalidateQueries`), which is the
+  // path that actually repaints this screen on a >30s-idle return or
+  // right after a bulk action. `isFetching` covers both. Deliberately
+  // NOT folded into `showingStaleRows` itself — that flag also disables
+  // the row fieldset and blocks mutations, and an ordinary background
+  // refetch over already-fresh-enough rows should not do either; only
+  // the two aggregates below (chips, freshness caption) that can render
+  // a stale NUMBER with no cue need it.
+  const countsMayBeStale = showingWidened ? widenProbe.isFetching : sendersQuery.isFetching;
   // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
   // KPI strip, and intent chips so headline numbers reflect the WHOLE
   // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
@@ -394,6 +406,7 @@ export function SendersScreen() {
       totalMatching={totalMatching}
       asOf={asOf}
       showingStaleRows={showingStaleRows}
+      countsMayBeStale={countsMayBeStale}
       filterCounts={filterCounts}
       compose={compose}
       setCompose={setCompose}
@@ -424,7 +437,9 @@ export function SendersScreen() {
  */
 function describeNarrowedFilters(compose: ComposeState): string {
   if (compose.activity && !compose.activityNegate) return compose.activity;
-  return 'matching';
+  // QA-senders-20260901-09: 'matching' collided with the template's own
+  // "senders match" a few words later ("No matching senders match ...").
+  return 'filtered';
 }
 
 /** Renders the screen once the senders list is loaded. */
@@ -446,6 +461,7 @@ function SendersScreenContent({
   totalMatching,
   asOf,
   showingStaleRows,
+  countsMayBeStale,
   filterCounts,
   compose,
   setCompose,
@@ -499,6 +515,15 @@ function SendersScreenContent({
   asOf: string | undefined;
   /** Prior query's pages retained while the active search/filter resolves. */
   showingStaleRows: boolean;
+  /**
+   * QA-senders-20260901-01 — the currently-rendered aggregates
+   * (`filterCounts`, `totalMatching`) may be one response behind: true
+   * during ANY in-flight fetch for the active query, not just a new-key
+   * placeholder swap. Drives the chip strip's and freshness caption's
+   * stale-number cue; deliberately narrower than `showingStaleRows`
+   * (which also gates mutations on the rows themselves).
+   */
+  countsMayBeStale: boolean;
   /** D38 — mailbox-wide absolute counts per axis (page-1 snapshot). */
   filterCounts:
     | {
@@ -2294,7 +2319,7 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Review every person, list, and service that emails you, grouped by sender. A manual decision affects current matching email; only an Autopilot rule changes future matches."
+        body="Review every person, list, and service that emails you, grouped by sender. Archive, Later and Delete change only email you already have; Unsubscribe and Autopilot rules change what arrives next."
         learnMore={{
           href: '/methodology#automation-method',
           label: 'Manual decisions vs automatic rules',
@@ -2396,7 +2421,7 @@ function SendersScreenContent({
           asOf={asOf}
           mailboxEmail={activeEmail}
           totalSenders={filterCounts?.total ?? null}
-          updating={showingStaleRows}
+          updating={countsMayBeStale}
           stillSyncing={mailboxStillSyncing}
           syncFailed={mailboxSyncFailed}
         />
@@ -2409,6 +2434,7 @@ function SendersScreenContent({
       {senders.length > 0 && (
         <ComposeStrip
           state={compose}
+          updating={countsMayBeStale}
           counts={
             filterCounts
               ? {
@@ -2896,8 +2922,8 @@ function SenderResultsFreshness({
           <strong style={{ fontWeight: 600 }}>Scan failed</strong>
           <span>
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
-              : `Senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
+              : `Senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
           </span>
         </>
       ) : stillSyncing ? (
@@ -2928,8 +2954,8 @@ function SenderResultsFreshness({
                 sanctioned term for this event, same as the empty-state
                 copy above and the onboarding gate's own vocabulary. */}
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
-              : `Senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
+              : `Senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
           </span>
         </>
       ) : updating ? (
@@ -2954,7 +2980,7 @@ function SenderResultsFreshness({
           <span aria-hidden="true">·</span>
           <span>
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail}`
+              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail}`
               : `Matching count and rows for ${mailboxEmail}`}
           </span>
         </>
@@ -3043,9 +3069,10 @@ function BulkSelectButton({
         letterSpacing: '0.04em',
       }}
     >
-      {allSelected
-        ? `deselect loaded ${senders.length} [⌫]`
-        : `select loaded ${senders.length} [+]`}
+      {/* QA-senders-20260901-09: "loaded" is the infinite-query's own
+          vocabulary, not the reader's — "shown" says the same thing
+          (this page, not the whole filtered set) in plain language. */}
+      {allSelected ? `deselect ${senders.length} shown [⌫]` : `select ${senders.length} shown [+]`}
     </button>
   );
 }

@@ -93,8 +93,8 @@ describe('SenderTable', () => {
   it('renders a semantic <table> with sortable <th> headers carrying aria-sort', () => {
     const { container } = render(<Harness {...{}} />);
     expect(container.querySelector('table')).toBeTruthy();
-    // Default sort = total DESC.
-    const totalHeader = screen.getByRole('columnheader', { name: /total/i });
+    // Default sort = total DESC ("Received" — ADR-0014 §Neutral).
+    const totalHeader = screen.getByRole('columnheader', { name: /received/i });
     expect(totalHeader.getAttribute('aria-sort')).toBe('descending');
     // Non-active sortable column carries aria-sort="none".
     const nameHeader = screen.getByRole('columnheader', { name: /sender/i });
@@ -118,10 +118,10 @@ describe('SenderTable', () => {
 
   it('toggles direction when the active sortable header is clicked', () => {
     render(<Harness sort="total" direction="desc" />);
-    const totalButton = screen.getByRole('button', { name: /^total/i });
+    const totalButton = screen.getByRole('button', { name: /^received/i });
     fireEvent.click(totalButton);
     // Re-query: state has flipped to ascending.
-    expect(screen.getByRole('columnheader', { name: /total/i }).getAttribute('aria-sort')).toBe(
+    expect(screen.getByRole('columnheader', { name: /received/i }).getAttribute('aria-sort')).toBe(
       'ascending',
     );
   });
@@ -390,7 +390,7 @@ describe('SenderTable', () => {
 
   it('suppresses the magnitude bar when globalMaxTotal is 0', () => {
     const { container } = render(<Harness rows={[row({ totalReceived: 0 })]} globalMaxTotal={0} />);
-    // The bar is the only aria-hidden span inside the Total cell with a
+    // The bar is the only aria-hidden span inside the Received cell with a
     // width style — querying by attribute is the cheapest stable seam.
     const bars = container.querySelectorAll('span[aria-hidden="true"]');
     // No fixed-width 120px bar should be present when max is 0.

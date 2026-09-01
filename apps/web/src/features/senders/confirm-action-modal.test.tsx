@@ -210,6 +210,46 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  // QA-senders-20260901-09: the headline pluralised the noun ("1 email")
+  // but not the verb ("currently match"), on the one screen whose job is
+  // to be trusted.
+  it('agrees the verb with the noun at a singular count (QA-senders-20260901-09)', () => {
+    const { container } = render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          counts: { all: 1, olderThan30d: 1, olderThan90d: 1, olderThan180d: 1, olderThan365d: 1 },
+        }}
+      />,
+    );
+
+    expect(container.textContent).toMatch(/1\s*email currently matches/);
+    expect(container.textContent).not.toMatch(/1\s*email currently match(?!es)/);
+  });
+
+  // QA-senders-20260901-10: a 375px sheet can't be reached by a keyboard
+  // shortcut, so the hints only added to the distance between the reader
+  // and the confirm button.
+  it('drops the Esc / ⌘⏎ keyboard hints in the mobile sheet variant', () => {
+    render(
+      <ConfirmActionModal
+        variant="sheet"
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+
+    expect(screen.queryByText('Esc')).toBeNull();
+    expect(screen.queryByText('⌘⏎')).toBeNull();
+    expect(screen.getByRole('button', { name: /Cancel/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Archive/ })).toBeInTheDocument();
+  });
+
   it('states quota usage when the action fits, from server-supplied numbers (A3)', () => {
     render(
       <ConfirmActionModal
@@ -876,7 +916,7 @@ describe('ConfirmActionModal — preview trust affordances', () => {
     );
     expect(
       screen.getByText(
-        /Every window through 6 months\+ matches the same 2,908 — this sender's newest inbox email is 182 days old, so those windows exclude nothing\./,
+        /Nothing newer than 182 days, so every window through 6 months\+ matches the same 2,908\./,
       ),
     ).toBeTruthy();
     // The chips themselves stay: merging them would let "All inbox" stand
