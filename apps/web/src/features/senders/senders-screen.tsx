@@ -2940,6 +2940,14 @@ function SenderResultsFreshness({
               ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
               : `Senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
           </span>
+          {/* Codex round-2 review of QA-senders-20260901-01: a filter/
+              search change can flip `rowsReadOnly` true WHILE the scan
+              state also renders — that branch took priority and never
+              mentioned it, leaving a disabled fieldset with no caption
+              explaining why. */}
+          {rowsReadOnly && (
+            <span>These rows are temporarily read-only while the new filter loads.</span>
+          )}
         </>
       ) : stillSyncing ? (
         // QA-onboarding-20260828-01: `asOf` is the server's compute time
@@ -2972,6 +2980,9 @@ function SenderResultsFreshness({
               ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
               : `Senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
           </span>
+          {rowsReadOnly && (
+            <span>These rows are temporarily read-only while the new filter loads.</span>
+          )}
         </>
       ) : updating ? (
         <>

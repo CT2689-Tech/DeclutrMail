@@ -159,16 +159,18 @@ export function ComposeStrip({
       }}
     >
       <AxisLabel>activity</AxisLabel>
-      {/* Codex round-1 review of QA-senders-20260901-07: three
-          `role="radio"` chips with no `radiogroup` ancestor is invalid
-          ARIA. `display: contents` keeps them as direct flex children
-          of the strip (same gap/wrap behaviour) while giving them a
-          real group for assistive tech. */}
-      <div role="radiogroup" aria-label="Activity" style={{ display: 'contents' }}>
-        <ActivityChip bucket="active" state={state} count={counts?.active} onChange={onChange} />
-        <ActivityChip bucket="quiet" state={state} count={counts?.quiet} onChange={onChange} />
-        <ActivityChip bucket="dormant" state={state} count={counts?.dormant} onChange={onChange} />
-      </div>
+      {/* Codex round-2 review of QA-senders-20260901-07: a `radiogroup`
+          wrapper (round-1's fix) implies an ARIA interaction contract
+          (roving tabindex, arrow-key nav) these chips don't implement,
+          and clicking an already-checked one unchecks it — not real
+          radio behaviour. A `radiogroup` that doesn't honour that
+          contract is worse than none. Reverted to bare `role="radio"`
+          chips (pre-existing) under the strip's own `role="group"`;
+          the underlying interaction-model gap is flagged as its own
+          QA candidate, not fixed here. */}
+      <ActivityChip bucket="active" state={state} count={counts?.active} onChange={onChange} />
+      <ActivityChip bucket="quiet" state={state} count={counts?.quiet} onChange={onChange} />
+      <ActivityChip bucket="dormant" state={state} count={counts?.dormant} onChange={onChange} />
 
       <Divider />
 

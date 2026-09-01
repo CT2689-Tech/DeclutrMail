@@ -2179,9 +2179,11 @@ One diff, sent as one Codex review (the fixes for -01/-03/-04/-05/-06/-07/-08/
 -09/-10 landed together, `fd6b2d9a` on top of the run's own docs commit
 `96b00dad`).
 
-| round | ran against | verdict         | what it returned                                                                                                                                           |
-| ----- | ----------- | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | `fd6b2d9a`  | **substantive** | 6 findings across 6 of the 9 items (01, 02-comment, 03, 04, 06, 07, 09), each a real defect in THIS diff, not the pre-existing baseline. Fixed; see below. |
+| round | ran against | verdict         | what it returned                                                                                                                                                                                      |
+| ----- | ----------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `fd6b2d9a`  | **substantive** | 6 findings across 6 of the 9 items (01, 02-comment, 03, 04, 06, 07, 09), each a real defect in THIS diff, not the pre-existing baseline. Fixed in `9436c9f2`.                                         |
+| 2     | `9436c9f2`  | **substantive** | 2 of 4 checks came back with something real: (A) the `rowsReadOnly` fix from round 1 was itself incomplete, (D) the round-1 `radiogroup` fix has its own ARIA gap. B and C confirmed safe. See below. |
+| —     | —           | **cap reached** | Two substantive rounds. No round 3 — the founder decides whether to ship as-is or keep reviewing.                                                                                                     |
 
 **Round 1's six findings.**
 
@@ -2268,4 +2270,51 @@ is still `maxHeight: 88vh`. Standing correction, not disputed.
 
 Round 1's fixes land as a follow-up commit on the same branch/PR as the
 original 9-item bundle, rather than a separately-approved item — sent back
-to Codex for round 2 against the fixed diff.
+to Codex for round 2 against the fixed diff (`9436c9f2`).
+
+**Round 2 attacked the round-1 fixes themselves — did fixing one thing break
+or shift another.** Two explicit safety checks (B, C below) came back clean;
+two came back with something real (A, D).
+
+- **A — real gap, fixed.** `rowsReadOnly` is only consulted inside the
+  `updating` branch of `SenderResultsFreshness`, but `syncFailed`/
+  `stillSyncing` take priority over `updating` in the same if/else chain. A
+  filter/search change while the mailbox is mid-sync flips
+  `showingStaleRows` true (a real disabled fieldset via `keepPreviousData`),
+  and the caption never says so — it only discusses scan health. Fixed:
+  both the `syncFailed` and `stillSyncing` branches now render an
+  additional `rowsReadOnly &&` line ("These rows are temporarily read-only
+  while the new filter loads.") alongside their existing message.
+- **B — confirmed safe.** Whether a same-key background refetch could
+  overlap a `fetchNextPage()` and get incorrectly suppressed by the
+  `isFetchingNextPage` exclusion: traced into the pinned TanStack Query
+  5.102.8 internals — a query tracks one fetch direction at a time
+  (`cancelRefetch: true` is the default on both `fetchNextPage()` and
+  `invalidateQueries()`), so the two kinds cannot coexist as two flags on
+  one query. No gap.
+- **C — confirmed safe, and re-confirms round 1's own correction.**
+  `tiedWindowNoticeCopy` still has exactly one production caller
+  (`confirm-action-modal.tsx`), which explicitly passes the subject from
+  `isBulk`. No second caller either round missed.
+- **D — real ARIA gap, in the round-1 FIX itself; reverted rather than
+  patched further.** Wrapping the three `ActivityChip`s in
+  `role="radiogroup"` (round 1's fix for finding 07) implies an
+  interaction contract — roving `tabindex`, arrow-key navigation — the
+  underlying chips don't implement; clicking an already-checked chip
+  unchecks it, which isn't real radio behaviour either, and the negated
+  state also reports `aria-checked="true"`. A `radiogroup` that doesn't
+  honour that contract reads as MORE broken to assistive tech than a bare
+  `role="radio"` set with no group, not less. This is a genuine,
+  pre-existing interaction-model gap in `ActivityChip` (the tri-state
+  negate/alt-click behaviour predates this PR entirely) — fixing it
+  properly means redesigning the chip as a toggle-button group, which is a
+  materially different change than "add an ARIA wrapper" and outside a
+  copy/UX-polish bundle. Reverted the `radiogroup` wrapper back to bare
+  `role="radio"` chips under the strip's own `role="group"` (this PR's
+  actual, narrower fix for 07 — the wrong `aria-label`). The interaction-
+  model gap itself is flagged as a new candidate, not fixed here.
+
+**At review cap.** Two substantive rounds ran; per protocol, no round 3 —
+the founder decides whether to ship as-is or request a human-reviewed
+round 3. A's and D's fixes are in the working tree pending the founder's
+call.

@@ -78,17 +78,6 @@ describe('ComposeStrip · activity chip thresholds', () => {
       'Last email over 180 days ago',
     );
   });
-
-  // Codex round-1 review of QA-senders-20260901-07: three role="radio"
-  // chips with no radiogroup ancestor is invalid ARIA.
-  it('groups the three activity radios under a radiogroup', () => {
-    renderStrip();
-
-    const group = screen.getByRole('radiogroup', { name: 'Activity' });
-    for (const name of [/^active/i, /^quiet/i, /^dormant/i]) {
-      expect(group).toContainElement(screen.getByRole('radio', { name }));
-    }
-  });
 });
 
 describe('ComposeStrip · updating (QA-senders-20260901-01)', () => {

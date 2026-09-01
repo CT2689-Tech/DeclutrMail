@@ -826,6 +826,63 @@ describe('SendersScreen — edge states', () => {
     );
   });
 
+  // Codex round-2 review of QA-senders-20260901-01: `syncFailed`/
+  // `stillSyncing` take priority over `updating` in SenderResultsFreshness,
+  // so a filter change mid-sync flips `rowsReadOnly` true (a real disabled
+  // fieldset) with the caption still only discussing scan health — never
+  // saying the rows themselves are temporarily locked.
+  it('says the rows are read-only when a filter changes while the mailbox is still syncing', async () => {
+    mockAuth.readiness = 'syncing';
+    const FILTERED_ROW = { ...ROW, id: 'filtered', displayName: 'Filtered Sender' };
+    let resolveFiltered: ((response: Response) => void) | null = null;
+    const filteredResponse = new Promise<Response>((resolve) => {
+      resolveFiltered = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          if (url.searchParams.get('q') === 'filtered') return filteredResponse;
+          return jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          });
+        },
+      },
+      sendersSummaryHandler(),
+    ]);
+
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    const freshness = screen.getByTestId('sender-results-freshness');
+    expect(freshness).toHaveTextContent(/still syncing/i);
+    expect(freshness).not.toHaveTextContent(/read-only/i);
+
+    fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
+      target: { value: 'filtered' },
+    });
+
+    await waitFor(() => expect(freshness).toHaveTextContent(/read-only/i));
+    expect(screen.getByTestId('sender-results-region')).toHaveAttribute('aria-busy', 'true');
+
+    await act(async () => {
+      resolveFiltered?.(
+        jsonOk({
+          data: [FILTERED_ROW],
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 50 },
+            query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:05:00.000Z' },
+          },
+        }),
+      );
+    });
+    await screen.findAllByText(/Filtered Sender/);
+  });
+
   describe('F011 — a search the default filter starves', () => {
     /**
      * A keystroke reaches the list query through TWO debounces —
