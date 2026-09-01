@@ -134,12 +134,13 @@ export function PrivacyDesk() {
               privacy policy covers the other account and billing information needed to run the
               service.
             </p>
+            {/* Data rights only. The action-safety bullet that used to lead
+                this list — preview, Activity records the result, Undo when
+                available, unsubscribe is one-way — restated §02's "Keep
+                control" step almost sentence for sentence. §02 owns what
+                happens when you act; this section owns what is stored and
+                what you can do about it. */}
             <ul className="dm-mkt-desk-points">
-              <li>
-                Before a manual action moves email, you see what will change. Activity records the
-                result and shows Undo when it is available. Sent unsubscribe requests are clearly
-                marked as one-way.
-              </li>
               <li>
                 Disconnect Gmail at any time. You can also export your data or schedule permanent
                 deletion of your DeclutrMail account.
