@@ -2,7 +2,13 @@
  * Tests for `meHasSyncingMailbox` — the predicate that drives `me`
  * polling while a mailbox finishes its initial sync (D116). Polling is
  * what lets the account-switcher badge + ready-toast update without a
- * manual refresh; it must stop once every mailbox is terminal.
+ * manual refresh; it stops once every mailbox is `ready` or has no sync
+ * row at all.
+ *
+ * QA-sync-20260831-05: `failed` is deliberately NOT terminal for this
+ * predicate (unlike `ready`/`null`) — a failed mailbox may recover via a
+ * retry or the server-side `cursorTooOld` recovery, and without a live
+ * poll the app would only notice on the next window focus or reload.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -32,12 +38,19 @@ describe('meHasSyncingMailbox', () => {
     expect(meHasSyncingMailbox(me([{ status: 'active', readiness: 'queued' }]))).toBe(true);
   });
 
-  it('false when every mailbox is terminal (ready/failed/null)', () => {
+  it('true when an active mailbox has failed — it may still recover without a reload (QA-sync-20260831-05)', () => {
+    // The negative control: reverting `SYNCING_READINESS` to its original
+    // `['queued', 'syncing']` makes this assertion fail — a failed
+    // mailbox that recovers (a retry succeeds, or a second failure
+    // occurs) would go unnoticed until the next window focus or reload.
+    expect(meHasSyncingMailbox(me([{ status: 'active', readiness: 'failed' }]))).toBe(true);
+  });
+
+  it('false when every mailbox is genuinely terminal (ready/null)', () => {
     expect(
       meHasSyncingMailbox(
         me([
           { status: 'active', readiness: 'ready' },
-          { status: 'active', readiness: 'failed' },
           { status: 'active', readiness: null },
         ]),
       ),

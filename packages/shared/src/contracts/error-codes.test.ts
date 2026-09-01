@@ -51,6 +51,22 @@ describe('ERROR_CODES registry (ADR-0014)', () => {
     expect(ERROR_CODES.SUBSCRIPTION_REFUND_SETTLING.message).toContain('refund');
     expect(ERROR_CODES.SUBSCRIPTION_REFUND_SETTLING.message).not.toMatch(/already has/i);
   });
+
+  it('SYNC_NOT_READY is not retryable — the mailbox state must change first (Codex adversarial review)', () => {
+    // The negative control: reverting `retryable` to `true` makes this
+    // fail. Resubmitting the identical POST /sync/incremental 409s again
+    // every time until the underlying readiness changes (a worker
+    // finishing, or a manual retry succeeding) — the "same request might
+    // succeed if retried" contract `retryable` documents (error-envelope.ts)
+    // is false here, matching `classifyHttpError(409)`'s own default
+    // (error-envelope.test.ts) that this entry had overridden with no
+    // stated reason.
+    expect(ERROR_CODES.SYNC_NOT_READY).toMatchObject({
+      status: 409,
+      severityTier: 'inline_recoverable',
+      retryable: false,
+    });
+  });
 });
 
 describe('isErrorCode', () => {

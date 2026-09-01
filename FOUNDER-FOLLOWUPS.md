@@ -2217,6 +2217,35 @@ the shipped design; a fresh session reading them finds no contradiction with
 `apps/web`.
 **Status:** Open
 
+### 2026-08-31 — Audit whether prior /ct-qa copy runs need re-checking against check-microcopy.sh
+**Source:** session 2026-08-31 (branch `claude/gifted-cerf-95d017`) — fix for
+`.claude/hooks/check-microcopy.sh`'s docs-exemption path-match bug (see
+`MISTAKES.md` 2026-08-31 entry). The hook's docs/config exemption did a
+plain substring match against the harness-reported `file_path`; the Claude
+Code harness's own auto-worktree feature checks worktrees out at
+`.claude/worktrees/<session-id>/`, so every file in such a worktree
+contained `/.claude/` in its path and the hook exited 0 before checking
+content — for every file, always, in every harness worktree.
+**Why:** Every prior `/ct-qa` run logged in this repo (mailbox-switch,
+archive, delete, onboarding — see recent commits touching those features)
+ran inside a `.claude/worktrees/*` path per this session's git history.
+That means this hook was silently inert for the entirety of their copy
+diffs: their shipped copy (button labels, shortcuts, privacy-badge
+strings, marketing truth constraints) was never actually scanned against
+the canonical-verbs (D227) or truth-constraint (ADR-0030) rules by this
+hook, even though CI/PR history would show it as a passing gate. This is
+a retroactive scope question, not a code fix — how far back to check is
+a founder call.
+**How:** Decide whether to re-run `check-microcopy.sh` (now fixed) against
+the diffs of the affected merged PRs, or accept the risk given other
+review layers (design-system-agent gate, manual `/ct-qa` review) likely
+caught anything the hook would have. If re-checking: `git diff
+<merge-base>...<pr-branch> --name-only` per affected PR, then feed each
+changed file through the fixed hook manually.
+**Verifies by:** Either a stated founder decision to skip, or a follow-up
+PR fixing any violation the re-check surfaces.
+**Status:** Open
+
 ## Done
 
 ### 2026-07-09 — Live authed smoke of the no-active-mailbox reachability fix (needs DB + OAuth)

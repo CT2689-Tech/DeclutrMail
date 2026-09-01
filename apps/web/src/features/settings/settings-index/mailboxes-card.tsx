@@ -172,7 +172,12 @@ export function MailboxesCard({
                       <StatusTag tone="muted">Syncing…</StatusTag>
                     ) : m.readiness === 'failed' ? (
                       <>
-                        <StatusTag tone="danger">Sync failed</StatusTag>
+                        {/* QA-sync-20260831-09: "scan" is this product's
+                            sanctioned term for this event (the onboarding
+                            gate, the retry endpoint's own semantics, and
+                            check-microcopy.sh's ban list all use it) —
+                            "sync" was the odd one out on this card. */}
+                        <StatusTag tone="danger">Scan failed</StatusTag>
                         {/* The sibling #418 missed: the onboarding gate got a
                             real retry while this card kept a dead-end tag
                             (fix-the-class, D158 triage). Same endpoint, same
@@ -180,6 +185,13 @@ export function MailboxesCard({
                             "whatever is active". */}
                         <RetrySyncButton mailboxId={m.id} />
                       </>
+                    ) : m.readiness === 'ready' && health?.hasSyncError ? (
+                      // QA-sync-20260831-04: readiness stays `ready` for a
+                      // failed INCREMENTAL sync by the worker's own design
+                      // (only an initial-sync failure ever flips it) — a
+                      // persistently-broken mailbox otherwise read as plain
+                      // "Ready" here, worse than no tag at all.
+                      <StatusTag tone="danger">Not syncing</StatusTag>
                     ) : m.readiness === 'ready' ? (
                       <StatusTag tone="muted">Ready</StatusTag>
                     ) : (
@@ -341,7 +353,7 @@ function RetrySyncButton({ mailboxId }: { mailboxId: string }) {
         cursor: retry.isPending ? 'default' : 'pointer',
       }}
     >
-      {retry.isPending ? 'Starting…' : 'Try again'}
+      {retry.isPending ? 'Starting…' : 'Scan again'}
     </button>
   );
 }

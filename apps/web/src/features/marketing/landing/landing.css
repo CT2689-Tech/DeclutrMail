@@ -295,7 +295,16 @@
 .dm-mkt-h1 {
   font-family: var(--dm-font-display);
   font-weight: 600;
-  font-size: clamp(38px, 6.2vw, 68px);
+  /* Cap 64px, not 68px. The D250 headline is 11 words and the hero's left
+     column settles at 583px on a wide screen, where 68px wrapped to FIVE
+     lines (347px of headline) and broke as "sender — and / see exactly",
+     stranding the em-dash at a line end. 64px is the largest size that
+     still fits four lines: 86px shorter for 4px of display size.
+     That height was also what stranded the ledger demo — the left column
+     ran 681px against the demo's 394px, so `align-items: center` floated
+     the card in ~143px of dead space. Widening the column to 8fr fixes the
+     wrap too, but only by shrinking the demo, which is the wrong trade. */
+  font-size: clamp(38px, 6.2vw, 64px);
   line-height: 1.02;
   letter-spacing: -0.02em;
   margin: 0;
@@ -390,6 +399,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* At 375px the two labels measure exactly the content width, so
+     space-between has nothing left to distribute: they abut, each wraps
+     mid-phrase, and the row reads "DECISION 1 OFTHIS / 14 WEEK". The gap
+     guarantees separation and the wrap lets "this week" drop to its own
+     line instead of interleaving. */
+  flex-wrap: wrap;
+  gap: 4px 16px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--mkt-line-soft);
   font-family: var(--dm-font-mono);
@@ -1286,6 +1302,52 @@ a.dm-mkt-trust-item:focus-visible {
 
 .dm-mkt-faq-a a {
   color: var(--mkt-accent);
+}
+
+/* ── Pre-consent scope disclosure ───────────────────────────── */
+
+/* Inherits the mono/muted note treatment from .dm-mkt-hero-note; only
+   the summary affordance and the expanded body need styling. */
+.dm-mkt-scope summary {
+  cursor: pointer;
+  list-style: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--mkt-line);
+  text-underline-offset: 3px;
+}
+
+.dm-mkt-scope summary::-webkit-details-marker {
+  display: none;
+}
+
+.dm-mkt-scope summary::after {
+  content: '+';
+  color: var(--mkt-accent);
+  font-weight: 700;
+}
+
+.dm-mkt-scope[open] summary::after {
+  content: '–';
+}
+
+.dm-mkt-scope summary:hover,
+.dm-mkt-scope summary:focus-visible {
+  color: var(--mkt-ink);
+}
+
+.dm-mkt-scope p {
+  margin: 10px 0 0;
+  max-width: 62ch;
+  line-height: 1.6;
+}
+
+/* The final CTA column is centred, so the disclosure centres with it. */
+.dm-mkt-scope-center .dm-mkt-scope p {
+  margin-inline: auto;
 }
 
 /* ── Final CTA + footer ─────────────────────────────────────── */

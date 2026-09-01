@@ -127,7 +127,7 @@ describe('AccountMenu Gmail reconnect health', () => {
 
     expect(within(row).getAllByText('Active')).toHaveLength(1);
     expect(within(row).getByText('Needs reconnect')).toBeInTheDocument();
-    expect(within(row).queryByText('Sync failed')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
     expect(
       within(row).getByRole('button', {
         name: `Active mailbox ${MAILBOX_A.email}, needs reconnect`,
@@ -155,7 +155,7 @@ describe('AccountMenu Gmail reconnect health', () => {
 
     expect(within(row).getByText('Needs reconnect')).toBeInTheDocument();
     expect(within(row).queryByText('Active')).not.toBeInTheDocument();
-    expect(within(row).queryByText('Sync failed')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
     const selector = within(row).getByRole('button', {
       name: `Switch to mailbox ${MAILBOX_B.email}, needs reconnect`,
     });
@@ -174,6 +174,26 @@ describe('AccountMenu Gmail reconnect health', () => {
     act(() => onSuccess?.());
     expect(screen.queryByRole('dialog', { name: 'Gmail accounts' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  it('tags a persistently-broken non-active mailbox instead of reading as caught up (QA-sync-20260831-04)', async () => {
+    // The negative control: reverting the `hasSyncError` branch makes
+    // this assertion fail — `readiness` stays `'ready'` for a failed
+    // INCREMENTAL sync by the worker's own design, so this row rendered
+    // no tag at all before this fix, indistinguishable from a healthy
+    // mailbox.
+    me = makeMe([MAILBOX_A, { ...MAILBOX_B, readiness: 'ready' }]);
+    healthById[MAILBOX_B.id] = {
+      lastSyncedAt: '2026-08-01T00:00:00.000Z',
+      needsReconnect: false,
+      hasSyncError: true,
+    };
+    await renderOpenMenu();
+    const row = screen.getByTestId(`account-mailbox-${MAILBOX_B.id}`);
+
+    expect(within(row).getByText('Not syncing')).toBeInTheDocument();
+    expect(within(row).queryByText('Needs reconnect')).not.toBeInTheDocument();
+    expect(within(row).queryByText('Scan failed')).not.toBeInTheDocument();
   });
 
   it('keeps disconnected reactivation disabled at 2/2 with persistent limit context', async () => {

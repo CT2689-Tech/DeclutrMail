@@ -94,6 +94,122 @@ deletion modal) — both render and focus-trap correctly, zero console
 errors. Full detail: `docs/qa/qa-worklist.md` § mailbox-switch,
 `QA-mailbox-switch-20260831-01`.
 
+**Found:** 2026-08-31 · `/ct-qa sync`, QA-sync-20260831-01, filed from
+`flow-completeness-auditor`.
+
+Triage's empty state (`apps/web/src/features/triage/empty-state.tsx:58`)
+renders the identical "Nothing needs a decision right now." regardless of
+the active mailbox's sync state — `queued`, `syncing`, `ready`, or
+`failed` all produce the same copy, because the component has no sync
+input at all. This is a confident positive claim about the user's own mail
+on this product's highest-dwell screen (CLAUDE.md's own topic table calls
+Triage "the core ritual"), rendered while sync is genuinely broken and new
+mail may not be arriving. Same defect class as F032 (below), on a
+different, higher-traffic screen F032's fix never touched. Full detail:
+`docs/qa/qa-worklist.md` § sync, `QA-sync-20260831-01`.
+
+**Found:** 2026-08-31 · `/ct-qa sync`, QA-sync-20260831-02, filed from
+`defect-class-sweeper` + `usability-editor`.
+
+`senders-screen.tsx:539-540`'s `mailboxStillSyncing` guard covers
+`readiness === 'queued' || 'syncing'` only. `failed` (and `null`) fall
+through to the healthy branch, rendering "Synced through &lt;now&gt; · N
+senders found" over a pre-failure snapshot — the exact "asserts a sync
+completion it never measured" defect F032 was filed P0 for and fixed
+(#673), left open for the one readiness value that fix's guard didn't
+enumerate. The component's own test (`senders-screen.test.tsx:460`, named
+for the `syncing` case) is green today while the identical false claim
+renders for `failed`. Separately, `asOf` (the value the "Synced through"
+label uses) is documented in its own source
+(`apps/api/src/senders/senders.read-service.ts:915`) as "server time at
+compute," not a sync timestamp — so the label overclaims even in the
+healthy state. Full detail: `docs/qa/qa-worklist.md` § sync,
+`QA-sync-20260831-02`.
+
+**Found:** 2026-08-31 · `/ct-qa sync`, QA-sync-20260831-03, survived
+`finding-refuter` (narrowed) and independently re-derived by
+`defect-class-sweeper` + `flow-completeness-auditor`.
+
+The app-shell header's only freshness/retry control (`SyncNowButton`)
+renders `null` for `readiness_status !== 'ready'` — confirmed live via a
+DB-forced failure + hard reload at both desktop and 375px, on every
+authenticated route. `SyncErrorBanner`, the component whose job is
+surfacing a broken sync, never fires for this exact state either: it keys
+on `last_sync_error_at`, a column only the _incremental_-sync worker ever
+stamps, while `readiness='failed'` is written only by the _initial_-sync
+worker's terminal-failure path — the two signals are mutually exclusive by
+each worker's own design. `MailboxReconnectBanner` explicitly excludes the
+active mailbox on the documented assumption `SyncErrorBanner` already
+covers it, which for this shape it does not. Net: a revoked grant or any
+other initial-sync failure on the mailbox the user is actively viewing has
+zero chrome surface anywhere except a collapsed, default-hidden tag in the
+account-menu dropdown. Full detail: `docs/qa/qa-worklist.md` § sync,
+`QA-sync-20260831-03`.
+
+**Found:** 2026-08-31 · `/ct-qa sync`, QA-sync-20260831-04, filed from
+`defect-class-sweeper`.
+
+A non-active connected mailbox with a PERSISTENT incremental-sync failure
+(any cause other than `InvalidGrantError`) renders an affirmative
+**"Ready"** badge in Settings and no tag at all in the account menu —
+worse than silence. `use-mailbox-health.ts:44-58`'s wire projection drops
+`last_sync_error_at`/`last_sync_error_code` entirely, keeping only a
+`needsReconnect` flag that's `InvalidGrantError`-only; since a real
+incremental failure never flips `readiness` away from `'ready'` (by
+design), both consuming components fall to their happy-path branch. The
+founder's own two-connected-mailbox workspace is exactly the shape that
+exercises the active-vs-non-active split this lives in. Full detail:
+`docs/qa/qa-worklist.md` § sync, `QA-sync-20260831-04`.
+
+**Found:** 2026-08-31 · `/ct-qa sync`, QA-sync-20260831-05, filed from
+`defect-class-sweeper` + `flow-completeness-auditor`.
+
+No in-app signal ever fires for a background sync that fails —
+`useMailboxSyncToasts` only has a `→ready` branch (its own analytics
+sibling, `use-sync-funnel.ts`, already pairs `ready || failed`, proving the
+asymmetry isn't deliberate). Compounding it: `useMe`'s `refetchInterval`
+only re-polls while a mailbox is ALREADY known to be syncing, and `failed`
+isn't in that set — so every surface reading `me.mailboxes[].readiness`
+(Senders, AccountMenu, Settings, the toast hook itself) never gets a fresh
+read to notice a `ready→failed` transition without a manual reload. A
+fully server-side, zero-user-action trigger for exactly this exists today
+(`apps/api/worker.ts:929`'s `cursorTooOld` recovery). Full detail:
+`docs/qa/qa-worklist.md` § sync, `QA-sync-20260831-05`.
+
+**Found:** 2026-08-31 · `/ct-qa sync`, QA-sync-20260831-06, filed from
+`defect-class-sweeper`, reachability live-counted this run (4 of 5 dev-DB
+mailboxes currently in the affected shape).
+
+Reconnecting ANY previously-synced mailbox (any OAuth reconnect/reactivate
+path — not just first-connect) unconditionally nulls its stored history
+cursor and forces a full resync, even when the cursor is still valid —
+bypassing both the cheap incremental-resume path (`enqueueManualIncremental
+Sync`, unused here) and the codebase's own existing `cursorTooOld`
+escalation ladder, which already handles a genuinely-stale cursor by
+falling back to a full resync automatically. Trying incremental first costs
+nothing extra when the cursor really is stale (one `history.list` 404 lands
+in the identical remedy). Touches the OAuth reconnect flow — flagged for
+founder sizing before any fix ships, not a hard §9 stop condition. Full
+detail: `docs/qa/qa-worklist.md` § sync, `QA-sync-20260831-06`.
+
+**Found:** 2026-08-31 · `/ct-qa sync`, QA-sync-20260831-07, filed from
+`defect-class-sweeper`.
+
+The onboarding `SyncFailed` screen's copy correctly diagnoses an
+`InvalidGrantError`/`AuthExpiredError` ("Google revoked our access...
+Reconnect the account to grant it again") but its only button re-queues a
+full scan using the SAME dead token — failing again, burning one of 3
+rate-limited attempts/minute, with no `startMailboxConnect` call anywhere
+in the file. The correct pattern already exists one directory over
+(`sync-error-banner.tsx:135`). The same gap reaches Settings by a second
+route: its own reconnect-detection checks only for `InvalidGrantError`,
+missing `AuthExpiredError` (a real, gate-documented terminal auth failure),
+so that specific cause shows "Sync failed + Try again" there too instead of
+"Needs reconnect." The only real exits from the onboarding screen —
+"Disconnect and start over," "Sign out" — work but aren't signposted as
+the fix. Full detail: `docs/qa/qa-worklist.md` § sync,
+`QA-sync-20260831-07`.
+
 **Found:** 2026-09-01 · `/ct-qa billing`, QA-billing-20260901-03, filed by
 `flow-completeness-auditor` (source-only), survived `finding-refuter` —
 CONFIRMED STRONGER than filed.

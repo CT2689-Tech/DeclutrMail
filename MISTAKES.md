@@ -4354,3 +4354,142 @@ Filing to `FOUNDER-FOLLOWUPS.md` as a companion to the existing
 `merge-queue-posture` gap: a bundle-budget regression on an authenticated
 route with heavy daily traffic is exactly the kind of check whose absence
 from `merge_group` should not be silent.
+
+## 2026-08-31 — `check-microcopy.sh`'s docs-exemption path match silently disables it for every file in a harness-created worktree
+
+**PR:** none yet — caught mid-session during `/ct-qa sync` fix work, not
+shipped code
+**Caught by:** manual starve-test of the hook while verifying new copy
+(CLAUDE.md §8's own "starve any new guard before trusting it" rule, applied
+retroactively to an EXISTING guard rather than a new one)
+**What happened:** `.claude/hooks/check-microcopy.sh`'s docs/config
+exemption case is `*/.claude/*|*/CLAUDE.md|...) exit 0 ;;` — a plain
+substring match against the tool call's `file_path`. This repo's own
+documented worktree convention (CLAUDE.md §6, `git wt new`) places
+worktrees at `../wt-<branch>`, a sibling of the repo — outside `.claude/`,
+so the exemption is correct for that path shape. But this specific
+harness's own auto-worktree feature creates worktrees at
+`.claude/worktrees/<session-id>/` — INSIDE the `.claude/` directory — so
+every absolute path to every file in every such worktree contains the
+literal substring `/.claude/` as part of `.claude/worktrees/...`, and the
+hook exits 0 before ever reading file content. Confirmed directly: a
+probe file at `apps/web/src/features/sync/probe-microcopy-DELETE-ME.tsx`
+inside this session's worktree, containing the literal banned string
+`<button>Screen</button>`, produced no violation and exit code 0; `bash -x`
+tracing showed the script exiting at the docs-exemption case, never
+reaching the canonical-verbs check at all. This session's own copy fixes
+this run (senders/triage/sync/settings/mailboxes/onboarding surfaces) were
+verified some other way (manual re-read against the documented ban list,
+plus ESLint and unit tests, none of which cover microcopy content) — but
+every `/ct-qa` run that has operated inside a `.claude/worktrees/*` path
+this project has logged (mailbox-switch, archive, delete, onboarding, this
+sync run) has been editing product copy with this specific guard
+silently inert the whole time. It is unknown whether any of their shipped
+copy actually violates the canonical-verbs or truth-constraint rules —
+nothing has checked.
+**Correct approach:** A path-based exemption meant to mean "this file lives
+in the project's own `.claude/` config directory" must anchor the match
+(e.g. reject the exemption unless `.claude/` is followed by one of the
+hook's own known subpaths — `hooks/`, `agents/`, `commands/`, `settings*`
+— or better, resolve the path relative to the repo root found via
+`git rev-parse --show-toplevel` and check THAT relative path, which cannot
+contain a worktree's own container directory). A substring match against an
+absolute path is exactly the shape CLAUDE.md §8 already warns about: it
+cannot distinguish "this file is repo config" from "this file merely lives
+somewhere under a directory that happens to be named `.claude`".
+**Enforcement update:** None yet — not fixed in this session (out of scope
+for the `/ct-qa sync` diff in flight; touching `.claude/hooks/` deserves its
+own reviewed change, not a rider on an unrelated fix). Flagged to the
+founder via `spawn_task` and this entry. Until fixed, no PostToolUse
+microcopy enforcement should be trusted for any session whose worktree path
+contains `.claude/worktrees/` — verify canonical-verb and truth-constraint
+compliance by hand for those sessions' copy changes.
+
+## 2026-08-31 — check-microcopy.sh docs-exemption bug, fixed (follow-up to the entry above)
+**PR:** #703 — the dedicated, reviewed change the entry above deferred to
+("touching `.claude/hooks/` deserves its own reviewed change, not a rider
+on an unrelated fix")
+**Caught by:** independently re-found via manual probe + `bash -x` trace in
+a separate session, before that session had seen the entry above
+**What happened:** The docs/config exemption in `.claude/hooks/check-microcopy.sh`
+(`case "$file_path" in */.claude/*|*/CLAUDE.md|...) exit 0 ;; esac`) does a
+plain substring match against the incoming `file_path`. CLAUDE.md §6
+documents worktrees at `../wt-<branch>`, a sibling of the repo — safe
+against that pattern. But the Claude Code harness's own auto-worktree
+feature checks worktrees out at `.claude/worktrees/<session-id>/`, INSIDE
+the project's own `.claude/`. Every file path in such a worktree therefore
+contains the substring `/.claude/`, so the exemption `case` matched and
+`exit 0`'d before the script ever reached the canonical-verbs check — for
+every file, always, in every harness worktree. Confirmed directly: a probe
+file at `apps/web/src/components/__probe_check_microcopy.tsx` containing
+the literal banned string `<button>Screen</button>` produced zero
+violations; `bash -x` showed the script exiting at the docs-exemption
+`case` line, never reaching the JSX-text check below it. This is the
+BLIND-GUARD subform from CLAUDE.md §8 ("a guard that cannot fail is not a
+guard") — the guard's own scoping logic silently exempted its subject
+before evaluating it, and nothing distinguished "checked, clean" from
+"never checked."
+**Correct approach:** Stop matching the harness-reported `file_path`
+substring directly. Resolve `git -C "$(dirname "$file_path")" rev-parse
+--show-toplevel` for the file's OWN worktree, strip that prefix to get a
+repo-relative path, and match the exemption against that. A file's
+worktree toplevel is exactly the `.claude/worktrees/<session-id>/`
+container when the harness creates it, so stripping it removes the
+`.claude/` substring from the relative path entirely — a harness-worktree
+product file at `.../worktrees/<id>/apps/web/src/foo.tsx` becomes
+`apps/web/src/foo.tsx` (no `.claude/` substring, correctly NOT exempt),
+while the hook's own file becomes `.claude/hooks/check-microcopy.sh`
+(correctly exempt). Verified both directions after the fix: the probe file
+above now returns exit 1 with the expected violation message, and
+`.claude/hooks/check-microcopy.sh` / `CLAUDE.md` still return exit 0.
+**Rule:** A hook or gate that scopes itself by matching a harness-reported
+absolute path must resolve it relative to the file's own repo/worktree
+root first — never substring-match the raw path — because the harness can
+place its own bookkeeping directories (worktrees, session dirs) inside a
+path segment the project uses for its own config (`.claude/`), and a
+substring match cannot tell the two apart.
+**Enforcement update:** Fixed in `.claude/hooks/check-microcopy.sh`
+directly (repo-relative resolution before the exemption `case`). Flagging
+separately in `FOUNDER-FOLLOWUPS.md`: every prior `/ct-qa` run logged in
+this repo (mailbox-switch, archive, delete, onboarding) ran inside a
+`.claude/worktrees/*` path, so this guard was silently inert for their
+entire copy diff — their shipped copy has never actually been checked
+against the canonical-verbs or truth-constraint rules by this hook. That's
+a retroactive audit question for the founder, not fixed in this PR.
+
+## 2026-09-01 — require-pr-template.sh's branch allowlist drifted behind pre-push.sh and branch-name.yml
+**PR:** #(pending — same PR as the check-microcopy.sh fix above)
+**Caught by:** blocked mid-task while creating the PR for this session's own work, on branch `claude/gifted-cerf-95d017`
+**What happened:** `.claude/hooks/require-pr-template.sh` (a PreToolUse hook
+gating `gh pr create`) only allowed `<type>/d<NNN>-` and `chore/bootstrap-`
+branch names. `.husky/pre-push` and `.github/workflows/branch-name.yml` —
+both explicitly documented as authoritative over this local copy — had
+already been updated to also allow `chore/distill-<topic>` and
+`(codex|claude)/<kebab>` per two founder decisions (2026-07-15 codex/,
+2026-08-11 claude/, both in FOUNDER-FOLLOWUPS). This hook's own comment
+said "KEEP THIS LIST IN SYNC" but nothing enforced that beyond the comment
+itself. Result: any `gh pr create` run from a `claude/*` or `codex/*`
+branch — which is every Claude Code web session's own branch, unrenameable
+by the session — was blocked by this hook alone, even though the exact
+same PR would pass CI (pre-push, branch-name.yml, pr-body all already
+allow it). This is the same "shared grammar changes on one surface and not
+its sibling" class already named in CLAUDE.md §8, just in a hook instead
+of a UI surface.
+**Correct approach:** Mirror the authoritative regex from `pre-push.sh`
+verbatim instead of hand-maintaining a second copy. Fixed by copying
+`^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude)/[a-z0-9][a-z0-9-]*$)`
+into `require-pr-template.sh`. Verified: `claude/gifted-cerf-95d017`,
+`codex/some-fix`, `feat/d011-...`, `chore/bootstrap-x`, `chore/distill-x`
+all pass; `random-branch`, `main`, bare `claude/` (no slug) still reject.
+**Rule:** When a rule is intentionally duplicated across enforcement
+layers for fail-fast reasons (CLAUDE.md §6's "defense in depth" table),
+copy the regex literally from the authoritative layer instead of
+re-deriving it — three independent hand-written copies of the same policy
+is how this drifted in the first place, twice, without any of the three
+layers' own tests catching it (none of them test each other).
+**Enforcement update:** Fixed directly. No test harness exists that diffs
+the three branch-name regexes (`pre-push.sh`, `require-pr-template.sh`,
+`branch-name.yml`) against each other — that would catch the next drift
+mechanically instead of by accident. Not adding it in this PR (out of
+scope for a hook bug fix); noting here so it's visible if this recurs a
+third time (CLAUDE.md §11 distillation trigger: recurrence ≥3).

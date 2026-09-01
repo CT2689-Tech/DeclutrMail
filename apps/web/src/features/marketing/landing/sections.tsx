@@ -121,20 +121,26 @@ export function PrivacyDesk() {
           <div>
             <p className="dm-mkt-eyebrow">№ 03 — Your email data</p>
             <h2 className="dm-mkt-h2">See exactly what DeclutrMail stores.</h2>
+            {/* States the PURPOSE and the SCOPE — the two things the badge
+                beside it does not say. The sentence that used to sit between
+                them ("The list shows what is stored and what never leaves
+                Gmail") only described the badge, and the bullet that used to
+                lead the list only paraphrased its locked headline. Both are
+                gone: the badge is the storage statement, generated from the
+                D245 registry, and a hand-written restatement of it is a copy
+                that drifts the moment the registry changes. */}
             <p className="dm-mkt-lede">
-              DeclutrMail uses a limited set of Gmail details to group and review senders. The list
-              shows what is stored and what never leaves Gmail. The privacy policy covers the other
-              account and billing information needed to run the service.
+              DeclutrMail uses a limited set of Gmail details to group and review senders. The
+              privacy policy covers the other account and billing information needed to run the
+              service.
             </p>
+            {/* Data rights only. The action-safety bullet that used to lead
+                this list — preview, Activity records the result, Undo when
+                available, unsubscribe is one-way — restated §02's "Keep
+                control" step almost sentence for sentence. §02 owns what
+                happens when you act; this section owns what is stored and
+                what you can do about it. */}
             <ul className="dm-mkt-desk-points">
-              <li>
-                We store only the Gmail details listed here, never the full contents of an email.
-              </li>
-              <li>
-                Before a manual action moves email, you see what will change. Activity records the
-                result and shows Undo when it is available. Sent unsubscribe requests are clearly
-                marked as one-way.
-              </li>
               <li>
                 Disconnect Gmail at any time. You can also export your data or schedule permanent
                 deletion of your DeclutrMail account.

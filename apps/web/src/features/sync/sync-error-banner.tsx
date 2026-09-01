@@ -109,13 +109,29 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
     );
   }
 
+  // A `failed` (terminal INITIAL-sync) readiness is a different error
+  // family from the incremental failure this banner reads `errorAt` for
+  // — `markQueued` preserves a prior incremental error stamp across an
+  // initial-sync retry (Codex adversarial review), so the two can be
+  // simultaneously true. `SyncNowButton`'s failed-indicator already owns
+  // this state with the correct action; retrying here would 409 (the
+  // sync-now endpoint requires `readiness_status === 'ready'`).
+  if (status.data?.readiness_status === 'failed') return null;
+
   if (errorAt === null) return null;
 
   const errorMs = new Date(errorAt).getTime();
 
-  // A success stamp at-or-after the error means the failure recovered.
+  // A success STRICTLY newer than the error means the failure recovered.
+  // design-system-agent review: a tie used to count as recovered here
+  // while `use-mailbox-health.ts`'s `hasSyncError` (same underlying
+  // fields, sibling surface) counts a tie as still broken — the same
+  // shared fact disagreeing across surfaces CLAUDE.md §8 warns about.
+  // Aligned to the same posture: a genuine tie should never happen (the
+  // two stamps come from mutually exclusive worker outcomes), but if it
+  // did, staying visible is the safer read than silently hiding it.
   const syncedAt = status.data?.last_synced_at ?? null;
-  if (syncedAt !== null && new Date(syncedAt).getTime() >= errorMs) return null;
+  if (syncedAt !== null && new Date(syncedAt).getTime() > errorMs) return null;
 
   // Retryable failures are useful while fresh. A revoked grant is a D170
   // critical-trust state and stays surfaced until reconnection succeeds.

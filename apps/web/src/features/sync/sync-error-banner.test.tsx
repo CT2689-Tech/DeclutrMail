@@ -104,6 +104,26 @@ describe('SyncErrorBanner', () => {
     expect(screen.getByText(/new email isn't syncing/i)).toBeInTheDocument();
   });
 
+  it('stays hidden when readiness is failed, even with a fresh preserved incremental error stamp (Codex adversarial review of QA-sync-20260831-03)', () => {
+    // The negative control: reverting the `readiness_status === 'failed'`
+    // guard makes this assertion fail. `markQueued` preserves a prior
+    // incremental error stamp across an initial-sync retry, so a mailbox
+    // can be `readiness_status: 'failed'` (a genuine INITIAL-sync
+    // failure) while also carrying a fresh `last_sync_error_at` from an
+    // unrelated, older incremental failure. Without this guard this
+    // banner would offer "Try again" — a mutation the sync-now endpoint
+    // 409s whenever readiness isn't `ready` — right beside
+    // `SyncNowButton`'s correct "Scan failed" / "Scan again" indicator.
+    statusCell.data = statusOf({
+      readiness_status: 'failed',
+      last_synced_at: null,
+      last_sync_error_at: minutesAgo(5),
+      last_sync_error_code: 'GMAIL_HISTORY_GONE',
+    });
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
+  });
+
   it('shows the banner when the error is recent and no sync has ever completed', () => {
     statusCell.data = statusOf({
       last_synced_at: null,
@@ -122,6 +142,22 @@ describe('SyncErrorBanner', () => {
     });
     render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
     expect(screen.queryByTestId('sync-error-banner')).not.toBeInTheDocument();
+  });
+
+  it('keeps the banner visible on an exact tie between the error and success stamps (design-system-agent review)', () => {
+    // The negative control: reverting `>` back to `>=` makes this fail.
+    // `use-mailbox-health.ts`'s `hasSyncError` (same underlying fields,
+    // sibling surface) treats a tie as still broken — this banner used
+    // to treat the identical tie as recovered, the exact "same fact
+    // disagreeing across surfaces" shape CLAUDE.md §8 warns about.
+    const tie = minutesAgo(5);
+    statusCell.data = statusOf({
+      last_synced_at: tie,
+      last_sync_error_at: tie,
+      last_sync_error_code: 'GMAIL_HISTORY_GONE',
+    });
+    render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
+    expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
   });
 
   it('hides the banner when the error is older than 60 minutes', () => {

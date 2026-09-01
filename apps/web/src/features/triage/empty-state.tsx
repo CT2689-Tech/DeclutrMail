@@ -43,9 +43,18 @@ const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
 export function TriageEmptyState({
   stats,
   onOpenUpgrade,
+  syncFailed = false,
 }: {
   stats: TriageSessionStats;
   onOpenUpgrade?: () => void;
+  /**
+   * QA-sync-20260831-01: the active mailbox's INITIAL sync has
+   * terminally failed (`readiness_status === 'failed'`) — not merely
+   * `queued`/`syncing`. Triage otherwise has zero sync awareness at all,
+   * so a resting-queue read during a broken sync renders the same
+   * confident "nothing to do" claim as a genuinely caught-up mailbox.
+   */
+  syncFailed?: boolean;
 }) {
   // D212 resting state (2026-07-02 audit W5) — the queue is empty and
   // the user decided NOTHING today: a fresh morning visit, or a new
@@ -55,6 +64,38 @@ export function TriageEmptyState({
   // D212 EmptyState instead: calm, mental-model copy, one next step.
   // The single editorial phrase is the ADR-0011 allowance for
   // first-class empty states.
+  if (stats.decidedToday === 0 && syncFailed) {
+    // "Nothing needs a decision" is a claim about the queue having been
+    // checked; a failed scan means it hasn't been. Same "Browse senders"
+    // escape hatch, honest headline.
+    return (
+      <EmptyState
+        title="This mailbox's last scan didn't finish."
+        description="New decisions can't appear until it's rescanned. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+        action={
+          <a
+            href="/senders"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              height: 32,
+              padding: '0 14px',
+              background: color.card,
+              color: color.fg,
+              border: `1px solid ${color.line}`,
+              borderRadius: 7,
+              fontFamily: font.sans,
+              fontSize: 13,
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+          >
+            Browse senders
+          </a>
+        }
+      />
+    );
+  }
   if (stats.decidedToday === 0) {
     return (
       <EmptyState

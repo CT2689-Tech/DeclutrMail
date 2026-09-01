@@ -310,15 +310,26 @@ export function AccountMenu() {
                     )}
                     {/* Per-mailbox initial-sync state (D116). `ready`/null
                         render nothing — they're the steady state. A revoked
-                        grant suppresses this tag because "sync failed" is a
+                        grant suppresses this tag because "scan failed" is a
                         less useful duplicate of the actual recovery state. */}
                     {!isDisconnected &&
                       !needsReconnect &&
                       m.readiness &&
                       m.readiness !== 'ready' && (
                         <MenuStatus tone={m.readiness === 'failed' ? 'danger' : 'muted'}>
-                          {m.readiness === 'failed' ? 'Sync failed' : 'Syncing…'}
+                          {m.readiness === 'failed' ? 'Scan failed' : 'Syncing…'}
                         </MenuStatus>
+                      )}
+                    {/* QA-sync-20260831-04: `readiness` stays `ready` for a
+                        failed INCREMENTAL sync by the worker's own design
+                        (only an initial-sync failure ever flips it), so the
+                        branch above never fires for this case — this
+                        mailbox previously carried no tag at all. */}
+                    {!isDisconnected &&
+                      !needsReconnect &&
+                      m.readiness === 'ready' &&
+                      healthById[m.id]?.hasSyncError && (
+                        <MenuStatus tone="danger">Not syncing</MenuStatus>
                       )}
                   </button>
                   <span

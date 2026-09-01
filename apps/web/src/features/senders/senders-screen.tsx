@@ -538,6 +538,12 @@ function SendersScreenContent({
   // pre-resync snapshot, never partial.
   const mailboxStillSyncing =
     activeMailbox?.readiness === 'queued' || activeMailbox?.readiness === 'syncing';
+  // QA-sync-20260831-02: the guard above stops at `queued`/`syncing`.
+  // `failed` fell through to the healthy branch below, rendering "Synced
+  // through <now>" over a pre-failure snapshot — the identical false-
+  // currency claim `mailboxStillSyncing` exists to prevent, for the one
+  // readiness value it didn't enumerate.
+  const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
@@ -2392,6 +2398,7 @@ function SendersScreenContent({
           totalSenders={filterCounts?.total ?? null}
           updating={showingStaleRows}
           stillSyncing={mailboxStillSyncing}
+          syncFailed={mailboxSyncFailed}
         />
       )}
 
@@ -2538,17 +2545,16 @@ function SendersScreenContent({
           transition: 'opacity 120ms ease',
         }}
       >
-        {senders.length === 0 && !query && isDefaultCompose(compose) && mailboxStillSyncing ? (
-          // QA-onboarding-20260828-01: an empty result on the default
-          // (unfiltered-from-the-user's-view) compose while the active
+        {senders.length === 0 && mailboxStillSyncing ? (
+          // QA-onboarding-20260828-01, widened by QA-sync-20260831-02's
+          // adversarial review round: an empty result while the active
           // mailbox is still `queued`/`syncing` is NOT "no active
-          // senders" — that asserts a completed-but-empty conclusion the
-          // app has not earned. Checked BEFORE the default-compose branch
-          // below (`isDefaultCompose(DEFAULT)` is active-only, which
-          // `hasAnyFilter` — correctly, for the "clear filters" affordance
-          // — counts as a filter, so this case would otherwise fall into
-          // the "no senders match these filters" branch, an even worse
-          // false claim).
+          // senders" or "no matches" — that asserts a completed
+          // conclusion (of the whole mailbox, or of a search over it)
+          // the app has not earned. Checked BEFORE the compose- and
+          // query-specific branches below, and unconditional on
+          // query/filters — a search over an unfinished scan is just as
+          // unanswerable as the unfiltered view.
           <EmptyState
             title="No senders yet"
             // Codex adversarial review, round 2: "will appear here"
@@ -2557,7 +2563,36 @@ function SendersScreenContent({
             // this active-only default even after the scan finishes.
             // Say what's true (the scan is still running), not what
             // will happen.
-            body="Your mailbox is still syncing. This list will update as the scan finishes."
+            body={
+              // `hasAnyFilter(compose)` is true even for the untouched
+              // DEFAULT compose (its active-only setting counts, on
+              // purpose, so "Clear filters" is offered on first visit —
+              // see the branch below). Checking it here would show the
+              // search-specific copy on every plain first-visit empty
+              // state. `!isDefaultCompose(compose)` is the actual "user
+              // narrowed something" signal.
+              query || !isDefaultCompose(compose)
+                ? "Your mailbox is still syncing, so this search can't be answered yet. Try again once the scan finishes."
+                : 'Your mailbox is still syncing. This list will update as the scan finishes.'
+            }
+          />
+        ) : senders.length === 0 && mailboxSyncFailed ? (
+          // QA-sync-20260831-02: same shape as the `mailboxStillSyncing`
+          // branch above, for the one readiness value that guard didn't
+          // cover — widened the same way, on Codex adversarial review,
+          // to also cover a search/filtered view (which otherwise fell
+          // through to "no senders match", an even worse false claim
+          // about a search that never really ran to completion).
+          <EmptyState
+            title="Scan failed"
+            body={
+              // Same `!isDefaultCompose` reasoning as the `stillSyncing`
+              // branch above — `hasAnyFilter(compose)` alone would also
+              // match the plain default view.
+              query || !isDefaultCompose(compose)
+                ? "This mailbox's last scan didn't finish, so this search can't be answered. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+                : "This mailbox's last scan didn't finish, so this list may be incomplete. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+            }
           />
         ) : senders.length === 0 && !query && isDefaultCompose(compose) ? (
           // First-visit default is active-only (launch-audit B2). A
@@ -2817,23 +2852,26 @@ function SenderResultsFreshness({
   totalSenders,
   updating,
   stillSyncing,
+  syncFailed,
 }: {
   asOf: string;
   mailboxEmail: string;
   totalSenders: number | null;
   updating: boolean;
   stillSyncing: boolean;
+  /** QA-sync-20260831-02/04: the active mailbox's initial sync failed. */
+  syncFailed: boolean;
 }) {
   const label = formatSenderSnapshotTime(asOf);
   return (
     <div
       data-testid="sender-results-freshness"
-      role={updating || stillSyncing ? 'status' : undefined}
-      aria-live={updating || stillSyncing ? 'polite' : undefined}
-      aria-atomic={updating || stillSyncing ? 'true' : undefined}
+      role={updating || stillSyncing || syncFailed ? 'status' : undefined}
+      aria-live={updating || stillSyncing || syncFailed ? 'polite' : undefined}
+      aria-atomic={updating || stillSyncing || syncFailed ? 'true' : undefined}
       style={{
         alignItems: 'baseline',
-        color: updating || stillSyncing ? color.amber : color.fgMuted,
+        color: syncFailed ? color.danger : updating || stillSyncing ? color.amber : color.fgMuted,
         display: 'flex',
         flexWrap: 'wrap',
         fontFamily: font.mono,
@@ -2843,24 +2881,55 @@ function SenderResultsFreshness({
         margin: '-2px 0 2px',
       }}
     >
-      {stillSyncing ? (
+      {syncFailed ? (
+        // QA-sync-20260831-02: same false-currency mechanism as the
+        // `stillSyncing` branch below, for the readiness value that
+        // guard didn't cover — a failed scan is neither "synced" nor
+        // "still syncing". Deliberately does NOT claim the rows are
+        // "from before this scan started" (Codex adversarial review):
+        // initial-sync flushes sender identity rows in batches, before
+        // its final aggregate rebuild, so a mid-fetch failure can leave
+        // a mix of a pre-failure snapshot AND partially-written,
+        // not-yet-aggregated rows from the failed attempt — "may be
+        // incomplete or stale" is true either way.
+        <>
+          <strong style={{ fontWeight: 600 }}>Scan failed</strong>
+          <span>
+            {totalSenders !== null
+              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
+              : `Senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
+          </span>
+        </>
+      ) : stillSyncing ? (
         // QA-onboarding-20260828-01: `asOf` is the server's compute time
         // for THIS request, not a measured sync-completion timestamp —
         // "Synced through <now>" on a mailbox that is still `queued`/
-        // `syncing` asserted a currency the app never checked, over
-        // rows that (if any) are a pre-resync snapshot, not partial
-        // results (the sender index is rebuilt in one transaction only
-        // at the end of sync).
+        // `syncing` asserted a currency the app never checked.
+        //
+        // Codex adversarial review round 2 (of QA-sync-20260831-02):
+        // this branch's own prior claim that rows are "a pre-resync
+        // snapshot, not partial results (the sender index is rebuilt in
+        // one transaction only at the end of sync)" is itself false —
+        // initial-sync.worker.ts's flushBatch writes sender identity
+        // rows in batches DURING metadata fetching, well before the
+        // final aggregate rebuild, so a still-syncing mailbox can show a
+        // mix of an old snapshot and partially-written, not-yet-
+        // aggregated rows. Same fix as the `syncFailed` branch above,
+        // now applied to its sibling.
         <>
           <strong style={{ fontWeight: 600 }}>Still syncing…</strong>
           <span>
             {/* Codex adversarial review, round 2: "more will appear"
                 promises growth a resync hasn't earned — it can also
                 find the same or fewer senders. Say the list may
-                change, not that it will grow. */}
+                change, not that it will grow.
+                QA-sync-20260831-09: "senders indexed" is on
+                check-microcopy.sh's own banned list — "scan" is the
+                sanctioned term for this event, same as the empty-state
+                copy above and the onboarding gate's own vocabulary. */}
             {totalSenders !== null
-              ? `Showing ${totalSenders.toLocaleString('en-US')} senders indexed before this sync started for ${mailboxEmail} — this may change once it finishes.`
-              : `Showing what was indexed before this sync started for ${mailboxEmail} — this may change once it finishes.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
+              : `Senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
           </span>
         </>
       ) : updating ? (
@@ -2874,7 +2943,13 @@ function SenderResultsFreshness({
       ) : (
         <>
           <span>
-            Synced through <time dateTime={asOf}>{label}</time>
+            {/* QA-sync-20260831-10 item 3: `asOf` is the server's compute
+                time for this request (senders.read-service.ts's own doc
+                comment: "server time at compute (observability)"), not a
+                measured sync-completion timestamp — true even here, in
+                the healthy branch. "Results as of" describes what the
+                value actually is. */}
+            Results as of <time dateTime={asOf}>{label}</time>
           </span>
           <span aria-hidden="true">·</span>
           <span>
