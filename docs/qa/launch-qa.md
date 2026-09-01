@@ -768,6 +768,84 @@ only, flagged unverified in the worklist); the Triage Delete-on-Protected-
 sender live reproduction (out of job scope). `U` not applicable — no
 unsubscribe surface reached this run.
 
+#### Fix phase — 2026-09-01, PR #704
+
+Founder approved all 11 rows for a single bundled PR: "Sure, I want them all
+in single PR. smoke it, create PR and merge it along with updating qa docs."
+All 11 fixes are FE-presentation-layer plus one new read-only API route
+(`GET /api/billing/founding-remaining`) — no money-moving logic, provider
+adapter cancel/pause/resume path, or webhook handling changed. Full local
+smoke (204 web + 624 shared + 297 API tests, typecheck, lint, format) passed
+before either Codex round; two dev-server staleness bugs (Next's persistent
+webpack disk cache; the API process running `start`, not `--watch`, so it was
+serving pre-fix code for over an hour of the session) were caught and fixed
+during smoke, not after — see the branch's commit history for detail.
+
+**Round 1** (commit `131994e2` reviewed against baseline `326320a1`) found 5
+real issues, all fixed same round: `NonBackingSubscriptionNotice`'s mismatch
+branch didn't carry the QA-01/-02 support-route fix (only the non-mismatch
+branch had it); the Cancel-modal dismiss button still said "Keep current
+plan" on a non-backing row it doesn't back; the upgrade-preview fallback
+branch (no provider preview) invented a charge direction the screen didn't
+have; and 2 lower-severity items. QA-04 scope (widening past the quota card
+to every "this month" surface) and QA-05/09's fail-open founding-availability
+gate were raised as questions, deliberately left unchanged, and carried
+forward in the reply rather than silently dropped.
+
+**Round 2** (commit `131994e2` again, this time reviewed as the response to
+round 1) closed QA-01, QA-03 and QA-06, and found 2 rows only partially
+fixed, plus one carried-over item Codex re-raised as a confirmed real defect:
+
+- **QA-07 partial.** The new invoice-row `aria-label` carried only raw values
+  ("May 1, $19, Due") — the same ambiguity the visible header was built to
+  fix, in a different form, since "Due" without the field name in front of
+  it still reads as an amount owed to a screen-reader user.
+- **QA-10 partial, and a genuine regression.** The round-1 fallback fix
+  stopped inventing a charge direction, but its replacement text said a
+  possible credit "applies to your existing payment method" — the wrong
+  destination; a credit lands in the account balance, contradicting the
+  confirmed-credit branch's own wording one condition over. Neither branch
+  had been reviewed against the other before round 1 shipped.
+- **Real defect, carried over.** Even the branches WITH a resolved provider
+  preview asserted "Charged today." / "No new charge today." inside a panel
+  labeled "Preview · before anything changes," before Confirm is clicked.
+  Codex rejected the "$0 today" downgrade-branch precedent (that phrasing
+  names an amount that is true either way — $0 whether confirmed or not —
+  not a completed action) and recommended conditional framing tied to
+  Confirm.
+- Two coverage gaps: QA-01's test used an ordinary paused fixture, which
+  `nonBackingReason` resolves to the OTHER notice branch — not the
+  chargeback-shaped one the component's own comment names as the only
+  branch a real chargeback reaches; a fix applied only to that branch would
+  have stayed green. QA-10 had no test for the successful-credit branch.
+- One documentation-only drift, not a runtime bug: the `pauseConfirming`
+  prop's doc-comment overclaimed that price is suppressed during an
+  unconfirmed pause — only "Next renewal" and the Cancel button are; price
+  stays, correctly, since the plan is still active and billing until the
+  webhook confirms otherwise.
+
+All of round 2's actionable findings were fixed same-day in commit
+`6050ec1a`: both preview branches plus the fallback now read "If you
+confirm: …" instead of asserting a completed action; the fallback names both
+real destinations instead of one wrong one; the invoice row's accessible
+name now states each field's label, not just its value; a chargeback-shaped
+fixture (`status: 'active'`, mismatched tier, `cancelAtPeriodEnd: true`,
+`cancelSource: 'chargeback'`) was added alongside a successful-credit-branch
+test; the stale doc-comment was corrected to describe what the code actually
+does.
+
+**At the review cap.** Per the worklist's own rule (`docs/qa/qa-worklist.md`
+§States), two substantive Codex rounds ran (round 1: 5 findings, fixed;
+round 2: 2 partial + 1 carried-over real defect, fixed) — a third round is
+capped. `6050ec1a`'s changes to QA-07 and QA-10 are themselves unreviewed
+(the row-level disposition lives in `qa-worklist.md`); the row for each is
+`At review cap`, naming `6050ec1a`, for the founder to ship as-is or
+explicitly authorize continued review. All other rows (QA-02, -04, -05,
+-06, -08, -09, -11) closed clean through round 2 and are untouched by
+`6050ec1a`; QA-01 and QA-03 had round-2 follow-up but neither was a
+behavior change (a test addition and a comment fix, respectively), so their
+round-2 CLOSED verdict still describes the shipped behavior.
+
 ## Refuted
 
 Candidates that did not survive a `finding-refuter` pass. Kept so they are not
