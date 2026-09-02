@@ -3,7 +3,7 @@ import type { ErrorCode } from '@declutrmail/shared/contracts';
 import { request as httpsRequest } from 'node:https';
 import { isIP } from 'node:net';
 
-import { and, desc, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -118,6 +118,14 @@ export interface UnsubExecutionJobData {
   source?: 'manual' | 'autopilot';
   /** Rule attribution for Autopilot outcomes; null/absent for manual. */
   ruleId?: string | null;
+  /**
+   * True ONLY for `actions.service.ts`'s `recordUnsubscribeIntent` — the
+   * single-sender explicit-click path D245 excludes from the Protected
+   * check below (bulk and autopilot never set this). Absent/false is the
+   * safe default: an older-shaped job re-delivered mid-deploy is treated
+   * as needing the check, not as exempt from it.
+   */
+  explicit?: boolean;
 }
 
 /** Metric-only result (logged on `worker.succeeded`). */
@@ -246,6 +254,16 @@ export const UNSUB_SEND_DISABLED_CODE: ErrorCode = 'UNSUB_SEND_DISABLED';
 export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';
 
 /**
+ * `action_jobs.error_code` when the execution-time Protected re-check
+ * (below) refuses a since-protected sender. Job-only, like
+ * `UNSUB_NOT_ONE_CLICK`/`UNSUB_TARGET_REJECTED` — never a live API
+ * response, so it is not part of the `ErrorCode` registry the way
+ * `UNSUB_SEND_DISABLED`/`PROTECTED_SENDER` are (those two are ALSO
+ * thrown synchronously at enqueue).
+ */
+export const UNSUB_SENDER_PROTECTED_ERROR_CODE = 'UNSUB_SENDER_PROTECTED';
+
+/**
  * Whether this process may perform a real one-click unsubscribe POST.
  *
  * `UNSUB_SEND_ENABLED === 'true'`, read explicitly, and nothing else. Unset,
@@ -369,10 +387,48 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     const senderKey = job.selector.senderKey;
     const mailboxAccountId = job.mailboxAccountId;
 
-    await db
-      .update(actionJobs)
-      .set({ status: 'executing', updatedAt: sql`now()` })
-      .where(eq(actionJobs.id, job.id));
+    // Guard, execution-time Protected re-check (QA-protect-20260901-04
+    // follow-up) — mirrors autopilot-action.worker.ts's "guard 4" and
+    // label-action.worker.ts's execution-time re-check for
+    // Archive/Later/Delete. Protection is checked once at enqueue
+    // (actions.service.ts's bulk path, autopilot-action.worker.ts's
+    // match/apply step) and never again before this point; per-mailbox
+    // queue depth and ordinary backlog widen that window well past
+    // instant. This is the ONLY re-check standing between a
+    // since-protected sender and an irreversible send —
+    // `recordSenderProtected` below deliberately does NOT use
+    // `recordOutcome`/activity/outbox, matching `recordSendDisabled`:
+    // nothing was attempted, so nothing may claim an attempt.
+    //
+    // Skipped for `payload.explicit` — D245 excludes Protected senders
+    // from BULK and AUTOMATIC actions only, never from an explicit
+    // single-sender click (`packages/shared`'s `canUnsubscribe()` and
+    // `actions.service.ts`'s `recordUnsubscribeIntent` carry no
+    // protection term by design — see `apps/web/src/features/senders/
+    // data.ts`). Only `enqueueBulkUnsubscribe` and the autopilot chain
+    // reach this worker without `explicit: true`.
+    //
+    // `job.status !== 'executing'` is the in-flight carve-out — but
+    // ONLY correct here because `status` moves to `'executing'` a few
+    // lines below, immediately before the POST (see there for why: a
+    // retry must distinguish "a POST may already be on the wire" from
+    // "nothing was ever sent," and only the position of that write
+    // decides which one `job.status` here actually answers).
+    if (job.status !== 'executing' && !payload.explicit) {
+      const [policy] = await db
+        .select({ isProtected: senderPolicies.isProtected })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        )
+        .limit(1);
+      if (policy?.isProtected) {
+        return this.recordSenderProtected(job.id, mailboxAccountId, senderKey);
+      }
+    }
 
     // The never-execute-on-method≠one_click invariant (ADR-0006 scope
     // boundary). The method is re-read at EXECUTION time — an intent
@@ -462,6 +518,22 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
         payload.ruleId ?? null,
       );
     }
+
+    // `status` moves to `'executing'` HERE — as close to the actual send
+    // as the remaining checks allow — not at the top of this function.
+    // The protection guard above reads this same column at the top of a
+    // (possibly retried) invocation to decide whether a POST may already
+    // be in flight; that read is only honest if the write happens right
+    // before the one thing that can't be un-sent. Setting it earlier (as
+    // the method/channel/kill-switch/SSRF checks above used to do) would
+    // make a retry caused by, say, a transient DB error during channel
+    // resolution — never having reached the network — look identical to
+    // one caused by the POST itself timing out, and the guard above would
+    // then skip a protection re-check for a job that never sent anything.
+    await db
+      .update(actionJobs)
+      .set({ status: 'executing', updatedAt: sql`now()` })
+      .where(eq(actionJobs.id, job.id));
 
     let response: UnsubHttpResponse;
     try {
@@ -705,6 +777,12 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       // both ride `failed` and are separated by `error_code` (D252). It is
       // honest about what the user needs to know — they are still on the
       // list — and `UNSUB_SEND_DISABLED` on the job says why.
+      //
+      // Narrowed to the in-flight statuses (matching `onTerminalFailure`
+      // below and `recordSenderProtected`'s identical write) — a fresh
+      // Idempotency-Key is a NEW attempt, so a stale queued job refused
+      // by the flag long after a later attempt already recorded
+      // `endpoint_accepted` must not clobber that outcome back to `failed`.
       await tx
         .update(senderPolicies)
         .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
@@ -712,6 +790,67 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
           and(
             eq(senderPolicies.mailboxAccountId, mailboxAccountId),
             eq(senderPolicies.senderKey, senderKey),
+            inArray(senderPolicies.unsubStatus, ['pending', 'requested']),
+          ),
+        );
+    });
+    // Still no activity row and no outbox event: those record an ATTEMPT,
+    // and nothing was attempted.
+    return { outcome: 'failed', httpStatus: null, alreadyDone: false };
+  }
+
+  /**
+   * Terminal write for a job the execution-time Protected re-check
+   * refused (guard above). Deliberately NOT `recordOutcome`, for the
+   * same reason as `recordSendDisabled`: nothing was attempted, so an
+   * activity row or outbox event would claim an unsubscribe attempt
+   * that never happened. Shares that method's shape exactly — only
+   * `action_jobs` and `sender_policies.unsub_status` move.
+   */
+  private async recordSenderProtected(
+    actionId: string,
+    mailboxAccountId: string,
+    senderKey: string,
+  ): Promise<UnsubExecutionResult> {
+    // Same structured-log convention as the kill-switch refusal
+    // (`unsub.send_disabled` above) — the only trace this guard fired is
+    // otherwise a bare `action_jobs.error_code` nothing queries by name.
+    // Sender/mailbox ids only, never the URL (D7).
+    console.warn(
+      JSON.stringify({
+        level: 'warn',
+        kind: 'unsub.sender_protected',
+        actionId,
+        mailboxAccountId,
+        senderKey,
+        message: 'Refused a one-click unsubscribe: sender is Protected.',
+      }),
+    );
+    await this.deps.db.transaction(async (tx) => {
+      await tx
+        .update(actionJobs)
+        .set({
+          status: 'failed',
+          errorCode: UNSUB_SENDER_PROTECTED_ERROR_CODE,
+          affectedCount: 0,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(actionJobs.id, actionId));
+
+      // Narrowed to the in-flight statuses (matching `onTerminalFailure`
+      // below) rather than an unconditional set — a fresh Idempotency-Key
+      // is a NEW attempt (`recordUnsubscribeIntent`'s own contract), so a
+      // stale queued job refused long after a later attempt already
+      // recorded `endpoint_accepted` must not clobber that outcome back
+      // to `failed`.
+      await tx
+        .update(senderPolicies)
+        .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+            inArray(senderPolicies.unsubStatus, ['pending', 'requested']),
           ),
         );
     });

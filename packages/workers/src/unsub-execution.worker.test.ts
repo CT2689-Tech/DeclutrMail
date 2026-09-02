@@ -25,6 +25,7 @@ import {
   UNSUB_MAX_ATTEMPTS,
   UNSUB_USER_AGENT,
   UNSUB_SEND_BLOCKED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
   UnsubExecutionWorker,
   unsubExecutionJobOptions,
   unsubSendsEnabled,
@@ -347,6 +348,115 @@ describe('UnsubExecutionWorker', () => {
         process.env.UNSUB_SEND_ENABLED = previousOptIn;
       }
     }
+  });
+
+  it('refuses a sender protected since enqueue, before touching the network (QA-protect-20260901-04 follow-up)', async () => {
+    await seedSender(db, mailboxId);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      policyType: 'unsubscribe',
+      unsubStatus: 'requested',
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
+    const actionId = await seedExecutionJob(db, mailboxId);
+    const http = fakeHttp([200]);
+    const worker = new UnsubExecutionWorker({
+      db: db as never,
+      http,
+      outbox: new OutboxPublisher(),
+      resolveHost: PUBLIC_RESOLVE,
+    });
+
+    const result = await worker.processJob(
+      { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'protected-1' },
+      ctx(1),
+    );
+
+    // The load-bearing assertion: nothing left the process. A fake that
+    // would have answered 200 was never asked — the sender became
+    // Protected AFTER enqueue (this row was written directly, mirroring
+    // a `sender_policies` flip the enqueue-time check could not have seen).
+    expect(http.calls).toEqual([]);
+    expect(result.outcome).toBe('failed');
+
+    const { job, policy, activities, events } = await readState(actionId);
+    expect(job.status).toBe('failed');
+    expect(job.errorCode).toBe(UNSUB_SENDER_PROTECTED_ERROR_CODE);
+
+    // Same "nothing attempted" contract as the kill-switch refusal above:
+    // resolved (not left `requested`), no activity row, no outbox event.
+    expect(policy.unsubStatus).toBe('failed');
+    expect(activities.filter((a) => a.action !== 'unsubscribe')).toHaveLength(0);
+    expect(events).toHaveLength(0);
+  });
+
+  it('the in-flight carve-out still sends when a PRIOR attempt already reached the network (status=executing)', async () => {
+    // Architecture-guardian review of the guard above: `status='executing'`
+    // now moves right before the POST (not at the top of processJob), so
+    // it means "a previous attempt already dispatched" — this pins that a
+    // job seeded already-executing skips the guard and still sends, even
+    // for a sender that is currently Protected.
+    await seedSender(db, mailboxId);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      policyType: 'unsubscribe',
+      unsubStatus: 'requested',
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
+    const actionId = await seedExecutionJob(db, mailboxId);
+    await db.update(actionJobs).set({ status: 'executing' }).where(eq(actionJobs.id, actionId));
+    const http = fakeHttp([200]);
+    const worker = new UnsubExecutionWorker({
+      db: db as never,
+      http,
+      outbox: new OutboxPublisher(),
+      resolveHost: PUBLIC_RESOLVE,
+    });
+
+    const result = await worker.processJob(
+      { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'executing-1' },
+      ctx(2),
+    );
+
+    expect(http.calls).toHaveLength(1);
+    expect(result.outcome).toBe('endpoint_accepted');
+  });
+
+  it('skips the Protected guard for an explicit single-sender intent (D245 — bulk/automatic only)', async () => {
+    // actions.service.ts's `recordUnsubscribeIntent` (the single-sender
+    // click) never checks protection by design — D245 excludes Protected
+    // senders from BULK and AUTOMATIC actions only. `explicit: true` is
+    // what that path sets on the job payload; this pins that the worker
+    // honors it and still sends.
+    await seedSender(db, mailboxId);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      policyType: 'unsubscribe',
+      unsubStatus: 'requested',
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
+    const actionId = await seedExecutionJob(db, mailboxId);
+    const http = fakeHttp([200]);
+    const worker = new UnsubExecutionWorker({
+      db: db as never,
+      http,
+      outbox: new OutboxPublisher(),
+      resolveHost: PUBLIC_RESOLVE,
+    });
+
+    const result = await worker.processJob(
+      { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'explicit-1', explicit: true },
+      ctx(1),
+    );
+
+    expect(http.calls).toHaveLength(1);
+    expect(result.outcome).toBe('endpoint_accepted');
   });
 
   it('2xx → endpoint accepted: action row, truthful Activity outcome, no undo, outbox event', async () => {

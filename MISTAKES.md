@@ -4537,3 +4537,106 @@ per fixed method (`listPendingSuggestions`, `approveMatches`,
 `approveAllForRule`), each seeding a Protected sender's pending match
 alongside a normal one and asserting the Protected row is excluded /
 left `pending` and counted under `skippedProtectedCount`.
+
+## 2026-09-02 — UnsubExecutionWorker never re-checked Protected status before the irreversible POST
+**PR:** N/A — caught and fixed same session, not yet a PR
+**Caught by:** Codex adversarial review of the QA-protect-20260901-04 fix
+diff (branch `claude/ct-qa-protect-23b96f`), which found the same TOCTOU
+shape in a more severe place and flagged it rather than fixing it
+directly, since it touches the RFC 8058 send path (CLAUDE.md §2.0 Tier 1)
+**What happened:** `actions.service.ts`'s bulk unsubscribe enqueue and
+`autopilot-action.worker.ts`'s match/apply step both check
+`sender_policies.is_protected` before creating an `action_jobs` row or
+queuing an unsub execution job — but only at that moment.
+`UnsubExecutionWorker.processJob` (the ONLY place that actually issues
+the RFC 8058 one-click POST) never re-checked protection before sending,
+even though it already re-checks the unsubscribe method and re-resolves
+the URL at execution time (D252) for the identical staleness reason.
+`autopilot-action.worker.ts`'s own "guard 4" re-checks protection when an
+autopilot MATCH is applied, but that is a separate step from the later,
+separately-queued execution job `UnsubExecutionWorker` actually runs — so
+the re-check that already exists for the match doesn't cover the send.
+`UNSUB_SEND_ENABLED=true` is set in prod for both API and worker
+(`deploy-cloud-run.yml`), so this was live, not theoretical. Failure
+window: enqueue while unprotected → protect the sender while the job is
+queued/backlogged → the worker sends anyway. Unlike Archive/Later/Delete
+(30-day Activity Undo; Delete uses Gmail Trash), a delivered one-click
+unsubscribe has NO undo at all (D58) — this was the one action-lifecycle
+gap with no recovery path once it fires.
+**Correct approach:** Mirrored the guard shape already proven twice in
+this codebase (`autopilot-action.worker.ts`'s guard 4;
+`label-action.worker.ts`'s execution-time re-check for
+Archive/Later/Delete, added earlier this session on
+`claude/ct-qa-protect-23b96f` for the sibling finding). Added a re-check
+of `sender_policies.is_protected` in `processJob`, before the
+`status='executing'` transition, with the same `job.status !==
+'executing'` in-flight carve-out. Followed `recordSendDisabled`'s
+existing "nothing was attempted" terminal-write shape (plain terminal
+return, no activity row, no outbox event) rather than the sibling
+worker's exception-throwing shape — this file's own established idiom
+for a pre-attempt refusal is a return, not a thrown error, so copying the
+other worker's mechanics verbatim would itself have been the
+surgical-changes violation. Deliberately did NOT reuse the app-wide
+`PROTECTED_SENDER` error code (a LIVE, synchronous 409 whose registered
+copy is "Confirm to apply the action anyway") — a new job-only
+`UNSUB_SENDER_PROTECTED` code avoids stamping that override affordance
+onto a job that already terminated with no override available.
+**Rule:** Any worker that performs an irreversible external send and is
+fed by an async queue must re-check every safety predicate the enqueue
+step checked again immediately before the send — not only at whatever
+earlier match/apply step feeds the queue. The enqueue-time check answers
+"was this okay to queue"; only the execution-time check answers "is this
+still okay to send," and queue depth/backlog is exactly the gap between
+the two.
+**Follow-up (same session):** `architecture-guardian`, run on the diff
+before recommending merge per §7's "gate for `packages/workers/**`,"
+found the first-draft guard above was itself wrong in two ways worth
+recording as their own instance of recurring classes:
+1. **Silently broke a legitimate feature.** D245 excludes Protected
+   senders from bulk and automatic actions only — `actions.service.ts`'s
+   `recordUnsubscribeIntent` (the single-sender explicit click) has
+   never checked protection, by design (`apps/web/src/features/senders/
+   data.ts`'s `canUnsubscribe()` docblock). The first-draft guard
+   refused unconditionally, so it would have made every explicit
+   single-sender Unsubscribe on a Protected sender fail with no way to
+   proceed — a live, currently-working, intentionally-allowed action.
+   Fixed by adding `UnsubExecutionJobData.explicit?: boolean`
+   (`enqueueUnsubExecution`'s new required param), `true` only from
+   `recordUnsubscribeIntent`'s two enqueue sites, and skipping the guard
+   when set.
+2. **The in-flight carve-out's own comment claimed a guarantee the code
+   didn't provide** — this codebase's "a claim is only as true as what
+   backs it" class, caught in a safety comment before it shipped rather
+   than after. `status='executing'` was written unconditionally near the
+   top of `processJob`, before the method/channel/kill-switch/SSRF
+   checks — so a retry caused by an ordinary retryable error in any of
+   those (never having reached the network) looked identical, via
+   `job.status`, to a retry caused by the POST itself timing out
+   mid-flight. The carve-out would then skip the protection re-check for
+   a job that had never sent anything. Fixed by moving the
+   `status='executing'` write to immediately before the `postOneClick`
+   call — the same column, no new field or migration, but now `job.status
+   !== 'executing'` at the top of a (possibly retried) invocation
+   actually answers "has a POST for this action already gone out,"
+   which is the only question the carve-out needs answered.
+Also applied the class-fix instinct in reverse: found the SAME
+unconditional `sender_policies.unsub_status` overwrite (no predicate on
+current status) in the file's own pre-existing, already-shipped
+`recordSendDisabled` and narrowed both to `unsub_status IN
+('pending','requested')`, matching `onTerminalFailure`'s existing guard —
+a fresh Idempotency-Key is a new attempt, so a stale refusal must not
+clobber a later `endpoint_accepted`.
+**Enforcement update:** None — same "a hook can only enforce a match, not
+a reading" limit as the entry above; there is no fixed-string way to
+assert "every irreversible-send worker fed by a queue re-checks
+protection," or that a safety comment's claim matches the code beneath
+it. Regression coverage: `unsub-execution.worker.test.ts` gained three
+cases — protected-since-enqueue (guard fires, verified against a
+negative control: reverted, confirmed red and POSTing to the fake,
+restored), the in-flight carve-out still sending on a pre-seeded
+`status='executing'` row, and `explicit: true` bypassing the guard
+(also verified against its own negative control the same way). The
+`architecture-guardian` review that caught both gaps is itself the
+concrete argument for CLAUDE.md §8's "adversarial review for
+context-moving changes" rule and for running the applicable gate before
+recommending merge even on a change that felt small and precedented.
