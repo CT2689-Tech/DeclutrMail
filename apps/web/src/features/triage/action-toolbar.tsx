@@ -1,7 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
+import {
+  Button,
+  DESTRUCTIVE_ACTIONS_PREVIEW_HINT,
+  Kbd,
+  Tooltip,
+  tokens,
+} from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
@@ -198,7 +204,7 @@ export function ActionToolbar({
           textTransform: 'uppercase',
         }}
       >
-        Preview before anything changes
+        {DESTRUCTIVE_ACTIONS_PREVIEW_HINT}
       </span>
       {/* Visible reason when Unsubscribe is gated off for lack of a
           channel — the title attr alone is hover-only and disabled

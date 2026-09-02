@@ -101,3 +101,20 @@ describe('ActionToolbar — D245 fact-derived primary', () => {
     expect(onProtectedAction).toHaveBeenCalledWith({ verb: 'Delete', senders: [protectedRow] });
   });
 });
+
+describe('ActionToolbar — pre-selection hint (QA-archive-20260828-05)', () => {
+  it('renders the exact, verb-neutral hint text with no appended qualifier', () => {
+    // Exact node-boundary match, not a loose substring: catches both a
+    // reversion to the old "Preview before anything changes" text (which
+    // is false for Keep — Keep dispatches immediately, no preview, D40)
+    // and a differently-misleading variant appended after the same
+    // opening words (e.g. "...preview first — nothing changes until you
+    // preview" would still contain the substring but fail this exact
+    // `>text</span>` boundary check). No middot-eyebrow check here — this
+    // component has no D226 preview eyebrow to collide with; that check
+    // lives on the sibling Triage toolbar, which renders both at once.
+    const html = renderToStaticMarkup(<ActionToolbar sender={sender()} onAction={() => {}} />);
+    expect(html).toContain('>Destructive actions preview first</span>');
+    expect(html).not.toContain('Preview before anything changes');
+  });
+});
