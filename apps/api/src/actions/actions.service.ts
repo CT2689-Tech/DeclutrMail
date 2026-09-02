@@ -1173,6 +1173,7 @@ export class ActionsService {
           mailboxAccountId,
           row.senderKey,
           row.idempotencyKey,
+          false,
         ),
       ),
     );
@@ -1558,7 +1559,13 @@ export class ActionsService {
         // the row is still 'queued': BullMQ's jobId dedup makes the
         // duplicate `add` a no-op on the happy path, and the orphan case
         // self-heals.
-        await this.enqueueUnsubExecution(execution.id, mailboxAccountId, senderKey, executionKey);
+        await this.enqueueUnsubExecution(
+          execution.id,
+          mailboxAccountId,
+          senderKey,
+          executionKey,
+          true,
+        );
       }
       const [policy] = await this.db
         .select({ unsubStatus: senderPolicies.unsubStatus })
@@ -1892,6 +1899,7 @@ export class ActionsService {
         mailboxAccountId,
         senderKey,
         executionKey,
+        true,
       );
     }
 
@@ -1911,12 +1919,22 @@ export class ActionsService {
    * failure the durable rows are already committed, so record the
    * honest terminal state — exec row 'failed' + `unsub_status='failed'`
    * (never a 'requested' chip with no job behind it) — then 503.
+   *
+   * `explicit` must be `true` ONLY from `recordUnsubscribeIntent` (the
+   * single-sender click) — D245 excludes Protected senders from bulk and
+   * automatic actions, never from that explicit path (see
+   * `apps/web/src/features/senders/data.ts`'s `canUnsubscribe()`
+   * docblock). `enqueueBulkUnsubscribe` passes `false`: it already
+   * excludes Protected senders before calling this at all, and the
+   * worker's execution-time re-check (this method's whole reason to
+   * carry the flag) must stay active for that path.
    */
   private async enqueueUnsubExecution(
     actionId: string,
     mailboxAccountId: string,
     senderKey: string,
     idempotencyKey: string,
+    explicit: boolean,
   ): Promise<void> {
     if (!this.unsubQueue) {
       // Callers guard up front; fail-fast for any future path that forgets.
@@ -1928,7 +1946,7 @@ export class ActionsService {
     try {
       await this.unsubQueue.add(
         UNSUB_EXECUTION_JOB,
-        { actionId, mailboxAccountId, idempotencyKey, source: 'manual' },
+        { actionId, mailboxAccountId, idempotencyKey, source: 'manual', explicit },
         unsubExecutionJobOptions(idempotencyKey),
       );
     } catch (err) {

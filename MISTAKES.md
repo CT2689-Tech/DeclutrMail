@@ -4588,11 +4588,55 @@ earlier match/apply step feeds the queue. The enqueue-time check answers
 "was this okay to queue"; only the execution-time check answers "is this
 still okay to send," and queue depth/backlog is exactly the gap between
 the two.
+**Follow-up (same session):** `architecture-guardian`, run on the diff
+before recommending merge per §7's "gate for `packages/workers/**`,"
+found the first-draft guard above was itself wrong in two ways worth
+recording as their own instance of recurring classes:
+1. **Silently broke a legitimate feature.** D245 excludes Protected
+   senders from bulk and automatic actions only — `actions.service.ts`'s
+   `recordUnsubscribeIntent` (the single-sender explicit click) has
+   never checked protection, by design (`apps/web/src/features/senders/
+   data.ts`'s `canUnsubscribe()` docblock). The first-draft guard
+   refused unconditionally, so it would have made every explicit
+   single-sender Unsubscribe on a Protected sender fail with no way to
+   proceed — a live, currently-working, intentionally-allowed action.
+   Fixed by adding `UnsubExecutionJobData.explicit?: boolean`
+   (`enqueueUnsubExecution`'s new required param), `true` only from
+   `recordUnsubscribeIntent`'s two enqueue sites, and skipping the guard
+   when set.
+2. **The in-flight carve-out's own comment claimed a guarantee the code
+   didn't provide** — this codebase's "a claim is only as true as what
+   backs it" class, caught in a safety comment before it shipped rather
+   than after. `status='executing'` was written unconditionally near the
+   top of `processJob`, before the method/channel/kill-switch/SSRF
+   checks — so a retry caused by an ordinary retryable error in any of
+   those (never having reached the network) looked identical, via
+   `job.status`, to a retry caused by the POST itself timing out
+   mid-flight. The carve-out would then skip the protection re-check for
+   a job that had never sent anything. Fixed by moving the
+   `status='executing'` write to immediately before the `postOneClick`
+   call — the same column, no new field or migration, but now `job.status
+   !== 'executing'` at the top of a (possibly retried) invocation
+   actually answers "has a POST for this action already gone out,"
+   which is the only question the carve-out needs answered.
+Also applied the class-fix instinct in reverse: found the SAME
+unconditional `sender_policies.unsub_status` overwrite (no predicate on
+current status) in the file's own pre-existing, already-shipped
+`recordSendDisabled` and narrowed both to `unsub_status IN
+('pending','requested')`, matching `onTerminalFailure`'s existing guard —
+a fresh Idempotency-Key is a new attempt, so a stale refusal must not
+clobber a later `endpoint_accepted`.
 **Enforcement update:** None — same "a hook can only enforce a match, not
 a reading" limit as the entry above; there is no fixed-string way to
 assert "every irreversible-send worker fed by a queue re-checks
-protection." Regression coverage added in
-`unsub-execution.worker.test.ts` (protected-since-enqueue case, asserting
-the fake HTTP port was never called), verified against a negative
-control — reverted the guard, confirmed the new test goes red and POSTs
-to the fake, then restored it.
+protection," or that a safety comment's claim matches the code beneath
+it. Regression coverage: `unsub-execution.worker.test.ts` gained three
+cases — protected-since-enqueue (guard fires, verified against a
+negative control: reverted, confirmed red and POSTing to the fake,
+restored), the in-flight carve-out still sending on a pre-seeded
+`status='executing'` row, and `explicit: true` bypassing the guard
+(also verified against its own negative control the same way). The
+`architecture-guardian` review that caught both gaps is itself the
+concrete argument for CLAUDE.md §8's "adversarial review for
+context-moving changes" rule and for running the applicable gate before
+recommending merge even on a change that felt small and precedented.
