@@ -9,7 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiGet, apiPost } from './client';
+import { ApiError, apiErrorDisplayId, apiGet, apiPost } from './client';
 import { installFetchStub, jsonOk, jsonNotFound, resetFetchStub } from '@/test/fetch-stub';
 
 describe('apiGet — request shape', () => {
@@ -285,5 +285,25 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
 
     expect(assign).toHaveBeenCalledOnce();
     expect(String(assign.mock.calls[0]?.[0])).toContain('/api/auth/google/start');
+  });
+});
+
+describe('apiErrorDisplayId', () => {
+  it('reads the envelope displayId off an ApiError', () => {
+    const err = new ApiError(
+      409,
+      { error: { code: 'PROTECTED_SENDER', displayId: 'DM-7F2A91' } },
+      'boom',
+    );
+    expect(apiErrorDisplayId(err)).toBe('DM-7F2A91');
+  });
+
+  it('returns null for a non-ApiError', () => {
+    expect(apiErrorDisplayId(new Error('boom'))).toBeNull();
+  });
+
+  it('returns null when the body carries no error envelope', () => {
+    const err = new ApiError(500, 'plain text', 'boom');
+    expect(apiErrorDisplayId(err)).toBeNull();
   });
 });

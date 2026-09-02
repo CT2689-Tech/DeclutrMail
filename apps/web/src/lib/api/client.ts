@@ -91,6 +91,21 @@ export function apiErrorCode(err: unknown): string | null {
 }
 
 /**
+ * The D168 envelope's `error.displayId`, or null when the body isn't one.
+ *
+ * The short user-quotable support code (e.g. `DM-7F2A91`) a support agent
+ * maps back to `correlationId` in the API logs. Same body-shape guard as
+ * `apiErrorCode` — the two fields live on the same envelope.
+ */
+export function apiErrorDisplayId(err: unknown): string | null {
+  if (!(err instanceof ApiError) || typeof err.body !== 'object' || err.body === null) return null;
+  const { error } = err.body as { error?: unknown };
+  if (typeof error !== 'object' || error === null) return null;
+  const { displayId } = error as { displayId?: unknown };
+  return typeof displayId === 'string' ? displayId : null;
+}
+
+/**
  * Options passed straight to `fetch` plus an optional query-string map.
  *
  * All optional fields explicitly allow `undefined` so call sites can
