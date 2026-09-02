@@ -34,6 +34,7 @@ type StoryMeta<C extends (...args: never) => unknown> = {
 type Story<C extends (props: never) => unknown> = {
   args?: Partial<Parameters<C>[0]>;
   parameters?: Record<string, unknown>;
+  globals?: Record<string, unknown>;
   render?: (args: Parameters<C>[0]) => ReturnType<C>;
 };
 
@@ -214,9 +215,7 @@ export const MobileNarrow: Story<typeof SenderDetailPage> = {
   args: {
     state: { kind: 'ready', detail: buildSenderDetail(linkedin) },
   },
-  parameters: {
-    viewport: { defaultViewport: 'mobile1' },
-  },
+  globals: { viewport: 'mobile1' },
   render: (args: PageArgs) =>
     frame(
       <div style={{ maxWidth: 380, margin: '0 auto' }}>
