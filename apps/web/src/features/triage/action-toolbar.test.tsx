@@ -95,6 +95,28 @@ describe('ActionToolbar — render (D29, D31)', () => {
     expect(html).toContain('>L<');
   });
 
+  it('the pre-selection hint never collides with the D226 preview eyebrow, and never promises Keep a preview it never gets (QA-archive-20260828-05)', () => {
+    // The toolbar's static hint renders BEFORE a verb is picked; the D226
+    // preview's "Preview · before anything changes" eyebrow renders AFTER,
+    // simultaneously, once a verb is selected. Byte-identical text between
+    // the two broke `triage-screen.actions.test.tsx` with a duplicate-text
+    // query error when this was tried — see docs/qa/qa-worklist.md's
+    // "attempted and reverted" note on this row. The hint also must not
+    // claim EVERY verb previews — Keep dispatches immediately, no preview,
+    // by design (D40) — so it asserts the actual replacement text is
+    // present, not just that the old one is gone; a vacuous or empty hint
+    // would fail this, not just pass it by accident.
+    const row = rowById('t-groupon');
+    const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);
+    // Exact node-boundary match — a loose substring check would still pass
+    // if something misleading were appended after the same opening words
+    // (e.g. "...preview first — nothing changes until you preview", which
+    // reintroduces the false-for-Keep promise this row exists to remove).
+    expect(html).toContain('>Destructive actions preview first</span>');
+    expect(html).not.toContain('Preview · before anything changes');
+    expect(html).not.toContain('Preview before anything changes');
+  });
+
   it('never renders an "S" shortcut chip — no "Screen" anywhere (D227)', () => {
     const row = rowById('t-groupon');
     const html = renderToStaticMarkup(<ActionToolbar row={row} onAction={() => {}} />);

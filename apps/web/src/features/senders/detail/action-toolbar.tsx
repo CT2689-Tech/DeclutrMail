@@ -134,7 +134,7 @@ export function ActionToolbar({
           textTransform: 'uppercase',
         }}
       >
-        Preview before anything changes
+        Destructive actions preview first
       </span>
     </div>
   );

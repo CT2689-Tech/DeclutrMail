@@ -198,7 +198,7 @@ export function ActionToolbar({
           textTransform: 'uppercase',
         }}
       >
-        Preview before anything changes
+        Destructive actions preview first
       </span>
       {/* Visible reason when Unsubscribe is gated off for lack of a
           channel — the title attr alone is hover-only and disabled
