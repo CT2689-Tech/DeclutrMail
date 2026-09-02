@@ -210,6 +210,31 @@ so that specific cause shows "Sync failed + Try again" there too instead of
 the fix. Full detail: `docs/qa/qa-worklist.md` § sync,
 `QA-sync-20260831-07`.
 
+**Found:** 2026-09-01 · `/ct-qa senders`, QA-senders-20260901-01, filed
+after a `finding-refuter` killed the run's own theory and a
+`defect-class-sweeper` independently found the real mechanism.
+
+On `/senders`, the filter chips (e.g. "protected 508") and the hero total
+render whatever count the underlying list query currently holds — including
+a stale one left over from BEFORE a background refetch resolves. The run
+live-watched the "protected" chip show a wrong value (588 vs. the true,
+DB-verified 508) for a few seconds after ordinary page loads/view-toggles,
+with zero loading or staleness indicator. The run's first-guess cause
+(`keepPreviousData`) was refuted — traced correctly, but the real mechanism
+is that `showingStaleRows` (`sendersQuery.isPlaceholderData`) only fires for
+a brand-new filter/search/sort key being served a placeholder; it never
+fires for an ordinary SAME-key background refetch — which is what actually
+repaints this screen on a >30s-idle return (`staleTime: 30_000` +
+`refetchOnMount`) and after every action (`invalidateQueries`). A sibling
+component 5 lines away (`SenderResultsFreshness`) IS wired to that same
+flag and would show some stale treatment if it ever fired — it doesn't
+either, on this path. Reachable by every user, every time they come back to
+Senders after >30s away, or right after archiving/deleting/etc. Full
+detail, plus 2 sibling instances the sweep found on `/activity` and in the
+`/api/senders` API layer (not yet driven live — belong to a future
+`/ct-qa activity` run): `docs/qa/qa-worklist.md` § senders,
+`QA-senders-20260901-01`.
+
 **Found:** 2026-09-01 · `/ct-qa billing`, QA-billing-20260901-03, filed by
 `flow-completeness-auditor` (source-only), survived `finding-refuter` —
 CONFIRMED STRONGER than filed.

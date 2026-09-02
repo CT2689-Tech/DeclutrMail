@@ -299,7 +299,28 @@ export function SendersScreen() {
     enabled: searchNarrowedToNothing,
   });
   const widenedCount = widenProbe.data?.pages[0]?.meta.query?.totalMatching ?? 0;
-  const showingWidened = searchNarrowedToNothing && !keepNarrow && widenedCount > 0;
+  // Codex round-1 review of QA-senders-filtering-20260901-03: `widenProbe`
+  // also rides `keepPreviousData`, so on the FIRST render of a new
+  // search key it can be `isPlaceholderData: true` — showing the PRIOR
+  // search's rows/count under this search's own notice. Wait for the
+  // real response before trusting it.
+  //
+  // Codex round-2 review: that guard alone still misses a narrower
+  // window. `query` (raw, updated as soon as `SenderSearch`'s own
+  // internal debounce settles) can already read the NEW search term
+  // while `debouncedQuery` — this hook's OWN extra 150ms debounce,
+  // which is what actually keys `widenProbe`'s query — is still on the
+  // OLD term. In that window react-query correctly reports the old
+  // term's response as fresh (not a placeholder — nothing has asked it
+  // to fetch the new term yet), so the `isPlaceholderData` check above
+  // passes while the notice interpolates the NEW `query` text over the
+  // OLD term's rows/count. Only trust it once the two agree.
+  const showingWidened =
+    searchNarrowedToNothing &&
+    !keepNarrow &&
+    !widenProbe.isPlaceholderData &&
+    query.trim() === debouncedQuery &&
+    widenedCount > 0;
 
   const allSenders = useMemo<Sender[]>(() => {
     const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
@@ -333,11 +354,28 @@ export function SendersScreen() {
   // (the BE-honest "X senders match"). Falls back to the loaded length
   // while page 1 is in flight.
   const totalMatching = queryMeta?.totalMatching ?? undefined;
-  // D245 — the server computes counts + rows against one observational
-  // snapshot. Surface that scope and make keepPreviousData transitions
-  // explicitly read-only so prior-query rows cannot receive actions.
+  // D245 — surface the response's scope and make keepPreviousData
+  // transitions explicitly read-only so prior-query rows cannot receive
+  // actions.
   const asOf = queryMeta?.asOf;
   const showingStaleRows = sendersQuery.isPlaceholderData;
+  // QA-senders-20260901-01: `showingStaleRows` only covers a NEW filter/
+  // search/sort key being served placeholder data — it stays false during
+  // an ordinary SAME-key background refetch (staleTime expiry +
+  // refetchOnMount, or a post-action `invalidateQueries`), which is the
+  // path that actually repaints this screen on a >30s-idle return or
+  // right after a bulk action. `isFetching` covers both. Deliberately
+  // NOT folded into `showingStaleRows` itself — that flag also disables
+  // the row fieldset and blocks mutations, and an ordinary background
+  // refetch over already-fresh-enough rows should not do either; only
+  // the two aggregates below (chips, freshness caption) that can render
+  // a stale NUMBER with no cue need it.
+  // Codex round-1 review: `isFetching` also covers `fetchNextPage()` —
+  // scrolling to load more rows was flagging the page-1 aggregates as
+  // stale even though nothing about them was being refetched. Excluded.
+  const countsMayBeStale = showingWidened
+    ? widenProbe.isFetching && !widenProbe.isFetchingNextPage
+    : sendersQuery.isFetching && !sendersQuery.isFetchingNextPage;
   // Mailbox-wide aggregates (#145, real-data counts) — drives the hero,
   // KPI strip, and intent chips so headline numbers reflect the WHOLE
   // mailbox, not the loaded ≤50-row page. Honors the same debounced `q`
@@ -386,7 +424,34 @@ export function SendersScreen() {
       widenedFrom={showingWidened ? describeNarrowedFilters(compose) : null}
       widenedCount={widenedCount}
       onKeepNarrow={() => setKeepNarrow(true)}
-      matchesOutsideFilters={searchNarrowedToNothing && !widenProbe.isPending ? widenedCount : null}
+      // Codex round-1 review: `!widenProbe.isPending` alone reads a
+      // FAILED probe the same as a successfully-answered zero —
+      // `widenedCount` defaults to 0 on missing data either way, so a
+      // 500 from the probe rendered "Nothing matches outside your
+      // filters either" as if the search had actually run.
+      //
+      // Codex round-2 review (partial trace, session stalled before a
+      // written verdict — applying directly since the mechanism is
+      // identical to `showingWidened`'s own fix above): `widenedCount`
+      // itself can still be the PRIOR search's placeholder value while
+      // `widenProbe.isPlaceholderData` is true, independent of
+      // `isPending`/`isError`. Without this, a second starved search
+      // could report "N sender matches outside these filters" using a
+      // count that actually belongs to the first search.
+      // Codex round-2 review: same `query.trim() === debouncedQuery` gap
+      // as `showingWidened` above — this value feeds the empty-state
+      // BODY TEXT ("N sender matches outside these filters"), so it
+      // needs the identical guard against the raw-vs-debounced query
+      // mismatch window, not just the placeholder/pending/error cases.
+      matchesOutsideFilters={
+        searchNarrowedToNothing &&
+        !widenProbe.isPending &&
+        !widenProbe.isError &&
+        !widenProbe.isPlaceholderData &&
+        query.trim() === debouncedQuery
+          ? widenedCount
+          : null
+      }
       onWiden={() => setKeepNarrow(false)}
       query={query}
       onQueryChange={setQuery}
@@ -394,6 +459,7 @@ export function SendersScreen() {
       totalMatching={totalMatching}
       asOf={asOf}
       showingStaleRows={showingStaleRows}
+      countsMayBeStale={countsMayBeStale}
       filterCounts={filterCounts}
       compose={compose}
       setCompose={setCompose}
@@ -423,8 +489,22 @@ export function SendersScreen() {
  * sentence anyone parses.
  */
 function describeNarrowedFilters(compose: ComposeState): string {
-  if (compose.activity && !compose.activityNegate) return compose.activity;
-  return 'matching';
+  // Codex round-1 review of QA-senders-filtering-20260901-03: widening
+  // clears EVERY compose axis (`compose: EMPTY_COMPOSE` in the probe
+  // above), not just Activity — naming only the activity bucket when
+  // another filter (protected, has-unsub, domain, …) was ALSO cleared
+  // understates what "showing all N" actually widened past.
+  const hasOtherFilters =
+    compose.unsubReady !== null ||
+    compose.wroteTo !== null ||
+    compose.protectedFlag !== null ||
+    compose.windowDays !== null ||
+    compose.domain !== null ||
+    compose.unsubIgnored;
+  if (compose.activity && !compose.activityNegate && !hasOtherFilters) return compose.activity;
+  // QA-senders-20260901-09: 'matching' collided with the template's own
+  // "senders match" a few words later ("No matching senders match ...").
+  return 'filtered';
 }
 
 /** Renders the screen once the senders list is loaded. */
@@ -446,6 +526,7 @@ function SendersScreenContent({
   totalMatching,
   asOf,
   showingStaleRows,
+  countsMayBeStale,
   filterCounts,
   compose,
   setCompose,
@@ -499,6 +580,15 @@ function SendersScreenContent({
   asOf: string | undefined;
   /** Prior query's pages retained while the active search/filter resolves. */
   showingStaleRows: boolean;
+  /**
+   * QA-senders-20260901-01 — the currently-rendered aggregates
+   * (`filterCounts`, `totalMatching`) may be one response behind: true
+   * during ANY in-flight fetch for the active query, not just a new-key
+   * placeholder swap. Drives the chip strip's and freshness caption's
+   * stale-number cue; deliberately narrower than `showingStaleRows`
+   * (which also gates mutations on the rows themselves).
+   */
+  countsMayBeStale: boolean;
   /** D38 — mailbox-wide absolute counts per axis (page-1 snapshot). */
   filterCounts:
     | {
@@ -527,6 +617,12 @@ function SendersScreenContent({
   const { me } = useAuth();
   const tier = me.tier ?? 'free';
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
+  // Codex round-1 review of QA-senders-filtering-20260901-01: the server
+  // never sees a whitespace-only search box (the request debounces off
+  // `query.trim()`, senders-screen.tsx's own top-level hook), so the
+  // empty-state branches below must agree with what was actually
+  // searched, not what's literally in the input.
+  const hasQuery = query.trim().length > 0;
   // Which mailbox these senders belong to — makes a multi-mailbox switch
   // visible in the header instead of a static "default mailbox".
   const activeEmail = activeMailbox?.email ?? me.user.email;
@@ -2206,6 +2302,11 @@ function SendersScreenContent({
       saveViews.mutate(
         savedViews.filter((v) => v.name !== name),
         {
+          // QA-senders-filtering-20260901-06: this was silent on success —
+          // the only feedback for an irreversible delete sitting right
+          // beside Apply was failure. Save/Apply above both toast either
+          // way; Delete now matches.
+          onSuccess: () => toast(`Deleted view "${name}"`, 'success'),
           onError: (err) => {
             captureFeatureException(err, { surface: 'senders', reason: 'delete_view' });
             toast(`Couldn't delete the view "${name}"`, 'warn');
@@ -2294,7 +2395,7 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Review every person, list, and service that emails you, grouped by sender. A manual decision affects current matching email; only an Autopilot rule changes future matches."
+        body="Review every person, list, and service that emails you, grouped by sender. Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches automatically."
         learnMore={{
           href: '/methodology#automation-method',
           label: 'Manual decisions vs automatic rules',
@@ -2396,7 +2497,8 @@ function SendersScreenContent({
           asOf={asOf}
           mailboxEmail={activeEmail}
           totalSenders={filterCounts?.total ?? null}
-          updating={showingStaleRows}
+          updating={countsMayBeStale}
+          rowsReadOnly={showingStaleRows}
           stillSyncing={mailboxStillSyncing}
           syncFailed={mailboxSyncFailed}
         />
@@ -2405,10 +2507,36 @@ function SendersScreenContent({
       {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
           Counts on chips are mailbox-wide absolutes (filterCounts),
           NOT loaded-page derivations. URL state via useComposeState
-          makes the scope shareable + refresh-stable. */}
-      {senders.length > 0 && (
+          makes the scope shareable + refresh-stable.
+
+          QA-senders-filtering-20260901-01: stays mounted through a
+          filter-only zero-result too, not just senders.length > 0 — a
+          user who narrows themselves to nothing is the one person who
+          most needs to see and adjust a chip, not lose the whole strip.
+          Excludes the still-syncing/scan-failed states on purpose: those
+          empty states are "not answerable yet".
+
+          Codex round-1 review: `hasAnyFilter(compose)` is true for
+          `DEFAULT_COMPOSE` too (activity: 'active' is on by design), so
+          this condition ALSO mounts the strip on a genuinely-empty ready
+          mailbox's very first, unfiltered visit — not just when a user
+          actively narrowed themselves to nothing. That's judged fine:
+          the dedicated `isDefaultCompose` empty branch below still
+          renders its own correct "No active senders" copy either way,
+          and showing the chips alongside it only adds a second way out
+          (click "quiet"/"dormant" directly) — it does not, by itself,
+          assert anything false. */}
+      {(senders.length > 0 ||
+        // Codex round-1 review: raw `query` truthiness treats a
+        // whitespace-only search box as a real search — the server
+        // never sees it (`debouncedQuery = query.trim()` above), so
+        // "search" here means the same thing it means to the request.
+        ((query.trim().length > 0 || hasAnyFilter(compose)) &&
+          !mailboxStillSyncing &&
+          !mailboxSyncFailed)) && (
         <ComposeStrip
           state={compose}
+          updating={countsMayBeStale}
           counts={
             filterCounts
               ? {
@@ -2436,6 +2564,9 @@ function SendersScreenContent({
             onDelete: deleteSavedView,
             canSaveCurrent: hasAnyFilter(compose),
             capReached: savedViews.length >= SENDER_VIEWS_CAP,
+            // Codex round-2 review — see ViewsMenuProps.mutating's own
+            // comment for why this matters.
+            mutating: saveViews.isPending,
           }}
         />
       )}
@@ -2490,8 +2621,11 @@ function SendersScreenContent({
       {/* F011 — the widened-search notice.
           Announced, never silent: the rows below are NOT what the
           filters ask for, and a user who set those filters deliberately
-          is owed both that fact and a way back. "Keep <filter> only"
-          returns the honest empty result rather than clearing anything,
+          is owed both that fact and a way back. The "Show <filter> only" /
+          "Use my filters" button (QA-senders-filtering-20260901-03: was
+          "Keep <filter> only" — collided with the screen's own canonical
+          Keep verb) returns the honest empty result rather than clearing
+          anything,
           so the query survives either choice — the dead end the old
           "Clear search & filters" created was that it threw away the
           search along with the filter. */}
@@ -2514,12 +2648,42 @@ function SendersScreenContent({
             color: color.fgMuted,
           }}
         >
+          {/* QA-senders-filtering-20260901-03: three fixes.
+              1. "showing all N" claimed N rows were rendered; only a page
+                 (`limit`) ever is. Codex round-1 review: "— showing
+                 those" still made the same claim in different words
+                 ("those" = "the N that match") — dropped the clause
+                 entirely rather than reword around it.
+              2. `describeNarrowedFilters` returning the literal string
+                 'filtered' for a non-activity narrowing (protected/
+                 has-unsub/domain) reads as a stray adjective, not a noun
+                 — "under your filters" says the same thing as a normal
+                 sentence instead of a magic-word sentinel.
+              3. (round-1) `describeNarrowedFilters` now falls back to
+                 'filtered' whenever a NON-activity filter was also
+                 cleared, so this branch's "match without that filter"
+                 (singular) is only reached when activity really was the
+                 only one. */}
           <span>
-            No {widenedFrom} senders match &ldquo;{query}&rdquo; — showing all{' '}
-            {widenedCount.toLocaleString('en-US')}.
+            {/* Codex round-2 review: "1 do without…" — subject/verb
+                agreement broke at exactly the count (1) this notice is
+                least likely to be skimmed past. */}
+            {widenedFrom === 'filtered' ? (
+              <>
+                No senders match &ldquo;{query}&rdquo; under your filters —{' '}
+                {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'} without
+                them.
+              </>
+            ) : (
+              <>
+                No {widenedFrom} senders match &ldquo;{query}&rdquo; —{' '}
+                {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'} without
+                that filter.
+              </>
+            )}
           </span>
           <Button tone="ghost" onClick={onKeepNarrow}>
-            Keep {widenedFrom} only
+            {widenedFrom === 'filtered' ? 'Use my filters' : `Show ${widenedFrom} only`}
           </Button>
         </div>
       )}
@@ -2571,7 +2735,12 @@ function SendersScreenContent({
               // search-specific copy on every plain first-visit empty
               // state. `!isDefaultCompose(compose)` is the actual "user
               // narrowed something" signal.
-              query || !isDefaultCompose(compose)
+              //
+              // Codex round-2 review: was raw `query` — the same
+              // whitespace-only-search-box inconsistency the sibling
+              // filter-only branch further down was fixed for, one
+              // branch over.
+              hasQuery || !isDefaultCompose(compose)
                 ? "Your mailbox is still syncing, so this search can't be answered yet. Try again once the scan finishes."
                 : 'Your mailbox is still syncing. This list will update as the scan finishes.'
             }
@@ -2589,12 +2758,12 @@ function SendersScreenContent({
               // Same `!isDefaultCompose` reasoning as the `stillSyncing`
               // branch above — `hasAnyFilter(compose)` alone would also
               // match the plain default view.
-              query || !isDefaultCompose(compose)
+              hasQuery || !isDefaultCompose(compose)
                 ? "This mailbox's last scan didn't finish, so this search can't be answered. Your Gmail is untouched — see Settings → Gmail accounts to try again."
                 : "This mailbox's last scan didn't finish, so this list may be incomplete. Your Gmail is untouched — see Settings → Gmail accounts to try again."
             }
           />
-        ) : senders.length === 0 && !query && isDefaultCompose(compose) ? (
+        ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
           // First-visit default is active-only (launch-audit B2). A
           // mailbox with nothing ACTIVE must not read as a filter
           // mistake — name the default and offer the full list.
@@ -2611,7 +2780,7 @@ function SendersScreenContent({
               </Button>
             }
           />
-        ) : senders.length === 0 && (query || hasAnyFilter(compose)) ? (
+        ) : senders.length === 0 && (hasQuery || hasAnyFilter(compose)) ? (
           <EmptyState
             // F011 — say WHICH thing found nothing. `No senders match
             // "X"` is a claim about the QUERY, and it was false: the
@@ -2619,9 +2788,9 @@ function SendersScreenContent({
             // one row above. When filters are on and the search found
             // nothing anywhere, the honest sentence names both.
             title={
-              query && hasAnyFilter(compose)
+              hasQuery && hasAnyFilter(compose)
                 ? `No senders match "${query}" under these filters`
-                : query
+                : hasQuery
                   ? `No senders match "${query}"`
                   : 'No senders match these filters'
             }
@@ -2634,18 +2803,27 @@ function SendersScreenContent({
               // this: after "Keep active only" the screen asserted
               // nothing existed outside the filter while holding the one
               // sender that did.)
-              query && matchesOutsideFilters !== null && matchesOutsideFilters > 0
+              hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0
                 ? `${matchesOutsideFilters.toLocaleString('en-US')} ${matchesOutsideFilters === 1 ? 'sender matches' : 'senders match'} outside these filters.`
-                : query && hasAnyFilter(compose) && matchesOutsideFilters === 0
-                  ? 'We also looked outside the filters and found nothing, so this is the whole answer.'
-                  : 'Try a different search or clear the filters.'
+                : hasQuery && hasAnyFilter(compose) && matchesOutsideFilters === 0
+                  ? // QA-senders-filtering-20260901-09: narrated the search
+                    // procedure instead of stating the fact the user acts on.
+                    'Nothing matches outside your filters either.'
+                  : hasQuery
+                    ? 'Try a different search or clear the filters.'
+                    : // QA-senders-filtering-20260901-03: no search was made
+                      // here — the widening probe only runs off a query
+                      // (searchNarrowedToNothing), so this is a pure filter
+                      // combination excluding everything. Naming a search
+                      // the user never made made them doubt what they did.
+                      'Nothing matches this combination of filters.'
             }
             action={
-              query && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
+              hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
                 // Widening keeps the query; clearing throws it away. Lead
                 // with the one that answers what the user asked.
-                <Button onClick={onWiden}>Show them</Button>
-              ) : (
+                <Button onClick={onWiden}>Show all matches</Button>
+              ) : hasQuery ? (
                 <Button
                   onClick={() => {
                     clearSearchAndFilters();
@@ -2653,6 +2831,8 @@ function SendersScreenContent({
                 >
                   Clear search &amp; filters
                 </Button>
+              ) : (
+                <Button onClick={clearCompose}>Clear filters</Button>
               )
             }
           />
@@ -2727,13 +2907,6 @@ function SendersScreenContent({
               const adapted = enrichSenderRow(sender);
               requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
             }}
-            emptyKind={
-              query.trim() !== ''
-                ? 'no-search-match'
-                : hasAnyFilter(compose)
-                  ? 'no-filter-match'
-                  : 'no-senders'
-            }
           />
         )}
 
@@ -2851,6 +3024,7 @@ function SenderResultsFreshness({
   mailboxEmail,
   totalSenders,
   updating,
+  rowsReadOnly,
   stillSyncing,
   syncFailed,
 }: {
@@ -2858,6 +3032,14 @@ function SenderResultsFreshness({
   mailboxEmail: string;
   totalSenders: number | null;
   updating: boolean;
+  /**
+   * Codex round-1 review of QA-senders-20260901-01: `updating` now also
+   * fires for a same-key background refetch, where the rows stay fully
+   * interactive (only `showingStaleRows` disables the fieldset) — so
+   * "rows are read-only" is false in that case. True only when the
+   * fieldset is actually disabled.
+   */
+  rowsReadOnly: boolean;
   stillSyncing: boolean;
   /** QA-sync-20260831-02/04: the active mailbox's initial sync failed. */
   syncFailed: boolean;
@@ -2896,9 +3078,17 @@ function SenderResultsFreshness({
           <strong style={{ fontWeight: 600 }}>Scan failed</strong>
           <span>
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
-              : `Senders found for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
+              : `Senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
           </span>
+          {/* Codex round-2 review of QA-senders-20260901-01: a filter/
+              search change can flip `rowsReadOnly` true WHILE the scan
+              state also renders — that branch took priority and never
+              mentioned it, leaving a disabled fieldset with no caption
+              explaining why. */}
+          {rowsReadOnly && (
+            <span>These rows are temporarily read-only while the new filter loads.</span>
+          )}
         </>
       ) : stillSyncing ? (
         // QA-onboarding-20260828-01: `asOf` is the server's compute time
@@ -2928,14 +3118,21 @@ function SenderResultsFreshness({
                 sanctioned term for this event, same as the empty-state
                 copy above and the onboarding gate's own vocabulary. */}
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
-              : `Senders found for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
+              : `Senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
           </span>
+          {rowsReadOnly && (
+            <span>These rows are temporarily read-only while the new filter loads.</span>
+          )}
         </>
       ) : updating ? (
         <>
           <strong style={{ fontWeight: 600 }}>Updating results…</strong>
-          <span>Previous count and rows are read-only.</span>
+          <span>
+            {rowsReadOnly
+              ? 'Previous count and rows are read-only.'
+              : 'Counts may be a moment behind.'}
+          </span>
           <span>
             Previous snapshot <time dateTime={asOf}>{label}</time>.
           </span>
@@ -2953,9 +3150,14 @@ function SenderResultsFreshness({
           </span>
           <span aria-hidden="true">·</span>
           <span>
+            {/* QA-senders-filtering-20260901-09: "for {mailboxEmail}" here
+                repeated the eyebrow 3 lines above verbatim
+                ("Senders · chintan.a.thakkar@gmail.com") — the eyebrow is
+                the one that answers "which mailbox", this line only
+                needs to answer "how many". */}
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders found for ${mailboxEmail}`
-              : `Matching count and rows for ${mailboxEmail}`}
+              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox`
+              : 'Matching count and rows'}
           </span>
         </>
       )}
@@ -2966,12 +3168,16 @@ function SenderResultsFreshness({
 function formatSenderSnapshotTime(iso: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return 'time unavailable';
+  // QA-senders-filtering-20260901-07: was hardcoded `timeZone: 'UTC'` —
+  // the same false-currency-cue mechanism already fixed once on
+  // `QA-triage-20260827-09` (the undo toast/preview), now found on a
+  // different surface. Omitting `timeZone` renders the reader's own,
+  // matching `receipt-strip.tsx`/`undo-tray.tsx`/`quiet-screen.tsx`.
   return new Intl.DateTimeFormat('en-US', {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     month: 'short',
-    timeZone: 'UTC',
     timeZoneName: 'short',
     year: 'numeric',
   }).format(date);
@@ -3043,9 +3249,13 @@ function BulkSelectButton({
         letterSpacing: '0.04em',
       }}
     >
-      {allSelected
-        ? `deselect loaded ${senders.length} [⌫]`
-        : `select loaded ${senders.length} [+]`}
+      {/* QA-senders-20260901-09: "loaded" is the infinite-query's own
+          vocabulary, not the reader's. Codex round-1 review: "shown" is
+          FALSE in Grid mode once a domain group collapses 3+ senders
+          behind one card — this button still selects every one of
+          them, not just the visible cards. "all N" claims neither
+          loading state nor visibility, so it holds in both views. */}
+      {allSelected ? `deselect all ${senders.length} [⌫]` : `select all ${senders.length} [+]`}
     </button>
   );
 }

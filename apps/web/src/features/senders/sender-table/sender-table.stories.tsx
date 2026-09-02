@@ -12,7 +12,9 @@
 //   • Density toggle compact vs comfortable — column geometry stable.
 //   • Loading skeleton preserves column count (no horizontal jump).
 //   • Error row renders + offers retry.
-//   • Empty: no senders, no filter match, no search match (3 copies).
+//   • Empty: one generic message (QA-senders-filtering-20260901-01 —
+//     was 3 copies, deleted as dead code: the parent Senders screen's
+//     own empty-state ternary always fires first in production).
 //   • Mixed-state row: protected sender, unknown trend, never-read, etc.
 //   • Long display name and very long domain truncate without breaking
 //     the column grid.
@@ -181,7 +183,6 @@ function ControlledTable(props: Partial<ComponentProps<typeof SenderTable>>) {
         loading={props.loading ?? false}
         error={props.error ?? null}
         onRetry={props.onRetry}
-        emptyKind={props.emptyKind}
         density={props.density}
       />
     </div>
@@ -228,16 +229,13 @@ export const ErrorState: Story<typeof SenderTable> = {
   ),
 };
 
-export const EmptyNoSenders: Story<typeof SenderTable> = {
-  render: () => <ControlledTable rows={[]} emptyKind="no-senders" />,
-};
-
-export const EmptyNoFilterMatch: Story<typeof SenderTable> = {
-  render: () => <ControlledTable rows={[]} emptyKind="no-filter-match" />,
-};
-
-export const EmptyNoSearchMatch: Story<typeof SenderTable> = {
-  render: () => <ControlledTable rows={[]} emptyKind="no-search-match" />,
+// QA-senders-filtering-20260901-01: was a 3-way emptyKind discriminator
+// (no-senders/no-filter-match/no-search-match) — unreachable in
+// production, since the parent Senders screen's own empty-state ternary
+// always fires first. Down to the one generic empty row the table can
+// actually show.
+export const Empty: Story<typeof SenderTable> = {
+  render: () => <ControlledTable rows={[]} />,
 };
 
 // ── Stories — D212 edge data shapes ──────────────────────────────────

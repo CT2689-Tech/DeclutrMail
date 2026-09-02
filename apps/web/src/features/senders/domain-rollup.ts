@@ -90,7 +90,7 @@ export function registrableDomain(domain: string): string {
   return labels.slice(-keep).join('.');
 }
 
-/** One entry in the rolled-up list — a plain sender or a brand group. */
+/** One entry in the rolled-up list — a plain sender or a domain group. */
 export type RollupEntry =
   | { kind: 'sender'; sender: Sender }
   | {

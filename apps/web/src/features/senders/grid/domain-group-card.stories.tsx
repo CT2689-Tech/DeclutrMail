@@ -1,4 +1,4 @@
-// Storybook CSF3 stories for the brand-rollup group card (D51, D210).
+// Storybook CSF3 stories for the domain-group card (D51, D210).
 //
 // `DomainGroupCard` is the header row for a registrable-domain group on
 // the Senders grid — it collapses many rows from the same brand (e.g.
@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof DomainGroupCard> = {
     docs: {
       description: {
         component:
-          'Brand-rollup group header row (D51 — eTLD+1 grouping). Shows the shared registrable domain + aggregate counts (senders · 90d volume · lifetime total) and an expand control. Group-level actions are deliberately absent in v1 — expansion + per-sender actions only, so every mutation keeps its per-sender D226 preview.',
+          'Domain-group header row (D51 — eTLD+1 grouping). Shows the shared registrable domain, sender count, 90d volume, received total, and an expand control. Group-level actions are deliberately absent in v1 — expansion + per-sender actions only, so every mutation keeps its per-sender D226 preview.',
       },
     },
   },

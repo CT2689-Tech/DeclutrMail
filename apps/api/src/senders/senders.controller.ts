@@ -192,9 +192,11 @@ export class SendersController {
     const cursor = cursorRaw ? { key: cursorRaw.key, id: cursorRaw.id } : null;
 
     // `query` meta is MAILBOX/FILTER-WIDE, not page-wide: two aggregate
-    // scans over every sender in the mailbox, whose values are identical
-    // for every page of one filter set. The client only ever reads it
-    // off page 1 — every consumer indexes `pages[0].meta.query`, and
+    // scans over every sender in the mailbox, whose values would be
+    // identical across every page of one filter set absent a concurrent
+    // write between fetches (each page is its own independent query, no
+    // shared snapshot — QA-senders-20260901-02). The client only ever
+    // reads it off page 1 — every consumer indexes `pages[0].meta.query`, and
     // `sender-table.tsx` says so outright ("Pass page-1's
     // meta.query.globalMaxTotal and PRESERVE it"). So on a cursor page
     // those scans were pure cost: paid on every infinite-scroll fetch,

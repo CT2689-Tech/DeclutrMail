@@ -2090,6 +2090,309 @@ Settings → Gmail accounts."`
 red/green boundary except (4), which could assert a visible error message
 renders on a mocked mutation rejection.
 
+## senders
+
+Rows accumulate across every `/ct-qa senders` run. First filed 2026-09-01 (10
+survivors; 2 candidates refuted before filing — see the ledger's Refuted
+table). Both refuted candidates were the run's own; every filed row below is
+sourced from the read-only agent wave (`defect-class-sweeper` ×2,
+`usability-editor` ×8), not independently live-verified beyond what each
+row's evidence line states.
+
+|     | id                     | sev | one line                                                                                                                                                                                                                                                                                                 | status                                                                                                                                                                                       | PR  |
+| --- | ---------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --- |
+| 🔴  | QA-senders-20260901-01 | P1  | Filter chips and the hero total show a stale count with zero visual cue whenever the list query background-refetches on the same key (staleTime expiry, or post-action `invalidateQueries`) — `showingStaleRows`/`isPlaceholderData` only covers a _new_-key placeholder swap, never this path           | At review cap — countsMayBeStale (isFetching, excl. isFetchingNextPage) drives ComposeStrip + freshness caption; rowsReadOnly split covers all 3 branches. Last commit 0a3728ef              |     |
+| 🔴  | QA-senders-20260901-02 | P2  | `GET /api/senders`'s list + summary meta run as an unwrapped concurrent `Promise.all` with no transaction, so the chips/total/rows in one response can reflect different DB snapshots under a concurrent write; a code comment falsely claims a single observational snapshot                            | At review cap — false single-snapshot comment removed (both the original + a sibling); transaction wrap deferred (perf-critical path). Last commit 9436c9f2                                  |     |
+| 🔴  | QA-senders-20260901-03 | P2  | The intro banner says "only an Autopilot rule changes future matches" — Unsubscribe is a manual decision that also changes future mail, by the product's own `action-semantics.ts` contract                                                                                                              | At review cap — banner copy corrected, reworded again after round 1 to stop overclaiming Unsubscribe. Last commit 9436c9f2                                                                   |     |
+| 🔴  | QA-senders-20260901-04 | P2  | Three differently-scoped sender counts render within ~60px ("7,968 senders found" reads as this search's result but is always the whole unfiltered mailbox); the Activity chip thresholds (30d/180d) are never stated and their counts silently ignore the search box                                    | At review cap — freshness line reworded + activity chip thresholds added; Quiet boundary fixed after round 1. Last commit 9436c9f2                                                           |     |
+| 🔴  | QA-senders-20260901-05 | P3  | Naming inconsistency sweep: Unsubscribe wears 4 spellings on one screen, "received" wears 3 names, "brand group" vs. a filter chip labelled "domain" name the same grouping differently, and the mobile bulk sheet's "Cancel" silently wipes the selection instead of just closing                       | At review cap — unsub/received naming, domain-group naming, sheet Clear selection corrected. Last commit fd6b2d9a                                                                            |     |
+| 🔴  | QA-senders-20260901-06 | P3  | Verbosity sweep: the D226 Archive preview's lead paragraph, its mail-location line, its tied-window notice, the brand-group card's stat strip, and the post-action receipt (toast + strip + tray all restate one fact, two identical Undo buttons) — ~80 words trimmable, exact replacement text on file | At review cap — mail-location/tied-window trims + sheet Kbd hints dropped; tiedWindowNoticeCopy bulk-subject fixed after round 1; lead-paragraph merge deferred. Last commit 9436c9f2        |     |
+| 🔴  | QA-senders-20260901-07 | P2  | The compose/filter strip's `aria-label` reads "Senders included in this message" — describes a recipient list, not the filter-and-sort row it actually is; a screen-reader user is told the opposite of what the control does                                                                            | At review cap — aria-label corrected; radiogroup wrapper added then reverted after round 2 (real ARIA-contract gap, interaction-model redesign out of scope). Last commit 0a3728ef           |     |
+| 🔴  | QA-senders-20260901-08 | P2  | A bulk selection that is all-Protected shows 4 natively-disabled action buttons with the reason visible only in a hover title/`aria-label` — a mouse user who doesn't hover gets zero explanation, though the identical sentence already exists and fires on the keyboard path                           | At review cap — visible protectedLockNote added to both bar variants; duplicate-text-with-toast confirmed intentional by reviewer. Last commit fd6b2d9a                                      |     |
+| 🔴  | QA-senders-20260901-09 | P3  | Grammar/wording nits: "1 email currently match" (verb agreement), the widened-search fallback branch produces "No matching senders match X" + a "Keep matching only" button (doubled word), and "select loaded 50" leaks internal pagination jargon to the reader                                        | At review cap — verb agreement + widened-filter collision fixed; select-shown reverted to select-all after round 1 (false once Grid domain-grouping collapses senders). Last commit 9436c9f2 |     |
+| 🔴  | QA-senders-20260901-10 | P2  | Senders' own D226 preview (`confirm-action-modal.tsx`, `variant="sheet"`) reaches its confirm button only after ~110 words + a 5-option radio group in an 88vh sheet at 375px — same shape as `QA-triage-20260827-11` (merged in #671) but a DIFFERENT, un-shared component                              | At review cap — Kbd hints dropped in sheet variant; reviewer disputes calling the ~110-word/88vh complaint even partially resolved (lead paragraph untouched). Last commit fd6b2d9a          |     |
+
+**Siblings, not filed here — belong to a future `/ct-qa activity` run.** The
+`defect-class-sweeper` pass, working from the same seed mechanism as -01,
+independently found the identical missing-staleness-cue shape on `/activity`:
+`MetricsHeader` (`apps/web/src/features/activity/activity-screen.tsx:350-362`)
+renders the OLD time-window's label next to numbers from the query's
+`keepPreviousData` snapshot while a sibling region 60 lines down IS gated on
+`showingStaleRows` — and the card is `role="status" aria-live="polite"`, so a
+screen reader announces mismatched window/numbers together. Not driven this
+run (out of job scope per the one-job-per-run boundary); also added to
+`FINDINGS.md`'s Inbox so it isn't lost before Activity gets its own run.
+
+### QA-senders-20260901-01 — the corrected mechanism, and why the run's own first guess was wrong
+
+The run's own live observation (repeatedly watched the "protected" chip show
+`588` immediately after a fresh nav/view-toggle, then silently correct to
+`508` — DB-verified as the true, ~48h-stable value — within a couple seconds,
+with no loading cue) was real, but its own attributed cause —
+`keepPreviousData`/`isPlaceholderData` — was **refuted**: a `finding-refuter`
+traced `filterCountsQuery` (`apps/api/src/senders/senders.read-service.ts:1013-1060`)
+and found it scoped ONLY by `mailboxAccountId` (ignores compose/search/sort),
+so for a fixed mailbox every valid response computes the identical numbers —
+`keepPreviousData`'s placeholder can never differ from the incoming fresh
+value on this screen, and a live DB requery found no code path that could
+have computed `588` during the session at all. That refutation stands; see
+the ledger's Refuted table.
+
+A `defect-class-sweeper`, working from the same seed description independently
+of the refuter, found the ACTUAL mechanism: `showingStaleRows` is defined as
+`sendersQuery.isPlaceholderData` (`senders-screen.tsx:340`), and in TanStack
+Query v5 that flag is true only while a _new_ query key is being served
+placeholder data — it is `false` during an ordinary _same-key_ background
+refetch. `apps/web/src/lib/query-client.ts:150-151` sets `staleTime: 30_000`
+with `refetchOnWindowFocus: false`, so `refetchOnMount` on any &gt;30s-old
+cache entry, and the post-action `qc.invalidateQueries({queryKey:['senders']})`
+at `senders-screen.tsx:2830`, both refetch the SAME key — `isPlaceholderData`
+never fires, `showingStaleRows` stays `false`, and `ComposeStrip`
+(`senders-screen.tsx:2409-2425`, receives `counts` with no staleness prop at
+all) and the hero total (`:2378`/`:2468`, ungated — contrast the adjacent
+`BulkSelectButton` on the same row, which IS gated at `:2483`) both keep
+rendering the previous response's numbers with zero visual difference from a
+fresh one, while `SenderResultsFreshness` (`:2394-2402`, which DOES receive
+`updating={showingStaleRows}`) has no reason to flag anything either, since
+its own flag is equally blind to this path.
+
+Net: the specific "588" the run watched cannot be explained by either
+account and its exact provenance is unresolved (the refuter's "no code path
+computed 588" stands) — but the CLASS of bug the run's raw observation was
+reaching for (stale sender counts, zero visual cue, live on ordinary use) is
+real, code-proven, and reachable by every user on every return visit &gt;30s
+and after every bulk action, via a different, corrected mechanism. Filed as
+such. **Unmeasured:** an actual before/after chip value pinned to a
+&gt;30s-idle repro, to close the loop the run's own flawed observation left
+open.
+
+**Regression test:** mock `useSenders` to return `isPlaceholderData: false`
+with a response whose `filterCounts` differ from a previous render's, assert
+`ComposeStrip`'s rendered chip text updates with no intermediate stale paint
+— or, at the integration level, assert `ComposeStrip` receives a
+staleness-derived prop at all (it currently receives none, so this assertion
+would fail today by construction, not by racing a timer).
+
+### Review rounds — the 9-item fix bundle (01, 03–10)
+
+One diff, sent as one Codex review (the fixes for -01/-03/-04/-05/-06/-07/-08/
+-09/-10 landed together, `fd6b2d9a` on top of the run's own docs commit
+`96b00dad`).
+
+| round | ran against | verdict         | what it returned                                                                                                                                                                                      |
+| ----- | ----------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `fd6b2d9a`  | **substantive** | 6 findings across 6 of the 9 items (01, 02-comment, 03, 04, 06, 07, 09), each a real defect in THIS diff, not the pre-existing baseline. Fixed in `9436c9f2`.                                         |
+| 2     | `9436c9f2`  | **substantive** | 2 of 4 checks came back with something real: (A) the `rowsReadOnly` fix from round 1 was itself incomplete, (D) the round-1 `radiogroup` fix has its own ARIA gap. B and C confirmed safe. See below. |
+| —     | —           | **cap reached** | Two substantive rounds. No round 3 — the founder decides whether to ship as-is or keep reviewing.                                                                                                     |
+
+**Round 1's six findings.**
+
+1. **01 — the "read-only" caption lied on the path it was meant to cover.**
+   `countsMayBeStale` (→ `updating`) now also fires for a same-key background
+   refetch, where the row fieldset stays fully interactive
+   (`showingStaleRows` alone gates that). The freshness caption's fixed text
+   — "Previous count and rows are read-only" — is false on that path; the
+   checkbox a reviewer clicks right under that sentence still works. Fixed:
+   `SenderResultsFreshness` now takes a separate `rowsReadOnly` prop
+   (`showingStaleRows`) and only claims read-only rows when that's actually
+   true; otherwise "Counts may be a moment behind."
+2. **01 — `isFetching` also covers `fetchNextPage()`.** Scrolling to load
+   more rows was flagging the page-1 aggregates (chips, hero total) as
+   stale, though nothing about them was being refetched. Fixed:
+   `countsMayBeStale` now excludes `isFetchingNextPage`.
+3. **02 — a sibling of the false comment survived.** `senders.controller.ts`
+   separately claimed the list+meta aggregate "values are identical for
+   every page of one filter set" — true only absent a concurrent write
+   between page fetches. Fixed: qualified with "absent a concurrent write…
+   no shared snapshot" and cross-referenced to this row.
+4. **03 — the corrected banner overclaimed in the other direction.**
+   "Unsubscribe … change[s] what arrives next" states a guarantee the
+   product's own contract doesn't make (`action-semantics.ts`'s Unsubscribe
+   entry, and the screen's own terminal toast, both hedge: a request was
+   sent, delivery still depends on the sender). Fixed: "Unsubscribe asks the
+   sender to stop; Autopilot rules act on future matches automatically" —
+   the two verbs no longer share one verb of certainty they don't share in
+   reality.
+5. **04 — the Quiet tooltip's boundary overlapped Active's.** "30–180 days
+   ago" and Active's own "within 30 days" both claim a sender last seen
+   exactly 30 days ago. Fixed: "more than 30 and up to 180 days ago."
+6. **06 — `tiedWindowNoticeCopy`'s bulk case was always singular.** The
+   Senders caller passes `newestInboxDays: null` for every bulk preview (no
+   single per-sender age across senders), which fell straight into the
+   hardcoded "This sender has nothing newer" — false on a 5-sender tied row.
+   Fixed: added a `subject` param (mirrors `inboxScopeNoticeCopy`'s existing
+   pattern), caller passes `isBulk ? 'these senders' : 'this sender'`.
+
+**Also fixed, not separately numbered by the reviewer:**
+
+- **07 — no `radiogroup` around the three Activity `role="radio"` chips.**
+  Invalid ARIA once they have `role="radio"` at all (pre-existing) and now
+  matters more since this diff added the outer `role="group"`. Fixed:
+  wrapped in `<div role="radiogroup" aria-label="Activity" style={{display:
+'contents'}}>` — `display: contents` keeps them direct flex children of
+  the strip (same gap/wrap) while giving assistive tech a real group.
+- **09 — "select N shown" is false once Grid-mode domain grouping is
+  active.** 3+ same-domain senders collapse behind one `DomainGroupCard`;
+  the bulk-select-all button still selects every one of them, not just the
+  visible cards. "shown" claims visibility the button doesn't have. Fixed:
+  reverted to a word that claims neither loading state nor visibility —
+  "select all N" / "deselect all N".
+
+**Confirmed correct by the reviewer, no change:** 05 (naming), 08 (the
+duplicate toast+note text is judged intentional-and-fine, not a bug — the
+note explains a persistent disabled state, the toast confirms a rejected
+keyboard command), the `mailLocationCopy` cross-consumer check (safe in both
+Senders and Triage), and `describeNarrowedFilters`'s single call site (no
+collision left to find). The reviewer also corrected the run's own framing:
+`tiedWindowNoticeCopy` has exactly one production caller (Senders) — it is
+NOT shared with Triage, despite the fix brief claiming cross-consumer risk.
+
+**Sibling sweep, not fixed — flagged for a future QA pass.** The reviewer
+found two defects in code this diff did not touch, both pre-existing:
+`SelectionBar`'s per-verb `unitTitle` always says "protected senders are
+excluded" whenever a verb's eligible count is short, even when the true
+reason is Unsubscribe's separate people-gate (`canBulkUnsubscribe`) on an
+unprotected sender with no unsubscribe channel — a real reason exists, it's
+just the wrong one, printed with total confidence. And
+`confirm-action-modal.tsx` defaults to `variant="modal"`, and Sender Detail's
+own mobile-reachable usage never passes `variant="sheet"` — so the Esc/⌘⏎
+Kbd-hint fix in this diff (item 10) does not reach that consumer. Neither
+touched here; both are new candidates for whichever `/ct-qa` run picks up
+Sender Detail or the SelectionBar reason strings next.
+
+**On item 10's "partial" framing — the reviewer pushed back, correctly.**
+This row's status calls the D226-preview-too-long complaint "partial" for
+having dropped the Kbd hints plus inheriting 06's mail-location/tied-window
+trims. The reviewer's read: that's not reasonable to call even partially
+resolved on the "~110 words / 88vh" complaint specifically — the 4-sentence
+lead paragraph (the largest single contributor) is untouched, and the sheet
+is still `maxHeight: 88vh`. Standing correction, not disputed.
+
+Round 1's fixes land as a follow-up commit on the same branch/PR as the
+original 9-item bundle, rather than a separately-approved item — sent back
+to Codex for round 2 against the fixed diff (`9436c9f2`).
+
+**Round 2 attacked the round-1 fixes themselves — did fixing one thing break
+or shift another.** Two explicit safety checks (B, C below) came back clean;
+two came back with something real (A, D).
+
+- **A — real gap, fixed.** `rowsReadOnly` is only consulted inside the
+  `updating` branch of `SenderResultsFreshness`, but `syncFailed`/
+  `stillSyncing` take priority over `updating` in the same if/else chain. A
+  filter/search change while the mailbox is mid-sync flips
+  `showingStaleRows` true (a real disabled fieldset via `keepPreviousData`),
+  and the caption never says so — it only discusses scan health. Fixed:
+  both the `syncFailed` and `stillSyncing` branches now render an
+  additional `rowsReadOnly &&` line ("These rows are temporarily read-only
+  while the new filter loads.") alongside their existing message.
+- **B — confirmed safe.** Whether a same-key background refetch could
+  overlap a `fetchNextPage()` and get incorrectly suppressed by the
+  `isFetchingNextPage` exclusion: traced into the pinned TanStack Query
+  5.102.8 internals — a query tracks one fetch direction at a time
+  (`cancelRefetch: true` is the default on both `fetchNextPage()` and
+  `invalidateQueries()`), so the two kinds cannot coexist as two flags on
+  one query. No gap.
+- **C — confirmed safe, and re-confirms round 1's own correction.**
+  `tiedWindowNoticeCopy` still has exactly one production caller
+  (`confirm-action-modal.tsx`), which explicitly passes the subject from
+  `isBulk`. No second caller either round missed.
+- **D — real ARIA gap, in the round-1 FIX itself; reverted rather than
+  patched further.** Wrapping the three `ActivityChip`s in
+  `role="radiogroup"` (round 1's fix for finding 07) implies an
+  interaction contract — roving `tabindex`, arrow-key navigation — the
+  underlying chips don't implement; clicking an already-checked chip
+  unchecks it, which isn't real radio behaviour either, and the negated
+  state also reports `aria-checked="true"`. A `radiogroup` that doesn't
+  honour that contract reads as MORE broken to assistive tech than a bare
+  `role="radio"` set with no group, not less. This is a genuine,
+  pre-existing interaction-model gap in `ActivityChip` (the tri-state
+  negate/alt-click behaviour predates this PR entirely) — fixing it
+  properly means redesigning the chip as a toggle-button group, which is a
+  materially different change than "add an ARIA wrapper" and outside a
+  copy/UX-polish bundle. Reverted the `radiogroup` wrapper back to bare
+  `role="radio"` chips under the strip's own `role="group"` (this PR's
+  actual, narrower fix for 07 — the wrong `aria-label`). The interaction-
+  model gap itself is flagged as a new candidate, not fixed here.
+
+**At review cap.** Two substantive rounds ran; per protocol, no round 3 —
+the founder decides whether to ship as-is or request a human-reviewed
+round 3. A's and D's fixes are in the working tree pending the founder's
+call.
+
+## senders-filtering
+
+Rows accumulate across every `/ct-qa senders-filtering` run. First filed
+2026-09-01 (9 survivors; 1 candidate refuted before filing — the run's own
+tooling mistake, see the ledger's Refuted table). No P0/P1 this run, so
+nothing here also lives in `FINDINGS.md`.
+
+|     | id                               | sev | one line                                                                                                                                                                                                                                                                                                                                                                                                                                                    | status                   | PR  |
+| --- | -------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --- |
+| 🔴  | QA-senders-filtering-20260901-01 | P2  | A zero-result filter-only combo (no search term) hides the ENTIRE filter bar, leaving only a nuclear "Clear search & filters" that also wipes any search term — the same file already has a working, non-destructive rescue for the search-narrowed-to-nothing case; Table view loses its sort headers through the same gate, and `SenderTable`'s own 3-way empty-state copy is provably unreachable dead code with a passing test asserting behavior on it | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-02 | P2  | Chip negation (right-click/alt-click to exclude) is invisible: the negated chip shows the SAME label and count as the included state (color only), nothing on screen teaches the gesture, there is no touch/mobile equivalent at all, and `aria-checked` announces "checked" for both the included AND excluded state                                                                                                                                       | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-03 | P2  | Truth/grammar bundle: the search-widen notice claims "showing all N" when only 50 rows actually render; a literal `'filtered'` string leaks into "No filtered senders match…"; the negated "has unsubscribe" chip conflates a confirmed-none sender with one never yet checked (a real NULL-vs-false distinction the schema documents); "Keep {bucket} only" collides with the screen's own canonical Keep verb                                             | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-04 | P2  | Three different meanings of "quiet" live on one toolbar (a bounded 30–180d chip, an open-ended Nd+ window, and a sort direction); 2 of the 5 Quiet-for window options exactly duplicate chips already on the same strip, and 2 combinations (quiet + 6 months+, quiet + 1 year+) are permanently, structurally empty by construction                                                                                                                        | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-05 | P2  | The sender-search typeahead swaps units and populations mid-keystroke: a local-fallback suggestion shows "N in last 90d," then ~250ms later the remote result replaces it with "N emails · active" for the identical row, no explanation, can move by orders of magnitude                                                                                                                                                                                   | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-06 | P2  | The Saved Views popover's empty state teaches nothing ("No saved views yet.") and its Delete-view control is a silent, unconfirmed 12px `×` sitting immediately beside Apply — success fires no toast at all, only failure does                                                                                                                                                                                                                             | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-07 | P2  | The Senders count line hardcodes `timeZone: 'UTC'` instead of the reader's own timezone — a new instance of the same mechanism already fixed once on Triage's toast/preview (`QA-triage-20260827-09`, merged in #671), now found on a different surface                                                                                                                                                                                                     | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-08 | P3  | Mobile: popovers (Domain/Sort/Views/Quiet-for) have no viewport-edge clamp and can render off-screen at 375px for chips later in the wrapped row; the whole strip dims to 0.6 opacity during a background refetch, compounding with already-dimmed inactive-chip counts to read as "disabled" rather than "updating"                                                                                                                                        | At review cap (21ecff37) |     |
+| 🔴  | QA-senders-filtering-20260901-09 | P3  | Verbosity/hygiene bundle: empty-state body narrates search mechanism instead of stating the fact; the freshness caption repeats the mailbox email already shown in the eyebrow 3 lines above; the saved-views cap is duplicated as two separate constants (`SAVED_VIEWS_CAP` locally, `SENDER_VIEWS_CAP` from the shared contract) for the same limit, stated in two different sentences                                                                    | At review cap (21ecff37) |     |
+
+### QA-senders-filtering-20260901-01 — corrected mechanism note
+
+The seed (zero-result filter combo hides the whole `ComposeStrip`) was this
+run's own live find, sent to `finding-refuter` and SURVIVED — see the
+ledger's `senders-filtering` section for the refuter's strengthening
+argument (`clearSearchAndFilters` lands on `EMPTY_COMPOSE` not
+`DEFAULT_COMPOSE`; `router.replace` means no per-filter browser-Back undo;
+Saved Views is itself hidden by the same gate). The Table-view / dead-code
+half is entirely `defect-class-sweeper`-sourced, not independently
+live-driven this run — the sweeper gave an exact `curl .../senders/summary`-
+style repro and a concrete negative-control test (assert the strip's
+"clear filters" button is present at zero results — no such assertion
+exists today, so nothing currently regresses).
+
+**Regression test, once approved:** `senders-screen.test.tsx` — seed a
+filter combo that returns zero rows, assert `screen.getByRole('button',
+{ name: /clear filters/i })` (the ComposeStrip's own gentler `onClear`,
+NOT the EmptyState's "Clear search & filters") is present. For the Table
+view half: `sender-table.test.tsx`'s existing `'renders distinct empty
+copy per emptyKind'` test should be deleted only if the fix is "make
+`SenderTable` genuinely reachable" is rejected in favor of "delete the
+dead `emptyKind` prop" — the founder's call per the sweeper's note, not
+this run's.
+
+### Review rounds — the 9-item fix bundle (01–09)
+
+One diff, two review rounds, sent as three commits total on
+`claude/ct-qa-senders-fixes-9d21a4`: the fix bundle (`6f8597d9`), round-1's
+response (`c620a698` + a follow-on partial fix `20ae8267` after round 1's
+own review session stalled mid-investigation before producing a written
+verdict — cancelled after 19 minutes with no log activity for 12+ of them;
+its last captured note was acted on directly since the mechanism matched an
+already-reviewed sibling fix), and round-2's response (`21ecff37`, after a
+clean retry of round 2 completed normally).
+
+| round | ran against             | verdict         | what it returned                                                                                                                                                                                                                                                                                                                                              |
+| ----- | ----------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | `6f8597d9`              | **substantive** | 7 blockers: an ARIA regression (aria-label suppressed chip counts), 2 widen-probe races (`isPlaceholderData`, `isError`), a mixed-filter widening undercount, a pagination overclaim, an incomplete popover clamp, an unconfirmed one-click saved-view delete. Fixed in `c620a698`; one partial finding from a stalled follow-up session fixed in `20ae8267`. |
+| 2     | `c620a698` + `20ae8267` | **substantive** | 5 more: a raw-query-vs-debounced-query race in the F011 widen notice, 2 sibling spots the whitespace-query fix missed, a grammar bug, a saved-view mutation race. 4 fixed directly, 1 mitigated (UI-level disable, root mutation hook left untouched). Fixed in `21ecff37`.                                                                                   |
+| —     | —                       | **cap reached** | Two substantive rounds. No round 3 — the founder decides whether to ship as-is or keep reviewing.                                                                                                                                                                                                                                                             |
+
+**Known limitation left in place, not silently.** `Popover`'s edge-clamp
+measures once on mount; content that grows AFTER mount while the same
+instance stays open (Domain's suggestion list as the draft changes, Views'
+list once a fetch resolves) isn't remeasured. A `ResizeObserver`-driven fix
+needs the flip decision anchored to the trigger's stable position rather
+than the popover's own (already-possibly-flipped) rect to avoid oscillating
+between top/bottom on every resize — judged as its own review-worthy change
+rather than something to risk on the last round with no further adversarial
+pass available. Documented in place at the `Popover` component.
+
+**Mobile chip-negation equivalent** — separately deferred during triage
+(before round 1), not a review finding: logged in `FOUNDER-FOLLOWUPS.md`
+under "Design a mobile equivalent for Senders filter-chip negation."
+
 ## billing
 
 Rows accumulate across every `/ct-qa billing` run. Per-run counts are in the

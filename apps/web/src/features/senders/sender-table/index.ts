@@ -1,6 +1,1 @@
-export {
-  SenderTable,
-  type SenderTableProps,
-  type SenderTableEmptyKind,
-  type SenderTableVerb,
-} from './sender-table';
+export { SenderTable, type SenderTableProps, type SenderTableVerb } from './sender-table';

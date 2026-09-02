@@ -35,9 +35,10 @@
  * 5. **State coverage.** `loading` renders a skeleton that PRESERVES the
  *    column header set so re-renders on sort/filter change do not jump
  *    layout. `error` renders an in-table error row with retry. `rows.length
- *    === 0` renders an empty state cell with `emptyKind` discriminator
- *    so callers can swap copy (no-senders / no-filter-match / no-search-
- *    match) without forking the component.
+ *    === 0` renders a generic empty-state cell — defensive only; the
+ *    parent Senders screen's own empty-state ternary always fires first
+ *    in production, so this table never actually receives zero rows
+ *    there (QA-senders-filtering-20260901-01).
  *
  * 6. **Density toggle.** `density` switches row padding only — the column
  *    layout stays stable so a density flip never reflows columns.
@@ -74,9 +75,6 @@ import type {
 } from '@/lib/api/senders';
 
 const { color, font, radius, text } = tokens;
-
-/** Discriminator for the empty-state cell when `rows.length === 0`. */
-export type SenderTableEmptyKind = 'no-senders' | 'no-filter-match' | 'no-search-match';
 
 /**
  * Row-level verb the table emits up to the consumer.
@@ -134,8 +132,6 @@ export interface SenderTableProps {
   error?: { message: string } | null | undefined;
   /** Retry handler invoked from the in-table error row. */
   onRetry?: (() => void) | undefined;
-  /** Empty-state copy discriminator. Only used when `rows.length === 0`. */
-  emptyKind?: SenderTableEmptyKind | undefined;
   /** Density preference — `compact` halves the row padding. */
   density?: 'comfortable' | 'compact' | undefined;
 }
@@ -149,7 +145,7 @@ const COLUMNS: ReadonlyArray<{
 }> = [
   { key: null, label: '' }, // checkbox
   { key: 'name', label: 'Sender' },
-  { key: 'total', label: 'Total', alignRight: true },
+  { key: 'total', label: 'Received', alignRight: true },
   // Monthly cadence — the number the grid card leads with. Present on
   // both views so the Grid↔Table toggle never drops a fact (2026-07-03
   // consistency pass). Not sortable: the wire `SenderListSort` union
@@ -167,7 +163,7 @@ const COLUMNS: ReadonlyArray<{
   // (grid↔table parity, 2026-07-16).
   { key: null, label: 'You wrote', alignRight: true },
   { key: 'last_seen', label: 'Last seen', alignRight: true },
-  { key: null, label: 'Unsub' },
+  { key: null, label: 'Unsubscribe' },
   { key: null, label: '' }, // verbs
   { key: null, label: '' }, // expand chevron
 ];
@@ -226,7 +222,7 @@ export function SenderTable(props: SenderTableProps) {
           ) : error ? (
             <ErrorRow onRetry={props.onRetry} />
           ) : rows.length === 0 ? (
-            <EmptyRow kind={props.emptyKind ?? 'no-senders'} />
+            <EmptyRow />
           ) : (
             rows.map((sender) => (
               <SenderRow
@@ -919,23 +915,14 @@ function ErrorRow({ onRetry }: { onRetry: SenderTableProps['onRetry'] }) {
   );
 }
 
-const EMPTY_COPY: Record<SenderTableEmptyKind, { headline: string; sub: string }> = {
-  'no-senders': {
-    headline: 'No senders yet',
-    sub: 'Your mailbox is syncing — senders appear here once the index builds.',
-  },
-  'no-filter-match': {
-    headline: 'No senders match this filter',
-    sub: 'Try removing a filter or switching to a different category.',
-  },
-  'no-search-match': {
-    headline: 'No matches',
-    sub: 'No senders match your search. Check spelling or shorten the query.',
-  },
-};
-
-function EmptyRow({ kind }: { kind: SenderTableEmptyKind }) {
-  const copy = EMPTY_COPY[kind];
+// QA-senders-filtering-20260901-01: this table's own zero-row branch is
+// unreachable in production — the parent screen's `senders.length === 0`
+// ternary always renders ITS OWN empty state first, so `SenderTable`
+// never receives an empty `rows` array outside a test/Storybook render.
+// A single generic message (not the 3-way no-senders/no-filter-match/
+// no-search-match discriminator this used to carry) is enough for that
+// defensive case.
+function EmptyRow() {
   return (
     <tr>
       <td
@@ -943,14 +930,10 @@ function EmptyRow({ kind }: { kind: SenderTableEmptyKind }) {
         style={{
           padding: '48px 16px',
           textAlign: 'center',
+          color: color.fgMuted,
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, color: color.fgMuted }}>
-          <span style={{ fontSize: text.lg, fontWeight: 600, color: color.fg }}>
-            {copy.headline}
-          </span>
-          <span>{copy.sub}</span>
-        </div>
+        No senders to show.
       </td>
     </tr>
   );

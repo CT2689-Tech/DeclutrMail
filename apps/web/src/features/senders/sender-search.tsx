@@ -138,7 +138,7 @@ export function SenderSearch({
     return senders
       .filter((s) => s.name.toLowerCase().includes(q) || s.domain.toLowerCase().includes(q))
       .slice(0, 6)
-      .map((s) => ({ id: s.id, name: s.name, domain: s.domain, monthly: s.monthlyVolume ?? 0 }));
+      .map((s) => ({ id: s.id, name: s.name, domain: s.domain, totalReceived: s.totalReceived }));
   }, [text, senders]);
 
   // Resolve the dropdown row set. Empty query → nothing. Remote result
@@ -168,7 +168,15 @@ export function SenderSearch({
       id: s.id,
       name: s.name,
       domain: s.domain,
-      secondary: s.monthly + ' in last 90d',
+      // QA-senders-filtering-20260901-05: this row used to show
+      // "N in last 90d" (monthlyVolume), then swap to "N emails · active"
+      // (totalReceived) the moment the remote result landed 250ms later —
+      // same row, different population, no explanation, and the number
+      // could move by orders of magnitude. Same field, same unit as the
+      // remote branch above; only the activity-bucket suffix is missing
+      // (the local page doesn't compute one), which is a gentler swap
+      // than the number itself changing meaning.
+      secondary: s.totalReceived.toLocaleString('en-US') + ' emails',
     }));
   }, [trimmed, remote.suggestions, remote.loading, remote.error, fallbackMatches]);
 

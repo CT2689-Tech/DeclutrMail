@@ -13,6 +13,7 @@ import {
   canBulkDelete,
   canBulkLater,
   canBulkUnsubscribe,
+  isStandingProtected,
   verbDisplay,
   type ActionVerb,
   type Sender,
@@ -93,6 +94,24 @@ export function SelectionBar({
       </Link>
     </span>
   ) : null;
+
+  // QA-senders-20260901-08: every destructive verb button already carries
+  // the "protected senders are excluded" reason in its `title`/aria-label,
+  // but a disabled `<button>` never fires `onClick` — so a mouse user who
+  // doesn't hover sees 4 greyed buttons and no reason at all. Standing
+  // protection is the only thing that can zero out Archive/Later/Delete
+  // together (Unsubscribe alone can also drop to 0 for non-protected
+  // "people" senders — canUnsubscribe's own rule — so it's excluded from
+  // this check).
+  const allProtected = senders.every(isStandingProtected);
+  const protectedLockNote = (dark: boolean) =>
+    allProtected ? (
+      <span role="note" style={{ color: dark ? color.fgInverseSoft : color.fgSoft, fontSize: 12 }}>
+        {senders.length === 1
+          ? `${senders[0]!.name} is protected — unprotect it first`
+          : `All ${senders.length} are protected — unprotect to include them`}
+      </span>
+    ) : null;
 
   const verbButton = (verb: SelectionBarVerb, stretch: boolean) => {
     const n = eligible[verb];
@@ -194,10 +213,11 @@ export function SelectionBar({
               cursor: 'pointer',
             }}
           >
-            Cancel
+            Clear selection
           </button>
         </div>
         {multiSenderNote}
+        {protectedLockNote(false)}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) =>
             verbButton(verb, true),
@@ -262,6 +282,7 @@ export function SelectionBar({
       <span style={{ flex: 1 }} />
 
       {multiSenderNote}
+      {protectedLockNote(true)}
 
       {(['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete'] as const).map((verb) =>
         verbButton(verb, false),

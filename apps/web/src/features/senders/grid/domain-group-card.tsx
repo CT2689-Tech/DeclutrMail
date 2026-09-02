@@ -79,7 +79,7 @@ export function DomainGroupCard({
               marginTop: 1,
             }}
           >
-            brand group
+            domain group
           </div>
         </div>
         <span
@@ -102,21 +102,15 @@ export function DomainGroupCard({
       </div>
 
       <div>
-        <NumericDisplay value={volume90d} suffix="in last 90d" variant="display" />
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-            marginTop: 10,
-            paddingTop: 10,
-            borderTop: `1px dashed ${color.lineSoft}`,
-          }}
-        >
-          <GroupStat label="Senders" value={String(senderCount)} />
-          <GroupStat label="90d volume" value={fmtCompact(volume90d)} />
-          {/* "Received", never "all-time" — ADR-0014 §Neutral. */}
-          <GroupStat label="Received" value={fmtCompact(totalReceived)} />
-        </div>
+        {/* QA-senders-20260901-06: dropped the 3-cell stat grid below —
+            "Senders" and "90d volume" repeated the pill above and this
+            line verbatim; "Received" (never "all-time" — ADR-0014
+            §Neutral) was the only new fact, so it rides this line instead. */}
+        <NumericDisplay
+          value={volume90d}
+          suffix={`in last 90d · ${fmtCompact(totalReceived)} received`}
+          variant="display"
+        />
       </div>
 
       <span style={{ flex: 1 }} />
@@ -145,24 +139,5 @@ export function DomainGroupCard({
         {expanded ? 'Hide senders ▴' : `Show ${senderCount} senders ▾`}
       </button>
     </article>
-  );
-}
-
-function GroupStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      <span
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10,
-          textTransform: 'uppercase',
-          color: color.fgMuted,
-          letterSpacing: '0.12em',
-        }}
-      >
-        {label}
-      </span>
-      <NumericDisplay value={value} variant="data" tone="default" />
-    </div>
   );
 }
