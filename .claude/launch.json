@@ -4,8 +4,8 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "/Users/chintant/projects/DeclutrMail/apps/web", "dev"],
-      "port": 3000
+      "runtimeArgs": ["--dir", "/Users/chintant/projects/DeclutrMail/.claude/worktrees/prod-infra-validation-372143/apps/web", "dev", "-p", "3006"],
+      "port": 3006
     }
   ]
 }
