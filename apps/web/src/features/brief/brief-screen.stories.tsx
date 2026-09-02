@@ -31,6 +31,7 @@ type StoryMeta<C extends (...args: never) => unknown> = {
 type Story<C extends (props: never) => unknown> = {
   args?: Partial<Parameters<C>[0]>;
   parameters?: Record<string, unknown>;
+  globals?: Record<string, unknown>;
   render?: (args: Parameters<C>[0]) => ReturnType<C>;
 };
 
@@ -156,7 +157,7 @@ export const Populated: Story<typeof BriefScreen> = {
  * Gmail link stack full-width below so nothing overflows a phone.
  */
 export const Mobile: Story<typeof BriefScreen> = {
-  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  globals: { viewport: 'mobile1' },
   render: (_args: ComponentProps<typeof BriefScreen>) => frame(makeClient(BASE)),
 };
 

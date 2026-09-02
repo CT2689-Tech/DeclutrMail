@@ -55,6 +55,7 @@ type StoryMeta<C extends (...args: never) => unknown> = {
 type Story<C extends (props: never) => unknown> = {
   args?: Partial<Parameters<C>[0]>;
   parameters?: Record<string, unknown>;
+  globals?: Record<string, unknown>;
   render?: (args: Parameters<C>[0]) => ReturnType<C>;
 };
 
@@ -293,7 +294,7 @@ export const Empty: Story<typeof ActivityScreen> = {
  * `useIsAtMost('sm')` reading the resized story viewport's matchMedia.
  */
 export const Mobile: Story<typeof ActivityScreen> = {
-  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  globals: { viewport: 'mobile1' },
   render: (_args: ComponentProps<typeof ActivityScreen>) => frame(makeClient(ROWS, '30d', 'all')),
 };
 

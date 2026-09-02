@@ -36,6 +36,7 @@ type StoryMeta<C extends (...args: never) => unknown> = {
 type Story<C extends (props: never) => unknown> = {
   args?: Partial<Parameters<C>[0]>;
   parameters?: Record<string, unknown>;
+  globals?: Record<string, unknown>;
   render?: (args: Parameters<C>[0]) => ReturnType<C>;
 };
 
@@ -275,7 +276,7 @@ export const LongNameAndDomain: Story<typeof SenderListRow> = {
 export const MobileNarrow: Story<typeof SenderListRow> = {
   args: { ...baseArgs, s: sender({ monthlyVolume: 12, volumeTrend: 'up' }) },
   render: (args: RowArgs) => frame(args, 360),
-  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  globals: { viewport: 'mobile1' },
 };
 
 /**
@@ -287,7 +288,7 @@ export const MobileNarrow: Story<typeof SenderListRow> = {
 export const MobileCollapsed: Story<typeof SenderListRow> = {
   args: { ...baseArgs, s: sender({ monthlyVolume: 47, volumeTrend: 'up' }) },
   render: (args: RowArgs) => frame(args, 375),
-  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  globals: { viewport: 'mobile1' },
 };
 
 /**
@@ -303,7 +304,7 @@ export const MobileSelectMode: Story<typeof SenderListRow> = {
     selected: true,
   },
   render: (args: RowArgs) => frame(args, 375),
-  parameters: { viewport: { defaultViewport: 'mobile1' } },
+  globals: { viewport: 'mobile1' },
 };
 
 /**
