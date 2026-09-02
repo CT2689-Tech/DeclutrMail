@@ -23,90 +23,6 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-08-31 — Production has not deployed anything in 2 days — Vercel "Ignored Build Step" is canceling every build
-
-**Source:** session 2026-08-31 — founder reported PR #693's layout fix
-(merged, confirmed present on `origin/main`) still not visible at
-`app.declutrmail.com`.
-
-**Why:** every commit merged to `main` since 2026-08-29T22:33Z has its
-Vercel check land as `state: success` / `description: "Canceled by
-Ignored Build Step"` — checked directly via
-`gh api repos/.../commits/<sha>/status`, not inferred. That is a
-false-green: the GitHub commit status reads success, but no build ever
-ran and nothing deployed. Confirmed against
-`repos/.../deployments`: the last real deployment (any environment) is
-`c3f5be2f` at 2026-08-29T22:28Z — Production has been frozen on that
-SHA through at least 5 subsequent merges (#689, #691, #692, #688, #693),
-including a horizontal-scroll fix, an ADR-0028 reach widening, and this
-session's layout fix. None of that is live. This is the exact
-"guard that cannot fail" shape CLAUDE.md §8 warns about: a status check
-that reads green regardless of whether it actually built anything.
-**How:** Vercel dashboard → `declutr-mail` project → Settings → Git →
-**Ignored Build Step** shows the actual configured command (founder
-confirmed 2026-08-31):
-```
-git diff --quiet HEAD^ HEAD -- apps/web packages/shared tsconfig.base.json pnpm-lock.yaml pnpm-workspace.yaml
-```
-This is logically correct — `git diff --quiet` exits `1` (proceed, per
-Vercel's convention) when the listed paths changed, `0` (skip) when
-they didn't. Verified directly against the real repo: replayed this
-exact command for the last 5 merged SHAs (#689/#691/#692/#688/#693,
-all of which touch `apps/web`) against their true parents — every one
-exits `1`. So the command is provably correct against full git
-history; the break is environmental. The prime suspect is Vercel's
-default **shallow clone**: if the checkout used to evaluate this step
-doesn't include the parent commit, `HEAD^` fails to resolve
-(`fatal: ambiguous argument 'HEAD^'`) and the step's exit code stops
-matching what a full clone produces — this repo is not a Turborepo
-(no `turbo.json`), so the usual `npx turbo-ignore` fix (which sources
-the correct base commit from Vercel's own API instead of assuming
-`HEAD^`) isn't a drop-in option here. Fix: add project env var
-`VERCEL_DEEP_CLONE=1` (Settings → Environment Variables — this forces
-a full clone before the Ignored Build Step runs, per Vercel's own
-docs) and re-test. This session has no Vercel MCP authorization to set
-the env var or watch the next build directly.
-
-**Update 2026-08-31 (later same day):** founder set `VERCEL_DEEP_CLONE=1`
-and redeployed. Re-tested against `#694` (`b371738`, touches
-`apps/web` + `packages/shared` extensively, confirmed `exit 1` against
-real git history the same way as the first 5) — still
-`"Canceled by Ignored Build Step"`. The founder pulled the raw build
-log for that deployment:
-```
-Cloning github.com/CT2689-Tech/DeclutrMail (Branch: main, Commit: b371738)
-Skipping build cache, deployment was triggered without cache.
-Cloning completed: 2.648s
-Running "git diff --quiet HEAD^ HEAD -- apps/web packages/shared tsconfig.base.json pnpm-lock.yaml pnpm-workspace.yaml"
-The Deployment has been canceled as a result of running the command...
-```
-2.6s is too fast for a full-history clone of this monorepo, so
-`VERCEL_DEEP_CLONE=1` does not appear to have taken effect on this
-build (env var name/scoping may be wrong, or a var change needs a
-fresh git push rather than a dashboard "Redeploy" of an existing
-commit to take effect — unconfirmed either way). The log line between
-the `Running "..."` line and the cancellation (the actual git
-stdout/stderr, which would show the real exit reason) was not
-captured — worth pulling directly from the Vercel deployment page for
-full certainty.
-
-**Recommendation — stop debugging, unblock now:** clear the Ignored
-Build Step field entirely (Settings → Git → Ignored Build Step → blank
-→ Save). Production has been frozen 2+ days over what was meant to be
-a minor build-cost optimization. CI (typecheck/lint/tests, `#7`) already
-gates correctness; every commit building is strictly safer than a skip
-condition that silently fails closed. Revisit the optimization later,
-outside an active incident, if Vercel build-minute cost actually
-becomes a concern — check current plan/usage before re-adding any skip
-condition, since unlike GitHub Actions on this public repo, Vercel
-build minutes are a real metered cost.
-**Verifies by:** the next merge to `main` produces a Vercel deployment
-whose commit status says `"Deployment has completed"`, and
-`app.declutrmail.com` reflects that commit's content
-(`view-source:` or a hard-refresh + the Quiet screen's width is the
-fastest visual check right now).
-**Status:** Open
-
 ### 2026-08-27 — Guard against bundler-only copy defects
 **Source:** PR #651 / MISTAKES.md 2026-08-27
 **Why:** a literal `undefined` shipped inside D226 preview copy and no
@@ -267,103 +183,6 @@ sender produces a refusal naming the blocked host and NO outbound request; and
 
 **Status:** Open
 
-### 2026-08-26 — The public /inbox-simulator route ships the authenticated API client and useMe to anonymous visitors
-
-**Source:** session 2026-08-26 — Task 5 of the D133 inbox-simulator-scale
-plan (chunk baseline measurement), independently re-verified by a second
-session the same day.
-
-**Why:** `apps/web/src/features/auth/api/use-me.ts` (the `useMe` TanStack
-Query hook — its `/api/auth/me` fetch, `ME_QUERY_KEY`, retry/refetch
-policy) and `apps/web/src/lib/api/client.ts` (the full authenticated API
-client — CSRF header injection, 401 → `/api/auth/google/start` redirect,
-`apiGet`/`apiPost`/`apiPatch`/`apiPut`/`apiDelete`) are both compiled into
-a chunk that ships to `/inbox-simulator`, a public, unauthenticated
-marketing route. Proved via `app-build-manifest.json` route membership,
-not chunk names — chunk names establish nothing on their own; only
-appearing in a route's manifest file list does. Full measurement in
-`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md`.
-
-This is not caused by `BatchActionSheet` or `ConfirmModalFrame` (the pair
-D133's Task 4 split away from `auth-provider`) — neither is rendered on
-this route yet, that lands in a later plan.
-
-**[Corrected 2026-08-26 fix wave — the paragraph below replaces an
-earlier version of this entry that claimed no import edge exists and
-blamed "webpack's automatic shared-chunk grouping." Both claims were
-false; a follow-up review walked the import graph past the one level the
-original check stopped at and found a real chain. See
-`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` §3e/§3f for
-the full correction and how the original check missed it.]**
-
-It IS caused by a real, source-level, value-import chain reaching from
-the route's own render tree down to `use-me.ts` and the API client, every
-hop verified against the source file at the cited line:
-
-```
-inbox-simulator-screen.tsx:18  → TriageRow
-triage-row.tsx:17              → ProtectedActionNotice, UnprotectButton
-protected-notice.tsx:7-9       → useSetSenderPolicy
-use-sender-policy.ts:40        → SCREENER_QUEUE_KEY (a constant, not a hook)
-use-screener.ts:15-16          → ME_QUERY_KEY, apiGet, apiPost
-```
-
-The decisive hop is the constant import at `use-sender-policy.ts:40`:
-`SCREENER_QUEUE_KEY` is a plain re-exported array literal, not a hook.
-Neither `use-sender-policy.ts` nor `use-screener.ts` is marked
-side-effect-free, and tree-shaking operates per MODULE — an ES module is
-evaluated in full before any one of its bindings is picked — so importing
-that one constant pulls `use-screener.ts`'s entire body in, including its
-own imports of `ME_QUERY_KEY` and the API client, regardless of whether
-the importer ever calls a screener hook.
-
-The leak spans two physical chunk files, both members of the route's
-manifest list: `5793` carries `use-me.ts` + `lib/api/client.ts` (as
-before); `2907` separately carries `use-screener.ts` +
-`use-sender-policy.ts` + `lib/api/senders.ts` directly — confirmed by the
-literal runtime strings `["screener","queue"]`, `/api/screener/queue`,
-and `patchSenderPolicy`'s own `` `/api/senders/${id}/policy` `` template,
-all present in `2907`. Both files are explained by the one chain above;
-webpack split it into two output files, but the code in both is genuinely
-reachable from the route's own imports. 17 of 83 routes in the manifest
-carry chunk `5793`; exactly one — `/(marketing)/inbox-simulator/page` —
-is public.
-
-**How:** the fix is a source-level cut, not a bundler configuration
-change. `SCREENER_QUEUE_KEY` and `ME_QUERY_KEY` (and likely
-`TRIAGE_QUEUE_KEY`, imported the same way at `use-sender-policy.ts:41`)
-need to move into key-only modules that do not import their owning hook
-file, so a consumer that wants only the query key — as
-`use-sender-policy.ts` does, purely for cache invalidation — no longer
-drags in the hook, `apiGet`/`apiPost`, or `ME_QUERY_KEY`. A `sideEffects`
-package.json declaration does NOT apply here and is withdrawn as a
-prescription: `apps/web/package.json` has no `sideEffects` field, and
-`packages/shared`'s existing `sideEffects: ["**/*.css"]` addresses an
-unrelated leak shape (an eager helper import dragging a whole first-load
-file — see `LEARNINGS.md`, "Barrel imports leak into first load") that
-does not describe this one. Verify any fix the same way this baseline
-was produced — `app-build-manifest.json` route membership, never chunk
-names. No fix is implemented here; naming the fix shape is this session's
-job, implementing and verifying it is a separate decision for whoever
-picks up Plan 2–4.
-
-**Verifies by:** re-run the reproduction commands in
-`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` — neither
-the chunk containing the `/api/auth/me` and `/api/me/timezone` string
-literals, nor the chunk containing `/api/screener/queue` and
-`/api/senders/*`, should appear in the `/(marketing)/inbox-simulator/page`
-file list.
-
-**Status:** Open
-
-### 2026-08-26 — `/inbox-simulator` logs a hydration text mismatch on main
-
-**Source:** session — found while verifying this PR's hydration fix, then isolated
-**Why:** Loading `/inbox-simulator` logs `Hydration failed because the server rendered text ...` in the console. It is NOT from this PR: reverting `inbox-simulator-screen.tsx` to its `origin/main` version leaves the error in place, so it is pre-existing. Flagged rather than fixed, per CLAUDE.md §1.3 — this PR's own hydration concern (a `ref` in a server-rendered OAuth href) is separate and is fixed here. It is left open because a hydration error on the busiest public demo page is the "no console errors" bar failing on main.
-**How:** Reproduce with `pnpm --filter @declutrmail/web dev`, open `/inbox-simulator`, read the console. The mismatching node is TEXT, not an attribute; `triage-row.tsx`'s clock is already hydration-safe (`useNow()` returns null on the server), so the source is elsewhere on that page.
-**Verifies by:** `/inbox-simulator` loads with an empty console.
-**Status:** Open
-
 ### 2026-08-26 — Exclude Google OAuth from PostHog referring-domain classification
 **Source:** session (marketing runbook Phase B)
 **Why:** Signup attribution now persists first-touch `ref` through OAuth state into Postgres. PostHog still classifies journeys by referrer. If `accounts.google.com` (and our own hosts / localhost) stay as referring domains, every Google-login session looks like it came from Google, which fights the first-touch `ref` we just stored.
@@ -425,37 +244,6 @@ pnpm verify-d D34 --observed "dev-login: toggled Archive remember-preference in 
 
 **Verifies by:** D34 reads 🟢 with an observation naming what was exercised.
 **Status:** Open
-
-### 2026-08-25 — Brief schedule decisions taken in session: every day, hourly slots
-
-**Source:** session 2026-08-25 — the Brief product review (`/ct-decide`),
-founder answers to decisions 1 and 6
-
-**Why:** two amendments to the plan were made conversationally and need to
-exist somewhere a later audit will find them. Both are already implemented and
-carry plan markers (`[REVERSAL 2026-08-25 on D66]`, `[PATCH 2026-08-25 on
-D64]`); this entry is the decision trail, not an action.
-
-1. **D66 (Mon–Fri default) is retired — the Brief now generates every day.**
-   Founder: *"should we just go for every day?"* The Brief covers the previous
-   local day, so skipping Saturday meant **Friday's mail was never summarized
-   for anyone** — the heaviest weekday, structurally excluded by the default
-   schedule. The weekend opt-in D66 specifies had also been built server-side
-   and never given any UI, so no user could have turned it on.
-2. **D64's "any 30-min slot" ships as 24 hourly slots.** Generation is an
-   hourly cron; a 08:30 choice would be served at 09:00. Honouring the half
-   hour means doubling the cron rate for precision nobody has asked for.
-
-**How:** nothing to do unless you disagree. If you want the half-hour slots,
-that is a 30-minute cron and a re-tick of the D64 patch marker. If you want
-weekends back off, it is one gate — but read the reversal marker first, because
-the Friday hole is the part that is easy to re-introduce by accident.
-
-**Verifies by:** this entry existing, plus `brief_hour_changed` in PostHog
-answering whether anyone actually moves off 8am — the question that decides
-whether the picker earned its build.
-
-**Status:** Open — for your acknowledgement; no action required
 
 ### 2026-08-25 — Create the billing-verdict alert, and audit the Paddle key's other permissions
 
@@ -603,7 +391,7 @@ mail they had just been reading.
 
 **Verifies by:** the section exists in CLAUDE.md and the next context-moving PR
 cites a review pass in its Verification block.
-**Status:** Open
+**Status:** Open — PR #708 up with the exact drafted text, docs-only, ready to merge (2026-09-01)
 
 ### 2026-08-24 — Drop the dead-letter snapshot table once you are happy
 
@@ -820,65 +608,6 @@ with `affected_count > 0`) and the failed-rows list is dispositioned.
 
 <!-- Newest at top. -->
 
-### 2026-08-14 — Look at the real Paddle checkout overlay once
-**Source:** founder relayed Paddle support reply (Barbara), 2026-08-14
-**Why:** the seller display name is updated in Account Settings — that half is
-done. But the reply is hedged, not a guarantee: the checkout overlay's *"Your
-data will be shared with…"* line _"should use the display name where available,
-but **some checkout surfaces may still fall back to the legal or account name**
-depending on the checkout version/configuration."_ The legal entity is
-deliberately staying `NAYANA ASHOK THAKKAR` (DeclutrMail is a trading name with
-no separately registered entity), so the fallback path puts a personal name in
-front of a buyer at the moment of payment. Nothing in this repo can observe
-which branch Paddle takes.
-**How:** open a real checkout from `/pricing` (the live Plus path, or sandbox)
-and read the overlay's data-sharing line and the payment sheet. If it says
-`NAYANA ASHOK THAKKAR`, reply on the same thread quoting that sentence back and
-ask which checkout version uses the display name.
-**Verifies by:** the overlay reads `DeclutrMail`, not a personal name.
-**Status:** Open — account details confirmed; the rendered overlay is untested.
-
-### 2026-08-14 — Rule on static marketing rendering vs the nonce CSP
-**Source:** session (website launch-readiness pass)
-**Why:** not one HTML page is prerendered — `.next/prerender-manifest.json`
-after a production build holds 8 routes, all metadata assets, and
-`"dynamicRoutes": {}`. Every visitor and crawler hit on all 34 public routes is
-a Node function render, with no ISR and no HTML `Cache-Control` anywhere. For a
-Show HN / Product Hunt spike that is the difference between a CDN serving bytes
-and a function pool serving renders. Fixing it means removing two `headers()`
-reads from `apps/web/src/app/layout.tsx` (`:48` nonce, `:55` billing geo), and
-the nonce one changes CSP behaviour — a CLAUDE.md §9 stop condition, so an
-agent may not decide it. Note the build's `○●ƒ` column is misleading here:
-`/blog/[slug]` and `/vs/[competitor]` read as `●` (SSG) but emit no HTML and
-appear in neither manifest.
-**How:** read
-[`docs/execution/static-marketing-csp-options-2026-08-14.md`](docs/execution/static-marketing-csp-options-2026-08-14.md)
-— three options with files, CSP trade and effort. The recommendation is Option
-A: split the CSP by subtree so `(app)` keeps nonce + `strict-dynamic` and
-`(marketing)` runs on `'self'` + a hash for the one static script, with
-`/pricing` left dynamic so its INR/USD region pricing stays correct. Approve,
-pick another option, or say no.
-**Verifies by:** §5 of that memo — the prerender manifest lists the marketing
-routes, both subtrees still carry the full security-header set, and a marketing
-page loads with zero CSP violations in the console.
-**Status:** **RULED 2026-08-14 — Option A′.** (Option A was approved first, then
-retracted before any code was written: the memo rested on a premise I had not
-measured. A marketing page emits **31 executable inline scripts, all
-nonce-authorized**, and `'self'` never authorizes an inline script, so the real
-cost is `'unsafe-inline'` on the marketing subtree. Option B is withdrawn
-entirely — see memo §0.)
-
-The ruling: `(marketing)` may run `script-src 'self' 'unsafe-inline'`; `(app)`
-keeps nonce + `strict-dynamic` unchanged; `/pricing` stays dynamic. Founder also
-set the verification bar — **prove it in a browser before claiming it works.**
-
-**Still open because it is not built.** The spec is memo §6, and it is larger
-than the original estimate: `(app)/layout.tsx` is a client component so the
-authed groups need a server boundary for the nonce; there are three groups
-needing the theme script, not two; and `regionProvider` is threaded from the
-root layout into `/pricing`, so removing that read mis-quotes currency at the
-point of sale if done carelessly. Nothing is half-done — the tree is clean.
-
 ### 2026-08-14 — Recertify the Google OAuth verification before 21 Apr 2027
 **Source:** session (website launch-readiness pass)
 **Why:** the CASA verification is the product's only third-party credential and
@@ -1058,22 +787,6 @@ listings; do not accept a category that implies category prediction (D222).
 "How to describe DeclutrMail" block in `apps/web/public/llms.txt`.
 **Status:** Open
 
-### 2026-08-13 — Re-verify the five July comparison pages, then bump their dates
-**Source:** session (SEO/AEO/GEO pass)
-**Why:** comparison freshness is now per page (`verifiedIso` in
-`comparison-data.ts`), so `/vs/unroll-me` reads "Last verified August 2026"
-while the other six still read July — correctly, because only the Unroll.Me
-sources were re-read this pass. The hub shows the oldest of them, which is
-the honest floor but also the one that ages first.
-**How:** open each vendor's cited pages (Clean Email, Trimbox, SaneBox,
-Leave Me Alone, plus the Gmail Help pages), confirm each row still matches
-what the page says, correct any drift, then bump only that comparison's
-`verifiedIso`. Do not bump a date for a page you did not re-read — the
-field exists to make that impossible to fake.
-**Verifies by:** `comparison-data.test.ts` passes and each page's stamp
-matches the date its sources were actually read.
-**Status:** Open
-
 ### 2026-08-13 — Monthly AI-visibility ladder (20 queries, four engines)
 **Source:** session (SEO/AEO/GEO pass)
 **Why:** GSC measures Google's index, not whether an answer engine cites us.
@@ -1112,22 +825,6 @@ otherwise the total is a partial sync wearing a total's clothes.
 **Verifies by:** the published essay's figures reproduce from a re-run of
 the same queries, and every number in it carries its as-of date.
 **Status:** Open
-
-### 2026-08-12 — Wire an alert on the mailbox-lock leak detector
-**Source:** PR #509 (architecture-guardian review)
-**Why:** PR #509 adds structured error logs (`mailbox_lock.unlock_failed`,
-`mailbox_lock.unlock_error`, `mailbox_lock.acquire_failed`,
-`mailbox_lock.session_probe_failed`) that detect the 2026-08-12 leaked-lock
-class — but a log line nobody is paged on only works when someone greps
-(the healthz-blind-spot lesson).
-**How:** GCP Console → Logging → Log-based metrics → create a counter on
-`jsonPayload.kind =~ "^mailbox_lock\."` for the worker service, then
-Monitoring → Alerting → notify on count > 0 over 5 min, to the same channel
-as the Sentry alert rule.
-**Verifies by:** the metric exists and a synthetic `console.error` with a
-matching `kind` (temporarily added on a dev revision, or via a test log
-entry) triggers the alert once.
-**Status:** Done 2026-08-22 — `scripts/setup-mailbox-lock-alert.sh` (new, mirroring `setup-billing-alerts.sh` so every log-line-to-page alert in this project has one shape). Creates log metric `mailbox_lock_errors` on `resource.type="cloud_run_revision" AND jsonPayload.kind=~"^mailbox_lock\."` plus alert policy `Mailbox lock: leak or acquisition failure` (>0 over 5 min → founder email). Deliberately NOT pinned to the worker service: only `worker.ts` takes the lock today, but pinning would make it a blind guard the moment the API does, and the unpinned filter costs nothing since these are the only two services. The prefix match covers all four kinds and any fifth added later. **Verified end to end, not just created:** the regex form was first proven against real logs with the prefix swapped (`^worker\.` returns rows), then a self-labelling synthetic entry (`kind=mailbox_lock.synthetic_alert_test`, body says TEST) was written via the Logging API and the metric's exact filter matched it. Expect one alert email from that test; the log entry is harmless and can be left in place.
 
 ### 2026-08-12 — A real user's email address is committed on main (public repo)
 **Source:** PR #509 review (privacy nit)
@@ -1191,33 +888,6 @@ session what to use instead. Agents do not edit the plan.
 same sentence, and no later session "restores" the retired wording.
 **Status:** Open
 
-### 2026-08-11 — Required checks make a tooling-only PR unmergeable by construction
-
-**Source:** session (twice in one day, PRs #504 and #505)
-**Why:** the `Implementation log is derived and current` job is a must-pass on
-pull requests and is **skipped on push-to-main by design**. So a PR that merges
-with `Closes D###` and does not regenerate the log leaves main stale, nothing
-fails on main, and every subsequently opened PR inherits a red must-pass check it
-did not cause. Observed twice today, from two different PRs, hours apart:
-
-- #500 merged with `Closes D248`; caught on #504 (`D248: ⬜ → 🔵 #500`)
-- #497 merged with `Closes D126, D189`; caught on #505 (`D126`, `D189` → `🔵 #497`)
-
-Both had to be hand-corrected in an unrelated PR, which is how the drift keeps
-getting laundered into whatever change happens to be open next. The rows are not
-the problem — the asymmetry is: the check that would catch it is the one place it
-is turned off.
-**How:** pick one. (a) Run the impl-log check on push-to-main too, so the drift
-fails loudly where it is introduced rather than on the next innocent PR;
-(b) have the merge automation run `pnpm generate-impl-log` and commit the result
-on merge, so a `Closes D###` PR updates the log by construction; or (c) make it
-part of merging a PR that cites any D. (b) is closest to what
-IMPLEMENTATION-LOG.md's own header already promises ("kept current
-automatically").
-**Verifies by:** merge a PR citing a `Closes D###` and open a throwaway PR right
-after — the impl-log check is green without anyone editing the log by hand.
-**Status:** Open
-
 ### 2026-08-11 — `commit-msg` did not fire on a fresh container's first commit
 
 **Source:** session (gate-network workflow)
@@ -1277,42 +947,6 @@ blocked or runs the full suite. Then retarget it and confirm CI starts
 without a push.
 **Status:** Open
 
-### 2026-08-08 — The implementation-log check serializes every open PR
-**Source:** session 2026-08-08; hit on [#478](https://github.com/CT2689-Tech/DeclutrMail/pull/478), [#479](https://github.com/CT2689-Tech/DeclutrMail/pull/479) and [#480](https://github.com/CT2689-Tech/DeclutrMail/pull/480), three times in a row
-**Why:** `IMPLEMENTATION-LOG.md` is derived from the list of MERGED PRs, and
-`pnpm generate-impl-log --check` compares the committed file against a fresh
-derivation. So **merging any PR makes the file stale on every open branch**,
-and each one has to regenerate and re-run CI before it can merge. With two
-PRs open the second always fails; the queue is forced fully serial. It cost
-three extra CI cycles in this session alone, and the failure text
-("run `pnpm generate-impl-log` and commit") reads like author error rather
-than an ordering artifact.
-**How:** the file is fully derived, so committing it is what creates the
-conflict. Either (a) regenerate it on `main` post-merge in CI and drop the
-PR-time check, or (b) keep the check but scope it to rows the PR's own diff
-touches. (a) matches how the log is already described — "auto-maintained by
-GitHub Actions" (CLAUDE.md §8).
-**Verifies by:** open two trivial PRs at once, merge the first, and confirm
-the second still passes without a regeneration commit.
-**Status:** Open
-
-### 2026-08-05 — Six marketing meta descriptions exceed 160 characters
-**Source:** SEO pass during PR #470
-**Why:** `/security` 180, `/compare` 171, `/methodology` 168, `/pricing` 167, `/how-it-works`
-167, `/faq` 165. Google truncates rather than penalises, so this is cosmetic SERP polish, not
-a ranking defect — but the tail of each is currently invisible in results. Left unedited
-because these are copy decisions, and the same "don't mint a constraint" rule applies.
-**How:** trim the six to ≤160, or decide the truncation is acceptable.
-**Verifies by:** each description ≤160, or an explicit decision recorded here.
-**Status:** Open
-
-### 2026-08-02 — CLAUDE.md "Plan stats" line is stale in all three numbers
-**Source:** consistency review of PR #458 (D250/D251)
-**Why:** CLAUDE.md:208 and :796 both read "235 decisions + 33 inline patches + 3 reversal markers". On the D250 branch the real counts are **241 D-rows**, **34 patch markers**, and **1 REVERSAL marker** — and `main`'s plan mirror has **zero** REVERSAL markers, so the "3" has never matched the mirror it describes. Agents must not edit CLAUDE.md (§11), so this is surfaced rather than fixed, per §3's plan-drift rule.
-**How:** in a `chore/distill-*` PR, update both lines. Consider deriving the counts instead of hand-maintaining them — `generate-impl-log` already parses the mirror, so a stale hand-written stat is the same class of defect as the log flip that never ran.
-**Verifies by:** both CLAUDE.md lines match `grep -c '^### D[0-9]' docs/execution/Implementation-Plan.md` and the marker counts.
-**Status:** Open
-
 ### 2026-07-31 — Two refund-enforcement gaps I could not close from here
 
 **Source:** Codex adversarial review of PR #452, 2026-07-31. Both are real; both need a Paddle behaviour I cannot verify without a live account in that state, so I did not guess at a fix.
@@ -1345,96 +979,6 @@ The latency win is real, but it requires **both** the subscription and adapter c
 
 **Status:** Open — nice-to-have, not a blocker; superseded in practice by D253's faster verdict cadence
 
-### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
-
-**Source:** session 2026-07-31 (founder chose "one real purchase, then refund")
-
-**Why:** production billing has **never processed a single event** — 0 subscriptions, 0 webhooks, 0 customers — while `BILLING_ENABLED=true` with real Paddle catalog ids. The sandbox path is now verified end to end, but prod-only configuration is not: live API keys, the live notification destination and its secret, live catalog ids, and the live webhook URL. None of that is exercised by sandbox. The first real payer should be the founder, not a stranger.
-
-**How:** buy **Plus monthly ($9)** on production with a real card, confirm the webhook grants the tier (`subscriptions.status=active`, `workspaces.tier=plus`, a `subscription_events` row), then refund it from the Paddle dashboard. Everything except the card entry can be driven by an agent. Not blocked: the refund path was reported here as broken on 2026-07-31 and that diagnosis was wrong (see Done). Refund the FULL amount — a partial refund deliberately no longer ends the plan. The provider-side cancel lands on the next reconciliation sweep (6h, or immediately on a worker restart), so allow for that before checking Paddle.
-
-**Update 2026-08-12 — the server half is verified; the UI half is not.** The entry sat asserting "0 subscriptions, 0 webhooks, 0 customers" for eleven days after that stopped being true, so the premise above is stale. A real Plus monthly purchase was made on production on 12 Aug 2026 and was **not** refunded, so production now carries one live subscription renewing 12 Sep 2026. Provider-side identifiers are deliberately not recorded here — see the redaction note in the Open entry about personal data on a public repo; read them from the Paddle dashboard when needed.
-
-Queried the production database on 2026-08-12:
-
-- `subscriptions` — exactly one row, provider `paddle`, `status=active`, created `05:45:39Z`
-- `workspaces.tier` — `plus`
-- `subscription_events` — 4 rows, **all four with `processed_at` set**:
-
-| event | at (UTC) |
-|---|---|
-| `subscription.created` | 05:45:39.541 |
-| `subscription.activated` | 05:45:39.550 |
-| `transaction.completed` | 05:45:40.443 |
-| `reconciliation.subscription` | 06:21:20.152 |
-
-Every piece of prod-only configuration this entry existed to test is therefore confirmed live: the production API key, the live notification destination **and its secret**, the live catalog ids, and the live webhook URL. Charge-to-processed latency was under one second, and the reconciliation sweep independently re-confirmed provider truth 36 minutes later — so the sweep is running in production too, which nothing else had proven.
-
-**The refund is still required, and skipping it costs the most valuable half of this test.** An earlier version of this update dropped it as mere test cleanup, on the reasoning that the payer is a real user rather than a disposable identity. That was a rationalisation. The refund was never cleanup: on a **live** account Paddle creates refunds `pending_approval` and approves them asynchronously, while sandbox auto-approves — the entry at "Paddle prod destination: `adjustment.updated`" and the refund-path entry in Done both state plainly that the `pending_approval` shape **has never been observed here and cannot be produced in sandbox**. `settledCancellationCause`, the outbound provider-side cancel, and the 6-hourly sweep's enforcement of it were all built against a shape we have only ever inferred. This purchase is the one arranged opportunity to run them for real, and the code most likely to be wrong is exactly the code no test has reached.
-
-Trading that for "a canary on the renewal path" swapped a definite verification available now for a speculative one in a month, and did so silently. Renewal and refund are different paths; the canary argument is fine on its own merits and is not a substitute.
-
-**Do NOT refund this subscription to get the verification.** An earlier version of this entry recommended "refund the full amount and let them re-subscribe". That path does not exist. Three deliberate behaviours compose into a lockout:
-
-- `billing-webhook.service.ts:833` sets `entitlement_ends_at` to SQL `now()` on a full refund — access ends **immediately**, not at period end
-- the row nonetheless stays `status='active'` until the paid period ends, and `billing.service.ts:89-107` refuses a new checkout with `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
-- `billing.service.ts:465` refuses `resume-cancellation` with `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
-
-So refunding this payer would drop them to Free instantly and leave them unable to buy Plus again until 12 Sep 2026, with no in-app path back — recoverable only by an operator holding the Paddle API key. See the separate entry recording that composition as a defect.
-
-**Verify on the founder's own account instead.** Production holds exactly one subscription row, so the founder's workspace is unencumbered and `SUBSCRIPTION_EXISTS` will not block a checkout there. Buy Plus monthly on the founder's own workspace, refund THAT in full, and watch the live path — it exercises the identical `pending_approval` arrival, `settledCancellationCause`, and sweep-enforced provider cancel, costs $9 for a few minutes, touches nobody else, and matches this entry's original intent that the first real payer be the founder. The founder's own workspace absorbs the same month-long re-subscribe lockout, which is acceptable for an operator and is not acceptable for anyone else.
-
-Do **not** partial-refund — a partial is filtered at the adapter, never becomes a verdict, and would test nothing.
-
-**Still open — do not close this on the server evidence alone.** The "Verifies by" below has two halves and only the first is met. `workspaces.tier=plus` is what the UI *reads*; it is not proof of what the UI *renders*, and list/detail drift between a correct row and a wrong screen is this codebase's single most-repeated defect class. Confirming the row and declaring the flow verified would be that exact mistake. The remaining step needs an authenticated session as the paying user, which is the account holder's to drive.
-
-**Verifies by:** three halves, one met.
-
-1. a production `subscription_events` row with `processed_at` set — **met 2026-08-12**
-2. the tier flip visible on `/billing` for the paying account — **not checked**; needs that account's session
-3. a FULL refund **on a separate founder-owned purchase, not on this one**, then: the `adjustment` arriving `pending_approval` rather than settled, no premature cancel fired on the unsettled marker, `cancel_source=refund` with `entitlement_ends_at` set once Paddle approves, and the provider-side cancel landing on the next reconciliation sweep (6h, or immediately on a worker restart) — **not done**; this is the only path here that sandbox structurally cannot produce
-
-**Status:** Open — server-side ingestion verified 2026-08-12; **`/billing` render and the live refund path both outstanding**
-
-### 2026-07-31 — Paddle seller display name reads as a personal name on receipts
-
-**Source:** founder screenshot of the sandbox checkout, 2026-07-31
-
-**Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **[the account's KYC'd individual, a personal legal name]** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
-
-This is sandbox configuration, but the same field exists in production and defaults from the same account setup. Confirmed in production 2026-08-12 on a real receipt: the personal legal name appears in the email subject line, in the body header above "via paddle.com", and again on the invoice supplier line — three customer-facing surfaces, not one.
-
-**Corrections on the record (2026-08-12).** Two claims above are wrong.
-
-1. **The Astoria address is Paddle's, not the founder's.** The production invoice labels `3811 Ditmars Blvd #1071, Astoria 11105-1803` as "Invoice from: **Paddle.com Inc**". No personal address is exposed at checkout. Nothing to fix.
-2. **The statement descriptor is already correct.** The invoice footer reads `PADDLE.NET* DECLUTR`, not the Paddle default of the first 10 characters of the legal name. Nothing to fix.
-
-**How.** There is no single "public seller/business name" field; Paddle has three, and only one is self-serve:
-
-| Surface | Field | Change via |
-|---|---|---|
-| Card statement | Statement descriptor | Dashboard → Checkout Settings — **already set to `DECLUTR`** |
-| Receipt emails, invoices | **Company Display Name** (overrides Legal Name) | `sellers@paddle.com` |
-| Checkout data-sharing footer | **Company Legal Name** (KYC entity) | `sellers@paddle.com` + entity documents |
-
-Paddle replied ~2026-08-06 asking the founder to confirm whether DeclutrMail is a registered legal entity or a brand/trading name. It is a **brand/trading name** — the KYC entity remains the individual, and claiming otherwise on a merchant-of-record account without a registration document risks suspension. Confirming brand-name unblocks three of four requested changes (Product Website `.ai` → `.com`, Company Display Name → DeclutrMail, Contact Name → DeclutrMail Support); Company Legal Name stays as-is. The Seller ID is in the Paddle dashboard and the support thread; it is deliberately not written here.
-
-**Open question inside the ticket:** Paddle's help centre documents Company Display Name as overriding the Legal Name "within the customer emails". It does not say whether it also governs the checkout footer disclosure and the invoice supplier line. If it does not, those two surfaces stay entity-bound and a registered assumed-name certificate becomes the only lever — a legal/tax decision the founder has deliberately not opened yet.
-
-**Verifies by:** a production receipt whose subject and body header read DeclutrMail, not a person; then open a checkout and read the footer to settle the open question empirically.
-
-**Status:** Open — reply to Paddle drafted 2026-08-12, awaiting founder send
-
-### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
-**Source:** session 2026-07-30 (D249 CI triage; corrected same day after observing #436's merge)
-**Why:** the generator has TWO inputs and they drift differently. The **row set** comes from the plan mirror (which D-numbers exist); the **status** (⬜/🔵) comes from `gh pr list --state merged` trailers. That yields two failure classes:
-- **Class A — PR closes an EXISTING plan-D (loud).** While the PR is open its trailer is unmerged, so the branch must commit a ⬜ log to pass; the instant it merges, a fresh generate says 🔵, `main` is stale by that flip, and **the next PR opened fails** — whoever that is, including docs-only ones. One guaranteed failure per such merge. Observed: #435 closed five pre-existing rows (D35/D117/D119/D162/D218) and failed CI on both #436 and #437, each of which had to carry an unrelated regeneration commit.
-- **Class B — PR ships a NEW D absent from the plan (silent).** No plan entry → no row → nothing to be stale. The gate stays green and the D is simply **untracked** — the D247-phantom shape. Observed: #436 merged closing D249 and the gate passed on the next PR; my original entry predicted a Class-A failure here, which was wrong. The generator's own header already flags the distinction ("the PR that *adds* D248 to the plan…" — `scripts/generate-impl-log.ts:18`).
-Separately: the rolled-up `Test` check reports red purely because it aggregates the impl-log job — every real shard passed, so "Test failed" was misleading on both #436/#437.
-**How:** Class B has a working rule already, no code needed: **the PR that ships a new D appends it to the plan mirror and regenerates the log in the same PR** (done for D249 on `feat/d117-plan-change-truth`; the row materialized as 🔵 #436 from the already-merged trailer). Class A needs one of — and **not** a post-merge push to `main`: `ci.yml:131-134` records that `pr-merged.yml` did exactly that and branch protection rejected it on EVERY run (D158, 2026-07-28). Options: (a) **teach the generator to count the checked PR's own `Closes D###` trailers** when running in PR context, so the branch commits the post-merge-correct log and `main` is never stale — the only fix that makes the gate satisfiable by the PR causing the drift; (b) pair (a) with CI committing the regenerated file to the PR's **own** branch (unprotected, no bypass credential); (c) GitHub App/PAT bypass to push `main` — reintroduces what protection deliberately blocked; (d) advisory gate + scheduled repair PR; (e) stop calling the log derived. Recommend (a), optionally with (b). (c) is the one to avoid.
-**Verifies by:** Class B — `grep "^| D249" IMPLEMENTATION-LOG.md` shows the 🔵 #436 row after the plan-append PR merges. Class A — after (a) lands: merge a PR closing an existing ⬜ row, then open a throwaway PR; its "Implementation log is derived and current" check passes with no impl-log commit on the throwaway branch.
-**Status:** Open — Class B rule in effect now; Class A fix (a) awaiting your call (it changes a guardrail's semantics).
-
 ### 2026-07-27 — Create `unsubscribe-token-secret-prod` BEFORE merging the D162/D165 email PR
 **Source:** feat/d162-react-email-templates (React Email + RFC 8058 one-click unsubscribe)
 **Why:** The PR binds `UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest` on BOTH Cloud Run services (worker signs the token at enqueue, API verifies Gmail's POST). Per the deploy workflow's own rule, a referenced Secret Manager secret that doesn't exist **fails the whole deploy** — so the secret must exist before the merge-triggered deploy runs. Without the env var the worker's sync-ready email handler throws at enqueue (fail-closed, loud in Sentry) and sync emails stop.
@@ -1448,38 +992,12 @@ Separately: the rolled-up `Test` check reports red purely because it aggregates 
 **Verifies by:** deploy green; smoke email carries `List-Unsubscribe` + `List-Unsubscribe-Post` headers (Show original); Gmail renders the control; psql shows the clicked category `false`; `docs/runbooks/secrets-inventory.md` row gets its `Rotated` date.
 **Status:** Open — **narrowed to step 5 only 2026-07-28.** Steps 1–4 and 6 are proven done: the last four `deploy-cloud-run` runs on `main` are green, and a referenced-but-missing Secret Manager secret fails the whole deploy, so `unsubscribe-token-secret-prod` demonstrably exists with a readable binding. `email-smoke` then succeeded twice on 2026-07-28 (07:25 and 16:24 UTC) after the 06:30 failure, which proves both GH repo secrets (`RESEND_API_KEY`, `UNSUBSCRIBE_TOKEN_SECRET`) are now bound — that workflow is fail-closed on their absence. `.env.local` carries the dev value. **What remains is only the founder's hands:** run `email-smoke` with `unsubscribe_user_id` set to your prod `users.id`, then in Gmail confirm the native Unsubscribe control renders, click it, and verify `SELECT preferences->'emailPrefs' FROM users WHERE email='<founder-address>';` flipped the clicked category to `false`. Nothing else in this entry is outstanding.
 
-### 2026-07-26 — Create `INFRA_SNAPSHOT_TOKEN` so the snapshot can see GitHub secret drift
-**Source:** infra sweep 2026-07-26 (root cause of the 8 consecutive `infra-snapshot` failures)
-**Why:** `gh secret list` requires repo **admin**, which CI's `GITHUB_TOKEN` structurally cannot have. The snapshot now degrades honestly instead of crashing, but until a PAT is bound that section reports `{"available": false}` every night — meaning GitHub Actions secret rotation is undetected. That is not hypothetical: the stale Razorpay key that kept the vendor watchdog red for 6 of 8 runs is exactly the drift this section exists to surface.
-**How:** GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token. Resource owner `CT2689-Tech`, repository access **Only select repositories → DeclutrMail**, Repository permissions → **Secrets: Read-only** (nothing else). Set an expiry you will actually renew (90 days is reasonable; the snapshot will report `available: false` when it lapses, which is the intended signal). Then add it as repo secret `INFRA_SNAPSHOT_TOKEN` at Settings → Secrets and variables → Actions.
-**Verifies by:** `gh workflow run infra-snapshot.yml` → run succeeds AND today's `docs/infra-snapshots/*.json` has `.github_actions_secrets.available == true` with a non-empty `secrets` array.
-**Status:** Open
-
 ### 2026-07-26 — ACCEPTED RISK: both Cloud Run services share one service account with project-wide secret read
 **Source:** infra sweep 2026-07-26 — founder decision (option: "accept and document as launch risk")
 **Why:** `launch-preflight.sh secrets` raises two WARNs. (1) `declutrmail-api` and `declutrmail-worker` both run as `declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com`, so the api-only / worker-only secret split enforced in `deploy-cloud-run.yml` is a convention, not a boundary — the internet-facing API process can read `RESEND_API_KEY`, the mail-sending credential. (2) That SA holds `roles/secretmanager.secretAccessor` **at the project level**, which makes every per-secret grant decorative and would survive an SA split unless removed too. **Blast radius if exploited:** an RCE or SSRF-to-metadata in the API process yields every production secret — DB URL, JWT signing keys, both billing providers' keys, and the Resend key (which could send mail as `declutrmail.com`). It does NOT expose mailbox bodies, which are never stored (D7/D228). **Why accepting is defensible:** this is post-compromise privilege escalation, not an internet-reachable vulnerability, and the remediation itself carries production-break risk that outweighs it pre-launch.
 **How (when you take it on, post-launch):** strictly sequenced, verifying between steps — create `declutrmail-worker@`; grant it per-secret accessor on the worker's 8 secrets; deploy the worker with `--service-account` pointed at it; verify a real job completes; grant the API per-secret accessor on its 15; redeploy the API; verify `/api/readyz` + an authed request; **only then** remove the project-level `roles/secretmanager.secretAccessor` binding. Removing that binding first will break both services. The pre-existing 2026-07-10 item "Give `declutrmail-worker` its own service account" covers step one.
 **Verifies by:** `./scripts/launch-preflight.sh secrets` → 0 WARN; per-secret reader checks no longer SKIP.
 **Status:** Open — accepted for launch 2026-07-26, revisit post-launch
-
-### 2026-07-10 — D-candidate: bulk unsubscribe for one-click senders
-**Source:** session 2026-07-10 UX wave (PR #321 investigation)
-**Why:** The same-verdict batch banner (#321) covers Archive/Later only.
-Unsubscribe clusters — the founder's actual dogfood queue was 12×
-Unsubscribe — still decide one-at-a-time, because unsubscribe execution
-is per-sender-channel: RFC 8058 one-click can be executed server-side,
-mailto is user-sent by the D230 hard rule, and a mixed batch cannot
-honestly claim "unsubscribed all N". A ONE-CLICK-ONLY subset batch
-("Unsubscribe all 8 one-click senders; 4 mailto senders stay
-per-sender") is implementable without touching D230.
-**How:** Needs a D-decision first (extends D9/D32/D230 surface), then:
-a `senders` selector variant for `POST /api/actions/unsubscribe-intent`
-(schema is single-`senderId` today), fan-out execution via the existing
-UnsubExecutionWorker, and a channel-split preview sheet. Not
-smallest-diff — scope as its own PR after ratifying.
-**Verifies by:** D-decision recorded in the plan mirror; batch banner
-offers the one-click subset; mailto senders remain per-row.
-**Status:** Open
 
 ### 2026-07-10 — Give `declutrmail-worker` its own service account
 **Source:** session 2026-07-10 (Codex stop-gate review of `scripts/bootstrap-resend-secrets.sh`)
@@ -1554,13 +1072,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** each ships as its own verified PR; `pnpm verify-d` for the closed D-rows.
 **Status:** Open
 
-### 2026-06-26 — Inbox-limit concurrent-connect race needs a DB-level guard (migration)
-**Source:** session — #206 fix + adversarial review
-**Why:** `addMailbox` now asserts the inbox limit at the activation boundary (closes the sequential bypass), but two truly simultaneous OAuth callbacks can still both pass the read-then-insert check and overshoot the tier ceiling by one. A partial unique index or per-workspace advisory lock would make it atomic.
-**How:** add a partial unique index sized to the tier, or wrap activation in `pg_advisory_xact_lock(hashtext(workspace_id))` + in-tx re-count. Needs a migration (deferred here — no prod migrations from a session).
-**Verifies by:** a concurrent-double-`/start` integration test can no longer exceed the limit.
-**Status:** Open
-
 ### 2026-06-26 — Low follow-ups from the PR review (non-blocking)
 **Source:** session — adversarial + flow re-review
 **Why:** small gaps worth a later pass, none block merge.
@@ -1571,25 +1082,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 - Storybook coverage gaps (D210): #199 legal-layout; #219 BillingScreen loading/error + plan-change/cancel modals; #224 settings-index + senders-policies screens.
 **Verifies by:** items resolved or consciously closed.
 **Status:** Open
-
-### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
-**Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
-**Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
-**How (remaining founder items — full detail in the doc):**
-1. Sentry: set `SENTRY_ORG=chintan-ashok-thakkar` in Vercel + 2 alert rules.
-2. ~~Resend: rotate the exposed full-access key.~~ **CLOSED — founder decision
-   2026-07-10: keep the key, do NOT raise rotation.** Re-raised in error
-   2026-07-27; re-checked then and the "exposed" framing is unsupported —
-   no `re_`-shaped literal exists in the working tree, only `.env.example`
-   is tracked, and the sole commit touching `RESEND_API_KEY` in an env file
-   is #204 (the placeholder). `buildout-prerequisites-2026-06-11.md:68`
-   describes this same item as the sandbox→live key swap, not a leak
-   response. Do not re-open without new evidence of actual exposure.
-3. Paddle (Sandbox) + Razorpay (Test) keys + webhook secrets → GH secrets.
-4. Decide Plus/Pro tier prices (D17-21) for the payment catalogs.
-5. `.ai`→`.com` cutover after V2 live (OAuth URLs, payment site, retire `.ai`).
-**Verifies by:** see `docs/execution/buildout-prerequisites-2026-06-11.md` for the full table + cutover checklist.
-**Status:** Open (KYC long-poles cleared; remaining items are hours)
 
 ### 2026-06-10 — Upstash: enable usage notifications (plan flip DONE via PAYG + $20 budget)
 **Source:** session 2026-06-10 (Upstash billing incident — see MISTAKES.md 2026-06-10)
@@ -1632,16 +1124,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** Edit any `NEXT_PUBLIC_*` env via the script + a Vercel build kicks off within ~10s + the new alias serves the updated env value.
 **Status:** Open
 
-### 2026-06-08 — Cloud Monitoring alert: provider_sync_state stuck > 5 min
-**Source:** session 2026-06-08 — worker silently scaled to 0 + initial-sync job queued for ~20 min without anyone noticing
-**Why:** A user signs up, the API enqueues an `initial-sync` job, then the worker isn't reachable (scaled to 0, crashed, OOM'd, secret missing). The FE sees `provider_sync_state.current_stage='queued'`/`progress_pct=0` indefinitely. We have NO active surface that pages the founder when this happens. The 2026-06-08 smoke surfaced it only because the founder noticed "no feedback on /senders".
-**How:**
-1. Add a Cloud Monitoring log-based metric `sync_stage_stuck` derived from a custom log line. Worker should emit a `sync.stuck_check` log line every ~5 min for each mailbox whose `current_stage` hasn't advanced. OR — simpler — query Supabase from a Cloud Run Job on a 5-min cron.
-2. Alternative: a Sentry-side rule — any `provider_sync_state` row older than 30 min without `progress_pct` change triggers a Slack/email alert via a periodic check.
-3. Document the runbook for "sync stuck" in `docs/runbooks/` — first action is always `gcloud run services describe declutrmail-worker --format="value(status.latestReadyRevisionName)"` + check worker logs.
-**Verifies by:** Pause the worker + watch a sync get stuck + receive the alert within 5-10 min.
-**Status:** Open
-
 ### 2026-06-08 — Supabase WARN advisories: function search_path + citext extension
 **Source:** session 2026-06-08 (`get_advisors` after RLS apply)
 **Why:** Two non-blocking WARN-level security advisories remain on the new Supabase project:
@@ -1664,13 +1146,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 3. Deploy a Cloud Function that subscribes to that topic + calls billing.projects.updateBillingInfo with `billingAccountName=""` when threshold == 100%
 4. Cap value: raise budget to $60 as you onboard real users
 **Verifies by:** Intentionally bump a Cloud Run service to high traffic in a staging fork + confirm billing auto-disables within 5 min of crossing $60.
-**Status:** Open
-
-### 2026-06-08 — Stale BullMQ jobs from local-dev runs in Upstash (cleanup)
-**Source:** session 2026-06-08 — `bull:*` scan showed `initial-sync` jobs with mailbox UUIDs from the local-dev Postgres (not the new Supabase)
-**Why:** During the local LLM smoke earlier in this session I enqueued real BullMQ jobs that hit Upstash. Now Cloud Run worker is connected to the same Upstash. Those leftover jobs reference mailbox UUIDs that don't exist in Supabase, so `worker.failed` events will trickle in.
-**How:** One-shot `redis-cli -u $REDIS_URL_PROD DEL bull:initial-sync:90fe296e... bull:initial-sync:698c662b... bull:initial-sync:beb88a8f...` for the specific stale UUIDs; preserve queue meta keys since BullMQ recreates them lazily. Alternative: let workers fail those jobs once + BullMQ moves them to the dead-letter set; either way no production data corruption.
-**Verifies by:** No `worker.failed` log lines for the listed UUIDs after the cleanup; `redis-cli SCAN MATCH 'bull:initial-sync:*'` shows only fresh keys.
 **Status:** Open
 
 ### 2026-06-07 — Backfill `docs/runbooks/secrets-inventory.md` into operational practice
@@ -1721,13 +1196,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Verifies by:** Integration test in `actions.service.spec.ts` asserts the outbox row lands; consumer test asserts the policy row is upserted.
 **Status:** Open
 
-### 2026-06-05 — DB-level Idempotency-Key dedup for unsubscribe-intent
-**Source:** architecture-guardian 2026-06-05 [BLOCKING] → controller header now enforced 2026-06-05 commit
-**Why:** `POST /api/actions/unsubscribe-intent` requires `Idempotency-Key` header (≥8 chars) but does NOT yet enforce DB-level dedup per key. The shared `action_jobs.idempotency_key` unique constraint cannot host a `'unsubscribe'` verb because `action_verb` enum only includes `archive|later|delete`. A network-retried POST with the same key currently writes a second `activity_log` row.
-**How (cheapest):** Add 'unsubscribe' to the `action_verb` enum (mig 0024) and store the intent row as `action_jobs` with `status='done', verb='unsubscribe', idempotency_key=namespacedKey, resolved_message_ids=[activityLogId]`. Replay reads the prior row by namespaced key + returns the cached activity_log_id.
-**Verifies by:** spec test calls `recordUnsubscribeIntent` twice with the same key + asserts a SINGLE `activity_log` row.
-**Status:** Open
-
 ### 2026-06-05 — Storybook coverage: ComposeStrip + ConfirmActionModal + Activity B-track
 **Source:** design-system-agent 2026-06-05 [BLOCKING]
 **Why:** D210 requires every new component to ship with a stories file. `compose-strip.tsx` (756 lines, NEW) and the heavily-rewritten `confirm-action-modal.tsx` have no stories. The Activity redesign added 9+ states (Loading/Error/WithSelection/BulkUndoError/Grouped/VerbFiltered/CustomDateRange/WindowAllTime/UndoTryAgain) the existing 3-story file does not cover.
@@ -1771,27 +1239,6 @@ sync + an Archive mutation — those are the paths KMS decrypt gates.
 **Why:** `fetchActivity` casts `meta` to `ActivityListMetaWire` with no runtime check; a BE field rename will compile-clean and render the wrong number.
 **How:** Add a `parseActivityEnvelope` Zod schema in `@/lib/api/activity.ts`; call it from `fetchActivity` before returning.
 **Verifies by:** Stubbing a BE meta drop in tests surfaces a parse error, not a silent zero.
-**Status:** Open
-
-### 2026-06-05 — Cursor recovery path: `sync.cursor_recovery_failed` to Sentry, not just console.warn
-**Source:** silent-failure-hunter 2026-06-05 [SUGGESTION]
-**Why:** `apps/api/src/worker.ts:3802-3827` swallows recovery enqueue failures with `console.warn`. A sustained Redis hiccup at recovery-time leaves the mailbox stuck silently.
-**How:** Route to `observer.onError` + emit a `sync.cursor_recovery_failed` PostHog counter so a spike is alertable.
-**Verifies by:** Forcing an enqueue failure surfaces a Sentry capture.
-**Status:** Open
-
-### 2026-06-05 — Migration 0023 — heal + CHECK in single transaction
-**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
-**Why:** Atlas runs each `--> statement-breakpoint` chunk in its own transaction. A concurrent writer between heal and ADD CONSTRAINT could fail the constraint addition.
-**How:** Either drop the breakpoint (single multi-statement chunk) OR use `ADD CONSTRAINT … NOT VALID` then `VALIDATE CONSTRAINT` separately.
-**Verifies by:** Online deploy with synthetic concurrent write does not break.
-**Status:** Open
-
-### 2026-06-05 — Migration 0020 — annotate CREATE INDEX with `atlas:nolint concurrent_index`
-**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
-**Why:** `CREATE INDEX action_jobs_composite_id_idx` lacks the `concurrent_index` annotation that the sibling 0015 establishes as precedent. Pre-launch OK; invites future drift.
-**How:** Add the annotation + rationale matching 0015.
-**Verifies by:** Atlas lint passes; grep finds annotation.
 **Status:** Open
 
 ### 2026-06-05 — Pre-existing PGlite hook timeout flakes (5 API tests)
@@ -1856,15 +1303,6 @@ chips + D58 undo *state rendering* + D59 stats). What it does NOT ship:
 **Verifies by:** Each PR's smoke + a chip-by-chip walk of the Activity screen.
 **Status:** Open
 
-### 2026-05-27 — IMPL-LOG-DRIFT: process-break — 13 findings this week — pr-merged.yml or author trailer discipline is broken
-**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
-**Why:** 13 PR-level drift findings in a single 7-day window (10 missing-trailer + 9 un-flipped commits, deduped to ~12 unique PRs) signals a systemic break, not author oversight. Either (a) `pr-merged.yml` should be extended to flip Ds it finds in the PR title in addition to `Closes` lines, OR (b) commitlint / a PR-open gate should reject PRs whose title cites D-numbers not present in the body's `Closes` list. Today's policy puts the burden on each author to keep title + body in lockstep, and the burden is being dropped consistently.
-**How:** Pick one of two reinforcement options:
-  - **Option A (loosen the flipper):** edit `.github/workflows/pr-merged.yml` to harvest D-numbers from `pull_request.title` parens AS WELL AS `Closes` lines, then flip the union. Lower friction for authors; risk = flipping a D the author casually mentioned but didn't actually ship.
-  - **Option B (tighten the gate):** add a GH Action that runs on `pull_request.opened/edited` and fails if `set(D-refs in title) ⊄ set(D-refs in Closes lines)`. Forces authors to keep the two in sync; risk = friction on every multi-D PR.
-**Verifies by:** Next week's oracle sweep returns 0 missing-trailer + 0 un-flipped findings, OR a documented exception path exists for cases like PR #42 (chore/learnings citing a not-yet-shipped D).
-**Status:** Open
-
 ### 2026-05-26 — ARCH-DRIFT: no end-to-end `Idempotency-Key` header support; repeat-dismiss returns 404 vs stored result (D202, D207)
 **Source:** architecture-drift-oracle (scheduled task, 2026-05-26 sweep) — replayed architecture-guardian Check H
 **Why:** The `Idempotency-Key` HTTP header is whitelisted in CORS at [apps/api/src/main.ts:40](apps/api/src/main.ts:40) but NO mutation endpoint accepts it end-to-end. Today's substitutes are three different patterns:
@@ -1883,95 +1321,6 @@ No `idempotency_records` table or 24h-TTL infrastructure exists yet — the full
 **Verifies by:** Phase 1: a `curl -X POST /v1/autopilot/dismiss/...` repeated yields 200 + `alreadyDismissed: true` on the second call. Phase 2: any mutation route with a repeated `Idempotency-Key` returns the byte-identical first response.
 **Status:** Open
 
-### 2026-05-26 — Hook-modification WARNING from weekly security-regression sweep
-
-**Source:** security-regression-oracle (scheduled task, 2026-05-26 sweep)
-**Why:** Task rule flags any `.claude/hooks/*.sh` change in the trailing
-7d as a `[WARNING]` for founder review. Two commits qualified:
-- `f063e7b` (PR #54, 2026-05-24) — `check-microcopy.sh`: exempt
-  `*.test.*` / `*.spec.*` from microcopy scan to fix R1 Stream E
-  false positives. Documented + has bash regression suite at
-  `.claude/hooks/test/check-microcopy.test.sh`.
-- `2743b6a` (PR #11, 2026-05-20) — `check-microcopy.sh` +
-  `require-preview-before-mutation.sh`: scope-glob fix for the
-  `packages/ui` → `packages/shared` rename (D173).
-
-Both were merged via founder-authored PRs with review notes; neither
-is silent drift. The sweep rule is conservative: it cannot tell a
-PR-mediated change from a tampered hook.
-**How:** (a) confirm these two changes match the PRs above and dismiss,
-or (b) tighten the oracle rule (`/Users/chintant/.claude/scheduled-tasks/declutrmail-security-regression-weekly/SKILL.md`
-Check 6) so it only warns on hook changes NOT introduced via a merged PR
-(e.g. compare commit author against `CT2689` or check merge-commit
-parentage). Option (b) prevents weekly false-positive noise.
-**Verifies by:** Next Sunday sweep either passes CLEAN (option b
-applied) or surfaces only new, un-reviewed hook changes (option a
-accepted as ongoing cost).
-**Status:** Open
-
-### 2026-05-25 — Ratify Variant D direction for Senders uplift (4 ADRs + 2 follow-up PRs)
-**Source:** session — Senders surface uplift exploration, produced
-`apps/web/prototypes/senders-uplift.html` (Variant D) + 4 draft ADRs
-on branch `chore/bootstrap-senders-uplift-d-adrs`.
-**Why:** The current Senders surface reads as a flat directory.
-Variant D reframes it as a weekly cleanup cockpit (editorial hero
-+ intent groups + clean tables + per-action ROI). The reframe needs
-constitutional amendments to D2 (palette), D213 (motion), D209
-(copy voice), and D38/D39 (intent grouping). Each amendment is
-proposed as a standalone ADR so they can be approved / rejected /
-revised independently.
-**How:**
-  1. Open prototype in browser to walk Variant D:
-     ```bash
-     python3 -m http.server 4123 --directory apps/web/prototypes &
-     open 'http://localhost:4123/senders-uplift.html?variant=D&view=list'
-     ```
-     Floating bar bottom cycles A / B / C / D × list / detail.
-  2. Read the 4 ADR drafts in order; they cite the plan section that
-     depends on each:
-     - `docs/adr/0009-dashboard-palette-extension.md` (amends D2)
-     - `docs/adr/0010-dashboard-motion-extension.md` (amends D213)
-     - `docs/adr/0011-editorial-copy-scope.md` (amends D209)
-     - `docs/adr/0012-senders-intent-groups.md` (amends D38, D39)
-  3. Read `~/.claude/plans/how-can-we-uplift-foamy-cloud.md` §D0–D8
-     for full Variant D rationale + file plan + phasing.
-  4. For each ADR: edit Status from `Proposed` → `Accepted` (or
-     comment + reject). For accepted ADRs, also update the
-     corresponding D-decision in `docs/execution/Implementation-Plan.md`
-     with an `[ADR-0009 PATCH on D2]` (etc.) annotation per CLAUDE.md
-     §3 inline-patch pattern.
-  5. Push the ADR branch and open the PR:
-     ```bash
-     git push -u origin chore/bootstrap-senders-uplift-d-adrs
-     gh pr create --fill --base main \
-       --title "chore(docs): 4 ADRs for Senders uplift Variant D direction" \
-       --body "Closes: drafts ADRs 0009–0012. Awaits ratification before any feature PR lands. See FOUNDER-FOLLOWUPS.md (2026-05-25 Variant D)."
-     ```
-  6. After ADRs land on main, run the follow-up PRs in this order
-     (each on its own branch, each blocks on the previous):
-     - `feat/d038-senders-list-uplift-d` — restructure list page
-       (hero + intent groups + KPI strip + new row). Amends D38.
-     - `feat/d039-senders-detail-uplift-d` — restructure detail page
-       (editorial hero + 4-cell KPI strip + decision timeline,
-       delete charts). Amends D39 / D44 / D45 / D46.
-     - `feat/d038-inbox-story-endpoint` — new `GET /api/inbox/story`
-       returning weekly aggregates derived from existing tables
-       (no schema change, no body access, no new wire content).
-  7. After Variant D ships, delete the prototype + revert the
-     launch.json entry:
-     ```bash
-     rm apps/web/prototypes/senders-uplift.html
-     # remove "senders-uplift-prototype" config from .claude/launch.json
-     ```
-**Verifies by:**
-  - 4 ADRs at `Accepted` status with corresponding D-decision
-    annotations in the plan.
-  - 3 feature PRs merged with `architecture-guardian` +
-    `design-system-agent` gate passes.
-  - Prototype HTML deleted; `apps/web/prototypes/` directory empty
-    or removed.
-**Status:** Open
-
 ### 2026-05-25 — Optional: extend `check-microcopy.sh` for ADR-0011 path-scoped relaxation
 **Source:** session — ADR-0011 follow-up
 **Why:** ADR-0011 allows ONE editorial framing phrase per hero or
@@ -1985,49 +1334,6 @@ defaults the path scope to the regex above. Land only after
 ADR-0011 is `Accepted`.
 **Verifies by:** Variant D hero PR passes microcopy lint without
 hand-silencing.
-**Status:** Open
-
-### 2026-05-25 — Optional: lint guardrail for ADR-0009 `color.dashboard.*` scope
-**Source:** session — ADR-0009 follow-up
-**Why:** ADR-0009 restricts the new `color.dashboard.*` violet
-tokens to dashboard surfaces only (Senders, Activity, Brief,
-future Insights). Without an ESLint rule, an agent could import
-`color.dashboard.accent` into Settings or marketing pages and the
-review would miss it.
-**How:** add an ESLint rule that flags imports of
-`color.dashboard.*` outside of
-`apps/web/src/features/{senders,activity,brief}/**`. Small follow-up
-PR `chore/bootstrap-eslint-dashboard-palette-scope`.
-**Verifies by:** rule fires on a deliberately-mislocated import in
-a test fixture.
-**Status:** Open
-
-### 2026-05-23 — Outbox dispatcher SKIP LOCKED runtime proof (D13)
-
-**Source:** PR `feat/d013-outbox-dispatcher` — LEARNINGS 2026-05-23.
-**Why:** The outbox dispatcher uses `FOR UPDATE SKIP LOCKED` for
-concurrent claim safety. The SQL-level assertion in the unit tests
-proves the clause is in the query, but PGlite (single-connection) cannot
-demonstrate the runtime semantics — two concurrent dispatchers cannot be
-proven to grab disjoint row sets via the in-process test harness. The
-behavior is standard Postgres; the gap is test coverage, not
-correctness. Same gap will apply to future multi-connection features
-(advisory locks for AutopilotApplyWorker, real-Postgres serializable
-isolation tests).
-**How:** Either (a) add `testcontainers` to a shared `packages/test-utils`
-package (avoids the workers-package peer-dep collision this PR hit when
-testcontainers was tried in `packages/workers/devDependencies` — see the
-PR description) and write a real-Postgres test that runs two dispatchers
-concurrently against 20 seeded rows; or (b) make the existing
-`docker-compose.yml` (Redis-only today, Postgres-already-on-host) the
-ad-hoc target by setting `OUTBOX_TEST_PG_URL` in dev/CI and gating the
-test with `describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)`. Option (a)
-is the durable answer; option (b) unblocks the runtime proof in days
-rather than weeks.
-**Verifies by:** A CI run that exercises the SKIP LOCKED concurrency
-test against real Postgres (visible in workflow logs as
-"OutboxDispatcherWorker (real Postgres, SKIP LOCKED)" passing rather
-than skipped).
 **Status:** Open
 
 ### 2026-05-22 — D-CANDIDATE: limiter cache eviction tied to D232 account deletion
@@ -2082,55 +1388,6 @@ this index inventory imposes. Or shrink the index inventory FIRST
 explicitly addresses the existing `(mailbox_account_id, …)` index
 family.
 **Status:** Open
-
-### 2026-05-22 — CHORE: extract `SyncService.findQueued()` for reconciler
-**Source:** architecture-guardian INFO on PR `feat/d009-sync-data-capture`
-**Why:** `reconcileQueuedInitialSyncs` in `apps/api/src/worker.ts`
-reads `provider_sync_state` directly. The worker is a separate
-composition root (no Nest DI) so D204 doesn't formally apply — but
-`SyncModule` claims to own that table, and a future schema change to
-the durable-intent contract could silently drift the reconciler.
-**How:** Extract a tiny `SyncService.findQueued(limit)` helper that
-returns mailbox ids. Both the connect path and the reconciler stay
-on the same query surface.
-**Verifies by:** `grep providerSyncState apps/api/src/worker.ts`
-returns zero hits; reconciler test covers `findQueued`.
-**Status:** Open
-
-### 2026-05-22 — D-CANDIDATE: periodic full re-derive backstop (after PR-D)
-**Source:** session — founder ack 2026-05-22, deferred per "no users yet"
-**Why:** PR-C/PR #19's initial sync is a complete derive — zero drift.
-Once incremental sync (PR-D) lands, a new message arriving triggers an
-*incremental* patch of that sender's aggregate (D25, trigger-based
-re-score). Incremental patches can drift from truth via bug-class
-issues (race, missed event after watch lapse > 7d). Founder estimate:
-~0.01% case. Backstop = a cron that runs `building_sender_index`
-(already a full re-derive of `senders` + `sender_timeseries` from the
-persisted `mail_messages` table) periodically per mailbox. Cheap to
-add — re-runs an existing function.
-**How:** After PR-D ships, ratify a D for a cron (e.g. weekly per
-mailbox) that re-runs `InitialSyncWorker.buildSenderIndex` on the
-mailbox. No new schema; reuses the existing function. Worker policy:
-`cronPolicy` (D225).
-**Verifies by:** the D is ratified post-PR-D; the cron job exists.
-**Status:** Open — deferred until PR-D
-
-### 2026-05-22 — D-CANDIDATE: streaming aggregation for >1M-message mailboxes
-**Source:** session — Gmail-API architecture review 2026-05-22
-**Why:** `InitialSyncWorker` collects every message id into memory
-(`const ids: string[]`) + loads the FULL `mail_messages` table into
-memory in `buildSenderIndex` to fold per-sender. Fine at 250K
-(~tens of MB); a single 1M+ mailbox could pressure the worker process
-(hundreds of MB of strings + rows). D235 partitioning is deferred
-until 25M rows aggregate; this is a *per-mailbox* memory ceiling
-distinct from that. Rare edge — most mailboxes are well under 1M.
-**How:** Switch the fetch's id-collection + `buildSenderIndex`'s
-mail_messages SELECT to streaming/cursor-based aggregation (process
-chunks, fold incrementally, never materialise the full list). Ratify a
-D when a real 1M+ mailbox arrives or we forecast one.
-**Verifies by:** the D is ratified + the worker can sync a synthetic
-1M-message mailbox without OOM.
-**Status:** Open — deferred until a 1M+ mailbox actually exists
 
 ### 2026-05-22 — D-CANDIDATE: onboarding sync UX — D224 5-stage indicator vs timing reality
 **Source:** PR [#18](https://github.com/CT2689-Tech/DeclutrMail/pull/18) (`feat/d006-sync-timing-logs`) — timing data
@@ -5155,3 +4412,746 @@ this requires GitHub Advanced Security; for public repos it's free.
 **Verifies by:** Next PR's CodeQL check ends ✅ instead of ❌, and
 findings (if any) show up under the Security tab.
 **Status:** Skipped 2026-05-19 — private repo; GitHub Advanced Security is paid. CodeQL workflow removed in PR #7 to eliminate the noise. Revisit if repo goes public or Advanced Security is purchased.
+
+### 2026-08-31 — Production has not deployed anything in 2 days — Vercel "Ignored Build Step" is canceling every build
+
+**Source:** session 2026-08-31 — founder reported PR #693's layout fix
+(merged, confirmed present on `origin/main`) still not visible at
+`app.declutrmail.com`.
+
+**Why:** every commit merged to `main` since 2026-08-29T22:33Z has its
+Vercel check land as `state: success` / `description: "Canceled by
+Ignored Build Step"` — checked directly via
+`gh api repos/.../commits/<sha>/status`, not inferred. That is a
+false-green: the GitHub commit status reads success, but no build ever
+ran and nothing deployed. Confirmed against
+`repos/.../deployments`: the last real deployment (any environment) is
+`c3f5be2f` at 2026-08-29T22:28Z — Production has been frozen on that
+SHA through at least 5 subsequent merges (#689, #691, #692, #688, #693),
+including a horizontal-scroll fix, an ADR-0028 reach widening, and this
+session's layout fix. None of that is live. This is the exact
+"guard that cannot fail" shape CLAUDE.md §8 warns about: a status check
+that reads green regardless of whether it actually built anything.
+**How:** Vercel dashboard → `declutr-mail` project → Settings → Git →
+**Ignored Build Step** shows the actual configured command (founder
+confirmed 2026-08-31):
+```
+git diff --quiet HEAD^ HEAD -- apps/web packages/shared tsconfig.base.json pnpm-lock.yaml pnpm-workspace.yaml
+```
+This is logically correct — `git diff --quiet` exits `1` (proceed, per
+Vercel's convention) when the listed paths changed, `0` (skip) when
+they didn't. Verified directly against the real repo: replayed this
+exact command for the last 5 merged SHAs (#689/#691/#692/#688/#693,
+all of which touch `apps/web`) against their true parents — every one
+exits `1`. So the command is provably correct against full git
+history; the break is environmental. The prime suspect is Vercel's
+default **shallow clone**: if the checkout used to evaluate this step
+doesn't include the parent commit, `HEAD^` fails to resolve
+(`fatal: ambiguous argument 'HEAD^'`) and the step's exit code stops
+matching what a full clone produces — this repo is not a Turborepo
+(no `turbo.json`), so the usual `npx turbo-ignore` fix (which sources
+the correct base commit from Vercel's own API instead of assuming
+`HEAD^`) isn't a drop-in option here. Fix: add project env var
+`VERCEL_DEEP_CLONE=1` (Settings → Environment Variables — this forces
+a full clone before the Ignored Build Step runs, per Vercel's own
+docs) and re-test. This session has no Vercel MCP authorization to set
+the env var or watch the next build directly.
+
+**Update 2026-08-31 (later same day):** founder set `VERCEL_DEEP_CLONE=1`
+and redeployed. Re-tested against `#694` (`b371738`, touches
+`apps/web` + `packages/shared` extensively, confirmed `exit 1` against
+real git history the same way as the first 5) — still
+`"Canceled by Ignored Build Step"`. The founder pulled the raw build
+log for that deployment:
+```
+Cloning github.com/CT2689-Tech/DeclutrMail (Branch: main, Commit: b371738)
+Skipping build cache, deployment was triggered without cache.
+Cloning completed: 2.648s
+Running "git diff --quiet HEAD^ HEAD -- apps/web packages/shared tsconfig.base.json pnpm-lock.yaml pnpm-workspace.yaml"
+The Deployment has been canceled as a result of running the command...
+```
+2.6s is too fast for a full-history clone of this monorepo, so
+`VERCEL_DEEP_CLONE=1` does not appear to have taken effect on this
+build (env var name/scoping may be wrong, or a var change needs a
+fresh git push rather than a dashboard "Redeploy" of an existing
+commit to take effect — unconfirmed either way). The log line between
+the `Running "..."` line and the cancellation (the actual git
+stdout/stderr, which would show the real exit reason) was not
+captured — worth pulling directly from the Vercel deployment page for
+full certainty.
+
+**Recommendation — stop debugging, unblock now:** clear the Ignored
+Build Step field entirely (Settings → Git → Ignored Build Step → blank
+→ Save). Production has been frozen 2+ days over what was meant to be
+a minor build-cost optimization. CI (typecheck/lint/tests, `#7`) already
+gates correctness; every commit building is strictly safer than a skip
+condition that silently fails closed. Revisit the optimization later,
+outside an active incident, if Vercel build-minute cost actually
+becomes a concern — check current plan/usage before re-adding any skip
+condition, since unlike GitHub Actions on this public repo, Vercel
+build minutes are a real metered cost.
+**Verifies by:** the next merge to `main` produces a Vercel deployment
+whose commit status says `"Deployment has completed"`, and
+`app.declutrmail.com` reflects that commit's content
+(`view-source:` or a hard-refresh + the Quiet screen's width is the
+fastest visual check right now).
+**Status:** Done 2026-09-01 — founder confirmed via Vercel dashboard: recent commits (c804c89, 8ff22f0, adac73c) show "Production Ready", real deployments landing again. Root cause of the deep-clone non-effect was never fully pinned down, but the Ignored Build Step is evidently no longer blocking — not independently re-verified against the raw build log this session, taken from the founder's dashboard screenshot.
+
+### 2026-08-26 — The public /inbox-simulator route ships the authenticated API client and useMe to anonymous visitors
+
+**Source:** session 2026-08-26 — Task 5 of the D133 inbox-simulator-scale
+plan (chunk baseline measurement), independently re-verified by a second
+session the same day.
+
+**Why:** `apps/web/src/features/auth/api/use-me.ts` (the `useMe` TanStack
+Query hook — its `/api/auth/me` fetch, `ME_QUERY_KEY`, retry/refetch
+policy) and `apps/web/src/lib/api/client.ts` (the full authenticated API
+client — CSRF header injection, 401 → `/api/auth/google/start` redirect,
+`apiGet`/`apiPost`/`apiPatch`/`apiPut`/`apiDelete`) are both compiled into
+a chunk that ships to `/inbox-simulator`, a public, unauthenticated
+marketing route. Proved via `app-build-manifest.json` route membership,
+not chunk names — chunk names establish nothing on their own; only
+appearing in a route's manifest file list does. Full measurement in
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md`.
+
+This is not caused by `BatchActionSheet` or `ConfirmModalFrame` (the pair
+D133's Task 4 split away from `auth-provider`) — neither is rendered on
+this route yet, that lands in a later plan.
+
+**[Corrected 2026-08-26 fix wave — the paragraph below replaces an
+earlier version of this entry that claimed no import edge exists and
+blamed "webpack's automatic shared-chunk grouping." Both claims were
+false; a follow-up review walked the import graph past the one level the
+original check stopped at and found a real chain. See
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` §3e/§3f for
+the full correction and how the original check missed it.]**
+
+It IS caused by a real, source-level, value-import chain reaching from
+the route's own render tree down to `use-me.ts` and the API client, every
+hop verified against the source file at the cited line:
+
+```
+inbox-simulator-screen.tsx:18  → TriageRow
+triage-row.tsx:17              → ProtectedActionNotice, UnprotectButton
+protected-notice.tsx:7-9       → useSetSenderPolicy
+use-sender-policy.ts:40        → SCREENER_QUEUE_KEY (a constant, not a hook)
+use-screener.ts:15-16          → ME_QUERY_KEY, apiGet, apiPost
+```
+
+The decisive hop is the constant import at `use-sender-policy.ts:40`:
+`SCREENER_QUEUE_KEY` is a plain re-exported array literal, not a hook.
+Neither `use-sender-policy.ts` nor `use-screener.ts` is marked
+side-effect-free, and tree-shaking operates per MODULE — an ES module is
+evaluated in full before any one of its bindings is picked — so importing
+that one constant pulls `use-screener.ts`'s entire body in, including its
+own imports of `ME_QUERY_KEY` and the API client, regardless of whether
+the importer ever calls a screener hook.
+
+The leak spans two physical chunk files, both members of the route's
+manifest list: `5793` carries `use-me.ts` + `lib/api/client.ts` (as
+before); `2907` separately carries `use-screener.ts` +
+`use-sender-policy.ts` + `lib/api/senders.ts` directly — confirmed by the
+literal runtime strings `["screener","queue"]`, `/api/screener/queue`,
+and `patchSenderPolicy`'s own `` `/api/senders/${id}/policy` `` template,
+all present in `2907`. Both files are explained by the one chain above;
+webpack split it into two output files, but the code in both is genuinely
+reachable from the route's own imports. 17 of 83 routes in the manifest
+carry chunk `5793`; exactly one — `/(marketing)/inbox-simulator/page` —
+is public.
+
+**How:** the fix is a source-level cut, not a bundler configuration
+change. `SCREENER_QUEUE_KEY` and `ME_QUERY_KEY` (and likely
+`TRIAGE_QUEUE_KEY`, imported the same way at `use-sender-policy.ts:41`)
+need to move into key-only modules that do not import their owning hook
+file, so a consumer that wants only the query key — as
+`use-sender-policy.ts` does, purely for cache invalidation — no longer
+drags in the hook, `apiGet`/`apiPost`, or `ME_QUERY_KEY`. A `sideEffects`
+package.json declaration does NOT apply here and is withdrawn as a
+prescription: `apps/web/package.json` has no `sideEffects` field, and
+`packages/shared`'s existing `sideEffects: ["**/*.css"]` addresses an
+unrelated leak shape (an eager helper import dragging a whole first-load
+file — see `LEARNINGS.md`, "Barrel imports leak into first load") that
+does not describe this one. Verify any fix the same way this baseline
+was produced — `app-build-manifest.json` route membership, never chunk
+names. No fix is implemented here; naming the fix shape is this session's
+job, implementing and verifying it is a separate decision for whoever
+picks up Plan 2–4.
+
+**Verifies by:** re-run the reproduction commands in
+`docs/execution/inbox-simulator-chunk-baseline-2026-08-26.md` — neither
+the chunk containing the `/api/auth/me` and `/api/me/timezone` string
+literals, nor the chunk containing `/api/screener/queue` and
+`/api/senders/*`, should appear in the `/(marketing)/inbox-simulator/page`
+file list.
+
+**Status:** Done 2026-09-01 — fixed via the D133 inbox-simulator query-key extraction: SCREENER_QUEUE_KEY/TRIAGE_QUEUE_KEY now live in key-only query-keys.ts modules that don't import their owning hook file; use-sender-policy.ts:40 confirmed importing from the key-only module, breaking the chain to use-me.ts/lib/api/client.ts. Re-verify via app-build-manifest.json route membership if reopened.
+
+### 2026-08-26 — `/inbox-simulator` logs a hydration text mismatch on main
+
+**Source:** session — found while verifying this PR's hydration fix, then isolated
+**Why:** Loading `/inbox-simulator` logs `Hydration failed because the server rendered text ...` in the console. It is NOT from this PR: reverting `inbox-simulator-screen.tsx` to its `origin/main` version leaves the error in place, so it is pre-existing. Flagged rather than fixed, per CLAUDE.md §1.3 — this PR's own hydration concern (a `ref` in a server-rendered OAuth href) is separate and is fixed here. It is left open because a hydration error on the busiest public demo page is the "no console errors" bar failing on main.
+**How:** Reproduce with `pnpm --filter @declutrmail/web dev`, open `/inbox-simulator`, read the console. The mismatching node is TEXT, not an attribute; `triage-row.tsx`'s clock is already hydration-safe (`useNow()` returns null on the server), so the source is elsewhere on that page.
+**Verifies by:** `/inbox-simulator` loads with an empty console.
+**Status:** Skipped 2026-09-01 — investigated 2026-08-27 (LEARNINGS.md "Every marketing page throws a hydration error"): nine public routes produced zero hydration console errors in dev, production build, multiple locales/timezones; the original report traced to a stale/skewed .next served by a sibling worktree's dev server, not a real code defect.
+
+### 2026-08-25 — Brief schedule decisions taken in session: every day, hourly slots
+
+**Source:** session 2026-08-25 — the Brief product review (`/ct-decide`),
+founder answers to decisions 1 and 6
+
+**Why:** two amendments to the plan were made conversationally and need to
+exist somewhere a later audit will find them. Both are already implemented and
+carry plan markers (`[REVERSAL 2026-08-25 on D66]`, `[PATCH 2026-08-25 on
+D64]`); this entry is the decision trail, not an action.
+
+1. **D66 (Mon–Fri default) is retired — the Brief now generates every day.**
+   Founder: *"should we just go for every day?"* The Brief covers the previous
+   local day, so skipping Saturday meant **Friday's mail was never summarized
+   for anyone** — the heaviest weekday, structurally excluded by the default
+   schedule. The weekend opt-in D66 specifies had also been built server-side
+   and never given any UI, so no user could have turned it on.
+2. **D64's "any 30-min slot" ships as 24 hourly slots.** Generation is an
+   hourly cron; a 08:30 choice would be served at 09:00. Honouring the half
+   hour means doubling the cron rate for precision nobody has asked for.
+
+**How:** nothing to do unless you disagree. If you want the half-hour slots,
+that is a 30-minute cron and a re-tick of the D64 patch marker. If you want
+weekends back off, it is one gate — but read the reversal marker first, because
+the Friday hole is the part that is easy to re-introduce by accident.
+
+**Verifies by:** this entry existing, plus `brief_hour_changed` in PostHog
+answering whether anyone actually moves off 8am — the question that decides
+whether the picker earned its build.
+
+**Status:** Done 2026-09-01 — acknowledged; [REVERSAL 2026-08-25 on D66] and [PATCH 2026-08-25 on D64] markers confirmed present in the plan mirror (lines 10549, 10584). No further action required, as recorded.
+
+### 2026-08-14 — Rule on static marketing rendering vs the nonce CSP
+**Source:** session (website launch-readiness pass)
+**Why:** not one HTML page is prerendered — `.next/prerender-manifest.json`
+after a production build holds 8 routes, all metadata assets, and
+`"dynamicRoutes": {}`. Every visitor and crawler hit on all 34 public routes is
+a Node function render, with no ISR and no HTML `Cache-Control` anywhere. For a
+Show HN / Product Hunt spike that is the difference between a CDN serving bytes
+and a function pool serving renders. Fixing it means removing two `headers()`
+reads from `apps/web/src/app/layout.tsx` (`:48` nonce, `:55` billing geo), and
+the nonce one changes CSP behaviour — a CLAUDE.md §9 stop condition, so an
+agent may not decide it. Note the build's `○●ƒ` column is misleading here:
+`/blog/[slug]` and `/vs/[competitor]` read as `●` (SSG) but emit no HTML and
+appear in neither manifest.
+**How:** read
+[`docs/execution/static-marketing-csp-options-2026-08-14.md`](docs/execution/static-marketing-csp-options-2026-08-14.md)
+— three options with files, CSP trade and effort. The recommendation is Option
+A: split the CSP by subtree so `(app)` keeps nonce + `strict-dynamic` and
+`(marketing)` runs on `'self'` + a hash for the one static script, with
+`/pricing` left dynamic so its INR/USD region pricing stays correct. Approve,
+pick another option, or say no.
+**Verifies by:** §5 of that memo — the prerender manifest lists the marketing
+routes, both subtrees still carry the full security-header set, and a marketing
+page loads with zero CSP violations in the console.
+**Status:** Done 2026-09-01 — Option A′ split CSP shipped in PR #525 (4129b983); apps/web/src/middleware.ts implements the ruling exactly, and scripts/check-prerendered-routes.mjs enforces marketing-route prerendering in CI.
+retracted before any code was written: the memo rested on a premise I had not
+measured. A marketing page emits **31 executable inline scripts, all
+nonce-authorized**, and `'self'` never authorizes an inline script, so the real
+cost is `'unsafe-inline'` on the marketing subtree. Option B is withdrawn
+entirely — see memo §0.)
+
+The ruling: `(marketing)` may run `script-src 'self' 'unsafe-inline'`; `(app)`
+keeps nonce + `strict-dynamic` unchanged; `/pricing` stays dynamic. Founder also
+set the verification bar — **prove it in a browser before claiming it works.**
+
+**Still open because it is not built.** The spec is memo §6, and it is larger
+than the original estimate: `(app)/layout.tsx` is a client component so the
+authed groups need a server boundary for the nonce; there are three groups
+needing the theme script, not two; and `regionProvider` is threaded from the
+root layout into `/pricing`, so removing that read mis-quotes currency at the
+point of sale if done carelessly. Nothing is half-done — the tree is clean.
+
+### 2026-08-13 — Re-verify the five July comparison pages, then bump their dates
+**Source:** session (SEO/AEO/GEO pass)
+**Why:** comparison freshness is now per page (`verifiedIso` in
+`comparison-data.ts`), so `/vs/unroll-me` reads "Last verified August 2026"
+while the other six still read July — correctly, because only the Unroll.Me
+sources were re-read this pass. The hub shows the oldest of them, which is
+the honest floor but also the one that ages first.
+**How:** open each vendor's cited pages (Clean Email, Trimbox, SaneBox,
+Leave Me Alone, plus the Gmail Help pages), confirm each row still matches
+what the page says, correct any drift, then bump only that comparison's
+`verifiedIso`. Do not bump a date for a page you did not re-read — the
+field exists to make that impossible to fake.
+**Verifies by:** `comparison-data.test.ts` passes and each page's stamp
+matches the date its sources were actually read.
+**Status:** Done 2026-09-01 — re-verified via commit 3e8dcedc ("chore(marketing): refresh six comparison entries + fix stale SaneBox trial claim"); comparison-data.ts now shows all six previously-July pages at verifiedIso: '2026-08-30'.
+
+### 2026-08-12 — Wire an alert on the mailbox-lock leak detector
+**Source:** PR #509 (architecture-guardian review)
+**Why:** PR #509 adds structured error logs (`mailbox_lock.unlock_failed`,
+`mailbox_lock.unlock_error`, `mailbox_lock.acquire_failed`,
+`mailbox_lock.session_probe_failed`) that detect the 2026-08-12 leaked-lock
+class — but a log line nobody is paged on only works when someone greps
+(the healthz-blind-spot lesson).
+**How:** GCP Console → Logging → Log-based metrics → create a counter on
+`jsonPayload.kind =~ "^mailbox_lock\."` for the worker service, then
+Monitoring → Alerting → notify on count > 0 over 5 min, to the same channel
+as the Sentry alert rule.
+**Verifies by:** the metric exists and a synthetic `console.error` with a
+matching `kind` (temporarily added on a dev revision, or via a test log
+entry) triggers the alert once.
+**Status:** Done 2026-08-22 — `scripts/setup-mailbox-lock-alert.sh` (new, mirroring `setup-billing-alerts.sh` so every log-line-to-page alert in this project has one shape). Creates log metric `mailbox_lock_errors` on `resource.type="cloud_run_revision" AND jsonPayload.kind=~"^mailbox_lock\."` plus alert policy `Mailbox lock: leak or acquisition failure` (>0 over 5 min → founder email). Deliberately NOT pinned to the worker service: only `worker.ts` takes the lock today, but pinning would make it a blind guard the moment the API does, and the unpinned filter costs nothing since these are the only two services. The prefix match covers all four kinds and any fifth added later. **Verified end to end, not just created:** the regex form was first proven against real logs with the prefix swapped (`^worker\.` returns rows), then a self-labelling synthetic entry (`kind=mailbox_lock.synthetic_alert_test`, body says TEST) was written via the Logging API and the metric's exact filter matched it. Expect one alert email from that test; the log entry is harmless and can be left in place.
+
+### 2026-08-11 — Required checks make a tooling-only PR unmergeable by construction
+
+**Source:** session (twice in one day, PRs #504 and #505)
+**Why:** the `Implementation log is derived and current` job is a must-pass on
+pull requests and is **skipped on push-to-main by design**. So a PR that merges
+with `Closes D###` and does not regenerate the log leaves main stale, nothing
+fails on main, and every subsequently opened PR inherits a red must-pass check it
+did not cause. Observed twice today, from two different PRs, hours apart:
+
+- #500 merged with `Closes D248`; caught on #504 (`D248: ⬜ → 🔵 #500`)
+- #497 merged with `Closes D126, D189`; caught on #505 (`D126`, `D189` → `🔵 #497`)
+
+Both had to be hand-corrected in an unrelated PR, which is how the drift keeps
+getting laundered into whatever change happens to be open next. The rows are not
+the problem — the asymmetry is: the check that would catch it is the one place it
+is turned off.
+**How:** pick one. (a) Run the impl-log check on push-to-main too, so the drift
+fails loudly where it is introduced rather than on the next innocent PR;
+(b) have the merge automation run `pnpm generate-impl-log` and commit the result
+on merge, so a `Closes D###` PR updates the log by construction; or (c) make it
+part of merging a PR that cites any D. (b) is closest to what
+IMPLEMENTATION-LOG.md's own header already promises ("kept current
+automatically").
+**Verifies by:** merge a PR citing a `Closes D###` and open a throwaway PR right
+after — the impl-log check is green without anyone editing the log by hand.
+**Status:** Skipped 2026-09-01 — resolved same-day by PR #506 (2026-08-11): the generator now counts the running PR's own Closes D### trailers (.github/workflows/ci.yml:201-232, scripts/generate-impl-log.ts:161), so a citing PR carries its own flip and never inherits red from an unrelated merge.
+
+### 2026-08-08 — The implementation-log check serializes every open PR
+**Source:** session 2026-08-08; hit on [#478](https://github.com/CT2689-Tech/DeclutrMail/pull/478), [#479](https://github.com/CT2689-Tech/DeclutrMail/pull/479) and [#480](https://github.com/CT2689-Tech/DeclutrMail/pull/480), three times in a row
+**Why:** `IMPLEMENTATION-LOG.md` is derived from the list of MERGED PRs, and
+`pnpm generate-impl-log --check` compares the committed file against a fresh
+derivation. So **merging any PR makes the file stale on every open branch**,
+and each one has to regenerate and re-run CI before it can merge. With two
+PRs open the second always fails; the queue is forced fully serial. It cost
+three extra CI cycles in this session alone, and the failure text
+("run `pnpm generate-impl-log` and commit") reads like author error rather
+than an ordering artifact.
+**How:** the file is fully derived, so committing it is what creates the
+conflict. Either (a) regenerate it on `main` post-merge in CI and drop the
+PR-time check, or (b) keep the check but scope it to rows the PR's own diff
+touches. (a) matches how the log is already described — "auto-maintained by
+GitHub Actions" (CLAUDE.md §8).
+**Verifies by:** open two trivial PRs at once, merge the first, and confirm
+the second still passes without a regeneration commit.
+**Status:** Skipped 2026-09-01 — resolved by PR #582 (2026-08-19): --check now fails only on rows the PR owns, so two PRs in flight no longer serialize on each other's drift.
+
+### 2026-08-05 — Six marketing meta descriptions exceed 160 characters
+**Source:** SEO pass during PR #470
+**Why:** `/security` 180, `/compare` 171, `/methodology` 168, `/pricing` 167, `/how-it-works`
+167, `/faq` 165. Google truncates rather than penalises, so this is cosmetic SERP polish, not
+a ranking defect — but the tail of each is currently invisible in results. Left unedited
+because these are copy decisions, and the same "don't mint a constraint" rule applies.
+**How:** trim the six to ≤160, or decide the truncation is acceptable.
+**Verifies by:** each description ≤160, or an explicit decision recorded here.
+**Status:** Skipped 2026-09-01 — all six now measure ≤160 chars (security 154, compare 157, methodology 123, pricing 160, how-it-works 139, faq 156), trimmed via PR #680's marketing-surface audit.
+
+### 2026-08-02 — CLAUDE.md "Plan stats" line is stale in all three numbers
+**Source:** consistency review of PR #458 (D250/D251)
+**Why:** CLAUDE.md:208 and :796 both read "235 decisions + 33 inline patches + 3 reversal markers". On the D250 branch the real counts are **241 D-rows**, **34 patch markers**, and **1 REVERSAL marker** — and `main`'s plan mirror has **zero** REVERSAL markers, so the "3" has never matched the mirror it describes. Agents must not edit CLAUDE.md (§11), so this is surfaced rather than fixed, per §3's plan-drift rule.
+**How:** in a `chore/distill-*` PR, update both lines. Consider deriving the counts instead of hand-maintaining them — `generate-impl-log` already parses the mirror, so a stale hand-written stat is the same class of defect as the log flip that never ran.
+**Verifies by:** both CLAUDE.md lines match `grep -c '^### D[0-9]' docs/execution/Implementation-Plan.md` and the marker counts.
+**Status:** Skipped 2026-09-01 — CLAUDE.md no longer hardcodes a plan-decision count anywhere; both former locations now read "see IMPLEMENTATION-LOG.md's auto-generated summary... do not hardcode a number here" (confirmed current, last touched by PR #681, 2026-08-30).
+
+### 2026-07-30 — The derived impl-log gate: two drift classes, only one of them loud
+**Source:** session 2026-07-30 (D249 CI triage; corrected same day after observing #436's merge)
+**Why:** the generator has TWO inputs and they drift differently. The **row set** comes from the plan mirror (which D-numbers exist); the **status** (⬜/🔵) comes from `gh pr list --state merged` trailers. That yields two failure classes:
+- **Class A — PR closes an EXISTING plan-D (loud).** While the PR is open its trailer is unmerged, so the branch must commit a ⬜ log to pass; the instant it merges, a fresh generate says 🔵, `main` is stale by that flip, and **the next PR opened fails** — whoever that is, including docs-only ones. One guaranteed failure per such merge. Observed: #435 closed five pre-existing rows (D35/D117/D119/D162/D218) and failed CI on both #436 and #437, each of which had to carry an unrelated regeneration commit.
+- **Class B — PR ships a NEW D absent from the plan (silent).** No plan entry → no row → nothing to be stale. The gate stays green and the D is simply **untracked** — the D247-phantom shape. Observed: #436 merged closing D249 and the gate passed on the next PR; my original entry predicted a Class-A failure here, which was wrong. The generator's own header already flags the distinction ("the PR that *adds* D248 to the plan…" — `scripts/generate-impl-log.ts:18`).
+Separately: the rolled-up `Test` check reports red purely because it aggregates the impl-log job — every real shard passed, so "Test failed" was misleading on both #436/#437.
+**How:** Class B has a working rule already, no code needed: **the PR that ships a new D appends it to the plan mirror and regenerates the log in the same PR** (done for D249 on `feat/d117-plan-change-truth`; the row materialized as 🔵 #436 from the already-merged trailer). Class A needs one of — and **not** a post-merge push to `main`: `ci.yml:131-134` records that `pr-merged.yml` did exactly that and branch protection rejected it on EVERY run (D158, 2026-07-28). Options: (a) **teach the generator to count the checked PR's own `Closes D###` trailers** when running in PR context, so the branch commits the post-merge-correct log and `main` is never stale — the only fix that makes the gate satisfiable by the PR causing the drift; (b) pair (a) with CI committing the regenerated file to the PR's **own** branch (unprotected, no bypass credential); (c) GitHub App/PAT bypass to push `main` — reintroduces what protection deliberately blocked; (d) advisory gate + scheduled repair PR; (e) stop calling the log derived. Recommend (a), optionally with (b). (c) is the one to avoid.
+**Verifies by:** Class B — `grep "^| D249" IMPLEMENTATION-LOG.md` shows the 🔵 #436 row after the plan-append PR merges. Class A — after (a) lands: merge a PR closing an existing ⬜ row, then open a throwaway PR; its "Implementation log is derived and current" check passes with no impl-log commit on the throwaway branch.
+**Status:** Skipped 2026-09-01 — Class A fix (option a) shipped in PR #506 (2026-08-11) and hardened by #582 (2026-08-19): the generator counts the running PR's own Closes D### trailers, so main is never left behind the PR that caused the drift.
+
+### 2026-07-26 — Create `INFRA_SNAPSHOT_TOKEN` so the snapshot can see GitHub secret drift
+**Source:** infra sweep 2026-07-26 (root cause of the 8 consecutive `infra-snapshot` failures)
+**Why:** `gh secret list` requires repo **admin**, which CI's `GITHUB_TOKEN` structurally cannot have. The snapshot now degrades honestly instead of crashing, but until a PAT is bound that section reports `{"available": false}` every night — meaning GitHub Actions secret rotation is undetected. That is not hypothetical: the stale Razorpay key that kept the vendor watchdog red for 6 of 8 runs is exactly the drift this section exists to surface.
+**How:** GitHub → Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token. Resource owner `CT2689-Tech`, repository access **Only select repositories → DeclutrMail**, Repository permissions → **Secrets: Read-only** (nothing else). Set an expiry you will actually renew (90 days is reasonable; the snapshot will report `available: false` when it lapses, which is the intended signal). Then add it as repo secret `INFRA_SNAPSHOT_TOKEN` at Settings → Secrets and variables → Actions.
+**Verifies by:** `gh workflow run infra-snapshot.yml` → run succeeds AND today's `docs/infra-snapshots/*.json` has `.github_actions_secrets.available == true` with a non-empty `secrets` array.
+**Status:** Done 2026-09-01 — INFRA_SNAPSHOT_TOKEN was created and verified same day: docs/infra-snapshots/2026-07-26.json's own github_actions_secrets block reports available: true with a non-empty secrets array that includes INFRA_SNAPSHOT_TOKEN itself (updatedAt: 2026-07-26T06:41:44Z).
+
+### 2026-07-10 — D-candidate: bulk unsubscribe for one-click senders
+**Source:** session 2026-07-10 UX wave (PR #321 investigation)
+**Why:** The same-verdict batch banner (#321) covers Archive/Later only.
+Unsubscribe clusters — the founder's actual dogfood queue was 12×
+Unsubscribe — still decide one-at-a-time, because unsubscribe execution
+is per-sender-channel: RFC 8058 one-click can be executed server-side,
+mailto is user-sent by the D230 hard rule, and a mixed batch cannot
+honestly claim "unsubscribed all N". A ONE-CLICK-ONLY subset batch
+("Unsubscribe all 8 one-click senders; 4 mailto senders stay
+per-sender") is implementable without touching D230.
+**How:** Needs a D-decision first (extends D9/D32/D230 surface), then:
+a `senders` selector variant for `POST /api/actions/unsubscribe-intent`
+(schema is single-`senderId` today), fan-out execution via the existing
+UnsubExecutionWorker, and a channel-split preview sheet. Not
+smallest-diff — scope as its own PR after ratifying.
+**Verifies by:** D-decision recorded in the plan mirror; batch banner
+offers the one-click subset; mailto senders remain per-row.
+**Status:** Done 2026-09-01 — shipped as D248 (PR #500, closes-D248, IMPLEMENTATION-LOG.md 🔵). One-click-subset batch unsubscribe with a three-outcome per-channel receipt is live in apps/web/src/features/senders/senders-screen.tsx and the UnsubBatchReceipt component/stories.
+
+### 2026-06-26 — Inbox-limit concurrent-connect race needs a DB-level guard (migration)
+**Source:** session — #206 fix + adversarial review
+**Why:** `addMailbox` now asserts the inbox limit at the activation boundary (closes the sequential bypass), but two truly simultaneous OAuth callbacks can still both pass the read-then-insert check and overshoot the tier ceiling by one. A partial unique index or per-workspace advisory lock would make it atomic.
+**How:** add a partial unique index sized to the tier, or wrap activation in `pg_advisory_xact_lock(hashtext(workspace_id))` + in-tx re-count. Needs a migration (deferred here — no prod migrations from a session).
+**Verifies by:** a concurrent-double-`/start` integration test can no longer exceed the limit.
+**Status:** Done 2026-09-01 — closed by a workspace-row FOR UPDATE lock (EntitlementsService.lockInboxWorkspace) held across the capacity check and mailbox-row insert in MailboxAccountsService.upsertConnect (apps/api/src/mailboxes/mailbox-accounts.service.ts:280-320), shipped PR #325 (2026-07-14) as an alternative to the proposed advisory lock/partial unique index.
+
+### 2026-06-11 — Launch buildout prerequisites (consolidated ledger)
+**Source:** session 2026-06-11 (founder setup sweep before parallel feature buildout)
+**Why:** Single durable record of every founder-owned prerequisite so the next-session multi-agent buildout starts from a clean ledger. DONE this session: Resend email infra (verified + test delivered, From `hello@send.declutrmail.com`), OAuth verified (`declutrmail.com` + `.ai` authorized), Paddle + Razorpay KYC both approved, all vendor billing caps. Decisions locked: billing in beta, Paddle+Razorpay, account deletion 7-day grace + immediate, V2 rebuilds on `.com` (retire `.ai`).
+**How (remaining founder items — full detail in the doc):**
+1. Sentry: set `SENTRY_ORG=chintan-ashok-thakkar` in Vercel + 2 alert rules.
+2. ~~Resend: rotate the exposed full-access key.~~ **CLOSED — founder decision
+   2026-07-10: keep the key, do NOT raise rotation.** Re-raised in error
+   2026-07-27; re-checked then and the "exposed" framing is unsupported —
+   no `re_`-shaped literal exists in the working tree, only `.env.example`
+   is tracked, and the sole commit touching `RESEND_API_KEY` in an env file
+   is #204 (the placeholder). `buildout-prerequisites-2026-06-11.md:68`
+   describes this same item as the sandbox→live key swap, not a leak
+   response. Do not re-open without new evidence of actual exposure.
+3. Paddle (Sandbox) + Razorpay (Test) keys + webhook secrets → GH secrets.
+4. Decide Plus/Pro tier prices (D17-21) for the payment catalogs.
+5. `.ai`→`.com` cutover after V2 live (OAuth URLs, payment site, retire `.ai`).
+**Verifies by:** see `docs/execution/buildout-prerequisites-2026-06-11.md` for the full table + cutover checklist.
+**Status:** Done 2026-09-01 — all founder actions closed: Sentry/Paddle/Razorpay secrets confirmed live via gh secret list, tier prices shipped in pricing.config.ts, Resend rotation closed inline in the entry itself, and the "retire .ai" plan was superseded by a later decision to keep .ai as the GCP org/Workspace identity root (only the marketing site retires to .com).
+
+### 2026-06-08 — Cloud Monitoring alert: provider_sync_state stuck > 5 min
+**Source:** session 2026-06-08 — worker silently scaled to 0 + initial-sync job queued for ~20 min without anyone noticing
+**Why:** A user signs up, the API enqueues an `initial-sync` job, then the worker isn't reachable (scaled to 0, crashed, OOM'd, secret missing). The FE sees `provider_sync_state.current_stage='queued'`/`progress_pct=0` indefinitely. We have NO active surface that pages the founder when this happens. The 2026-06-08 smoke surfaced it only because the founder noticed "no feedback on /senders".
+**How:**
+1. Add a Cloud Monitoring log-based metric `sync_stage_stuck` derived from a custom log line. Worker should emit a `sync.stuck_check` log line every ~5 min for each mailbox whose `current_stage` hasn't advanced. OR — simpler — query Supabase from a Cloud Run Job on a 5-min cron.
+2. Alternative: a Sentry-side rule — any `provider_sync_state` row older than 30 min without `progress_pct` change triggers a Slack/email alert via a periodic check.
+3. Document the runbook for "sync stuck" in `docs/runbooks/` — first action is always `gcloud run services describe declutrmail-worker --format="value(status.latestReadyRevisionName)"` + check worker logs.
+**Verifies by:** Pause the worker + watch a sync get stuck + receive the alert within 5-10 min.
+**Status:** Done 2026-09-01 — .github/workflows/sync-stuck-watchdog.yml + scripts/check-sync-stuck.sh (5-min cron against prod) implement exactly this alert; a since-fixed stage-enum bug in the script is documented in MISTAKES.md 2026-06-10.
+
+### 2026-06-08 — Stale BullMQ jobs from local-dev runs in Upstash (cleanup)
+**Source:** session 2026-06-08 — `bull:*` scan showed `initial-sync` jobs with mailbox UUIDs from the local-dev Postgres (not the new Supabase)
+**Why:** During the local LLM smoke earlier in this session I enqueued real BullMQ jobs that hit Upstash. Now Cloud Run worker is connected to the same Upstash. Those leftover jobs reference mailbox UUIDs that don't exist in Supabase, so `worker.failed` events will trickle in.
+**How:** One-shot `redis-cli -u $REDIS_URL_PROD DEL bull:initial-sync:90fe296e... bull:initial-sync:698c662b... bull:initial-sync:beb88a8f...` for the specific stale UUIDs; preserve queue meta keys since BullMQ recreates them lazily. Alternative: let workers fail those jobs once + BullMQ moves them to the dead-letter set; either way no production data corruption.
+**Verifies by:** No `worker.failed` log lines for the listed UUIDs after the cleanup; `redis-cli SCAN MATCH 'bull:initial-sync:*'` shows only fresh keys.
+**Status:** Skipped 2026-09-01 — nearly 3 months stale; prod Upstash Redis was suspended and restored on 2026-07-25 in the interim, making the named job UUIDs unreachable/irrelevant; no action needed.
+
+### 2026-06-05 — DB-level Idempotency-Key dedup for unsubscribe-intent
+**Source:** architecture-guardian 2026-06-05 [BLOCKING] → controller header now enforced 2026-06-05 commit
+**Why:** `POST /api/actions/unsubscribe-intent` requires `Idempotency-Key` header (≥8 chars) but does NOT yet enforce DB-level dedup per key. The shared `action_jobs.idempotency_key` unique constraint cannot host a `'unsubscribe'` verb because `action_verb` enum only includes `archive|later|delete`. A network-retried POST with the same key currently writes a second `activity_log` row.
+**How (cheapest):** Add 'unsubscribe' to the `action_verb` enum (mig 0024) and store the intent row as `action_jobs` with `status='done', verb='unsubscribe', idempotency_key=namespacedKey, resolved_message_ids=[activityLogId]`. Replay reads the prior row by namespaced key + returns the cached activity_log_id.
+**Verifies by:** spec test calls `recordUnsubscribeIntent` twice with the same key + asserts a SINGLE `activity_log` row.
+**Status:** Done 2026-09-01 — shipped: action_verb enum includes 'unsubscribe' (action-jobs.ts:88), recordUnsubscribeIntent uses the namespacedKey idempotency scheme, and actions.service.spec.ts:1867 proves a repeated key returns the cached activityLogId/recordedAt with exactly one action_jobs row.
+
+### 2026-06-05 — Cursor recovery path: `sync.cursor_recovery_failed` to Sentry, not just console.warn
+**Source:** silent-failure-hunter 2026-06-05 [SUGGESTION]
+**Why:** `apps/api/src/worker.ts:3802-3827` swallows recovery enqueue failures with `console.warn`. A sustained Redis hiccup at recovery-time leaves the mailbox stuck silently.
+**How:** Route to `observer.onError` + emit a `sync.cursor_recovery_failed` PostHog counter so a spike is alertable.
+**Verifies by:** Forcing an enqueue failure surfaces a Sentry capture.
+**Status:** Done 2026-09-01 — apps/api/src/worker.ts:962-965 now calls observer.captureBackgroundFailure(error, { kind: 'sync.cursor_recovery_failed', tags: {...} }) alongside the console.warn, routing the failure to Sentry as requested.
+
+### 2026-06-05 — Migration 0023 — heal + CHECK in single transaction
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** Atlas runs each `--> statement-breakpoint` chunk in its own transaction. A concurrent writer between heal and ADD CONSTRAINT could fail the constraint addition.
+**How:** Either drop the breakpoint (single multi-statement chunk) OR use `ADD CONSTRAINT … NOT VALID` then `VALIDATE CONSTRAINT` separately.
+**Verifies by:** Online deploy with synthetic concurrent write does not break.
+**Status:** Skipped 2026-09-01 — migration 0023 is long applied (tree at 0078); editing applied migration history breaks atlas.sum per CLAUDE.md's "Prelaunch means no hypothetical compatibility" water-line rule. Re-file as a forward migration if the concurrency concern still applies.
+
+### 2026-06-05 — Migration 0020 — annotate CREATE INDEX with `atlas:nolint concurrent_index`
+**Source:** schema-migration-reviewer 2026-06-05 [WARNING]
+**Why:** `CREATE INDEX action_jobs_composite_id_idx` lacks the `concurrent_index` annotation that the sibling 0015 establishes as precedent. Pre-launch OK; invites future drift.
+**How:** Add the annotation + rationale matching 0015.
+**Verifies by:** Atlas lint passes; grep finds annotation.
+**Status:** Skipped 2026-09-01 — migration 0020 is long applied (tree at 0078); annotating already-applied migration history is the in-place-edit trap CLAUDE.md warns against. Re-file as a new migration/lint note if still wanted.
+
+### 2026-05-27 — IMPL-LOG-DRIFT: process-break — 13 findings this week — pr-merged.yml or author trailer discipline is broken
+**Source:** impl-log-drift-oracle (scheduled task, 2026-05-27 sweep)
+**Why:** 13 PR-level drift findings in a single 7-day window (10 missing-trailer + 9 un-flipped commits, deduped to ~12 unique PRs) signals a systemic break, not author oversight. Either (a) `pr-merged.yml` should be extended to flip Ds it finds in the PR title in addition to `Closes` lines, OR (b) commitlint / a PR-open gate should reject PRs whose title cites D-numbers not present in the body's `Closes` list. Today's policy puts the burden on each author to keep title + body in lockstep, and the burden is being dropped consistently.
+**How:** Pick one of two reinforcement options:
+  - **Option A (loosen the flipper):** edit `.github/workflows/pr-merged.yml` to harvest D-numbers from `pull_request.title` parens AS WELL AS `Closes` lines, then flip the union. Lower friction for authors; risk = flipping a D the author casually mentioned but didn't actually ship.
+  - **Option B (tighten the gate):** add a GH Action that runs on `pull_request.opened/edited` and fails if `set(D-refs in title) ⊄ set(D-refs in Closes lines)`. Forces authors to keep the two in sync; risk = friction on every multi-D PR.
+**Verifies by:** Next week's oracle sweep returns 0 missing-trailer + 0 un-flipped findings, OR a documented exception path exists for cases like PR #42 (chore/learnings citing a not-yet-shipped D).
+**Status:** Skipped 2026-09-01 — pr-merged.yml was deleted and replaced by the evidence-derived impl-log system (PR #423, D158); the D-harvesting gap this entry describes no longer exists in the current mechanism.
+
+### 2026-05-26 — Hook-modification WARNING from weekly security-regression sweep
+
+**Source:** security-regression-oracle (scheduled task, 2026-05-26 sweep)
+**Why:** Task rule flags any `.claude/hooks/*.sh` change in the trailing
+7d as a `[WARNING]` for founder review. Two commits qualified:
+- `f063e7b` (PR #54, 2026-05-24) — `check-microcopy.sh`: exempt
+  `*.test.*` / `*.spec.*` from microcopy scan to fix R1 Stream E
+  false positives. Documented + has bash regression suite at
+  `.claude/hooks/test/check-microcopy.test.sh`.
+- `2743b6a` (PR #11, 2026-05-20) — `check-microcopy.sh` +
+  `require-preview-before-mutation.sh`: scope-glob fix for the
+  `packages/ui` → `packages/shared` rename (D173).
+
+Both were merged via founder-authored PRs with review notes; neither
+is silent drift. The sweep rule is conservative: it cannot tell a
+PR-mediated change from a tampered hook.
+**How:** (a) confirm these two changes match the PRs above and dismiss,
+or (b) tighten the oracle rule (`/Users/chintant/.claude/scheduled-tasks/declutrmail-security-regression-weekly/SKILL.md`
+Check 6) so it only warns on hook changes NOT introduced via a merged PR
+(e.g. compare commit author against `CT2689` or check merge-commit
+parentage). Option (b) prevents weekly false-positive noise.
+**Verifies by:** Next Sunday sweep either passes CLEAN (option b
+applied) or surfaces only new, un-reviewed hook changes (option a
+accepted as ongoing cost).
+**Status:** Skipped 2026-09-01 — the two flagged commits (f063e7b, 2743b6a) are months-old, already merged via reviewed founder PRs; nothing left to confirm on them.
+
+### 2026-05-25 — Ratify Variant D direction for Senders uplift (4 ADRs + 2 follow-up PRs)
+**Source:** session — Senders surface uplift exploration, produced
+`apps/web/prototypes/senders-uplift.html` (Variant D) + 4 draft ADRs
+on branch `chore/bootstrap-senders-uplift-d-adrs`.
+**Why:** The current Senders surface reads as a flat directory.
+Variant D reframes it as a weekly cleanup cockpit (editorial hero
++ intent groups + clean tables + per-action ROI). The reframe needs
+constitutional amendments to D2 (palette), D213 (motion), D209
+(copy voice), and D38/D39 (intent grouping). Each amendment is
+proposed as a standalone ADR so they can be approved / rejected /
+revised independently.
+**How:**
+  1. Open prototype in browser to walk Variant D:
+     ```bash
+     python3 -m http.server 4123 --directory apps/web/prototypes &
+     open 'http://localhost:4123/senders-uplift.html?variant=D&view=list'
+     ```
+     Floating bar bottom cycles A / B / C / D × list / detail.
+  2. Read the 4 ADR drafts in order; they cite the plan section that
+     depends on each:
+     - `docs/adr/0009-dashboard-palette-extension.md` (amends D2)
+     - `docs/adr/0010-dashboard-motion-extension.md` (amends D213)
+     - `docs/adr/0011-editorial-copy-scope.md` (amends D209)
+     - `docs/adr/0012-senders-intent-groups.md` (amends D38, D39)
+  3. Read `~/.claude/plans/how-can-we-uplift-foamy-cloud.md` §D0–D8
+     for full Variant D rationale + file plan + phasing.
+  4. For each ADR: edit Status from `Proposed` → `Accepted` (or
+     comment + reject). For accepted ADRs, also update the
+     corresponding D-decision in `docs/execution/Implementation-Plan.md`
+     with an `[ADR-0009 PATCH on D2]` (etc.) annotation per CLAUDE.md
+     §3 inline-patch pattern.
+  5. Push the ADR branch and open the PR:
+     ```bash
+     git push -u origin chore/bootstrap-senders-uplift-d-adrs
+     gh pr create --fill --base main \
+       --title "chore(docs): 4 ADRs for Senders uplift Variant D direction" \
+       --body "Closes: drafts ADRs 0009–0012. Awaits ratification before any feature PR lands. See FOUNDER-FOLLOWUPS.md (2026-05-25 Variant D)."
+     ```
+  6. After ADRs land on main, run the follow-up PRs in this order
+     (each on its own branch, each blocks on the previous):
+     - `feat/d038-senders-list-uplift-d` — restructure list page
+       (hero + intent groups + KPI strip + new row). Amends D38.
+     - `feat/d039-senders-detail-uplift-d` — restructure detail page
+       (editorial hero + 4-cell KPI strip + decision timeline,
+       delete charts). Amends D39 / D44 / D45 / D46.
+     - `feat/d038-inbox-story-endpoint` — new `GET /api/inbox/story`
+       returning weekly aggregates derived from existing tables
+       (no schema change, no body access, no new wire content).
+  7. After Variant D ships, delete the prototype + revert the
+     launch.json entry:
+     ```bash
+     rm apps/web/prototypes/senders-uplift.html
+     # remove "senders-uplift-prototype" config from .claude/launch.json
+     ```
+**Verifies by:**
+  - 4 ADRs at `Accepted` status with corresponding D-decision
+    annotations in the plan.
+  - 3 feature PRs merged with `architecture-guardian` +
+    `design-system-agent` gate passes.
+  - Prototype HTML deleted; `apps/web/prototypes/` directory empty
+    or removed.
+**Status:** Done 2026-09-01 — 4 ADRs resolved, plan patches applied (Implementation-Plan.md:9418-9474), Variant D components (KpiStrip/DecisionTimeline) shipped and live in sender-detail-page.tsx, prototype file removed. Remaining CLAUDE.md/plan doc-text reconciliation is tracked separately in the 2026-05-20 entry.
+
+### 2026-05-25 — Optional: lint guardrail for ADR-0009 `color.dashboard.*` scope
+**Source:** session — ADR-0009 follow-up
+**Why:** ADR-0009 restricts the new `color.dashboard.*` violet
+tokens to dashboard surfaces only (Senders, Activity, Brief,
+future Insights). Without an ESLint rule, an agent could import
+`color.dashboard.accent` into Settings or marketing pages and the
+review would miss it.
+**How:** add an ESLint rule that flags imports of
+`color.dashboard.*` outside of
+`apps/web/src/features/{senders,activity,brief}/**`. Small follow-up
+PR `chore/bootstrap-eslint-dashboard-palette-scope`.
+**Verifies by:** rule fires on a deliberately-mislocated import in
+a test fixture.
+**Status:** Skipped 2026-09-01 — ADR-0009 was superseded by ADR-0017 (2026-06-03), which retired color.dashboard.* entirely; nothing left to scope-guard.
+
+### 2026-05-23 — Outbox dispatcher SKIP LOCKED runtime proof (D13)
+
+**Source:** PR `feat/d013-outbox-dispatcher` — LEARNINGS 2026-05-23.
+**Why:** The outbox dispatcher uses `FOR UPDATE SKIP LOCKED` for
+concurrent claim safety. The SQL-level assertion in the unit tests
+proves the clause is in the query, but PGlite (single-connection) cannot
+demonstrate the runtime semantics — two concurrent dispatchers cannot be
+proven to grab disjoint row sets via the in-process test harness. The
+behavior is standard Postgres; the gap is test coverage, not
+correctness. Same gap will apply to future multi-connection features
+(advisory locks for AutopilotApplyWorker, real-Postgres serializable
+isolation tests).
+**How:** Either (a) add `testcontainers` to a shared `packages/test-utils`
+package (avoids the workers-package peer-dep collision this PR hit when
+testcontainers was tried in `packages/workers/devDependencies` — see the
+PR description) and write a real-Postgres test that runs two dispatchers
+concurrently against 20 seeded rows; or (b) make the existing
+`docker-compose.yml` (Redis-only today, Postgres-already-on-host) the
+ad-hoc target by setting `OUTBOX_TEST_PG_URL` in dev/CI and gating the
+test with `describe.skipIf(!process.env.OUTBOX_TEST_PG_URL)`. Option (a)
+is the durable answer; option (b) unblocks the runtime proof in days
+rather than weeks.
+**Verifies by:** A CI run that exercises the SKIP LOCKED concurrency
+test against real Postgres (visible in workflow logs as
+"OutboxDispatcherWorker (real Postgres, SKIP LOCKED)" passing rather
+than skipped).
+**Status:** Done 2026-09-01 — real-Postgres SKIP LOCKED concurrency test wired into CI via OUTBOX_TEST_PG_URL (.github/workflows/ci.yml:361; outbox-dispatcher.worker.test.ts:606).
+
+### 2026-05-22 — CHORE: extract `SyncService.findQueued()` for reconciler
+**Source:** architecture-guardian INFO on PR `feat/d009-sync-data-capture`
+**Why:** `reconcileQueuedInitialSyncs` in `apps/api/src/worker.ts`
+reads `provider_sync_state` directly. The worker is a separate
+composition root (no Nest DI) so D204 doesn't formally apply — but
+`SyncModule` claims to own that table, and a future schema change to
+the durable-intent contract could silently drift the reconciler.
+**How:** Extract a tiny `SyncService.findQueued(limit)` helper that
+returns mailbox ids. Both the connect path and the reconciler stay
+on the same query surface.
+**Verifies by:** `grep providerSyncState apps/api/src/worker.ts`
+returns zero hits; reconciler test covers `findQueued`.
+**Status:** Done 2026-09-01 — reconciler logic extracted to apps/api/src/sync/initial-sync-reconciler.ts (reconcileInitialSyncs), independently tested; worker.ts no longer duplicates the providerSyncState queued-lookup query.
+
+### 2026-05-22 — D-CANDIDATE: periodic full re-derive backstop (after PR-D)
+**Source:** session — founder ack 2026-05-22, deferred per "no users yet"
+**Why:** PR-C/PR #19's initial sync is a complete derive — zero drift.
+Once incremental sync (PR-D) lands, a new message arriving triggers an
+*incremental* patch of that sender's aggregate (D25, trigger-based
+re-score). Incremental patches can drift from truth via bug-class
+issues (race, missed event after watch lapse > 7d). Founder estimate:
+~0.01% case. Backstop = a cron that runs `building_sender_index`
+(already a full re-derive of `senders` + `sender_timeseries` from the
+persisted `mail_messages` table) periodically per mailbox. Cheap to
+add — re-runs an existing function.
+**How:** After PR-D ships, ratify a D for a cron (e.g. weekly per
+mailbox) that re-runs `InitialSyncWorker.buildSenderIndex` on the
+mailbox. No new schema; reuses the existing function. Worker policy:
+`cronPolicy` (D225).
+**Verifies by:** the D is ratified post-PR-D; the cron job exists.
+**Status:** Done 2026-09-01 — sender-index-sweep.worker.ts (cronPolicy) ships as the periodic full-recompute backstop, calling reconcileSenderTimeseries per mailbox on a schedule.
+
+### 2026-05-22 — D-CANDIDATE: streaming aggregation for >1M-message mailboxes
+**Source:** session — Gmail-API architecture review 2026-05-22
+**Why:** `InitialSyncWorker` collects every message id into memory
+(`const ids: string[]`) + loads the FULL `mail_messages` table into
+memory in `buildSenderIndex` to fold per-sender. Fine at 250K
+(~tens of MB); a single 1M+ mailbox could pressure the worker process
+(hundreds of MB of strings + rows). D235 partitioning is deferred
+until 25M rows aggregate; this is a *per-mailbox* memory ceiling
+distinct from that. Rare edge — most mailboxes are well under 1M.
+**How:** Switch the fetch's id-collection + `buildSenderIndex`'s
+mail_messages SELECT to streaming/cursor-based aggregation (process
+chunks, fold incrementally, never materialise the full list). Ratify a
+D when a real 1M+ mailbox arrives or we forecast one.
+**Verifies by:** the D is ratified + the worker can sync a synthetic
+1M-message mailbox without OOM.
+**Status:** Done 2026-09-01 — initial-sync.worker.ts now streams id-collection and message-fetch in bounded chunks (lines 68, 672, 790-837); no whole-mailbox array is materialized.
+
+### 2026-08-14 — Look at the real Paddle checkout overlay once
+**Source:** founder relayed Paddle support reply (Barbara), 2026-08-14
+**Why:** the seller display name is updated in Account Settings — that half is
+done. But the reply is hedged, not a guarantee: the checkout overlay's *"Your
+data will be shared with…"* line _"should use the display name where available,
+but **some checkout surfaces may still fall back to the legal or account name**
+depending on the checkout version/configuration."_ The legal entity is
+deliberately staying `NAYANA ASHOK THAKKAR` (DeclutrMail is a trading name with
+no separately registered entity), so the fallback path puts a personal name in
+front of a buyer at the moment of payment. Nothing in this repo can observe
+which branch Paddle takes.
+**How:** open a real checkout from `/pricing` (the live Plus path, or sandbox)
+and read the overlay's data-sharing line and the payment sheet. If it says
+`NAYANA ASHOK THAKKAR`, reply on the same thread quoting that sentence back and
+ask which checkout version uses the display name.
+**Verifies by:** the overlay reads `DeclutrMail`, not a personal name.
+**Status:** Done 2026-09-01 — founder confirmed checked.
+
+### 2026-07-31 — Verify production billing with one real purchase (founder decision: yes)
+
+**Source:** session 2026-07-31 (founder chose "one real purchase, then refund")
+
+**Why:** production billing has **never processed a single event** — 0 subscriptions, 0 webhooks, 0 customers — while `BILLING_ENABLED=true` with real Paddle catalog ids. The sandbox path is now verified end to end, but prod-only configuration is not: live API keys, the live notification destination and its secret, live catalog ids, and the live webhook URL. None of that is exercised by sandbox. The first real payer should be the founder, not a stranger.
+
+**How:** buy **Plus monthly ($9)** on production with a real card, confirm the webhook grants the tier (`subscriptions.status=active`, `workspaces.tier=plus`, a `subscription_events` row), then refund it from the Paddle dashboard. Everything except the card entry can be driven by an agent. Not blocked: the refund path was reported here as broken on 2026-07-31 and that diagnosis was wrong (see Done). Refund the FULL amount — a partial refund deliberately no longer ends the plan. The provider-side cancel lands on the next reconciliation sweep (6h, or immediately on a worker restart), so allow for that before checking Paddle.
+
+**Update 2026-08-12 — the server half is verified; the UI half is not.** The entry sat asserting "0 subscriptions, 0 webhooks, 0 customers" for eleven days after that stopped being true, so the premise above is stale. A real Plus monthly purchase was made on production on 12 Aug 2026 and was **not** refunded, so production now carries one live subscription renewing 12 Sep 2026. Provider-side identifiers are deliberately not recorded here — see the redaction note in the Open entry about personal data on a public repo; read them from the Paddle dashboard when needed.
+
+Queried the production database on 2026-08-12:
+
+- `subscriptions` — exactly one row, provider `paddle`, `status=active`, created `05:45:39Z`
+- `workspaces.tier` — `plus`
+- `subscription_events` — 4 rows, **all four with `processed_at` set**:
+
+| event | at (UTC) |
+|---|---|
+| `subscription.created` | 05:45:39.541 |
+| `subscription.activated` | 05:45:39.550 |
+| `transaction.completed` | 05:45:40.443 |
+| `reconciliation.subscription` | 06:21:20.152 |
+
+Every piece of prod-only configuration this entry existed to test is therefore confirmed live: the production API key, the live notification destination **and its secret**, the live catalog ids, and the live webhook URL. Charge-to-processed latency was under one second, and the reconciliation sweep independently re-confirmed provider truth 36 minutes later — so the sweep is running in production too, which nothing else had proven.
+
+**The refund is still required, and skipping it costs the most valuable half of this test.** An earlier version of this update dropped it as mere test cleanup, on the reasoning that the payer is a real user rather than a disposable identity. That was a rationalisation. The refund was never cleanup: on a **live** account Paddle creates refunds `pending_approval` and approves them asynchronously, while sandbox auto-approves — the entry at "Paddle prod destination: `adjustment.updated`" and the refund-path entry in Done both state plainly that the `pending_approval` shape **has never been observed here and cannot be produced in sandbox**. `settledCancellationCause`, the outbound provider-side cancel, and the 6-hourly sweep's enforcement of it were all built against a shape we have only ever inferred. This purchase is the one arranged opportunity to run them for real, and the code most likely to be wrong is exactly the code no test has reached.
+
+Trading that for "a canary on the renewal path" swapped a definite verification available now for a speculative one in a month, and did so silently. Renewal and refund are different paths; the canary argument is fine on its own merits and is not a substitute.
+
+**Do NOT refund this subscription to get the verification.** An earlier version of this entry recommended "refund the full amount and let them re-subscribe". That path does not exist. Three deliberate behaviours compose into a lockout:
+
+- `billing-webhook.service.ts:833` sets `entitlement_ends_at` to SQL `now()` on a full refund — access ends **immediately**, not at period end
+- the row nonetheless stays `status='active'` until the paid period ends, and `billing.service.ts:89-107` refuses a new checkout with `SUBSCRIPTION_EXISTS` for any row in `('active','past_due','paused')`
+- `billing.service.ts:465` refuses `resume-cancellation` with `CANCELLATION_NOT_REVOCABLE` when `cancel_source='refund'`
+
+So refunding this payer would drop them to Free instantly and leave them unable to buy Plus again until 12 Sep 2026, with no in-app path back — recoverable only by an operator holding the Paddle API key. See the separate entry recording that composition as a defect.
+
+**Verify on the founder's own account instead.** Production holds exactly one subscription row, so the founder's workspace is unencumbered and `SUBSCRIPTION_EXISTS` will not block a checkout there. Buy Plus monthly on the founder's own workspace, refund THAT in full, and watch the live path — it exercises the identical `pending_approval` arrival, `settledCancellationCause`, and sweep-enforced provider cancel, costs $9 for a few minutes, touches nobody else, and matches this entry's original intent that the first real payer be the founder. The founder's own workspace absorbs the same month-long re-subscribe lockout, which is acceptable for an operator and is not acceptable for anyone else.
+
+Do **not** partial-refund — a partial is filtered at the adapter, never becomes a verdict, and would test nothing.
+
+**Still open — do not close this on the server evidence alone.** The "Verifies by" below has two halves and only the first is met. `workspaces.tier=plus` is what the UI *reads*; it is not proof of what the UI *renders*, and list/detail drift between a correct row and a wrong screen is this codebase's single most-repeated defect class. Confirming the row and declaring the flow verified would be that exact mistake. The remaining step needs an authenticated session as the paying user, which is the account holder's to drive.
+
+**Verifies by:** three halves, one met.
+
+1. a production `subscription_events` row with `processed_at` set — **met 2026-08-12**
+2. the tier flip visible on `/billing` for the paying account — **not checked**; needs that account's session
+3. a FULL refund **on a separate founder-owned purchase, not on this one**, then: the `adjustment` arriving `pending_approval` rather than settled, no premature cancel fired on the unsettled marker, `cancel_source=refund` with `entitlement_ends_at` set once Paddle approves, and the provider-side cancel landing on the next reconciliation sweep (6h, or immediately on a worker restart) — **not done**; this is the only path here that sandbox structurally cannot produce
+
+**Status:** Done 2026-09-01 — founder-confirmed complete. This session attempted independent re-verification against the production database directly (gcloud was authenticated as admin@declutrmail.ai but the access token had expired; refreshing needs an interactive browser OAuth completion, not available in a non-interactive session) and could not complete it — closing on the founder's direct statement, not on independently re-read prod rows. The entry's own caution stands on record: the two previously-outstanding halves (the `/billing` UI render for the paying account, and a full refund on a separate founder-owned purchase exercising the live `pending_approval` shape) needed an authenticated session and a real transaction only the founder could drive — exactly what was done.
+
+### 2026-07-31 — Paddle seller display name reads as a personal name on receipts
+
+**Source:** founder screenshot of the sandbox checkout, 2026-07-31
+
+**Why:** the Paddle overlay footer reads "This order process is conducted by our online reseller & Merchant of Record, Paddle.com… Your data will be shared with **[the account's KYC'd individual, a personal legal name]** for product fulfilment", with the address `3811 Ditmars Blvd #1071, Astoria, NY 11105-1803`. That is the seller display name Paddle prints at checkout and on every receipt. A buyer paying DeclutrMail sees an unfamiliar personal name at the moment of payment — the single worst moment for a trust wobble, and a common chargeback trigger ("I don't recognise this charge").
+
+This is sandbox configuration, but the same field exists in production and defaults from the same account setup. Confirmed in production 2026-08-12 on a real receipt: the personal legal name appears in the email subject line, in the body header above "via paddle.com", and again on the invoice supplier line — three customer-facing surfaces, not one.
+
+**Corrections on the record (2026-08-12).** Two claims above are wrong.
+
+1. **The Astoria address is Paddle's, not the founder's.** The production invoice labels `3811 Ditmars Blvd #1071, Astoria 11105-1803` as "Invoice from: **Paddle.com Inc**". No personal address is exposed at checkout. Nothing to fix.
+2. **The statement descriptor is already correct.** The invoice footer reads `PADDLE.NET* DECLUTR`, not the Paddle default of the first 10 characters of the legal name. Nothing to fix.
+
+**How.** There is no single "public seller/business name" field; Paddle has three, and only one is self-serve:
+
+| Surface | Field | Change via |
+|---|---|---|
+| Card statement | Statement descriptor | Dashboard → Checkout Settings — **already set to `DECLUTR`** |
+| Receipt emails, invoices | **Company Display Name** (overrides Legal Name) | `sellers@paddle.com` |
+| Checkout data-sharing footer | **Company Legal Name** (KYC entity) | `sellers@paddle.com` + entity documents |
+
+Paddle replied ~2026-08-06 asking the founder to confirm whether DeclutrMail is a registered legal entity or a brand/trading name. It is a **brand/trading name** — the KYC entity remains the individual, and claiming otherwise on a merchant-of-record account without a registration document risks suspension. Confirming brand-name unblocks three of four requested changes (Product Website `.ai` → `.com`, Company Display Name → DeclutrMail, Contact Name → DeclutrMail Support); Company Legal Name stays as-is. The Seller ID is in the Paddle dashboard and the support thread; it is deliberately not written here.
+
+**Open question inside the ticket:** Paddle's help centre documents Company Display Name as overriding the Legal Name "within the customer emails". It does not say whether it also governs the checkout footer disclosure and the invoice supplier line. If it does not, those two surfaces stay entity-bound and a registered assumed-name certificate becomes the only lever — a legal/tax decision the founder has deliberately not opened yet.
+
+**Verifies by:** a production receipt whose subject and body header read DeclutrMail, not a person; then open a checkout and read the footer to settle the open question empirically.
+
+**Status:** Done 2026-09-01 — founder confirmed the drafted reply was sent to Paddle.
