@@ -65,6 +65,14 @@ export const AutopilotApproveResultSchema = z
      */
     alreadyResolvedCount: z.number().int().nonnegative(),
     /**
+     * Rows left `pending` because their sender is currently Protected
+     * (D245's sole safety state) — the action worker re-checks
+     * protection at execution time and would dismiss these anyway, so
+     * they are excluded from `approvedCount` up front rather than
+     * counted as approved and then silently dropped.
+     */
+    skippedProtectedCount: z.number().int().nonnegative(),
+    /**
      * True when an `autopilot-action` sweep job was enqueued for the
      * mailbox (i.e. ≥1 row flipped and the queue is up).
      */

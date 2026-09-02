@@ -4493,3 +4493,47 @@ the three branch-name regexes (`pre-push.sh`, `require-pr-template.sh`,
 mechanically instead of by accident. Not adding it in this PR (out of
 scope for a hook bug fix); noting here so it's visible if this recurs a
 third time (CLAUDE.md §11 distillation trigger: recurrence ≥3).
+
+## 2026-09-02 — Autopilot `approveMatches`/`approveAllForRule` counted Protected senders as approved
+**PR:** N/A — caught and fixed same session, not yet a PR
+**Caught by:** `flow-completeness-auditor` subagent, run during `/ct-qa protect` (out of scope for that job, filed separately)
+**What happened:** `AutopilotReadService.approveMatches` and
+`approveAllForRule` (`apps/api/src/autopilot/autopilot.read-service.ts`)
+flipped `rule_match_log.resolution` to `'approved'` for every pending row
+matching the request, with no check on whether the sender was currently
+Protected. `AutopilotActionWorker` (`packages/workers/src/autopilot-action.worker.ts:650`)
+DOES re-check `sender_policies.is_protected` at execution time and
+dismisses any approved-but-protected match with `dismissReason:'protected'`.
+Net effect: a user approves 10 matches, the API returns
+`approvedCount: 10`, and the worker silently executes only 8 — the exact
+"claim is only as true as what backs it" defect class CLAUDE.md already
+names as this codebase's most recurring problem. `listPendingSuggestions`
+(the review list the user approves FROM) had the identical gap: a sender
+protected after its match was logged kept rendering as an actionable
+suggestion until the moment of approval. The auto-approve path
+(`autopilot-apply.worker.ts`, Active-mode rules) was NOT affected — it
+already filters `signals.isProtected` before ever writing an approved row.
+**Correct approach:** Added a `SENDER_IS_PROTECTED` correlated-EXISTS
+predicate (same `sql.raw`-on-the-outer-table pattern as the existing
+`SENDER_INDEXED_AT_MATCH_TIME`, for the same bare-column-name reason) and
+applied it in three places: excluded from `listPendingSuggestions`'
+WHERE, excluded from both approve endpoints' UPDATE WHERE, and counted
+separately via a new `skippedProtectedCount` field on
+`AutopilotApproveResult` so the caller's total is never inflated. A
+protected row is left `pending` (not dismissed) — if the user later
+unprotects the sender, the original suggestion is still approvable rather
+than being ended in a terminal state prematurely.
+**Rule:** Any endpoint that flips `rule_match_log.resolution='approved'`
+directly (bypassing the auto-approve path's own signal-level protected
+filter) must apply the exact same protection check the execution-time
+guard applies, and must report what it excluded as its own counted field
+— never let a downstream guard's dismissal be the only place a requested
+count silently shrinks.
+**Enforcement update:** None — no hook can express "this SQL predicate
+matches that other file's predicate" as a fixed-string match (this
+codebase's own "a hook can only enforce a match" rule, CLAUDE.md §8).
+Regression coverage added in `autopilot.read-service.spec.ts`: one test
+per fixed method (`listPendingSuggestions`, `approveMatches`,
+`approveAllForRule`), each seeding a Protected sender's pending match
+alongside a normal one and asserting the Protected row is excluded /
+left `pending` and counted under `skippedProtectedCount`.
