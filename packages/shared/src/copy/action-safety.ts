@@ -10,6 +10,14 @@ export const ACTION_SAFETY_SUMMARY =
 export const ACTION_PREVIEW_CLAIM =
   'Before a manual action moves email, DeclutrMail shows how many emails are affected, a sample when available, and what will change in Gmail. DeclutrMail checks Gmail again when the action runs, so the final number can change if new email arrives first.';
 
+// Pre-selection toolbar hint (Triage + Sender Detail). Deliberately NOT
+// "Preview · before anything changes" — that's the D226 preview dialog's
+// own eyebrow (9 other call sites), which renders only after a verb is
+// picked. This hint renders BEFORE any verb is picked, alongside Keep,
+// which dispatches immediately with no preview by design (D40) — so it
+// must hold for all five verbs, not just the four that preview.
+export const DESTRUCTIVE_ACTIONS_PREVIEW_HINT = 'Destructive actions preview first';
+
 export const DELETE_RECOVERY_CLAIM =
   'Delete can be undone from Activity until the deadline shown there. It also moves email to Gmail Trash, where Gmail normally keeps it for up to 30 days unless you permanently delete it or empty Trash sooner.';
 

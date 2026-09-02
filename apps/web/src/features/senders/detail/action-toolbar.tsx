@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Kbd, tokens } from '@declutrmail/shared';
+import { Button, DESTRUCTIVE_ACTIONS_PREVIEW_HINT, Kbd, tokens } from '@declutrmail/shared';
 import {
   canArchive,
   canDelete,
@@ -134,7 +134,7 @@ export function ActionToolbar({
           textTransform: 'uppercase',
         }}
       >
-        Destructive actions preview first
+        {DESTRUCTIVE_ACTIONS_PREVIEW_HINT}
       </span>
     </div>
   );
