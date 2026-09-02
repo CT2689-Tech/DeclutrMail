@@ -131,6 +131,59 @@ export const Trigger: Story = {
   ),
 };
 
+/**
+ * QA-senders-filtering-20260901-08 / design-system-agent PR #707 —
+ * viewport-edge clamping, the same technique implemented for
+ * compose-strip.tsx's own Popover in PR #707.
+ * `layout: 'fullscreen'` removes Storybook's default padding so the
+ * trigger renders flush against the real edge each story tests
+ * against; each is pre-opened (no interaction needed) so a visual
+ * regression pass catches the clamp. Padding on each story is sized to
+ * trip exactly ONE branch of the clamp — see the popover's own
+ * ~220×205px footprint below — so a reviewer can attribute a visual
+ * diff to a specific edge instead of "somewhere it clamped."
+ */
+
+/** Trigger near the viewport TOP only (`paddingLeft` generous enough
+ *  that the left clamp never fires here) — the default anchor opens
+ *  ABOVE the trigger, so this is the overflow-prone edge for THIS
+ *  component (the mirror of compose-strip's bottom-overflow case,
+ *  since that Popover opens below by default and this one opens
+ *  above). Flips to open below with `maxHeight` capped to the space
+ *  actually there, instead of running past the top edge. */
+export const NearViewportTopFlipsBelow: Story = {
+  parameters: { layout: 'fullscreen' },
+  render: () => (
+    <div style={{ paddingTop: 8, paddingLeft: 260, background: color.bg, fontFamily: font.sans }}>
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <ActionPopoverTrigger onClick={noop} ariaLabel="More actions for Acme Deals" />
+        <ActionPopover ariaLabel="Actions for Acme Deals" onPick={noop} onClose={noop} />
+      </div>
+    </div>
+  ),
+};
+
+/** Trigger near the viewport LEFT edge only (`paddingTop` generous
+ *  enough that the top flip never fires here) — the default anchor is
+ *  `right: 0` (right-aligned to the trigger, extending leftward), so a
+ *  trigger close to the viewport's LEFT edge is what overflows, not
+ *  one close to the right (a right-anchored popover always has room to
+ *  its right by construction). Same bug shape compose-strip's Popover
+ *  fixed: "a chip near the LEFT edge... opens a right-anchored 220px
+ *  popover that runs off the LEFT edge instead." Clamps to `left: 0`
+ *  instead of running past the left edge. */
+export const NearViewportLeftEdgeClamps: Story = {
+  parameters: { layout: 'fullscreen' },
+  render: () => (
+    <div style={{ paddingTop: 280, paddingLeft: 4, background: color.bg, fontFamily: font.sans }}>
+      <div style={{ position: 'relative', display: 'inline-block' }}>
+        <ActionPopoverTrigger onClick={noop} ariaLabel="More actions for Acme Deals" />
+        <ActionPopover ariaLabel="Actions for Acme Deals" onPick={noop} onClose={noop} />
+      </div>
+    </div>
+  ),
+};
+
 function Container({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -138,11 +191,20 @@ function Container({ children }: { children: React.ReactNode }) {
         padding: 24,
         background: color.bg,
         fontFamily: font.sans,
-        display: 'flex',
-        justifyContent: 'flex-start',
       }}
     >
-      {children}
+      {/* ActionPopover positions itself absolutely (`bottom`/`right`)
+          against the nearest `position: relative` ancestor — same
+          wiring every real call-site needs around the trigger. The
+          generous margin keeps this DEFAULT story clear of both edge
+          clamps (dedicated `NearViewport*` stories below cover those)
+          so it stays a clean reference for the unclamped anchor. */}
+      <div
+        style={{ marginTop: 320, marginLeft: 320, position: 'relative', display: 'inline-block' }}
+      >
+        <ActionPopoverTrigger onClick={noop} ariaLabel="More actions for Acme Deals" />
+        {children}
+      </div>
     </div>
   );
 }

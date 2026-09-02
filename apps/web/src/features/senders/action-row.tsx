@@ -147,21 +147,19 @@ export function SenderActionRow({
         ariaLabel={`More actions for ${senderLabel}`}
       />
       {popoverOpen && (
-        <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', right: 0, zIndex: 50 }}>
-          <ActionPopover
-            ariaLabel={`Actions for ${senderLabel}`}
-            capabilities={capabilities}
-            dimmedVerb={primaryVerbId}
-            onPick={(verbId) => {
-              onAction({ verb: legacyVerbFromId(verbId), senders: [sender] });
-              // Close on pick — the popover's contract ("self-closes on
-              // pick") only auto-fires on the keyboard-shortcut path;
-              // the click path leaves closing to the consumer.
-              setPopoverOpen(false);
-            }}
-            onClose={() => setPopoverOpen(false)}
-          />
-        </div>
+        <ActionPopover
+          ariaLabel={`Actions for ${senderLabel}`}
+          capabilities={capabilities}
+          dimmedVerb={primaryVerbId}
+          onPick={(verbId) => {
+            onAction({ verb: legacyVerbFromId(verbId), senders: [sender] });
+            // Close on pick — the popover's contract ("self-closes on
+            // pick") only auto-fires on the keyboard-shortcut path;
+            // the click path leaves closing to the consumer.
+            setPopoverOpen(false);
+          }}
+          onClose={() => setPopoverOpen(false)}
+        />
       )}
     </div>
   );

@@ -17,14 +17,15 @@
 // PRIVACY (D7, D228): UI metadata only. No PII, no wire-data.
 //
 // Consumed by:
-//   - apps/web/src/features/senders/grid/sender-card.tsx
-//   - apps/web/src/features/senders/sender-table/sender-table.tsx
-//   - apps/web/src/features/senders/detail/* action toolbar
-//   - apps/web/src/features/senders/mobile/* (Phase 4)
+//   - apps/web/src/features/senders/action-row.tsx (SenderActionRow),
+//     itself rendered by grid/sender-card.tsx, sender-table/sender-
+//     table.tsx, and table/sender-list-row.tsx. Positions itself
+//     absolutely, so every call site needs a `position: relative`
+//     ancestor around the trigger — see `ActionPopoverProps.style`.
 
 'use client';
 
-import { useEffect, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   VERB_REGISTRY,
   verbById,
@@ -92,7 +93,17 @@ export interface ActionPopoverProps {
    */
   ariaLabel: string;
 
-  /** Optional style overrides for positioning. */
+  /**
+   * Optional style overrides. The component positions itself
+   * (`position: absolute; bottom: calc(100% + 4px); right: 0`) so the
+   * caller only needs a `position: relative` ancestor around the
+   * trigger — this is for the rare override, not the normal wiring.
+   * Note the automatic edge clamp (below) recomputes `left` / `right`
+   * / `top` / `bottom` / `maxHeight` after mount and applies on top of
+   * anything set here, so an override of those specific properties can
+   * still be superseded when the popover would otherwise overflow the
+   * viewport.
+   */
   style?: CSSProperties;
 }
 
@@ -103,7 +114,10 @@ export interface ActionPopoverProps {
  * leaves closing to the consumer — call `onClose()` inside your
  * `onPick` (both `SenderActionRow` consumers do). The trigger (`⋯`
  * button) lives at each call-site; this component is purely the
- * dropdown surface.
+ * dropdown surface. Positions itself above/right-aligned to its
+ * `position: relative` offset parent by default; detects viewport
+ * left/top overflow and clamps toward the offset parent's edge
+ * instead (see the edge-clamp effect below for the exact mechanics).
  */
 export function ActionPopover({
   verbs = VERB_REGISTRY.map((v) => v.id),
@@ -115,6 +129,56 @@ export function ActionPopover({
   style,
 }: ActionPopoverProps) {
   const ref = useFocusTrap<HTMLDivElement>(true);
+
+  // QA-senders-filtering-20260901-08 / design-system-agent PR #707
+  // review: the same viewport-edge-clamp technique (measure the
+  // rendered rect once via useLayoutEffect, clamp whichever edges
+  // overflow, flip + cap maxHeight when there's no room in the default
+  // direction) was implemented for compose-strip.tsx's own Popover in
+  // PR #707. This shared sibling — the same K/A/U/L/D grammar rendered
+  // on every SenderCard, SenderTable, and SenderListRow via
+  // `action-row.tsx` — didn't have it, so a row near a viewport edge
+  // still overflowed here. Ported and mirrored for this component's
+  // default anchor (opens ABOVE the trigger via
+  // `bottom: calc(100% + 4px)`, so the overflow-prone edge is the
+  // viewport TOP, not the bottom).
+  //
+  // Known gap: measuring once on mount misses content that grows after
+  // mount while the same popover instance stays open. This component's
+  // row count is fixed per render (the Verb Registry + a static
+  // capability map), so that gap doesn't bite here in practice.
+  //
+  // Table/card containers that clip overflow (`overflow: hidden` on
+  // SenderTable's scroll body and SenderGroup) can still cut off a
+  // popover the viewport itself has room for — that's a container-clip
+  // problem a viewport-relative clamp can't reach, pre-existing before
+  // this change, and out of scope for it.
+  const [edgeFix, setEdgeFix] = useState<CSSProperties>({});
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const fix: CSSProperties = {};
+    if (rect.left < 8) {
+      fix.left = 0;
+      fix.right = 'auto';
+    }
+    if (rect.top < 8) {
+      fix.bottom = 'auto';
+      fix.top = 'calc(100% + 4px)';
+      // Space below the trigger once flipped, measured from the
+      // trigger's OWN bottom edge (the offset parent — the popover's
+      // still-upward rect at this point reflects the un-flipped
+      // position, one full offset-parent height above the trigger's
+      // bottom edge, so deriving from the popover's own rect here would
+      // over-count that height back in).
+      const parentRect = el.offsetParent?.getBoundingClientRect();
+      const triggerBottom = parentRect ? parentRect.bottom : rect.bottom;
+      const availableBelow = window.innerHeight - triggerBottom - 4 - 8;
+      fix.maxHeight = Math.max(80, availableBelow);
+    }
+    setEdgeFix(fix);
+  }, [ref]);
 
   // Keyboard nav: ↑↓ navigate, Enter activates, Esc closes. Click-
   // outside closes via the global mousedown listener below.
@@ -171,15 +235,22 @@ export function ActionPopover({
       role="menu"
       aria-label={ariaLabel}
       style={{
+        position: 'absolute',
+        bottom: 'calc(100% + 4px)',
+        right: 0,
         background: color.card,
         border: `1px solid ${color.line}`,
         borderRadius: radius.md,
         padding: 6,
-        minWidth: 220,
+        minWidth: 'min(220px, calc(100vw - 32px))',
+        maxWidth: 'calc(100vw - 32px)',
+        maxHeight: 'calc(100vh - 32px)',
+        overflowY: 'auto',
         fontFamily: font.sans,
         boxShadow: shadow.pop,
-        zIndex: 100,
+        zIndex: 50,
         ...style,
+        ...edgeFix,
       }}
     >
       {verbs.map((verbId) => {
