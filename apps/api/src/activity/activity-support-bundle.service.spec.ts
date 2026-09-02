@@ -191,6 +191,83 @@ describe('ActivitySupportBundleService', () => {
     expect(csv).not.toContain('Archived');
   });
 
+  it('never prints Completed for a persisted row with no terminal outcome', async () => {
+    const unresolvedRows: ActivityRowFacts[] = [
+      {
+        id: '77777777-7777-7777-7777-777777777777',
+        occurredAt: '2026-07-14T05:00:00.000Z',
+        source: 'manual',
+        action: 'unsubscribe_draft_opened',
+        affectedCount: 1,
+        sender: null,
+        rule: null,
+        feedbackRating: null,
+        undoState: { kind: 'unavailable' },
+        executionState: null,
+        reviewOutcome: null,
+      },
+      {
+        id: '88888888-8888-8888-8888-888888888888',
+        occurredAt: '2026-07-13T05:00:00.000Z',
+        source: 'manual',
+        action: 'archive',
+        affectedCount: 3,
+        sender: null,
+        rule: null,
+        feedbackRating: null,
+        undoState: { kind: 'executed', executedAt: '2026-07-13T06:00:00.000Z' },
+        executionState: null,
+        // `reverted_at IS NOT NULL` — persistedReviewOutcomeExpression yields null.
+        reviewOutcome: null,
+      },
+      {
+        id: '99999999-9999-9999-9999-999999999999',
+        occurredAt: '2026-07-12T05:00:00.000Z',
+        source: 'manual',
+        action: 'unsubscribe_unavailable',
+        affectedCount: 1,
+        sender: null,
+        rule: null,
+        feedbackRating: null,
+        undoState: { kind: 'unavailable' },
+        executionState: null,
+        reviewOutcome: 'failed',
+      },
+    ];
+    const files = await unzipBundle(
+      await makeService(undefined, unresolvedRows).service.createBundle({
+        workspaceId: 'workspace-1',
+        mailboxAccountId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+        filters: { ...FILTERS, outcomes: [] },
+        includeFullSenderAddresses: false,
+        includeTechnicalDetails: true,
+        generatedAt: GENERATED_AT,
+      }),
+    );
+
+    const [, draftOpenedLine, revertedLine, unavailableLine] =
+      files['activity.csv']!.trim().split('\n');
+    // The Result column (7th field) must not claim completion for a row
+    // that never resolved (draft opened / reverted) or that resolved to
+    // failure (unsubscribe_unavailable) — activityExecutionLabel(null)
+    // defaults to 'Completed' and previously leaked through unguarded.
+    expect(draftOpenedLine!.split(',').at(-2)).not.toBe('Completed');
+    expect(draftOpenedLine).toContain('Not yet resolved');
+    expect(revertedLine!.split(',').at(-2)).not.toBe('Completed');
+    expect(revertedLine).toContain('Not yet resolved');
+    expect(unavailableLine!.split(',').at(-2)).not.toBe('Completed');
+    expect(unavailableLine).toContain('Failed');
+
+    const technical = JSON.parse(files['technical-details.json']!) as {
+      records: Array<Record<string, unknown>>;
+    };
+    expect(technical.records.map((record) => record.executionStatus)).toEqual([
+      'unresolved',
+      'unresolved',
+      'failed',
+    ]);
+  });
+
   it('adds independently opted-in full addresses and exact technical fields', async () => {
     const files = await unzipBundle(
       await makeService().service.createBundle({
