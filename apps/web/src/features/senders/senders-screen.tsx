@@ -62,6 +62,7 @@ import {
 import { useSetSenderPolicy } from './api/use-sender-policy';
 import { sendersKeys } from './api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { UnsubMailtoCallout, UnsubMailtoChecklist } from './unsub-mailto-callout';
 import { UnsubBatchReceipt, type UnsubBatchReceiptData } from './unsub-batch-receipt';
@@ -3044,7 +3045,8 @@ function SenderResultsFreshness({
   /** QA-sync-20260831-02/04: the active mailbox's initial sync failed. */
   syncFailed: boolean;
 }) {
-  const label = formatSenderSnapshotTime(asOf);
+  const timeZone = useUserTimeZone();
+  const label = formatSenderSnapshotTime(asOf, timeZone);
   return (
     <div
       data-testid="sender-results-freshness"
@@ -3165,19 +3167,31 @@ function SenderResultsFreshness({
   );
 }
 
-function formatSenderSnapshotTime(iso: string): string {
+function formatSenderSnapshotTime(iso: string, timeZone: string): string {
   const date = new Date(iso);
   if (!Number.isFinite(date.getTime())) return 'time unavailable';
   // QA-senders-filtering-20260901-07: was hardcoded `timeZone: 'UTC'` —
   // the same false-currency-cue mechanism already fixed once on
   // `QA-triage-20260827-09` (the undo toast/preview), now found on a
-  // different surface. Omitting `timeZone` renders the reader's own,
-  // matching `receipt-strip.tsx`/`undo-tray.tsx`/`quiet-screen.tsx`.
+  // different surface. The fix landed as an OMITTED `timeZone` option
+  // (implicitly the runtime's own zone), reasoning it'd match
+  // `receipt-strip.tsx`/`undo-tray.tsx`/`quiet-screen.tsx` — but those
+  // only render post-mount, client-only, after a user-triggered
+  // mutation; `SenderResultsFreshness` renders unconditionally as part
+  // of `/senders`'s initial SSR HTML. An omitted `timeZone` resolves to
+  // the RUNTIME's own zone, which differs between the server (UTC
+  // container) and a non-UTC client — a deterministic hydration
+  // mismatch (`hydration-smoke.spec.ts`'s "non-en-US locale + timezone"
+  // lane), not a flake. Explicit `timeZone`, sourced from `useUserTimeZone()`
+  // (the dehydrated `me` query, identical value on server and client —
+  // same fix already applied to `formatExpiry` in
+  // `activity-screen.tsx` for the equivalent undo-expiry tooltip).
   return new Intl.DateTimeFormat('en-US', {
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     month: 'short',
+    timeZone,
     timeZoneName: 'short',
     year: 'numeric',
   }).format(date);

@@ -54,6 +54,18 @@ vi.mock('@/features/auth/auth-provider', () => {
   };
 });
 
+// `SenderResultsFreshness` renders its snapshot time in the reader's own
+// zone via `useUserTimeZone()` (QA-senders-filtering-20260901-07's fix,
+// corrected post-hydration-bug to source the zone from this hook instead
+// of an implicit runtime default — see `senders-screen.tsx`'s
+// `formatSenderSnapshotTime`). Mocked to the machine's own zone, same
+// convention as `snoozed-screen.test.tsx`, so the exact-zone-name
+// assertion below stays meaningful under whatever TZ this suite runs.
+vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useUserTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+}));
+
 import { ToastHost } from '@declutrmail/shared';
 import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
