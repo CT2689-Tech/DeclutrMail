@@ -120,9 +120,12 @@ export function ComposeStrip({
   counts: ComposeCounts | undefined;
   /**
    * QA-senders-20260901-01 — true while `counts` may be one response
-   * behind (an in-flight refetch of the active query). Dims the chip
-   * counts so a background-refreshed number is not mistaken for a
-   * current one; the chips themselves stay clickable.
+   * behind (an in-flight refetch of the active query). Marks the strip
+   * `aria-busy`; the chips themselves stay clickable and their counts do
+   * NOT dim (see the `aria-busy` test below for why — a whole-strip dim
+   * used to compound with an already-dimmed inactive chip's own count
+   * span). `SenderResultsFreshness` (senders-screen.tsx) renders the
+   * visible "Updating results…" status text for this state.
    */
   updating?: boolean;
   onChange: (next: ComposeState) => void;
