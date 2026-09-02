@@ -246,6 +246,16 @@ export const UNSUB_SEND_DISABLED_CODE: ErrorCode = 'UNSUB_SEND_DISABLED';
 export const UNSUB_SEND_BLOCKED_ERROR_CODE = 'UNSUB_SEND_DISABLED';
 
 /**
+ * `action_jobs.error_code` when the execution-time Protected re-check
+ * (below) refuses a since-protected sender. Job-only, like
+ * `UNSUB_NOT_ONE_CLICK`/`UNSUB_TARGET_REJECTED` — never a live API
+ * response, so it is not part of the `ErrorCode` registry the way
+ * `UNSUB_SEND_DISABLED`/`PROTECTED_SENDER` are (those two are ALSO
+ * thrown synchronously at enqueue).
+ */
+export const UNSUB_SENDER_PROTECTED_ERROR_CODE = 'UNSUB_SENDER_PROTECTED';
+
+/**
  * Whether this process may perform a real one-click unsubscribe POST.
  *
  * `UNSUB_SEND_ENABLED === 'true'`, read explicitly, and nothing else. Unset,
@@ -368,6 +378,39 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
     }
     const senderKey = job.selector.senderKey;
     const mailboxAccountId = job.mailboxAccountId;
+
+    // Guard, execution-time Protected re-check (QA-protect-20260901-04
+    // follow-up) — mirrors autopilot-action.worker.ts's "guard 4" and
+    // label-action.worker.ts's execution-time re-check for
+    // Archive/Later/Delete. Protection is checked once at enqueue
+    // (actions.service.ts's bulk path, autopilot-action.worker.ts's
+    // match/apply step) and never again before this point; per-mailbox
+    // queue depth and ordinary backlog widen that window well past
+    // instant. `job.status !== 'executing'` is the same in-flight
+    // carve-out as both sibling workers: once a claim already reached
+    // 'executing' from an earlier attempt, let it finish rather than
+    // newly refuse it here — finishing cannot un-send a POST that may
+    // already be in flight, and unlike Archive/Later/Delete, a sent
+    // one-click request has NO undo at all (D58). This is the ONLY
+    // re-check standing between a since-protected sender and an
+    // irreversible send — recordSenderProtected below deliberately does
+    // NOT use recordOutcome/activity/outbox, matching recordSendDisabled:
+    // nothing was attempted, so nothing may claim an attempt.
+    if (job.status !== 'executing') {
+      const [policy] = await db
+        .select({ isProtected: senderPolicies.isProtected })
+        .from(senderPolicies)
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        )
+        .limit(1);
+      if (policy?.isProtected) {
+        return this.recordSenderProtected(job.id, mailboxAccountId, senderKey);
+      }
+    }
 
     await db
       .update(actionJobs)
@@ -705,6 +748,45 @@ export class UnsubExecutionWorker extends BaseDeclutrWorker<
       // both ride `failed` and are separated by `error_code` (D252). It is
       // honest about what the user needs to know — they are still on the
       // list — and `UNSUB_SEND_DISABLED` on the job says why.
+      await tx
+        .update(senderPolicies)
+        .set({ unsubStatus: 'failed', updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(senderPolicies.mailboxAccountId, mailboxAccountId),
+            eq(senderPolicies.senderKey, senderKey),
+          ),
+        );
+    });
+    // Still no activity row and no outbox event: those record an ATTEMPT,
+    // and nothing was attempted.
+    return { outcome: 'failed', httpStatus: null, alreadyDone: false };
+  }
+
+  /**
+   * Terminal write for a job the execution-time Protected re-check
+   * refused (guard above). Deliberately NOT `recordOutcome`, for the
+   * same reason as `recordSendDisabled`: nothing was attempted, so an
+   * activity row or outbox event would claim an unsubscribe attempt
+   * that never happened. Shares that method's shape exactly — only
+   * `action_jobs` and `sender_policies.unsub_status` move.
+   */
+  private async recordSenderProtected(
+    actionId: string,
+    mailboxAccountId: string,
+    senderKey: string,
+  ): Promise<UnsubExecutionResult> {
+    await this.deps.db.transaction(async (tx) => {
+      await tx
+        .update(actionJobs)
+        .set({
+          status: 'failed',
+          errorCode: UNSUB_SENDER_PROTECTED_ERROR_CODE,
+          affectedCount: 0,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(actionJobs.id, actionId));
+
       await tx
         .update(senderPolicies)
         .set({ unsubStatus: 'failed', updatedAt: sql`now()` })

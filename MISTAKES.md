@@ -4537,3 +4537,62 @@ per fixed method (`listPendingSuggestions`, `approveMatches`,
 `approveAllForRule`), each seeding a Protected sender's pending match
 alongside a normal one and asserting the Protected row is excluded /
 left `pending` and counted under `skippedProtectedCount`.
+
+## 2026-09-02 — UnsubExecutionWorker never re-checked Protected status before the irreversible POST
+**PR:** N/A — caught and fixed same session, not yet a PR
+**Caught by:** Codex adversarial review of the QA-protect-20260901-04 fix
+diff (branch `claude/ct-qa-protect-23b96f`), which found the same TOCTOU
+shape in a more severe place and flagged it rather than fixing it
+directly, since it touches the RFC 8058 send path (CLAUDE.md §2.0 Tier 1)
+**What happened:** `actions.service.ts`'s bulk unsubscribe enqueue and
+`autopilot-action.worker.ts`'s match/apply step both check
+`sender_policies.is_protected` before creating an `action_jobs` row or
+queuing an unsub execution job — but only at that moment.
+`UnsubExecutionWorker.processJob` (the ONLY place that actually issues
+the RFC 8058 one-click POST) never re-checked protection before sending,
+even though it already re-checks the unsubscribe method and re-resolves
+the URL at execution time (D252) for the identical staleness reason.
+`autopilot-action.worker.ts`'s own "guard 4" re-checks protection when an
+autopilot MATCH is applied, but that is a separate step from the later,
+separately-queued execution job `UnsubExecutionWorker` actually runs — so
+the re-check that already exists for the match doesn't cover the send.
+`UNSUB_SEND_ENABLED=true` is set in prod for both API and worker
+(`deploy-cloud-run.yml`), so this was live, not theoretical. Failure
+window: enqueue while unprotected → protect the sender while the job is
+queued/backlogged → the worker sends anyway. Unlike Archive/Later/Delete
+(30-day Activity Undo; Delete uses Gmail Trash), a delivered one-click
+unsubscribe has NO undo at all (D58) — this was the one action-lifecycle
+gap with no recovery path once it fires.
+**Correct approach:** Mirrored the guard shape already proven twice in
+this codebase (`autopilot-action.worker.ts`'s guard 4;
+`label-action.worker.ts`'s execution-time re-check for
+Archive/Later/Delete, added earlier this session on
+`claude/ct-qa-protect-23b96f` for the sibling finding). Added a re-check
+of `sender_policies.is_protected` in `processJob`, before the
+`status='executing'` transition, with the same `job.status !==
+'executing'` in-flight carve-out. Followed `recordSendDisabled`'s
+existing "nothing was attempted" terminal-write shape (plain terminal
+return, no activity row, no outbox event) rather than the sibling
+worker's exception-throwing shape — this file's own established idiom
+for a pre-attempt refusal is a return, not a thrown error, so copying the
+other worker's mechanics verbatim would itself have been the
+surgical-changes violation. Deliberately did NOT reuse the app-wide
+`PROTECTED_SENDER` error code (a LIVE, synchronous 409 whose registered
+copy is "Confirm to apply the action anyway") — a new job-only
+`UNSUB_SENDER_PROTECTED` code avoids stamping that override affordance
+onto a job that already terminated with no override available.
+**Rule:** Any worker that performs an irreversible external send and is
+fed by an async queue must re-check every safety predicate the enqueue
+step checked again immediately before the send — not only at whatever
+earlier match/apply step feeds the queue. The enqueue-time check answers
+"was this okay to queue"; only the execution-time check answers "is this
+still okay to send," and queue depth/backlog is exactly the gap between
+the two.
+**Enforcement update:** None — same "a hook can only enforce a match, not
+a reading" limit as the entry above; there is no fixed-string way to
+assert "every irreversible-send worker fed by a queue re-checks
+protection." Regression coverage added in
+`unsub-execution.worker.test.ts` (protected-since-enqueue case, asserting
+the fake HTTP port was never called), verified against a negative
+control — reverted the guard, confirmed the new test goes red and POSTs
+to the fake, then restored it.

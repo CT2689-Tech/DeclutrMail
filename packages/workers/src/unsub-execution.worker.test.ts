@@ -25,6 +25,7 @@ import {
   UNSUB_MAX_ATTEMPTS,
   UNSUB_USER_AGENT,
   UNSUB_SEND_BLOCKED_ERROR_CODE,
+  UNSUB_SENDER_PROTECTED_ERROR_CODE,
   UnsubExecutionWorker,
   unsubExecutionJobOptions,
   unsubSendsEnabled,
@@ -347,6 +348,48 @@ describe('UnsubExecutionWorker', () => {
         process.env.UNSUB_SEND_ENABLED = previousOptIn;
       }
     }
+  });
+
+  it('refuses a sender protected since enqueue, before touching the network (QA-protect-20260901-04 follow-up)', async () => {
+    await seedSender(db, mailboxId);
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: SENDER_KEY,
+      policyType: 'unsubscribe',
+      unsubStatus: 'requested',
+      isProtected: true,
+      protectionReason: 'user_defined',
+    });
+    const actionId = await seedExecutionJob(db, mailboxId);
+    const http = fakeHttp([200]);
+    const worker = new UnsubExecutionWorker({
+      db: db as never,
+      http,
+      outbox: new OutboxPublisher(),
+      resolveHost: PUBLIC_RESOLVE,
+    });
+
+    const result = await worker.processJob(
+      { actionId, mailboxAccountId: mailboxId, idempotencyKey: 'protected-1' },
+      ctx(1),
+    );
+
+    // The load-bearing assertion: nothing left the process. A fake that
+    // would have answered 200 was never asked — the sender became
+    // Protected AFTER enqueue (this row was written directly, mirroring
+    // a `sender_policies` flip the enqueue-time check could not have seen).
+    expect(http.calls).toEqual([]);
+    expect(result.outcome).toBe('failed');
+
+    const { job, policy, activities, events } = await readState(actionId);
+    expect(job.status).toBe('failed');
+    expect(job.errorCode).toBe(UNSUB_SENDER_PROTECTED_ERROR_CODE);
+
+    // Same "nothing attempted" contract as the kill-switch refusal above:
+    // resolved (not left `requested`), no activity row, no outbox event.
+    expect(policy.unsubStatus).toBe('failed');
+    expect(activities.filter((a) => a.action !== 'unsubscribe')).toHaveLength(0);
+    expect(events).toHaveLength(0);
   });
 
   it('2xx → endpoint accepted: action row, truthful Activity outcome, no undo, outbox event', async () => {
