@@ -121,7 +121,13 @@ const OVERRIDES_KB = {
   '/(app)/later/page': 150, // 145.2 — return queue + explainer
   '/(app)/followups/page': 150, // 145.2 — follow-up queue + explainer
   '/(app)/admin/security/page': 125, // 120.4
-  '/(app)/settings/help/page': 115, // 112.2
+  // Raised 115 -> 120 on 2026-09-01: measured 118.2, up from 112.2. The
+  // new "Contact support" form (subject/message fields, submit handler,
+  // the postSupportRequest API wrapper, and its own track() call) landed
+  // entirely in this route's own chunk — confirmed no OTHER route's
+  // budget moved in the same CI run, so nothing leaked into a shared
+  // chunk via the newly-added `Button` import. 120 leaves ~2 kB headroom.
+  '/(app)/settings/help/page': 120, // 118.2
 };
 
 let manifest;

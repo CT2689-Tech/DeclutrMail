@@ -236,6 +236,7 @@ export interface EmailDeliveryPort {
     idempotencyKey: string;
     html?: string;
     headers?: Record<string, string>;
+    replyTo?: string;
   }): Promise<EmailDeliveryOutcome>;
 }
 

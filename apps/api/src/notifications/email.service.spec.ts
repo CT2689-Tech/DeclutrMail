@@ -162,4 +162,21 @@ describe('EmailService', () => {
       delete process.env.EMAIL_REPLY_TO;
     }
   });
+
+  it('prefers a per-call replyTo over EMAIL_REPLY_TO', async () => {
+    process.env.EMAIL_REPLY_TO = 'founder@declutrmail.com';
+    try {
+      const client = fakeClient({ data: { id: 'x' }, error: null });
+      const service = new EmailService(fakeSuppression(false), client);
+
+      await service.deliver({ ...INPUT, replyTo: 'user@example.com' });
+
+      expect(client.emails.send).toHaveBeenCalledWith(
+        expect.objectContaining({ replyTo: 'user@example.com' }),
+        { idempotencyKey: 'k1' },
+      );
+    } finally {
+      delete process.env.EMAIL_REPLY_TO;
+    }
+  });
 });

@@ -12,6 +12,7 @@ import {
   toast,
   useIsAtMost,
 } from '@declutrmail/shared';
+import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
   BillingProviderId,
@@ -135,7 +136,7 @@ export function BillingScreen({
   invoiceHistory?: ReactNode;
 }) {
   const { me } = useAuth();
-  const { tier: meTier, cleanupRemaining } = useTier();
+  const { tier: meTier, cleanupRemaining, cleanupResetsAt } = useTier();
   const workspaceId = me.user.workspaceId;
   // The pending payment lock. Persisted per workspace (localStorage) so
   // it survives reloads and reaches every tab of this browser — React
@@ -145,17 +146,26 @@ export function BillingScreen({
   // storage on mount below. Cross-DEVICE remains a BE gap — flagged.
   const [pending, setPending] = useState<PendingCheckout | null>(null);
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>('fresh');
+  // QA-billing-20260901-03: `pauseForThirtyDays` writes nothing locally
+  // (not `status`, not `pause_until` — the webhook owns both), so the
+  // one refetch `usePauseSubscription` fires immediately after success
+  // is guaranteed to return PRE-pause state. Without a poll of its own
+  // the card kept asserting an active plan — price, renewal, a live
+  // Cancel button — until some unrelated invalidate happened to fire.
+  const [pauseConfirming, setPauseConfirming] = useState(false);
   const subscriptionQuery = useBillingSubscription({
-    // Two waits, and the pending-payment one outranks: it is measured in
-    // seconds and its lock hides the settling notice anyway.
+    // Three waits, and the pending-payment one outranks: it is measured
+    // in seconds and its lock hides the other notices anyway.
     refetchInterval:
       pending === null
-        ? // The settling window polls itself back to life. Read off the
-          // query's own data rather than the derived view, which does not
-          // exist yet at this line — and the promise the notice makes
-          // ("we'll switch this back on automatically") is only true
-          // because of this.
-          (query) => (isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false)
+        ? pauseConfirming
+          ? PAYMENT_PROCESSING_POLL_MS
+          : // The settling window polls itself back to life. Read off the
+            // query's own data rather than the derived view, which does
+            // not exist yet at this line — and the promise the notice
+            // makes ("we'll switch this back on automatically") is only
+            // true because of this.
+            (query) => (isRefundSettling(query.state.data) ? REFUND_SETTLING_POLL_MS : false)
         : processingPhase === 'unconfirmed'
           ? PAYMENT_UNCONFIRMED_POLL_MS
           : PAYMENT_PROCESSING_POLL_MS,
@@ -204,6 +214,16 @@ export function BillingScreen({
   }, [workspaceId]);
 
   const data = subscriptionQuery.data ?? null;
+
+  // QA-billing-20260901-03: resolve the pause-confirming poll once the
+  // provider's `subscription.paused` webhook has actually landed —
+  // never on a timer (that would just stop polling before the real
+  // state arrived).
+  useEffect(() => {
+    if (!pauseConfirming || data?.subscription?.status !== 'paused') return;
+    setPauseConfirming(false);
+    toast('Plan paused — it resumes automatically in 30 days.', 'success');
+  }, [pauseConfirming, data]);
 
   // 0051 cross-device lock: the SERVER's pending-checkout signal covers
   // the device that did NOT run the checkout (localStorage is
@@ -453,12 +473,19 @@ export function BillingScreen({
   }
 
   function onConfirmCancel(reason: CancelRequest['reason']) {
+    // QA-billing-20260901-02: `CancelModal`'s own preview already splits
+    // this on `backsEntitlement` — the toast fired one function away did
+    // not, so canceling a non-backing (e.g. paused) row claimed "your
+    // plan stays active" for a row granting nothing. Same source of
+    // truth the preview used, read before the mutation fires.
+    const backsEntitlement =
+      (view.kind === 'plan' || view.kind === 'payment_pending') && view.backing.state !== 'none';
     cancel.mutate(reason ? { reason } : {}, {
       onSuccess: (next) => {
         setCancelOpen(false);
         const end = formatBillingDate(next.subscription?.currentPeriodEnd ?? null);
         toast(
-          end
+          backsEntitlement && end
             ? `Cancellation scheduled — your plan stays active until ${end}.`
             : 'Cancellation scheduled.',
           'success',
@@ -580,7 +607,9 @@ export function BillingScreen({
       <CurrentPlanCard
         plan={plan}
         cleanupRemaining={cleanupRemaining}
+        cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
+        pauseConfirming={pauseConfirming}
         onCancel={() => setCancelOpen(true)}
         onResumeCancellation={() =>
           resumeCancellation.mutate(undefined, {
@@ -623,6 +652,7 @@ export function BillingScreen({
           currentTier={backingSub.tier}
           currentCycle={backingSub.cycle}
           scheduledChange={plan.scheduledChange}
+          backingIsActive={plan.backing.state === 'active'}
           onCanceled={(next) => {
             queryClient.setQueryData(billingKeys.subscription(), next);
             toast('Keeping your current plan — confirming with Paddle.', 'success');
@@ -725,6 +755,11 @@ export function BillingScreen({
               // `subscription.paused` webhook lands, so promising "paused
               // until Aug 30" here would assert something unconfirmed.
               toast('Pause requested — confirming with your payment provider.', 'success');
+              // QA-billing-20260901-03: show the confirming state (and
+              // poll for it) instead of letting the card keep asserting
+              // the pre-pause active plan until an unrelated invalidate
+              // happens to fire.
+              setPauseConfirming(true);
             },
           })
         }
@@ -1112,7 +1147,9 @@ export function PaymentProcessingNotice({
 function CurrentPlanCard({
   plan,
   cleanupRemaining,
+  cleanupResetsAt,
   billingDark,
+  pauseConfirming,
   onCancel,
   onResumeCancellation,
   isResumingCancellation,
@@ -1120,7 +1157,15 @@ function CurrentPlanCard({
 }: {
   plan: BillingPlanView;
   cleanupRemaining: number | null;
+  cleanupResetsAt: string | null;
   billingDark: boolean;
+  /** QA-billing-20260901-03 — a pause was requested but the webhook that
+   *  actually changes `status` hasn't landed yet. The plan is still
+   *  active and billing at its current price until that confirms, so
+   *  the price stays; what the card must not do is assert a FUTURE fact
+   *  the pause may falsify — a "Next renewal" date, or a Cancel button
+   *  for a subscription whose own fate is still unresolved. */
+  pauseConfirming: boolean;
   onCancel: () => void;
   /** D118 — revoke a scheduled cancel and go back on renewal. */
   onResumeCancellation: () => void;
@@ -1154,8 +1199,14 @@ function CurrentPlanCard({
   // directly below states the real outcome, so the card stays silent
   // rather than contradict it — the same reason `cancel_scheduled`
   // already suppresses this line.
+  // Codex round 1 (QA-billing-20260901-03): a pause in flight makes this
+  // claim false the same way a scheduled change does — the confirming
+  // note below says the plan's fate is unresolved, so this line must not
+  // simultaneously assert a future renewal date for it.
   const renewal =
-    (backing.state === 'active' || backing.state === 'past_due') && plan.scheduledChange === null
+    (backing.state === 'active' || backing.state === 'past_due') &&
+    plan.scheduledChange === null &&
+    !pauseConfirming
       ? formatBillingDate(backing.sub.currentPeriodEnd)
       : null;
 
@@ -1217,7 +1268,15 @@ function CurrentPlanCard({
               {' '}
               <strong style={{ fontWeight: 600, color: color.fg }}>
                 {cleanupRemaining} of {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions
-                left this month.
+                left
+                {/* QA-billing-20260901-04: the reset is the signup
+                    anniversary, not the calendar month — "this month" was
+                    provably wrong (e.g. an anniversary of the 27th, told
+                    in the first days of the next month). The real date is
+                    already fetched by useTier(); state it instead. */}
+                {formatBillingDate(cleanupResetsAt)
+                  ? ` · resets ${formatBillingDate(cleanupResetsAt)}`
+                  : '.'}
               </strong>
             </>
           ) : null}
@@ -1238,10 +1297,27 @@ function CurrentPlanCard({
         </p>
       ) : null}
 
-      {!billingDark && (backing.state === 'active' || backing.state === 'past_due') ? (
+      {pauseConfirming ? (
+        <p
+          role="status"
+          data-testid="pause-confirming-note"
+          style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.amber }}
+        >
+          Confirming your pause with the payment provider — this page updates automatically, usually
+          within a minute.
+        </p>
+      ) : null}
+
+      {!billingDark &&
+      !pauseConfirming &&
+      (backing.state === 'active' || backing.state === 'past_due') ? (
         <div style={{ display: 'flex', gap: 8 }}>
+          {/* QA-billing-20260901-06: this opens the preview; the modal's
+              own destructive confirm keeps "Cancel subscription" so the
+              two clicks read as two different things — matching the
+              resume flow's "Review resume" one component over. */}
           <Button tone="default" onClick={onCancel}>
-            Cancel subscription
+            Review cancellation
           </Button>
         </div>
       ) : null}
@@ -1334,11 +1410,18 @@ function ScheduledPlanChangeNotice({
   currentTier,
   currentCycle,
   scheduledChange,
+  backingIsActive,
   onCanceled,
 }: {
   currentTier: 'plus' | 'pro';
   currentCycle: BillingCycle;
   scheduledChange: NonNullable<NonNullable<BillingSubscription['subscription']>['scheduledChange']>;
+  /** QA-billing-20260901-08: "Keep current plan" calls `changePlan`,
+   *  which the API refuses with `PLAN_CHANGE_UNSUPPORTED` for any
+   *  backing status other than `active` (e.g. `past_due`) — a
+   *  guaranteed, deterministic 409. Withhold the control rather than
+   *  offer a dead end. */
+  backingIsActive: boolean;
   onCanceled: (next: BillingSubscription) => void;
 }) {
   const changePlan = useChangePlan();
@@ -1403,33 +1486,55 @@ function ScheduledPlanChangeNotice({
           if this does not settle shortly.
         </span>
       ) : null}
-      <div>
-        <Button
-          tone="default"
-          disabled={changePlan.isPending}
-          onClick={() =>
-            changePlan.mutate(
-              { tierId: currentTier, cycle: currentCycle },
-              { onSuccess: onCanceled },
-            )
-          }
-        >
-          {changePlan.isPending
-            ? 'Keeping current plan…'
-            : restoring
-              ? 'Retry keeping current plan'
-              : 'Keep current plan instead'}
-        </Button>
-      </div>
+      {backingIsActive ? (
+        <div>
+          <Button
+            tone="default"
+            disabled={changePlan.isPending}
+            onClick={() =>
+              changePlan.mutate(
+                { tierId: currentTier, cycle: currentCycle },
+                { onSuccess: onCanceled },
+              )
+            }
+          >
+            {changePlan.isPending
+              ? 'Keeping current plan…'
+              : restoring
+                ? 'Retry keeping current plan'
+                : 'Keep current plan'}
+          </Button>
+        </div>
+      ) : (
+        <span style={{ color: color.fgMuted, fontSize: 12 }}>
+          Plan changes aren&rsquo;t available on this subscription right now. Email{' '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            support@declutrmail.com
+          </a>{' '}
+          if you want to keep {TIER_MANIFEST[currentTier].name}.
+        </span>
+      )}
       {changePlan.error ? (
         <span role="alert" style={{ color: color.red, fontSize: 12 }}>
-          The payment provider didn&rsquo;t confirm the cancellation — it may or may not have
-          registered. This page reflects the confirmed state; retry, or email
-          support@declutrmail.com if it repeats.
+          {scheduledChangeErrorMessage(changePlan.error)}
         </span>
       ) : null}
     </div>
   );
+}
+
+/**
+ * QA-billing-20260901-08 — the "Keep current plan" retry names the real,
+ * deterministic reason instead of a single "may or may not have
+ * registered" string, which was false for every 409 in `PRE_CLAIM_REJECTIONS`
+ * (nothing was ever attempted at the provider for those).
+ */
+function scheduledChangeErrorMessage(error: unknown): string {
+  const code = apiErrorCode(error);
+  if (code !== null && isErrorCode(code)) {
+    return ERROR_CODES[code].message;
+  }
+  return 'The payment provider didn’t confirm the cancellation — it may or may not have registered. This page reflects the confirmed state; retry, or email support@declutrmail.com if it repeats.';
 }
 
 /**
@@ -1572,9 +1677,52 @@ function NonBackingSubscriptionNotice({
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
               Your account is on {entitlementName} — this subscription isn&rsquo;t what grants it.{' '}
-              {isPaused
-                ? `Resuming makes ${tierName} your paid subscription again; your plan is then recomputed from your subscriptions, which can move your account off ${entitlementName}. Cancel it if you’re done with it.`
-                : 'Cancel it if you’re done with it.'}
+              {sub.cancelAtPeriodEnd ? (
+                // QA-billing-20260901-02: the row was already canceled —
+                // repeating "cancel it if you're done with it" over a
+                // now-inert Cancel button implies a click that changes
+                // nothing did nothing. Say what's actually true instead.
+                //
+                // Codex round 1 (QA-billing-20260901-01): "nothing
+                // further to do" was false — the plan picker stays
+                // locked regardless of cancelAtPeriodEnd
+                // (nonBackingBlocksNewCheckout keys on status, not this
+                // flag), and this is the ONLY branch a chargeback can
+                // reach (a chargeback pins cancelAtPeriodEnd immediately
+                // and never runs through the mismatch/paused branches
+                // below). Losing the support-route sentence here is
+                // exactly the gap the original finding named.
+                <>
+                  It won&rsquo;t renew. If your plan picker doesn&rsquo;t unlock on its own, email{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    support@declutrmail.com
+                  </a>
+                  .
+                </>
+              ) : isPaused ? (
+                <>
+                  {`Resuming makes ${tierName} your paid subscription again; your plan is then recomputed from your subscriptions, which can move your account off ${entitlementName}. Cancel it if you’re done with it.`}{' '}
+                  {/* QA-billing-20260901-01: the picker below is locked
+                      while this row exists, and canceling isn't always
+                      the fast unlock (a chargeback stays blocking until
+                      its period ends) — name the route this screen has
+                      no other way to reach. */}
+                  If canceling doesn&rsquo;t free up your plan picker right away, email{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    support@declutrmail.com
+                  </a>
+                  .
+                </>
+              ) : (
+                <>
+                  Cancel it if you&rsquo;re done with it. If that doesn&rsquo;t free up your plan
+                  picker right away, email{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    support@declutrmail.com
+                  </a>
+                  .
+                </>
+              )}
             </span>
           </>
         ) : (
@@ -1584,8 +1732,24 @@ function NonBackingSubscriptionNotice({
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
               While it&rsquo;s paused you aren&rsquo;t billed, and your account is on{' '}
-              {entitlementName}. Resume to reactivate {tierName}, or cancel if you&rsquo;re done
-              with it.
+              {entitlementName}.{' '}
+              {sub.cancelAtPeriodEnd ? (
+                <>
+                  It won&rsquo;t renew. If your plan picker doesn&rsquo;t unlock on its own, email{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    support@declutrmail.com
+                  </a>
+                  .
+                </>
+              ) : (
+                <>
+                  Resume to reactivate {tierName}, or cancel if you&rsquo;re done with it — email{' '}
+                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                    support@declutrmail.com
+                  </a>{' '}
+                  if canceling doesn&rsquo;t free up your plan picker right away.
+                </>
+              )}
             </span>
           </>
         )}
@@ -1685,9 +1849,18 @@ function NonBackingSubscriptionNotice({
             Review resume
           </Button>
         ) : null}
-        <Button tone="default" onClick={onRequestCancel} disabled={resume.isPending}>
-          Cancel subscription
-        </Button>
+        {/* QA-billing-20260901-06: same split as the current-plan card —
+            this opens the preview, the modal's confirm keeps the
+            destructive label. QA-billing-20260901-02: once
+            `cancelAtPeriodEnd` is already true, opening the cancel
+            preview again is a dead end — the service's cancel is
+            idempotent and skips the provider round-trip, so a second
+            confirm would look like it worked and change nothing. */}
+        {!sub.cancelAtPeriodEnd ? (
+          <Button tone="default" onClick={onRequestCancel} disabled={resume.isPending}>
+            Review cancellation
+          </Button>
+        ) : null}
       </div>
     </div>
   );

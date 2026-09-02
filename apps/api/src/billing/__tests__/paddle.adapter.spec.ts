@@ -401,6 +401,70 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect(init.body).toBe(JSON.stringify({ effective_from: 'next_billing_period' }));
   });
 
+  // QA-billing-20260901-07: Paddle mints a $0, `ready`-status transaction
+  // with this origin every time a customer updates their card through
+  // `paymentMethodSession`'s own portal. It never bills and carries no
+  // document, so it must never reach the customer's invoice list under
+  // the same "Due" label a genuine past-due dunning invoice gets.
+  describe('listInvoices', () => {
+    function transactionsResponse(rows: unknown[]) {
+      return new Response(JSON.stringify({ data: rows, meta: { pagination: {} } }), {
+        status: 200,
+      });
+    }
+
+    it('drops a subscription_payment_method_change transaction from the list', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue(
+        transactionsResponse([
+          {
+            id: 'txn_paid',
+            status: 'paid',
+            billed_at: '2026-07-30T18:00:27.000Z',
+            currency_code: 'USD',
+            details: { totals: { grand_total: '18101' } },
+          },
+          {
+            id: 'txn_card_verify',
+            status: 'ready',
+            origin: 'subscription_payment_method_change',
+            billed_at: null,
+            created_at: '2026-08-17T02:05:17.000Z',
+            currency_code: 'USD',
+            details: { totals: { grand_total: '0' } },
+          },
+        ]),
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+      const result = await adapter.listInvoices('sub_01paddle000001');
+      expect(result.invoices).toHaveLength(1);
+      expect(result.invoices[0]?.id).toBe('txn_paid');
+      // Not a hidden/omitted row either — it isn't a billing document at
+      // all, so counting it as "couldn't be displayed" would be its own
+      // false claim.
+      expect(result.omitted).toBe(0);
+    });
+
+    it('keeps a $0 transaction of any OTHER origin (never-fabricate: origin is the only signal read)', async () => {
+      const fetchSpy = vi.fn().mockResolvedValue(
+        transactionsResponse([
+          {
+            id: 'txn_zero_other',
+            status: 'billed',
+            billed_at: '2026-07-30T18:00:27.000Z',
+            currency_code: 'USD',
+            details: { totals: { grand_total: '0' } },
+          },
+        ]),
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+      const result = await adapter.listInvoices('sub_01paddle000001');
+      expect(result.invoices).toHaveLength(1);
+      expect(result.invoices[0]?.id).toBe('txn_zero_other');
+    });
+  });
+
   // The gate on the ONE outbound cancel. On a live account
   // `adjustment.created` fires while a refund is still
   // `pending_approval`, and sandbox auto-approves — so the pending shape

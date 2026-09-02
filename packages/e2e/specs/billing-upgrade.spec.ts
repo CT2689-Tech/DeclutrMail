@@ -249,9 +249,11 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const planCard = page.getByTestId('current-plan-card');
   await expect(planCard).toBeVisible({ timeout: 60_000 });
   await expect(planCard).toContainText('Free');
-  await expect(planCard).toContainText(
-    `0 of ${FREE_CLEANUP_LIMIT} cleanup actions left this month.`,
-  );
+  // QA-billing-20260901-04: the card states the real signup-anniversary
+  // reset date, not "this month" — the seed creates the user at `now()`,
+  // so the date itself is not fixed here, only the shape.
+  await expect(planCard).toContainText(`0 of ${FREE_CLEANUP_LIMIT} cleanup actions left`);
+  await expect(planCard).toContainText(/· resets [A-Z][a-z]{2} \d{1,2}, \d{4}/);
   await expect(page.getByTestId('checkout-panel')).toBeVisible();
   await expect(page.getByTestId('checkout-panel')).toContainText(
     'Preview · before anything changes',
@@ -345,7 +347,10 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // Provider name is plumbing, not a plan fact — asserted ABSENT.
   await expect(proCard).not.toContainText('via Paddle');
   await expect(proCard).toContainText('Next renewal');
-  await expect(proCard.getByRole('button', { name: 'Cancel subscription' })).toBeVisible();
+  // QA-billing-20260901-06: the opener button was renamed from "Cancel
+  // subscription" so the two clicks (open preview vs. the modal's own
+  // destructive confirm) read as two different things.
+  await expect(proCard.getByRole('button', { name: 'Review cancellation' })).toBeVisible();
   const sub = await api.get<SubscriptionView>('/api/billing/subscription');
   expect(sub.tier).toBe('pro');
   expect(sub.foundingMember, 'pro_monthly is not the founding price').toBe(false);
