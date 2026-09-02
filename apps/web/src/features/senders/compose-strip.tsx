@@ -25,7 +25,7 @@
  */
 
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
-import { tokens } from '@declutrmail/shared';
+import { tokens, useIsAtMost } from '@declutrmail/shared';
 import { WINDOWS } from '@declutrmail/shared/senders';
 import type {
   ActivityBucket,
@@ -140,6 +140,7 @@ export function ComposeStrip({
    */
   views?: ViewsMenuProps | undefined;
 }) {
+  const isTouch = useIsAtMost('xs');
   return (
     <div
       role="group"
@@ -165,22 +166,27 @@ export function ComposeStrip({
           chips (pre-existing) under the strip's own `role="group"`;
           the underlying interaction-model gap is flagged as its own
           QA candidate, not fixed here. */}
-      {/* QA-senders-filtering-20260901-02: nothing on screen previously
-          taught alt-click/right-click-to-exclude — one hint, once, covers
-          every chip in the strip rather than repeating per-chip. */}
-      <span
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10,
-          color: color.fgMuted,
-          marginRight: 2,
-        }}
-      >
-        (alt-click a chip to exclude it)
-      </span>
       <ActivityChip bucket="active" state={state} count={counts?.active} onChange={onChange} />
       <ActivityChip bucket="quiet" state={state} count={counts?.quiet} onChange={onChange} />
       <ActivityChip bucket="dormant" state={state} count={counts?.dormant} onChange={onChange} />
+      {/* QA-senders-filtering-20260901-02: nothing on screen previously
+          taught alt-click/right-click-to-exclude — one hint, once, covers
+          every chip in the strip rather than repeating per-chip. Hidden on
+          touch (design-system-agent PR #707 review): alt-click doesn't
+          exist as a gesture there, so the hint would name something the
+          reader can't do. */}
+      {!isTouch && (
+        <span
+          style={{
+            fontFamily: font.mono,
+            fontSize: 10,
+            color: color.fgMuted,
+            marginRight: 2,
+          }}
+        >
+          (alt-click a chip to exclude it)
+        </span>
+      )}
 
       <Divider />
 

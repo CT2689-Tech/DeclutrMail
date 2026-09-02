@@ -249,7 +249,9 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
   // `senders-screen.tsx` (the D211 skeleton, the grid-mode EmptyState
   // pair, and the retry ErrorState). Table-mode variants ARE storied
   // at component level (`sender-table.stories.tsx`: Loading,
-  // ErrorState, EmptyNoSenders / NoFilterMatch / NoSearchMatch), but
+  // ErrorState, Empty — QA-senders-filtering-20260901-01 collapsed the
+  // prior 3-way EmptyNoSenders/NoFilterMatch/NoSearchMatch split, since
+  // the parent screen's own empty-state check always fires first), but
   // no story renders the full screen in these states — hence
   // `implemented`, not `covered`.
   senders: {
