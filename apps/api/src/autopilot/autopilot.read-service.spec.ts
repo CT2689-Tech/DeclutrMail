@@ -830,6 +830,38 @@ describe('AutopilotReadService', () => {
       expect(rule!.observeDigest?.pendingTotal).toBe(1);
     });
 
+    it('drops matches for senders Protected after the match was logged', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const protectedKey = 'a'.repeat(64);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: protectedKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      await db.insert(ruleMatchLog).values([
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: protectedKey,
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'protected-after-match',
+        },
+        {
+          ruleId,
+          mailboxAccountId: mailboxA,
+          senderKey: 'b'.repeat(64),
+          modeAtMatch: 'observe',
+          confidence: '0.92',
+          reason: 'unprotected',
+        },
+      ]);
+
+      const pending = await service.listPendingSuggestions(mailboxA);
+      expect(pending.map((p) => p.reason)).toEqual(['unprotected']);
+    });
+
     it('returns observe+pending matches newest first', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const now = new Date();
@@ -1345,6 +1377,52 @@ describe('AutopilotReadService', () => {
       expect(row!.intentApplied).toBe(false);
     });
 
+    it('excludes Protected senders from approval and reports skippedProtectedCount', async () => {
+      const { svc, add } = withQueue();
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const protectedKey = 'a'.repeat(64);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: protectedKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      const [protectedMatch, okMatch] = await db
+        .insert(ruleMatchLog)
+        .values([
+          {
+            ruleId,
+            mailboxAccountId: mailboxA,
+            senderKey: protectedKey,
+            modeAtMatch: 'observe',
+            confidence: '0.92',
+            reason: 'protected-after-match',
+          },
+          {
+            ruleId,
+            mailboxAccountId: mailboxA,
+            senderKey: 'c'.repeat(64),
+            modeAtMatch: 'observe',
+            confidence: '0.92',
+            reason: 'unprotected',
+          },
+        ])
+        .returning({ id: ruleMatchLog.id });
+
+      const result = await svc.approveMatches(mailboxA, [protectedMatch!.id, okMatch!.id]);
+      expect(result.approvedCount).toBe(1);
+      expect(result.skippedProtectedCount).toBe(1);
+      expect(result.alreadyResolvedCount).toBe(0);
+      expect(add).toHaveBeenCalledTimes(1);
+
+      const rows = await db
+        .select({ id: ruleMatchLog.id, resolution: ruleMatchLog.resolution })
+        .from(ruleMatchLog)
+        .where(inArray(ruleMatchLog.id, [protectedMatch!.id, okMatch!.id]));
+      expect(rows.find((r) => r.id === protectedMatch!.id)?.resolution).toBe('pending');
+      expect(rows.find((r) => r.id === okMatch!.id)?.resolution).toBe('approved');
+    });
+
     it('is idempotent — a replay reports alreadyResolved and enqueues nothing', async () => {
       const { svc, add } = withQueue();
       const { matchId } = await seedPendingMatch(mailboxA);
@@ -1424,6 +1502,50 @@ describe('AutopilotReadService', () => {
       // Cross-tenant rule id → null → controller 404.
       const ruleB = await getRuleId(db, mailboxB, 'auto_archive_low_engagement');
       expect(await svc.approveAllForRule(mailboxA, ruleB)).toBeNull();
+    });
+
+    it('approveAllForRule also excludes Protected senders and reports skippedProtectedCount', async () => {
+      const { svc } = withQueue();
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const protectedKey = 'd'.repeat(64);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: protectedKey,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      const [protectedMatch, okMatch] = await db
+        .insert(ruleMatchLog)
+        .values([
+          {
+            ruleId,
+            mailboxAccountId: mailboxA,
+            senderKey: protectedKey,
+            modeAtMatch: 'observe',
+            confidence: '0.92',
+            reason: 'protected-after-match',
+          },
+          {
+            ruleId,
+            mailboxAccountId: mailboxA,
+            senderKey: 'e'.repeat(64),
+            modeAtMatch: 'observe',
+            confidence: '0.92',
+            reason: 'unprotected',
+          },
+        ])
+        .returning({ id: ruleMatchLog.id });
+
+      const result = await svc.approveAllForRule(mailboxA, ruleId);
+      expect(result!.approvedCount).toBe(1);
+      expect(result!.skippedProtectedCount).toBe(1);
+
+      const rows = await db
+        .select({ id: ruleMatchLog.id, resolution: ruleMatchLog.resolution })
+        .from(ruleMatchLog)
+        .where(inArray(ruleMatchLog.id, [protectedMatch!.id, okMatch!.id]));
+      expect(rows.find((r) => r.id === protectedMatch!.id)?.resolution).toBe('pending');
+      expect(rows.find((r) => r.id === okMatch!.id)?.resolution).toBe('approved');
     });
   });
 

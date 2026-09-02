@@ -135,6 +135,24 @@ const SENDER_INDEXED_AT_MATCH_TIME: SQL = sql`exists (
     and s.created_at <= ${sql.raw('rule_match_log.matched_at')}
 )`;
 
+/**
+ * A pending match is Protected when the sender it names carries
+ * `sender_policies.is_protected = true` RIGHT NOW — protection can be
+ * set any time after the match was logged. The execution-time guard in
+ * `autopilot-action.worker.ts` re-checks this and dismisses an already-
+ * approved match with `dismissReason:'protected'`, so both the pending
+ * list and the approve endpoints must apply the same check — otherwise
+ * the list offers, and approve counts, suggestions the worker will
+ * silently refuse to execute.
+ */
+const SENDER_IS_PROTECTED: SQL = sql`exists (
+  select 1
+  from sender_policies sp
+  where sp.mailbox_account_id = ${sql.raw('rule_match_log.mailbox_account_id')}
+    and sp.sender_key = ${sql.raw('rule_match_log.sender_key')}
+    and sp.is_protected = true
+)`;
+
 /** D246 repeated-decision evidence and dismissal windows. */
 const PATTERN_EVIDENCE_WINDOW_DAYS = 30;
 const PATTERN_EVIDENCE_MIN_SENDERS = 3;
@@ -892,6 +910,7 @@ export class AutopilotReadService {
           eq(ruleMatchLog.modeAtMatch, 'observe'),
           eq(ruleMatchLog.resolution, 'pending'),
           SENDER_INDEXED_AT_MATCH_TIME,
+          sql`not ${SENDER_IS_PROTECTED}`,
         ),
       )
       .orderBy(desc(ruleMatchLog.matchedAt), desc(ruleMatchLog.id))
@@ -1028,7 +1047,12 @@ export class AutopilotReadService {
    *   - first approve of a pending row → counted in `approvedCount`
    *   - replayed approve of a terminal row (approved/dismissed) for
    *     THIS mailbox → counted in `alreadyResolvedCount`, 200
-   *   - cross-tenant / unknown ids → silently absent from both counts
+   *   - a row whose sender is currently Protected is left `pending` and
+   *     counted in `skippedProtectedCount` instead of `approvedCount` —
+   *     the action worker re-checks protection at execution time and
+   *     would otherwise dismiss it, silently shorting the count this
+   *     call already returned to the caller
+   *   - cross-tenant / unknown ids → silently absent from all counts
    *     (cannot probe existence across mailboxes)
    *
    * Fails 503 BEFORE any write when the action queue is down —
@@ -1051,10 +1075,28 @@ export class AutopilotReadService {
           eq(ruleMatchLog.modeAtMatch, 'observe'),
           eq(ruleMatchLog.resolution, 'pending'),
           SENDER_INDEXED_AT_MATCH_TIME,
+          sql`not ${SENDER_IS_PROTECTED}`,
         ),
       )
       .returning({ id: ruleMatchLog.id });
     const approvedCount = updated.length;
+
+    // Rows left `pending` solely because their sender is now Protected
+    // — otherwise-eligible (still indexed, still pending) but excluded
+    // by the update's protection check above.
+    const [protectedSkip] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(ruleMatchLog)
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          inArray(ruleMatchLog.id, matchIds),
+          eq(ruleMatchLog.resolution, 'pending'),
+          SENDER_INDEXED_AT_MATCH_TIME,
+          SENDER_IS_PROTECTED,
+        ),
+      );
+    const skippedProtectedCount = protectedSkip?.n ?? 0;
 
     // Benign-replay accounting: rows in THIS mailbox that are terminal
     // but were not flipped by this call (already approved or dismissed
@@ -1073,7 +1115,7 @@ export class AutopilotReadService {
 
     const executionEnqueued =
       approvedCount > 0 ? await this.enqueueActionSweep(mailboxAccountId) : false;
-    return { approvedCount, alreadyResolvedCount, executionEnqueued };
+    return { approvedCount, alreadyResolvedCount, skippedProtectedCount, executionEnqueued };
   }
 
   /**
@@ -1113,14 +1155,31 @@ export class AutopilotReadService {
           eq(ruleMatchLog.modeAtMatch, 'observe'),
           eq(ruleMatchLog.resolution, 'pending'),
           SENDER_INDEXED_AT_MATCH_TIME,
+          sql`not ${SENDER_IS_PROTECTED}`,
         ),
       )
       .returning({ id: ruleMatchLog.id });
     const approvedCount = updated.length;
 
+    // Same accounting as `approveMatches`: rows left `pending` solely
+    // because their sender is now Protected.
+    const [protectedSkip] = await this.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(ruleMatchLog)
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          eq(ruleMatchLog.ruleId, ruleId),
+          eq(ruleMatchLog.resolution, 'pending'),
+          SENDER_INDEXED_AT_MATCH_TIME,
+          SENDER_IS_PROTECTED,
+        ),
+      );
+    const skippedProtectedCount = protectedSkip?.n ?? 0;
+
     const executionEnqueued =
       approvedCount > 0 ? await this.enqueueActionSweep(mailboxAccountId) : false;
-    return { approvedCount, alreadyResolvedCount: 0, executionEnqueued };
+    return { approvedCount, alreadyResolvedCount: 0, skippedProtectedCount, executionEnqueued };
   }
 
   /**
