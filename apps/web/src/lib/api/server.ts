@@ -25,6 +25,23 @@ export class ServerApiError extends Error {
   }
 }
 
+/**
+ * The D168 envelope's `error.displayId` off a `ServerApiError`, or null.
+ *
+ * Mirrors `apiErrorDisplayId` in `./client` for the server-side error type
+ * — the short user-quotable support code a support agent maps back to
+ * `correlationId` in the API logs.
+ */
+export function serverApiErrorDisplayId(err: unknown): string | null {
+  if (!(err instanceof ServerApiError) || typeof err.body !== 'object' || err.body === null) {
+    return null;
+  }
+  const { error } = err.body as { error?: unknown };
+  if (typeof error !== 'object' || error === null) return null;
+  const { displayId } = error as { displayId?: unknown };
+  return typeof displayId === 'string' ? displayId : null;
+}
+
 export async function serverGetEnvelope<T, Meta = unknown>(
   path: string,
   cookieHeader: string,

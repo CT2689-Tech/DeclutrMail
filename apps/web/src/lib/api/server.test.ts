@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('server-only', () => ({}));
 
-import { serverGet } from './server';
+import { ServerApiError, serverApiErrorDisplayId, serverGet } from './server';
 
 describe('serverGet', () => {
   afterEach(() => {
@@ -48,5 +48,25 @@ describe('serverGet', () => {
         'X-Active-Mailbox-Id': 'mailbox-2',
       },
     });
+  });
+});
+
+describe('serverApiErrorDisplayId', () => {
+  it('reads the envelope displayId off a ServerApiError', () => {
+    const err = new ServerApiError(
+      409,
+      { error: { code: 'PROTECTED_SENDER', displayId: 'DM-7F2A91' } },
+      'boom',
+    );
+    expect(serverApiErrorDisplayId(err)).toBe('DM-7F2A91');
+  });
+
+  it('returns null for a non-ServerApiError', () => {
+    expect(serverApiErrorDisplayId(new Error('boom'))).toBeNull();
+  });
+
+  it('returns null when the body carries no error envelope', () => {
+    const err = new ServerApiError(500, 'plain text', 'boom');
+    expect(serverApiErrorDisplayId(err)).toBeNull();
   });
 });
