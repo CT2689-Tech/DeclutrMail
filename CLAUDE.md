@@ -593,6 +593,16 @@ A PR is not complete until ALL of these pass:
 - **No gate agent has unresolved blocking comments**
 - **No new TODOs** unless linked to a D-decision or GitHub issue
 - **Local smoke test passes** — see "Smoke before merge" below
+- **Adversarial review for context-moving changes.** A change that moves work
+  between execution contexts — off a request/push path into a background job,
+  from in-process state into shared state, from inside a lock to outside it —
+  needs a review pass before merge (`/code-review ultra`, or an equivalent
+  second opinion). Structural gates do not run the app and tests assert what
+  their author already believed; neither catches a reader that was fine until
+  the write moved. Before the review, write down every reader of the data the
+  change relocates and what each does with a stale value. If any reader takes a
+  DESTRUCTIVE action on it, the write cannot be deferred past that reader —
+  scope it instead.
 
 ### A green test is not evidence (2026-08-21)
 
