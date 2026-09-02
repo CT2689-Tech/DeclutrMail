@@ -290,11 +290,38 @@ function activityCsvLine(row: ActivityRowFacts, includeFullSenderAddresses: bool
     senderName,
     senderAddress,
     String(row.affectedCount),
-    reviewLabel ?? activityExecutionLabel(execution),
+    reviewLabel ?? resultLabel(row.reviewOutcome, execution),
     activityUndoLabel(row.undoState.kind),
   ]
     .map(csvField)
     .join(',');
+}
+
+// `activityExecutionLabel` returns 'Completed' for a null execution — true
+// only when `reviewOutcome` is also 'completed'/'recovered'. A persisted row
+// with no linked job (failed unsubscribe attempts, reverted actions, or an
+// unsubscribe intent still awaiting a terminal event) carries a null
+// execution too, so the label must come from `reviewOutcome`, not default to
+// 'Completed' — see `persistedReviewOutcomeExpression`'s "without inventing
+// success" contract in activity.read-service.ts.
+function resultLabel(
+  reviewOutcome: ActivityRowFacts['reviewOutcome'],
+  execution: ActivityRowFacts['executionState'],
+): string {
+  if (execution !== null) return activityExecutionLabel(execution);
+  switch (reviewOutcome) {
+    case 'completed':
+    case 'recovered':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'skipped':
+      return 'Skipped';
+    case 'protected':
+      return 'Protected';
+    case null:
+      return 'Not yet resolved';
+  }
 }
 
 function technicalHeader(context: {
@@ -322,14 +349,32 @@ function technicalRecord(row: ActivityRowFacts) {
     occurredAt: row.occurredAt,
     action: row.action,
     source: row.source,
-    executionStatus:
-      execution === null
-        ? 'completed'
-        : execution.kind === 'in_progress'
-          ? execution.status
-          : 'failed',
+    executionStatus: technicalExecutionStatus(row.reviewOutcome, execution),
     errorCode: execution?.kind === 'failed' ? execution.errorCode : null,
   };
+}
+
+// Mirrors `resultLabel`'s reasoning: a null execution is not on its own
+// evidence of completion — read the persisted `reviewOutcome` instead of
+// defaulting to 'completed'.
+function technicalExecutionStatus(
+  reviewOutcome: ActivityRowFacts['reviewOutcome'],
+  execution: ActivityRowFacts['executionState'],
+): string {
+  if (execution !== null) return execution.kind === 'in_progress' ? execution.status : 'failed';
+  switch (reviewOutcome) {
+    case 'completed':
+    case 'recovered':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'skipped':
+      return 'skipped';
+    case 'protected':
+      return 'protected';
+    case null:
+      return 'unresolved';
+  }
 }
 
 function maskSenderAddress(email: string): string {
