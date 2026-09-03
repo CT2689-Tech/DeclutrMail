@@ -298,7 +298,12 @@ export interface MailMessageRow {
 
 /** Row shape on `GET /api/senders/:id/timeseries` — 12-month volume + read counts. */
 export interface TimeseriesPointDto {
-  /** First-of-month ISO date (YYYY-MM-DD). */
+  // Codex adversarial review: this comment claimed `YYYY-MM-DD`, but the
+  // API projects to `YYYY-MM` before sending (`senders.read-service.ts`:
+  // `row.yearMonth.slice(0, 7)`) — matching `senders.types.ts`'s own
+  // documentation of the same field on the API side. The stale comment
+  // here is what let a test fixture drift to `YYYY-MM-DD` undetected.
+  /** YYYY-MM (the chart x-axis key). */
   yearMonth: string;
   volume: number;
   readCount: number;

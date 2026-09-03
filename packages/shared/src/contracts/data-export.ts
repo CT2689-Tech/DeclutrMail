@@ -59,8 +59,13 @@ export const DATA_EXPORT_FORMAT_MANIFEST = {
     label: 'Selected account data (JSON)',
     buttonLabel: 'Download selected data',
     pendingLabel: 'Preparing JSON…',
+    // QA-sender-detail-20260902-02: "listed email details" was vague
+    // enough to read as "just headers" — the sibling `csv` description
+    // below already names the Gmail preview snippet explicitly; this one
+    // didn't, which is what let the settings screen's blanket "Exports
+    // never contain message bodies" sentence go unnoticed next to it.
     description:
-      'mailbox addresses and status, sender profiles and decisions, listed email details, Activity history, and product feedback.',
+      'mailbox addresses and status, sender profiles and decisions, listed email details (sender, subject, Gmail preview snippet, date, labels, and read state), Activity history, and product feedback.',
     includedInventoryIds: includedInventoryIds('json'),
     completeAccountExport: false,
   },

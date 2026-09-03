@@ -24,7 +24,47 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
     expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
     expect(screen.getByText('Details used')).toBeInTheDocument();
     expect(screen.getByText('12 messages received in the last 30 days')).toBeInTheDocument();
-    expect(screen.getByText(/does not change email/i)).toBeInTheDocument();
+  });
+
+  /**
+   * QA-sender-detail-20260902-12: "This suggestion does not change email.
+   * Choose the action that fits." was the third statement of that fact on
+   * one screen — "Optional suggestion" and the toolbar's own safety hint
+   * both already say it.
+   */
+  it('does not repeat "this suggestion does not change email" a third time', () => {
+    render(<RecommendationBanner recommendation={SUGGESTION} />);
+    expect(screen.queryByText(/does not change email/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * QA-sender-detail-20260902-12: "Suggested action" labelled the
+   * reasoning paragraph, which explains the suggestion — not an action.
+   */
+  it('labels the reasoning paragraph "Why", not "Suggested action"', () => {
+    render(<RecommendationBanner recommendation={SUGGESTION} />);
+    expect(screen.getByText('Why')).toBeInTheDocument();
+    expect(screen.queryByText('Suggested action')).not.toBeInTheDocument();
+  });
+
+  /**
+   * QA-sender-detail-20260902-07: the toolbar's fact-derived primary verb
+   * and this banner's engine suggestion are two independently-sourced
+   * signals that can disagree with no explanation of which is which.
+   */
+  it('names the toolbar highlight when it disagrees with the suggestion', () => {
+    render(<RecommendationBanner recommendation={SUGGESTION} toolbarHighlight="later" />);
+    expect(screen.getByText(/highlighted button is Later/i)).toBeInTheDocument();
+  });
+
+  it('says nothing extra when the toolbar highlight agrees with the suggestion', () => {
+    render(<RecommendationBanner recommendation={SUGGESTION} toolbarHighlight="archive" />);
+    expect(screen.queryByText(/highlighted button is/i)).not.toBeInTheDocument();
+  });
+
+  it('says nothing extra when no toolbar highlight is given', () => {
+    render(<RecommendationBanner recommendation={SUGGESTION} />);
+    expect(screen.queryByText(/highlighted button is/i)).not.toBeInTheDocument();
   });
 
   /**
@@ -40,7 +80,12 @@ describe('RecommendationBanner — D245 optional suggestion', () => {
       />,
     );
     const summary = screen.getByText(/Optional suggestion · Archive/);
-    expect(summary).toHaveTextContent(/scored .+ ago|scored today|scored yesterday/);
+    // QA-sender-detail-20260902-08: "scored" was the scoring engine's own
+    // vocabulary; the shared `scoredAgeLabel` now says "Last checked".
+    expect(summary).toHaveTextContent(
+      /Last checked .+ ago|Last checked today|Last checked yesterday/,
+    );
+    expect(summary).not.toHaveTextContent(/scored/i);
     expect(summary.closest('details')).not.toHaveAttribute('open');
   });
 

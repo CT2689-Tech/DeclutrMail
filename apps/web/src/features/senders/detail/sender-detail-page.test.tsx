@@ -18,7 +18,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { ACTION_OVERDUE_MS, SenderDetailRoute } from './sender-detail-page';
+import { ACTION_OVERDUE_MS, isCurrentYearMonth, SenderDetailRoute } from './sender-detail-page';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { useRevertUndo } from '@/lib/api/use-action';
@@ -31,6 +31,7 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 
 // Toast is the user-visible surface the overdue-release cases assert on.
 // Partial mock — every other export from the shared package stays real.
@@ -133,8 +134,14 @@ const MESSAGE = {
   isUnread: true,
 };
 
+// Codex adversarial review: this used to be `YYYY-MM-DD` (with a `-01`
+// day suffix); the real API sends `YYYY-MM` (`senders.read-service.ts`'s
+// `row.yearMonth.slice(0, 7)`) — see the corrected comment on
+// `TimeseriesPointDto`. The stale format silently failed to match
+// `isCurrentYearMonth`'s `/^(\d{4})-(\d{2})$/` regex, so no test here
+// ever exercised the "current month" branch through this fixture.
 const TIMESERIES = Array.from({ length: 12 }, (_, i) => ({
-  yearMonth: `2025-${String(i + 1).padStart(2, '0')}-01`,
+  yearMonth: `2025-${String(i + 1).padStart(2, '0')}`,
   volume: 60,
   readCount: 1,
 }));
@@ -189,6 +196,33 @@ function renderDetail(id = 'linkedin') {
   );
 }
 
+describe('isCurrentYearMonth', () => {
+  /**
+   * QA-sender-detail-20260902-03, Codex adversarial review round 2: an
+   * integration test deriving its fixture from ambient "now" can't prove
+   * the UTC-vs-local distinction, since real UTC and local months only
+   * diverge within a day of a boundary — most days it's accidentally
+   * correct either way. This tests the function directly against a fixed
+   * instant chosen to cross a month boundary in UTC, independent of
+   * whatever timezone the CI/dev machine itself runs in — 02:00 UTC on
+   * October 1st is October in UTC everywhere, and September in any
+   * timezone west of UTC by 2+ hours (which is most of the Americas).
+   */
+  const octoberFirst2AmUtc = Date.UTC(2026, 9, 1, 2, 0, 0);
+
+  it('is true for the UTC month, even one a negative-offset local timezone would call last month', () => {
+    expect(isCurrentYearMonth('2026-10', octoberFirst2AmUtc)).toBe(true);
+  });
+
+  it('is false for the local month when it differs from the UTC month', () => {
+    expect(isCurrentYearMonth('2026-09', octoberFirst2AmUtc)).toBe(false);
+  });
+
+  it('returns false for a malformed yearMonth', () => {
+    expect(isCurrentYearMonth('not-a-date', octoberFirst2AmUtc)).toBe(false);
+  });
+});
+
 describe('SenderDetailRoute', () => {
   beforeEach(() => {
     installFetchStub([]);
@@ -211,6 +245,202 @@ describe('SenderDetailRoute', () => {
     expect(screen.getByText(/top notifications this week/i)).toBeInTheDocument();
     expect(screen.queryByText(/Optional suggestion/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/confidence \d+%/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * QA-sender-detail-20260902-05: aria-label and title described the
+   * "Open all in Gmail" link two different ways to two different users
+   * ("open all messages" vs. "search every email"), and "all"/"every"
+   * overclaim what a `from:` search actually reaches (Gmail's default
+   * search excludes Spam and Trash).
+   */
+  it('describes the Gmail deep link the same way to every user, without overclaiming scope', async () => {
+    installHappyPath();
+    renderDetail();
+
+    const link = await screen.findByRole('link', {
+      name: 'Open a Gmail search for email from this sender',
+    });
+    expect(link).toHaveAttribute('title', 'Open a Gmail search for email from this sender');
+    expect(screen.queryByText(/open all in gmail/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/search every email/i)).not.toBeInTheDocument();
+  });
+
+  /**
+   * QA-sender-detail-20260902-02: "we never render bodies" sat directly
+   * above each row's Gmail-snippet text. Recent Messages now names what's
+   * actually shown instead.
+   */
+  it('never claims "no bodies" beside the rendered Gmail preview snippet', async () => {
+    installHappyPath();
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    expect(screen.queryByText(/we never render bodies/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/subject and the Gmail preview snippet only/i)).toBeInTheDocument();
+  });
+
+  /**
+   * QA-sender-detail-20260902-03, gap found by Codex adversarial review:
+   * the pre-existing `TIMESERIES` fixture used `YYYY-MM-DD`, which
+   * silently failed `isCurrentYearMonth`'s regex — no test here ever
+   * exercised the "current month" ("so far in") branch with a genuinely
+   * current point, only the (indistinguishable, by accident) stale-month
+   * fallback. This constructs a timeseries whose latest point IS the
+   * real current calendar month.
+   */
+  it('shows "so far in" framing for a genuinely current month, and stale-month framing otherwise', async () => {
+    const now = new Date();
+    // UTC, matching `isCurrentYearMonth`'s comparison basis (fixed after
+    // Codex adversarial review to agree with the server's UTC bucketing)
+    // — avoids test flakiness within ~24h of a month boundary in a
+    // non-UTC CI/dev timezone.
+    const currentYearMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    installFetchStub([
+      { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [{ yearMonth: currentYearMonth, volume: 5, readCount: 1 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/so far in/i)).toBeInTheDocument());
+    expect(screen.queryByText(/^Last mailed you in/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Sent \d/)).not.toBeInTheDocument();
+  });
+
+  it('shows "Last mailed you in" framing for a stale (non-current) latest month', async () => {
+    installFetchStub([
+      { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [{ yearMonth: '2020-01', volume: 5, readCount: 1 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/^Last mailed you in Jan/)).toBeInTheDocument());
+    // The KPI cell disambiguates a stale month with the year, not just
+    // the abbreviation, so it doesn't read as this year's January.
+    expect(screen.getByText('Jan 2020')).toBeInTheDocument();
+  });
+
+  /**
+   * QA-sender-detail-20260902-01: the hero used to fall back to "Hasn't
+   * mailed you yet." for ANY empty 12-month timeseries, including a
+   * sender who genuinely has mail history — just outside the window.
+   * `totalReceived > 0` with an empty timeseries is exactly that shape.
+   */
+  it('shows a dormant-sender hero, not "never mailed", for a sender with history outside the 12-month window', async () => {
+    installFetchStub([
+      { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [HISTORY_ROW],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    expect(screen.getByText(/Nothing in the last 12 months\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Hasn.t mailed you yet\./)).not.toBeInTheDocument();
+  });
+
+  it('keeps "Hasn\'t mailed you yet." for a sender who genuinely never mailed', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => jsonOk({ data: { ...DETAIL, totalReceived: 0 } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    expect(screen.getByText(/Hasn.t mailed you yet\./)).toBeInTheDocument();
   });
 
   it('shows the action it has, with the real message count', async () => {
@@ -265,7 +495,12 @@ describe('SenderDetailRoute', () => {
     await waitFor(() =>
       expect(screen.getByText(/No actions on this sender yet/i)).toBeInTheDocument(),
     );
-    for (const claim of ['Kept', 'Archived', 'Unsubscribe requested', 'Moved to Later']) {
+    for (const claim of [
+      'Keep decision saved',
+      'Archived',
+      'Unsubscribe request recorded',
+      'Moved to Later',
+    ]) {
       expect(screen.queryByText(claim)).not.toBeInTheDocument();
     }
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
@@ -323,7 +558,8 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     const summary = await screen.findByText(/Optional suggestion · Keep/);
-    expect(summary).toHaveTextContent(/scored/);
+    // QA-sender-detail-20260902-08: "scored" renamed to "Last checked".
+    expect(summary).toHaveTextContent(/Last checked/);
     expect(summary.closest('details')).not.toHaveAttribute('open');
     // The suggestion never claims the user did anything.
     expect(screen.queryByText(/^op /)).not.toBeInTheDocument();
@@ -420,7 +656,7 @@ describe('SenderDetailRoute', () => {
     renderDetail();
 
     const openAll = await waitFor(() =>
-      screen.getByRole('link', { name: /open all messages from this sender in gmail/i }),
+      screen.getByRole('link', { name: /open a gmail search for email from this sender/i }),
     );
     const message = screen.getByRole('link', { name: /top notifications this week/i });
 
@@ -465,7 +701,7 @@ describe('SenderDetailRoute', () => {
     const subject = await waitFor(() => screen.getByText(/top notifications this week/i));
     expect(subject.closest('a')).toBeNull();
     expect(
-      screen.queryByRole('link', { name: /open all messages from this sender in gmail/i }),
+      screen.queryByRole('link', { name: /open a gmail search for email from this sender/i }),
     ).not.toBeInTheDocument();
   });
 
@@ -496,18 +732,138 @@ describe('SenderDetailRoute', () => {
     // transient 5xx, so the designed state appears after four failed
     // attempts. The user-triggered retry is the fifth and succeeds.
     const alert = await screen.findByRole('alert', {}, { timeout: 10000 });
-    expect(
-      within(alert).getByRole('heading', { name: /couldn[’']t load this sender/i }),
-    ).toBeInTheDocument();
-    expect(
-      within(alert).getByText(/gmail messages and sender settings haven.t changed/i),
-    ).toBeInTheDocument();
+    const heading = within(alert).getByRole('heading', { name: /couldn[’']t load this sender/i });
+    expect(heading).toBeInTheDocument();
+    // QA-sender-detail-20260902-09: the body used to repeat the title's
+    // own sentence ("We couldn't load this sender." as the first words
+    // of the description, right under a heading that says the same
+    // thing). Assert the fixed reassurance line instead, and that it
+    // does NOT restate the heading.
+    const description = within(alert).getByText(/nothing in your mailbox changed/i);
+    expect(description).toBeInTheDocument();
+    expect(description.textContent).not.toMatch(/couldn[’']t load this sender/i);
+
+    // QA-sender-detail-20260902-17: "Try again" used to be the only
+    // action — a dead end for an error that keeps recurring.
+    expect(screen.getByRole('link', { name: /back to senders/i })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
 
     fireEvent.click(within(alert).getByRole('button', { name: /try again/i }));
 
     await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
     expect(detailAttempts).toBe(5);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  }, 15000);
+
+  /**
+   * QA-sender-detail-20260902-09, defect found by Codex adversarial
+   * review: the error-state guard used to fire on bare `detail.isError`,
+   * with no check for whether cached data was still around. A background
+   * refetch failing right after a successful action (e.g. the invalidation
+   * that follows an Archive) would tear the whole page down for a
+   * full-page "Nothing in your mailbox changed" takeover — false, since
+   * the just-completed action DID change something, and needless, since
+   * the page already had something correct to show.
+   */
+  it('keeps showing the sender when a background refetch fails but cached data is still present', async () => {
+    let detailAttempts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => {
+          detailAttempts += 1;
+          return detailAttempts === 1 ? jsonOk({ data: DETAIL }) : jsonServerError();
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/(messages|timeseries|history)$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <SenderDetailRoute id="linkedin" />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+
+    // Simulates the invalidation that follows a successful mutation;
+    // the retry backoff means this takes a few seconds to settle.
+    await client.invalidateQueries();
+    await waitFor(() => expect(detailAttempts).toBeGreaterThan(1), { timeout: 10000 });
+
+    // The page must keep showing the sender from cached data — never the
+    // full-page error takeover — while the background refetch is failing.
+    expect(screen.getByText('LinkedIn')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/nothing in your mailbox changed/i)).not.toBeInTheDocument();
+  }, 15000);
+
+  /**
+   * QA-sender-detail-20260902-09, Codex adversarial review round 2: the
+   * fix above (trust cached data over a background refetch failure) can
+   * trust STALE data from a DIFFERENT mailbox — `resetMailboxScopedCache`
+   * uses `invalidateQueries()`, not `clear()`, so a switch does not evict
+   * the previous mailbox's cached sender; only a successful refetch
+   * replaces it. If that refetch then fails, the earlier version of this
+   * fix would keep showing the WRONG mailbox's sender. This asserts the
+   * opposite of the test above for the identical mechanism: once a
+   * mailbox-scope reset has fired, cached data does NOT get trusted again
+   * until a fetch has genuinely succeeded since.
+   */
+  it('does NOT keep showing stale data from a previous mailbox after a switch + failed refetch', async () => {
+    let detailAttempts = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => {
+          detailAttempts += 1;
+          // Succeeds once (mailbox A's cached view), fails on every
+          // attempt after the simulated mailbox switch below.
+          return detailAttempts === 1 ? jsonOk({ data: DETAIL }) : jsonServerError();
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/(messages|timeseries|history)$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <SenderDetailRoute id="linkedin" />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+
+    // Simulates `resetMailboxScopedCache`: the real switch dispatches
+    // this event AND invalidates every query, triggering the refetch
+    // that will fail on this mailbox's now-wrong sender id.
+    window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
+    await client.invalidateQueries();
+    await waitFor(() => expect(detailAttempts).toBeGreaterThan(1), { timeout: 10000 });
+
+    // The page must NOT keep showing mailbox A's cached sender once a
+    // scope reset has fired and the post-reset refetch has failed.
+    await waitFor(() => expect(screen.queryByText('LinkedIn')).not.toBeInTheDocument());
+    expect(screen.getByRole('alert')).toBeInTheDocument();
   }, 15000);
 
   // Standing-policy writes (Keep + Protect).
@@ -546,12 +902,12 @@ describe('SenderDetailRoute', () => {
       const protectButton = await waitFor(() => screen.getByRole('button', { name: 'Protect' }));
       fireEvent.click(protectButton);
       await waitFor(() => expect(bodies).toEqual([{ isProtected: true }]));
-      expect(screen.getByRole('button', { name: '◆ Protect' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Protected' })).toBeInTheDocument();
       // CLAUDE.md §2.6 / D245 — the exact reason, on the surface that
       // owns this sender. The toggle said only "Protect", so a user
       // looking at an automatically-protected sender had no way to
       // learn why (three of the four reasons are automatic).
-      expect(screen.getByRole('button', { name: '◆ Protect' })).toHaveAttribute(
+      expect(screen.getByRole('button', { name: 'Protected' })).toHaveAttribute(
         'title',
         expect.stringMatching(
           /^Protected — .+\. Select to remove protection\.$/,
@@ -560,11 +916,11 @@ describe('SenderDetailRoute', () => {
 
       // Second toggle (unprotect) fails → rollback to the set chip.
       fail = true;
-      fireEvent.click(screen.getByRole('button', { name: '◆ Protect' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Protected' }));
       await waitFor(() => expect(bodies).toHaveLength(2));
       expect(bodies[1]).toEqual({ isProtected: false });
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: '◆ Protect' })).toBeInTheDocument(),
+        expect(screen.getByRole('button', { name: 'Protected' })).toBeInTheDocument(),
       );
     });
 
@@ -627,7 +983,7 @@ describe('SenderDetailRoute', () => {
       await client.invalidateQueries();
 
       await waitFor(() =>
-        expect(screen.getByRole('button', { name: '◆ Protect' })).toBeInTheDocument(),
+        expect(screen.getByRole('button', { name: 'Protected' })).toBeInTheDocument(),
       );
     });
 

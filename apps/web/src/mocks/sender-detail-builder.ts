@@ -269,16 +269,16 @@ function buildHistory(s: SenderFixture): DecisionHistoryRow[] {
   } else if (s.read < 0.2 && s.monthly >= 6) {
     candidates.push({ source: 'Autopilot', action: 'Moved to Later', count: s.monthly });
   } else if (s.group === 'primary') {
-    candidates.push({ source: 'You', action: 'Kept' });
+    candidates.push({ source: 'You', action: 'Keep decision saved' });
   } else {
-    candidates.push({ source: 'You', action: 'Kept' });
+    candidates.push({ source: 'You', action: 'Keep decision saved' });
   }
 
   // A handful of older entries for context.
   const olderPool: Omit<DecisionHistoryRow, 'id' | 'at' | 'opId'>[] = [
-    { source: 'Triage', action: 'Kept' },
+    { source: 'Triage', action: 'Keep decision saved' },
     { source: 'Autopilot', action: 'Moved to Later', count: s.monthly },
-    { source: 'Screener', action: 'Kept' },
+    { source: 'Screener', action: 'Keep decision saved' },
     { source: 'You', action: 'Restored' },
     { source: 'You', action: 'Protected' },
     { source: 'You', action: 'Unprotected' },

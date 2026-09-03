@@ -46,12 +46,19 @@ export type DecisionSource = 'You' | 'Triage' | 'Autopilot' | 'Screener';
  * Past-tense action labels surfaced in the decision-history list.
  * The set spans all V2 actions (D46) — including Protect toggles
  * and the lifecycle actions (Restored, Snoozed).
+ *
+ * QA-sender-detail-20260902-06: `'Kept'` and `'Unsubscribe requested'`
+ * used to be this file's OWN wording for the same `activity_log` rows
+ * the Activity feed renders under `ACTIVITY_ACTION_LABELS`
+ * (`packages/shared/src/actions/activity-record-copy.ts`) — one click
+ * away via "View in Activity →", two different sentences for the
+ * identical fact. Renamed to match the shared source's exact strings.
  */
 export type DecisionAction =
   | 'Archived'
-  | 'Kept'
+  | 'Keep decision saved'
   | 'Deleted to Gmail Trash'
-  | 'Unsubscribe requested'
+  | 'Unsubscribe request recorded'
   | 'Moved to Later'
   | 'Protected'
   | 'Unprotected'

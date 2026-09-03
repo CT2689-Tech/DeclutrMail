@@ -147,6 +147,23 @@ describe('PrivacyDataView', () => {
     expect(text).not.toMatch(/full export/i);
   });
 
+  /**
+   * QA-sender-detail-20260902-02: the JSON export genuinely includes the
+   * Gmail preview snippet on every message — this screen used to say
+   * "Exports never contain message bodies", which a reader who downloads
+   * and forwards the file would reasonably read as false. Names the field
+   * (matching the CSV description's own honesty) and states the locked,
+   * accurate claim instead.
+   */
+  it('names the Gmail preview snippet in the JSON export description and never claims exports contain no bodies', () => {
+    const { container } = renderView();
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+
+    expect(text).toContain('Gmail preview snippet');
+    expect(text).not.toMatch(/exports never contain message bodies/i);
+    expect(text).toContain('We never fetch or store full email contents.');
+  });
+
   it('export buttons hand the format to onExport', async () => {
     const onExport = vi.fn();
     renderView({ onExport });

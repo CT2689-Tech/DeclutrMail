@@ -179,9 +179,28 @@ describe('SenderRowDetail volume chart', () => {
 
   it('ready + no rows: renders the calm empty state, no bars, no peak', () => {
     renderDetail({ status: 'ready', points: [] });
-    expect(screen.getByText(/no volume history yet/i)).toBeTruthy();
     expect(screen.queryByRole('img')).toBeNull();
     expect(screen.queryByText(/peak/i)).toBeNull();
+  });
+
+  /**
+   * QA-sender-detail-20260902-01 (sibling): the default `sender()` fixture
+   * carries `totalReceived: 144` (`makeSender`'s default), so the test
+   * above was — unknowingly — exercising the exact bug this pins: a
+   * sender with real mail history outside the 12-month chart window used
+   * to render the same "No volume history yet" copy as a sender who has
+   * genuinely never mailed anyone. The two are now different sentences.
+   */
+  it('a sender with history outside the 12-month window gets "Nothing in the last 12 months", not "No volume history yet"', () => {
+    renderDetail({ status: 'ready', points: [] }, READY_SUBJECTS, sender({ totalReceived: 144 }));
+    expect(screen.getByText(/Nothing in the last 12 months/i)).toBeTruthy();
+    expect(screen.queryByText(/no volume history yet/i)).toBeNull();
+  });
+
+  it('a sender who genuinely never mailed keeps "No volume history yet"', () => {
+    renderDetail({ status: 'ready', points: [] }, READY_SUBJECTS, sender({ totalReceived: 0 }));
+    expect(screen.getByText(/no volume history yet/i)).toBeTruthy();
+    expect(screen.queryByText(/Nothing in the last 12 months/i)).toBeNull();
   });
 
   it('loading: marks the card busy and shows the skeleton, no data claims', () => {

@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { DecisionHistoryRowDto, MailMessageRow, TimeseriesPointDto } from '@/lib/api/senders';
+import { ACTIVITY_ACTION_LABELS } from '@declutrmail/shared/actions';
 import { makeSenderRow } from '../testing/make-sender';
 import {
   adaptDecisionHistoryRow,
@@ -58,9 +59,9 @@ describe('adaptDecisionHistoryRow — actions that actually happened', () => {
 
   it('maps every wire action to its past-tense label', () => {
     const cases: Array<[DecisionHistoryRowDto['action'], string]> = [
-      ['keep', 'Kept'],
+      ['keep', 'Keep decision saved'],
       ['archive', 'Archived'],
-      ['unsubscribe', 'Unsubscribe requested'],
+      ['unsubscribe', 'Unsubscribe request recorded'],
       ['later', 'Moved to Later'],
       ['delete', 'Deleted to Gmail Trash'],
       ['marked_protected', 'Protected'],
@@ -68,6 +69,31 @@ describe('adaptDecisionHistoryRow — actions that actually happened', () => {
     ];
     for (const [action, label] of cases) {
       expect(adaptDecisionHistoryRow(historyRow({ action }))?.action).toBe(label);
+    }
+  });
+
+  /**
+   * QA-sender-detail-20260902-06: this label used to be a SEPARATE
+   * hand-written copy of the Activity feed's `ACTIVITY_ACTION_LABELS`
+   * for the identical `activity_log` row — the same fact rendered two
+   * different sentences, one click apart via "View in Activity →". This
+   * asserts the COMPOSITION (Sender Detail reads the shared source),
+   * not just today's literal, so a future edit to one cannot silently
+   * leave the other behind.
+   */
+  it('renders the exact same label the Activity feed uses for the identical action', () => {
+    for (const action of [
+      'keep',
+      'archive',
+      'unsubscribe',
+      'later',
+      'delete',
+      'marked_protected',
+      'unmarked_protected',
+    ] as const) {
+      expect(adaptDecisionHistoryRow(historyRow({ action }))?.action).toBe(
+        ACTIVITY_ACTION_LABELS[action],
+      );
     }
   });
 
@@ -177,8 +203,8 @@ describe('adaptMailMessageRow — recent-message projection', () => {
 
 describe('adaptTimeseriesPoint — readCount → opens', () => {
   it('maps the wire point onto the FE chart point', () => {
-    expect(adaptTimeseriesPoint({ yearMonth: '2026-06-01', volume: 20, readCount: 3 })).toEqual({
-      yearMonth: '2026-06-01',
+    expect(adaptTimeseriesPoint({ yearMonth: '2026-06', volume: 20, readCount: 3 })).toEqual({
+      yearMonth: '2026-06',
       volume: 20,
       opens: 3,
     });
@@ -289,12 +315,12 @@ describe('adaptSenderDetail — honest wire composition', () => {
     const detail = adaptSenderDetail({
       detail: makeSenderRow(),
       messages: [messageRow()],
-      timeseries: [{ yearMonth: '2026-05-01', volume: 8, readCount: 2 } as TimeseriesPointDto],
+      timeseries: [{ yearMonth: '2026-05', volume: 8, readCount: 2 } as TimeseriesPointDto],
       history: [historyRow()],
       now: NOW,
     });
     expect(detail.recentMessages[0]?.threadId).toBe('thread-m1');
     expect(detail.timeseries[0]?.opens).toBe(2);
-    expect(detail.history[0]?.action).toBe('Unsubscribe requested');
+    expect(detail.history[0]?.action).toBe('Unsubscribe request recorded');
   });
 });

@@ -25,6 +25,7 @@ import type {
   TimeseriesPointDto,
 } from '@/lib/api/senders';
 import { daysSince, enrichSenderRow, monthsSince } from '../data';
+import { ACTIVITY_ACTION_LABELS } from '@declutrmail/shared/actions';
 import type {
   DecisionAction,
   DecisionHistoryRow,
@@ -201,10 +202,13 @@ export function adaptMailMessageRow(row: MailMessageRow): RecentMessage {
  * `readCount` maps onto the FE's `opens` (same meaning — the count of
  * messages that were read in the month).
  *
- * The wire uses `YYYY-MM-DD` (first of month); the FE chart accepts
- * the same string and only uses it as an axis key, so we forward it
- * verbatim. The chart never parses the date — keys just need to be
- * stable and ordered.
+ * The wire uses `YYYY-MM` (Codex adversarial review round 2: this
+ * comment used to say `YYYY-MM-DD` — stale against `lib/api/senders.ts`'s
+ * `TimeseriesPointDto.yearMonth` doc); the FE chart accepts the same
+ * string and only uses it as an axis key, so we forward it verbatim.
+ * `isCurrentYearMonth` (sender-detail-page.tsx) DOES parse it, though,
+ * via a `YYYY-MM`-only regex — so this format is load-bearing, not just
+ * a chart key.
  */
 export function adaptTimeseriesPoint(p: TimeseriesPointDto): TimeseriesPoint {
   return {
@@ -214,22 +218,30 @@ export function adaptTimeseriesPoint(p: TimeseriesPointDto): TimeseriesPoint {
   };
 }
 
+// QA-sender-detail-20260902-06: this used to be a SEPARATE, hand-written
+// copy of the same 7 facts `ACTIVITY_ACTION_LABELS` already labels for
+// the Activity feed — the exact "4th independent copy" shape the comment
+// below once warned about, just for two different strings ('Kept' vs.
+// 'Keep decision saved', 'Unsubscribe requested' vs. 'Unsubscribe
+// request recorded'). Reading the shared map directly means the two
+// VALUES cannot drift apart by hand-edit again.
+//
+// Codex adversarial review round 2, correcting an earlier draft of this
+// comment: this is NOT type-enforced synchronization. `ACTIVITY_ACTION_
+// LABELS`'s values type as `string` (`resultLabel` on `getActionSemantics`'s
+// return isn't a literal), so each entry below is cast to `DecisionAction`
+// individually — a future edit to a shared label's WORDING still
+// compiles here even if it makes this map stale. Only the KEY set is
+// enforced (the `Record<..., DecisionAction>` annotation requires every
+// wire action present); the per-value cast is trusted, not checked.
 const ACTION_LABEL: Record<DecisionHistoryRowDto['action'], DecisionAction> = {
-  keep: 'Kept',
-  archive: 'Archived',
-  unsubscribe: 'Unsubscribe requested',
-  later: 'Moved to Later',
-  // "Deleted to Gmail Trash", matching the other 3 independent copies of
-  // this label (action-semantics.ts, triage/types.ts, senders/data.ts) —
-  // a 4th copy Codex's review found still reading bare "Deleted" on
-  // Sender Detail's own decision-history timeline (QA-undo-20260828-04).
-  // "Deleted to Gmail Trash", matching the other 3 independent copies of
-  // this label (action-semantics.ts, triage/types.ts, senders/data.ts) —
-  // a 4th copy Codex's review found still reading bare "Deleted" on
-  // Sender Detail's own decision-history timeline (QA-undo-20260828-04).
-  delete: 'Deleted to Gmail Trash',
-  marked_protected: 'Protected',
-  unmarked_protected: 'Unprotected',
+  keep: ACTIVITY_ACTION_LABELS.keep as DecisionAction,
+  archive: ACTIVITY_ACTION_LABELS.archive as DecisionAction,
+  unsubscribe: ACTIVITY_ACTION_LABELS.unsubscribe as DecisionAction,
+  later: ACTIVITY_ACTION_LABELS.later as DecisionAction,
+  delete: ACTIVITY_ACTION_LABELS.delete as DecisionAction,
+  marked_protected: ACTIVITY_ACTION_LABELS.marked_protected as DecisionAction,
+  unmarked_protected: ACTIVITY_ACTION_LABELS.unmarked_protected as DecisionAction,
 };
 
 /**

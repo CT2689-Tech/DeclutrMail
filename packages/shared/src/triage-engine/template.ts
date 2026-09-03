@@ -73,7 +73,22 @@ export const VERDICT_LABEL = {
  */
 export function renderTemplate(displayName: string, result: CascadeResult): string {
   const name = displayName.trim() || 'This sender';
-  const monthlyVol = result.facts.monthlyVolume;
+  // QA-sender-detail-20260902-01 (sibling): raw `monthlyVolume` is an
+  // unrounded 90-day-window float — a sender with 1 message per quarter
+  // rendered `0.3333333333333333/mo` verbatim. One decimal is enough
+  // precision for a cadence figure and avoids reintroducing a false "0"
+  // for any sender who sent SOMETHING in the window (see below).
+  //
+  // Codex adversarial review, round 2: rounding BEFORE the zero-volume
+  // check meant a positive-but-tiny raw value (e.g. 0.04) rounded to 0.0
+  // and triggered "hasn't sent anything" — false for a sender who did
+  // send something. Today's only producer (score.worker.ts's
+  // `volume90 / 3`) can never emit a value that small — the closest
+  // nonzero result is 1/3 — so this was latent, not live, but the
+  // exported `CascadeResult` type permits it. Check the RAW value for
+  // "did they send anything"; round only for the display string.
+  const rawMonthlyVol = result.facts.monthlyVolume;
+  const monthlyVol = Math.round(rawMonthlyVol * 10) / 10;
   const readPct = result.facts.readRatePct;
   // No `??` fallback. Both lookups are total at compile time:
   //   - `RULE_PHRASE` satisfies `Record<CascadeRuleId, string>`
@@ -86,10 +101,25 @@ export function renderTemplate(displayName: string, result: CascadeResult): stri
   // — the audit phrase is. The two-clause shape keeps the template
   // recognisable across verdicts ("{name} sends {N}/mo. {phrase}").
   //
-  // A null read rate DROPS the clause rather than printing 0%. The
-  // sentence is addressed to the user about their own behaviour, so
-  // "You open 0%." on a sender with no mail in the window is not a
-  // rounding artefact — it is a false statement about them.
+  // QA-sender-detail-20260902-01 (sibling), CORRECTED after Codex
+  // adversarial review: the first version of this fix assumed
+  // `readPct === null` implies zero volume (true for the API's
+  // `computeReadRate`, apps/api/src/senders/senders.read-service.ts) —
+  // but `packages/workers/src/reasoning.test.ts`'s existing "F009 —
+  // unmeasurable read rate" case documents `CascadeResult.facts` as a
+  // WIDER type: `{ monthlyVolume: 9, readRatePct: null }` is valid —
+  // volume can be known and nonzero while the read rate is unmeasurable
+  // for an unrelated reason. That version broke the existing
+  // "still sends 9/mo" assertion by printing "hasn't sent anything"
+  // for a sender who plainly had sent something. Check volume directly
+  // instead of inferring it from readPct.
+  if (rawMonthlyVol === 0) {
+    return `${name} hasn't sent anything in the last 90 days. ${phrase}`;
+  }
+  // A null read rate (with nonzero volume) DROPS the clause rather than
+  // printing 0%. The sentence is addressed to the user about their own
+  // behaviour, so "You open 0%." when the rate could not be measured is
+  // not a rounding artefact — it is a false statement about them.
   if (readPct === null) {
     return `${name} sends ${monthlyVol}/mo. ${phrase}`;
   }

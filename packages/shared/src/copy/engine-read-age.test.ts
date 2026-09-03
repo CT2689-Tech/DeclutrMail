@@ -32,7 +32,9 @@ describe('scoredAge', () => {
    */
   it('labels every age it can express, and stays silent when it cannot', () => {
     for (const [iso, expected] of cases) {
-      expect(scoredAgeLabel(iso, now)).toBe(`Scored ${expected}`);
+      // QA-sender-detail-20260902-08: "scored" is the scoring engine's
+      // own vocabulary — "Last checked" says the same fact without it.
+      expect(scoredAgeLabel(iso, now)).toBe(`Last checked ${expected}`);
     }
     expect(scoredAgeLabel('not-a-date', now)).toBeNull();
   });

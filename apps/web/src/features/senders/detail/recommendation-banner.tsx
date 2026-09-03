@@ -1,7 +1,7 @@
 'use client';
 
 import { Eyebrow, tokens } from '@declutrmail/shared';
-import { scoredAge } from '@declutrmail/shared/copy';
+import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
 import type { Recommendation, Verdict } from './types';
 
@@ -42,8 +42,18 @@ const VERDICT_LABEL: Record<Verdict, string> = {
 
 export function RecommendationBanner({
   recommendation,
+  toolbarHighlight,
 }: {
   recommendation: Recommendation | null;
+  /**
+   * QA-sender-detail-20260902-07: the toolbar's fact-derived primary verb
+   * (`derivePrimaryVerbId`) and this banner's engine suggestion are two
+   * independently-sourced signals that can disagree with no explanation
+   * of which is which. Optional so existing callers (Storybook, other
+   * fixtures) don't need updating to keep compiling; `undefined` and
+   * `null` both render the pre-existing copy.
+   */
+  toolbarHighlight?: Verdict | null;
 }) {
   if (recommendation == null) return null;
 
@@ -57,7 +67,13 @@ export function RecommendationBanner({
   // decoration and can wait one tick. Same guard the triage and
   // screener rows use; this was the last surface without it.
   const now = useNow();
-  const age = scoredAt && now !== null ? scoredAge(scoredAt, new Date(now)) : null;
+  // QA-sender-detail-20260902-08: this surface used to build its own
+  // " · scored X" string from the lower-level `scoredAge`, while Triage
+  // and the Screener called the shared `scoredAgeLabel` — three copies of
+  // one fact, one already drifted. Calling the same function here means
+  // fixing the word "scored" is a one-place change again.
+  const age = scoredAt && now !== null ? scoredAgeLabel(scoredAt, new Date(now)) : null;
+  const disagreesWithToolbar = toolbarHighlight != null && toolbarHighlight !== verdict;
 
   return (
     <details
@@ -80,7 +96,13 @@ export function RecommendationBanner({
         }}
       >
         Optional suggestion · {verbLabel}
-        {age && <span style={{ fontWeight: 500, color: color.fgMuted }}> · scored {age}</span>}
+        {disagreesWithToolbar && (
+          <span style={{ fontWeight: 500, color: color.fgMuted }}>
+            {' '}
+            — highlighted button is {VERDICT_LABEL[toolbarHighlight]}
+          </span>
+        )}
+        {age && <span style={{ fontWeight: 500, color: color.fgMuted }}> · {age}</span>}
       </summary>
       <div
         style={{
@@ -92,7 +114,10 @@ export function RecommendationBanner({
         }}
       >
         <div>
-          <Eyebrow tone="default">Suggested action</Eyebrow>
+          {/* QA-sender-detail-20260902-12: "Suggested action" labelled the
+              REASONING paragraph below it, which explains the suggestion,
+              not an action itself. */}
+          <Eyebrow tone="default">Why</Eyebrow>
           <p style={{ margin: '5px 0 0', fontSize: 13, lineHeight: 1.55 }}>{reasoning}</p>
         </div>
         {signals.length > 0 && (
@@ -116,9 +141,10 @@ export function RecommendationBanner({
             </ul>
           </div>
         )}
-        <p style={{ margin: 0, fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-          This suggestion does not change email. Choose the action that fits.
-        </p>
+        {/* QA-sender-detail-20260902-12: "this suggestion does not change
+            email" was the third statement of that fact on one screen —
+            "Optional suggestion" above and the toolbar's own safety hint
+            both already say it. Cut, not reworded. */}
       </div>
     </details>
   );
