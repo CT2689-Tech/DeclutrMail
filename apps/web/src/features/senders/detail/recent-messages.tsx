@@ -1,6 +1,7 @@
 'use client';
 
-import { Eyebrow, EmptyState, tokens } from '@declutrmail/shared';
+import { EmptyState, tokens } from '@declutrmail/shared';
+import { GMAIL_PREVIEW_FIELD_LABEL, PRIVACY_BADGE_HEADLINE } from '@declutrmail/shared/copy';
 import { absoluteFromIso, fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
 import { track } from '@/lib/posthog';
@@ -15,7 +16,10 @@ const { color, font, radius } = tokens;
  *
  * Renders sender + subject + Gmail snippet + relative date + size +
  * attachment icon + read/unread dot. Clicking the subject opens the
- * thread in a new Gmail tab — DeclutrMail never renders bodies (D7).
+ * thread in a new Gmail tab. The snippet IS Gmail's own body-derived
+ * preview text (D7's "Gmail preview snippet" framing, never called a
+ * body or summary in user-facing copy) — DeclutrMail never fetches or
+ * stores the full message.
  *
  * The empty state handles "no recent messages" (a fresh add, or a
  * sender that recently went dark) — D211/D212.
@@ -61,20 +65,21 @@ export function RecentMessages({
           gap: 8,
         }}
       >
-        <div>
-          <Eyebrow>Recent messages</Eyebrow>
-          <h2
-            style={{
-              margin: '4px 0 0',
-              fontSize: 15,
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              color: color.fg,
-            }}
-          >
-            Last {messages.length} from this sender
-          </h2>
-        </div>
+        {/* QA-sender-detail-20260902-11: the eyebrow and the heading said
+            the same thing ("Recent messages" / "Last N from this sender"),
+            and the heading's count was just how many rows happened to
+            load — it grew as the list paginated. One heading, no count. */}
+        <h2
+          style={{
+            margin: 0,
+            fontSize: 15,
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+            color: color.fg,
+          }}
+        >
+          Recent messages
+        </h2>
         <span
           style={{
             fontFamily: font.mono,
@@ -84,14 +89,20 @@ export function RecentMessages({
             textTransform: 'uppercase',
           }}
         >
-          Opens in Gmail · we never render bodies
+          {/* QA-sender-detail-20260902-02: "we never render bodies" sat
+              directly above each row's `message.snippet` line — real
+              Gmail body-derived text (confirmed live: transaction
+              amounts, account digits, merchant names). Name what's
+              actually shown instead of a claim the row beneath it
+              contradicts. */}
+          Opens in Gmail · subject and the {GMAIL_PREVIEW_FIELD_LABEL} only
         </span>
       </div>
 
       {messages.length === 0 ? (
         <EmptyState
           title="No recent messages"
-          body="Once a new message arrives from this sender it will appear here. We never store the body — only what you see now."
+          body={`New email from this sender shows up here. ${PRIVACY_BADGE_HEADLINE}`}
         />
       ) : (
         <ol

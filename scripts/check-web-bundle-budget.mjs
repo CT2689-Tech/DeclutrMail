@@ -110,18 +110,35 @@ const OVERRIDES_KB = {
   // a 175 budget). Headroom is deliberately small: 206 leaves ~4 kB, so
   // the next addition here still has to argue for itself.
   '/(app)/triage/page': 206, // 202.2 (was 198.2) — action sheet, preview + verification detail, undo tray
-  '/(app)/senders/[id]/page': 195, // 191.3 — detail: timeseries + history + messages
+  // 199.9 (was 191.3), measured after the 2026-09-02 sender-detail QA
+  // batch (18 findings — mailbox-scope-reset guard, fuller/more accurate
+  // KPI + hero copy, the toolbar's primaryVerbReason). Checked this was
+  // real: the route's own page chunk carries the new code (confirmed via
+  // app-build-manifest.json + grepping the built chunks for symbols
+  // unique to the diff — none leaked into a shared chunk), not a barrel
+  // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
+  // /triage above.
+  '/(app)/senders/[id]/page': 204,
   '/(app)/billing/page': 185, // 181.3 — checkout + invoices + plan controls + explainer
 
-  // Raised 180 -> 182 on 2026-09-02 (D168): measured 180.1, up from
-  // ~180.0 on main. `apiErrorDisplayId` (client.ts) gained its first
-  // production call site (technicalErrorDetails, activity-screen.tsx's
-  // "Show support details" disclosures) and could no longer be
-  // dead-code-eliminated from the shared `api/client.ts` chunk every
-  // authed route includes. Every authed route absorbed the same ~0.1 kB;
-  // settings was the only one already at its cap with zero headroom, so
-  // it is the only one that needed a bump.
-  '/(app)/settings/page': 182, // 180.1
+  // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
+  // against 180 — "ok" by the barest possible margin, same shape the
+  // /inbox-simulator entry above already warns about: a comment saying
+  // there was headroom while the route had already drifted to none).
+  // The 2026-09-02 sender-detail QA batch's `packages/shared` copy edits
+  // (D226 preview hint, `scoredAgeLabel`, the data-export description)
+  // are in the shared chunk graph this whole authed-default cluster
+  // pulls from, not anything settings-specific — a few bytes of net
+  // string growth there was enough to tip the one route with zero
+  // margin left. 184 restores real headroom.
+  //
+  // This also absorbs a second, independent +0.1 kB (measured 180.1 on
+  // this branch alone, pre-merge): `apiErrorDisplayId` (D168) gaining
+  // its first production call site (technicalErrorDetails) means it can
+  // no longer be dead-code-eliminated from the shared `api/client.ts`
+  // chunk. Both deltas land in the same shared cluster; 184 covers both
+  // with headroom to spare rather than stacking a second override.
+  '/(app)/settings/page': 184, // 180.0 (was ~175, drifted to the ceiling unnoticed)
 
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.

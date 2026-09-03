@@ -1369,6 +1369,156 @@ an unresolved finding. All 11 worklist rows now read `Merged #704`, not
 `Fixed` — that flip is earned by a later run re-confirming each symptom
 is actually gone against production/main, not by this session's own say-so.
 
+### `sender-detail` — 2026-09-02
+
+**Setup, not a finding.** This worktree had no `.env.local` (worktrees don't
+share gitignored files), no `node_modules`, and `:4000`/`:3000` belonged to a
+DIFFERENT live worktree (`ct-qa-archive-60c875`) — the exact "wrong checkout"
+trap the preflight checklist names, caught before driving anything. Ran the
+API on `:4010` and web on `:3010` per the parallel-worktree pattern (`PORT=4010
+pnpm --filter @declutrmail/api dev`, `next dev -p 3010`, `NEXT_PUBLIC_API_URL`
+pointed at `:4010`), `pnpm install` run fresh, `.dev-db-identity` recorded.
+Outstanding restores was empty at start and stayed empty throughout — every
+mutation this run made (one Archive+Undo cycle, one Protect+Unprotect cycle)
+went through the product's own mechanisms, not a raw DB force, so nothing
+needed a restore row.
+
+**Walked:** Sender Detail (`/senders/:id`) for three shapes — an active
+financial sender with 10+ messages (Bank of America), a single-message
+6-year-dormant sender (eBay Feedback), and a fresh single-message sender
+(Chalon). First-timer and scared-user reads of the hero sentence, KPI strip,
+Recent Messages, Decision Timeline, and the action toolbar's D226 preview.
+Archive preview → 0-match disabled-button correctness (Chalon, real inbox
+mail check) → cancelled; a real Archive+Undo full round-trip on a low-risk
+single-message sender (eBay Feedback), API-driven (bypassing the UI on
+purpose — see below) and verified via `action_jobs`, `undo_journal`, and
+Gmail MCP `get_message` (label restored to `INBOX`, exact pre-run set).
+Protect → Unprotect round-trip on the same sender, DB-verified both
+directions (`sender_policies.is_protected` t→f, `protection_reason
+='user_defined'`). Cross-tenant sender id (belonging to a different
+workspace's mailbox) → correct 404 isolation on all four endpoints, no data
+leak, but wrong client-side error copy (filed, see below). 375px mobile
+render (clean layout, correctly non-primary Delete/Later/Unsubscribe
+buttons). Console errors checked and fully accounted for (4× expected 404
+from the cross-tenant test; 1× 500 from the dev-login redirect bouncing
+through the _other_ worktree's stale `:3000` app, not a product defect —
+`WEB_URL` unset defaults the redirect there; harness artifact, not filed).
+
+**Not run, with reasons:** Unsubscribe — read-not-driven per Safety, `U`
+never pressed, verified only that the button is present/disabled correctly
+and its D226 preview renders (checked via source + Storybook, not by trying
+to defeat it). Two-tab race and worker-kill mid-action — time; this
+mechanism (undo/action-pipeline correctness) was already exercised end-to-end
+via the Archive+Undo round-trip and is covered system-wide by the `undo` and
+`archive` jobs' own runs. Heavy-user scale (5,000+ senders) — this mailbox's
+538 active / 7,983 total senders was the available population; no
+performance-specific probe run.
+
+**Filed** (survived `finding-refuter`, or — rows `-03` through `-18` — came
+from the `usability-editor` persona pass with exact source citations and
+exact replacement text but no separate adversarial pass; flagged as such on
+each row): see `docs/qa/qa-worklist.md`'s `## sender-detail` section,
+`QA-sender-detail-20260902-01` through `-18`.
+
+- **P1 — `-01`.** The hero sentence "Hasn't mailed you yet." fires whenever
+  the 12-month volume timeseries is empty, independent of whether the
+  sender has genuinely never mailed the user — reproduced live (a real
+  message dated 2020, confirmed via Gmail MCP) on the exact screen whose
+  Relationship stat and Recent Messages list contradict the hero sentence
+  one glance below it. `defect-class-sweeper` found 3 live siblings sharing
+  the identical producer/window mechanism: the Read-rate KPI's "no data
+  yet" on the same screen, the Senders table's row-expand panel ("No volume
+  history yet"), and — the widest-reaching instance — the recommendation
+  engine's own reasoning template ("`{sender} sends 0/mo.`"), which is
+  PERSISTED into `triage_decisions.reasoning` for every dormant sender on
+  each sync-complete score sweep, not just rendered. `finding-refuter`
+  live-DB-confirmed the mechanism affects 6,420 of 7,983 senders (80.4%) in
+  this mailbox, with the caveat that reaching a dormant sender needs a
+  deliberate filter widen or search (the default `/senders` view filters to
+  `activity=active`).
+- **P1 — `-02`.** Three separate privacy-claim strings ("we never render
+  bodies" on Sender Detail's Recent Messages header, "We never store the
+  body" on its empty state, "Exports never contain message bodies or
+  attachments" on Settings → Privacy & Data) all sit beside or govern real
+  Gmail-snippet body text (confirmed live: transaction amounts, partial
+  account numbers, merchant names, a Zelle recipient's email address, in
+  the raw JSON response of `GET /api/senders/:id/messages`). `finding-refuter`
+  partially refuted the FIRST of these three in isolation (severity
+  downgraded to P2/P3 — "body" has a locked, D7-sanctioned narrower meaning
+  used consistently elsewhere in the app's canonical copy module), but
+  `defect-class-sweeper` then found the export-screen claim independently —
+  a false statement about a persisted, downloadable, shareable artifact, not
+  an ephemeral screen render, which is closer to Tier 1b territory than what
+  the refuter evaluated. Filed at P1 for that reason, with the refuter's
+  downgrade of instance 1 alone quoted in full on the worklist row so the
+  founder can weigh both readings.
+- **P2×9, P3×7 — `-03` through `-18`.** Usability-editor findings: partial/
+  stale-month volume framing, an unscoped read-rate percentage, an
+  overclaiming "Open all in Gmail" link, Decision-Timeline vocabulary that
+  disagrees with the Activity feed one click away (plus an ungrammatical
+  "You Unsubscribe requested" row), two unsourced and sometimes-disagreeing
+  "what should I do" signals on one screen (toolbar highlight vs. suggestion
+  banner), internal "scored" jargon, a load-error state that repeats its own
+  title as its first body sentence with only a dead-end "Try again" (no
+  escape hatch, unlike the sibling not-found state), a raw `op <uuid>` on
+  every timeline row, redundant header chrome above Recent Messages, a
+  suggestion-banner sentence repeated a third time on one screen, a
+  Relationship KPI restating one number in a second unit instead of the
+  fact the reader can't compute, Delete rendering with zero visual
+  distinction from Keep, Protect's D245-required "exact reason" being
+  title-only (never opens on touch — evidenced by 4 Protect/Unprotect
+  toggles inside 2 days on this run's own reproduction sender), and a
+  disabled Unsubscribe button giving no reason. Full citations + exact
+  replacement copy on each worklist row.
+
+**Refuted before filing** (3 candidates; full grounds in `## Refuted` below):
+a client/server error-class mismatch theorized to cause the wrong
+not-found copy on a fresh page load (REFUTED by an actual code repro
+against the installed TanStack Query build — failed server-prefetch queries
+are dropped from dehydration by design, so the client's own `ApiError`
+check fires correctly; a `defect-class-sweeper` independently confirmed 0
+live instances of the class repo-wide); a general claim that D226's preview
+is enforced only client-side, demonstrated live via a raw `POST /api/actions`
+that archived a real message with zero preview ever rendered (REFUTED — the
+hook and CLAUDE.md's "MANDATORY" language were always scoped to client
+composition, isolation holds via `CurrentMailboxGuard`+CSRF so only the
+mailbox owner's own session can reach it, and every safety invariant that
+actually matters — Protected 409, rate limit, undo — still fires on the raw
+path); and a sharper follow-on candidate the sweep surfaced from that same
+gap — that a Protected sender's entire mail history can be permanently
+Deleted via `override:true` with no server-side proof a warning was ever
+shown (REFUTED — D245's own text scopes exclusion to "bulk and automatic"
+actions; the single-sender `override` IS the designed confirm-after-warning
+path, and the shared `ConfirmActionModal` names the protection reason before
+ever setting it, on every call site checked).
+
+**Sibling/hygiene findings surfaced by the agent wave, NOT filed under
+`sender-detail` — flagged for their own follow-ups, out of this job's
+scope:**
+
+- `require-preview-before-mutation.sh` always `exit 0`s and its scope never
+  reaches `apps/api` — a guard that cannot fail (CLAUDE.md §8, a further
+  occurrence). `check-microcopy.sh`'s T5 privacy rule has a closed verb set
+  (`read`/`look at`) that cannot match "render"/"store" — the same shape,
+  and the reason the snippet-claim defect (`-02`) shipped and stayed clean
+  on every check.
+- `apiErrorDisplayId`/`serverApiErrorDisplayId` (added in the very recent
+  `#714`) have zero production consumers — shipped, tested, wired to
+  nothing. `apiErrorCode` is client-only, with a divergent hand-rolled
+  reimplementation server-side (`server-query-client.ts:41-42`) already
+  drifting from it.
+- The `override` flag being an unlinked client-supplied boolean (the
+  mechanism behind the refuted Protected-override candidate) has already
+  caused three real, different incidents per `MISTAKES.md` — a known
+  hardening candidate independent of this run's specific claim.
+
+```
+New: 18   Inherited and still open: 0   Refuted or downgraded: 3
+QA-sender-detail-20260902-01 · P1 · "Hasn't mailed you yet." asserted for a sender that mailed the user 6 years ago, on the same screen as the contradicting stat · refuter: "false sentence sits inches from data that visibly contradicts it — a reader is likelier to read it as a broken widget than to act on it"
+QA-sender-detail-20260902-02 · P1 · "We never render/store bodies" claims sit beside real Gmail body-derived text, including on a downloadable export · refuter (instance 1 alone): "a locked internal definition of 'body' is not a defence an ordinary user gets to read"
+QA-sender-detail-20260902-03…18 · P2/P3 · usability-editor pass — verbosity, naming inconsistency, unsourced/disagreeing signals, missing reasons on disabled/safety controls
+```
+
 ## Refuted
 
 Candidates that did not survive a `finding-refuter` pass. Kept so they are not
@@ -1395,6 +1545,10 @@ re-found and re-argued next quarter.
 | 2026-09-01 | senders           | The "protected" filter chip on `/senders` shows a stale, wrong count (588 observed, vs. the true 508) for a few seconds after page load/view-toggle, because `keepPreviousData`/`isPlaceholderData` lets a previous response's `filterCounts` render with no staleness cue | 3, 4, 5 | REFUTED as filed — `filterCountsQuery` (`senders.read-service.ts:1013-1060`) is scoped only by `mailboxAccountId`, ignoring search/sort/compose, so for one mailbox every valid response computes identical numbers; a `keepPreviousData` placeholder therefore cannot diverge from a fresh value on this screen, and 508→588→508 is structurally impossible under the named mechanism. Independently, `sender_policies` has held exactly 508 protected rows for the mailbox for ≥48h (one policy row touched at all in that window, and it wasn't a protection) — no DB state this session could have produced 588 via any path. The raw symptom (a stale count with no visual cue) is real via a DIFFERENT, corrected mechanism a `defect-class-sweeper` found independently — filed as `QA-senders-20260901-01`                                                                                                                                                                                |
 | 2026-09-01 | senders-filtering | The Domain filter's free-text input doesn't commit its value on Enter — only blur/click-outside does, despite a passing unit test for the identical scenario (`compose-strip.tsx`'s `DomainMenu`)                                                                          | 1, 3    | REFUTED — this run's own tooling mistake. The Enter key was dispatched via the browser tool as `"Return"`, which CDP's `Input.dispatchKeyEvent` copies verbatim into `KeyboardEvent.key`; `"Return"` is not the DOM-spec key value (`"Enter"` is), so `if (e.key === 'Enter')` correctly never matched. The run's own Escape control test used the CORRECT DOM value (`"Escape"` is valid) and worked, creating a false asymmetry that looked like evidence of a real bug. Independently re-verified live by this run after the refutation: re-drove the identical steps with `key: "Enter"` — the popover closed and a `domain=…` request fired correctly                                                                                                                                                                                                                                                                                                                                        |
 | 2026-09-01 | billing           | Forcing `workspaces.tier='free'` next to the real, healthy, active Pro subscription (via a direct DB write) reproduces a permanent checkout lockout with no working remedy                                                                                                 | 2, 4, 5 | REFUTED — the exact state is unreachable by any production code path: both live writers of `workspaces.tier` (`recomputeWorkspaceTier`, the reconciliation sweep) deterministically recompute `pro` from that row's shape, so only this run's own `UPDATE` produced it. The missing plan-card CTA in that state is the correct, already-shipped fix for a 2026-07-27 bug (`MISTAKES.md`), not a new one. The 409 the reproduction hit is the ordinary one-subscription-per-workspace guard, identical for a healthy Pro subscriber — not evidence of drift-specific blocking. The underlying MECHANISM (a non-backing subscription trapping the customer with generic/inert notice+cancel) is real and reachable via chargeback and via a paused-row cancel — filed corrected as `QA-billing-20260901-01` and `-02`                                                                                                                                                                               |
+
+| 2026-09-02 | sender-detail | A server/client error-class mismatch (`ServerApiError` vs. `ApiError`) causes the wrong "generic retry" copy instead of the purpose-built not-found state, on a fresh page load for a deleted/foreign sender id | 4, 3 | REFUTED — a real Node repro against the installed `@tanstack/query-core@5.102.8` build proved failed server-prefetch queries are dropped from dehydration by default (`defaultShouldDehydrateQuery` only keeps `status:'success'`), so `ServerApiError` never reaches the client at all; the client's own `useSenderDetail` query independently throws a real `ApiError`, and the `instanceof ApiError` check fires correctly. A `defect-class-sweeper` independently swept all 60 `instanceof ApiError` call sites in `apps/web/src` and confirmed 0 live instances of the class. Likelier real cause of the observed copy: a transient render race where `detail.isError` (a different, unrelated branch) can flash the generic state before `detail`'s own error settles — unmeasured, would need a live cold-reload watching the server log to confirm |
+| 2026-09-02 | sender-detail | D226's "the preview is MANDATORY" is enforced only client-side; a raw authenticated `POST /api/actions` with no prior preview call successfully archived a real message (`action_jobs.status='done'`, a real Gmail label changed, confirmed reversible via `POST /api/undo/:token`) | 2, 5 | REFUTED — CLAUDE.md's own wording scopes "MANDATORY" to how the preview _renders_ (two named UI variants, modal/inline), and D226's body + ADR-0020 both describe the preview endpoint as intentionally separate/stateless; `require-preview-before-mutation.sh` is a `PostToolUse` authoring-time warning, scoped only to `apps/web`/`packages/shared`, that always `exit 0`s — it was never a runtime control, so "enforced by" in CLAUDE.md §2.3 overstates it (flagged separately, not as this finding). Isolation holds (`CurrentMailboxGuard` + CSRF double-submit), so only the mailbox owner's own session can reach this. Every safety invariant the lifecycle actually depends on still fires on the raw path: the Protected-sender 409, idempotency, the `gmail-action` rate limit, and the undo journal, which this run's own test exercised successfully |
+| 2026-09-02 | sender-detail | A Protected sender's entire mail history (inbox + archived, `reach:'all_mail'`) can be permanently Deleted via `override:true` with zero server-side evidence any "this sender is Protected" warning was ever shown — same gap forwarded into Screener decide, a bounded version in Autopilot approve-all | 2, 5, 6 | REFUTED — D245's own body excludes Protected senders from **bulk and automatic** mail-changing actions specifically, and the code implements exactly that split: bulk/autopilot paths exclude Protected server-side with no override affordance at all, while the single-sender explicit path's 409 (`PROTECTED_SENDER`, message "Confirm to apply the action anyway") **is** the designed confirm — `override` is its answer, not a bypass. Every checked call site (`confirm-action-modal.tsx`, Sender Detail, Triage, Screener) sets `override:true` only inside the branch that already rendered the named protection reason. What remains — a user with their own session posting to their own mailbox with a flag the UI would have set for them anyway — is the same shape as the already-refuted general preview-bypass finding above, refuted for the same reason. Residual, not this finding: `override` being an unlinked boolean has already caused 3 real incidents per `MISTAKES.md` (2026-07-26 onward) — a hardening candidate worth its own ticket |
 
 ## Out of scope
 

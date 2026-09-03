@@ -2805,3 +2805,219 @@ to the founder for those jobs' own follow-up:**
   **Regression test.** `cancel-modal.test.tsx` — assert initial focus (when
   `canPause` is true) lands on "Keep my plan" or the dialog container, not
   "Pause for 30 days". Must go RED against today's code.
+
+## sender-detail
+
+Rows accumulate across every `/ct-qa sender-detail` run. Per-run counts are in
+the ledger. First filed 2026-09-02 (18 survivors — 2 P1 clusters each with
+sibling instances, 16 P2/P3 usability items — 3 candidates REFUTED before
+filing: see the ledger for the refuters' evidence).
+
+**Verification bar note.** Rows `-01` and `-02` each went through a full
+`finding-refuter` pass (the refuter's strongest surviving objection is quoted
+on the row) and their sibling instances came from a `defect-class-sweeper` that
+proved its own search rediscovers the seed before trusting silence elsewhere.
+Rows `-03` through `-18` came from the `usability-editor` persona pass only —
+every one carries an exact source citation and exact replacement text (the
+editor's own evidence standard), but none went through an adversarial
+`finding-refuter`. Flagged per-row as `(editor pass, not refuted)`.
+
+⬜ pending · 🟡 being worked · 🔵 shipped, not yet re-checked · 🟢 closed ·
+🔴 needs the founder · ⏸️ won't do
+
+|     | id                           | sev | one line                                                                                                                                                                                                                                                         | status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --- | ---------------------------- | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🟡  | QA-sender-detail-20260902-01 | P1  | The hero sentence says "Hasn't mailed you yet." for a sender that mailed the user 6 years ago — same screen's Relationship stat and message list contradict it                                                                                                   | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-02 | P1  | "We never render bodies" / "We never store the body" / "Exports never contain message bodies" all sit beside or govern real Gmail-snippet body text — the export claim is on a persisted, shareable artifact                                                     | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-03 | P2  | Volume KPI/hero renders a partial or stale month in the same unit as complete months ("Sent 3 in Sep.", 2 days into September) — reads as a full month's cadence                                                                                                 | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-04 | P2  | "0% of the last 90 days' email was marked read" has no denominator — 0% of 2 emails and 0% of 200 are different facts, same sentence                                                                                                                             | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-05 | P3  | "Open all in Gmail" overclaims — the link is a `from:` search, which excludes Spam and Trash; aria-label and title describe the same control two different ways                                                                                                  | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-06 | P2  | Decision timeline vocabulary disagrees with the Activity feed for the identical `activity_log` row, one click apart via "View in Activity →"; today's Unsubscribe row also reads ungrammatically ("You Unsubscribe requested")                                   | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-07 | P2  | Two unsourced "what should I do" signals on one screen — the toolbar's fact-derived primary verb (Archive) and the "Optional suggestion" banner (Later) can disagree with no explanation of which is which                                                       | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-08 | P3  | "scored yesterday" is internal scoring-engine vocabulary leaking into user-facing copy on Sender Detail, Triage and Screener via one shared string                                                                                                               | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-09 | P3  | The generic load-error state repeats its own title as the first sentence of its body                                                                                                                                                                             | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-10 | P3  | Decision timeline renders a raw `op <uuid>` on every row; at 375px it's the widest thing in the column and wraps                                                                                                                                                 | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-11 | P3  | Recent Messages stacks three near-duplicate chrome lines (eyebrow + heading + trust line) above the list; the heading count is just how many rows loaded, so it changes as you scroll                                                                            | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-12 | P3  | The suggestion banner's "This suggestion does not change email" is the third statement of that same fact on one screen                                                                                                                                           | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-13 | P3  | Relationship KPI restates one number in a second unit ("13 yr" / "159 months") instead of the one fact the reader can't compute (the start date)                                                                                                                 | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-14 | P2  | Delete has no visual distinction from Keep in the action toolbar — the only verb that puts mail in Gmail Trash renders identically to the safest verb                                                                                                            | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-15 | P2  | Protect's exact reason (D245: "show the exact reason") is title-only, which never opens on touch; the button's own label doesn't say "Protected" — evidenced by 4 Protect/Unprotect toggles inside 2 days on the same sender in this run's own Decision Timeline | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-16 | P2  | Disabled Unsubscribe gives no reason it's disabled, though the screen already knows why (no List-Unsubscribe channel)                                                                                                                                            | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-17 | P2  | The generic load-error state's only action is "Try again" with no escape hatch; the sibling `NotFoundState` for the same route already has "Back to Senders"                                                                                                     | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+| 🟡  | QA-sender-detail-20260902-18 | P3  | "DESTRUCTIVE ACTIONS PREVIEW FIRST" is uppercase D226 mechanism-language ("destructive", "preview") that reads as a noun phrase on first pass, shared with Triage via one literal                                                                                | At review cap — founder approved all 18 2026-09-02. 2 substantive Codex rounds ran (round 1: a broken template.ts zero-volume check that broke the existing F009 workers regression test, a reverse-lookup map drift tsc couldn't catch, an imprecise "over 6 months" claim — all fixed; round 2: a cross-mailbox stale-data regression in the new error guard, a rounding-before-zero-check ordering bug in template.ts, a missing 4th branch in the toolbar re-derivation, an unverified UTC test — all fixed and negative-controlled). Founder authorized merge directly ("Codex limits were reset. Proceed. If it looks good then merge it.") rather than a 3rd round, per the skill's 2-round cap. Diff final (29 files, incl. a 3-instance sibling sweep of round 2's own stale-`YYYY-MM-DD` finding), typecheck+lint clean, 2646 tests pass across the affected suites incl. per-fix negative controls, live-smoked (fresh tab, D206 dev login, eBay Feedback sender). PR #717. |
+
+### QA-sender-detail-20260902-01 — "Hasn't mailed you yet." on a sender with real history
+
+P1 · sender-detail · The hero sentence asserts a sender never mailed the user
+whenever the 12-month volume timeseries is empty — even when the sender
+genuinely has mail history outside that window.
+
+**Steps.** Open Sender Detail for any sender whose most recent message is
+&gt;12 months old but who has mailed the user before (e.g. `eBay Feedback` /
+`csfeedback@go.ebay.com`, one message, confirmed via Gmail MCP `internalDate`
+2020-09-21).
+**Expected.** Copy scoped to what was actually checked (CLAUDE.md Tier 1b): a
+statement about the visible window, not an absolute "never".
+**Actual.** Hero reads "Hasn't mailed you yet." while the same screen's
+Relationship KPI reads "6 yr / 72 months" and Recent Messages lists the exact
+message, "6y ago".
+**Evidence.** Screenshot + `get_page_text` capture (both strings on one
+render); Gmail MCP `get_message` on `174b22029273ce44` confirming
+`internalDate: 2020-09-21T19:24:43Z`, `labelIds: ["INBOX"]`.
+**Cause.** [sender-detail-page.tsx:1364](apps/web/src/features/senders/detail/sender-detail-page.tsx:1364)
+(`&lt;&gt;Hasn&amp;rsquo;t mailed you yet.&lt;/&gt;`), gated on `latestPoint` at
+[sender-detail-page.tsx:392](apps/web/src/features/senders/detail/sender-detail-page.tsx:392)
+(`timeseries.length &gt; 0 ? … : null`). Producer:
+[senders.read-service.ts:1781](apps/api/src/senders/senders.read-service.ts:1781)
+— a hard `startOfMonthMonthsAgo(now, 11)` floor with no all-time fallback.
+**Refuter's verdict.** SURVIVES. Live-DB-confirmed: this sender has
+`total_received=1`, one all-time `sender_timeseries` row, zero inside the
+12-month window; mailbox-wide, 6,420 of 7,983 senders (80.4%) share this exact
+shape. Refuter's own severity note, taken as the filed row's calibration: the
+default `/senders` list filters to `activity=active`
+([compose-strip.tsx:88](apps/web/src/features/senders/compose-strip.tsx:88)),
+so reaching one of these 6,420 needs a deliberate filter widen, search, or
+deep link — not the default view. **Strongest surviving objection**: "this is
+P1, not P0, because the false sentence sits inches from data that visibly
+contradicts it (a reader is likelier to read it as a broken widget than to act
+on it), and it takes an active choice to reach a dormant sender at all."
+**Siblings** (`defect-class-sweeper`, same producer/window mechanism,
+rediscovered the seed before reporting these — all on the identical
+reproduction sender, code-traced, not independently live-driven this run):
+
+- **Read-rate KPI**, same screen: "no data yet" instead of "no email in the
+  last 90 days" —
+  [sender-detail-page.tsx:1419](apps/web/src/features/senders/detail/sender-detail-page.tsx:1419).
+  Producer `computeReadRate` returns `null` on zero 90-day volume
+  ([senders.read-service.ts:1922](apps/api/src/senders/senders.read-service.ts:1922)),
+  which the ternary's own false-branch already names correctly ("of the last
+  90 days") — only the null branch abandons the window.
+- **Senders table row-expand panel**, sibling surface, same producer: "No
+  volume history yet" —
+  [sender-row-detail.tsx:446](apps/web/src/features/senders/table/sender-row-detail.tsx:446).
+- **Recommendation reasoning**, reachable for every sender in the mailbox via
+  the sync-complete score sweep: "`{name} sends 0/mo.`" for any dormant
+  sender, and an unrounded float (e.g. `0.3333333333333333/mo`) for 1–2
+  messages per quarter — [template.ts:94,109](packages/shared/src/triage-engine/template.ts:94).
+  Producer: `volume90 ?? 0` /
+  `monthlyVolume = volume90 / 3` unrounded
+  ([score.worker.ts:971,974](packages/workers/src/score.worker.ts:971)),
+  persisted into `triage_decisions.reasoning` — **this instance is
+  persisted, not just rendered**, so a copy-only fix does not correct rows
+  already written; a backfill/re-score sweep is a separate, out-of-scope
+  decision (a cron with no request principal — the same shape CLAUDE.md §2.6
+  already names).
+- **Adjacent, not filed as an instance:** the mobile Senders list row prints
+  a 90-day count with a `/mo` suffix (3× overstatement) —
+  [sender-list-row.tsx:168](apps/web/src/features/senders/table/sender-list-row.tsx:168)
+  — the exact defect already fixed on the desktop table
+  ([sender-table.tsx:566](apps/web/src/features/senders/sender-table/sender-table.tsx:566))
+  but missed on this row. Worth its own sweep via `/ct-class`.
+  **Editor's replacement text** (usability-editor, folded in): hero →
+  `"Nothing in the last 12 months. Their last email was 6 years ago."`
+  (add a staleness variant for a non-current latest month:
+  `"Last mailed you in April — 12 emails that month."`); read-rate micro →
+  `"no email in the last 90 days"`.
+  **Regression test.** `sender-detail-page.test.tsx` — render with a sender
+  fixture carrying `totalReceived: 1`, `lastSeenDays: 2100` (outside the
+  12-month window) and an empty `timeseries` array; assert the hero does NOT
+  render the literal "Hasn't mailed you yet." Must go RED against today's code.
+
+### QA-sender-detail-20260902-02 — "we never render bodies" beside rendered body text
+
+P1 · sender-detail · Three separate privacy/trust claims on Sender Detail and
+Settings → Privacy & Data disclaim body content while the surfaces they sit on
+render or export Gmail's `snippet` field — body-derived text confirmed to
+carry real transaction amounts, account digits, merchant names and a
+recipient's email address.
+
+**Steps.** Open Sender Detail for a transactional sender with several
+messages (e.g. Bank of America); read the Recent Messages header, then the
+row text below it. Separately, open Settings → Privacy & Data → export JSON
+description.
+**Expected.** Claims scoped to what the product actually does with the field
+(CLAUDE.md's own locked phrasing: "we never fetch or store full email
+contents").
+**Actual.**
+
+1. Header: "Opens in Gmail · we never render bodies" — [recent-messages.tsx:87](apps/web/src/features/senders/detail/recent-messages.tsx:87)
+   — directly above rows whose second line renders `{message.snippet}`
+   ([recent-messages.tsx:239](apps/web/src/features/senders/detail/recent-messages.tsx:239)).
+2. Empty state: "We never store the body — only what you see now." —
+   [recent-messages.tsx:94](apps/web/src/features/senders/detail/recent-messages.tsx:94)
+   — flatly false in both halves; snippet IS stored, and the stored set
+   (Gmail ids, size, labels, snippet) exceeds what this card shows.
+3. Export screen: "Exports never contain message bodies or attachments." —
+   [privacy-data-screen.tsx:236](apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx:236)
+   — the downloaded JSON emits `gmailPreview: row.snippet` unconditionally
+   for every message ([export.service.ts:214](apps/api/src/account/export.service.ts:214)).
+   **This is the more serious instance**: a false claim about a persisted,
+   downloadable, shareable artifact, not an ephemeral screen render — and the
+   sibling CSV description in the same manifest already names the field
+   correctly ("Gmail preview snippet",
+   [data-export.ts:72](packages/shared/src/contracts/data-export.ts:72)),
+   proving the JSON string is the one that drifted.
+   **Evidence.** Raw JSON response body of `GET /api/senders/:id/messages`
+   (field `snippet`, ~200 chars, verbatim transaction/account/merchant text);
+   registry entry `id: 'gmail-preview'` at
+   [gmail-data-inventory.ts:139-152](packages/shared/src/contracts/gmail-data-inventory.ts:139)
+   (`transmittedTo: ['DeclutrMail', 'Anthropic']`); export producer read
+   directly.
+   **Refuter's verdict** (on instance 1 only, the originally-filed candidate).
+   PARTIALLY REFUTED — severity of instance 1 ALONE downgraded from P0 to P2/P3:
+   "body" has a locked, D7-sanctioned narrower meaning (snippet ≠ body) used
+   consistently in `packages/shared/src/copy/privacy.ts`, terms, FAQ and the
+   PrivacyBadge — this specific line is simply off-contract (a bespoke literal
+   that doesn't import the canonical copy and drops the "full" qualifier every
+   sibling string carries). **Strongest surviving objection, in the refuter's own
+   words:** "a locked internal definition of 'body' is not a defence an ordinary
+   user gets to read; 'we never render bodies' sits one line above a rendered
+   account number and dollar amount... If the founder rules that the user's
+   reading governs over the copy contract's, the P0 is back." The row is filed
+   at **P1**, not the refuter's P2/P3, because the `defect-class-sweeper`'s
+   subsequent find of instance 3 (the export claim) changes the picture the
+   refuter evaluated — instance 3 was not part of what the refuter reviewed, and
+   is a claim about persisted/exported data, closer to Tier 1b territory than a
+   screen render.
+   **Siblings/instances** (`defect-class-sweeper`, rediscovered the seed before
+   reporting these): instances 2 and 3 above, both code-traced. Also found: the
+   correct pattern already shipped elsewhere in this exact codebase —
+   `"Subjects only · we never fetch or store full email contents."` in
+   [action-preview-detail.tsx:188](apps/web/src/features/triage/action-preview-detail.tsx:188)
+   and
+   [confirm-action-modal.tsx:1735](apps/web/src/features/senders/confirm-action-modal.tsx:1735)
+   — a ready template for the fix (self-scoping, matches what's actually
+   rendered on those rows).
+   **Guard gap, not filed as a row (recorded for the founder):**
+   `.claude/hooks/check-microcopy.sh` rule T5 has a closed verb set (`read` /
+   `look at`) and cannot match "render", "store", or "keep" — it reported clean
+   on this defect for its entire life. Ninth occurrence of CLAUDE.md §8's "a
+   guard that cannot fail is not a guard." Worth its own hardening pass, out of
+   this run's scope.
+   **Editor's replacement text** (folded in): header →
+   `"Opens in Gmail · subject and Gmail's preview line only"`; empty state →
+   `"New email from this sender shows up here. We never fetch or store full
+email contents."`; export description → name the field explicitly, matching
+   the CSV sibling string.
+   **Regression test.** `recent-messages.test.tsx` — assert the header string
+   does NOT contain the literal substring "bodies" while a message list with a
+   non-empty `snippet` is rendered. `privacy-data-screen.test.tsx` — assert the
+   JSON export description string names "preview snippet" rather than asserting
+   zero bodies. Both must go RED against today's code.
+
+---
+
+**Items 03–18 below are `usability-editor` findings — one persona pass, not
+independently refuted.** Each carries the editor's exact source citation and
+exact replacement text; grouped under their own ids per the "every survivor
+gets a row" rule, filed at P2/P3 so none required a `FINDINGS.md` entry.
+Full detail (steps, before/after copy, source lines) is in the editor's
+report, condensed to the one-line table above; expand any row into its own
+finding block before scoping a fix. Not siblings of `-01`/`-02` — independent
+observations from the same screen walk.
+
+**Regression tests, batched by mechanism** (write when a row is approved,
+not before): `-06` and `-08` share `activity-record-copy.ts` /
+`engine-read-age.ts` — one shared-copy-string fix each covers Sender Detail,
+Triage and Screener simultaneously, so scope those two as cross-surface
+changes, not sender-detail-only edits.

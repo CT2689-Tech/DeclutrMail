@@ -166,7 +166,9 @@ describe('ActionPreviewPresentation — reasoning age label (D25, QA-archive-202
         mode="modal"
       />,
     );
-    expect(await screen.findByText('Scored today')).toBeInTheDocument();
+    // QA-sender-detail-20260902-08: "Scored" renamed to "Last checked" —
+    // shared across Sender Detail, Triage, and the Screener.
+    expect(await screen.findByText('Last checked today')).toBeInTheDocument();
   });
 
   it('renders no age label when scoredAt is unknown (demo/simulator rows)', () => {
@@ -180,7 +182,7 @@ describe('ActionPreviewPresentation — reasoning age label (D25, QA-archive-202
         mode="modal"
       />,
     );
-    expect(screen.queryByText(/^Scored /)).toBeNull();
+    expect(screen.queryByText(/^Last checked /)).toBeNull();
     // The reasoning itself still renders — only the age label is gated.
     expect(screen.getByText('Why we suggested this:')).toBeInTheDocument();
   });

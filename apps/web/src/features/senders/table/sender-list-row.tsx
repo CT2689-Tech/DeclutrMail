@@ -148,7 +148,7 @@ function trendToken(s: Sender): string | null {
  * to one line and ellipsis-truncates from the recency token first.
  *
  * Token order (highest decision weight first, last to truncate):
- *   1. `<N>/mo`             — cadence (always present unless 0)
+ *   1. `<N> in last 90d`    — cadence (always present unless 0)
  *   2. `<trend>`            — Up / Down / Dormant / New (omitted on steady)
  *   3. `<read-state>`       — "Almost never marked read" etc. when
  *                              the signal is decision-grade, otherwise
@@ -165,7 +165,12 @@ function buildEvidenceTokens(s: Sender): string[] {
 
   const monthly = s.monthlyVolume ?? 0;
   if (monthly > 0) {
-    tokens.push(`${monthly}/mo`);
+    // `monthlyVolume` is a 90-day rolling COUNT, not a per-month rate
+    // (WINDOWS.ENGINE_WINDOW_DAYS: 90). The retired `/mo` suffix
+    // overstated cadence 3x — same fix as sender-table.tsx's cell and
+    // confirm-action-modal.tsx's arrival figure; all three must say
+    // the same thing about the same field (ADR-0037).
+    tokens.push(`${monthly} in last 90d`);
   }
 
   const trend = trendToken(s);

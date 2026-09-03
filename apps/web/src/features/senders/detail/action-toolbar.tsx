@@ -6,12 +6,51 @@ import {
   canDelete,
   canLater,
   canUnsubscribe,
+  isStandingProtected,
   type ActionRequest,
   type ActionVerb,
   type Sender,
 } from '../data';
 import { derivePrimaryVerbId } from '../action-row';
 import type { Verdict } from './types';
+
+/**
+ * QA-sender-detail-20260902-07: the highlighted verb was a bare visual
+ * cue with no label or tooltip explaining why THIS verb, of five, is the
+ * fact-derived primary. Mirrors `derivePrimaryVerbId`'s own rule order
+ * (`verb-registry.ts`'s `deriveDefaultPrimary`) in plain language — every
+ * branch that rule can select gets a stated reason, including the
+ * fallback `keep` (Codex adversarial review round 2 caught this branch
+ * originally returning `null` — an outdated draft of this comment still
+ * claimed that as the design, not a gap).
+ */
+function primaryVerbReason(sender: Sender, highlight: Verdict): string | null {
+  if (highlight === 'keep' && isStandingProtected(sender)) {
+    return 'Highlighted because this sender is Protected.';
+  }
+  if (highlight === 'unsubscribe') {
+    return 'Highlighted because this sender offers one-click unsubscribe.';
+  }
+  if (highlight === 'archive') {
+    // Codex adversarial review: "over 6 months" overclaims precision for
+    // `deriveDefaultPrimary`'s real threshold (`lastSeenDays > 180`) —
+    // 180 days is 5.75-6.3 calendar months depending on which months, so
+    // a sender at exactly 181 days could read "over 6 months" while
+    // genuinely under six calendar months. State the actual threshold.
+    return 'Highlighted because they haven’t emailed you in more than 180 days.';
+  }
+  // Codex adversarial review: `deriveDefaultPrimary`'s fallback branch
+  // (not protected, no one-click unsubscribe, `lastSeenDays <= 180`)
+  // lands on `keep` with no distinguishing signal to name — this used to
+  // return `null`, leaving a highlighted button with no explanation.
+  // "No strong signal yet" is the accurate description of that branch:
+  // there genuinely isn't a fact driving the pick, only the absence of
+  // the other three.
+  if (highlight === 'keep') {
+    return 'Highlighted because there’s no strong signal to Archive or Unsubscribe yet.';
+  }
+  return null;
+}
 
 const { color, font, radius } = tokens;
 
@@ -88,6 +127,28 @@ export function ActionToolbar({
           (verb === 'Later' && !canLater(sender)) ||
           (verb === 'Delete' && !canDelete(sender));
         const isHighlighted = highlight === verdict && !disabled;
+        // QA-sender-detail-20260902-14: Delete has `canBePrimary: false`
+        // (verb-registry.ts) — it can never be `isHighlighted`, so it
+        // rendered with the exact same `tone='default'` fill as Keep, the
+        // safest verb. A colour-only accent (matching the registry's own
+        // `tone: 'danger'` for this verb) keeps the toolbar's uniform
+        // WEIGHT — no verb dominates as "the suggestion" — while making
+        // Delete visually findable before the D226 confirm step, not just
+        // after.
+        const deleteAccentStyle =
+          verb === 'Delete' && !isHighlighted && !disabled
+            ? { color: color.danger, borderColor: color.danger }
+            : null;
+        // QA-sender-detail-20260902-07/-16: the highlighted verb had no
+        // stated reason, and the only verb `canUnsubscribe` ever disables
+        // — no List-Unsubscribe channel — rendered greyed out with no
+        // explanation, though the screen already knows exactly why.
+        const buttonTitle =
+          verb === 'Unsubscribe' && disabled
+            ? "No unsubscribe link in this sender's emails — Archive is the reliable fallback."
+            : isHighlighted
+              ? primaryVerbReason(sender, verdict)
+              : null;
         return (
           <Button
             key={verb}
@@ -102,6 +163,8 @@ export function ActionToolbar({
             }
             size="md"
             disabled={disabled}
+            {...(deleteAccentStyle ? { style: deleteAccentStyle } : {})}
+            {...(buttonTitle ? { title: buttonTitle } : {})}
             onClick={() => onAction({ verb, senders: [sender] })}
             iconRight={
               isHighlighted ? (

@@ -15,11 +15,11 @@ function toneFor(
     case 'Archived':
     case 'Moved to Later':
       return 'default';
-    case 'Unsubscribe requested':
+    case 'Unsubscribe request recorded':
       return 'amber';
     case 'Deleted to Gmail Trash':
       return 'red';
-    case 'Kept':
+    case 'Keep decision saved':
       return 'primary';
     case 'Protected':
     case 'Unprotected':

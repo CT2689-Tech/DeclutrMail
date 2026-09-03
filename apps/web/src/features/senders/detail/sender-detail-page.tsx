@@ -21,6 +21,8 @@ import {
   type Sender,
 } from '../data';
 import { ConfirmActionModal, type ConfirmOptions } from '../confirm-action-modal';
+import { derivePrimaryVerbId } from '../action-row';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
 import { ActionToolbar } from './action-toolbar';
@@ -52,6 +54,7 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import { formatReadRatePct } from '../fact-language';
+import { relTime } from './data';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import { useNow } from '@/lib/use-now';
@@ -71,9 +74,8 @@ const { color, font, radius, shadow, space } = tokens;
  *   4. Decision timeline — vertical timeline (replaces D46
  *      table-style history per ADR-0012).
  *
- * Removed from the surface (component files preserved on disk;
- * deletion deferred to a follow-up cleanup PR):
- *   - <StatsStrip> (replaced by <KpiStrip>)
+ * Removed from the surface (StatsStrip deleted; remaining component
+ * files preserved on disk, deletion deferred to a follow-up cleanup PR):
  *   - <Charts> (heatmap + open-rate; founder feedback: "chart adds noise")
  *   - <DecisionHistory> table (replaced by <DecisionTimeline>)
  *   - <SenderDetailHeader> (inlined into the hero card composition)
@@ -157,6 +159,28 @@ function parseSenderDetailSource(raw: string | null): SenderDetailSource {
 
 export function SenderDetailRoute({ id }: { id: string }) {
   const detail = useSenderDetail(id);
+  // QA-sender-detail-20260902-09, Codex adversarial review round 2: the
+  // `adapted == null` guard below (added to stop a background refetch
+  // failure from tearing down a page that already had good data) can
+  // trust STALE data from a DIFFERENT mailbox — `resetMailboxScopedCache`
+  // uses `invalidateQueries()`, not `clear()`/`removeQueries()` (by
+  // design, documented on that function), so the previous mailbox's
+  // cached sender survives a switch until a refetch actually lands. If
+  // that refetch then fails for any reason, `adapted` would still be
+  // non-null with the WRONG mailbox's sender. Track the reset event
+  // locally and refuse to trust `adapted` for the error-bypass until a
+  // fetch has genuinely SUCCEEDED since the last reset.
+  const mailboxResetAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    const onReset = () => {
+      mailboxResetAtRef.current = Date.now();
+    };
+    window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, onReset);
+    return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, onReset);
+  }, []);
+  const cachedDataIsTrustworthy =
+    mailboxResetAtRef.current == null ||
+    (detail.dataUpdatedAt > 0 && detail.dataUpdatedAt >= mailboxResetAtRef.current);
   // Opening a sender whose read has aged out asks for a fresh one
   // (D25 `stale_refresh`, founder decision 2026-08-19). Nothing on
   // screen waits for it: the old read stays, with its age, until a
@@ -215,7 +239,19 @@ export function SenderDetailRoute({ id }: { id: string }) {
     return <NotFoundState />;
   }
 
-  if (detail.isError) {
+  // QA-sender-detail-20260902-09, defect found by Codex adversarial
+  // review: this branch used to fire on bare `detail.isError`, with no
+  // check for whether `detail.data` (TanStack's last-known-good value)
+  // was still around. After a successful Archive/Delete/Later, the app
+  // invalidates and refetches this same query — if THAT background
+  // refetch fails, `isError` flips true while `data` is very likely
+  // still the prior successful value, and the page tore ReadyState down
+  // for the full-page "Nothing in your mailbox changed" takeover right
+  // after something genuinely did change. `adapted == null` (already
+  // computed above, requiring ALL four queries' data) is the same
+  // "nothing to show" gate the sibling `anyChildError` branch below
+  // already uses — this just brings the two branches into agreement.
+  if (detail.isError && (adapted == null || !cachedDataIsTrustworthy)) {
     return (
       <SenderDetailErrorState
         message={
@@ -232,7 +268,12 @@ export function SenderDetailRoute({ id }: { id: string }) {
   }
 
   const anyChildError = messages.isError || timeseries.isError || history.isError;
-  if (anyChildError && adapted == null) {
+  // Same mailbox-scope guard as the `detail.isError` branch above — this
+  // branch already had the `adapted == null` half of the check (which is
+  // what suggested the fix above), but shares the identical stale-cross-
+  // mailbox exposure since `messages`/`timeseries`/`history` are equally
+  // unpartitioned by mailbox.
+  if (anyChildError && (adapted == null || !cachedDataIsTrustworthy)) {
     return (
       <SenderDetailErrorState
         message={GENERIC_RETRY_MESSAGE}
@@ -372,6 +413,19 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   }, [initial, setPolicy.isPending]);
 
   const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
+  // QA-sender-detail-20260902-15: D245 requires showing the EXACT
+  // protection reason, and the only place it lived was a `title=`
+  // tooltip — which never opens on touch. Computed once here so both
+  // the tooltip and the new visible line below the header read the
+  // same clause.
+  const protectionReasonText = detail.isProtected
+    ? (() => {
+        const reason = normalizeProtectionReason(detail.protectionReason);
+        return reason === null
+          ? 'Protected. Select to remove protection.'
+          : `Protected — ${protectionReasonClause(reason)}. Select to remove protection.`;
+      })()
+    : null;
   const openAllInGmailHref = activeMailboxEmail
     ? GmailOpenLinkService.buildFromSearchLink({
         mailboxEmail: activeMailboxEmail,
@@ -391,6 +445,19 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const volumes = useMemo(() => timeseries.map((p) => p.volume), [timeseries]);
   const latestPoint = timeseries.length > 0 ? timeseries[timeseries.length - 1] : null;
   const latestMonthAbbrev = latestPoint != null ? monthAbbrev(latestPoint.yearMonth) : null;
+  // QA-sender-detail-20260902-03: an empty `now` (pre-mount / SSR) must
+  // pick SOME value so the first client render matches the server's — same
+  // `useNow()` hydration contract as `recent-messages.tsx`. Codex
+  // adversarial review caught the first version of this defaulting to
+  // "current" (`true`): that means EVERY page load's first paint shows
+  // the "so far in {month}" framing for a stale month too, briefly
+  // reintroducing the exact bug this fix exists to remove, self-correcting
+  // only after mount. Defaulting to "not current" is the safer bias — the
+  // worst case becomes a genuinely-current sender showing "Last mailed you
+  // in {month} — N that month" for one tick before upgrading to "so far
+  // in", which understates rather than overstates freshness.
+  const latestIsCurrentMonth =
+    latestPoint != null && now != null && isCurrentYearMonth(latestPoint.yearMonth, now);
 
   // ADR-0020 composite preview (mirrors senders-screen.tsx:380).
   // Without this prop, ConfirmActionModal's time-window pills + summary
@@ -1239,10 +1306,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                   fontWeight: 500,
                   textDecoration: 'none',
                 }}
-                aria-label="Open all messages from this sender in Gmail"
-                title="Search every email from this sender in Gmail"
+                // QA-sender-detail-20260902-05: aria-label and title
+                // described this one control two different ways to two
+                // different users ("open all messages" vs. "search every
+                // email"), and "all"/"every" overclaim scope — the link is
+                // a `from:` search (GmailOpenLinkService.buildFromSearchLink),
+                // and Gmail's default search excludes Spam and Trash.
+                aria-label="Open a Gmail search for email from this sender"
+                title="Open a Gmail search for email from this sender"
               >
-                Open all in Gmail
+                Open in Gmail
                 <ExternalLinkIcon />
               </a>
             )}
@@ -1261,25 +1334,38 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               ariaPressed={detail.isProtected}
               disabled={setPolicy.isPending}
               title={
-                detail.isProtected
-                  ? // Composed, not concatenated blindly: with no recorded
-                    // reason the shared clause is "it is Protected", and
-                    // "Protected — it is Protected" is a tautology exactly
-                    // where the exact reason is promised. Drop the clause
-                    // segment instead of inventing one.
-                    (() => {
-                      const reason = normalizeProtectionReason(detail.protectionReason);
-                      return reason === null
-                        ? 'Protected. Select to remove protection.'
-                        : `Protected — ${protectionReasonClause(reason)}. Select to remove protection.`;
-                    })()
-                  : 'Protect this sender from bulk and automatic actions that move email.'
+                protectionReasonText ??
+                'Protect this sender from bulk and automatic actions that move email.'
               }
             >
-              {detail.isProtected ? '◆ Protect' : 'Protect'}
+              {/* QA-sender-detail-20260902-15: labelled "Protect" even
+                  while already protected — a diamond glyph was the only
+                  active-state signal, and glyphs aren't a reliable
+                  screen-reader or at-a-glance cue. The word itself now
+                  carries the state. */}
+              {detail.isProtected ? 'Protected' : 'Protect'}
             </Button>
           </div>
         </div>
+
+        {/* QA-sender-detail-20260902-15: the EXACT reason (D245) now has a
+            visible line, not just a `title=` tooltip that never opens on
+            touch — evidenced by this run's own reproduction sender showing
+            4 Protect/Unprotect toggles inside 2 days on the Decision
+            Timeline below, consistent with someone clicking to find out
+            which state they were in. */}
+        {protectionReasonText != null && (
+          <p
+            style={{
+              margin: '2px 0 0',
+              fontSize: 12,
+              color: color.fgMuted,
+              fontFamily: font.sans,
+            }}
+          >
+            {protectionReasonText}
+          </p>
+        )}
 
         <style>{`@media (max-width: 600px) {
           .dm-sender-detail-identity-row {
@@ -1317,12 +1403,34 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               "Mails you 13×/mo" — a derived monthly-average over the
               last 12 buckets, which lied for any sender with a recent
               spike or quiet stretch. Now: latest month's actual count
-              + month name; no averages, no /mo unit. Falls back to
-              "Hasn't mailed you yet." when there is no timeseries. */}
+              + month name; no averages, no /mo unit.
+
+              QA-sender-detail-20260902-01/-03 (2026-09-02): the fallback
+              used to read "Hasn't mailed you yet." for ANY empty
+              12-month timeseries, which is true only when the sender has
+              never mailed the user at all (`totalReceived === 0`) — a
+              sender whose one message predates the 12-month window read
+              the identical false "never" sentence, contradicted by the
+              Relationship KPI and Recent Messages one glance below it on
+              the same screen. Split on `totalReceived` instead. Also: a
+              non-current `latestPoint` (mail arrived months ago, nothing
+              since) used the same "Sent N in Month." framing as a
+              genuinely current month, reading as live cadence — named
+              explicitly below instead. */}
           {latestPoint != null ? (
             <>
-              Sent <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span> in{' '}
-              {latestMonthAbbrev}.
+              {latestIsCurrentMonth ? (
+                <>
+                  <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span>{' '}
+                  {latestPoint.volume === 1 ? 'email' : 'emails'} so far in {latestMonthAbbrev}.
+                </>
+              ) : (
+                <>
+                  Last mailed you in {latestMonthAbbrev} —{' '}
+                  <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span>{' '}
+                  {latestPoint.volume === 1 ? 'email' : 'emails'} that month.
+                </>
+              )}
               {stats.readRate !== null && (
                 <>
                   {' '}
@@ -1334,8 +1442,23 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       timeseries, while readRate is a ROLLING 30 days from
                       `mail_messages`. Two windows, one sentence, and the
                       pronoun tied the percentage to the wrong one. Name
-                      the window instead of implying a denominator. */}
-                  of the last 90 days&rsquo; email was marked read.
+                      the window instead of implying a denominator.
+
+                      QA-sender-detail-20260902-04: a bare percentage with
+                      no population is two different facts wearing one
+                      sentence — 0% of 2 emails and 0% of 200 are not the
+                      same claim. `sender.monthlyVolume` is the identical
+                      90-day count `readRate`'s own denominator is computed
+                      from server-side (`senders.read-service.ts`'s
+                      `last90dMsgs`), so this names the real population
+                      rather than adding a second, disconnected query. */}
+                  of the{' '}
+                  <span style={{ color: color.fg, fontWeight: 600 }}>{sender.monthlyVolume}</span>{' '}
+                  {sender.monthlyVolume === 1 ? 'email' : 'emails'} they sent in the last 90 days{' '}
+                  {/* Codex adversarial review: "N emails ... was marked
+                      read" disagrees for any N !== 1 — "64 emails ... was"
+                      instead of "were". */}
+                  {sender.monthlyVolume === 1 ? 'was' : 'were'} marked read.
                   {/* THE SPLIT (F012). A third-party sweeper can mark
                       mail read through the API, and on the mailbox this
                       was measured against one did so 20,819 times — 27.5%
@@ -1360,6 +1483,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                 </>
               )}
             </>
+          ) : sender.totalReceived > 0 ? (
+            <>Nothing in the last 12 months. Their last email was {relTime(stats.lastSeenDays)}.</>
           ) : (
             <>Hasn&rsquo;t mailed you yet.</>
           )}
@@ -1376,10 +1501,17 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           <ActionToolbar sender={sender} onAction={requestAction} />
         </div>
 
-        {/* Suggestions are optional secondary disclosure below actions. */}
+        {/* Suggestions are optional secondary disclosure below actions.
+            QA-sender-detail-20260902-07: `toolbarHighlight` lets the
+            banner say so when it disagrees with the toolbar's own
+            fact-derived primary verb, instead of leaving two unsourced
+            "what should I do" signals on the screen. */}
         {recommendation != null && (
           <div style={{ position: 'relative', marginTop: 12 }}>
-            <RecommendationBanner recommendation={recommendation} />
+            <RecommendationBanner
+              recommendation={recommendation}
+              toolbarHighlight={derivePrimaryVerbId(sender)}
+            />
           </div>
         )}
       </section>
@@ -1399,7 +1531,20 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           {
             label: 'Volume',
             value: latestPoint != null ? latestPoint.volume : '—',
-            unit: latestPoint != null ? latestMonthAbbrev : null,
+            // QA-sender-detail-20260902-03, gap found by Codex adversarial
+            // review: the hero sentence learned to distinguish a current
+            // month from a stale one, but this cell — a SEPARATE render
+            // site over the same `latestPoint` — still paired the count
+            // with a bare month name either way, so a stale month read
+            // "3 Sep" exactly like the hero's original bug. The year
+            // disambiguates a past month without a wordy prefix a
+            // compact KPI cell has no room for.
+            unit:
+              latestPoint != null
+                ? latestIsCurrentMonth
+                  ? latestMonthAbbrev
+                  : `${latestMonthAbbrev} ${latestPoint.yearMonth.slice(0, 4)}`
+                : null,
             micro:
               latestPoint != null && volumes.length > 0 ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1416,13 +1561,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             unit: stats.readRate !== null ? '%' : null,
             // The micro line carries the window — this cell sits beside
             // lifetime cells, so an unqualified rate reads as lifetime.
-            micro: stats.readRate === null ? 'no data yet' : 'of the last 90 days',
+            // QA-sender-detail-20260902-01 (sibling): "no data yet" reads
+            // as a promise the number is coming, which is false for any
+            // sender dormant &gt;90 days — name the empty window instead.
+            micro: stats.readRate === null ? 'no email in the last 90 days' : 'of the last 90 days',
           },
           {
             label: 'Relationship',
-            value: relationshipDisplay(stats.relationshipMonths).value,
-            unit: relationshipDisplay(stats.relationshipMonths).unit,
-            micro: relationshipDisplay(stats.relationshipMonths).since,
+            value: relationshipDisplay(stats.relationshipMonths, sender.firstSeenAt).value,
+            unit: relationshipDisplay(stats.relationshipMonths, sender.firstSeenAt).unit,
+            micro: relationshipDisplay(stats.relationshipMonths, sender.firstSeenAt).since,
           },
           // "Reading cost" KPI cell RETIRED per spec v1.2 Decision 6.
           // Was the same uncalibrated 1.6 min/msg estimate as the
@@ -1514,6 +1662,27 @@ function monthAbbrev(yearMonth: string): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(year, month, 1));
 }
 
+// QA-sender-detail-20260902-03: whether `latestPoint` is the calendar
+// month the reader is IN right now, vs. a completed month with nothing
+// since — the two need different framing ("so far in" vs "last mailed
+// you in") or a stale month reads as live cadence.
+// Exported for a direct, environment-independent unit test (Codex
+// adversarial review round 2: the integration-level test can't prove the
+// UTC-vs-local distinction, since ambient "now" only diverges from UTC
+// within a day of a month boundary).
+export function isCurrentYearMonth(yearMonth: string, nowMs: number): boolean {
+  const m = /^(\d{4})-(\d{2})$/.exec(yearMonth);
+  if (m == null) return false;
+  // Codex adversarial review: `sender_timeseries.year_month` buckets by
+  // `getUTCFullYear()`/`getUTCMonth()` server-side
+  // (incremental-sync.worker.ts's `startOfMonthISO`), so comparing
+  // against the browser's LOCAL month can disagree for up to ~24h around
+  // a month boundary depending on the reader's timezone offset. UTC
+  // matches the bucket's own basis.
+  const now = new Date(nowMs);
+  return Number(m[1]) === now.getUTCFullYear() && Number(m[2]) - 1 === now.getUTCMonth();
+}
+
 // `trendCaption` retired (founder 2026-06-06): the bucket strings
 // ("↑ up vs prior 3mo") leaned on the same misleading derivation as
 // the original Volume cell. The sparkline now carries the temporal
@@ -1522,19 +1691,26 @@ function monthAbbrev(yearMonth: string): string {
 // the user can compute themselves from the sparkline (e.g. "5 in May
 // vs 12 avg prior 11mo") rather than a bucketed adjective.
 
-function relationshipDisplay(months: number) {
+// QA-sender-detail-20260902-13: the `&gt;=12mo` branch used to restate
+// `months` in a second unit ("13 yr" / micro "159 months") — the reader
+// can already compute 159÷12; the fact they can't compute is the start
+// date, which `firstSeenAt` carries and this cell never showed.
+function relationshipDisplay(months: number, firstSeenAt: string) {
   if (months < 12) {
     return {
       value: months,
       unit: months === 1 ? 'mo' : 'mo',
-      since: months === 0 ? 'New' : `Since ${months} month${months === 1 ? '' : 's'} ago`,
+      since:
+        months === 0
+          ? 'New'
+          : `since ${monthAbbrev(firstSeenAt.slice(0, 7))} ${firstSeenAt.slice(0, 4)}`,
     };
   }
   const years = Math.floor(months / 12);
   return {
     value: years,
     unit: years === 1 ? 'yr' : 'yr',
-    since: `${months} months`,
+    since: `since ${monthAbbrev(firstSeenAt.slice(0, 7))} ${firstSeenAt.slice(0, 4)}`,
   };
 }
 
@@ -1548,14 +1724,19 @@ function historyRowToTimelineItem(
     id: row.id,
     when,
     current: isCurrent,
+    // QA-sender-detail-20260902-06/-10: `{source} {action}` had no
+    // separator (the middle-dot pattern the rest of this row already
+    // uses for `count`), and the raw `op <uuid>` was always visible —
+    // at 375px the widest thing in its column, and not something anyone
+    // acts on. Kept as a `title` tooltip instead of dropped outright, so
+    // it's still there to paste into a support message.
     what: (
-      <>
-        <span style={{ color: '#4B5552' }}>{row.source}</span> <strong>{row.action}</strong>
+      <span title={`op ${row.opId}`}>
+        <span style={{ color: '#4B5552' }}>{row.source}</span> · <strong>{row.action}</strong>
         {row.count != null && (
           <span style={{ color: '#646D69', fontSize: 11.5 }}> · {row.count} messages</span>
-        )}{' '}
-        <span style={{ color: '#646D69', fontSize: 11.5 }}>· op {row.opId}</span>
-      </>
+        )}
+      </span>
     ),
   };
 }
@@ -1636,12 +1817,34 @@ function NotFoundState() {
   );
 }
 
-function SenderDetailErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
+// QA-sender-detail-20260902-09: `message` used to prefix the body with
+// near-identical prose to `title` whenever the underlying error was a
+// real `ApiError` ("We couldn't load this sender." + "We couldn't load
+// this sender" as the title, one word apart) — the `=== GENERIC_RETRY_
+// MESSAGE` check only caught the ONE generic literal, not this
+// near-duplicate. Status codes already never reach primary copy (2026-
+// 07-28 sweep); the fix is to stop repeating the title at all, not to
+// catch a second literal. `_message` stays in the signature — both
+// call sites already compute and pass it — but the body no longer reads
+// it.
+// QA-sender-detail-20260902-09: `message` used to prefix the body with
+// near-identical prose to `title` whenever the underlying error was a
+// real `ApiError` ("We couldn't load this sender." + "We couldn't load
+// this sender" as the title, one word apart) — the `=== GENERIC_RETRY_
+// MESSAGE` check only caught the ONE generic literal, not this
+// near-duplicate. Status codes already never reach primary copy (2026-
+// 07-28 sweep); the fix is to stop repeating the title at all, not to
+// catch a second literal. `_message` stays in the signature — both
+// call sites already compute and pass it — but the body no longer reads
+// it.
+function SenderDetailErrorState({
+  message: _message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
   const handleRetry = onRetry ?? (() => window.location.reload());
-  // Status codes never reach primary copy — the load error is stated
-  // plainly and the reassurance line carries the rest (plain-language
-  // sweep, 2026-07-28).
-  const context = message === GENERIC_RETRY_MESSAGE ? '' : `${message} `;
   return (
     <div
       style={{
@@ -1655,9 +1858,29 @@ function SenderDetailErrorState({ message, onRetry }: { message: string; onRetry
     >
       <RecoverableErrorState
         title="We couldn't load this sender"
-        description={`${context}Your Gmail messages and sender settings haven't changed. Try again in a moment.`}
+        description="Nothing in your mailbox changed. Try again in a moment."
         onRetry={handleRetry}
       />
+      {/* QA-sender-detail-20260902-17: "Try again" was the only action —
+          a dead end for any error that keeps recurring (a genuinely
+          nonexistent/foreign sender resolves to `NotFoundState` below,
+          which already has this escape hatch; this branch covers actual
+          load failures — 4xx/5xx/network — where retrying may never
+          succeed either). */}
+      <div style={{ textAlign: 'center', marginTop: 12 }}>
+        <a
+          href="/senders"
+          style={{
+            fontFamily: font.sans,
+            fontSize: 12.5,
+            fontWeight: 600,
+            color: color.fgSoft,
+            textDecoration: 'none',
+          }}
+        >
+          Back to Senders
+        </a>
+      </div>
     </div>
   );
 }

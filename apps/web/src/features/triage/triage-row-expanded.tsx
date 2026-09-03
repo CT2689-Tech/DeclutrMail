@@ -50,7 +50,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
       }}
     >
       {/* Stats grid — 4 numbers, mono tabular figures so they line up.
-          `auto-fit`/`minmax` (matching senders/detail/stats-strip.tsx)
+          `auto-fit`/`minmax` (matching senders/uplift-d/kpi-strip/kpi-strip.tsx)
           instead of a fixed 4-column track: a fixed track left a label
           like "MARKED READ 90D" with too little width at 375px and its
           window word orphaned onto its own line (QA-triage-20260827-10).

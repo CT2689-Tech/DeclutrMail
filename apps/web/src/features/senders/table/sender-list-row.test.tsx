@@ -191,4 +191,23 @@ describe('<SenderListRow /> — D54 phone dialect', () => {
     screen.getByRole('button', { name: `${sender.name} — expand detail` }).click();
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
   });
+
+  it('names the 90d window on the cadence token and never renders a bare /mo', () => {
+    // Same defect as sender-table.tsx's cell and confirm-action-modal.tsx's
+    // arrival figure: `monthlyVolume` is a 90-day rolling COUNT, not a
+    // per-month rate. A `/mo` suffix here overstates cadence 3x.
+    setViewportWidth(1280);
+    render(
+      <SenderListRow
+        s={sender}
+        selected={false}
+        onToggleSelect={noop}
+        expanded={false}
+        onToggleExpand={noop}
+        onAction={noop}
+      />,
+    );
+    expect(screen.getByTitle(/12 in last 90d/)).toBeInTheDocument();
+    expect(screen.queryByText(/\/mo/)).not.toBeInTheDocument();
+  });
 });

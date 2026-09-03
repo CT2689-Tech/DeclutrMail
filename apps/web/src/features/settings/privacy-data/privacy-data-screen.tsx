@@ -14,6 +14,7 @@ import {
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_OAUTH_ACCESS,
   GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
+  PRIVACY_BADGE_HEADLINE,
   PrivacyBadge,
   ScreenIntro,
   tokens,
@@ -235,8 +236,13 @@ export function PrivacyDataView({
           <p style={mutedTextStyle}>
             {DATA_EXPORT_LIMITATION} Current JSON includes{' '}
             {DATA_EXPORT_FORMAT_MANIFEST.json.description} The CSVs each cover the dataset named on
-            the button. App preferences and billing records are not included. Exports never contain
-            message bodies or attachments; DeclutrMail never fetches or stores them.
+            the button. App preferences and billing records are not included.{' '}
+            {/* QA-sender-detail-20260902-02: the JSON export above genuinely
+                includes the Gmail preview snippet on every message — this
+                used to say "Exports never contain message bodies", which a
+                reader downloading and forwarding the file would reasonably
+                read as false. The locked headline is the accurate claim. */}
+            {PRIVACY_BADGE_HEADLINE}
           </p>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button

@@ -67,5 +67,11 @@ export function scoredAge(iso: string, now: Date = new Date()): string | null {
  */
 export function scoredAgeLabel(iso: string, now: Date = new Date()): string | null {
   const age = scoredAge(iso, now);
-  return age === null ? null : `Scored ${age}`;
+  // QA-sender-detail-20260902-08: "scored" is the scoring engine's own
+  // internal vocabulary — nothing else on any of the three consuming
+  // surfaces (Sender Detail, Triage, Screener) calls this a "score", and
+  // the user never sees the underlying number. "Last checked" says the
+  // same fact (how old this read is) in the words the rest of the
+  // product uses.
+  return age === null ? null : `Last checked ${age}`;
 }
