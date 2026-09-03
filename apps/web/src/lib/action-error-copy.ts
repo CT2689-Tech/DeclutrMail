@@ -1,3 +1,5 @@
+import { apiErrorDisplayId } from '@/lib/api/client';
+
 /**
  * Plain-language error contract for the asynchronous action pipeline.
  *
@@ -111,6 +113,12 @@ export function getActionFailureCopy(
 
 /** Extract support-only diagnostics without putting them in primary copy. */
 export function technicalErrorDetails(error: unknown): string {
+  const base = rawErrorMessage(error);
+  const displayId = apiErrorDisplayId(error);
+  return displayId ? `${base} (Support code: ${displayId})` : base;
+}
+
+function rawErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
   return 'No additional diagnostic details were provided.';

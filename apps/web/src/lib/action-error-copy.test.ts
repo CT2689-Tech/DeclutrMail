@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { ApiError } from '@/lib/api/client';
+
 import { getActionFailureCopy, technicalErrorDetails } from './action-error-copy';
 
 describe('getActionFailureCopy', () => {
@@ -41,5 +43,19 @@ describe('technicalErrorDetails', () => {
   it('keeps raw diagnostics available for a disclosure', () => {
     expect(technicalErrorDetails(new Error('request-id=abc'))).toBe('request-id=abc');
     expect(technicalErrorDetails(null)).toBe('No additional diagnostic details were provided.');
+  });
+
+  it('appends the D168 support code when the error envelope carries one', () => {
+    const err = new ApiError(
+      409,
+      { error: { code: 'PROTECTED_SENDER', displayId: 'DM-7F2A91' } },
+      'Conflict',
+    );
+    expect(technicalErrorDetails(err)).toBe('Conflict (Support code: DM-7F2A91)');
+  });
+
+  it('omits the support code suffix when the envelope has none', () => {
+    const err = new ApiError(500, 'plain text', 'boom');
+    expect(technicalErrorDetails(err)).toBe('boom');
   });
 });
