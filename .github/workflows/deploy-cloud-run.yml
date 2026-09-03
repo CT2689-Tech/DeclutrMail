@@ -222,6 +222,88 @@ jobs:
           docker push "$LATEST_TAG"
           echo "image=$SHA_TAG" >> "$GITHUB_OUTPUT"
 
+      # WORKER DEPLOYS BEFORE API (swapped 2026-09-03, architecture-guardian
+      # review of the RateLimitError backoff fix). Both services share this
+      # same image, but a producer/consumer contract change — API starting
+      # to enqueue a job option (`backoff: { type: 'custom' }`) only a
+      # NEWLY-CODED worker understands — is unsafe consumer-second: any job
+      # enqueued in the gap between the two deploys that lands on the OLD
+      # worker revision and needs a retry throws inside BullMQ itself
+      # (`Unknown backoff strategy custom.`), and that failure is WORSE than
+      # a normal one — the job never reaches `failed`, so there is no
+      # dead-letter row and no Sentry capture, just a job stuck `active`
+      # until the stalled-job reclaim. Deploying the consumer (worker) first
+      # closes that window for this change and for any future one shaped
+      # the same way. Same class as CLAUDE.md's 2026-08-25 web-ahead-of-API
+      # incident — a required key introduced by a producer must exist for
+      # every consumer that could receive it before the producer starts
+      # sending it.
+      - name: Deploy declutrmail-worker (BullMQ + health)
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # Worker shares the API image — only the entrypoint differs.
+          # `--command="node"` + `--args=...` overrides the image CMD.
+          # Worker is `--no-allow-unauthenticated` (no public HTTP).
+          # `--port=8080` is required so the Cloud Run startup probe
+          # passes; the in-process health server (see
+          # `apps/api/src/worker.ts startHealthServer()`) listens there.
+          #
+          # `--no-cpu-throttling` + `--cpu-boost` (2026-06-08 session
+          # — FOUNDER-FOLLOWUPS entry). BullMQ workers have no inbound
+          # HTTP traffic so Cloud Run's request-only CPU allocation
+          # throttles them between job ticks, killing gRPC connection
+          # pools to KMS / Gmail / Supabase. Cold reconnect spirals
+          # blow past BullMQ's stalled-lock check (30s) and the job is
+          # marked failed. `--no-cpu-throttling` keeps connections
+          # warm at ~2x the request-only cost (~$30-50/mo). The API
+          # service stays request-only because it IS HTTP-driven.
+          #
+          # DEV-PHASE sizing (2026-07-10, founder cost review): 1 CPU +
+          # 1Gi + max 1 instance. The June invoice's $72/mo was this
+          # service at 2 CPU / 2Gi always-allocated — sized for the
+          # launch-scale initial-sync working set with zero users to
+          # serve. Initial sync is resumable, so an OOM under 1Gi
+          # degrades to a retry, not data loss. REVERT to 2 CPU / 2Gi /
+          # max 3 when real users arrive.
+          #
+          # WORKER_*DRAIN_DELAY/STALLED_INTERVAL — BullMQ idle-poll
+          # tuning (2026-06-10 Upstash command-volume audit). DEV-PHASE
+          # override 2026-07-15: this single worker process runs 17
+          # always-on BullMQ Workers; at 10s user-facing drainDelay their
+          # idle re-poll was the dominant Upstash cost and suspended the
+          # pre-launch $20 budget with zero real traffic. Slowed to 60s/
+          # 300s (user-facing) and 300s/900s (cron) for a ~6× idle-command
+          # cut — job pickup is marker-driven, NOT drainDelay-bound, so
+          # there is no felt latency (see `workerTuningOptions` in
+          # `packages/workers/src/queue.ts`). REVERT toward 10s/60s at
+          # launch when real traffic warrants snappier crash recovery.
+          #
+          # RATE_LIMIT_ENABLED was removed here as dead config, not as a
+          # posture change: `worker.ts` never calls NestFactory, so
+          # RateLimitModule is never instantiated in this process and the
+          # variable was read by nothing.
+          gcloud run deploy declutrmail-worker \
+            --image="$IMAGE" \
+            --region="$WORKER_REGION" \
+            --project="$PROJECT" \
+            --service-account="$RUNTIME_SA" \
+            --min-instances=1 \
+            --max-instances=1 \
+            --memory=1Gi \
+            --cpu=1 \
+            --cpu-boost \
+            --no-cpu-throttling \
+            --port=8080 \
+            --no-allow-unauthenticated \
+            --command="node" \
+            --args="src/worker.ts" \
+            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|SENTRY_RELEASE=$GITHUB_SHA|WEB_URL=https://app.declutrmail.com|REASONING_RATE_PER_MIN=400|REASONING_TIMEOUT_MS=12000|WORKER_SENTRY_ENABLED=true|WORKER_DRAIN_DELAY_SEC=60|WORKER_STALLED_INTERVAL_MS=300000|WORKER_CRON_DRAIN_DELAY_SEC=300|WORKER_CRON_STALLED_INTERVAL_MS=900000|DOMAIN_ICON_WEBSITE_FALLBACK_ENABLED=true|API_URL=https://api.declutrmail.com|PADDLE_ENV=production|UNSUB_SEND_ENABLED=true" \
+            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,RESEND_API_KEY=resend-api-key-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,BRANDFETCH_API_KEY=brandfetch-api-key-prod:latest" \
+            --quiet
+
       - name: Deploy declutrmail-api (HTTP)
         # Same routing-via-env pattern for every interpolation.
         env:
@@ -383,72 +465,6 @@ jobs:
             --allow-unauthenticated \
             --set-env-vars="NODE_ENV=production,WEB_URL=https://app.declutrmail.com,GOOGLE_REDIRECT_URI=https://api.declutrmail.com/api/auth/google/callback,CORS_ORIGIN=/^https:[/][/](app[.])?declutrmail[.]com$/,COOKIE_DOMAIN=.declutrmail.com,KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE,GOOGLE_CLOUD_PROJECT_ID=$PROJECT,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC,PUBSUB_OIDC_SERVICE_ACCOUNT=$PUBSUB_OIDC_SERVICE_ACCOUNT,PUBSUB_WEBHOOK_ENABLED=true,PUBSUB_PUSH_AUDIENCE=https://api.declutrmail.com,PUBSUB_PUSH_SA_EMAIL=$PUBSUB_OIDC_SERVICE_ACCOUNT,SENTRY_RELEASE=$GITHUB_SHA,BETA_GATE_ENABLED=false,BILLING_ENABLED=true,PADDLE_ENV=production,UNSUB_SEND_ENABLED=true" \
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest,RESEND_WEBHOOK_SECRET=resend-webhook-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,PADDLE_CLIENT_TOKEN=paddle-client-token-prod:latest,PADDLE_WEBHOOK_SECRET=paddle-webhook-secret-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,RAZORPAY_WEBHOOK_SECRET=razorpay-webhook-secret-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest" \
-            --quiet
-
-      - name: Deploy declutrmail-worker (BullMQ + health)
-        env:
-          IMAGE: ${{ steps.build.outputs.image }}
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          # Worker shares the API image — only the entrypoint differs.
-          # `--command="node"` + `--args=...` overrides the image CMD.
-          # Worker is `--no-allow-unauthenticated` (no public HTTP).
-          # `--port=8080` is required so the Cloud Run startup probe
-          # passes; the in-process health server (see
-          # `apps/api/src/worker.ts startHealthServer()`) listens there.
-          #
-          # `--no-cpu-throttling` + `--cpu-boost` (2026-06-08 session
-          # — FOUNDER-FOLLOWUPS entry). BullMQ workers have no inbound
-          # HTTP traffic so Cloud Run's request-only CPU allocation
-          # throttles them between job ticks, killing gRPC connection
-          # pools to KMS / Gmail / Supabase. Cold reconnect spirals
-          # blow past BullMQ's stalled-lock check (30s) and the job is
-          # marked failed. `--no-cpu-throttling` keeps connections
-          # warm at ~2x the request-only cost (~$30-50/mo). The API
-          # service stays request-only because it IS HTTP-driven.
-          #
-          # DEV-PHASE sizing (2026-07-10, founder cost review): 1 CPU +
-          # 1Gi + max 1 instance. The June invoice's $72/mo was this
-          # service at 2 CPU / 2Gi always-allocated — sized for the
-          # launch-scale initial-sync working set with zero users to
-          # serve. Initial sync is resumable, so an OOM under 1Gi
-          # degrades to a retry, not data loss. REVERT to 2 CPU / 2Gi /
-          # max 3 when real users arrive.
-          #
-          # WORKER_*DRAIN_DELAY/STALLED_INTERVAL — BullMQ idle-poll
-          # tuning (2026-06-10 Upstash command-volume audit). DEV-PHASE
-          # override 2026-07-15: this single worker process runs 17
-          # always-on BullMQ Workers; at 10s user-facing drainDelay their
-          # idle re-poll was the dominant Upstash cost and suspended the
-          # pre-launch $20 budget with zero real traffic. Slowed to 60s/
-          # 300s (user-facing) and 300s/900s (cron) for a ~6× idle-command
-          # cut — job pickup is marker-driven, NOT drainDelay-bound, so
-          # there is no felt latency (see `workerTuningOptions` in
-          # `packages/workers/src/queue.ts`). REVERT toward 10s/60s at
-          # launch when real traffic warrants snappier crash recovery.
-          #
-          # RATE_LIMIT_ENABLED was removed here as dead config, not as a
-          # posture change: `worker.ts` never calls NestFactory, so
-          # RateLimitModule is never instantiated in this process and the
-          # variable was read by nothing.
-          gcloud run deploy declutrmail-worker \
-            --image="$IMAGE" \
-            --region="$WORKER_REGION" \
-            --project="$PROJECT" \
-            --service-account="$RUNTIME_SA" \
-            --min-instances=1 \
-            --max-instances=1 \
-            --memory=1Gi \
-            --cpu=1 \
-            --cpu-boost \
-            --no-cpu-throttling \
-            --port=8080 \
-            --no-allow-unauthenticated \
-            --command="node" \
-            --args="src/worker.ts" \
-            --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/preload --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|SENTRY_RELEASE=$GITHUB_SHA|WEB_URL=https://app.declutrmail.com|REASONING_RATE_PER_MIN=400|REASONING_TIMEOUT_MS=12000|WORKER_SENTRY_ENABLED=true|WORKER_DRAIN_DELAY_SEC=60|WORKER_STALLED_INTERVAL_MS=300000|WORKER_CRON_DRAIN_DELAY_SEC=300|WORKER_CRON_STALLED_INTERVAL_MS=900000|DOMAIN_ICON_WEBSITE_FALLBACK_ENABLED=true|API_URL=https://api.declutrmail.com|PADDLE_ENV=production|UNSUB_SEND_ENABLED=true" \
-            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,RESEND_API_KEY=resend-api-key-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,BRANDFETCH_API_KEY=brandfetch-api-key-prod:latest" \
             --quiet
 
       - name: Smoke API revision
