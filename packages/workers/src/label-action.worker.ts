@@ -25,6 +25,7 @@ import type {
   LabelChange,
 } from './gmail-mutation-client.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
+import { backoffJobOptions } from './rate-limit-backoff.js';
 import { ValidationError } from './worker-errors.js';
 import { WORKER_POLICIES } from './worker-policies.js';
 import type { WorkerContext } from './worker-context.js';
@@ -208,15 +209,21 @@ export interface LabelActionDeps {
   lock: MailboxActionLock;
 }
 
-/** BullMQ options — `jobId` = idempotency key; attempts/backoff from the policy. */
+/**
+ * BullMQ options — `jobId` = idempotency key; attempts/backoff from the
+ * policy. `batchModify` (below) is a real Gmail call and can throw
+ * `RateLimitError` — `backoffJobOptions` + the Worker's
+ * `perMailboxWorkerSettings()` (apps/api/src/worker.ts) are the same
+ * pairing `initialSyncJobOptions` uses, so a quota-exceeded bulk
+ * Archive/Later/Delete gets the same 60s-window-aware retry instead of
+ * dead-lettering a visible K/A/U/L/D action (2026-09-02 incident sweep).
+ */
 export function labelActionJobOptions(idempotencyKey: string): JobsOptions {
   const policy = WORKER_POLICIES.perMailboxPolicy;
   return {
     jobId: idempotencyKey,
     attempts: policy.maxAttempts,
-    ...(policy.backoff
-      ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
-      : {}),
+    ...backoffJobOptions(policy.backoff),
     removeOnComplete: { age: 86_400 },
     removeOnFail: false,
   };

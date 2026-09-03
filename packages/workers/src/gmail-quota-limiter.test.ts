@@ -109,6 +109,7 @@ describe('RedisGmailQuotaLimiter — the shared budget (real Lua, real Redis)', 
       SHA,
       mailbox,
       100,
+      100,
       60_000,
       neverCalled(),
       a.clock,
@@ -117,6 +118,7 @@ describe('RedisGmailQuotaLimiter — the shared budget (real Lua, real Redis)', 
       redis!,
       SHA,
       mailbox,
+      100,
       100,
       60_000,
       neverCalled(),
@@ -143,6 +145,7 @@ describe('RedisGmailQuotaLimiter — the shared budget (real Lua, real Redis)', 
       SHA,
       mailbox,
       600,
+      600,
       60_000,
       neverCalled(),
       h.clock,
@@ -166,6 +169,7 @@ describe('RedisGmailQuotaLimiter — the shared budget (real Lua, real Redis)', 
       SHA,
       mailbox,
       10,
+      10,
       60_000,
       neverCalled(),
       h.clock,
@@ -183,6 +187,7 @@ describe('RedisGmailQuotaLimiter — the shared budget (real Lua, real Redis)', 
       redis!,
       SHA,
       mailbox,
+      100,
       100,
       60_000,
       neverCalled(),
@@ -204,12 +209,49 @@ describe('RedisGmailQuotaLimiter — the shared budget (real Lua, real Redis)', 
       SHA,
       mailbox,
       100,
+      100,
       60_000,
       neverCalled(),
       h.clock,
     );
     await expect(lim.acquire(1)).resolves.toBeUndefined();
   });
+
+  it.runIf(live)(
+    'caps the INSTANT burst below the sustained target (2026-09-03 incident fix)',
+    async () => {
+      // Negative control for the bug this closes: before decoupling
+      // burst from sustained rate, a fresh bucket started FULL at
+      // whatever the sustained target was — a mailbox could spend the
+      // entire per-minute budget (here 1,200) in one call. This
+      // assertion fails against that old coupled-capacity behavior and
+      // passes once burstCapacity is a real, independent ceiling.
+      const h = clockAt(6_000_000);
+      const lim = new RedisGmailQuotaLimiter(
+        redis!,
+        SHA,
+        mailbox,
+        100, // burst ceiling
+        1_200, // sustained target...
+        60_000, // ...per this window (refill = 20 units/sec)
+        neverCalled(),
+        h.clock,
+      );
+      // A single call for MORE than the burst ceiling but well under
+      // the sustained target must still be refused as "too big to fit
+      // in the bucket right now" — proving the ceiling is burstCapacity,
+      // not the sustained target.
+      await lim.acquire(100); // exhausts the 100-unit bucket.
+      await lim.acquire(1); // 1 more unit — bucket is empty, must wait.
+      expect(h.slept.length).toBeGreaterThan(0);
+      // Refill rate still reflects the SUSTAINED pair (20/sec), not the
+      // burst pair — waiting for 1 unit at 20/sec is ~50ms, not instant
+      // and not anywhere near a 60s window.
+      const waited = h.slept.reduce((s, x) => s + x, 0);
+      expect(waited).toBeGreaterThan(0);
+      expect(waited).toBeLessThan(1_000);
+    },
+  );
 });
 
 describe('RedisGmailQuotaLimiter — degradation and guards', () => {
@@ -222,7 +264,7 @@ describe('RedisGmailQuotaLimiter — degradation and guards', () => {
       eval: () => Promise.reject(new Error('ECONNREFUSED')),
     };
 
-    const lim = new RedisGmailQuotaLimiter(broken, SHA, 'mb-1', 100, 60_000, fallback);
+    const lim = new RedisGmailQuotaLimiter(broken, SHA, 'mb-1', 100, 100, 60_000, fallback);
     await lim.acquire(5);
 
     expect(spy).toHaveBeenCalledWith(5);
@@ -243,7 +285,7 @@ describe('RedisGmailQuotaLimiter — degradation and guards', () => {
       .mockResolvedValueOnce([1, 0]);
     const flaky: GmailQuotaRedis = { evalsha, eval: vi.fn() };
 
-    const lim = new RedisGmailQuotaLimiter(flaky, SHA, 'mb-1', 100, 60_000, fallback);
+    const lim = new RedisGmailQuotaLimiter(flaky, SHA, 'mb-1', 100, 100, 60_000, fallback);
     await lim.acquire(5); // degrades
     await lim.acquire(5); // must try Redis again
 
@@ -252,13 +294,15 @@ describe('RedisGmailQuotaLimiter — degradation and guards', () => {
   });
 
   it('refuses an amount the bucket can never hold instead of sleeping forever', async () => {
-    // Without this the loop is a hang: the bucket caps at `capacity`, so
-    // `units > capacity` can never be satisfied and every iteration
-    // sleeps and re-checks. A hang reads as a stuck worker, not a bug.
+    // Without this the loop is a hang: the bucket caps at `burstCapacity`,
+    // so `units > burstCapacity` can never be satisfied and every
+    // iteration sleeps and re-checks. A hang reads as a stuck worker,
+    // not a bug.
     const lim = new RedisGmailQuotaLimiter(
       { evalsha: vi.fn(), eval: vi.fn() },
       SHA,
       'mb-1',
+      100,
       100,
       60_000,
       neverCalled(),
@@ -272,6 +316,7 @@ describe('RedisGmailQuotaLimiter — degradation and guards', () => {
       { evalsha: vi.fn().mockResolvedValue([1, 0]), eval: evalFn },
       SHA,
       'mb-1',
+      100,
       100,
       60_000,
       neverCalled(),

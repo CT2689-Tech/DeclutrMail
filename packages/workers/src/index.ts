@@ -19,7 +19,19 @@ export {
 export type { NonRetryableError } from './worker-errors.js';
 export { INVALID_GRANT_ERROR, notNeedingReconnect } from './mailbox-reconnect.js';
 export { WORKER_POLICIES } from './worker-policies.js';
-export type { ConcurrencyScope, WorkerPolicy, WorkerPolicyConfig } from './worker-policies.js';
+export type {
+  ConcurrencyScope,
+  CustomBackoff,
+  ExponentialBackoff,
+  WorkerBackoff,
+  WorkerPolicy,
+  WorkerPolicyConfig,
+} from './worker-policies.js';
+export {
+  backoffJobOptions,
+  perMailboxBackoff,
+  perMailboxWorkerSettings,
+} from './rate-limit-backoff.js';
 export {
   createRedisConnection,
   createRedisProducerConnection,

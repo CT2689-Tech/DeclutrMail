@@ -6,9 +6,12 @@
 # row is found — that's the signal a watchdog (GH Actions cron, Cloud
 # Run Job, etc.) reads to fire an alert.
 #
-# Default stuck threshold: 5 minutes (D224's documented worker tick is
-# every ~30 s; a sync that hasn't ticked in 5 min is structurally
-# stuck, not slow).
+# Default stuck threshold: 10 minutes (raised from 5 on 2026-09-02: a
+# `perMailboxPolicy` retry can now legitimately wait up to
+# `rateLimitMaxDelayMs` = 5 min mid-backoff on a RateLimitError with
+# `updated_at` frozen the whole time — see rate-limit-backoff.ts — so 5
+# min was tight enough to page this watchdog for a mailbox correctly
+# backing off, not actually stuck).
 #
 # Privacy (D7 / D228): reads ONLY `provider_sync_state` rows. Surfaces
 # `mailbox_account_id`, `current_stage`, `progress_pct`, `updated_at`
@@ -21,7 +24,7 @@
 
 set -euo pipefail
 
-STUCK_MINUTES="${STUCK_MINUTES:-5}"
+STUCK_MINUTES="${STUCK_MINUTES:-10}"
 
 if [ -z "${SUPABASE_SESSION_DSN:-}" ]; then
   echo "::error::SUPABASE_SESSION_DSN env not set" >&2
