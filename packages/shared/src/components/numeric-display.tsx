@@ -40,7 +40,7 @@ export interface NumericDisplayProps {
    *  pass formatted output (e.g. `1,247`, `13%`, `3d`, `today`). */
   value: ReactNode;
   /** Optional small suffix rendered inline after the value (e.g.
-   *  `/mo`, `in last 30d`). Renders in sans, tone="muted". */
+   *  `in last 90d`, `each`). Renders in sans, tone="muted". */
   suffix?: ReactNode;
   variant?: NumericDisplayVariant;
   tone?: NumericDisplayTone;
@@ -102,7 +102,7 @@ const TONE_COLOR: Record<NumericDisplayTone, string> = {
  * consumer from a silent wire-regression that would otherwise ship a
  * literal `"NaN"` / `"undefined"` to the DOM and slip past Sentry. An
  * em-dash reads as a designed "no data" state that the rest of the
- * codebase already uses (`stats-strip.tsx`, `sender-table.tsx`).
+ * codebase already uses (`sender-table.tsx`, `sender-card.tsx`).
  */
 const EMPTY_PLACEHOLDER = '—';
 

@@ -133,7 +133,7 @@ export const HighConfidenceVerdict: Story<typeof SenderDetailPage> = {
 };
 
 /**
- * Trend bucket coverage — stats-strip "Trend" cell renders each
+ * Trend bucket coverage — kpi-strip "Trend" cell renders each
  * bucket with its glyph + tone. Founder-eyeball aid for the
  * vocabulary review before stories migrate to real Storybook.
  */

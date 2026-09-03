@@ -71,9 +71,8 @@ const { color, font, radius, shadow, space } = tokens;
  *   4. Decision timeline — vertical timeline (replaces D46
  *      table-style history per ADR-0012).
  *
- * Removed from the surface (component files preserved on disk;
- * deletion deferred to a follow-up cleanup PR):
- *   - <StatsStrip> (replaced by <KpiStrip>)
+ * Removed from the surface (StatsStrip deleted; remaining component
+ * files preserved on disk, deletion deferred to a follow-up cleanup PR):
  *   - <Charts> (heatmap + open-rate; founder feedback: "chart adds noise")
  *   - <DecisionHistory> table (replaced by <DecisionTimeline>)
  *   - <SenderDetailHeader> (inlined into the hero card composition)
