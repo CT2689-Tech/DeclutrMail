@@ -113,6 +113,16 @@ const OVERRIDES_KB = {
   '/(app)/senders/[id]/page': 195, // 191.3 — detail: timeseries + history + messages
   '/(app)/billing/page': 185, // 181.3 — checkout + invoices + plan controls + explainer
 
+  // Raised 180 -> 182 on 2026-09-02 (D168): measured 180.1, up from
+  // ~180.0 on main. `apiErrorDisplayId` (client.ts) gained its first
+  // production call site (technicalErrorDetails, activity-screen.tsx's
+  // "Show support details" disclosures) and could no longer be
+  // dead-code-eliminated from the shared `api/client.ts` chunk every
+  // authed route includes. Every authed route absorbed the same ~0.1 kB;
+  // settings was the only one already at its cap with zero headroom, so
+  // it is the only one that needed a bump.
+  '/(app)/settings/page': 182, // 180.1
+
   // Below the authed default, pinned tighter than it so they cannot
   // silently drift up into the cluster.
   '/(app)/settings/privacy/page': 170, // 165.6 — data controls + explainer
