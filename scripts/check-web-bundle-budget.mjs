@@ -131,6 +131,13 @@ const OVERRIDES_KB = {
   // pulls from, not anything settings-specific — a few bytes of net
   // string growth there was enough to tip the one route with zero
   // margin left. 184 restores real headroom.
+  //
+  // This also absorbs a second, independent +0.1 kB (measured 180.1 on
+  // this branch alone, pre-merge): `apiErrorDisplayId` (D168) gaining
+  // its first production call site (technicalErrorDetails) means it can
+  // no longer be dead-code-eliminated from the shared `api/client.ts`
+  // chunk. Both deltas land in the same shared cluster; 184 covers both
+  // with headroom to spare rather than stacking a second override.
   '/(app)/settings/page': 184, // 180.0 (was ~175, drifted to the ceiling unnoticed)
 
   // Below the authed default, pinned tighter than it so they cannot
