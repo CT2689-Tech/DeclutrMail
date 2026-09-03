@@ -142,9 +142,15 @@ export function fixtureToMailMessageRows(s: SenderFixture): MailMessageRow[] {
 export function fixtureToTimeseries(s: SenderFixture): TimeseriesPointDto[] {
   const detail = buildSenderDetail(s);
   return detail.timeseries.map((p) => ({
-    // Wire uses YYYY-MM-DD; fixture stores YYYY-MM. Pin to the first of
-    // the month so the contract stays exact.
-    yearMonth: `${p.yearMonth}-01`,
+    // Codex adversarial review round 2: this used to append `-01`,
+    // producing `YYYY-MM-DD` — stale even before this round's fix (the
+    // real API projects to `YYYY-MM`, `lib/api/senders.ts`'s
+    // `TimeseriesPointDto.yearMonth` doc). Silent in this file's own
+    // output (`adaptTimeseriesPoint` forwards the string verbatim), but
+    // `isCurrentYearMonth`'s `^(\d{4})-(\d{2})$` regex requires exactly
+    // `YYYY-MM` — a `-DD`-suffixed point would never match "current
+    // month" for any consumer of this fixture projector.
+    yearMonth: p.yearMonth,
     volume: p.volume,
     readCount: p.opens,
   }));
@@ -156,12 +162,27 @@ export function fixtureToDecisionHistoryRows(s: SenderFixture): DecisionHistoryR
   // The wire carries the DECISION subset of `activity_log.action`.
   // Fixture rows include 'Restored', which no producer writes yet — it
   // has no wire action, so those rows drop.
+  // QA-sender-detail-20260902-06: keyed on `string`, not `DecisionAction`
+  // — renaming the type's members ('Kept' → 'Keep decision saved',
+  // 'Unsubscribe requested' → 'Unsubscribe request recorded') would not
+  // have been caught by `tsc` here; the lookup below would have silently
+  // missed and the `if (!action …) return []` guard would have dropped
+  // every Kept/Unsubscribe row from the demo/simulator fixtures with no
+  // error anywhere.
+  //
+  // Codex adversarial review caught a THIRD, pre-existing instance of
+  // this exact silent-drop class in the same map, predating this whole
+  // fix: the key here was the bare `Deleted`, but `DecisionAction` (and
+  // `sender-detail-builder.ts`'s fixture rows) have only ever used
+  // `'Deleted to Gmail Trash'` — every Delete row from the demo/simulator
+  // fixtures has always silently dropped. Fixed alongside the two
+  // instances this diff was already touching.
   const actionMap: Record<string, DecisionHistoryRowDto['action']> = {
-    Kept: 'keep',
+    'Keep decision saved': 'keep',
     Archived: 'archive',
-    'Unsubscribe requested': 'unsubscribe',
+    'Unsubscribe request recorded': 'unsubscribe',
     'Moved to Later': 'later',
-    Deleted: 'delete',
+    'Deleted to Gmail Trash': 'delete',
     Protected: 'marked_protected',
     Unprotected: 'unmarked_protected',
   };

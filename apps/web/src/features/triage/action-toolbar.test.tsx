@@ -112,7 +112,7 @@ describe('ActionToolbar — render (D29, D31)', () => {
     // if something misleading were appended after the same opening words
     // (e.g. "...preview first — nothing changes until you preview", which
     // reintroduces the false-for-Keep promise this row exists to remove).
-    expect(html).toContain('>Destructive actions preview first</span>');
+    expect(html).toContain('>Nothing moves until you confirm</span>');
     expect(html).not.toContain('Preview · before anything changes');
     expect(html).not.toContain('Preview before anything changes');
   });

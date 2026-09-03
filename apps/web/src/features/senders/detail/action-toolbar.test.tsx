@@ -114,7 +114,7 @@ describe('ActionToolbar — pre-selection hint (QA-archive-20260828-05)', () => 
     // component has no D226 preview eyebrow to collide with; that check
     // lives on the sibling Triage toolbar, which renders both at once.
     const html = renderToStaticMarkup(<ActionToolbar sender={sender()} onAction={() => {}} />);
-    expect(html).toContain('>Destructive actions preview first</span>');
+    expect(html).toContain('>Nothing moves until you confirm</span>');
     expect(html).not.toContain('Preview before anything changes');
   });
 });

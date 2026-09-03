@@ -16,7 +16,14 @@ export const ACTION_PREVIEW_CLAIM =
 // picked. This hint renders BEFORE any verb is picked, alongside Keep,
 // which dispatches immediately with no preview by design (D40) — so it
 // must hold for all five verbs, not just the four that preview.
-export const DESTRUCTIVE_ACTIONS_PREVIEW_HINT = 'Destructive actions preview first';
+//
+// QA-sender-detail-20260902-18: "DESTRUCTIVE ACTIONS PREVIEW FIRST"
+// (rendered uppercase) parsed as mechanism/jargon on first read —
+// "destructive" and "preview" are D226's internal vocabulary, and
+// "actions preview first" reads as a noun phrase before it reads as a
+// sentence. Holds for Keep too: Keep moves nothing, ever, so "nothing
+// moves until you confirm" is true for it without needing a confirm step.
+export const DESTRUCTIVE_ACTIONS_PREVIEW_HINT = 'Nothing moves until you confirm';
 
 export const DELETE_RECOVERY_CLAIM =
   'Delete can be undone from Activity until the deadline shown there. It also moves email to Gmail Trash, where Gmail normally keeps it for up to 30 days unless you permanently delete it or empty Trash sooner.';

@@ -47,6 +47,83 @@ the point.
 
 ## Inbox (untriaged)
 
+**Found:** 2026-09-02 · `/ct-qa sender-detail`, QA-sender-detail-20260902-01,
+survived `finding-refuter`.
+
+Sender Detail's hero sentence reads "Hasn't mailed you yet." for any sender
+whose 12-month volume timeseries is empty — including senders who genuinely
+mailed the user, just outside that window. Reproduced live: `eBay Feedback`
+(`csfeedback@go.ebay.com`), one real message, confirmed via Gmail MCP
+`internalDate: 2020-09-21T19:24:43Z` (~6 years old). The same screen's
+Relationship stat reads "6 yr / 72 months" and Recent Messages lists that
+exact message, both directly contradicting the hero sentence one glance
+away. Cause: [sender-detail-page.tsx:1364](apps/web/src/features/senders/detail/sender-detail-page.tsx:1364),
+gated on an empty `timeseries` array
+([:392](apps/web/src/features/senders/detail/sender-detail-page.tsx:392)) with
+no all-time fallback; producer floor is a hard 12 calendar months
+([senders.read-service.ts:1781](apps/api/src/senders/senders.read-service.ts:1781)).
+
+`finding-refuter` live-DB-confirmed the shape affects 6,420 of 7,983 senders
+(80.4%) in the reproduction mailbox — reachable via a deliberate filter widen
+or search, not the default `activity=active` list view. A
+`defect-class-sweeper` pass found the identical producer/window mechanism
+live on 3 more strings: the Read-rate KPI's "no data yet" on the same
+screen, the Senders table row-expand panel's "No volume history yet", and —
+the widest-reaching sibling — the recommendation engine's own reasoning
+template, which renders `"{sender} sends 0/mo."` (and unrounded floats like
+`0.3333333333333333/mo` for 1-2 messages/quarter) and **persists** that
+string into `triage_decisions.reasoning` on every sync-complete score sweep,
+for every dormant sender in the mailbox — not just an on-screen render, so a
+copy-only fix leaves already-written rows wrong.
+
+Full detail, evidence, and exact replacement copy:
+`docs/qa/qa-worklist.md`'s `## sender-detail` section,
+`QA-sender-detail-20260902-01`.
+
+**Found:** 2026-09-02 · `/ct-qa sender-detail`, QA-sender-detail-20260902-02,
+survived `finding-refuter` (partially — see below).
+
+Three separate on-screen/on-document privacy claims disclaim body content
+while sitting beside or governing real Gmail-snippet body text. Confirmed
+live via the raw JSON response of `GET /api/senders/:id/messages` for a real
+Bank of America sender: `snippet` fields carrying exact transaction amounts,
+partial account numbers, merchant names, and (on other senders) a
+recipient's email address. The three claims: "Opens in Gmail · we never
+render bodies" (Recent Messages header,
+[recent-messages.tsx:87](apps/web/src/features/senders/detail/recent-messages.tsx:87));
+"We never store the body — only what you see now." (Recent Messages empty
+state, [:94](apps/web/src/features/senders/detail/recent-messages.tsx:94));
+and, most seriously, "Exports never contain message bodies or attachments."
+on Settings → Privacy & Data
+([privacy-data-screen.tsx:236](apps/web/src/features/settings/privacy-data/privacy-data-screen.tsx:236))
+— while the downloaded JSON export emits `gmailPreview: row.snippet`
+unconditionally for every message
+([export.service.ts:214](apps/api/src/account/export.service.ts:214)). The
+export claim is the strongest instance: it's a false statement about a
+persisted, downloadable, shareable artifact, not an ephemeral screen render
+— and the sibling CSV manifest description in the same file already names
+the field correctly ("Gmail preview snippet"), proving the JSON string
+specifically drifted.
+
+`finding-refuter` reviewed the FIRST claim in isolation and partially
+refuted it — downgraded to P2/P3, because "body" has a locked, D7-sanctioned
+narrower meaning (snippet ≠ full body) used consistently in the app's
+canonical copy module, terms, FAQ, and PrivacyBadge; this specific line is
+simply off-contract (a bespoke literal, doesn't import the canonical copy,
+drops the "full" qualifier every sibling string carries). The refuter's own
+strongest surviving objection: "a locked internal definition of 'body' is
+not a defence an ordinary user gets to read; 'we never render bodies' sits
+one line above a rendered account number and dollar amount... If the
+founder rules that the user's reading governs over the copy contract's, the
+P0 is back." Filed at P1 rather than the refuter's P2/P3 because the
+subsequent `defect-class-sweeper` pass found the export-screen claim
+independently — closer to Tier 1b territory than what the refuter evaluated,
+and not something the refuter's downgrade reasoning addresses.
+
+Full detail, evidence, refuter's full argument, and exact replacement copy:
+`docs/qa/qa-worklist.md`'s `## sender-detail` section,
+`QA-sender-detail-20260902-02`.
+
 **Found:** 2026-08-31 · `/ct-qa mailbox-switch`, QA-mailbox-switch-20260831-01,
 survived `finding-refuter`.
 

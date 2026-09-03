@@ -265,7 +265,12 @@ export function SenderRowDetail({
           gap: 14,
         }}
       >
-        <VolumeChartCard timeseries={timeseries} lastBarColor={lastBarColor} />
+        <VolumeChartCard
+          timeseries={timeseries}
+          lastBarColor={lastBarColor}
+          totalReceived={s.totalReceived}
+          lastDays={s.lastDays}
+        />
         <RecentSubjectsCard subjects={subjects} />
       </div>
 
@@ -347,9 +352,16 @@ const CHART_BODY_HEIGHT = 64;
 function VolumeChartCard({
   timeseries,
   lastBarColor,
+  totalReceived,
+  lastDays,
 }: {
   timeseries: RowDetailTimeseries;
   lastBarColor: string;
+  /** QA-sender-detail-20260902-01 (sibling): distinguishes a genuinely
+   *  quiet sender from one whose only mail predates the 12-month chart
+   *  window. */
+  totalReceived: number;
+  lastDays: number;
 }) {
   const points = timeseries.status === 'ready' ? timeseries.points : [];
   const maxBar = Math.max(1, ...points.map((p) => p.volume));
@@ -443,7 +455,9 @@ function VolumeChartCard({
             color: color.fgMuted,
           }}
         >
-          No volume history yet
+          {totalReceived > 0
+            ? `Nothing in the last 12 months — last received ${relTimeLabel(lastDays)}`
+            : 'No volume history yet'}
         </div>
       )}
 
