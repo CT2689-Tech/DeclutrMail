@@ -476,6 +476,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
   'maxAbsDelta',
   'messagesSynced',
   'moreRemaining',
+  'needsReconnect',
   'observeMatches',
   'outcome',
   'paidUsersChecked',

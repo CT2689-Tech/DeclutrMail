@@ -16,7 +16,7 @@ import type { MailboxActionLock } from './label-action.worker.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { syncMailboxLabels } from './mailbox-label-sync.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
-import { notNeedingReconnect } from './mailbox-reconnect.js';
+import { isAwaitingReconnect, notNeedingReconnect } from './mailbox-reconnect.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
@@ -233,6 +233,14 @@ export interface IncrementalSyncResult {
    */
   mailboxInactive?: true;
   /**
+   * Reconnect-eligibility guard — `true` when the mailbox already has a
+   * fresh, unresolved `InvalidGrantError` (`isAwaitingReconnect`). No
+   * Gmail call was attempted and no new failure was recorded; the first
+   * attempt already discovered + persisted the revoked grant, so this
+   * run is a designed no-op rather than a repeat refresh attempt.
+   */
+  needsReconnect?: true;
+  /**
    * New messages Gmail refused to render as metadata (400
    * FAILED_PRECONDITION) and the run skipped. Present only when non-zero.
    *
@@ -388,6 +396,37 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
         cursorTooOld: false,
         advancedToHistoryId: null,
         deletionPaused: true,
+      };
+    }
+
+    // Second worker-entry guard, same chokepoint as the eligibility
+    // check above. A revoked grant is permanent until reconnect; without
+    // this, every subsequent Gmail Pub/Sub push for a mailbox that keeps
+    // receiving mail re-attempts the token refresh and re-emits
+    // `oauth.refresh_failed` on every single delivery until the Gmail
+    // watch itself expires (prod: 1,455 refresh failures over 8 days on
+    // one mailbox, 2026-08-10 to 2026-08-18). The drift sweep already
+    // excludes these mailboxes via `notNeedingReconnect`
+    // (`selectIncrementalDriftCandidates`) and the FE already disables
+    // "Sync now" once `needsReconnect` is true — the webhook producer
+    // was the one path with no such filter, because Gmail delivers a
+    // push per history event regardless of what the last attempt did.
+    if (await isAwaitingReconnect(this.deps.db, mailboxAccountId)) {
+      console.warn(
+        JSON.stringify({
+          level: 'warn',
+          kind: 'incremental_sync.skipped_needs_reconnect',
+          mailboxAccountId,
+        }),
+      );
+      return {
+        recordsProcessed: 0,
+        added: 0,
+        deleted: 0,
+        labelChanges: 0,
+        cursorTooOld: false,
+        advancedToHistoryId: null,
+        needsReconnect: true,
       };
     }
 

@@ -1,5 +1,10 @@
-import { or, sql } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { providerSyncState } from '@declutrmail/db';
+import type { schema } from '@declutrmail/db';
+
+/** The Drizzle client, bound to the full `@declutrmail/db` schema. */
+type WorkerDb = PostgresJsDatabase<typeof schema>;
 
 /**
  * The classified error name for a revoked or expired Gmail OAuth grant.
@@ -39,3 +44,41 @@ export const notNeedingReconnect = or(
   sql`${providerSyncState.lastSyncedAt} IS NOT NULL
       AND ${providerSyncState.lastSyncedAt} >= ${providerSyncState.lastIncrementalErrorAt}`,
 );
+
+/**
+ * Point-lookup mirror of `notNeedingReconnect`, for a producer that
+ * handles one mailbox per call instead of a sweep query — a job
+ * processor's worker-entry guard, not a `WHERE` clause it composes
+ * into.
+ *
+ * `IncrementalSyncWorker` is fed by three producers: the drift sweep
+ * (already filtered via `notNeedingReconnect` in
+ * `selectIncrementalDriftCandidates`), the manual "Sync now" button
+ * (the FE already disables the action once `needsReconnect` is true),
+ * and every verified Gmail Pub/Sub push. The webhook producer has no
+ * sweep query to filter — Gmail delivers one push per history event
+ * regardless of what this mailbox's last attempt did — so a revoked
+ * grant on a mailbox that is still receiving mail re-attempts the
+ * token refresh, and re-emits `oauth.refresh_failed`, on every single
+ * push until the Gmail watch itself expires. Call this at the SAME
+ * worker-entry point as the inactive/deletion-pending checks, before
+ * `gmailAccess.getClient`, so the first attempt still discovers +
+ * records the revoked grant (`onTerminalFailure`) but every push after
+ * that is a cheap DB-only no-op instead of a repeat refresh attempt.
+ */
+export async function isAwaitingReconnect(
+  db: WorkerDb,
+  mailboxAccountId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
+    .from(providerSyncState)
+    .where(
+      and(
+        eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+        sql`NOT (${notNeedingReconnect})`,
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}

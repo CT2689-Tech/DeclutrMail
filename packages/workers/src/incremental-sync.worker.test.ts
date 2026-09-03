@@ -213,6 +213,77 @@ describe('IncrementalSyncWorker', () => {
     expect(await db.select().from(mailMessages)).toHaveLength(0);
   });
 
+  /**
+   * The webhook-storm regression (prod: 1,455 `oauth.refresh_failed`
+   * events over 8 days on one mailbox, 2026-08-10 to 2026-08-18). The
+   * drift sweep and the FE's "Sync now" button already refuse to spend
+   * a revoked grant again; the webhook producer had no such filter
+   * because Gmail delivers one push per history event regardless of
+   * what the last attempt did. Without the guard, EVERY push for a
+   * mailbox that keeps receiving mail re-attempts the token refresh.
+   */
+  it('no-ops a mailbox already awaiting reconnect before Gmail access — the webhook-storm regression', async () => {
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: new Date(),
+        lastIncrementalErrorCode: 'InvalidGrantError',
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    const getClient = vi.fn(async () => {
+      throw new Error('a mailbox already awaiting reconnect must not request a Gmail client');
+    });
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: { getClient },
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result).toEqual({
+      recordsProcessed: 0,
+      added: 0,
+      deleted: 0,
+      labelChanges: 0,
+      cursorTooOld: false,
+      advancedToHistoryId: null,
+      needsReconnect: true,
+    });
+    expect(getClient).not.toHaveBeenCalled();
+
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastHistoryId).toBe(1000n);
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+  });
+
+  it('still attempts a mailbox whose grant was reconnected after the recorded error', async () => {
+    const errorAt = new Date(Date.now() - 60 * 60 * 1000);
+    await db
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: errorAt,
+        lastIncrementalErrorCode: 'InvalidGrantError',
+        lastSyncedAt: new Date(errorAt.getTime() + 60 * 1000),
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    const client = new FakeGmailClient(
+      [{ forCursor: '1000', page: { records: [], historyId: '1500' } }],
+      new Map(),
+    );
+
+    const result = await new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(client),
+    }).processJob({ mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' }, CTX);
+
+    expect(result.needsReconnect).toBeUndefined();
+    expect(result.advancedToHistoryId).toBe('1500');
+  });
+
   it('processes a `messagesAdded` event — inserts mail + materialises sender', async () => {
     const meta = makeMetadata(
       'm-001',
