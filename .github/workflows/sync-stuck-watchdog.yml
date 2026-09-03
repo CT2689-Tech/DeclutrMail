@@ -1,10 +1,28 @@
-# Sync-stuck watchdog (D38, D224, D159).
+# Sync-stuck / sync-failed watchdog (D38, D224, D159).
 #
 # Runs every 5 minutes (GitHub Actions' cron minimum) against the
-# Supabase prod DB. Flags mailbox syncs in `queued`/`connecting`/
-# `syncing` whose `provider_sync_state.updated_at` is older than the
-# threshold (default 5 min). A failed workflow run = email to the
-# founder via GH's "Send notifications for failed workflows" setting.
+# Supabase prod DB. Two independent checks, both against
+# `provider_sync_state`:
+#   - check-sync-stuck.sh:  syncs WEDGED in `queued`/`syncing` (never
+#     reached a terminal state — `current_stage NOT IN ('ready','failed')`).
+#   - check-sync-failed.sh: INITIAL syncs that reached the TERMINAL
+#     `failed` state and sat there, unretried, past STUCK_FAILED_HOURS.
+#     Added 2026-09-02 — check-sync-stuck.sh's query explicitly excludes
+#     `failed`, so a mailbox that dead-letters (e.g. a Gmail
+#     RateLimitError that outlasted its retries) was invisible to any
+#     watchdog; two first-run signups stranded there with nobody
+#     watching, one of the "guard whose input can be empty and never
+#     distinguishes that from healthy" defects CLAUDE.md §8 warns about.
+#     Incremental-sync failures are a different signal
+#     (`last_incremental_error_at`, self-healed by a 5-min cron drift
+#     sweep) and are NOT covered by either check — see check-sync-failed.sh.
+#
+# Both scripts run even if one fails (`|| rc=1`, no `set -e` across
+# them) — a step that stops at the first failure would let a stuck-sync
+# alert mask a same-tick failed-sync alert, or vice versa. A failed
+# workflow run = email to the founder via GH's "Send notifications for
+# failed workflows" setting; the printed `::error::` lines say which
+# check(s) fired.
 #
 # Why GH Actions cron + psql vs Cloud Monitoring:
 #   * Cloud Monitoring can't directly query an external Supabase DB —
@@ -20,13 +38,13 @@
 # body carries mailbox_account_id (a UUID, not user-identifiable in
 # isolation) + stage + progress + stuck_seconds.
 
-name: Sync-stuck watchdog
+name: Sync-stuck / sync-failed watchdog
 
 on:
   schedule:
     # Every 5 min. GitHub may delay by up to several minutes under
     # platform load; the script's threshold accommodates that
-    # (STUCK_MINUTES default = 5).
+    # (STUCK_MINUTES default = 10 — see the job step below for why).
     - cron: '*/5 * * * *'
   workflow_dispatch: {}
 
@@ -51,11 +69,27 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends postgresql-client
 
-      - name: Check for stuck syncs
+      - name: Check for stuck + failed syncs
         env:
           SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
-          STUCK_MINUTES: '5'
+          # 10, not 5: the 2026-09-02 backoff fix lets a single
+          # `perMailboxPolicy` retry legitimately wait up to
+          # `rateLimitMaxDelayMs` (5 min — see rate-limit-backoff.ts)
+          # with `provider_sync_state.updated_at` frozen the whole time
+          # (only `onTerminalFailure` writes it, not a mid-backoff
+          # retry). At the old 5-min threshold a mailbox correctly
+          # backing off from a RateLimitError would page this watchdog
+          # as "stuck" — alert fatigue on the exact channel this PR
+          # relies on for the failed-sync check below.
+          STUCK_MINUTES: '10'
+          STUCK_FAILED_HOURS: '2'
         run: |
-          set -euo pipefail
-          chmod +x scripts/check-sync-stuck.sh
-          ./scripts/check-sync-stuck.sh
+          # No `set -e` across the two checks: each must run regardless
+          # of the other's result, or the first failure masks the second
+          # check for the rest of the tick.
+          set -uo pipefail
+          chmod +x scripts/check-sync-stuck.sh scripts/check-sync-failed.sh
+          rc=0
+          ./scripts/check-sync-stuck.sh || rc=1
+          ./scripts/check-sync-failed.sh || rc=1
+          exit "$rc"

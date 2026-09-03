@@ -14,12 +14,40 @@
  * shares for BullMQ. The ceiling becomes per-mailbox across the fleet,
  * and the pin becomes a capacity decision instead of a correctness one.
  *
- * TOKEN BUCKET, not the in-process sliding window. Both allow the same
- * burst (a full budget at t=0), but the bucket refills continuously
- * rather than releasing the whole window at once, so a limiter that just
- * blocked recovers smoothly instead of at a cliff. It is also O(1) — one
- * hash, two fields — where summing a sliding window's events in Lua
- * would be O(events) on every single call.
+ * TOKEN BUCKET, not the in-process sliding window. The bucket refills
+ * continuously rather than releasing the whole window at once, so a
+ * limiter that just blocked recovers smoothly instead of at a cliff. It
+ * is also O(1) — one hash, two fields — where summing a sliding window's
+ * events in Lua would be O(events) on every single call.
+ *
+ * BURST CAPACITY IS SEPARATE FROM THE SUSTAINED RATE (2026-09-03,
+ * post-incident). Before this, a bucket's `capacity` argument did
+ * double duty: it was both the ceiling on how much could be spent
+ * INSTANTLY and, divided by `windowMs`, the basis for the steady refill
+ * rate — so a bucket sized for a conservative 12,000-units/60s SUSTAINED
+ * average also started every mailbox with 12,000 units already sitting
+ * in it, letting a fresh sync burn the whole minute's budget in a single
+ * burst before the limiter ever introduced a millisecond of pacing.
+ *
+ * The 2026-08-26 incident (andre.darmochwal@gmail.com, workspace
+ * `300563ea-…`) is consistent with exactly this: a 30k+-message mailbox
+ * tripped Gmail's real quota-exceeded 403 on its first burst, and three
+ * more manual retries over the next 24 minutes — each opening with the
+ * SAME instant burst — never recovered; the fourth attempt failed on the
+ * very first Gmail call of the job (`getProfile`). A per-minute budget
+ * idle for 6–9 minutes between attempts should have fully refilled — the
+ * escalating failures look like a burst-triggered penalty with a cooldown
+ * measured in minutes, re-armed by each retry's own opening burst, not a
+ * simple per-minute cap the account was steadily bumping against.
+ *
+ * The constructor now takes `burstCapacity` (the bucket's actual ceiling
+ * — how much may be spent at once) SEPARATELY from
+ * `sustainedUnitsPerWindow`/`windowMs` (only used to derive the refill
+ * rate). Shrinking `burstCapacity` well below the sustained target
+ * paces a large mailbox's fetch loop into a steady stream of calls
+ * instead of a multi-thousand-call spike, without changing the total
+ * long-run throughput at all — see `GMAIL_QUOTA_BURST_CAPACITY` in
+ * `apps/api/src/worker.ts`.
  */
 
 /**
@@ -139,26 +167,35 @@ export class RedisGmailQuotaLimiter implements GmailQuotaLimiter {
     private readonly redis: GmailQuotaRedis,
     private readonly scriptSha: string,
     private readonly mailboxAccountId: string,
-    private readonly capacity: number,
+    /** Bucket ceiling — the most that may be spent in one instant. */
+    private readonly burstCapacity: number,
+    /**
+     * The sustained target this bucket paces TOWARD — together with
+     * `windowMs`, only used to derive the refill rate. Independent of
+     * `burstCapacity`: a mailbox can be paced to the same long-run
+     * 12,000-units/60s average while never holding more than a few
+     * hundred units at once.
+     */
+    sustainedUnitsPerWindow: number,
     windowMs: number,
     private readonly fallback: GmailQuotaLimiter,
     clock: GmailQuotaClock = {},
   ) {
     this.now = clock.now ?? Date.now;
     this.sleep = clock.sleep ?? defaultSleep;
-    this.refillPerMs = capacity / windowMs;
+    this.refillPerMs = sustainedUnitsPerWindow / windowMs;
     // 2x the window so an idle mailbox's key expires on its own without
     // ever discarding state a live sync still needs.
     this.ttlSec = Math.max(Math.ceil((2 * windowMs) / 1000), 1);
   }
 
   async acquire(units: number): Promise<void> {
-    if (units > this.capacity) {
+    if (units > this.burstCapacity) {
       // Would sleep forever: the bucket can never hold this much. A
-      // caller asking for more than a full minute's budget in one call
-      // is a bug in the caller, and looping would hide it as a hang.
+      // caller asking for more than the burst ceiling in one call is a
+      // bug in the caller, and looping would hide it as a hang.
       throw new Error(
-        `gmail quota: cannot acquire ${units} units against a capacity of ${this.capacity}`,
+        `gmail quota: cannot acquire ${units} units against a burst capacity of ${this.burstCapacity}`,
       );
     }
     for (;;) {
@@ -196,7 +233,7 @@ export class RedisGmailQuotaLimiter implements GmailQuotaLimiter {
   private async evalScript(units: number): Promise<[number, number]> {
     const args: (string | number)[] = [
       gmailQuotaKey(this.mailboxAccountId),
-      String(this.capacity),
+      String(this.burstCapacity),
       String(this.refillPerMs),
       String(Math.floor(this.now())),
       String(units),

@@ -17,12 +17,40 @@
  * future worker PRs do not have to re-declare it.
  */
 
-/** Retry backoff — exponential with jitter (D203). */
-export interface WorkerBackoff {
+/** Retry backoff — plain exponential (D203), used by every policy but `perMailboxPolicy`. */
+export interface ExponentialBackoff {
   type: 'exponential';
   /** First-retry delay in ms; doubles each attempt. */
   delayMs: number;
 }
+
+/**
+ * `perMailboxPolicy`'s error-aware backoff (2026-09-02 incident fix; see
+ * `rate-limit-backoff.ts`). BullMQ's built-in `exponential` strategy
+ * cannot see the error, so a `RateLimitError` got the same fixed
+ * 2s/4s/8s/16s schedule as an ordinary network blip — a span of ~30s,
+ * well under Gmail's 60s quota window, guaranteeing every automatic
+ * retry landed inside the same still-exhausted window.
+ *
+ * `delayMs` still governs every OTHER retryable error on this policy
+ * (`TransientError`, `AuthExpiredError`) via the identical exponential
+ * math — unchanged. Only a `RateLimitError` uses `rateLimitFallbackMs` /
+ * `rateLimitMaxDelayMs`, both declared here (not as free-floating
+ * constants) so this object is the single, checkable description of
+ * what `perMailboxBackoff` actually does — CLAUDE.md §3: "code that
+ * enforces itself beats prose that describes it."
+ */
+export interface CustomBackoff {
+  type: 'custom';
+  /** Non-rate-limit schedule — identical role to `ExponentialBackoff.delayMs`. */
+  delayMs: number;
+  /** Flat wait when Gmail sent no `Retry-After` (its 403 "quota exceeded" form usually doesn't). */
+  rateLimitFallbackMs: number;
+  /** Ceiling for a `RateLimitError.retryAfterMs` that DID come from a `Retry-After` header. */
+  rateLimitMaxDelayMs: number;
+}
+
+export type WorkerBackoff = ExponentialBackoff | CustomBackoff;
 
 /** Concurrency keying — which dimension caps parallel jobs (D203 §concurrency). */
 export type ConcurrencyScope = 'perMailbox' | 'perUser' | 'global';
@@ -62,11 +90,19 @@ export const WORKER_POLICIES = {
    * One in-flight job per mailbox (D5 + D203 `perMailbox=1`): Gmail rate-
    * limits per mailbox and concurrent mutations on one mailbox interfere.
    * No wall-clock cap — the initial backfill is long-running (D203 notes
-   * sync as a long-running job). Used by `InitialSyncWorker`.
+   * sync as a long-running job). Used by every Gmail-calling per-mailbox
+   * worker (initial-sync, incremental-sync, label-action, autopilot-
+   * action, action-recovery) — see `CustomBackoff` for why `backoff` is
+   * `'custom'` rather than plain `'exponential'`.
    */
   perMailboxPolicy: {
     maxAttempts: 5,
-    backoff: { type: 'exponential', delayMs: 2_000 },
+    backoff: {
+      type: 'custom',
+      delayMs: 2_000,
+      rateLimitFallbackMs: 65_000,
+      rateLimitMaxDelayMs: 5 * 60_000,
+    },
     concurrencyScope: 'perMailbox',
     timeoutMs: null,
     singleFailureCapture: true,

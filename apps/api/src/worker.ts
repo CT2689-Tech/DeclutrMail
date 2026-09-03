@@ -67,6 +67,7 @@ import {
   OutboxDispatcherWorker,
   selectIncrementalDriftCandidates,
   OutboxPublisher,
+  perMailboxWorkerSettings,
   RateLimiter,
   RedisGmailQuotaLimiter,
   RedisSnoozeLabelMapStore,
@@ -207,11 +208,33 @@ import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
 /**
  * Gmail quota throttle (D5). Gmail meters 15,000 quota units / user /
  * minute; we pace to 12,000 (20% headroom) — `messages.get` is 5 units,
- * so ~2,400 messages/min. One limiter per mailbox (the quota is
- * per-user).
+ * so ~2,400 messages/min SUSTAINED. One limiter per mailbox (the quota
+ * is per-user).
  */
 const GMAIL_QUOTA_UNITS_PER_MIN = 12_000;
 const GMAIL_QUOTA_WINDOW_MS = 60_000;
+
+/**
+ * Burst ceiling — separate from the sustained target above (2026-09-03,
+ * post-incident: see `RedisGmailQuotaLimiter`'s class doc for the full
+ * root-cause). Both limiter implementations previously started a fresh
+ * mailbox's bucket FULL, so `InitialSyncWorker`'s fetch loop could spend
+ * the entire 12,000-unit sustained budget the instant it started —
+ * ~2,400 `messages.get` calls with zero pacing before either limiter
+ * ever introduced a delay.
+ *
+ * 1,000 units (200 calls — 10 `FETCH_CONCURRENCY` chunks) caps that
+ * instant burst while the refill rate keeps the exact same long-run
+ * throughput: a large mailbox's backfill takes the same total time, it
+ * just can no longer open with a multi-thousand-call spike. Paired with
+ * `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME 200-units/sec average as the
+ * sustained pair above (1,000 / 5,000 = 12,000 / 60,000), so the
+ * in-process `RateLimiter` fallback paces identically to the primary
+ * Redis-backed bucket instead of reverting to the old full-burst
+ * behavior the moment Redis degrades.
+ */
+const GMAIL_QUOTA_BURST_CAPACITY = 1_000;
+const GMAIL_QUOTA_BURST_WINDOW_MS = 5_000;
 
 /** Read a required env var or fail loudly at boot. */
 function requireEnv(name: string): string {
@@ -719,9 +742,10 @@ async function bootstrap(): Promise<void> {
         gmailQuotaConnection,
         gmailQuotaSha,
         mailboxAccountId,
+        GMAIL_QUOTA_BURST_CAPACITY,
         GMAIL_QUOTA_UNITS_PER_MIN,
         GMAIL_QUOTA_WINDOW_MS,
-        new RateLimiter(GMAIL_QUOTA_UNITS_PER_MIN, GMAIL_QUOTA_WINDOW_MS),
+        new RateLimiter(GMAIL_QUOTA_BURST_CAPACITY, GMAIL_QUOTA_BURST_WINDOW_MS),
       );
       limiterByMailbox.set(mailboxAccountId, limiter);
     }
@@ -836,7 +860,11 @@ async function bootstrap(): Promise<void> {
     (job) => initialSync.run(job),
     // concurrency = D203 global queue cap; per-mailbox=1 is enforced by
     // the `jobId = mailboxAccountId` dedup in `initialSyncJobOptions`.
-    { connection, concurrency: 20, ...userFacingTuning },
+    // `...perMailboxWorkerSettings()`: pairs with `initialSyncJobOptions`'s
+    // `backoff: { type: 'custom' }` (2026-09-02 incident fix) — every
+    // `perMailboxPolicy` Worker uses this SAME helper so the job-option
+    // side and the Worker-registration side can't drift independently.
+    { connection, concurrency: 20, ...userFacingTuning, ...perMailboxWorkerSettings() },
   );
 
   bullWorker.on('error', (err) => {
@@ -894,7 +922,8 @@ async function bootstrap(): Promise<void> {
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
     INCREMENTAL_SYNC_QUEUE,
     (job) => incrementalSync.run(job),
-    { connection, concurrency: 20, ...userFacingTuning },
+    // See the initial-sync `Worker` above.
+    { connection, concurrency: 20, ...userFacingTuning, ...perMailboxWorkerSettings() },
   );
   incrementalBullWorker.on('error', (err) => {
     console.error(JSON.stringify({ level: 'error', kind: 'bullmq.error', message: err.message }));
@@ -1109,8 +1138,14 @@ async function bootstrap(): Promise<void> {
     LABEL_ACTION_QUEUE,
     (job) => labelActionWorker.run(job),
     // Bounded to the dedicated `lockPg` pool size — every job holds one
-    // advisory-lock connection for its full duration.
-    { connection, concurrency: LABEL_ACTION_CONCURRENCY, ...userFacingTuning },
+    // advisory-lock connection for its full duration. `perMailboxWorkerSettings()`
+    // pairs with `labelActionJobOptions`'s `backoff` (2026-09-02 incident sweep).
+    {
+      connection,
+      concurrency: LABEL_ACTION_CONCURRENCY,
+      ...userFacingTuning,
+      ...perMailboxWorkerSettings(),
+    },
   );
 
   labelActionBullWorker.on('error', (err) => {
@@ -1140,7 +1175,9 @@ async function bootstrap(): Promise<void> {
   const actionRecoveryBullWorker = new Worker<ActionRecoveryJobData, ActionRecoveryResult>(
     ACTION_RECOVERY_QUEUE,
     (job) => actionRecoveryWorker.run(job),
-    { connection, concurrency: 10, ...userFacingTuning },
+    // `perMailboxWorkerSettings()` pairs with `actionRecoveryJobOptions`'s
+    // `backoff` (2026-09-02 incident sweep).
+    { connection, concurrency: 10, ...userFacingTuning, ...perMailboxWorkerSettings() },
   );
 
   actionRecoveryBullWorker.on('error', (err) => {
@@ -2097,7 +2134,9 @@ async function bootstrap(): Promise<void> {
     // on the separate main `pg` pool, so it always completes and
     // releases. What changed is that the queue is now measured —
     // `mailbox_lock.pool_wait` logs any checkout over a second.
-    { connection, concurrency: 5, ...userFacingTuning },
+    // `perMailboxWorkerSettings()` pairs with `autopilotActionJobOptions`'s
+    // `backoff` (2026-09-02 incident sweep).
+    { connection, concurrency: 5, ...userFacingTuning, ...perMailboxWorkerSettings() },
   );
   autopilotActionBullWorker.on('error', (err) => {
     console.error(

@@ -39,6 +39,7 @@ import { labelChangeForVerb, type MailboxActionLock } from './label-action.worke
 import { lockSenderIndex } from './sender-index-lock.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
+import { backoffJobOptions } from './rate-limit-backoff.js';
 import { unsubSendsEnabled } from './unsub-execution.worker.js';
 import type { UnsubExecutionJobData } from './unsub-execution.worker.js';
 import { ValidationError } from './worker-errors.js';
@@ -309,15 +310,18 @@ export interface AutopilotActionDeps {
   now?: () => Date;
 }
 
-/** BullMQ options — `jobId` dedups; attempts/backoff from the policy. */
+/**
+ * BullMQ options — `jobId` dedups; attempts/backoff from the policy.
+ * `batchModify` (below) is a real Gmail call — see `labelActionJobOptions`
+ * for why this uses `backoffJobOptions` rather than a plain exponential
+ * literal (2026-09-02 incident sweep).
+ */
 export function autopilotActionJobOptions(jobId: string): JobsOptions {
   const policy = WORKER_POLICIES.perMailboxPolicy;
   return {
     jobId,
     attempts: policy.maxAttempts,
-    ...(policy.backoff
-      ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
-      : {}),
+    ...backoffJobOptions(policy.backoff),
     removeOnComplete: { age: 86_400 },
     removeOnFail: false,
   };

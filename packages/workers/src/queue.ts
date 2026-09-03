@@ -1,6 +1,7 @@
 import type { JobsOptions, Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 
+import { backoffJobOptions } from './rate-limit-backoff.js';
 import { WORKER_POLICIES } from './worker-policies.js';
 
 /**
@@ -76,9 +77,7 @@ export function incrementalSyncJobOptions(
   return {
     jobId: `${mailboxAccountId}__${endHistoryId}`,
     attempts: policy.maxAttempts,
-    ...(policy.backoff
-      ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
-      : {}),
+    ...backoffJobOptions(policy.backoff),
     // Drop completed jobs after 24h — they are pure ack signal, no
     // value beyond the cursor advance which already lives in
     // `provider_sync_state`.
@@ -267,9 +266,7 @@ export function initialSyncJobOptions(mailboxAccountId: string): JobsOptions {
   return {
     jobId: mailboxAccountId,
     attempts: policy.maxAttempts,
-    ...(policy.backoff
-      ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
-      : {}),
+    ...backoffJobOptions(policy.backoff),
     // Keep a completed job 24h so a reconnect after that re-syncs.
     removeOnComplete: { age: 86_400 },
     removeOnFail: false,
