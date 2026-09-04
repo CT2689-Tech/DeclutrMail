@@ -31,7 +31,10 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
+import {
+  MAILBOX_SCOPE_RESET_EVENT,
+  resetMailboxScopedCache,
+} from '@/features/mailboxes/api/reset-mailbox-cache';
 
 // Toast is the user-visible surface the overdue-release cases assert on.
 // Partial mock — every other export from the shared package stays real.
@@ -599,6 +602,56 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  // QA-sender-detail-20260903-01: all four sender-scoped queries hit the
+  // same `CurrentMailboxGuard` and 404 for the identical reason (foreign
+  // or nonexistent sender id), but resolve as four independent promises
+  // with no ordering guarantee. The old guard checked ONLY `detail`'s own
+  // error — if a SIBLING settled its 404 first while `detail` was still
+  // in flight, the page fell through to the generic "We couldn't load
+  // this sender" error state instead of the purpose-built not-found UI,
+  // live-reproduced twice on an identical URL. This test forces that
+  // exact ordering: `messages` 404s immediately, `detail` stays pending
+  // until released mid-test.
+  it('shows not-found (not the generic error) when a sibling query 404s before `detail` settles', async () => {
+    // Promise executors run synchronously, so `releaseDetail` is always
+    // assigned by the time `new Promise` returns — the definite-assignment
+    // assertion just tells TS what the language already guarantees here.
+    let releaseDetail!: () => void;
+    const detailPending = new Promise<void>((resolve) => {
+      releaseDetail = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: async () => {
+          await detailPending;
+          return jsonNotFound('sender_not_found');
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/(messages|timeseries|history)$/,
+        respond: () => jsonNotFound('sender_not_found'),
+      },
+    ]);
+
+    renderDetail('ghost');
+
+    // Sibling 404s have already landed; `detail` is still pending. The
+    // race this test exists to close: this must already be the
+    // not-found UI, never the generic "We couldn't load this sender"
+    // retry state.
+    await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
+    expect(screen.queryByText(/we couldn't load this sender/i)).not.toBeInTheDocument();
+
+    // Release `detail`'s own 404 and confirm the page stays correct —
+    // no flash back to a loading or error state once it settles too.
+    releaseDetail();
+    await waitFor(() => expect(screen.getByText(/sender not found/i)).toBeInTheDocument());
+    expect(screen.queryByText(/we couldn't load this sender/i)).not.toBeInTheDocument();
+  });
+
   // D38 session-3 — instrument coverage.
 
   it('fires `sender_detail_opened` exactly once with source from ?from', async () => {
@@ -864,6 +917,91 @@ describe('SenderDetailRoute', () => {
     // scope reset has fired and the post-reset refetch has failed.
     await waitFor(() => expect(screen.queryByText('LinkedIn')).not.toBeInTheDocument());
     expect(screen.getByRole('alert')).toBeInTheDocument();
+  }, 15000);
+
+  /**
+   * Codex review 2026-09-03 on the four-query `notFound` fix above:
+   * `resetMailboxScopedCache` invalidates rather than clears, so a
+   * query's STALE error from the mailbox you just switched AWAY from
+   * can still be sitting on it while it refetches in the background
+   * after a switch back. Checking four queries instead of one widens
+   * that exposure — any one of them, not just `detail`, can carry a
+   * stale 404. Forces the exact sequence: mailbox A loads clean, a
+   * switch to B 404s `history` (correct — B has no such sender), then a
+   * switch back to A holds `history`'s refetch pending. While it's
+   * pending, `history.error` is still B's 404, dated BEFORE the second
+   * reset — the fix must not treat it as authoritative for A.
+   */
+  it("does not go not-found on a sibling's stale 404 from before the last mailbox switch", async () => {
+    let historyCallCount = 0;
+    let releaseThirdHistoryCall!: () => void;
+    const thirdHistoryCallPending = new Promise<void>((resolve) => {
+      releaseThirdHistoryCall = resolve;
+    });
+    const historyPage = () =>
+      jsonOk({
+        data: [HISTORY_ROW],
+        meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+      });
+    installFetchStub([
+      { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: TIMESERIES }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: async () => {
+          historyCallCount += 1;
+          if (historyCallCount === 1) return historyPage(); // mailbox A, initial load
+          if (historyCallCount === 2) return jsonNotFound('sender_not_found'); // switched to B
+          await thirdHistoryCallPending; // switched back to A — held pending
+          return historyPage();
+        },
+      },
+    ]);
+
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <SenderDetailRoute id="linkedin" />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+
+    // Switch A -> B, through the REAL helper (not a manual dispatch +
+    // invalidate) — Codex review 2026-09-03 round 2: an earlier version
+    // of this test dispatched the event and invalidated separately, in
+    // the opposite order production actually uses, so it didn't exercise
+    // the real race at all. Not asserting UI here — B genuinely has no
+    // such sender, so not-found would be the correct render.
+    await resetMailboxScopedCache(client);
+    await waitFor(() => expect(historyCallCount).toBe(2));
+
+    // Switch B -> A: history's refetch is deliberately left pending, so
+    // its cached error is still B's 404 while detail/messages/timeseries
+    // are unaffected mocks that stay ready throughout. Must NOT await —
+    // `resetMailboxScopedCache` awaits every refetch settling.
+    void resetMailboxScopedCache(client);
+
+    await waitFor(() => expect(screen.getByText('LinkedIn')).toBeInTheDocument());
+    expect(screen.queryByText(/sender not found/i)).not.toBeInTheDocument();
+
+    releaseThirdHistoryCall();
+    await waitFor(() => expect(historyCallCount).toBe(3));
+    expect(screen.getByText('LinkedIn')).toBeInTheDocument();
+    expect(screen.queryByText(/sender not found/i)).not.toBeInTheDocument();
   }, 15000);
 
   // Standing-policy writes (Keep + Protect).

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
+import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { ContextualHelp } from '@/features/help/contextual-help';
@@ -232,7 +233,7 @@ export function ActionSheet({
       >
         <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
           <Eyebrow tone={verb === 'Unsubscribe' || danger ? 'amber' : 'primary'}>
-            Preview · {verb}
+            {previewEyebrowLabel(verb)}
           </Eyebrow>
           <h2
             id="dm-triage-sheet-title"

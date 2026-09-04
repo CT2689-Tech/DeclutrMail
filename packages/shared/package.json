@@ -14,6 +14,7 @@
     "./contracts": "./src/contracts/index.ts",
     "./contracts/signup-attribution-ref": "./src/contracts/signup-attribution-ref.ts",
     "./copy": "./src/copy/index.ts",
+    "./copy/preview-eyebrow": "./src/copy/preview-eyebrow.ts",
     "./entitlements": "./src/entitlements/index.ts",
     "./entitlements/undo-window": "./src/entitlements/undo-window.ts",
     "./flags": "./src/flags/index.ts",

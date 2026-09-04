@@ -50,3 +50,5 @@ export {
   type EngineVerdict,
   type ConfidenceBand,
 } from './engine-confidence';
+
+export { previewEyebrowLabel } from './preview-eyebrow';

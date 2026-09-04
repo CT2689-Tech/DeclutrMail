@@ -235,7 +235,37 @@ export function SenderDetailRoute({ id }: { id: string }) {
     });
   }, [detail.data, messages.data, timeseries.data, history.data]);
 
-  if (detail.error instanceof ApiError && detail.error.status === 404) {
+  // QA-sender-detail-20260903-01: checking ONLY `detail.error` here raced
+  // the sibling `messages`/`timeseries`/`history` queries — all four hit
+  // the same `CurrentMailboxGuard`-scoped sender id and 404 for the
+  // identical reason (foreign/nonexistent sender), but they resolve as
+  // four independent promises with no ordering guarantee. Whichever one
+  // settles first on a given render could be `messages` or `timeseries`,
+  // not `detail` — and while `detail` was still mid-flight, this branch's
+  // narrower check missed the 404 entirely and fell through to the
+  // generic `anyChildError` error state below, live-reproduced twice on
+  // an identical URL (first load: generic error; a second, separate
+  // navigation: correct `NotFoundState`). Checking all four make this
+  // order-independent: ANY of them reporting the identical 404 is exactly
+  // as authoritative as `detail`'s own.
+  //
+  // Codex review 2026-09-03: `resetMailboxScopedCache` invalidates rather
+  // than clears (by design, see that function's own doc), so a query's
+  // STALE error from the mailbox you just switched AWAY from can still be
+  // sitting on it while it refetches in the background after a switch
+  // back. Checking four queries instead of one widens that same
+  // pre-existing exposure (any one of the four can carry a stale 404
+  // instead of just `detail`). Reuse the identical `mailboxResetAtRef`
+  // generation guard the `cachedDataIsTrustworthy` check below already
+  // uses for stale DATA — an error is only authoritative if it was set at
+  // or after the last mailbox-scope reset.
+  const notFound = [detail, messages, timeseries, history].some(
+    (q) =>
+      q.error instanceof ApiError &&
+      q.error.status === 404 &&
+      (mailboxResetAtRef.current == null || q.errorUpdatedAt >= mailboxResetAtRef.current),
+  );
+  if (notFound) {
     return <NotFoundState />;
   }
 

@@ -2726,7 +2726,17 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('u');
-    await screen.findByText(/unsubscribe from 2 senders/i);
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText(/unsubscribe from 2 senders/i);
+    // Codex review 2026-09-03 round 3: bulk Unsubscribe confirm now waits
+    // on the live bulk preview too (it no longer arms on the request's
+    // stale queue count alone) — the title above renders before that
+    // preview settles, so wait for confirm to actually unlock first.
+    // Scoped to the dialog: the selection toolbar behind it has its own
+    // "Unsubscribe N senders" button with the same accessible name.
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /Unsubscribe/ })).toBeEnabled(),
+    );
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     const receipt = await screen.findByRole('status');

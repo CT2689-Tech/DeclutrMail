@@ -1431,11 +1431,30 @@ describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () =>
 
   it('offers the action as soon as one sender is one-click', () => {
     const onConfirm = vi.fn();
+    const request = unsubRequest(['one_click', 'mailto', null]);
     render(
       <ConfirmActionModal
-        request={unsubRequest(['one_click', 'mailto', null])}
+        request={request}
         onCancel={() => {}}
         onConfirm={onConfirm}
+        // Codex review 2026-09-03 round 3: bulk Unsubscribe now requires
+        // the live bulk preview before confirm unlocks (the real caller,
+        // senders-screen.tsx, always supplies one for bulk Unsubscribe —
+        // "Unsubscribe also starts this read in the background").
+        bulkPreview={{
+          data: {
+            senders: request.senders.map((s) => ({
+              senderId: s.id,
+              name: s.name,
+              counts: buckets,
+              protected: false,
+            })),
+            totals: buckets,
+            protectedCount: 0,
+          },
+          loading: false,
+          error: false,
+        }}
       />,
     );
 
@@ -1852,6 +1871,211 @@ describe('ConfirmActionModal — Delete title names its destination', () => {
     );
     expect(
       screen.getByRole('heading', { name: /move email from 1 sender to gmail trash/i }),
+    ).toBeInTheDocument();
+  });
+});
+
+// QA-archive-20260901-01: this modal's eyebrow was the one D226 preview
+// surface that dropped the verb entirely ("Preview · before anything
+// changes"), while Triage's identical sheets both name it. Shares the
+// same `n` the H3 title one line below already states, so the two never
+// drift from each other.
+describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-20260901-01)', () => {
+  it("names the verb for a single sender, matching the title's count", () => {
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.getByText('Preview · Archive')).toBeInTheDocument();
+    expect(screen.queryByText('Preview · before anything changes')).toBeNull();
+  });
+
+  it('names the verb and the real sender count for a bulk selection', () => {
+    const second = makeSender({ id: 'sender-2', displayName: 'Beta Digest', email: 'b@beta.com' });
+    const bulkRequest: ActionRequest = { verb: 'Archive', senders: [sender, second] };
+    const bulkData = {
+      senders: [
+        { senderId: sender.id, name: sender.name, counts: buckets, protected: false },
+        { senderId: second.id, name: second.name, counts: buckets, protected: false },
+      ],
+      totals: buckets,
+      protectedCount: 0,
+    };
+    render(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: bulkData, loading: false, error: false }}
+      />,
+    );
+    expect(screen.getByText('Preview · Archive · 2 senders')).toBeInTheDocument();
+  });
+
+  // Codex review 2026-09-03: `request.actionableCount` is a snapshot
+  // stated by the caller before the live bulk preview resolved. If the
+  // preview then independently flags one of those senders Protected, the
+  // eyebrow/title must drop to the live actionable count — never the
+  // stale caller-stated one — because that's the set
+  // `enqueueBulkComposite` actually commits to.
+  it('drops to the live actionable count when the bulk preview newly flags a sender Protected', () => {
+    const second = makeSender({ id: 'sender-3', displayName: 'Gamma News', email: 'c@gamma.com' });
+    const bulkRequest: ActionRequest = {
+      verb: 'Archive',
+      senders: [sender, second],
+      actionableCount: 2,
+    };
+    const bulkData = {
+      senders: [
+        { senderId: sender.id, name: sender.name, counts: buckets, protected: true },
+        { senderId: second.id, name: second.name, counts: buckets, protected: false },
+      ],
+      totals: buckets,
+      protectedCount: 1,
+    };
+    render(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: bulkData, loading: false, error: false }}
+      />,
+    );
+    // `previewEyebrowLabel` omits the count entirely at n=1 — the same
+    // wording a genuine single-sender request renders.
+    expect(screen.getByText('Preview · Archive')).toBeInTheDocument();
+    expect(screen.queryByText(/2 senders/)).toBeNull();
+  });
+
+  // Codex review 2026-09-03, round 2: `nothingToActOn` only blocks verbs
+  // that move CURRENT inbox mail, and is deliberately silent for
+  // Unsubscribe (it cuts future mail, not a count). But the live bulk
+  // preview can independently resolve to zero actionable senders for ANY
+  // bulk verb, Unsubscribe included, when every queued sender went
+  // Protected since the request was built — nothing else caught that.
+  it('disables bulk Unsubscribe confirm when the live preview resolves with every sender Protected', () => {
+    const one = makeSender({
+      id: 'sender-u1',
+      displayName: 'Weekly Digest',
+      unsubscribeMethod: 'one_click',
+    });
+    const two = makeSender({
+      id: 'sender-u2',
+      displayName: 'Promo Blast',
+      unsubscribeMethod: 'one_click',
+    });
+    const bulkRequest: ActionRequest = { verb: 'Unsubscribe', senders: [one, two] };
+    const bulkData = {
+      senders: [
+        { senderId: one.id, name: one.name, counts: buckets, protected: true },
+        { senderId: two.id, name: two.name, counts: buckets, protected: true },
+      ],
+      totals: buckets,
+      protectedCount: 2,
+    };
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: bulkData, loading: false, error: false }}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  // Codex review 2026-09-03, round 3: `nothingActionableBulk` above only
+  // becomes true once `bulkPreview.data` exists — it says nothing about
+  // BEFORE that, and pure Unsubscribe was the one verb `requiresLivePreview`
+  // deliberately excluded (D226's "moves nothing" exemption, correct for
+  // the single-sender mailto path but not for bulk membership). So bulk
+  // Unsubscribe confirm was reachable the instant the modal opened, before
+  // the live preview had even started, let alone resolved — committing to
+  // the stale queue count with no eligibility check at all.
+  it('disables bulk Unsubscribe confirm while the live preview is still loading, before any result is known', () => {
+    const one = makeSender({
+      id: 'sender-u3',
+      displayName: 'Daily Roundup',
+      unsubscribeMethod: 'one_click',
+    });
+    const two = makeSender({
+      id: 'sender-u4',
+      displayName: 'Flash Sale',
+      unsubscribeMethod: 'one_click',
+    });
+    const bulkRequest: ActionRequest = {
+      verb: 'Unsubscribe',
+      senders: [one, two],
+      actionableCount: 2,
+    };
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: undefined, loading: true, error: false }}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
+    expect(confirm).toBeDisabled();
+    expect(screen.getByText(/Loading the live preview/i)).toBeInTheDocument();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  // Codex review 2026-09-03, round 4: `nothingActionableBulk` treated
+  // every non-Protected sender as actionable for Unsubscribe too, but
+  // `enqueueBulkUnsubscribe` only counts CURRENT one-click senders — a
+  // mailto sender is recorded, never sent. A mixed selection whose sole
+  // one-click sender goes Protected leaves only a mailto row: not
+  // Protected, so the old gate read it as 1 actionable and left confirm
+  // enabled, but the server has zero executable senders and 409s
+  // NO_ACTIONABLE_SENDERS.
+  it('disables bulk Unsubscribe confirm when only a mailto sender remains executable (one-click sender went Protected)', () => {
+    const oneClick = makeSender({
+      id: 'sender-u5',
+      displayName: 'Weekly Newsletter',
+      unsubscribeMethod: 'one_click',
+    });
+    const mailto = makeSender({
+      id: 'sender-u6',
+      displayName: 'Support Updates',
+      unsubscribeMethod: 'mailto',
+    });
+    const bulkRequest: ActionRequest = { verb: 'Unsubscribe', senders: [oneClick, mailto] };
+    const bulkData = {
+      senders: [
+        { senderId: oneClick.id, name: oneClick.name, counts: buckets, protected: true },
+        { senderId: mailto.id, name: mailto.name, counts: buckets, protected: false },
+      ],
+      totals: buckets,
+      protectedCount: 1,
+    };
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={bulkRequest}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: bulkData, loading: false, error: false }}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/Every sender in this selection is now Protected or no longer/i),
     ).toBeInTheDocument();
   });
 });

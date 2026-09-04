@@ -27,12 +27,44 @@ export const MAILBOX_SCOPE_RESET_EVENT = 'declutrmail:mailbox-scope-reset';
  * lists update live. Inactive queries on other routes are marked stale
  * and refetch on next navigation. The brief reload is acceptable for this
  * rare, deliberate action.
+ *
+ * The event fires BEFORE `invalidateQueries()`, not after (Codex review
+ * 2026-09-03). Listeners use it to mark a "no cached state from before
+ * this instant is trustworthy" generation boundary — sender-detail-page's
+ * `mailboxResetAtRef` compares a query's `dataUpdatedAt`/`errorUpdatedAt`
+ * against it. `invalidateQueries()` awaits every active query's refetch,
+ * so if the event fired only after that await resolved, every one of
+ * those very refetches would already have stamped its
+ * `dataUpdatedAt`/`errorUpdatedAt` to a moment strictly before the
+ * boundary — making the freshest possible read of the NEW mailbox look
+ * stale by definition, not just a genuinely stale read. Firing first
+ * makes the boundary predate every refetch this call triggers, so `>=`
+ * comparisons against it stay inclusive of fresh data.
+ *
+ * `cancelQueries()` runs before `invalidateQueries()` (Codex review
+ * 2026-09-03, round 4). A query that is still on its FIRST fetch (no
+ * cached data yet — e.g. a sender-detail page opened moments before this
+ * switch) is not restarted by `invalidateQueries()`: TanStack dedupes an
+ * already-in-flight fetch instead of cancelling and re-issuing it, so
+ * that original request — resolved server-side by `CurrentMailboxGuard`
+ * against WHICHEVER mailbox was active when its guard ran, possibly the
+ * one being switched away from — lands after this call, stamped with a
+ * `dataUpdatedAt`/`errorUpdatedAt` past the boundary above. A
+ * generation-timestamp check alone cannot distinguish that from a
+ * genuine post-switch read. Every query hook in this app threads
+ * TanStack's own `signal` through to `fetch()` (`query-options.ts`
+ * factories, `senders.ts` readers), so cancelling here actually aborts
+ * the in-flight request client-side instead of just being ignored, and
+ * `invalidateQueries()` right after re-issues a fresh fetch for every
+ * still-mounted (active) query — one that can only resolve once the
+ * switch has certainly committed.
  */
 export async function resetMailboxScopedCache(qc: QueryClient): Promise<void> {
-  await qc.invalidateQueries();
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
   }
+  await qc.cancelQueries();
+  await qc.invalidateQueries();
 }
 
 /**
