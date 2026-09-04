@@ -1054,7 +1054,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     fireEvent.keyDown(window, { key: 'a' });
 
     // Inline preview banner renders (no dialog — the sheet was skipped).
-    await screen.findByText('Preview · before anything changes');
+    await screen.findByText('Preview · Archive');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(useTriageStore.getState().pendingAction).toMatchObject({
       verb: 'Archive',
@@ -1064,7 +1064,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
 
     fireEvent.keyDown(window, { key: 'Escape' });
 
-    await waitFor(() => expect(screen.queryByText('Preview · before anything changes')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Preview · Archive')).toBeNull());
     expect(useTriageStore.getState().pendingAction).toBeNull();
     // The row stays expanded — only the pending decision is discarded.
     expect(useTriageStore.getState().expandedRowId).toBe(GROUPON.id);
@@ -1078,7 +1078,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     renderScreen(client);
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText('Preview · before anything changes');
+    await screen.findByText('Preview · Archive');
 
     const input = document.createElement('input');
     document.body.appendChild(input);
@@ -1087,7 +1087,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
 
     // Pending action survives — Escape belonged to the input.
     expect(useTriageStore.getState().pendingAction).not.toBeNull();
-    expect(screen.getByText('Preview · before anything changes')).toBeDefined();
+    expect(screen.getByText('Preview · Archive')).toBeDefined();
     input.remove();
   });
 

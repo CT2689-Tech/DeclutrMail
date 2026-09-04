@@ -111,6 +111,13 @@ describe('makeQueryClient — global mailbox-scope-conflict recovery', () => {
       mutationFn: () => Promise.reject(error),
     });
     await mutation.execute(undefined).catch(() => undefined);
+    // `onError` fires `resetMailboxScopedCache` fire-and-forget (`void`,
+    // never awaited by the caller — see query-client.ts). It now awaits
+    // `cancelQueries()` before `invalidateQueries()` (Codex review round
+    // 4), one more microtask hop than this mock's synchronous-call
+    // interception alone can observe. Flush pending microtasks/a macrotask
+    // turn so that extra hop has landed either way before asserting.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     return { resetCalls };
   }
 
@@ -157,6 +164,10 @@ describe('makeQueryClient — global mailbox-scope-conflict recovery', () => {
         });
         await query.fetch().catch(() => undefined);
       }
+      // See the identical comment in `failOn` above — one more
+      // fire-and-forget microtask hop to flush since round 4's
+      // `cancelQueries()` addition to `resetMailboxScopedCache`.
+      await new Promise((resolve) => setTimeout(resolve, 0));
       return { resetCalls, client };
     }
 

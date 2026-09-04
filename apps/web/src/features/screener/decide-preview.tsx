@@ -8,6 +8,7 @@ import {
   WINDOW_PRESET_LABELS,
 } from '@declutrmail/shared/actions';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import { useNow } from '@/lib/use-now';
 import type { ActionReach } from '@/lib/api/actions';
@@ -212,7 +213,7 @@ export function DecidePreview({
           color: verb === 'delete' ? color.red : color.primary,
         }}
       >
-        Preview · before anything changes
+        {previewEyebrowLabel(VERB_LABEL[verb])}
       </span>
 
       <MailboxActionContext mailboxEmail={mailboxEmail} />

@@ -111,7 +111,8 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // ---- D226 mandatory preview modal — real count, then confirm.
   const modal = page.getByRole('dialog');
   await expect(modal).toBeVisible();
-  await expect(modal).toContainText('Preview · before anything changes');
+  // QA-archive-20260901-01: the eyebrow now names the verb.
+  await expect(modal).toContainText('Preview · Archive');
   // The modal's sender-context strip names the domain (the title is
   // count-based: "Archive all mail from 1 sender").
   await expect(modal).toContainText(senderDomain);

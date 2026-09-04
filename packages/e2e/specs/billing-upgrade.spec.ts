@@ -214,7 +214,11 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
 
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
-  await expect(preview).toContainText('Preview · before anything changes');
+  // QA-archive-20260901-01: the eyebrow used to be a fully generic
+  // "Preview · before anything changes" — unified across every D226
+  // preview surface to name the verb (`previewEyebrowLabel`), a bare
+  // "Preview · Archive" at n=1 with no count suffix.
+  await expect(preview).toContainText('Preview · Archive');
   // A3 client pre-refusal (#401): with the monthly allowance spent, the
   // confirm CTA is REPLACED by the upgrade CTA — the shortfall is
   // stated in the modal and no request is ever sent (the server 402

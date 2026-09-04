@@ -27,7 +27,10 @@ function renderReady() {
   );
 }
 
-const PREVIEW = 'Preview · before anything changes';
+// QA-archive-20260901-01: the eyebrow now names the verb instead of a
+// generic "Preview · before anything changes" everywhere.
+const PREVIEW_KEEP = 'Preview · Keep';
+const PREVIEW_ARCHIVE = 'Preview · Archive';
 const firstRow = SCREENER_QUEUE[0]!;
 const noChannelRow = SCREENER_QUEUE.find((row) => row.unsubscribeMethod === 'none')!;
 
@@ -108,31 +111,31 @@ describe('Screener keyboard handler (#220, D226)', () => {
   it('K on the EXPANDED row opens the mandatory preview (never a direct mutation)', () => {
     renderReady();
     expandFirstRow();
-    expect(screen.queryByText(PREVIEW)).not.toBeInTheDocument();
+    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'k' });
-    expect(screen.getByText(PREVIEW)).toBeInTheDocument();
+    expect(screen.getByText(PREVIEW_KEEP)).toBeInTheDocument();
   });
 
   it('Escape cancels the open preview', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'k' });
-    expect(screen.getByText(PREVIEW)).toBeInTheDocument();
+    expect(screen.getByText(PREVIEW_KEEP)).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByText(PREVIEW)).not.toBeInTheDocument();
+    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('does nothing when NO row is expanded (no ghost preview)', () => {
     renderReady();
     fireEvent.keyDown(window, { key: 'k' });
-    expect(screen.queryByText(PREVIEW)).not.toBeInTheDocument();
+    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('a modifier chord (Cmd/Ctrl) is ignored', () => {
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
-    expect(screen.queryByText(PREVIEW)).not.toBeInTheDocument();
+    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('disables click and U shortcut when the sender publishes no unsubscribe channel', () => {
@@ -145,7 +148,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     expect(unsubscribe).toBeDisabled();
     expect(unsubscribe).toHaveAttribute('title', expect.stringMatching(/No unsubscribe channel/i));
     fireEvent.keyDown(window, { key: 'u' });
-    expect(screen.queryByText(PREVIEW)).not.toBeInTheDocument();
+    expect(screen.queryByText(PREVIEW_KEEP)).not.toBeInTheDocument();
   });
 
   it('Enter cannot confirm Archive when its live preview is unavailable', async () => {
@@ -174,7 +177,7 @@ describe('Screener keyboard handler (#220, D226)', () => {
     fireEvent.keyDown(window, { key: 'Enter' });
     await Promise.resolve();
     expect(decidePosted).toBe(false);
-    expect(screen.getByText(PREVIEW)).toBeInTheDocument();
+    expect(screen.getByText(PREVIEW_ARCHIVE)).toBeInTheDocument();
   });
 
   it('Enter confirms Archive after the current-match preview resolves', async () => {

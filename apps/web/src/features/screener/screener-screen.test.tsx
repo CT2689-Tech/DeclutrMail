@@ -217,7 +217,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
         onCancel={noop}
       />,
     );
-    expect(html).toContain('Preview · before anything changes');
+    expect(html).toContain('Preview · Archive');
     expect(html).toContain('Confirm Archive');
     expect(html).toContain('Cancel');
     expect(html).toContain('4');
