@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
+import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -63,7 +64,22 @@ export function BatchActionSheet({
   quotaRemaining?: number | null | undefined;
 }) {
   const wakeAtInvalid = verb === 'Later' && (wakeAt === null || Date.parse(wakeAt) <= Date.now());
-  const confirmDisabled = preview === 'loading' || preview === 'unavailable' || wakeAtInvalid;
+  // Computed before the early-return guard below (`batch` can still be
+  // null here) so the ⌘⏎ handler registered by the hook right after —
+  // which must run on every render — can gate on it too. Codex review
+  // 2026-09-03 round 2: the live preview can legitimately resolve to
+  // zero actionable senders (every queued one went Protected or was
+  // deleted since queuing); without this, confirm stayed enabled and
+  // `enqueueBulkComposite` rejected the empty set after the sheet closed.
+  const actionableCount =
+    batch == null
+      ? 0
+      : typeof preview === 'object'
+        ? preview.senders.filter((s) => !s.protected).length
+        : batch.eligibleRows.length;
+  const nothingActionable = typeof preview === 'object' && actionableCount === 0;
+  const confirmDisabled =
+    preview === 'loading' || preview === 'unavailable' || wakeAtInvalid || nothingActionable;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -83,10 +99,17 @@ export function BatchActionSheet({
 
   if (!open || !batch) return null;
 
-  const eligible = batch.eligibleRows;
-  // One cleanup action per ACTIONABLE sender — the same set the server
-  // charges (`enqueueBulk` receives exactly these ids).
-  const unitsNeeded = eligible.length;
+  // `actionableCount` (One cleanup action per ACTIONABLE sender) is
+  // computed above, before the guard — `batch.eligibleRows` is the queue
+  // snapshot taken before the bulk preview ran; the preview independently
+  // re-resolves each id and can drop it (deleted since queued) or flag it
+  // newly Protected — `enqueueBulkComposite` repeats that same resolution
+  // and skips those rows. Once the preview has loaded, its `senders` list
+  // is the authoritative actionable set; only fall back to the snapshot
+  // while still loading/unavailable (Codex review 2026-09-03,
+  // QA-archive-20260901-01 — title/quota/eyebrow must all name the same
+  // count the confirm click actually commits to).
+  const unitsNeeded = actionableCount;
   const quotaShort = quotaRemaining != null && unitsNeeded > quotaRemaining;
   const quotaLine =
     quotaRemaining == null
@@ -104,8 +127,8 @@ export function BatchActionSheet({
   });
   const title =
     verb === 'Archive'
-      ? `Archive all inbox email from ${eligible.length} senders`
-      : `Move ${eligible.length} senders to Later`;
+      ? `Archive all inbox email from ${actionableCount} senders`
+      : `Move ${actionableCount} senders to Later`;
   const lead = presentation.previewCopy;
 
   return (
@@ -142,7 +165,7 @@ export function BatchActionSheet({
         }}
       >
         <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone="primary">Preview · {verb} · multiple senders</Eyebrow>
+          <Eyebrow tone="primary">{previewEyebrowLabel(verb, actionableCount)}</Eyebrow>
           <h2
             id="dm-triage-batch-sheet-title"
             style={{
@@ -274,7 +297,7 @@ export function BatchActionSheet({
             borderTop: `1px solid ${color.line}`,
             // Same fix as the single-sender ActionSheet (QA-triage-20260827-11):
             // this dialog scrolls (`overflow: 'auto'` above) and its sender
-            // list grows with `eligible.length`, so the footer is even more
+            // list grows with the batch size, so the footer is even more
             // likely to sit below the fold on a short viewport.
             position: 'sticky',
             bottom: 0,
@@ -293,7 +316,9 @@ export function BatchActionSheet({
                 ? 'Choose a future return time before confirming Later.'
                 : preview === 'unavailable'
                   ? 'Preview unavailable — close and retry.'
-                  : 'Counting inbox email — confirm unlocks after the live preview loads.'
+                  : nothingActionable
+                    ? 'Every sender in this batch is now Protected or no longer in your senders list — close and refresh to see what changed.'
+                    : 'Counting inbox email — confirm unlocks after the live preview loads.'
               : quotaShort
                 ? `This needs ${unitsNeeded.toLocaleString('en-US')} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining!.toLocaleString('en-US')} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
                 : `${quotaLine}${quotaLine === '' ? '' : ' '}${

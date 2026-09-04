@@ -1467,7 +1467,24 @@ export function TriageScreen({
         open={pendingBatch != null}
         verb={pendingBatch?.verb ?? 'Archive'}
         batch={pendingBatch?.batch ?? null}
-        preview={bulkPreview.isError ? 'unavailable' : (bulkPreview.data ?? 'loading')}
+        // Codex review 2026-09-03 round 3: `useBulkActionPreview` sets
+        // `staleTime: 0` specifically so reopening a batch re-counts
+        // (its own doc: "the inbox moves under us"), but this line
+        // showed the PREVIOUS fetch's cached `data` immediately while
+        // that recount ran silently in the background — a batch sheet
+        // could sit confirmable on a stale non-zero count while the
+        // live preview was mid-refetch (undermining `BatchActionSheet`'s
+        // own zero-actionable confirm gate, which only ever sees what
+        // this prop hands it). Treat `isFetching` as loading regardless
+        // of cached data, matching the composite single-sender preview's
+        // existing `isFetching || data == null` gate a few lines above.
+        preview={
+          bulkPreview.isError
+            ? 'unavailable'
+            : bulkPreview.isFetching
+              ? 'loading'
+              : (bulkPreview.data ?? 'loading')
+        }
         wakeAt={pendingBatch?.wakeAt ?? null}
         mailboxEmail={activeEmail}
         onCancel={() => setPendingBatch(null)}

@@ -47,6 +47,7 @@ export function ScreenerRow({
   previewInboxTotal = null,
   previewWindowDays = null,
   previewAllMailCount = null,
+  previewAllMailTotal = null,
   pendingReach = 'inbox_only',
   onReachChange,
   wakeAt = null,
@@ -71,6 +72,14 @@ export function ScreenerRow({
   previewWindowDays?: number | null;
   /** ADR-0028 all-mail count — `null` hides the Delete reach chips. */
   previewAllMailCount?: number | null;
+  /**
+   * Codex review 2026-09-03 (QA-delete-20260903-01, round 2): the TRUE
+   * un-windowed all-mail total — `previewAllMailCount` is windowed
+   * identically to `previewInboxCount` for a pending Delete, so it
+   * cannot answer "is all-mail reach truly empty" on its own, the same
+   * gap `previewInboxTotal` already closes for inbox-only reach.
+   */
+  previewAllMailTotal?: number | null;
   /** ADR-0028 — the pending Delete's selected reach. */
   pendingReach?: ActionReach;
   onReachChange?: ((reach: ActionReach) => void) | undefined;
@@ -390,6 +399,7 @@ export function ScreenerRow({
               inboxTotal={previewInboxTotal}
               windowDays={previewWindowDays}
               allMailCount={previewAllMailCount}
+              allMailTotal={previewAllMailTotal}
               reach={pendingReach}
               onReachChange={onReachChange}
               wakeAt={wakeAt}

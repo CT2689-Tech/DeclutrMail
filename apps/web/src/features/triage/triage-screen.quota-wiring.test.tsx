@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { QueryClient } from '@tanstack/react-query';
 
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
@@ -145,4 +145,132 @@ describe('TriageScreen — every confirm surface receives the cleanup allowance'
       ),
     );
   });
+});
+
+/**
+ * Codex review 2026-09-03, round 3: `useBulkActionPreview` sets
+ * `staleTime: 0` specifically so a background refetch always follows —
+ * its own doc says "reopening re-counts (the inbox moves under us)" —
+ * but the call site here handed `BatchActionSheet` `bulkPreview.data`
+ * whenever it existed, with no check for `isFetching`. So a batch sheet
+ * already open when its preview gets invalidated (e.g. by any mutation
+ * elsewhere that busts `['bulk-action-preview']`) kept showing the OLD
+ * cached actionable count, confirm still enabled, while a fresh count —
+ * one that could legitimately be zero if every sender went Protected in
+ * the meantime — was resolving unseen in the background. This directly
+ * undermines `BatchActionSheet`'s own zero-actionable confirm gate,
+ * which only ever sees what this prop hands it.
+ */
+describe('TriageScreen — batch sheet does not arm confirm on a stale cached preview mid-refetch', () => {
+  beforeEach(() => {
+    resetTriageStore();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              data: {
+                senders: batchRows.map((r) => ({
+                  senderId: r.senderId,
+                  name: r.senderName,
+                  counts: {
+                    all: 4,
+                    olderThan30d: 3,
+                    olderThan90d: 2,
+                    olderThan180d: 1,
+                    olderThan365d: 0,
+                  },
+                  protected: false,
+                })),
+                totals: {
+                  all: 12,
+                  olderThan30d: 9,
+                  olderThan90d: 6,
+                  olderThan180d: 3,
+                  olderThan365d: 0,
+                },
+                protectedCount: 0,
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        ),
+      ),
+    );
+  });
+
+  it('drops to the loading state (confirm disabled) once a shown preview is invalidated, even with cached data', async () => {
+    const client = createTestQueryClient();
+    renderScreen(client);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Archive all 3 senders from batchdomain.com' }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() =>
+      expect(dialog.textContent).toContain(
+        `Uses 3 of your ${CLEANUP_REMAINING} cleanup actions left this month.`,
+      ),
+    );
+    expect(within(dialog).getByRole('button', { name: /^Archive all/ })).not.toBeDisabled();
+
+    // Swap in a fresh response where every sender has since gone
+    // Protected, held pending until released below, then invalidate the
+    // ALREADY-MOUNTED (dialog still open) preview query — the same
+    // trigger any bulk-preview-busting mutation elsewhere would cause.
+    let releaseRefetch!: () => void;
+    const refetchPending = new Promise<void>((resolve) => {
+      releaseRefetch = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await refetchPending;
+        return new Response(
+          JSON.stringify({
+            data: {
+              senders: batchRows.map((r) => ({
+                senderId: r.senderId,
+                name: r.senderName,
+                counts: {
+                  all: 0,
+                  olderThan30d: 0,
+                  olderThan90d: 0,
+                  olderThan180d: 0,
+                  olderThan365d: 0,
+                },
+                protected: true,
+              })),
+              totals: {
+                all: 0,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+              protectedCount: batchRows.length,
+            },
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }),
+    );
+    void client.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+
+    // While the fresh (now-zero) result is still pending, the sheet must
+    // NOT keep confirm enabled on the stale "3" — this is the regression.
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: /^Archive all/ })).toBeDisabled(),
+    );
+    expect(dialog.textContent).toContain('Counting the inbox');
+
+    releaseRefetch();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByText(/close and refresh to see what changed/i),
+      ).toBeInTheDocument(),
+    );
+    expect(within(dialog).getByRole('button', { name: /^Archive all/ })).toBeDisabled();
+  }, 15000);
 });

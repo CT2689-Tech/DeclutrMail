@@ -251,6 +251,13 @@ export function ScreenerScreen({
         ? (compositePreview.data?.allMail?.counts.olderThan180d ?? null)
         : (compositePreview.data?.allMail?.counts.all ?? null)
       : null;
+  // Codex review 2026-09-03 (QA-delete-20260903-01, round 2): the TRUE
+  // un-windowed all-mail total. `previewAllMailCount` above is windowed
+  // for a pending Delete, so a zero-match check comparing against it
+  // can't tell "genuinely nothing archived" from "archived mail exists,
+  // just outside the window" — the same distinction `previewInboxTotal`
+  // already draws for inbox-only reach.
+  const previewAllMailTotal = compositePreview.data?.allMail?.counts.all ?? null;
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
   const pendingPreviewBlocked = pendingMovesMail && typeof previewInboxCount !== 'number';
@@ -631,6 +638,7 @@ export function ScreenerScreen({
                 previewInboxTotal={previewInboxTotal}
                 previewWindowDays={isPendingDelete ? DEFAULT_DELETE_WINDOW_DAYS : null}
                 previewAllMailCount={previewAllMailCount}
+                previewAllMailTotal={previewAllMailTotal}
                 pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}
                 onReachChange={(reach) =>
                   setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, reach } : cur))

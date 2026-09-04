@@ -273,6 +273,11 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
       screen.getByText(/9 emails from this sender are in your inbox, but none are older than/i),
     ).toBeInTheDocument();
     expect(screen.getByText(/the 6 months\+ window/i)).toBeInTheDocument();
+    // Codex review 2026-09-03 (QA-delete-20260903-01): the zero-match
+    // header must not contradict this exact notice — "Nothing to move"
+    // would sit directly above "9 emails ... are in your inbox."
+    expect(screen.queryByText(/Nothing to move/)).toBeNull();
+    expect(screen.getByText(`Delete ${row.senderName}'s inbox email`)).toBeInTheDocument();
   });
 
   it('applies no window qualifier or empty-window notice at all-mail reach', () => {
@@ -292,5 +297,165 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
       />,
     );
     expect(screen.queryByText(/older than/i)).toBeNull();
+  });
+});
+
+// QA-archive-20260903-01: this dialog rendered the frozen `reasoning`
+// sentence with no indication of when it was scored — the identical gap
+// QA-archive-20260828-02 already fixed on Triage's own D226 preview.
+describe('DecidePreview — reasoning age label (QA-archive-20260903-01)', () => {
+  it('states how old the reasoning is when scoredAt is known', async () => {
+    const scoredAt = new Date(Date.now() - 60_000).toISOString(); // 1 minute ago
+    render(
+      <DecidePreview
+        verb="archive"
+        row={{ ...row, recommendation: { ...row.recommendation!, scoredAt } }}
+        inboxCount={2}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    // "Scored" → "Last checked" — shared across Sender Detail, Triage,
+    // and the Screener (QA-sender-detail-20260902-08).
+    expect(await screen.findByText('Last checked today')).toBeInTheDocument();
+  });
+
+  it('renders no age label when scoredAt is unknown (demo/simulator rows)', () => {
+    expect(row.recommendation?.scoredAt).toBeUndefined(); // fixture precondition
+    render(
+      <DecidePreview
+        verb="archive"
+        row={row}
+        inboxCount={2}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/^Last checked /)).toBeNull();
+    // The reasoning itself still renders — only the age label is gated.
+    expect(screen.getByText('Why we suggested this:')).toBeInTheDocument();
+  });
+});
+
+// QA-delete-20260903-01: a zero-match Archive/Later/Delete otherwise still
+// read as an active move ("Delete X's inbox email") above a "0 matching
+// emails" body — the identical gap QA-delete-20260829-08 already fixed on
+// Triage's own D226 preview.
+describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
+  it.each(['archive', 'later', 'delete'] as const)(
+    'reads "Nothing to move" for a zero-match %s, not an active-move header',
+    (verb) => {
+      render(
+        <DecidePreview
+          verb={verb}
+          row={row}
+          inboxCount={0}
+          confirming={false}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />,
+      );
+      expect(
+        screen.getByText(`Nothing to move from ${row.senderName} right now`),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it('still reads "Nothing to move" when the window count AND the true total are both zero', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={0}
+        inboxTotal={0}
+        windowDays={180}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText(`Nothing to move from ${row.senderName} right now`),
+    ).toBeInTheDocument();
+  });
+
+  // Codex review 2026-09-03, round 2: `inboxTotal` is always the
+  // inbox-only unwindowed total, so it cannot answer "is all-mail reach
+  // truly empty" — an empty inbox with archived mail outside the window
+  // would still (wrongly) read `inboxTotal === 0` as a confident zero.
+  it('does not claim "Nothing to move" at all-mail reach when archived mail exists outside the window', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={0}
+        inboxTotal={0}
+        windowDays={180}
+        allMailCount={0}
+        allMailTotal={5}
+        reach="all_mail"
+        onReachChange={() => {}}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.queryByText(/Nothing to move/)).toBeNull();
+    expect(
+      screen.getByText(`Delete ${row.senderName}'s inbox + archived email`),
+    ).toBeInTheDocument();
+  });
+
+  it('still reads "Nothing to move" at all-mail reach when the true all-mail total is also zero', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={0}
+        inboxTotal={0}
+        windowDays={180}
+        allMailCount={0}
+        allMailTotal={0}
+        reach="all_mail"
+        onReachChange={() => {}}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(
+      screen.getByText(`Nothing to move from ${row.senderName} right now`),
+    ).toBeInTheDocument();
+  });
+
+  it('leaves Keep and Unsubscribe headers untouched — neither ever claims a move', () => {
+    render(
+      <DecidePreview
+        verb="keep"
+        row={row}
+        inboxCount={0}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText(`Keep ${row.senderName}`)).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing to move/)).toBeNull();
+  });
+
+  it('keeps the active-move header once at least one email matches', () => {
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={1}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText(`Delete ${row.senderName}'s inbox email`)).toBeInTheDocument();
   });
 });

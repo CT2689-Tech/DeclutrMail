@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
+import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   buildActionPresentation,
@@ -387,9 +388,19 @@ export function ConfirmActionModal({
   // composite/bulk endpoint is the preview contract for the active time
   // window; all-labels received sender totals and a legacy all-inbox count
   // are not a
-  // substitute. Pure Unsubscribe (Leave alone) is the one exception because
-  // it does not move existing inbox mail.
-  const requiresLivePreview = isArchiveVerb || isLaterVerb || isDeleteVerb || hasSecondaryAction;
+  // substitute. Pure single-sender Unsubscribe (Leave alone) is the one
+  // exception because it does not move existing inbox mail and needs no
+  // count to be valid.
+  //
+  // Codex review 2026-09-03 round 3: bulk Unsubscribe is NOT exempt —
+  // unlike the single-sender mailto/compose path, it commits to a set of
+  // sender IDS whose Protected/deleted status the live bulk preview is
+  // the only source of truth for (`nothingActionableBulk` below). Without
+  // `requiresLivePreview` covering it, confirm was reachable the instant
+  // the modal opened, before that preview had even started, let alone
+  // resolved — the stale queue count armed the click.
+  const requiresLivePreview =
+    isArchiveVerb || isLaterVerb || isDeleteVerb || hasSecondaryAction || (isBulk && isUnsubVerb);
   const livePreviewUnavailable =
     requiresLivePreview &&
     (isBulk
@@ -571,13 +582,35 @@ export function ConfirmActionModal({
   const quotaRemaining = cleanupQuota?.remaining ?? null;
   const unitsPerSender =
     (isUnsubVerb && unsubscribeChannel === 'none' ? 0 : 1) + (hasSecondaryAction ? 1 : 0);
-  const unitsNeeded =
-    unitsPerSender *
-    (isBulk
-      ? bulkPreview?.data
-        ? bulkPreview.data.senders.filter((s) => !s.protected).length
-        : (request?.senders.length ?? 0)
-      : 1);
+  // The live bulk preview's actionable (non-Protected) sender count —
+  // shared by the quota math below and, post-guard, `n` (the
+  // eyebrow/title/subject count) — both need to agree with what
+  // `enqueueBulkComposite` will actually commit to. `null` outside bulk.
+  const bulkActionableSenderCount = isBulk
+    ? bulkPreview?.data
+      ? bulkPreview.data.senders.filter((s) => !s.protected).length
+      : (request?.senders.length ?? 0)
+    : null;
+  // Codex review 2026-09-03 round 4: `bulkActionableSenderCount` above
+  // only knows Protected/missing — the bulk preview endpoint is
+  // verb-agnostic and carries no unsubscribe-capability field.
+  // `enqueueBulkUnsubscribe` (actions.service.ts) throws
+  // `NO_ACTIONABLE_SENDERS` unless at least one sender is CURRENTLY
+  // one-click; a mailto sender is recorded but never sent, so a
+  // selection down to mailto-only is executable=0 even though it's
+  // still "not Protected." Cross-references the capability known when
+  // this request was BUILT — stale only if a sender's OWN method
+  // changed since then (rare), but correct for the common failure this
+  // closes: the one-click sender in a mixed selection went Protected or
+  // was deleted before confirm.
+  const bulkUnsubExecutableCount =
+    isBulk && isUnsubVerb && bulkPreview?.data
+      ? bulkPreview.data.senders.filter((s) => {
+          const original = request?.senders.find((rs) => rs.id === s.senderId);
+          return !s.protected && original?.unsubscribeMethod === 'one_click';
+        }).length
+      : null;
+  const unitsNeeded = unitsPerSender * (bulkActionableSenderCount ?? 1);
   // Set when `requestAction` already trimmed this request to what the
   // allowance covers. The senders here ARE the ones that will run, so the
   // preview above is truthful as-is; all this changes is the copy, which
@@ -591,11 +624,25 @@ export function ConfirmActionModal({
   // `quotaShort` only blocks when NOTHING can run — a capped request has
   // already been trimmed to fit, so blocking it here would restore the
   // dead end the cap exists to remove.
+  //
+  // Codex review 2026-09-03 round 2: `nothingToActOn` only covers verbs
+  // that move current inbox mail, and is deliberately silent for
+  // Unsubscribe (it acts on future mail, not a count). But a bulk
+  // preview can independently resolve to zero ACTIONABLE senders — every
+  // queued one went Protected, or was deleted, since the request was
+  // built — for ANY bulk verb including Unsubscribe, and nothing else
+  // catches that. Gate on the same live count `unitsNeeded` above and
+  // `n` below both already use.
+  const nothingActionableBulk =
+    isBulk &&
+    bulkPreview?.data !== undefined &&
+    (bulkUnsubExecutableCount ?? bulkActionableSenderCount) === 0;
   const confirmDisabled =
     livePreviewBlocksConfirm ||
     nothingToActOn ||
     wakeAtInvalid ||
     unsubNothingToSend ||
+    nothingActionableBulk ||
     (quotaShort && !quotaCappedFrom);
 
   // Swap confirm for a truthful upgrade action when the quota cannot
@@ -683,9 +730,17 @@ export function ConfirmActionModal({
   const selectedCount = request.selectedCount ?? requestedSenderCount;
   const skippedCount = (request.skipped?.protectedCount ?? 0) + (request.skipped?.peopleCount ?? 0);
   const eligibleCount = Math.max(0, selectedCount - skippedCount);
-  // Stated by the caller when known; the old arithmetic is the fallback
-  // for the single-sender paths that never narrow.
-  const n = request.actionableCount ?? eligibleCount;
+  // Prefer the live bulk preview's actionable count — it independently
+  // re-resolves every sender id and can drop it (deleted since queued) or
+  // flag it newly Protected, exactly like `unitsNeeded`'s bulk branch
+  // above; `enqueueBulkComposite` repeats that same resolution and skips
+  // those rows. `request.actionableCount` is a caller-stated snapshot, and
+  // `eligibleCount`'s client arithmetic never narrows — both are the
+  // fallback for the single-sender paths, or while the preview hasn't
+  // resolved yet (Codex review 2026-09-03, QA-archive-20260901-01 — this
+  // eyebrow/title/subject must name the same count the confirm click
+  // actually commits to).
+  const n = bulkActionableSenderCount ?? request.actionableCount ?? eligibleCount;
   const plural = n === 1 ? '' : 's';
   const subject = n === 1 ? 'this sender' : 'these senders';
   // Tone: Delete is the strongest destructive — red eyebrow + amber-red
@@ -889,7 +944,9 @@ export function ConfirmActionModal({
         }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone={danger ? 'amber' : 'primary'}>Preview · before anything changes</Eyebrow>
+          <Eyebrow tone={danger ? 'amber' : 'primary'}>
+            {previewEyebrowLabel(request.verb, n)}
+          </Eyebrow>
           <h2
             id="dm-confirm-title"
             style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
@@ -1763,13 +1820,15 @@ export function ConfirmActionModal({
                 : "Couldn't load the live preview — close and retry before confirming."
               : livePreviewLoading
                 ? 'Loading the live preview — confirm stays locked until it is ready.'
-                : quotaCappedFrom
-                  ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — every cleanup action you have left this month. The rest stay untouched.`
-                  : quotaShort
-                    ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-                    : quotaRemaining !== null
-                      ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
-                      : ''}
+                : nothingActionableBulk
+                  ? 'Every sender in this selection is now Protected or no longer in your senders list — close and refresh to see what changed.'
+                  : quotaCappedFrom
+                    ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — every cleanup action you have left this month. The rest stay untouched.`
+                    : quotaShort
+                      ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
+                      : quotaRemaining !== null
+                        ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
+                        : ''}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {livePreviewUnavailable &&

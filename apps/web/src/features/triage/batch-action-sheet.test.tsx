@@ -134,6 +134,59 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     );
     expect(screen.getByRole('button', { name: /later for all/i })).not.toBeDisabled();
   });
+
+  // Codex review 2026-09-03, round 2: the live preview can legitimately
+  // resolve to zero actionable senders — every queued one went Protected,
+  // or was deleted, since the batch was queued. Confirm must disable
+  // itself instead of letting the click through to a server rejection.
+  it('disables confirm when the live preview resolves with every sender Protected', () => {
+    const onConfirm = vi.fn();
+    const allProtected: BulkActionPreviewResult = {
+      senders: readyPreview.senders.map((s) => ({ ...s, protected: true })),
+      totals: readyPreview.totals,
+      protectedCount: readyPreview.senders.length,
+    };
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={allProtected}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: /^Archive all/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByText(/close and refresh to see what changed/i)).toBeInTheDocument();
+  });
+
+  it('disables confirm when the live preview resolves with every sender deleted since queuing', () => {
+    const onConfirm = vi.fn();
+    const allGone: BulkActionPreviewResult = {
+      senders: [],
+      totals: readyPreview.totals,
+      protectedCount: 0,
+    };
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={allGone}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: /^Archive all/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByText(/close and refresh to see what changed/i)).toBeInTheDocument();
+  });
 });
 
 // A domain batch is the largest spend reachable from Triage — one cleanup
@@ -165,7 +218,7 @@ describe('BatchActionSheet — states what the batch costs (D226)', () => {
         open
         verb="Archive"
         batch={batch}
-        preview={{ senders: [], totals: buckets, protectedCount: 0 }}
+        preview={readyPreview}
         quotaRemaining={34}
         onCancel={() => {}}
         onConfirm={() => {}}
@@ -182,7 +235,7 @@ describe('BatchActionSheet — states what the batch costs (D226)', () => {
         open
         verb="Archive"
         batch={batch}
-        preview={{ senders: [], totals: buckets, protectedCount: 0 }}
+        preview={readyPreview}
         quotaRemaining={2}
         onCancel={() => {}}
         onConfirm={() => {}}
@@ -199,12 +252,62 @@ describe('BatchActionSheet — states what the batch costs (D226)', () => {
         open
         verb="Archive"
         batch={batch}
-        preview={{ senders: [], totals: buckets, protectedCount: 0 }}
+        preview={readyPreview}
         quotaRemaining={null}
         onCancel={() => {}}
         onConfirm={() => {}}
       />,
     );
     expect(screen.queryByText(/cleanup action/)).toBeNull();
+  });
+});
+
+// QA-archive-20260901-01: the eyebrow named a vague "multiple senders"
+// instead of the real, actionable count — the same count `unitsNeeded`
+// charges and the confirm button itself states ("Archive all N senders").
+describe('BatchActionSheet — preview eyebrow names the real count (QA-archive-20260901-01)', () => {
+  it('names the verb and the real eligible-sender count, not a vague "multiple"', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={readyPreview}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.getByText('Preview · Archive · 3 senders')).toBeInTheDocument();
+    expect(screen.queryByText(/multiple senders/)).toBeNull();
+  });
+
+  // Codex review 2026-09-03: `eligible` is the queue snapshot taken before
+  // the bulk preview ran. If the live preview newly flags one of those
+  // senders Protected, the eyebrow/title/quota must all drop to the count
+  // the confirm click actually commits to (`enqueueBulkComposite` skips
+  // Protected rows) — never the stale queue count.
+  it('drops the count to the live actionable total when the preview newly flags a sender Protected', () => {
+    const previewWithOneProtected: BulkActionPreviewResult = {
+      senders: readyPreview.senders.map((s, i) => (i === 0 ? { ...s, protected: true } : s)),
+      totals: readyPreview.totals,
+      protectedCount: 1,
+    };
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={previewWithOneProtected}
+        quotaRemaining={34}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+      />,
+    );
+    expect(screen.getByText('Preview · Archive · 2 senders')).toBeInTheDocument();
+    expect(screen.getByText('Archive all inbox email from 2 senders')).toBeInTheDocument();
+    expect(
+      screen.getByText(/Uses 2 of your 34 cleanup actions left this month/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/3 senders/)).toBeNull();
   });
 });

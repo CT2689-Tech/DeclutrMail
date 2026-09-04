@@ -7,7 +7,10 @@ import {
   inboxScopeNoticeCopy,
   WINDOW_PRESET_LABELS,
 } from '@declutrmail/shared/actions';
+import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { useNow } from '@/lib/use-now';
 import type { ActionReach } from '@/lib/api/actions';
 
 import {
@@ -49,6 +52,7 @@ export function DecidePreview({
   inboxTotal = null,
   windowDays = null,
   allMailCount = null,
+  allMailTotal = null,
   reach = 'inbox_only',
   onReachChange,
   wakeAt,
@@ -78,6 +82,15 @@ export function DecidePreview({
    * preview has not resolved; the reach chips then do not render.
    */
   allMailCount?: number | null;
+  /**
+   * Codex review 2026-09-03 (QA-delete-20260903-01, round 2): the TRUE
+   * un-windowed all-mail total. `allMailCount` above is windowed
+   * identically to `inboxCount` for a pending Delete, so the zero-match
+   * title check needs this separate, always-unwindowed figure to tell
+   * "genuinely nothing archived" from "archived mail exists, just
+   * outside the window" once `all_mail` reach is selected.
+   */
+  allMailTotal?: number | null;
   /** ADR-0028 — the selected reach for a pending Delete. */
   reach?: ActionReach;
   onReachChange?: ((reach: ActionReach) => void) | undefined;
@@ -99,6 +112,21 @@ export function DecidePreview({
   const effectiveCount: DecidePreviewCount =
     activeReach === 'all_mail' && allMailCount != null ? allMailCount : inboxCount;
   const liveCount = typeof effectiveCount === 'number' ? effectiveCount : null;
+  // What actually moves — only the label-modify verbs touch the inbox.
+  // Declared before `title` (QA-delete-20260903-01): a zero-match Archive/
+  // Later/Delete needs to say so in the header, the same "Nothing to move"
+  // branch `action-preview-presentation.tsx` already has for Triage.
+  const moves = verb === 'archive' || verb === 'later' || verb === 'delete';
+  // QA-archive-20260903-01: the frozen rationale below needs the same
+  // "Last checked" age label Triage's identical D226 preview already
+  // shows — this dialog is the one screen a destructive verb cannot
+  // bypass, so a stale read should say so here too, not just on the
+  // collapsed row.
+  const now = useNow();
+  const ageLabel =
+    row.recommendation?.scoredAt !== undefined && now !== null
+      ? scoredAgeLabel(row.recommendation.scoredAt, new Date(now))
+      : null;
   const presentation = buildActionPresentation({
     verb,
     liveCount: verb === 'keep' || verb === 'unsubscribe' ? 0 : liveCount,
@@ -110,23 +138,41 @@ export function DecidePreview({
     timeZone: 'viewer',
   });
 
+  // QA-delete-20260903-01: a zero-match Archive/Later/Delete otherwise
+  // still reads as an active move ("Delete X's inbox email") directly
+  // above a "0 matching emails" body — check this before the per-verb
+  // wording, same order `action-preview-presentation.tsx` uses.
+  //
+  // Codex review 2026-09-03: unlike Triage's identical branch, Delete's
+  // `liveCount` here can be WINDOWED (`windowDays` set, default delete
+  // window) while the TRUE un-windowed count for the active reach is > 0.
+  // "Nothing to move" would then contradict the ImpactFigure notice just
+  // below it, which already says N emails sit outside the window. Only
+  // claim a true zero when no window narrowed the count, or the
+  // un-windowed total for the SELECTED reach confirms it really is zero —
+  // round 2: comparing against `inboxTotal` unconditionally was still
+  // wrong at `all_mail` reach, where `liveCount` and `inboxTotal` measure
+  // different scopes (all-mail vs inbox-only) that can each independently
+  // be zero while the other is not.
+  const relevantTrueTotal = activeReach === 'all_mail' ? allMailTotal : inboxTotal;
+  const confidentZeroMatch = liveCount === 0 && (windowDays === null || relevantTrueTotal === 0);
   const title =
-    verb === 'keep'
-      ? `Keep ${name}`
-      : verb === 'archive'
-        ? `Archive all inbox email from ${name}`
-        : verb === 'later'
-          ? `Move ${name} to Later`
-          : verb === 'unsubscribe'
-            ? `Unsubscribe from ${name}`
-            : activeReach === 'all_mail'
-              ? `Delete ${name}'s inbox + archived email`
-              : `Delete ${name}'s inbox email`;
+    moves && confidentZeroMatch
+      ? `Nothing to move from ${name} right now`
+      : verb === 'keep'
+        ? `Keep ${name}`
+        : verb === 'archive'
+          ? `Archive all inbox email from ${name}`
+          : verb === 'later'
+            ? `Move ${name} to Later`
+            : verb === 'unsubscribe'
+              ? `Unsubscribe from ${name}`
+              : activeReach === 'all_mail'
+                ? `Delete ${name}'s inbox + archived email`
+                : `Delete ${name}'s inbox email`;
 
   const lead = presentation.previewCopy;
 
-  // What actually moves — only the label-modify verbs touch the inbox.
-  const moves = verb === 'archive' || verb === 'later' || verb === 'delete';
   const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
   const confirmDisabled = confirming || previewBlocked;
 
@@ -167,7 +213,7 @@ export function DecidePreview({
           color: verb === 'delete' ? color.red : color.primary,
         }}
       >
-        Preview · before anything changes
+        {previewEyebrowLabel(VERB_LABEL[verb])}
       </span>
 
       <MailboxActionContext mailboxEmail={mailboxEmail} />
@@ -310,7 +356,28 @@ export function DecidePreview({
       {/* Engine recap — why the engine queued this sender. */}
       {row.recommendation != null && (
         <div style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
-          <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this: </span>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: 8,
+            }}
+          >
+            <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this:</span>
+            {ageLabel !== null && (
+              <span
+                style={{
+                  fontFamily: font.mono,
+                  fontSize: 9.5,
+                  color: color.fgMuted,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {ageLabel}
+              </span>
+            )}
+          </div>
           {row.recommendation.reasoning}
         </div>
       )}

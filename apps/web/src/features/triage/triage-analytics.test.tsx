@@ -234,7 +234,7 @@ describe('triage_action_taken (D159)', () => {
 
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
-    await screen.findByText('Preview · before anything changes');
+    await screen.findByText('Preview · Archive');
     await screen.findByText(/emails in Inbox now/i);
     expect(actionTakenCalls()).toHaveLength(0);
 

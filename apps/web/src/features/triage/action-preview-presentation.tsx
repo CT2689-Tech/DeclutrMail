@@ -1,6 +1,7 @@
 import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import type { CSSProperties, ReactNode } from 'react';
 
 import { useNow } from '@/lib/use-now';
@@ -186,7 +187,7 @@ export function ActionPreviewPresentation({
               color: color.primary,
             }}
           >
-            Preview · before anything changes
+            {previewEyebrowLabel(verb)}
           </span>
         </div>
       )}
