@@ -66,7 +66,9 @@
  */
 
 import { execFile } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
+import { anthropicCostUsd, finiteNumber, makeSnapshot } from './infra-observability.mjs';
 
 // One slow vendor must not hang the run — every external call (HTTP
 // fetch or child process) gets this timeout.
@@ -169,7 +171,13 @@ async function checkSupabaseDbSize() {
   const stdout = await new Promise((resolve, reject) => {
     execFile(
       'psql',
-      [dsn, '-At', '--quiet', '-c', 'SELECT pg_database_size(current_database());'],
+      [
+        dsn,
+        '-At',
+        '--quiet',
+        '-c',
+        "SELECT json_build_object('database_bytes', pg_database_size(current_database()), 'connections', (SELECT count(*) FROM pg_stat_activity), 'max_connections', current_setting('max_connections')::int);",
+      ],
       { timeout: TIMEOUT_MS },
       (err, out, stderr) => {
         if (err) {
@@ -186,11 +194,19 @@ async function checkSupabaseDbSize() {
       },
     );
   });
-  const mb = Number(stdout.trim()) / (1024 * 1024);
+  const stats = JSON.parse(stdout.trim());
+  const mb = finiteNumber(stats.database_bytes, 'database size') / (1024 * 1024);
+  const connections = finiteNumber(stats.connections, 'database connections');
+  const maxConnections = finiteNumber(stats.max_connections, 'maximum connections');
   if (!Number.isFinite(mb)) throw new Error('psql returned a non-numeric DB size');
   return {
     ...gauge(mb, warnMb),
     detail: `DB size ${mb.toFixed(1)} MB (warn ${warnMb} MB)`,
+    usage: {
+      database_mb: mb,
+      database_connections: connections,
+      database_max_connections: maxConnections,
+    },
   };
 }
 
@@ -280,13 +296,18 @@ async function checkUpstash() {
   // spend-so-far is green early in the month by construction — day 5 of a
   // $30 budget at $8 reads 27% while the run-rate says $48 by month end.
   const budget = Number(db.budget ?? 0);
-  const monthCost = Number(stats.total_monthly_billing);
+  const monthCost = stats.total_monthly_billing == null ? NaN : Number(stats.total_monthly_billing);
   if (!(budget > 0) || !Number.isFinite(monthCost)) {
     // Fixed/pro plans carry no spend cap to breach, and a plan that does
     // not report billing cannot be gauged on it — say which, and fall
     // back to volume rather than inventing a verdict.
     const why = budget > 0 ? 'no billing reported' : `no spend cap (type=${db.type ?? 'unknown'})`;
-    return { ...volume, detail: `${db.database_name}: ${volume.detail}, ${why}` };
+    return {
+      ...volume,
+      costMtdUsd: Number.isFinite(monthCost) ? monthCost : null,
+      usage: { commands_today: cmds, storage_mb: storageMb },
+      detail: `${db.database_name}: ${volume.detail}, ${why}`,
+    };
   }
   const projected = monthCost / monthElapsedFraction();
   // Deliberately NOT `gauge()`. Its BREACH tier is 2x the warn threshold,
@@ -336,6 +357,13 @@ async function checkUpstash() {
   return {
     status: worst.status,
     usagePct: worst.usagePct,
+    costMtdUsd: monthCost,
+    usage: {
+      commands_today: cmds,
+      storage_mb: storageMb,
+      budget_usd: budget,
+      projected_month_usd: projected,
+    },
     detail:
       `${db.database_name}: $${monthCost.toFixed(2)} spent this month, ` +
       `projecting $${projected.toFixed(2)} against a $${budget.toFixed(2)} cap` +
@@ -343,7 +371,7 @@ async function checkUpstash() {
   };
 }
 
-async function checkAnthropic() {
+export async function checkAnthropic() {
   // Cost API: GET /v1/organizations/cost_report, daily buckets only
   // (bucket_width=1d), max 31 buckets/page — a full month-to-date fits in
   // one page without group_by, so has_more should always be false; if it
@@ -363,19 +391,15 @@ async function checkAnthropic() {
   if (res.has_more) {
     throw new Error('cost_report has_more=true — one page cannot cover the full month');
   }
-  let usd = 0;
-  for (const bucket of res.data ?? []) {
-    for (const r of bucket.results ?? []) {
-      usd += Number(r.amount) || 0;
-    }
-  }
+  const usd = anthropicCostUsd(res);
   return {
     ...gauge(usd, warnUsd),
-    detail: `MTD cost $${usd.toFixed(2)} (warn $${warnUsd}) across 3 key slots (see secrets-inventory.md)`,
+    costMtdUsd: usd,
+    detail: `MTD cost $${usd.toFixed(2)} (warn $${warnUsd})`,
   };
 }
 
-async function checkVercel() {
+export async function checkVercel() {
   const warnUsd = envNum('VERCEL_MTD_COST_WARN_USD', 20);
   const url = new URL('https://api.vercel.com/v1/billing/charges');
   url.searchParams.set('from', monthStartIso());
@@ -395,10 +419,13 @@ async function checkVercel() {
   let usd = 0;
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
-    usd += Number(JSON.parse(line).BilledCost) || 0;
+    const row = JSON.parse(line);
+    if (row.BillingCurrency !== 'USD') throw new Error('Unexpected Vercel billing currency');
+    usd += finiteNumber(row.BilledCost, 'Vercel BilledCost');
   }
   return {
     ...gauge(usd, warnUsd),
+    costMtdUsd: usd,
     detail: `MTD billed $${usd.toFixed(2)} (warn $${warnUsd})`,
   };
 }
@@ -458,6 +485,7 @@ async function checkSentry() {
   return {
     status: lost > 0 && volume.status === 'OK' ? 'WARN' : volume.status,
     usagePct: volume.usagePct,
+    usage: { accepted_errors_24h: accepted, discarded_errors_24h: lost },
     detail: `${fmtInt(accepted)} accepted errors last 24h (warn ${fmtInt(warnDaily)})${lostNote}`,
   };
 }
@@ -489,9 +517,10 @@ async function checkPosthog() {
       },
     }),
   });
-  const events = Number(res.results?.[0]?.[0]) || 0;
+  const events = finiteNumber(res.results?.[0]?.[0], 'PostHog events');
   return {
     ...gauge(events, warnEvents),
+    usage: { events_mtd: events },
     detail: `no quota limits hit; MTD events ${fmtInt(events)} (warn ${fmtInt(warnEvents)})`,
   };
 }
@@ -600,6 +629,8 @@ async function checkGithubActions() {
     netUsd > 0 ? `of ${fmtInt(included)} included` : '— public repo, standard runners bill $0';
   return {
     status,
+    costMtdUsd: netUsd,
+    usage: { actions_minutes_mtd: minutes },
     // No usagePct: the ratio is meaningless here and renders as a false
     // near-breach percentage in the table.
     detail: `${fmtInt(minutes)} Actions min MTD ${framing}; net spend $${netUsd.toFixed(2)}`,
@@ -745,6 +776,13 @@ async function main() {
   // timeout, so worst case is bounded by the slowest single vendor.
   const results = await Promise.all(VENDORS.map(runVendor));
 
+  if (process.env.INFRA_SNAPSHOT_PATH) {
+    writeFileSync(
+      process.env.INFRA_SNAPSHOT_PATH,
+      JSON.stringify(makeSnapshot(results), null, 2) + '\n',
+      { mode: 0o600 },
+    );
+  }
   const table = toMarkdown(results);
   console.log(table);
   if (process.env.GITHUB_STEP_SUMMARY) {
@@ -764,4 +802,4 @@ async function main() {
   }
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

@@ -1,5 +1,8 @@
 import 'reflect-metadata';
 
+import { writeWorkerHeartbeat } from '@declutrmail/workers';
+import { buildGmailReconnectEmailHandler } from './notifications/gmail-reconnect-email.trigger.js';
+
 import { createHash } from 'node:crypto';
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -1369,6 +1372,21 @@ async function bootstrap(): Promise<void> {
   // Don't keep the process alive solely on the reconciler tick; the
   // BullMQ worker is the foreground loop.
   reconcilerHandle.unref();
+
+  let heartbeatInFlight: Promise<void> | null = null;
+  function heartbeatTick(): void {
+    if (shuttingDown || !bootstrapComplete || heartbeatInFlight) return;
+    heartbeatInFlight = writeWorkerHeartbeat(db)
+      .catch(() => {
+        console.error(JSON.stringify({ level: 'error', kind: 'worker.heartbeat_failed' }));
+      })
+      .finally(() => {
+        heartbeatInFlight = null;
+      });
+  }
+  heartbeatTick();
+  const heartbeatHandle = setInterval(heartbeatTick, 60_000);
+  heartbeatHandle.unref();
 
   /**
    * Stuck-mailbox watchdog. Two production incidents (2026-09-04/05,
@@ -2806,6 +2824,11 @@ async function bootstrap(): Promise<void> {
         apiUrl: process.env.API_URL ?? 'http://localhost:4000',
       }),
       // D162/D224 — terminal-failure notice; per-mailbox-per-day dedup.
+      onMailboxReconnectRequired: buildGmailReconnectEmailHandler({
+        db,
+        emailQueue: emailSendQueue,
+        appUrl: process.env.WEB_URL ?? 'http://localhost:3000',
+      }),
       onMailboxSyncFailed: buildSyncFailedEmailHandler({
         db,
         emailQueue: emailSendQueue,
@@ -2848,6 +2871,7 @@ async function bootstrap(): Promise<void> {
     shuttingDown = true;
     clearInterval(reconcilerHandle);
     clearInterval(stuckMailboxHandle);
+    clearInterval(heartbeatHandle);
     clearInterval(briefSchedulerHandle);
     clearInterval(undoExpirySchedulerHandle);
     clearInterval(sendersCounterReconciliationSchedulerHandle);
@@ -2870,6 +2894,8 @@ async function bootstrap(): Promise<void> {
     clearInterval(billingReconcileHandle);
     clearInterval(webhookDedupSweepHandle);
     void (async () => {
+      if (heartbeatInFlight) await heartbeatInFlight;
+      if (stuckMailboxInFlight) await stuckMailboxInFlight;
       if (inFlight) {
         await inFlight;
       }
@@ -2957,6 +2983,7 @@ async function bootstrap(): Promise<void> {
   // is listening + the outbox dispatcher is wired. Probes before this
   // point return 503 so a half-booted revision isn't routed traffic.
   bootstrapComplete = true;
+  heartbeatTick();
 }
 
 // Boot-time errors (bad `DATABASE_URL`, Redis TLS failure, KMS

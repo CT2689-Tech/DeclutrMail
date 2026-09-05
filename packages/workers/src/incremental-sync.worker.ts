@@ -1,3 +1,5 @@
+import { MailboxReconnectRequiredPayloadSchema, TOPICS } from '@declutrmail/events';
+import { OutboxPublisher } from './outbox-publisher.js';
 import {
   deriveSenderId,
   mailboxAccounts,
@@ -327,14 +329,56 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) return;
     const errorCode = error.name || 'UnknownError';
-    await this.deps.db
-      .update(providerSyncState)
-      .set({
-        lastIncrementalErrorAt: new Date(),
-        lastIncrementalErrorCode: errorCode,
-        updatedAt: new Date(),
-      })
-      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    await this.deps.db.transaction(async (tx) => {
+      const [state] = await tx
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .for('update');
+      if (!state) return;
+      const alreadyAwaiting =
+        state.lastIncrementalErrorCode === 'InvalidGrantError' &&
+        state.lastIncrementalErrorAt !== null &&
+        (state.lastSyncedAt === null || state.lastIncrementalErrorAt > state.lastSyncedAt);
+      // Duplicate terminal callbacks must not shift the incident timestamp or notify twice.
+      if (alreadyAwaiting) return;
+      const unresolved =
+        state.lastIncrementalErrorAt !== null &&
+        (state.lastSyncedAt === null || state.lastIncrementalErrorAt > state.lastSyncedAt);
+      // Preserve the start of a retryable outage so repeated attempts cannot reset the watchdog grace window.
+      const failedAt =
+        errorCode !== 'InvalidGrantError' && unresolved
+          ? state.lastIncrementalErrorAt!
+          : new Date();
+      await tx
+        .update(providerSyncState)
+        .set({
+          lastIncrementalErrorAt: failedAt,
+          lastIncrementalErrorCode: errorCode,
+          updatedAt: failedAt,
+        })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+      if (errorCode === 'InvalidGrantError') {
+        const [account] = await tx
+          .select({ workspaceId: mailboxAccounts.workspaceId })
+          .from(mailboxAccounts)
+          .where(
+            and(eq(mailboxAccounts.id, mailboxAccountId), eq(mailboxAccounts.status, 'active')),
+          );
+        if (account)
+          await new OutboxPublisher().publish(tx, {
+            topic: TOPICS.MAILBOX_RECONNECT_REQUIRED,
+            aggregateId: mailboxAccountId,
+            schema: MailboxReconnectRequiredPayloadSchema,
+            payload: {
+              mailboxAccountId,
+              workspaceId: account.workspaceId,
+              failedAt: failedAt.toISOString(),
+              errorCode,
+            },
+          });
+      }
+    });
     console.error(
       JSON.stringify({
         level: 'error',

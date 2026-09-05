@@ -109,6 +109,8 @@ export const TOPICS = {
    * 'failed'). Consumers: sync-failed email trigger (D162).
    */
   MAILBOX_SYNC_FAILED: 'mailbox.sync_failed',
+  /** A previously connected mailbox now needs owner reauthorization. */
+  MAILBOX_RECONNECT_REQUIRED: 'mailbox.reconnect_required',
 
   /**
    * Mailbox was deleted (D232 hard-delete path completed). Consumers:

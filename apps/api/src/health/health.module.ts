@@ -1,3 +1,4 @@
+import { WorkerReadinessController } from './worker-readiness.controller.js';
 import { Module } from '@nestjs/common';
 
 import { HealthController } from './health.controller.js';
@@ -10,7 +11,7 @@ import { READINESS_REDIS_PROVIDER } from './readiness-redis.provider.js';
  * is dependency readiness (503s on a real outage, drives alerting).
  */
 @Module({
-  controllers: [HealthController, ReadinessController],
+  controllers: [HealthController, ReadinessController, WorkerReadinessController],
   providers: [READINESS_REDIS_PROVIDER],
 })
 export class HealthModule {}

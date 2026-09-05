@@ -70,6 +70,7 @@ export function buildSyncFailedEmailHandler(
 
     const rendered = await syncFailedEmail({
       mailboxEmail: mailbox.mailboxEmail,
+      mailboxAccountId: payload.mailboxAccountId,
       appUrl,
     });
     await enqueueEmailSend(deps.emailQueue, {

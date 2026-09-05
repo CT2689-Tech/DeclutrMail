@@ -308,6 +308,10 @@ export const MailboxSyncFailedPayloadSchema = z
   .strict();
 export type MailboxSyncFailedPayload = z.infer<typeof MailboxSyncFailedPayloadSchema>;
 
+/** Same safe identifiers, distinct lifecycle event from initial scan failure. */
+export const MailboxReconnectRequiredPayloadSchema = MailboxSyncFailedPayloadSchema;
+export type MailboxReconnectRequiredPayload = z.infer<typeof MailboxReconnectRequiredPayloadSchema>;
+
 // ──────────────────────────────────────────────────────────────────────
 // mailbox.deleted
 // ──────────────────────────────────────────────────────────────────────
@@ -449,6 +453,7 @@ export const EVENT_SCHEMAS = {
   [TOPICS.FOLLOWUP_DISMISSED]: FollowupDismissedPayloadSchema,
   [TOPICS.MAILBOX_SYNC_READY]: MailboxSyncReadyPayloadSchema,
   [TOPICS.MAILBOX_SYNC_FAILED]: MailboxSyncFailedPayloadSchema,
+  [TOPICS.MAILBOX_RECONNECT_REQUIRED]: MailboxReconnectRequiredPayloadSchema,
   [TOPICS.MAILBOX_DELETED]: MailboxDeletedPayloadSchema,
   [TOPICS.ACTIONS_UNSUBSCRIBE_INTENT_RECORDED]: ActionsUnsubscribeIntentRecordedPayloadSchema,
   [TOPICS.ACTIONS_UNSUBSCRIBE_EXECUTED]: ActionsUnsubscribeExecutedPayloadSchema,
