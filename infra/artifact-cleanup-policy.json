@@ -1,0 +1,17 @@
+[
+  {
+    "name": "old-builds",
+    "action": { "type": "Delete" },
+    "condition": { "tagState": "any", "packageNamePrefixes": ["api"], "olderThan": "30d" }
+  },
+  {
+    "name": "recent-rollbacks",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": { "packageNamePrefixes": ["api"], "keepCount": 20 }
+  },
+  {
+    "name": "serving-images",
+    "action": { "type": "Keep" },
+    "condition": { "tagState": "tagged", "tagPrefixes": ["retain-"] }
+  }
+]

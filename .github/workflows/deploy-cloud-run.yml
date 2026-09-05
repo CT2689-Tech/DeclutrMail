@@ -496,3 +496,7 @@ jobs:
             --format="value(status.conditions[0].status)")
           echo "Worker revision $REVISION status: $STATUS"
           test "$STATUS" = "True" || (echo "Worker revision NOT Ready" && exit 1)
+
+      - name: Protect serving images from registry cleanup
+        if: always() && steps.build.outcome == 'success'
+        run: node scripts/pin-production-images.mjs
