@@ -203,6 +203,9 @@ export const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'UnsupportedMediaTypeException',
 ]);
 const SENTRY_EXCEPTION_TYPES = new Set([
+  // The browser API client uses this fixed class name. Without a type or
+  // message, Sentry drops the exception entirely, including its safe frames.
+  'ApiError',
   'Error',
   'TypeError',
   'ReferenceError',
@@ -622,6 +625,8 @@ export function scrubSentryEvent(
     const out: Record<string, unknown> = {};
 
     const eventId = copyString(event.event_id, SAFE_EVENT_ID, 32);
+    // Sentry needs this closed runtime discriminator for JavaScript symbolication.
+    if (event.platform === 'javascript' || event.platform === 'node') out.platform = event.platform;
     if (eventId !== undefined) out.event_id = eventId;
     const timestamp = copyFiniteNumber(event.timestamp);
     if (timestamp !== undefined) out.timestamp = timestamp;
