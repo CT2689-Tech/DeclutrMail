@@ -27,6 +27,7 @@ const REDACTED = __testing.REDACTED;
 
 it('keeps browser ApiError identity so Sentry retains its exception and stack', () => {
   const result = scrubSentryEvent({
+    platform: 'javascript',
     exception: {
       values: [
         {
@@ -46,10 +47,12 @@ it('keeps browser ApiError identity so Sentry retains its exception and stack', 
       ],
     },
   });
-  expect(result.exception).toMatchObject({
+  expect(result?.exception).toMatchObject({
     values: [{ type: 'ApiError', stacktrace: { frames: [{ lineno: 1, colno: 6855 }] } }],
   });
   expect(JSON.stringify(result)).not.toContain('private provider response');
+  expect(result?.platform).toBe('javascript');
+  expect(scrubSentryEvent({ platform: 'private provider response' })?.platform).toBeUndefined();
 });
 
 // A realistic Gmail message-ish payload — exactly the kind of thing

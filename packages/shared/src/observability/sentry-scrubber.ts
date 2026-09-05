@@ -625,6 +625,8 @@ export function scrubSentryEvent(
     const out: Record<string, unknown> = {};
 
     const eventId = copyString(event.event_id, SAFE_EVENT_ID, 32);
+    // Sentry needs this closed runtime discriminator for JavaScript symbolication.
+    if (event.platform === 'javascript' || event.platform === 'node') out.platform = event.platform;
     if (eventId !== undefined) out.event_id = eventId;
     const timestamp = copyFiniteNumber(event.timestamp);
     if (timestamp !== undefined) out.timestamp = timestamp;

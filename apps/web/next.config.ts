@@ -129,6 +129,10 @@ export default withSentryConfig(nextConfig, {
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
 
+  // API/query helpers live in shared chunks outside app/ and pages/. Upload
+  // those maps too; otherwise their debug IDs exist but cannot be resolved.
+  widenClientFileUpload: true,
+
   // Quiet build output unless we're debugging the plugin itself.
   silent: !process.env.SENTRY_DEBUG,
 
