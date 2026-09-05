@@ -68,7 +68,8 @@ export function infrastructurePolicies({ runtime = false } = {}) {
 
   const requests =
     'run_googleapis_com:request_count{monitored_resource="cloud_run_revision",service_name="declutrmail-api"}';
-  const errors = requests.replace('}', ',response_code_class="5xx"}');
+  const errors =
+    'run_googleapis_com:request_count{monitored_resource="cloud_run_revision",service_name="declutrmail-api",response_code_class="5xx"}';
   policies.push({
     displayName: 'DeclutrMail API sustained server errors',
     documentation: documentation(
