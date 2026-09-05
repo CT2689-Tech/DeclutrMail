@@ -101,7 +101,7 @@ export async function checkGcpBillingExport(table, project = 'declutrmail-ai-pro
       `https://bigquery.googleapis.com/bigquery/v2/projects/${project}/queries/${ref.jobId}?location=US&pageToken=${encodeURIComponent(result.pageToken)}`,
       token,
     );
-  } while (nextPage);
+  } while (true);
   // BigQuery TIMESTAMP JSON values are Unix seconds.
   rows.forEach(
     (r) =>
