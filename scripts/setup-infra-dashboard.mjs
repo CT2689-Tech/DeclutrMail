@@ -1,5 +1,6 @@
 /** Idempotently provision the private operations dashboard and its metric descriptors. */
 import { pathToFileURL } from 'node:url';
+import { loadInvoiceHistory } from './infra-invoice-history.mjs';
 import { PREFIX, METRICS, gcpToken, gcpRequest } from './infra-observability.mjs';
 
 const TITLE = 'DeclutrMail — infrastructure, cost and recovery';
@@ -57,7 +58,7 @@ export function dashboard(project) {
           text: {
             format: 'MARKDOWN',
             content:
-              '**Engineering:** inspect sync errors, queue age, deployment health; repair code; verify release.\n\n**Founder/access:** Anthropic admin credential; Resend delivery-read access and business postal address; billing export/invoices for GCP, Supabase, Sentry, PostHog, Resend and Workspace/domain fees; OAuth/account reconnection and alert receipt.\n\nVendor status: **0 OK · 1 warning · 2 breach · 3 read error · 4 unconfigured**. Status measures the vendor check, not application uptime.\n\n[Daily workflow](https://github.com/CT2689-Tech/DeclutrMail/actions/workflows/vendor-limits-watchdog.yml) · [Incidents](https://console.cloud.google.com/monitoring/alerting?project=' +
+              '**Engineering:** inspect sync errors, queue age, deployment health; repair code; verify release.\n\n**Founder/access:** Anthropic admin credential; Resend delivery-read access and business postal address; remaining invoices for Sentry, PostHog, Resend and Workspace/domain fees. GCP detailed export is enabled and awaiting its first table; GCP statements plus Supabase, Vercel and Upstash receipts are imported; OAuth/account reconnection and alert receipt.\n\nVendor status: **0 OK · 1 warning · 2 breach · 3 read error · 4 unconfigured**. Status measures the vendor check, not application uptime.\n\n[Daily workflow](https://github.com/CT2689-Tech/DeclutrMail/actions/workflows/vendor-limits-watchdog.yml) · [Incidents](https://console.cloud.google.com/monitoring/alerting?project=' +
               project +
               ') · [Billing](https://console.cloud.google.com/billing?project=' +
               project +
@@ -73,6 +74,16 @@ export function dashboard(project) {
         custom(
           'Daily collector heartbeat — absent points mean no collection',
           'collector_completed',
+        ),
+        resource('Google Cloud gross usage charges — MTD USD', 'gcp_gross_mtd_usd'),
+        resource('Google Cloud credits — MTD USD', 'gcp_credits_mtd_usd'),
+        resource('Google Cloud billing export age — hours', 'billing_export_age_hours'),
+        ...['cloud_run', 'artifact_registry', 'storage', 'logging', 'pubsub', 'bigquery'].map(
+          (service) =>
+            resource(
+              `Google Cloud ${service.replaceAll('_', ' ')} — MTD USD after credits`,
+              `gcp_${service}_mtd_usd`,
+            ),
         ),
         resource('Redis commands — current vendor day, daily sample', 'commands_today'),
         resource('Redis storage — MB, daily sample', 'storage_mb'),
@@ -252,6 +263,19 @@ export async function setup(project) {
   if (matches.length > 1) throw new Error('Duplicate dashboard names; resolve before updating');
   const prior = matches[0];
   const definition = dashboard(project);
+  if (process.env.INFRA_INVOICE_LEDGER_PATH) {
+    definition.gridLayout.widgets.splice(
+      2,
+      0,
+      loadInvoiceHistory(process.env.INFRA_INVOICE_LEDGER_PATH),
+    );
+  } else {
+    // Preserve privately imported history during routine dashboard updates.
+    const history = prior?.gridLayout?.widgets?.find(
+      (w) => w.title === 'Historical invoices and statements — verified USD charges',
+    );
+    if (history) definition.gridLayout.widgets.splice(2, 0, history);
+  }
   const result = prior
     ? await gcpRequest(`https://monitoring.googleapis.com/v1/${prior.name}`, token, 'PATCH', {
         ...definition,

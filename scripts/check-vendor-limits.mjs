@@ -65,6 +65,7 @@
  * (or WARN with WARN_IS_FAILURE=true).
  */
 
+import { checkGcpBillingExport } from './gcp-billing-export.mjs';
 import { execFile } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -640,6 +641,11 @@ async function checkGithubActions() {
 // -------------------------------------------------------------- registry
 
 const VENDORS = [
+  {
+    name: 'Google Cloud (project charges)',
+    requires: ['GOOGLE_APPLICATION_CREDENTIALS', 'GCP_BILLING_EXPORT_TABLE'],
+    check: () => checkGcpBillingExport(process.env.GCP_BILLING_EXPORT_TABLE),
+  },
   { name: 'Supabase (DB size)', requires: ['SUPABASE_SESSION_DSN'], check: checkSupabaseDbSize },
   {
     name: 'Google Cloud (budgets)',

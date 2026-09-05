@@ -80,6 +80,7 @@ jobs:
           # sync-stuck watchdog + Atlas migrations).
           SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
           # Cred-gated checks — add the secret to activate each one.
+          GCP_BILLING_EXPORT_TABLE: ${{ vars.GCP_BILLING_EXPORT_TABLE }}
           GCP_BILLING_ACCOUNT_ID: ${{ secrets.GCP_BILLING_ACCOUNT_ID }}
           UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
