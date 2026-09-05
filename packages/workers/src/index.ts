@@ -22,6 +22,12 @@ export {
   isAwaitingReconnect,
   notNeedingReconnect,
 } from './mailbox-reconnect.js';
+export {
+  findStuckMailboxes,
+  STUCK_MAILBOX_GRACE_MS,
+  type StuckMailbox,
+  type StuckMailboxReason,
+} from './stuck-mailbox-watchdog.js';
 export { WORKER_POLICIES } from './worker-policies.js';
 export type {
   ConcurrencyScope,
