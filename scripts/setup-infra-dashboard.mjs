@@ -10,6 +10,8 @@ function chart(
   extra = '',
   aligner = 'ALIGN_MEAN',
   period = '86400s',
+  reducer,
+  groupByFields = [],
 ) {
   return {
     title,
@@ -19,7 +21,11 @@ function chart(
           timeSeriesQuery: {
             timeSeriesFilter: {
               filter: `metric.type="${type}" AND resource.type="${resource}"${extra ? ' AND ' + extra : ''}`,
-              aggregation: { alignmentPeriod: period, perSeriesAligner: aligner },
+              aggregation: {
+                alignmentPeriod: period,
+                perSeriesAligner: aligner,
+                ...(reducer ? { crossSeriesReducer: reducer, groupByFields } : {}),
+              },
             },
           },
           plotType: 'LINE',
@@ -33,7 +39,7 @@ function chart(
 export function dashboard(project) {
   const custom = (title, metric, extra = '') => chart(title, PREFIX + metric, 'global', extra);
   const resource = (title, measure) => custom(title, 'usage', `metric.labels.measure="${measure}"`);
-  return {
+  const definition = {
     displayName: TITLE,
     gridLayout: {
       columns: '2',
@@ -43,7 +49,7 @@ export function dashboard(project) {
           text: {
             format: 'MARKDOWN',
             content:
-              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost coverage = 1 measured / 0 unavailable.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently.',
+              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. **Use admin@declutrmail.ai for project access.** Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost coverage = 1 measured / 0 unavailable.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently. Database connection panels require the new collector release; until its first successful run, blank means unavailable. The daily publisher is in PR #726; the local scheduled bridge supplies existing CI observations meanwhile.',
           },
         },
         {
@@ -84,44 +90,64 @@ export function dashboard(project) {
           '',
           'ALIGN_FRACTION_TRUE',
           '300s',
+          'REDUCE_MEAN',
+          ['metric.label.check_id'],
         ),
         chart(
-          'Cloud Run CPU utilization — p95',
+          'Cloud Run CPU — worst revision p95 by service',
           'run.googleapis.com/container/cpu/utilizations',
           'cloud_run_revision',
           '',
           'ALIGN_PERCENTILE_95',
           '300s',
+          'REDUCE_MAX',
+          ['resource.label.service_name'],
         ),
         chart(
-          'Cloud Run memory utilization — p95',
+          'Cloud Run memory — worst revision p95 by service',
           'run.googleapis.com/container/memory/utilizations',
           'cloud_run_revision',
           '',
           'ALIGN_PERCENTILE_95',
           '300s',
+          'REDUCE_MAX',
+          ['resource.label.service_name'],
         ),
         chart(
-          'Cloud Run instances — API and worker',
+          'Cloud Run instances — summed by service and state',
           'run.googleapis.com/container/instance_count',
           'cloud_run_revision',
           '',
-          'ALIGN_MAX',
-          '300s',
+          'ALIGN_MEAN',
+          '60s',
+          'REDUCE_SUM',
+          ['resource.label.service_name', 'metric.label.state'],
         ),
         chart(
-          'API latency — p95 milliseconds',
+          'API requests per second — by response class',
+          'run.googleapis.com/request_count',
+          'cloud_run_revision',
+          'resource.labels.service_name="declutrmail-api"',
+          'ALIGN_RATE',
+          '300s',
+          'REDUCE_SUM',
+          ['metric.label.response_code_class'],
+        ),
+        chart(
+          'API latency — worst revision/status p95',
           'run.googleapis.com/request_latencies',
           'cloud_run_revision',
           'resource.labels.service_name="declutrmail-api"',
           'ALIGN_PERCENTILE_95',
           '300s',
+          'REDUCE_MAX',
+          ['resource.label.service_name'],
         ),
         chart(
           'Gmail push — oldest unacknowledged message age (seconds)',
           'pubsub.googleapis.com/subscription/oldest_unacked_message_age',
           'pubsub_subscription',
-          '',
+          'resource.labels.subscription_id="gmail-push-sub"',
           'ALIGN_MAX',
           '300s',
         ),
@@ -129,7 +155,7 @@ export function dashboard(project) {
           'Gmail push — undelivered messages',
           'pubsub.googleapis.com/subscription/num_undelivered_messages',
           'pubsub_subscription',
-          '',
+          'resource.labels.subscription_id="gmail-push-sub"',
           'ALIGN_MAX',
           '300s',
         ),
@@ -152,6 +178,18 @@ export function dashboard(project) {
       ],
     },
   };
+  // Put customer-impact signals ahead of daily vendor accounting.
+  const widgets = definition.gridLayout.widgets;
+  const operational = (w) =>
+    Boolean(w.logsPanel) ||
+    w.xyChart?.dataSets[0].timeSeriesQuery.timeSeriesFilter.filter.includes(PREFIX) === false;
+  definition.gridLayout.widgets = [
+    widgets[0],
+    widgets[1],
+    ...widgets.slice(2).filter(operational),
+    ...widgets.slice(2).filter((w) => !operational(w)),
+  ];
+  return definition;
 }
 export async function setup(project) {
   const token = gcpToken();
