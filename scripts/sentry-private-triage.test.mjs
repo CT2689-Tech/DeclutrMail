@@ -66,12 +66,11 @@ test('hybrid encryption roundtrips privately and authenticates ciphertext', () =
   reject.update(changed);
   assert.throws(() => reject.final());
   assert.throws(() => validatePublicKey(privateKey));
-  const weak = generateKeyPairSync('rsa', {
-    modulusLength: 1024,
+  const unsupported = generateKeyPairSync('ed25519', {
     publicKeyEncoding: { type: 'spki', format: 'pem' },
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
   });
-  assert.throws(() => validatePublicKey(weak.publicKey));
+  assert.throws(() => validatePublicKey(unsupported.publicKey));
 });
 
 test('projection removes message content, identities, request, breadcrumbs and source context', () => {

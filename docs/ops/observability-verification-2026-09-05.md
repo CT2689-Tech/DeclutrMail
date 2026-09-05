@@ -27,8 +27,8 @@
 ## Still required
 
 - Complete the outstanding real account reconnect and transactional email smoke; the owner completes Google consent. Then merge/release PR #726 and verify production revision, heartbeat, collector logs, metric freshness and the exact authenticated dashboard URL.
-- Isolated admin alert trigger/recovery and inbox receipt verification. Gmail connector requires reauthentication; no test notification has been sent yet.
-- Sentry recent-issue triage requires read scopes. `sentry-read-token` was not present when checked; the existing build token cannot read issues.
+- The isolated admin alert condition opened at 21:12:36 UTC and cleared at 21:15:30 UTC after healthy samples. Its temporary policy and metric were deleted. Email notification was requested through the existing admin channel, but inbox receipt remains unverified because the Gmail connector requires reauthentication. The first attempt was cleaned up after an unsupported incident-list ordering parameter; the corrected read used the bare alerts endpoint.
+- Sentry access is now verified through the existing GitHub watchdog credential. Sentry-only run 33992120426 succeeded and skipped vendor collection. Its encrypted report contains six unresolved issues from the seven-day search: four latest events in production and two in development. Counts are lifetime issue totals, not seven-day volume. The lapse-worker failure matches the fix already merged in PR #724; the repaired query also passed with the actual PostgreSQL driver in a read-only transaction. Older browser events still require source-map/current-release verification before declaring them fixed. No new token or GCP secret is required.
 - GCP billing export table exists but its last bounded check had no current-month rows. Cost availability remains unverified until real rows are read and published. Daily vendor snapshots and historical invoices must retain their source timestamps and coverage labels.
 
 See `docs/ops/observability-alerts.md` for staged activation and alert rehearsal. This report is not a launch-ready sign-off.
