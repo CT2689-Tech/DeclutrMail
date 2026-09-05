@@ -203,6 +203,9 @@ export const SENTRY_SERVER_EXCEPTION_TYPES = new Set([
   'UnsupportedMediaTypeException',
 ]);
 const SENTRY_EXCEPTION_TYPES = new Set([
+  // The browser API client uses this fixed class name. Without a type or
+  // message, Sentry drops the exception entirely, including its safe frames.
+  'ApiError',
   'Error',
   'TypeError',
   'ReferenceError',

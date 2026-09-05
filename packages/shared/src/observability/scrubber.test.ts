@@ -25,6 +25,33 @@ import {
 
 const REDACTED = __testing.REDACTED;
 
+it('keeps browser ApiError identity so Sentry retains its exception and stack', () => {
+  const result = scrubSentryEvent({
+    exception: {
+      values: [
+        {
+          type: 'ApiError',
+          value: 'private provider response',
+          stacktrace: {
+            frames: [
+              {
+                filename: 'https://preview.vercel.app/_next/static/chunks/page-3fb31dfbb5af4b3b.js',
+                lineno: 1,
+                colno: 6855,
+                in_app: true,
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  expect(result.exception).toMatchObject({
+    values: [{ type: 'ApiError', stacktrace: { frames: [{ lineno: 1, colno: 6855 }] } }],
+  });
+  expect(JSON.stringify(result)).not.toContain('private provider response');
+});
+
 // A realistic Gmail message-ish payload — exactly the kind of thing
 // that could leak into telemetry if a caller passes the wrong variable.
 function fullGmailMessage() {
