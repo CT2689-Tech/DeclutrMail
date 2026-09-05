@@ -14,7 +14,8 @@
 - 43 consent tests plus the real SDK transport test passed.
 - Real Chromium smoke in this checkout: delayed SDK import + withdrawal, later opt-in with a captured request at a local fake endpoint, then withdrawal and reload. No browser errors. Harness is `docs/eval/consent-browser-smoke.cjs`. Its local-only CSP/automation overrides permit the fake endpoint and prevent PostHog bot filtering from invalidating the positive control; no events were sent to the production analytics project.
 - Snooze/watch regression suites passed (35 tests); an additional missing-state watch regression passed in the updated 15-test watch suite.
-- 20 worker lifecycle tests and five operational telemetry tests passed, including durable PGlite queries, failure isolation and stalled-probe non-overlap. An isolated real Redis/BullMQ check verified waiting-job age and queue pause semantics.
+- 20 worker lifecycle tests and six operational telemetry tests passed, including durable PGlite queries, failure isolation and stalled-probe non-overlap. An isolated real Redis/BullMQ check verified waiting-job age and queue pause semantics.
+- A production-driver read-only smoke reproduced a new reconnect collector failure caused by a raw Date bind. After ISO conversion, mailbox, scheduler, database and reconnect collection all succeeded. A compiled-query bind-parameter regression covers the PGlite/postgres.js mismatch.
 - API and worker typechecks, changed-file ESLint, format and diff checks passed. Eight alert/metric contract tests passed.
 - Live GCP native metric descriptors, filters, aggregations and PromQL executed successfully. Snapshot: API p95 about 102 ms, memory fraction API 0.6895 / worker 0.3295, Pub/Sub oldest unacked 0 seconds; 61 API requests in the sampled five-minute window. These observations are not load-test or launch-capacity conclusions.
 

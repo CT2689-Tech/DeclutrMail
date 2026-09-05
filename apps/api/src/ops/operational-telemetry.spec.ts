@@ -9,10 +9,12 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { sql } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import {
   collectOperationalTelemetry,
   mailboxHealth,
   observeSyncAttempt,
+  reconnectObservationWindow,
   type OperationalQueue,
 } from './operational-telemetry.js';
 
@@ -32,6 +34,14 @@ const queue = (extra: Partial<OperationalQueue> = {}): OperationalQueue => ({
 });
 
 describe('operational telemetry', () => {
+  it('binds reconnect timestamps as ISO strings at the PostgreSQL query boundary', () => {
+    // PGlite accepts bare Dates that production postgres.js rejects. Inspect the
+    // actual compiled bind parameters, independently of PGlite's coercion.
+    const now = new Date('2026-09-05T21:00:00.000Z');
+    const query = new PgDialect().sqlToQuery(reconnectObservationWindow(now));
+    expect(query.params).toEqual([now.toISOString(), now.toISOString()]);
+    expect(query.params.some((value) => value instanceof Date)).toBe(false);
+  });
   it('bounds stalled queue readiness and never starts overlapping probes after timeout', async () => {
     const brokenDb = {
       transaction: async () => {

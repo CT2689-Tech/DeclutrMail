@@ -116,6 +116,11 @@ async function read<T>(db: Db, query: (tx: Db) => Promise<T>): Promise<T> {
   });
 }
 
+/** Raw SQL bindings need ISO strings: postgres.js rejects a bare Date here. */
+export function reconnectObservationWindow(now: Date) {
+  return sql`${outboxEvents.createdAt} >= ${now.toISOString()}::timestamptz - interval '24 hours' AND ${outboxEvents.createdAt} <= ${now.toISOString()}::timestamptz`;
+}
+
 export async function collectOperationalTelemetry(
   db: Db,
   queues: OperationalQueue[],
@@ -224,7 +229,7 @@ export async function collectOperationalTelemetry(
           .where(
             and(
               eq(outboxEvents.topic, 'mailbox.reconnect_required'),
-              sql`${outboxEvents.createdAt} >= ${now}::timestamptz - interval '24 hours' AND ${outboxEvents.createdAt} <= ${now}::timestamptz`,
+              reconnectObservationWindow(now),
             ),
           )
           .groupBy(outboxEvents.status);
