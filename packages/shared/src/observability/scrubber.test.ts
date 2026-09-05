@@ -1218,6 +1218,7 @@ describe('scrubSentryEvent — server request triage survives the wire (audit 20
       route: '/api/senders/:id/actions',
       response_status: '500',
       upstream_status: '502',
+      error_code: 'ECONNRESET',
     },
     exception: {
       values: [{ type: 'InternalServerErrorException', stacktrace: { frames: [] } }],
@@ -1248,7 +1249,17 @@ describe('scrubSentryEvent — server request triage survives the wire (audit 20
       route: '/api/senders/:id/actions',
       response_status: '500',
       upstream_status: '502',
+      error_code: 'ECONNRESET',
     });
+  });
+
+  it('keeps error codes server-only and rejects content-shaped values', () => {
+    expect(scrubSentryEvent(filterEvent(), 'browser')?.tags ?? {}).not.toHaveProperty('error_code');
+    for (const error_code of ['private.user@example.com', 'Failed to read private message']) {
+      expect(
+        scrubSentryEvent(filterEvent({ tags: { error_code } }), 'server')?.tags ?? {},
+      ).not.toHaveProperty('error_code');
+    }
   });
 
   // `route` is the one tag SAFE_SERVER_TAG cannot express — it excludes

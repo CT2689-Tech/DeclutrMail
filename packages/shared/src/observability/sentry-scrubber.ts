@@ -60,6 +60,9 @@ const SENTRY_SERVER_TAG_ALLOWLIST = new Set([
   'route',
   'response_status',
   'upstream_status',
+  // AllExceptionsFilter supplies only recognized application/runtime codes.
+  // Preserve them so DB/network failures can be distinguished without messages.
+  'error_code',
   // Worker shutdown signal (`SIGTERM`/`SIGINT`) and queue name.
   'signal',
   'queue',
