@@ -109,6 +109,7 @@ import {
   WEEKLY_VALUE_RECEIPT_QUEUE,
   WeeklyValueReceiptWorker,
   workerTuningOptions,
+  findStuckMailboxes,
 } from '@declutrmail/workers';
 import type {
   ActionRecoveryJobData,
@@ -1368,6 +1369,99 @@ async function bootstrap(): Promise<void> {
   // Don't keep the process alive solely on the reconciler tick; the
   // BullMQ worker is the foreground loop.
   reconcilerHandle.unref();
+
+  /**
+   * Stuck-mailbox watchdog. Two production incidents (2026-09-04/05,
+   * found by manual error review, not by any alert) share one shape: a
+   * mailbox goes silently broken and nobody — not the user, not the
+   * founder — finds out until someone happens to look. This sweep is
+   * the general form of that detection, independent of which error
+   * code caused it — `findStuckMailboxes` covers the two shapes shipped
+   * so far (a permanently-`failed` initial sync; a revoked grant with
+   * `readiness_status` still reading `'ready'`) and generalizes to the
+   * next one, since neither branch is keyed on a specific error class.
+   *
+   * The sweep itself is read-only and lives in
+   * `packages/workers/src/stuck-mailbox-watchdog.ts` so it is testable
+   * without a composition root; this wrapper owns the logging and the
+   * Sentry seam, same split as `reconcileStuckInitialSyncs` above.
+   *
+   * A structured `mailbox.stuck_unnoticed` line is emitted once PER
+   * STUCK MAILBOX PER TICK — deliberately not deduplicated across
+   * ticks, unlike `DeadLetterWorker`'s `alertedIds`. That worker
+   * dedupes because repeat Sentry captures burn its error quota; this
+   * is a plain log line, and the log-based Cloud Monitoring alert
+   * (`scripts/setup-stuck-mailbox-alert.sh`) needs the line to recur
+   * across several ticks to satisfy its "sustained" condition in the
+   * first place.
+   */
+  const STUCK_MAILBOX_INTERVAL_MS = 15 * 60 * 1000;
+  let stuckMailboxInFlight: Promise<void> | null = null;
+
+  async function sweepStuckMailboxes(): Promise<void> {
+    if (shuttingDown) return;
+    try {
+      const stuck = await findStuckMailboxes(db);
+      for (const mailbox of stuck) {
+        const stuckSinceHours = Math.floor(
+          (Date.now() - mailbox.stuckSince.getTime()) / (60 * 60 * 1000),
+        );
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'mailbox.stuck_unnoticed',
+            mailboxAccountId: mailbox.mailboxAccountId,
+            reason: mailbox.reason,
+            errorCode: mailbox.errorCode,
+            stuckSinceHours,
+          }),
+        );
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error(
+        JSON.stringify({
+          level: 'error',
+          kind: 'stuck_mailbox_watchdog.failed',
+          message: error.message,
+        }),
+      );
+      observer.captureBackgroundFailure(error, { kind: 'stuck_mailbox_watchdog.failed' });
+    }
+  }
+
+  function stuckMailboxTick(): void {
+    if (shuttingDown || stuckMailboxInFlight) return;
+    // `sweepStuckMailboxes` is documented to never reject (its body is
+    // wrapped in try/catch). The terminal `.catch` defends against
+    // future drift: if a refactor moves a line out of that try, an
+    // unhandled rejection here would otherwise be invisible.
+    const p = sweepStuckMailboxes()
+      .finally(() => {
+        stuckMailboxInFlight = null;
+      })
+      .catch((err: unknown) => {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'stuck_mailbox_watchdog.tick_unexpected',
+            message: error.message,
+          }),
+        );
+        observer.captureBackgroundFailure(error, {
+          kind: 'stuck_mailbox_watchdog.tick_unexpected',
+        });
+      });
+    stuckMailboxInFlight = p;
+  }
+
+  stuckMailboxTick();
+  if (stuckMailboxInFlight) {
+    await stuckMailboxInFlight;
+  }
+  const stuckMailboxHandle = setInterval(stuckMailboxTick, STUCK_MAILBOX_INTERVAL_MS);
+  stuckMailboxHandle.unref();
 
   /**
    * Brief snapshot cron scheduler (D62, D64, D225). Every hour, enqueue
@@ -2753,6 +2847,7 @@ async function bootstrap(): Promise<void> {
     console.log(JSON.stringify({ level: 'info', kind: 'worker.shutdown', signal }));
     shuttingDown = true;
     clearInterval(reconcilerHandle);
+    clearInterval(stuckMailboxHandle);
     clearInterval(briefSchedulerHandle);
     clearInterval(undoExpirySchedulerHandle);
     clearInterval(sendersCounterReconciliationSchedulerHandle);
