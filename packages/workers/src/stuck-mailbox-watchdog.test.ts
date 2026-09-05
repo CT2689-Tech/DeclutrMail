@@ -160,7 +160,7 @@ describe('findStuckMailboxes', () => {
     expect(await run()).toEqual([]);
   });
 
-  it('does NOT flag a non-InvalidGrantError incremental error via needs_reconnect, even when old — matches notNeedingReconnect scope exactly', async () => {
+  it('flags an unresolved non-auth incremental error without asking for reconnect', async () => {
     const id = await seedMailbox('other-error@example.com');
     await db.insert(providerSyncState).values({
       mailboxAccountId: id,
@@ -170,7 +170,9 @@ describe('findStuckMailboxes', () => {
       lastSyncedAt: null,
     });
 
-    expect(await run()).toEqual([]);
+    expect(await run()).toEqual([
+      expect.objectContaining({ reason: 'incremental_failed', errorCode: 'RateLimitError' }),
+    ]);
   });
 
   it('does NOT flag a disconnected mailbox even if its last state matches sync_failed', async () => {
@@ -189,4 +191,17 @@ describe('findStuckMailboxes', () => {
 
     expect(await run()).toEqual([]);
   });
+  it.each(['queued', 'syncing'] as const)(
+    'flags stale %s but permits recent progress',
+    async (readinessStatus) => {
+      const id = await seedMailbox('stalled@example.com');
+      await db.insert(providerSyncState).values({ mailboxAccountId: id, readinessStatus });
+      await backdateUpdatedAt(id, STALE);
+      expect(await run()).toEqual([
+        expect.objectContaining({ mailboxAccountId: id, reason: 'sync_stalled' }),
+      ]);
+      await backdateUpdatedAt(id, FRESH);
+      expect(await run()).toEqual([]);
+    },
+  );
 });

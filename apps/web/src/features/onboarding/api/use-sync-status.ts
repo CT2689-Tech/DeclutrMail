@@ -21,7 +21,7 @@
  */
 
 import { queryOptions, useQuery } from '@tanstack/react-query';
-import { apiGet } from '@/lib/api/client';
+import { apiGet, ApiError } from '@/lib/api/client';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
 export const SYNC_STATUS_KEY = ['sync', 'status'] as const;
@@ -59,17 +59,24 @@ export const SYNC_STATUS_STALE_TIME_MS = 30_000;
  *
  * Exported so it can be unit-tested without racing real timers.
  */
-export function syncRefetchInterval(data: SyncStatus | undefined, isError = false): number | false {
-  // STOP on error, do not treat it as "not loaded yet" (audit
-  // 2026-08-21). `!data` is true in BOTH states, so an errored read used
-  // to fall through to the 3s cadence and re-issue forever — `retry`
-  // correctly refuses to retry a 4xx, and the interval re-issued a fresh
-  // query regardless, which is the same storm one layer up. Two of the
-  // three consumers are always-mounted chrome that render `null` on
-  // error, so it was invisible in the UI. Recovery is covered: the
-  // scope-conflict handler in `makeQueryClient` resets the cache, and
-  // this query opts into focus refetch below.
-  if (isError) return false;
+export function syncRefetchInterval(
+  data: SyncStatus | undefined,
+  error: unknown = null,
+): number | false {
+  // Authorization/scope errors must not create a permanent 4xx poll storm.
+  // Network and server failures still need a slow probe: exhausting query
+  // retries must not freeze onboarding until the user changes tabs.
+  if (error) {
+    if (
+      error instanceof ApiError &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.status !== 429
+    ) {
+      return false;
+    }
+    return SYNC_FAILED_POLL_MS;
+  }
   if (!data) return SYNC_POLL_MS;
   if (data.is_ready_for_triage) return SYNC_READY_POLL_MS;
   if (data.readiness_status === 'failed') return SYNC_FAILED_POLL_MS;
@@ -88,7 +95,10 @@ export function syncStatusQueryOptions(mailboxId: string | undefined, reader: Sy
     queryFn: ({ signal }) => reader(signal),
     staleTime: SYNC_STATUS_STALE_TIME_MS,
     refetchInterval: (query) =>
-      syncRefetchInterval(query.state.data, query.state.status === 'error'),
+      syncRefetchInterval(
+        query.state.data,
+        query.state.status === 'error' ? query.state.error : null,
+      ),
     // Global query defaults disable focus refetches to prevent storms.
     // Sync health is the narrow exception: a backgrounded tab may have
     // paused its timer, so a STALE reading should restore truth on

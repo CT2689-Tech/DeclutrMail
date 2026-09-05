@@ -56,6 +56,10 @@ export interface OutboxConsumerDeps {
    * UTC day (see `syncFailedEmailJobId`), so redelivery AND rapid
    * retry-failure loops both collapse to one notice.
    */
+  onMailboxReconnectRequired?: (
+    payload: MailboxSyncFailedPayload,
+    eventId: string,
+  ) => Promise<void>;
   onMailboxSyncFailed?: (payload: MailboxSyncFailedPayload, eventId: string) => Promise<void>;
 }
 
@@ -137,6 +141,13 @@ export function buildOutboxConsumer(db: DrizzleDb, deps: OutboxConsumerDeps = {}
             }),
           );
         }
+        return;
+      }
+      case TOPICS.MAILBOX_RECONNECT_REQUIRED: {
+        const payload = MailboxSyncFailedPayloadSchema.parse(event.payload);
+        if (!deps.onMailboxReconnectRequired)
+          throw new Error('Reconnect notification handler is not wired');
+        await deps.onMailboxReconnectRequired(payload, event.id);
         return;
       }
       case TOPICS.MAILBOX_SYNC_FAILED: {

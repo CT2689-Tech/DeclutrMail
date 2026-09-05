@@ -9,7 +9,7 @@
  * the contract, not wall-clock behaviour.
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { focusManager } from '@tanstack/react-query';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
@@ -21,6 +21,7 @@ import {
   SYNC_READY_POLL_MS,
   SYNC_STATUS_KEY,
 } from './use-sync-status';
+import { ApiError } from '@/lib/api/client';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
@@ -98,15 +99,57 @@ describe('useSyncStatus', () => {
         error_code: 'RateLimitError',
       }),
     ).toBe(SYNC_FAILED_POLL_MS);
-    // ERRORED → STOP. `!data` is true for "not loaded yet" AND for
+    // Permanent 4xx → STOP. `!data` is true for "not loaded yet" AND for
     // "errored", so this used to fall through to the 3s cadence and
     // re-issue forever: `retry` correctly refuses a 4xx, and the
     // interval re-issued a fresh query anyway. Two of the three
     // consumers are always-mounted chrome that render `null` on error,
     // so the storm was invisible in the UI (audit 2026-08-21).
-    expect(syncRefetchInterval(undefined, true)).toBe(false);
-    expect(syncRefetchInterval(SYNCING, true)).toBe(false);
+    expect(syncRefetchInterval(undefined, new ApiError(409, {}, 'conflict'))).toBe(false);
+    expect(syncRefetchInterval(SYNCING, new ApiError(403, {}, 'forbidden'))).toBe(false);
+    expect(syncRefetchInterval(SYNCING, new ApiError(429, {}, 'rate limited'))).toBe(
+      SYNC_FAILED_POLL_MS,
+    );
   });
+
+  it.each([new ApiError(503, {}, 'unavailable'), new TypeError('Failed to fetch')])(
+    'recovers a failed status poll without a focus event (%s)',
+    async (failure) => {
+      let requests = 0;
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/v1/sync/status',
+          respond: () => {
+            requests += 1;
+            if (requests <= 2) throw failure;
+            return jsonOk({ data: READY });
+          },
+        },
+      ]);
+      const client = createTestQueryClient();
+      const { result, unmount } = renderHook(() => useSyncStatus(), {
+        wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+      });
+      await waitFor(() => expect(result.current.isError).toBe(true));
+      vi.useFakeTimers();
+      try {
+        // Start the timer from the errored cache, with no remount or focus change.
+        await act(async () => {
+          await client.refetchQueries({ queryKey: [...SYNC_STATUS_KEY, null], type: 'active' });
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(11_000);
+        });
+        expect(requests).toBe(3);
+        expect(result.current.data).toEqual(READY);
+      } finally {
+        unmount();
+        client.clear();
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it('refetches ready status on focus only after the cached reading goes stale', async () => {
     let requests = 0;

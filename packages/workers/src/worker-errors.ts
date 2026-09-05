@@ -33,7 +33,7 @@ export class AuthExpiredError extends Error {
 }
 
 /**
- * NOT retryable: the OAuth grant is gone (refresh token revoked). The
+ * NOT retryable: the OAuth grant is revoked or lacks required permissions. The
  * mailbox must be reconnected before any retry is meaningful.
  */
 export class InvalidGrantError extends Error {

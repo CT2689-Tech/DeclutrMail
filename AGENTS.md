@@ -34,6 +34,13 @@
 
 ## Observability
 
+- Before reporting a dashboard as live or ready, open the exact shared URL in
+  an authenticated browser and verify the intended account can access it,
+  panels render without errors, and displayed data has the expected freshness.
+  API creation and metric readback alone are not proof of usability. If browser
+  verification is blocked, report "created, usability unverified" and name the
+  blocker. Separate unavailable cost sources from verified cost coverage.
+
 - Sentry and PostHog are optional telemetry; product behavior must never depend
   on either service being available.
 - PostHog browser events are consent-gated. Do not add analytics events that

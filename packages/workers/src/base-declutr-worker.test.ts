@@ -135,6 +135,29 @@ describe('BaseDeclutrWorker', () => {
     );
   }
 
+  it('retains closed reconnect notification outcomes while stripping provider identifiers', async () => {
+    for (const outcome of [
+      'sent',
+      'skipped_recovered',
+      'skipped_delivery_disabled',
+      'skipped_delivery_rejected',
+      'skipped_no_postal_address',
+    ]) {
+      const worker = new TestWorker(async () => ({
+        ok: true,
+        kind: 'gmail-reconnect',
+        outcome,
+        providerId: 'private-provider-id',
+      }));
+      await worker.run(fakeJob({ data: {} }));
+      const result = lifecycleLines()
+        .filter((line) => line.kind === 'worker.succeeded')
+        .at(-1)?.result;
+      expect(result).toMatchObject({ kind: 'gmail-reconnect', outcome });
+      expect(result).not.toHaveProperty('providerId');
+    }
+  });
+
   it('derives a stable cross-instance telemetry reference from a fixed vector', () => {
     const previousSecret = process.env.JWT_ACCESS_SECRET;
     process.env.JWT_ACCESS_SECRET = 'test-jwt-access-secret-with-32-bytes-minimum';
@@ -344,6 +367,8 @@ describe('BaseDeclutrWorker', () => {
       ]);
       expect(lines[1]).toMatchObject({
         kind: 'worker.failed',
+        severity: 'ERROR',
+        level: 'error',
         error: 'TransientError',
         terminal: false,
         attempt: 1,
@@ -715,10 +740,10 @@ describe('BaseDeclutrWorker', () => {
       const startKeys = Object.keys(lines[0]!).sort();
       const successKeys = Object.keys(lines[1]!).sort();
       expect(startKeys).toEqual(
-        ['attempt', 'jobRef', 'kind', 'level', 'mailboxRef', 'worker'].sort(),
+        ['attempt', 'jobRef', 'kind', 'level', 'severity', 'mailboxRef', 'worker'].sort(),
       );
       expect(successKeys).toEqual(
-        ['attempt', 'jobRef', 'kind', 'level', 'mailboxRef', 'result', 'worker'].sort(),
+        ['attempt', 'jobRef', 'kind', 'level', 'severity', 'mailboxRef', 'result', 'worker'].sort(),
       );
       // None of the forbidden fields (D203 forbidden-fields list).
       for (const line of lines) {

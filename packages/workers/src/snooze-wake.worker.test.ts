@@ -3,6 +3,7 @@ import {
   cronRuns,
   mailMessages,
   mailboxAccounts,
+  outboxEvents,
   providerSyncState,
   senderPolicies,
   senders,
@@ -12,7 +13,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   GmailMutationAccess,
@@ -540,6 +541,56 @@ describe('SnoozeWakeWorker — sweep', () => {
     expect(result.mappingsRefreshed).toBe(0);
     expect(labelMap.store.get(mailboxId)).toBeUndefined();
     expect(gmail.calls).toHaveLength(0);
+  });
+
+  it('records a newly discovered bad grant once, stops retrying it, and resumes after recovery', async () => {
+    await db
+      .insert(providerSyncState)
+      .values({ mailboxAccountId: mailboxId, readinessStatus: 'ready' });
+    const getClient = vi
+      .fn<() => Promise<GmailMutationClient>>()
+      .mockRejectedValue(new InvalidGrantError('private provider response must not be logged'));
+    worker = makeWorker(db, { getClient }, labelMap);
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await worker.processJob({ kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' }, CTX);
+      await worker.processJob({ kind: 'sweep', scheduledAtMinute: '2026-06-11T12:15' }, CTX);
+      expect(getClient).toHaveBeenCalledTimes(1);
+      const [state] = await db.select().from(providerSyncState);
+      expect(state?.lastIncrementalErrorCode).toBe('InvalidGrantError');
+      expect(await db.select().from(outboxEvents)).toHaveLength(1);
+      const entry = JSON.parse(log.mock.calls[0]![0] as string);
+      expect(entry).toMatchObject({ severity: 'ERROR', errorCode: 'InvalidGrantError' });
+      expect(entry).not.toHaveProperty('error');
+      await db
+        .update(providerSyncState)
+        .set({
+          lastSyncedAt: new Date(state!.lastIncrementalErrorAt!.getTime() + 1000),
+        })
+        .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+      getClient.mockResolvedValue(gmail);
+      await worker.processJob({ kind: 'sweep', scheduledAtMinute: '2026-06-11T12:30' }, CTX);
+      expect(getClient).toHaveBeenCalledTimes(2);
+      expect(labelMap.store.get(mailboxId)).toBe('Label_7');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('keeps a retryable mapping failure eligible without publishing a reconnect notice', async () => {
+    await db
+      .insert(providerSyncState)
+      .values({ mailboxAccountId: mailboxId, readinessStatus: 'ready' });
+    const getClient = vi
+      .fn<() => Promise<GmailMutationClient>>()
+      .mockRejectedValueOnce(new Error('temporary connection failure'))
+      .mockResolvedValue(gmail);
+    worker = makeWorker(db, { getClient }, labelMap);
+    await worker.processJob({ kind: 'sweep', scheduledAtMinute: '2026-06-11T12:00' }, CTX);
+    await worker.processJob({ kind: 'sweep', scheduledAtMinute: '2026-06-11T12:15' }, CTX);
+    expect(getClient).toHaveBeenCalledTimes(2);
+    expect(await db.select().from(outboxEvents)).toHaveLength(0);
+    expect(labelMap.store.get(mailboxId)).toBe('Label_7');
   });
 
   it('resumes the mapping refresh once a later success clears the revoked grant', async () => {

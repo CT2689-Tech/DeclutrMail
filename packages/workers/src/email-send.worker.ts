@@ -1,7 +1,8 @@
+import { isAwaitingReconnect } from './mailbox-reconnect.js';
 import { desc, eq, gt, and } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
-import { activeSessions, users } from '@declutrmail/db';
+import { activeSessions, mailboxAccounts, providerSyncState, users } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { parseEmailPrefs, type EmailPrefs } from '@declutrmail/shared/contracts';
 import { hasPostalAddress } from '@declutrmail/shared/copy';
@@ -75,6 +76,7 @@ export type EmailKind =
   | 'sync-complete'
   | 'sync-reminder-24h'
   | 'sync-failed'
+  | 'gmail-reconnect'
   | 'lapse-reengagement'
   | 'weekly-value-receipt'
   | 'deletion-scheduled'
@@ -154,6 +156,8 @@ export const COMMERCIAL_KINDS: ReadonlySet<EmailKind> = new Set<EmailKind>([
 /** One transactional email send. */
 export interface EmailSendJobData {
   kind: EmailKind;
+  /** Incident timestamp for stale reconnect-notice suppression. */
+  reconnectRequiredAt?: string;
   /** Recipient — resolved to users.email at EXECUTION time. */
   userId: string;
   /** Pre-rendered subject (counts/dates only — no message content). */
@@ -206,6 +210,7 @@ export interface EmailSendResult {
     | 'sent'
     | 'skipped_user_returned'
     | 'skipped_opted_out'
+    | 'skipped_recovered'
     | 'skipped_suppressed'
     | 'skipped_no_recipient'
     | 'skipped_no_postal_address'
@@ -376,6 +381,35 @@ export class EmailSendWorker extends BaseDeclutrWorker<EmailSendJobData, EmailSe
       }
 
       to = user.email;
+    }
+
+    if (payload.kind === 'gmail-reconnect') {
+      const [account] = payload.mailboxAccountId
+        ? await this.deps.db
+            .select({ id: mailboxAccounts.id })
+            .from(mailboxAccounts)
+            .where(
+              and(
+                eq(mailboxAccounts.id, payload.mailboxAccountId),
+                eq(mailboxAccounts.userId, payload.userId),
+                eq(mailboxAccounts.status, 'active'),
+              ),
+            )
+        : [];
+      const [state] = account
+        ? await this.deps.db
+            .select()
+            .from(providerSyncState)
+            .where(eq(providerSyncState.mailboxAccountId, account.id))
+        : [];
+      if (
+        !account ||
+        !payload.reconnectRequiredAt ||
+        state?.lastIncrementalErrorAt?.getTime() !== Date.parse(payload.reconnectRequiredAt) ||
+        !(await isAwaitingReconnect(this.deps.db, account.id))
+      ) {
+        return { outcome: 'skipped_recovered', kind: payload.kind, providerId: null };
+      }
     }
 
     const delivered = await this.deps.delivery.deliver({

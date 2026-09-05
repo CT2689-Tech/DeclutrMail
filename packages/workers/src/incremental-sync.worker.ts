@@ -16,7 +16,11 @@ import type { MailboxActionLock } from './label-action.worker.js';
 import { reconcileSenderTimeseries } from './sender-timeseries-reconcile.js';
 import { syncMailboxLabels } from './mailbox-label-sync.js';
 import { getSyncMailboxEligibility } from './deletion-pause.js';
-import { isAwaitingReconnect, notNeedingReconnect } from './mailbox-reconnect.js';
+import {
+  isAwaitingReconnect,
+  notNeedingReconnect,
+  recordMailboxSyncFailure,
+} from './mailbox-reconnect.js';
 import { parseListUnsubscribe, parseRecipients } from './header-parsing.js';
 import { MAX_UNREADABLE_SHARE, MIN_UNREADABLE_FOR_SYSTEMIC } from './ports.js';
 import type { GmailAccess, GmailHistoryRecord, GmailMetadataClient } from './ports.js';
@@ -327,14 +331,7 @@ export class IncrementalSyncWorker extends BaseDeclutrWorker<
     const mailboxAccountId = payload?.mailboxAccountId;
     if (!mailboxAccountId) return;
     const errorCode = error.name || 'UnknownError';
-    await this.deps.db
-      .update(providerSyncState)
-      .set({
-        lastIncrementalErrorAt: new Date(),
-        lastIncrementalErrorCode: errorCode,
-        updatedAt: new Date(),
-      })
-      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, errorCode);
     console.error(
       JSON.stringify({
         level: 'error',

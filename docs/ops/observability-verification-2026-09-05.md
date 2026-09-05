@@ -1,0 +1,35 @@
+# Observability verification — 2026-09-05
+
+## Implemented in PR #726; not deployed
+
+- Consent is still opt-in. Withdrawal during the PostHog dynamic import now stops initialization before automatic pageview capture. Later opt-in remains possible.
+- Snooze mapping and wake paths persist the first invalid grant through the shared atomic reconnect incident/outbox writer. Missing initial sync state is created for an active account; duplicate callbacks do not duplicate the notice.
+- Worker lifecycle logs now carry Cloud Logging severity. Reconnect email result categories survive the safe log allowlist. Provider acceptance is not inbox delivery.
+- Five-minute aggregate observations cover affected mailboxes, durable scheduler success age, DB connection pressure, queue counts/age/pause flag and reconnect incidents followed by later successful sync. Attempt duration distinguishes resolved/rejected execution; resolved includes no-ops.
+- Optional collection has SQL/Redis deadlines and bounded single-flight probes. Telemetry failure does not block sync, heartbeat or shutdown. No user/mailbox/job identifiers are metric labels.
+- Runtime activation requires fresh successful observations for every source and each of the four queues. Missing measurements remain unknown.
+
+## Verification performed
+
+- 43 consent tests plus the real SDK transport test passed.
+- Real Chromium smoke in this checkout: delayed SDK import + withdrawal, later opt-in with a captured request at a local fake endpoint, then withdrawal and reload. No browser errors. Harness is `docs/eval/consent-browser-smoke.cjs`. Its local-only CSP/automation overrides permit the fake endpoint and prevent PostHog bot filtering from invalidating the positive control; no events were sent to the production analytics project.
+- Snooze/watch regression suites passed (35 tests); an additional missing-state watch regression passed in the updated 15-test watch suite.
+- 20 worker lifecycle tests and six operational telemetry tests passed, including durable PGlite queries, failure isolation and stalled-probe non-overlap. An isolated real Redis/BullMQ check verified waiting-job age and queue pause semantics.
+- A production-driver read-only smoke reproduced a new reconnect collector failure caused by a raw Date bind. After ISO conversion, mailbox, scheduler, database and reconnect collection all succeeded. A compiled-query bind-parameter regression covers the PGlite/postgres.js mismatch.
+- API and worker typechecks, changed-file ESLint, format and diff checks passed. Eight alert/metric contract tests passed.
+- Live GCP native metric descriptors, filters, aggregations and PromQL executed successfully. Snapshot: API p95 about 102 ms, memory fraction API 0.6895 / worker 0.3295, Pub/Sub oldest unacked 0 seconds; 61 API requests in the sampled five-minute window. These observations are not load-test or launch-capacity conclusions.
+
+## Applied and read back in GCP
+
+- Four new native policies: sustained API 5xx, latency, memory and Gmail Pub/Sub backlog. Existing daily collector policy retained. All 12 current policies are enabled, have one existing admin channel and no returned validity error.
+- Runtime log metric definitions provisioned ahead of deployment. Definition acceptance is not data or dashboard usability verification.
+- Current production revisions: API 00308-2b9, worker 00049-snv. `/api/worker-readyz` returns 404 and no new `ops.*` logs were found in the preceding hour. Runtime/worker alerts intentionally remain unactivated.
+
+## Still required
+
+- Complete the outstanding real account reconnect and transactional email smoke; the owner completes Google consent. Then merge/release PR #726 and verify production revision, heartbeat, collector logs, metric freshness and the exact authenticated dashboard URL.
+- The isolated admin alert condition opened at 21:12:36 UTC and cleared at 21:15:30 UTC after healthy samples. Its temporary policy and metric were deleted. Email notification was requested through the existing admin channel, but inbox receipt remains unverified because the Gmail connector requires reauthentication. The first attempt was cleaned up after an unsupported incident-list ordering parameter; the corrected read used the bare alerts endpoint.
+- Sentry access is now verified through the existing GitHub watchdog credential. Sentry-only run 33992120426 succeeded and skipped vendor collection. Its encrypted report contains six unresolved issues from the seven-day search: four latest events in production and two in development. Counts are lifetime issue totals, not seven-day volume. The lapse-worker failure matches the fix already merged in PR #724; the repaired query also passed with the actual PostgreSQL driver in a read-only transaction. Older browser events still require source-map/current-release verification before declaring them fixed. No new token or GCP secret is required.
+- GCP billing export table exists but its last bounded check had no current-month rows. Cost availability remains unverified until real rows are read and published. Daily vendor snapshots and historical invoices must retain their source timestamps and coverage labels.
+
+See `docs/ops/observability-alerts.md` for staged activation and alert rehearsal. This report is not a launch-ready sign-off.

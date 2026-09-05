@@ -5,6 +5,7 @@ import { syncFailedEmail } from './sync-failed.js';
 describe('sync-failed', () => {
   const input = {
     mailboxEmail: 'you@gmail.com',
+    mailboxAccountId: 'mailbox-secondary',
     appUrl: 'https://app.declutrmail.com',
   };
 
@@ -12,9 +13,13 @@ describe('sync-failed', () => {
     const email = await syncFailedEmail(input);
     expect(email.subject).toBe("We couldn't finish scanning you@gmail.com");
     expect(email.text).toContain('you@gmail.com');
-    expect(email.text).toContain('https://app.declutrmail.com/onboarding');
+    expect(email.text).toContain(
+      'https://app.declutrmail.com/onboarding?mailbox=mailbox-secondary',
+    );
     expect(email.html).toContain('you@gmail.com');
-    expect(email.html).toContain('https://app.declutrmail.com/onboarding');
+    expect(email.html).toContain(
+      'https://app.declutrmail.com/onboarding?mailbox=mailbox-secondary',
+    );
   });
 
   it('promises no automatic retry — that promise was the original lie', async () => {

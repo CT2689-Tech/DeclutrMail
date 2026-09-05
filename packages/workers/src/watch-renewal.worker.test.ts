@@ -1,8 +1,16 @@
-import { cronRuns, mailboxAccounts, providerSyncState, users, workspaces } from '@declutrmail/db';
+import {
+  cronRuns,
+  mailboxAccounts,
+  outboxEvents,
+  providerSyncState,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 
+import { recordMailboxSyncFailure } from './mailbox-reconnect.js';
 import { GMAIL_WATCH_STATE_KEY } from './gmail-watch-state.js';
 import { watchRenewalJobOptions } from './watch-renewal.queue.js';
 import { WatchRenewalWorker } from './watch-renewal.worker.js';
@@ -266,6 +274,25 @@ describe('WatchRenewalWorker', () => {
     expect(watchCalls.filter((id) => id === bad)).toHaveLength(1);
     expect(watchCalls.filter((id) => id === good)).toHaveLength(2);
     expect(captured).toHaveLength(1);
+    // A later terminal callback from incremental sync must share this incident, not notify twice.
+    await recordMailboxSyncFailure(db as never, bad, 'InvalidGrantError');
+    const notices = await db.select().from(outboxEvents);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({ topic: 'mailbox.reconnect_required', aggregateId: bad });
+  });
+
+  it('persists and deduplicates a first revoked grant even before sync state exists', async () => {
+    const db = await freshDb();
+    const mailbox = await seedMailbox(db, { email: 'before-sync@x.com' });
+    await db.delete(providerSyncState).where(eq(providerSyncState.mailboxAccountId, mailbox));
+    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError');
+    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError');
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailbox));
+    expect(state?.lastIncrementalErrorCode).toBe('InvalidGrantError');
+    expect(await db.select().from(outboxEvents)).toHaveLength(1);
   });
 
   it('keeps retrying a TRANSIENT failure — only a revoked grant is permanent', async () => {

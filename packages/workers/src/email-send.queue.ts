@@ -201,6 +201,7 @@ export async function enqueueEmailSend(
 const DELIVERED_BY_OUTCOME: Record<EmailSendResult['outcome'], boolean> = {
   sent: true,
   skipped_user_returned: false,
+  skipped_recovered: false,
   skipped_opted_out: false,
   skipped_suppressed: false,
   skipped_no_recipient: false,

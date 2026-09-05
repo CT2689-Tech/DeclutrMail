@@ -2,6 +2,7 @@ import type { OAuth2Client } from 'google-auth-library';
 import {
   AuthExpiredError,
   InvalidGrantError,
+  isNonRetryable,
   PermanentError,
   RateLimitError,
   type RateLimiter,
@@ -489,6 +490,27 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
       await expect(client.modifyLabels('m1', { addLabelIds: ['X'] })).rejects.toBeInstanceOf(
         RateLimitError,
       );
+    });
+
+    it('requires reconnect on the production getProfile insufficient-permissions response', async () => {
+      fetchMock.mockResolvedValueOnce(
+        makeResponse(
+          403,
+          JSON.stringify({
+            error: {
+              code: 403,
+              message: 'Request had insufficient authentication scopes.' + ' '.repeat(350),
+              errors: [{ reason: 'insufficientPermissions', domain: 'global' }],
+              status: 'PERMISSION_DENIED',
+            },
+          }),
+        ),
+      );
+      const client = new GmailClientService(oauth, limiter);
+      const error = await client.getProfile().catch((err: unknown) => err);
+      expect(error).toBeInstanceOf(InvalidGrantError);
+      expect(isNonRetryable(error)).toBe(true);
+      expect((error as Error).message).not.toContain('PERMISSION_DENIED');
     });
 
     it('maps a non-quota 403 to TransientError', async () => {

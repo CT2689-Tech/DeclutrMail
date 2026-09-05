@@ -101,6 +101,20 @@ describe('track() consent gate (D147)', () => {
     );
   });
 
+  it('does not initialize after consent is withdrawn while the SDK import is pending', async () => {
+    storeConsent('all');
+    const pending = track('page_viewed', { page: 'senders', mailbox_id: null });
+    storeConsent('essential');
+    await pending;
+    // init itself sends automatic pageviews: opting out afterwards is too late.
+    expect(posthogMock.init).not.toHaveBeenCalled();
+    expect(posthogMock.capture).not.toHaveBeenCalled();
+    storeConsent('all');
+    await track('page_viewed', { page: 'senders', mailbox_id: null });
+    expect(posthogMock.init).toHaveBeenCalledTimes(1);
+    expect(posthogMock.capture).toHaveBeenCalledTimes(1);
+  });
+
   it('consent granted mid-session takes effect on the NEXT call; earlier events are dropped, not queued', async () => {
     await track('page_viewed', { page: 'senders', mailbox_id: null });
     expect(posthogMock.capture).not.toHaveBeenCalled();
