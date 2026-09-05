@@ -23,14 +23,12 @@ it('routes a reconnect incident to the exact mailbox and suppresses delivery aft
     })
     .returning();
   const failedAt = new Date('2026-09-05T12:00:00Z');
-  await db
-    .insert(providerSyncState)
-    .values({
-      mailboxAccountId: account!.id,
-      readinessStatus: 'ready',
-      lastIncrementalErrorCode: 'InvalidGrantError',
-      lastIncrementalErrorAt: failedAt,
-    });
+  await db.insert(providerSyncState).values({
+    mailboxAccountId: account!.id,
+    readinessStatus: 'ready',
+    lastIncrementalErrorCode: 'InvalidGrantError',
+    lastIncrementalErrorAt: failedAt,
+  });
   const queue = { getJob: vi.fn().mockResolvedValue(null), add: vi.fn() };
   const handler = buildGmailReconnectEmailHandler({
     db: db as never,

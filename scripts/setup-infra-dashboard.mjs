@@ -83,6 +83,37 @@ export function dashboard(project) {
         resource('Sentry accepted errors — prior 24 hours', 'accepted_errors_24h'),
         resource('PostHog events — MTD', 'events_mtd'),
         resource('GitHub Actions minutes — MTD', 'actions_minutes_mtd'),
+        ...[
+          [
+            'Cloud Run billable instance time — daily seconds by service',
+            'container/billable_instance_time',
+          ],
+          [
+            'Cloud Run CPU allocation — daily CPU-seconds by service',
+            'container/cpu/allocation_time',
+          ],
+          [
+            'Cloud Run memory allocation — daily GiB-seconds by service',
+            'container/memory/allocation_time',
+          ],
+          [
+            'Cloud Run outgoing traffic — daily bytes by service and destination',
+            'container/network/sent_bytes_count',
+          ],
+        ].map(([title, metric]) =>
+          chart(
+            title,
+            'run.googleapis.com/' + metric,
+            'cloud_run_revision',
+            '',
+            'ALIGN_SUM',
+            '86400s',
+            'REDUCE_SUM',
+            metric.includes('network')
+              ? ['resource.label.service_name', 'metric.label.kind']
+              : ['resource.label.service_name'],
+          ),
+        ),
         chart(
           'API availability — fraction of uptime checks passing',
           'monitoring.googleapis.com/uptime_check/check_passed',
