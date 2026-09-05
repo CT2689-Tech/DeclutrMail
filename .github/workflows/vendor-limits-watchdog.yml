@@ -29,7 +29,17 @@ on:
     # Daily 13:00 UTC. GitHub may delay cron by several minutes under
     # platform load — irrelevant for a daily spend check.
     - cron: '0 13 * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Daily vendor snapshot or encrypted Sentry-only triage'
+        type: choice
+        options: [vendor-limits, sentry-triage]
+        default: vendor-limits
+      sentry_public_key:
+        description: 'RSA PUBLIC key PEM only (triage mode); keep private key locally'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -42,6 +52,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'workflow_dispatch' || inputs.mode != 'sentry-triage'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -73,11 +84,14 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends postgresql-client
 
       - name: Check vendor limits
+        id: collect
         env:
+          INFRA_SNAPSHOT_PATH: ${{ runner.temp }}/infra-snapshot.json
           # Day-1 working check (secret already exists for the
           # sync-stuck watchdog + Atlas migrations).
           SUPABASE_SESSION_DSN: ${{ secrets.SUPABASE_SESSION_DSN }}
           # Cred-gated checks — add the secret to activate each one.
+          GCP_BILLING_EXPORT_TABLE: ${{ vars.GCP_BILLING_EXPORT_TABLE }}
           GCP_BILLING_ACCOUNT_ID: ${{ secrets.GCP_BILLING_ACCOUNT_ID }}
           UPSTASH_EMAIL: ${{ secrets.UPSTASH_EMAIL }}
           UPSTASH_API_KEY: ${{ secrets.UPSTASH_API_KEY }}
@@ -101,3 +115,44 @@ jobs:
           RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
           RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
         run: node scripts/check-vendor-limits.mjs
+
+      - name: Publish daily infrastructure observations
+        if: always() && steps.collect.outcome != 'skipped' && env.GCP_WIF_PROVIDER != ''
+        run: node scripts/infra-observability.mjs "$RUNNER_TEMP/infra-snapshot.json" declutrmail-ai-prod
+
+      - name: Retain daily snapshot even when a vendor fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: infra-snapshot-${{ github.run_id }}
+          path: ${{ runner.temp }}/infra-snapshot.json
+          retention-days: 90
+          if-no-files-found: error
+
+  sentry-triage:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'sentry-triage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+      - name: Validate encrypted triage contracts
+        run: node --test scripts/sentry-private-triage.test.mjs
+      - name: Read bounded Sentry diagnostics into encrypted report
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_TRIAGE_PUBLIC_KEY: ${{ inputs.sentry_public_key }}
+          SENTRY_TRIAGE_OUTPUT: ${{ runner.temp }}/sentry-triage.encrypted.json
+        run: node scripts/sentry-private-triage.mjs
+      - name: Retain encrypted report only
+        uses: actions/upload-artifact@v4
+        with:
+          name: sentry-triage-encrypted-${{ github.run_id }}
+          path: ${{ runner.temp }}/sentry-triage.encrypted.json
+          retention-days: 1
+          if-no-files-found: error

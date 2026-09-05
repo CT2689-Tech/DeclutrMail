@@ -247,6 +247,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - name: Infrastructure telemetry contracts
+        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs
+      - name: Encrypted Sentry triage contracts
+        run: node --test scripts/sentry-private-triage.test.mjs
       - name: Build selection and artifact retention contracts
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and

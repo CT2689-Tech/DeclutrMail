@@ -1,6 +1,8 @@
+import { MailboxReconnectRequiredPayloadSchema, TOPICS } from '@declutrmail/events';
+import { OutboxPublisher } from './outbox-publisher.js';
 import { and, eq, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { providerSyncState } from '@declutrmail/db';
+import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 
 /** The Drizzle client, bound to the full `@declutrmail/db` schema. */
@@ -81,4 +83,73 @@ export async function isAwaitingReconnect(
     )
     .limit(1);
   return row !== undefined;
+}
+
+/** Persist the incident and notification atomically for every producer of reconnect state. */
+export async function recordMailboxSyncFailure(
+  db: WorkerDb,
+  mailboxAccountId: string,
+  errorCode: string,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    let [state] = await tx
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+      .for('update');
+    if (!state) {
+      // A periodic sweep can discover revoked credentials before sync has created
+      // its state row. Persist that first incident too, or every tick retries it.
+      const [active] = await tx
+        .select({ id: mailboxAccounts.id })
+        .from(mailboxAccounts)
+        .where(and(eq(mailboxAccounts.id, mailboxAccountId), eq(mailboxAccounts.status, 'active')));
+      if (!active) return;
+      await tx.insert(providerSyncState).values({ mailboxAccountId }).onConflictDoNothing();
+      [state] = await tx
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .for('update');
+      if (!state) return;
+    }
+    const alreadyAwaiting =
+      state.lastIncrementalErrorCode === 'InvalidGrantError' &&
+      state.lastIncrementalErrorAt !== null &&
+      (state.lastSyncedAt === null || state.lastIncrementalErrorAt > state.lastSyncedAt);
+    // Duplicate terminal callbacks must not shift the incident timestamp or notify twice.
+    if (alreadyAwaiting) return;
+    const unresolved =
+      state.lastIncrementalErrorAt !== null &&
+      (state.lastSyncedAt === null || state.lastIncrementalErrorAt > state.lastSyncedAt);
+    // Preserve the start of a retryable outage so repeated attempts cannot reset the watchdog grace window.
+    const failedAt =
+      errorCode !== 'InvalidGrantError' && unresolved ? state.lastIncrementalErrorAt! : new Date();
+    await tx
+      .update(providerSyncState)
+      .set({
+        lastIncrementalErrorAt: failedAt,
+        lastIncrementalErrorCode: errorCode,
+        updatedAt: failedAt,
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    if (errorCode === 'InvalidGrantError') {
+      const [account] = await tx
+        .select({ workspaceId: mailboxAccounts.workspaceId })
+        .from(mailboxAccounts)
+        .where(and(eq(mailboxAccounts.id, mailboxAccountId), eq(mailboxAccounts.status, 'active')));
+      if (account)
+        await new OutboxPublisher().publish(tx, {
+          topic: TOPICS.MAILBOX_RECONNECT_REQUIRED,
+          aggregateId: mailboxAccountId,
+          schema: MailboxReconnectRequiredPayloadSchema,
+          payload: {
+            mailboxAccountId,
+            workspaceId: account.workspaceId,
+            failedAt: failedAt.toISOString(),
+            errorCode,
+          },
+        });
+    }
+  });
 }

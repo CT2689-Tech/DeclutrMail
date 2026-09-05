@@ -2,6 +2,7 @@ import {
   deriveSenderId,
   mailboxAccounts,
   mailMessages,
+  outboxEvents,
   providerSyncState,
   senderPolicies,
   senders,
@@ -1930,6 +1931,90 @@ describe('IncrementalSyncWorker', () => {
     expect(state!.lastIncrementalErrorAt).toBeInstanceOf(Date);
     // Readiness intentionally NOT touched.
     expect(state!.readinessStatus).toBe('ready');
+  });
+
+  it('persists reconnect state and exactly one durable notice per incident', async () => {
+    const worker = new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(new FakeGmailClient([], new Map())),
+    });
+    const fail = (
+      worker as unknown as {
+        onTerminalFailure: (
+          p: { mailboxAccountId: string; startHistoryId: string; endHistoryId: string },
+          e: Error,
+        ) => Promise<void>;
+      }
+    ).onTerminalFailure.bind(worker);
+    const payload = { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' };
+    const error = Object.assign(new Error('grant lost'), { name: 'InvalidGrantError' });
+    await fail(payload, error);
+    await fail(payload, error);
+    const events = await db
+      .select()
+      .from(outboxEvents)
+      .where(eq(outboxEvents.topic, 'mailbox.reconnect_required'));
+    expect(events).toHaveLength(1);
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.readinessStatus).toBe('ready');
+    expect(events[0]!.payload).toMatchObject({
+      mailboxAccountId,
+      failedAt: state!.lastIncrementalErrorAt!.toISOString(),
+    });
+    await db
+      .update(providerSyncState)
+      .set({ lastIncrementalErrorAt: null, lastIncrementalErrorCode: null })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    await fail(payload, error);
+    expect(
+      await db
+        .select()
+        .from(outboxEvents)
+        .where(eq(outboxEvents.topic, 'mailbox.reconnect_required')),
+    ).toHaveLength(2);
+  });
+
+  it('preserves outage age across retries so the watchdog can detect continuous failure', async () => {
+    const firstFailure = new Date('2026-09-01T00:00:00Z');
+    await db
+      .update(providerSyncState)
+      .set({
+        lastSyncedAt: null,
+        lastIncrementalErrorAt: firstFailure,
+        lastIncrementalErrorCode: 'RateLimitError',
+      })
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    const worker = new IncrementalSyncWorker({
+      db,
+      lock: PASSTHROUGH_MAILBOX_LOCK,
+      gmailAccess: accessFor(new FakeGmailClient([], new Map())),
+    });
+    await (
+      worker as unknown as {
+        onTerminalFailure: (
+          p: { mailboxAccountId: string; startHistoryId: string; endHistoryId: string },
+          e: Error,
+        ) => Promise<void>;
+      }
+    ).onTerminalFailure(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      Object.assign(new Error('quota'), { name: 'RateLimitError' }),
+    );
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+    expect(state!.lastIncrementalErrorAt).toEqual(firstFailure);
+    expect(
+      await db
+        .select()
+        .from(outboxEvents)
+        .where(eq(outboxEvents.topic, 'mailbox.reconnect_required')),
+    ).toHaveLength(0);
   });
 
   it('successful cursor advance clears any prior incremental terminal-failure marker', async () => {

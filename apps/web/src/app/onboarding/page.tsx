@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ToastHost, toast, tokens } from '@declutrmail/shared';
+import { Button, ToastHost, toast, tokens } from '@declutrmail/shared';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 import type { OnboardingFunnelStep } from '@declutrmail/shared/observability';
 
@@ -178,10 +178,8 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
       retry: () => void state.refetch(),
     },
     hasActiveMailbox: activeMailboxId != null,
-    // On a sync-status read ERROR, fall to the gate's queued shape
-    // (not the skeleton): the 3s poll keeps retrying, so a transient
-    // failure self-heals on screen — same resilience the pre-split
-    // page had (`ready = sync.data?.is_ready_for_triage ?? false`).
+    // A failed read resolves to the gate, which exposes status recovery.
+    // Transient errors keep a slow poll; permanent 4xx wait for user action.
     syncReady: sync.data ? sync.data.is_ready_for_triage : sync.isError ? false : null,
   });
 
@@ -258,6 +256,14 @@ function AuthedFlow({ returnTo }: { returnTo: string | null }) {
         // Authed but no active mailbox (aborted OAuth / all disconnected).
         return <StepConnect variant="reconnect" />;
       case 'sync-gate': {
+        if (sync.isError) {
+          return (
+            <FlowError
+              message="We couldn't check your inbox scan. Try checking again."
+              onRetry={() => void sync.refetch()}
+            />
+          );
+        }
         // First-run strict gate (D6): no escape hatch — there is nothing
         // to return to. Ready flips the derivation to step 4 on its own.
         const status = sync.data ?? {
@@ -375,7 +381,7 @@ function SecondaryConnectGate({
   // Scoped to the EXACT error code (Codex adversarial review, round 1):
   // `sync.isError` alone also covers an exhausted 5xx or a network
   // failure, which production explicitly keeps retryable — a transient
-  // failure self-heals via `refetchOnWindowFocus` (`use-sync-status.ts`),
+  // failure self-heals via a slow poll (`use-sync-status.ts`),
   // and bailing to /senders on every such error would cut that recovery
   // short for a target mailbox that never actually went inactive.
   const trapped = !other && apiErrorCode(sync.error) === 'NO_ACTIVE_MAILBOX';
@@ -386,6 +392,16 @@ function SecondaryConnectGate({
       router.replace('/senders');
     }
   }, [exitPath, ready, router, trapped]);
+
+  if (sync.isError && !trapped) {
+    return (
+      <FlowError
+        message="We couldn't check your inbox scan. Try checking again."
+        onRetry={() => void sync.refetch()}
+        escape={escape}
+      />
+    );
+  }
 
   const status = sync.data ?? {
     readiness_status: 'queued' as const,
@@ -473,7 +489,15 @@ function FlowSkeleton({ label }: { label: string }) {
   );
 }
 
-function FlowError({ message, onRetry }: { message: string; onRetry: () => void }) {
+function FlowError({
+  message,
+  onRetry,
+  escape,
+}: {
+  message: string;
+  onRetry: () => void;
+  escape?: SyncGateEscape | undefined;
+}) {
   return (
     <main
       style={{
@@ -507,6 +531,11 @@ function FlowError({ message, onRetry }: { message: string; onRetry: () => void 
       >
         Try again
       </button>
+      {escape && (
+        <Button tone="ghost" disabled={escape.returning ?? false} onClick={escape.onReturn}>
+          Return to {escape.returnToEmail}
+        </Button>
+      )}
     </main>
   );
 }

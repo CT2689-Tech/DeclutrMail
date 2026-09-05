@@ -110,7 +110,7 @@ const ERROR_COPY: Record<string, string> = {
   AuthExpiredError:
     'Google stopped accepting our access partway through. Reconnecting the account restores it.',
   InvalidGrantError:
-    'Google revoked our access to this inbox, so the scan could not finish. Reconnect the account to grant it again.',
+    'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
   TransientError:
     'The scan kept losing its connection to Gmail and ran out of attempts. Starting it again usually works.',
   PermanentError:

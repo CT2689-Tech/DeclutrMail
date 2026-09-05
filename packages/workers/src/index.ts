@@ -511,3 +511,5 @@ export {
   billingVerdictJobOptions,
   enqueueBillingVerdictTick,
 } from './billing-verdict.queue.js';
+
+export { writeWorkerHeartbeat, workerHeartbeatIsFresh } from './worker-heartbeat.js';

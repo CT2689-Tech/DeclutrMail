@@ -570,11 +570,17 @@ export class GmailClientService
       // Gmail signals a quota breach as 403 "Quota exceeded" (NOT 429).
       // Classify it as RateLimitError so the worker backs off rather
       // than burning retries against a per-minute window (D5).
-      const body = await safeBody(res);
+      const body = await fullBody(res);
       if (isQuotaError(body)) {
         throw new RateLimitError('Gmail 403 — quota exceeded', retryAfterMs(res));
       }
-      throw new TransientError(`Gmail returned 403: ${body}`);
+      // The grant exists but cannot authorize this operation. Reusing the
+      // reconnect-required classification also stops periodic sweeps from
+      // retrying the same insufficient grant until fresh consent is stored.
+      if (gmailErrorReason(body) === 'insufficientPermissions') {
+        throw new InvalidGrantError('Gmail grant lacks required permissions — reconnect required');
+      }
+      throw new TransientError(`Gmail returned 403: ${body.slice(0, 300)}`);
     }
     if (res.status >= 500) {
       throw new TransientError(`Gmail returned ${res.status}`);

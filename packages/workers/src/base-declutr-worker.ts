@@ -407,7 +407,18 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
   private emit(event: WorkerEvent, ctx: WorkerContext, extra?: Record<string, unknown>): void {
     console.log(
       JSON.stringify({
-        level: 'info',
+        severity:
+          event === 'worker.failed' || event === 'worker.dead_lettered'
+            ? 'ERROR'
+            : event === 'worker.retried'
+              ? 'WARNING'
+              : 'INFO',
+        level:
+          event === 'worker.failed' || event === 'worker.dead_lettered'
+            ? 'error'
+            : event === 'worker.retried'
+              ? 'warn'
+              : 'info',
         kind: event,
         worker: ctx.workerName,
         jobRef: telemetryReference(ctx.jobId),
@@ -533,6 +544,7 @@ export const SAFE_WORKER_RESULT_KEYS: ReadonlySet<string> = new Set([
 
 const SAFE_RESULT_STRING_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
   kind: new Set([
+    'gmail-reconnect',
     'deletion-receipt',
     'deletion-scheduled',
     'sweep',
@@ -549,6 +561,10 @@ const SAFE_RESULT_STRING_VALUES: Readonly<Record<string, ReadonlySet<string>>> =
     'preserved_stale',
     'sent',
     'skipped_disabled',
+    'skipped_recovered',
+    'skipped_delivery_disabled',
+    'skipped_delivery_rejected',
+    'skipped_no_postal_address',
     'skipped_no_recipient',
     'skipped_opted_out',
     'skipped_suppressed',

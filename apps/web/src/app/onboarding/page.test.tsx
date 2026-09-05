@@ -451,6 +451,42 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
   });
 
+  it.each(['first-run', 'secondary'])(
+    'shows a status-read failure and a working retry for %s',
+    async (entry) => {
+      searchParams =
+        entry === 'secondary' ? new URLSearchParams({ mailbox: 'mb2' }) : new URLSearchParams();
+      let recovered = false;
+      installFetchStub([
+        entry === 'secondary' ? soloMe() : meAuthed('syncing'),
+        onboardingState(),
+        {
+          method: 'GET',
+          path: '/api/v1/sync/status',
+          respond: () =>
+            recovered
+              ? json({
+                  data: {
+                    readiness_status: 'syncing',
+                    current_stage: 'fetching_metadata',
+                    progress_pct: 35,
+                    is_ready_for_triage: false,
+                  },
+                })
+              : json({ error: { code: 'internal_error' } }, 503),
+        },
+      ]);
+      renderPage();
+      await screen.findByText("We couldn't check your inbox scan. Try checking again.");
+      expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+      recovered = true;
+      await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() =>
+        expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '35'),
+      );
+    },
+  );
+
   it('does NOT bail to /senders on a transient sync-status error with no other mailbox — only the exact NO_ACTIVE_MAILBOX code traps (Codex adversarial review, round 1)', async () => {
     // `sync.isError` alone (the pre-review version of `trapped`) also
     // covers an exhausted 5xx or a network failure — both of which
@@ -470,7 +506,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     ]);
     renderPage();
 
-    await screen.findByText('Reading your inbox…');
+    await screen.findByText("We couldn't check your inbox scan. Try checking again.");
     expect(replace).not.toHaveBeenCalledWith('/senders');
   });
 });

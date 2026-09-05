@@ -1,4 +1,4 @@
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
@@ -19,7 +19,8 @@ type WorkerDb = PostgresJsDatabase<typeof schema>;
  */
 export const STUCK_MAILBOX_GRACE_MS = 2 * 60 * 60 * 1000;
 
-export type StuckMailboxReason = 'sync_failed' | 'needs_reconnect';
+export type StuckMailboxReason =
+  'sync_failed' | 'sync_stalled' | 'needs_reconnect' | 'incremental_failed';
 
 export interface StuckMailbox {
   mailboxAccountId: string;
@@ -65,6 +66,7 @@ export async function findStuckMailboxes(
   const syncFailedRows = await db
     .select({
       mailboxAccountId: providerSyncState.mailboxAccountId,
+      readinessStatus: providerSyncState.readinessStatus,
       errorCode: providerSyncState.errorCode,
       stuckSince: providerSyncState.updatedAt,
     })
@@ -72,7 +74,7 @@ export async function findStuckMailboxes(
     .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, providerSyncState.mailboxAccountId))
     .where(
       and(
-        eq(providerSyncState.readinessStatus, 'failed'),
+        inArray(providerSyncState.readinessStatus, ['failed', 'queued', 'syncing']),
         eq(mailboxAccounts.status, 'active'),
         lt(providerSyncState.updatedAt, cutoff),
       ),
@@ -94,10 +96,34 @@ export async function findStuckMailboxes(
       ),
     );
 
+  const incrementalFailedRows = await db
+    .select({
+      mailboxAccountId: providerSyncState.mailboxAccountId,
+      errorCode: providerSyncState.lastIncrementalErrorCode,
+      stuckSince: providerSyncState.lastIncrementalErrorAt,
+    })
+    .from(providerSyncState)
+    .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, providerSyncState.mailboxAccountId))
+    .where(
+      and(
+        eq(mailboxAccounts.status, 'active'),
+        eq(providerSyncState.readinessStatus, 'ready'),
+        sql`${providerSyncState.lastIncrementalErrorCode} IS NOT NULL AND ${providerSyncState.lastIncrementalErrorCode} <> 'InvalidGrantError'`,
+        lt(providerSyncState.lastIncrementalErrorAt, cutoff),
+        sql`(${providerSyncState.lastSyncedAt} IS NULL OR ${providerSyncState.lastSyncedAt} < ${providerSyncState.lastIncrementalErrorAt})`,
+      ),
+    );
+
   return [
+    ...incrementalFailedRows.map((row): StuckMailbox => ({
+      mailboxAccountId: row.mailboxAccountId,
+      reason: 'incremental_failed',
+      errorCode: row.errorCode,
+      stuckSince: row.stuckSince!,
+    })),
     ...syncFailedRows.map((row): StuckMailbox => ({
       mailboxAccountId: row.mailboxAccountId,
-      reason: 'sync_failed',
+      reason: row.readinessStatus === 'failed' ? 'sync_failed' : 'sync_stalled',
       errorCode: row.errorCode,
       stuckSince: row.stuckSince,
     })),

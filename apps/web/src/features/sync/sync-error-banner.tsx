@@ -141,7 +141,7 @@ export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
     <SyncBannerFrame testId="sync-error-banner">
       <SyncBannerMessage>
         {needsReconnect
-          ? 'Gmail access expired. Reconnect this account to resume syncing and Gmail actions. Your existing DeclutrMail history is safe.'
+          ? 'Gmail access needs renewing. Reconnect this account to resume syncing and Gmail actions. Your existing DeclutrMail history is safe.'
           : "New email isn't syncing — the last attempt failed. We retry automatically every few minutes."}
       </SyncBannerMessage>
       <Button

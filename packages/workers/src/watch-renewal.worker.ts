@@ -5,7 +5,11 @@ import type { schema } from '@declutrmail/db';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { persistGmailWatchState } from './gmail-watch-state.js';
-import { INVALID_GRANT_ERROR, notNeedingReconnect } from './mailbox-reconnect.js';
+import {
+  INVALID_GRANT_ERROR,
+  notNeedingReconnect,
+  recordMailboxSyncFailure,
+} from './mailbox-reconnect.js';
 import { TransientError } from './worker-errors.js';
 import type { GmailWatchAccess } from './ports.js';
 import type { WorkerContext } from './worker-context.js';
@@ -244,14 +248,7 @@ export class WatchRenewalWorker extends BaseDeclutrWorker<WatchRenewalJobData, W
         // `last_incremental_error_at` docblock in the schema).
         const needsReconnect = error.name === INVALID_GRANT_ERROR;
         if (needsReconnect) {
-          await this.deps.db
-            .update(providerSyncState)
-            .set({
-              lastIncrementalErrorAt: new Date(),
-              lastIncrementalErrorCode: INVALID_GRANT_ERROR,
-              updatedAt: new Date(),
-            })
-            .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+          await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, INVALID_GRANT_ERROR);
         }
         console.error(
           JSON.stringify({

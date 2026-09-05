@@ -179,7 +179,7 @@ describe('SyncErrorBanner', () => {
     render(<SyncErrorBanner mailboxId={MAILBOX_ID} />);
 
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
-    expect(screen.getByText(/gmail access expired/i)).toBeInTheDocument();
+    expect(screen.getByText(/gmail access needs renewing/i)).toBeInTheDocument();
     expect(screen.getByText(/existing declutrmail history is safe/i)).toBeInTheDocument();
   });
 
