@@ -117,7 +117,7 @@ const notDecidedRecently = (now: Date) => sql`NOT EXISTS (
   WHERE al.mailbox_account_id = triage_decisions.mailbox_account_id
     AND al.sender_key = triage_decisions.sender_key
     AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
-    AND al.occurred_at >= ${now}::timestamptz - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
+    AND al.occurred_at >= ${now.toISOString()}::timestamptz - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
     AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
 )`;
 
