@@ -125,6 +125,10 @@
           {
             "type": "command",
             "command": ".claude/hooks/require-tests-after-edit.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/check-raw-date-in-sql.sh"
           }
         ]
       }

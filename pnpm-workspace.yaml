@@ -1,3 +1,12 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# pnpm 10 blocks a dependency's install-time scripts by default. @sentry/cli's
+# postinstall downloads the actual sentry-cli binary the Next.js Sentry
+# webpack plugin shells out to for sourcemap upload — without it, the upload
+# step has no binary to run and silently no-ops (no error, no log line,
+# build succeeds). Confirmed via Vercel build logs: "Ignored build scripts:
+# ..., @sentry/cli@2.58.6, ..." with zero Sentry output anywhere after.
+onlyBuiltDependencies:
+  - '@sentry/cli'

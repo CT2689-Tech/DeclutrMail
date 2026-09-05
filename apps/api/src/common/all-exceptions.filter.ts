@@ -33,13 +33,18 @@ const SAFE_RUNTIME_ERROR_CODES: ReadonlySet<string> = new Set([
 ]);
 
 // Attribution set for `errorName`'s fingerprint/log label — kept as a
-// stable grouping key even though the real exception (name, message,
+// stable grouping key even though the real exception (class name and
 // stack) now reaches Sentry directly (founder decision 2026-08-28:
 // Sentry is internal tooling, not a public surface, so the D7-motivated
 // scrub that used to replace every 5xx with a synthetic placeholder no
-// longer applies to it — see the 5xx block in `catch` below). The
-// CLIENT-facing response in `safeHttpMessage` is untouched: that message
-// reaches arbitrary callers of the endpoint and stays generic.
+// longer applies to it — see the 5xx block in `catch` below). NOTE:
+// `Error.message` itself still does NOT reach Sentry — `scrubSentryEvent`
+// (packages/shared/src/observability/sentry-scrubber.ts) omits `value` in
+// BOTH profiles unconditionally, by design (a message can carry a subject
+// line or address). The full message reaches Cloud Logging ONLY, via the
+// `console.error(JSON.stringify(detail))` call below — join the two by
+// `cid`. The CLIENT-facing response in `safeHttpMessage` is a separate,
+// generic boundary and is untouched by any of this.
 
 /**
  * AllExceptionsFilter — maps every thrown exception to the D168 error
@@ -139,9 +144,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
                 errorKind,
                 String(status),
               ]);
-              // The real exception — name, message and stack all reach
-              // Sentry now. Grouping is still controlled by the explicit
-              // fingerprint above, not by the message text.
+              // The exception's class and stack reach Sentry; `message`
+              // does not (`scrubSentryEvent` omits it in both profiles —
+              // see the top-of-file note). Grouping is controlled by the
+              // explicit fingerprint above, not by message text. For the
+              // actual message, join Cloud Logging on `cid`.
               Sentry.captureException(exception);
             });
           })
