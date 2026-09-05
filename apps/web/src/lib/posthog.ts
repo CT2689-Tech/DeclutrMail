@@ -71,6 +71,12 @@ async function loadSdk(): Promise<PosthogSdk | null> {
   if (!sdkPromise) {
     sdkPromise = (async () => {
       const mod = await import('posthog-js');
+      // Loading the chunk yields. Consent may have been withdrawn meanwhile;
+      // init itself emits automatic pageviews, so the later capture gate is too late.
+      if (!hasAnalyticsConsent()) {
+        sdkPromise = null;
+        return null;
+      }
       const posthog = mod.default as unknown as PosthogSdk;
       posthog.init(key, {
         api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',

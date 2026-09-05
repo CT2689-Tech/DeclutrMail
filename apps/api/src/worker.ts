@@ -1,6 +1,13 @@
 import 'reflect-metadata';
 
 import { writeWorkerHeartbeat } from '@declutrmail/workers';
+import {
+  collectOperationalTelemetry,
+  observeSyncAttempt,
+  OPERATIONAL_INTERVAL_MS,
+  OPERATIONAL_QUEUES,
+  type OperationalQueue,
+} from './ops/operational-telemetry.js';
 import { buildGmailReconnectEmailHandler } from './notifications/gmail-reconnect-email.trigger.js';
 
 import { createHash } from 'node:crypto';
@@ -626,6 +633,22 @@ async function bootstrap(): Promise<void> {
   });
   bootStep('gmail_quota_connection_done');
 
+  // One fail-fast, deadline-bound connection shared by read-only telemetry queues.
+  // Consumer connections buffer forever during outages and cannot serve this purpose.
+  const operationalConnection = gmailQuotaConnection.duplicate({
+    commandTimeout: 5_000,
+    connectTimeout: 5_000,
+  });
+  operationalConnection.on('error', () => undefined); // Collection emits its closed failure signal.
+  const operationalQueues = OPERATIONAL_QUEUES.map(
+    (name) =>
+      new Queue(name, {
+        connection: operationalConnection,
+        skipMetasUpdate: true,
+      }),
+  );
+  for (const queue of operationalQueues) queue.on('error', () => undefined);
+
   /**
    * Reuse of the KMS unwrap, keyed on the ciphertext the row read
    * returns. See `TokenUnwrapCache` for why the built client is
@@ -861,7 +884,7 @@ async function bootstrap(): Promise<void> {
 
   const bullWorker = new Worker<InitialSyncJobData, InitialSyncResult>(
     INITIAL_SYNC_QUEUE,
-    (job) => initialSync.run(job),
+    (job) => observeSyncAttempt('initial', () => initialSync.run(job)),
     // concurrency = D203 global queue cap; per-mailbox=1 is enforced by
     // the `jobId = mailboxAccountId` dedup in `initialSyncJobOptions`.
     // `...perMailboxWorkerSettings()`: pairs with `initialSyncJobOptions`'s
@@ -925,7 +948,7 @@ async function bootstrap(): Promise<void> {
   incrementalSync.setDeadLetterRecorder(deadLetterRecorder);
   const incrementalBullWorker = new Worker<IncrementalSyncJobData, IncrementalSyncResult>(
     INCREMENTAL_SYNC_QUEUE,
-    (job) => incrementalSync.run(job),
+    (job) => observeSyncAttempt('incremental', () => incrementalSync.run(job)),
     // See the initial-sync `Worker` above.
     { connection, concurrency: 20, ...userFacingTuning, ...perMailboxWorkerSettings() },
   );
@@ -1374,8 +1397,27 @@ async function bootstrap(): Promise<void> {
   reconcilerHandle.unref();
 
   let heartbeatInFlight: Promise<void> | null = null;
+  let operationalInFlight: Promise<void> | null = null;
+  let lastOperationalAt = 0;
   function heartbeatTick(): void {
     if (shuttingDown || !bootstrapComplete || heartbeatInFlight) return;
+    if (!operationalInFlight && Date.now() - lastOperationalAt >= OPERATIONAL_INTERVAL_MS) {
+      lastOperationalAt = Date.now();
+      operationalInFlight = collectOperationalTelemetry(db, operationalQueues as OperationalQueue[])
+        .catch(() =>
+          console.error(
+            JSON.stringify({
+              level: 'error',
+              kind: 'ops.collection',
+              source: 'collector',
+              success: 0,
+            }),
+          ),
+        )
+        .finally(() => {
+          operationalInFlight = null;
+        });
+    }
     heartbeatInFlight = writeWorkerHeartbeat(db)
       .catch(() => {
         console.error(JSON.stringify({ level: 'error', kind: 'worker.heartbeat_failed' }));
@@ -2893,6 +2935,9 @@ async function bootstrap(): Promise<void> {
     // flag, which is the invariant every other handle in this list keeps.
     clearInterval(billingReconcileHandle);
     clearInterval(webhookDedupSweepHandle);
+    // Optional read-only probes must not consume the worker drain grace period.
+    operationalConnection.disconnect();
+    void Promise.allSettled(operationalQueues.map((queue) => queue.close()));
     void (async () => {
       if (heartbeatInFlight) await heartbeatInFlight;
       if (stuckMailboxInFlight) await stuckMailboxInFlight;

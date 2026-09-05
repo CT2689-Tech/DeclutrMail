@@ -50,7 +50,7 @@ export function dashboard(project) {
           text: {
             format: 'MARKDOWN',
             content:
-              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. **Use admin@declutrmail.ai for project access.** Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost coverage = 1 measured / 0 unavailable.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently. Database connection panels require the new collector release; until its first successful run, blank means unavailable. The daily publisher is in PR #726; the local scheduled bridge supplies existing CI observations meanwhile.',
+              'Daily vendor snapshots; live Cloud Run and Pub/Sub telemetry. **Use admin@declutrmail.ai for project access.** Select **7 or 30 days** for history.\n\n**Costs are reported month-to-date usage charges, not daily spend or a complete invoice.** No inferred daily deltas; month boundaries reset. Fixed plans, taxes, credits and unconnected billing sources can be absent. Missing readings are unknown, never $0. Cost coverage = 1 measured / 0 unavailable.\n\nDaily collector runs at 13:00 UTC via the existing GitHub workflow. GitHub can delay schedules; the collector absence alert detects >30 hours without a snapshot. Health monitoring runs independently. Database connection panels require the new collector release; until its first successful run, blank means unavailable. Runtime charts require the aggregate telemetry release and log metric provisioning. Empty runtime panels mean unavailable; do not infer a healthy zero. Distribution percentiles describe observations and are approximate. Billing export panels stay unavailable until actual export rows arrive.',
           },
         },
         {
@@ -58,7 +58,7 @@ export function dashboard(project) {
           text: {
             format: 'MARKDOWN',
             content:
-              '**Engineering:** inspect sync errors, queue age, deployment health; repair code; verify release.\n\n**Founder/access:** Anthropic admin credential; Resend delivery-read access and business postal address; remaining invoices for Sentry, PostHog, Resend and Workspace/domain fees. GCP detailed export is enabled and awaiting its first table; GCP statements plus Supabase, Vercel and Upstash receipts are imported; OAuth/account reconnection and alert receipt.\n\nVendor status: **0 OK · 1 warning · 2 breach · 3 read error · 4 unconfigured**. Status measures the vendor check, not application uptime.\n\n[Daily workflow](https://github.com/CT2689-Tech/DeclutrMail/actions/workflows/vendor-limits-watchdog.yml) · [Incidents](https://console.cloud.google.com/monitoring/alerting?project=' +
+              '**Engineering:** [Alert runbook](https://github.com/CT2689-Tech/DeclutrMail/blob/main/docs/ops/observability-alerts.md); inspect sync errors, queue age, deployment health; repair code; verify release.\n\n**Founder/access:** Anthropic admin credential; Resend delivery-read access and business postal address; remaining invoices for Sentry, PostHog, Resend and Workspace/domain fees. GCP detailed export is enabled and awaiting its first table; GCP statements plus Supabase, Vercel and Upstash receipts are imported; OAuth/account reconnection and alert receipt.\n\nVendor status: **0 OK · 1 warning · 2 breach · 3 read error · 4 unconfigured**. Status measures the vendor check, not application uptime.\n\n[Daily workflow](https://github.com/CT2689-Tech/DeclutrMail/actions/workflows/vendor-limits-watchdog.yml) · [Incidents](https://console.cloud.google.com/monitoring/alerting?project=' +
               project +
               ') · [Billing](https://console.cloud.google.com/billing?project=' +
               project +
@@ -124,6 +124,89 @@ export function dashboard(project) {
               ? ['resource.label.service_name', 'metric.label.kind']
               : ['resource.label.service_name'],
           ),
+        ),
+        ...[
+          [
+            'Reconnect incidents created in prior 24h — sampled count by outbox state',
+            'ops_reconnect_incidents',
+            ['metric.label.status'],
+          ],
+          [
+            'Reconnect incidents followed by successful sync — sampled count, not email conversion',
+            'ops_reconnect_sync_after',
+            ['metric.label.status'],
+          ],
+          [
+            'BullMQ waiting job age since creation — p99 samples, includes retries/delays',
+            'ops_queue_wait_age',
+            ['metric.label.queue'],
+          ],
+          [
+            'BullMQ waiting count — p99 of five-minute samples',
+            'ops_queue_waiting',
+            ['metric.label.queue'],
+          ],
+          [
+            'Affected mailboxes — p99 of five-minute samples per reason (not additive)',
+            'ops_mailbox_affected',
+            ['metric.label.reason'],
+          ],
+          [
+            'Scheduler last success age — p99 of five-minute samples, seconds',
+            'ops_scheduler_success_age',
+            ['metric.label.worker'],
+          ],
+          [
+            'Database connection pressure — p99 of five-minute samples, fraction',
+            'ops_database_pressure',
+            [],
+          ],
+          [
+            'Sync attempt duration — resolved/failed p95 ms, not completed sync',
+            'ops_sync_attempt_duration',
+            ['metric.label.sync', 'metric.label.outcome'],
+          ],
+        ].map(([title, name, groups]) =>
+          chart(
+            title,
+            'logging.googleapis.com/user/' + name,
+            'cloud_run_revision',
+            'resource.labels.service_name="declutrmail-worker"',
+            name === 'ops_sync_attempt_duration' ? 'ALIGN_PERCENTILE_95' : 'ALIGN_PERCENTILE_99',
+            '300s',
+            'REDUCE_MAX',
+            groups,
+          ),
+        ),
+        chart(
+          'Reconnect email — provider accepted / skipped, not delivered',
+          'logging.googleapis.com/user/ops_reconnect_email_outcome',
+          'cloud_run_revision',
+          'resource.labels.service_name="declutrmail-worker"',
+          'ALIGN_SUM',
+          '300s',
+          'REDUCE_SUM',
+          ['metric.label.outcome'],
+        ),
+        chart(
+          'Runtime collection failures — observations per five minutes',
+          'logging.googleapis.com/user/ops_collection_failed',
+          'cloud_run_revision',
+          'resource.labels.service_name="declutrmail-worker"',
+          'ALIGN_SUM',
+          '300s',
+          'REDUCE_SUM',
+          ['metric.label.source', 'metric.label.queue'],
+        ),
+        chart(
+          'Runtime collection freshness — successful observations per five minutes',
+          'logging.googleapis.com/user/ops_collection_completed',
+          'cloud_run_revision',
+          'resource.labels.service_name="declutrmail-worker"',
+          'ALIGN_SUM',
+          '300s',
+          'REDUCE_SUM',
+          ['metric.label.source', 'metric.label.queue'],
         ),
         chart(
           'API availability — fraction of uptime checks passing',

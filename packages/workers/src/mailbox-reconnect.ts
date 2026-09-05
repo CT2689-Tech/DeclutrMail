@@ -92,12 +92,27 @@ export async function recordMailboxSyncFailure(
   errorCode: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
-    const [state] = await tx
+    let [state] = await tx
       .select()
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
       .for('update');
-    if (!state) return;
+    if (!state) {
+      // A periodic sweep can discover revoked credentials before sync has created
+      // its state row. Persist that first incident too, or every tick retries it.
+      const [active] = await tx
+        .select({ id: mailboxAccounts.id })
+        .from(mailboxAccounts)
+        .where(and(eq(mailboxAccounts.id, mailboxAccountId), eq(mailboxAccounts.status, 'active')));
+      if (!active) return;
+      await tx.insert(providerSyncState).values({ mailboxAccountId }).onConflictDoNothing();
+      [state] = await tx
+        .select()
+        .from(providerSyncState)
+        .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
+        .for('update');
+      if (!state) return;
+    }
     const alreadyAwaiting =
       state.lastIncrementalErrorCode === 'InvalidGrantError' &&
       state.lastIncrementalErrorAt !== null &&

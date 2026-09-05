@@ -281,6 +281,20 @@ describe('WatchRenewalWorker', () => {
     expect(notices[0]).toMatchObject({ topic: 'mailbox.reconnect_required', aggregateId: bad });
   });
 
+  it('persists and deduplicates a first revoked grant even before sync state exists', async () => {
+    const db = await freshDb();
+    const mailbox = await seedMailbox(db, { email: 'before-sync@x.com' });
+    await db.delete(providerSyncState).where(eq(providerSyncState.mailboxAccountId, mailbox));
+    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError');
+    await recordMailboxSyncFailure(db as never, mailbox, 'InvalidGrantError');
+    const [state] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailbox));
+    expect(state?.lastIncrementalErrorCode).toBe('InvalidGrantError');
+    expect(await db.select().from(outboxEvents)).toHaveLength(1);
+  });
+
   it('keeps retrying a TRANSIENT failure — only a revoked grant is permanent', async () => {
     const db = await freshDb();
     const flaky = await seedMailbox(db, { email: 'flaky@x.com' });

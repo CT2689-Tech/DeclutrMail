@@ -14,11 +14,11 @@ import { getActionDescriptor } from '@declutrmail/shared/actions';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { GmailMutationAccess } from './gmail-mutation-client.js';
 import type { MailboxActionLock } from './label-action.worker.js';
-import { notNeedingReconnect } from './mailbox-reconnect.js';
+import { notNeedingReconnect, recordMailboxSyncFailure } from './mailbox-reconnect.js';
 import { createLimiter } from './reasoning.js';
 import type { SnoozeLabelMapStore } from './snooze-wake.queue.js';
 import type { WorkerContext } from './worker-context.js';
-import { isNonRetryable, ValidationError } from './worker-errors.js';
+import { InvalidGrantError, isNonRetryable, ValidationError } from './worker-errors.js';
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 
@@ -327,11 +327,12 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
                 await this.recordWakeFailure(mailboxAccountId, senderKey, version, err);
                 console.error(
                   JSON.stringify({
+                    severity: 'ERROR',
                     level: 'error',
                     kind: 'snooze.wake_failed',
                     worker: this.workerName,
                     mailboxAccountId,
-                    error: err instanceof Error ? err.message : String(err),
+                    errorCode: snoozeErrorCode(err),
                   }),
                 );
               }
@@ -373,13 +374,20 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
               await this.deps.labelMap.set(mb.id, labelId);
               mappingsRefreshed += 1;
             } catch (err) {
+              // This sweep can be the first caller to discover a revoked or
+              // insufficient grant. Persist the shared incident so subsequent
+              // sweeps stop spending it and the existing recovery outbox fires.
+              if (err instanceof InvalidGrantError) {
+                await recordMailboxSyncFailure(this.deps.db, mb.id, 'InvalidGrantError');
+              }
               console.error(
                 JSON.stringify({
+                  severity: 'ERROR',
                   level: 'error',
                   kind: 'snooze.mapping_refresh_failed',
                   worker: this.workerName,
                   mailboxAccountId: mb.id,
-                  error: err instanceof Error ? err.message : String(err),
+                  errorCode: snoozeErrorCode(err),
                 }),
               );
             }
@@ -534,6 +542,9 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
     version: SnoozeTimerVersion,
     error: unknown,
   ): Promise<void> {
+    if (error instanceof InvalidGrantError) {
+      await recordMailboxSyncFailure(this.deps.db, mailboxAccountId, 'InvalidGrantError');
+    }
     const failedAt = (this.deps.now ?? (() => new Date()))();
     const errorName = error instanceof Error ? error.name : 'UnknownError';
     const failureKind =
@@ -562,6 +573,21 @@ export class SnoozeWakeWorker extends BaseDeclutrWorker<SnoozeWakeJobData, Snooz
         ),
       );
   }
+}
+
+/** Closed diagnostic classes; never log provider response text or mailbox content. */
+function snoozeErrorCode(error: unknown): string {
+  const name = error instanceof Error ? error.name : '';
+  return [
+    'InvalidGrantError',
+    'RateLimitError',
+    'TransientError',
+    'AuthExpiredError',
+    'PermanentError',
+    'ValidationError',
+  ].includes(name)
+    ? name
+    : 'UnknownError';
 }
 
 /** Optimistic timer version: both schedule and schedule-write timestamp. */
