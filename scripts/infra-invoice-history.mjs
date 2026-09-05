@@ -5,6 +5,7 @@ export function invoiceHistoryWidget(ledger) {
   if (ledger.version !== 1 || !Number.isFinite(Date.parse(ledger.verifiedAt)))
     throw new Error('Invalid invoice ledger version or verification time');
   const seen = new Set();
+  const vendorScopes = new Map();
   const rows = ledger.entries
     .map((e) => {
       if (!/^[A-Za-z0-9 .()-]{1,60}$/.test(e.vendor) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(e.month))
@@ -25,7 +26,11 @@ export function invoiceHistoryWidget(ledger) {
         throw new Error('Invalid invoice source');
       if (e.basis != null && !['payment month', 'statement month'].includes(e.basis))
         throw new Error('Invalid invoice month basis');
-      const key = `${e.vendor}:${e.scope}:${e.month}`;
+      const columnScope = `${e.scope}:${e.basis ?? 'statement month'}`;
+      if (vendorScopes.has(e.vendor) && vendorScopes.get(e.vendor) !== columnScope)
+        throw new Error('Mixed scope or month basis in invoice vendor column');
+      vendorScopes.set(e.vendor, columnScope);
+      const key = `${e.vendor}:${e.month}`;
       if (seen.has(key))
         throw new Error('Duplicate invoice month; consolidate source documents first');
       seen.add(key);
@@ -59,7 +64,7 @@ export function invoiceHistoryWidget(ledger) {
     title: 'Historical invoices and statements — verified USD charges',
     text: {
       format: 'MARKDOWN',
-      content: `Verified ${ledger.verifiedAt}. USD document totals; bars share one scale. Columns use the stated month basis below. Account totals may include other projects. Missing readings are unknown. History is independent of the dashboard time selector.\n\n| Month | ${vendors.join(' | ')} |\n|---|${vendors.map(() => '---|').join('')}\n${table}\n\n${evidence}`,
+      content: `Verified ${ledger.verifiedAt}. USD document totals; bars share one scale. Columns use the stated month basis below. Account totals may include other projects. Missing readings are unknown. History is independent of the dashboard time selector.\n\n| Month | ${vendors.map((vendor) => `${vendor} (${rows.find((e) => e.vendor === vendor).basis ?? 'statement month'})`).join(' | ')} |\n|---|${vendors.map(() => '---|').join('')}\n${table}\n\n${evidence}`,
     },
   };
 }

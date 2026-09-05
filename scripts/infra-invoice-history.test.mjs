@@ -31,3 +31,15 @@ test('duplicate documents and malformed or mixed-currency amounts cannot misstat
     /source/,
   );
 });
+
+test('vendor columns cannot silently combine different scopes or date bases', () => {
+  assert.throws(
+    () => invoiceHistoryWidget(ledger([entry, { ...entry, month: '2026-08', scope: 'project' }])),
+    /Mixed scope/,
+  );
+  assert.throws(
+    () =>
+      invoiceHistoryWidget(ledger([entry, { ...entry, month: '2026-08', basis: 'payment month' }])),
+    /Mixed scope/,
+  );
+});
