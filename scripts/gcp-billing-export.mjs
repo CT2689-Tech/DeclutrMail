@@ -90,18 +90,21 @@ export async function checkGcpBillingExport(table, project = 'declutrmail-ai-pro
   const schema = result.schema?.fields;
   if (!schema) throw new Error('Billing query returned no schema');
   const rows = [];
-  let nextPage;
-  do {
-    for (const row of result.rows ?? [])
+  const appendRows = (page) => {
+    for (const row of page.rows ?? [])
       rows.push(Object.fromEntries(row.f.map((c, i) => [schema[i].name, c.v])));
-    nextPage = result.pageToken;
-    if (!nextPage) break;
+  };
+  appendRows(result);
+  let nextPage = result.pageToken;
+  while (nextPage) {
     const ref = result.jobReference;
     result = await gcpRequest(
-      `https://bigquery.googleapis.com/bigquery/v2/projects/${project}/queries/${ref.jobId}?location=US&pageToken=${encodeURIComponent(result.pageToken)}`,
+      `https://bigquery.googleapis.com/bigquery/v2/projects/${project}/queries/${ref.jobId}?location=US&pageToken=${encodeURIComponent(nextPage)}`,
       token,
     );
-  } while (true);
+    appendRows(result);
+    nextPage = result.pageToken;
+  }
   // BigQuery TIMESTAMP JSON values are Unix seconds.
   rows.forEach(
     (r) =>
