@@ -19,6 +19,8 @@
  * `queryFn`.
  */
 
+import { getActionStatus, type UndoRevertResult } from './actions';
+
 import { ActivityListMetaSchema } from '@declutrmail/shared/contracts';
 import type { ActivityListMeta, ActivityRuleRef, Envelope } from '@declutrmail/shared/contracts';
 
@@ -243,17 +245,36 @@ export function fetchActivityWeeklyReview(
   });
 }
 
-/**
- * POST /api/undo/:token — revert the action recorded for `token`.
- *
- * The Activity row's `undoState.token` is the input; the BE enqueues a
- * reverse `action_jobs` row asynchronously and the FE invalidates the
- * Activity list query on success so the row flips to `executed` on the
- * next refetch.
- *
- * The fetcher swallows the typed envelope and returns nothing — every
- * caller wants the side effect, not the payload.
- */
-export async function revertActivityUndo(token: string): Promise<void> {
-  await apiPost<unknown>(`/api/undo/${encodeURIComponent(token)}`);
+/** Reverse only this Activity action and wait for confirmed completion. */
+export async function revertActivityUndo(token: string, mailboxId?: string): Promise<void> {
+  const options = mailboxId ? { mailboxId } : {};
+  const { data } = await apiPost<UndoRevertResult>(
+    `/api/undo/${encodeURIComponent(token)}/action`,
+    undefined,
+    options,
+  );
+  if (data.reverted) return;
+  if (!data.actionId)
+    throw new Error("Couldn't confirm Undo. Refresh Activity to check its status.");
+  // Keep the originating mailbox for every poll even if the user switches.
+  // Bound the wait: losing status access does not prove the Gmail job failed.
+  for (let attempt = 0; attempt < 120; attempt++) {
+    let status;
+    try {
+      status = await getActionStatus(data.actionId, options);
+    } catch {
+      throw new Error("Couldn't confirm Undo. It may still finish. Refresh Activity to check.");
+    }
+    if (status.status === 'failed') {
+      throw new Error('Undo did not complete. Some emails may have been restored. Try again.');
+    }
+    if (status.status === 'done') {
+      if (status.undoRevertedAt) return;
+      throw new Error("Couldn't confirm Undo. Refresh Activity to check its status.");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(
+    'Undo is taking longer than expected. It may still finish. Refresh Activity to check.',
+  );
 }

@@ -2295,7 +2295,11 @@ export class ActionsService {
    * — the FE polls the first entry as the user-visible undo progress;
    * the rest tick over silently via the worker's local-mirror update.
    */
-  async enqueueCompositeRevert(input: { mailboxAccountId: string; token: string }): Promise<
+  async enqueueCompositeRevert(input: {
+    mailboxAccountId: string;
+    token: string;
+    scope?: 'action';
+  }): Promise<
     Array<{
       token: string;
       actionId: string;
@@ -2330,6 +2334,25 @@ export class ActionsService {
         code: 'ACTION_NOT_FOUND',
         message: 'No forward action matches this undo token.',
       });
+    }
+
+    // Activity represents one action. Its explicit scope must not expand
+    // through composite_id into other senders or sibling verbs. Existing
+    // receipt/tray callers retain their intentional whole-batch reversal.
+    if (input.scope === 'action') {
+      if (forwardRow.verb === 'unsubscribe') {
+        throw new BadRequestException('Unsubscribe cannot be reversed.');
+      }
+      const handle = await this.enqueueRevert({
+        mailboxAccountId,
+        token,
+        verb: forwardRow.verb,
+        messageIds: forwardRow.resolvedMessageIds,
+        selector: forwardRow.selector,
+        wakeAt: forwardRow.wakeAt,
+        reach: forwardRow.reach,
+      });
+      return [{ token, ...handle }];
     }
 
     const primaryId = forwardRow.compositeId ?? forwardRow.id;

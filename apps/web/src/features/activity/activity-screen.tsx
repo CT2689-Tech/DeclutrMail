@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { useIsFetching } from '@tanstack/react-query';
+import { useIsFetching, useIsMutating, useMutationState } from '@tanstack/react-query';
 
 import {
   Avatar,
@@ -254,12 +254,14 @@ export function ActivityScreen() {
       outcomeFilters.isInvalid,
     ],
   );
+  const clearedFilterKey = useRef(filterKey);
   useEffect(() => {
     // Filter change → drop selections + failed-token pills. Otherwise a
     // row hidden by a new filter could still be in the bulk action set,
     // invisible. Guarded on !bulkBusy so an in-flight bulk-undo
     // doesn't lose its target set mid-run.
-    if (bulkBusy) return;
+    if (bulkBusy || clearedFilterKey.current === filterKey) return;
+    clearedFilterKey.current = filterKey;
     setSelectedIds(new Set());
     setFailedTokens(new Set());
     setBulkError(null);
@@ -1779,11 +1781,19 @@ function BulkActionBar({
   onClear: () => void;
 }) {
   const revert = useRevertActivity();
+  const mailboxId = useOptionalAuth()?.me?.activeMailboxId ?? undefined;
+  const pendingTokens = useMutationState({
+    filters: { mutationKey: ['activity-undo', mailboxId], status: 'pending' },
+    select: (mutation) => mutation.state.variables,
+  });
   // Only rows with an available undo are valid bulk-undo targets.
   // Show the count of revertable selections vs the total selection
   // so the user can SEE that a stale / expired row was skipped.
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
-  const revertableCount = selectedRows.filter((r) => r.undoState.kind === 'available').length;
+  const revertableRows = selectedRows.filter(
+    (r) => r.undoState.kind === 'available' && !pendingTokens.includes(r.undoState.token),
+  );
+  const revertableCount = revertableRows.length;
 
   if (selectedIds.size === 0) return null;
 
@@ -1791,8 +1801,7 @@ function BulkActionBar({
     onSetBulkBusy(true);
     onSetBulkError(null);
     onSetFailedTokens(() => new Set());
-    const targets = selectedRows
-      .filter((r) => r.undoState.kind === 'available')
+    const targets = revertableRows
       .map((r) => (r.undoState.kind === 'available' ? r.undoState.token : null))
       .filter((token): token is string => token !== null);
     addBreadcrumb({
@@ -1821,7 +1830,7 @@ function BulkActionBar({
       onSetBulkError(
         getActionFailureCopy('revert-terminal', {
           whatChanged: `${targets.length - failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} completed.`,
-          whatDidNotChange: `${failedTokenList.length} original action${failedTokenList.length === 1 ? ' was' : 's were'} not reversed.`,
+          whatDidNotChange: `Completion could not be confirmed for ${failedTokenList.length} action${failedTokenList.length === 1 ? '' : 's'}. Some emails may have been restored.`,
           nextStep: 'Use Try again on each failed row.',
         }).message,
       );
@@ -3290,11 +3299,14 @@ function UndoCell({
   const undo = row.undoState;
   const timeZone = useUserTimeZone();
 
-  // Mutation state lives per-row via the hook's mutationKey-free shape:
-  // we read `revert.isPending` + `revert.error` directly. Multiple
-  // rows share the same hook instance, so `isPending` flips for any
-  // in-flight revert — gate the visual pending state on `variables`.
-  const isPendingHere = revert.isPending && revert.variables === lastToken(undo);
+  // Keep feedback next to the action until the worker finishes, not just
+  // until the enqueue request returns.
+  const mailboxId = useOptionalAuth()?.me?.activeMailboxId ?? undefined;
+  const isPendingHere =
+    useIsMutating({
+      mutationKey: ['activity-undo', mailboxId],
+      predicate: (mutation) => mutation.state.variables === lastToken(undo),
+    }) > 0;
   const tokenIsBulkFailed =
     undo.kind === 'available' && (bulkFailedTokens?.has(undo.token) ?? false);
 
@@ -3314,32 +3326,42 @@ function UndoCell({
   if (undo.kind === 'available') {
     const failed = (revert.isError && revert.variables === undo.token) || tokenIsBulkFailed;
     return (
-      <button
-        type="button"
-        onClick={() => revert.mutate(undo.token)}
-        disabled={isPendingHere}
-        title={
-          failed
-            ? getActionFailureCopy('revert-enqueue', {
-                nextStep: 'Click to try again.',
-              }).message
-            : 'Revert this action.'
-        }
-        style={{
-          ...baseStyle,
-          color: failed ? color.amber : color.primary,
-          cursor: isPendingHere ? 'wait' : 'pointer',
-          fontWeight: failed ? 600 : 500,
-        }}
+      <span
+        style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}
+        aria-live="polite"
       >
-        {isPendingHere ? 'Undoing…' : failed ? 'Try again' : 'Undo'}
-        <span aria-hidden="true">↺</span>
-      </button>
+        <button
+          type="button"
+          aria-busy={isPendingHere}
+          onClick={() => revert.mutate(undo.token)}
+          disabled={isPendingHere}
+          title={
+            failed
+              ? (revert.error?.message ?? 'Could not confirm Undo. Try again.')
+              : 'Revert this action.'
+          }
+          style={{
+            ...baseStyle,
+            color: failed ? color.amber : color.primary,
+            cursor: isPendingHere ? 'wait' : 'pointer',
+            fontWeight: failed ? 600 : 500,
+          }}
+        >
+          {isPendingHere ? 'Undoing…' : failed ? 'Try again' : 'Undo'}
+          <span aria-hidden="true">↺</span>
+        </button>
+        {failed && (
+          <span role="status" style={{ color: color.amber, fontSize: 12, maxWidth: 260 }}>
+            {revert.error?.message ?? 'Could not confirm Undo. Try again.'}
+          </span>
+        )}
+      </span>
     );
   }
   if (undo.kind === 'executed') {
     return (
       <span
+        role="status"
         style={{
           ...baseStyle,
           color: color.fgMuted,

@@ -225,6 +225,16 @@ function makeClient(
     },
   });
   client.setQueryData(ME_QUERY_KEY, STORY_ME);
+  client.setQueryData(activityKeys.weeklyReview(), {
+    window: '7d',
+    from: isoHoursAgo(168),
+    to: isoHoursAgo(0),
+    completed: 0,
+    skipped: 0,
+    failed: 0,
+    recovered: 0,
+    protected: 0,
+  });
   if (rows) {
     // U27 — `useActivity` is an infinite query; the cache entry is
     // InfiniteData ({ pages, pageParams }), one page per envelope.
@@ -266,6 +276,7 @@ const meta: StoryMeta<typeof ActivityScreen> = {
   component: ActivityScreen,
   parameters: {
     layout: 'fullscreen',
+    nextjs: { appDirectory: true },
     docs: {
       description: {
         component:
@@ -355,6 +366,32 @@ export const NextPageError: Story<typeof ActivityScreen> = {
       fetchStatus: 'idle',
       fetchMeta: { fetchMore: { direction: 'forward' } },
     });
+    return frame(client);
+  },
+};
+
+/** Pending is shared across row remounts and bulk selections; no extra toast. */
+export const UndoInProgress: Story<typeof ActivityScreen> = {
+  render: () => {
+    const client = makeClient(ROWS.slice(0, 2), '30d', 'all');
+    const undo = ROWS[0]!.undoState;
+    if (undo.kind === 'available') {
+      client.getMutationCache().build(
+        client,
+        { mutationKey: ['activity-undo', undefined] },
+        {
+          context: undefined,
+          data: undefined,
+          error: null,
+          failureCount: 0,
+          failureReason: null,
+          isPaused: false,
+          status: 'pending',
+          variables: undo.token,
+          submittedAt: Date.now(),
+        },
+      );
+    }
     return frame(client);
   },
 };
