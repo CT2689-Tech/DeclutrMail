@@ -859,6 +859,73 @@ describe('ActivityScreen — populated', () => {
 });
 
 describe('ActivityScreen — D58 undo affordances', () => {
+  it('keeps row Undo busy until Gmail completion, scopes it to one action, then refreshes', async () => {
+    let finish!: (response: Response) => void;
+    let done = false;
+    let scopedRequest = false;
+    let observedMailbox: string | null = null;
+    let polls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                undoState: done
+                  ? { kind: 'executed', executedAt: new Date(NOW).toISOString() }
+                  : { kind: 'available', token: 'undo-one', expiresAt: '2099-01-01T00:00:00Z' },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/undo-one/action',
+        respond: (req) => {
+          scopedRequest = true;
+          observedMailbox = req.headers.get('X-Active-Mailbox-Id');
+          return jsonOk({ data: { actionId: 'reverse-one', reverted: false } });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/reverse-one',
+        respond: () => {
+          polls++;
+          return new Promise<Response>((resolve) => {
+            finish = resolve;
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    await userEvent.click(await screen.findByRole('button', { name: /^undo/i }));
+    await waitFor(() => expect(polls).toBe(1));
+    expect(screen.getByRole('button', { name: /undoing/i })).toBeDisabled();
+    expect(screen.queryByText(/^Undone$/)).not.toBeInTheDocument();
+    expect(scopedRequest).toBe(true);
+    expect(observedMailbox).toBe(authState.activeMailboxId);
+    done = true;
+    await act(async () =>
+      finish(
+        jsonOk({
+          data: {
+            actionId: 'reverse-one',
+            status: 'done',
+            direction: 'reverse',
+            affectedCount: 1,
+            requestedCount: 1,
+            undoRevertedAt: new Date(NOW).toISOString(),
+          },
+        }),
+      ),
+    );
+    expect(await screen.findByText(/^Undone$/)).toBeInTheDocument();
+  });
+
   it('renders "Undo →" button for `available`', async () => {
     installFetchStub([
       {
@@ -1672,6 +1739,70 @@ describe('ActivityScreen — B16 all-time totals', () => {
 });
 
 describe('ActivityScreen — B7 multi-select + bulk undo', () => {
+  it('waits for selected reversals, preserves unselected rows, and exposes partial failure', async () => {
+    const finish = new Map<string, (response: Response) => void>();
+    const completed = new Set<string>();
+    const posts: string[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: ['one', 'two', 'three'].map((id) =>
+              row({
+                id,
+                undoState: completed.has(id)
+                  ? { kind: 'executed', executedAt: new Date(NOW).toISOString() }
+                  : { kind: 'available', token: id, expiresAt: '2099-01-01T00:00:00Z' },
+              }),
+            ),
+            meta: META_BASE,
+          }),
+      },
+      {
+        method: 'POST',
+        path: /^\/api\/undo\/(one|two|three)\/action$/,
+        respond: (_req, url) => {
+          const id = url.pathname.split('/')[3]!;
+          posts.push(id);
+          return jsonOk({ data: { actionId: id, reverted: false } });
+        },
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/(one|two|three)$/,
+        respond: (_req, url) =>
+          new Promise<Response>((resolve) => {
+            finish.set(url.pathname.split('/')[3]!, resolve);
+          }),
+      },
+    ]);
+    renderScreen();
+    const boxes = await screen.findAllByRole('checkbox', { name: /Select activity row/ });
+    await userEvent.click(boxes[0]!);
+    await userEvent.click(boxes[1]!);
+    await userEvent.click(screen.getByRole('button', { name: 'Undo 2' }));
+    await waitFor(() => expect(finish.size).toBe(2));
+    expect(posts.sort()).toEqual(['one', 'two']);
+    expect(screen.getAllByRole('button', { name: /Undoing/ })).toHaveLength(3);
+    completed.add('one');
+    await act(async () =>
+      finish.get('one')!(
+        jsonOk({ data: { status: 'done', undoRevertedAt: new Date(NOW).toISOString() } }),
+      ),
+    );
+    await screen.findByText(/^Undone$/);
+    expect(screen.getByText('2 rows')).toBeInTheDocument();
+    await act(async () =>
+      finish.get('two')!(jsonOk({ data: { status: 'failed', affectedCount: 0 } })),
+    );
+    expect(await screen.findByRole('button', { name: /Try again/ })).toBeInTheDocument();
+    expect(screen.getByText(/Completion could not be confirmed for 1 action/)).toBeInTheDocument();
+    expect(screen.getAllByText(/^Undone$/)).toHaveLength(1);
+    expect(posts).not.toContain('three');
+  });
+
   it('selecting a row reveals the bulk action bar with a count', async () => {
     installFetchStub([
       {

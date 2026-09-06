@@ -93,7 +93,8 @@ export class UndoController {
   }
 
   /**
-   * POST /api/undo/:token — revert the action recorded for `token`.
+   * POST /api/undo/:token — revert the original composite/batch.
+   * Activity uses /:token/action to reverse only the displayed action.
    *
    * Async (D226): the forward action ran in a worker, so the revert does
    * too. This validates the token, then enqueues a reverse `action_jobs`
@@ -117,6 +118,25 @@ export class UndoController {
   async revert(
     @CurrentMailbox() mailbox: { id: string },
     @Param('token') token: string,
+  ): Promise<Envelope<UndoResult>> {
+    return this.performRevert(mailbox, token);
+  }
+
+  /** A separate route fails closed if web deploys before the supporting API. */
+  @RateLimit({ bucket: 'gmail-action', limit: 30, windowSec: 60 })
+  @Post(':token/action')
+  @UseGuards(CsrfGuard)
+  async revertAction(
+    @CurrentMailbox() mailbox: { id: string },
+    @Param('token') token: string,
+  ): Promise<Envelope<UndoResult>> {
+    return this.performRevert(mailbox, token, 'action');
+  }
+
+  private async performRevert(
+    mailbox: { id: string },
+    token: string,
+    scope?: 'action',
   ): Promise<Envelope<UndoResult>> {
     if (!isUuid(token)) {
       throw new BadRequestException('token must be a UUID.');
@@ -167,6 +187,7 @@ export class UndoController {
     const reverts = await this.actions.enqueueCompositeRevert({
       mailboxAccountId: mailbox.id,
       token,
+      ...(scope === 'action' ? { scope: 'action' as const } : {}),
     });
     // The primary (or single-verb) row's reverse is first by design — the
     // FE polls this `actionId` as the user-visible progress signal. The

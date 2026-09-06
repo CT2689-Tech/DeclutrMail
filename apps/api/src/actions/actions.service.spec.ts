@@ -20,6 +20,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import { UndoController } from '../undo/undo.controller.js';
+import { UndoService } from '../undo/undo.service.js';
 import { ActionsService, reverseQueueJobId } from './actions.service.js';
 import { compositeActionRequestSchema } from './actions.types.js';
 
@@ -1753,49 +1755,86 @@ describe('ActionsService', () => {
       ).rejects.toMatchObject({ response: { code: 'ACTION_NOT_FOUND' } });
     });
 
-    it('batch undo cascades across senders via the batch token (ADR-0020)', async () => {
-      const { batchId, anchorId, otherId } = await seedBatch();
-      // Both siblings complete with their own undo tokens.
-      const [u1] = await db
-        .insert(undoJournal)
-        .values({
-          mailboxAccountId: mailboxId,
-          actionKind: 'archive',
-          payload: { kind: 'archive', messageIds: ['s1-a'], priorLabels: ['INBOX'] },
-        })
-        .returning({ token: undoJournal.token });
-      const [u2] = await db
-        .insert(undoJournal)
-        .values({
-          mailboxAccountId: mailboxId,
-          actionKind: 'archive',
-          payload: { kind: 'archive', messageIds: ['s2-a'], priorLabels: ['INBOX'] },
-        })
-        .returning({ token: undoJournal.token });
-      await db
-        .update(actionJobs)
-        .set({ status: 'done', affectedCount: 1, undoToken: u1!.token })
-        .where(eq(actionJobs.id, anchorId));
-      await db
-        .update(actionJobs)
-        .set({ status: 'done', affectedCount: 1, undoToken: u2!.token })
-        .where(eq(actionJobs.id, otherId));
-      queue.count = 0;
-      queue.jobIds = [];
-      queue.jobData = [];
+    it.each([undefined, 'action', 'other-action'] as const)(
+      'undo scope %s preserves the selected scope across senders',
+      async (scope) => {
+        const { batchId, anchorId, otherId } = await seedBatch();
+        // Both siblings complete with their own undo tokens.
+        const [u1] = await db
+          .insert(undoJournal)
+          .values({
+            mailboxAccountId: mailboxId,
+            actionKind: 'archive',
+            payload: { kind: 'archive', messageIds: ['s1-a'], priorLabels: ['INBOX'] },
+          })
+          .returning({ token: undoJournal.token });
+        const [u2] = await db
+          .insert(undoJournal)
+          .values({
+            mailboxAccountId: mailboxId,
+            actionKind: 'archive',
+            payload: { kind: 'archive', messageIds: ['s2-a'], priorLabels: ['INBOX'] },
+          })
+          .returning({ token: undoJournal.token });
+        await db
+          .update(actionJobs)
+          .set({
+            status: 'done',
+            affectedCount: 1,
+            undoToken: u1!.token,
+            resolvedMessageIds: ['s1-a'],
+          })
+          .where(eq(actionJobs.id, anchorId));
+        await db
+          .update(actionJobs)
+          .set({
+            status: 'done',
+            affectedCount: 1,
+            undoToken: u2!.token,
+            resolvedMessageIds: ['s2-a'],
+          })
+          .where(eq(actionJobs.id, otherId));
+        queue.count = 0;
+        queue.jobIds = [];
+        queue.jobData = [];
 
-      // The FE undoes with the batch token (= anchor's). The cascade must
-      // reach EVERY sender's forward row, not just the anchor's.
-      const status = await svc.getBatchStatus(batchId, mailboxId);
-      const reverts = await svc.enqueueCompositeRevert({
-        mailboxAccountId: mailboxId,
-        token: status.undoToken!,
-      });
-      expect(reverts).toHaveLength(2);
-      expect([...queue.jobIds].sort()).toEqual(
-        [reverseQueueJobId(u1!.token), reverseQueueJobId(u2!.token)].sort(),
-      );
-    });
+        // The FE undoes with the batch token (= anchor's). The cascade must
+        // reach EVERY sender's forward row, not just the anchor's.
+        const status = await svc.getBatchStatus(batchId, mailboxId);
+        const controller = new UndoController(new UndoService(db as never), svc);
+        const selectedToken = scope === 'other-action' ? u2!.token : status.undoToken!;
+        if (scope) {
+          await expect(
+            controller.revertAction({ id: '00000000-0000-0000-0000-000000000000' }, selectedToken),
+          ).rejects.toMatchObject({ response: { code: 'NOT_FOUND' } });
+          await db
+            .update(undoJournal)
+            .set({ expiresAt: new Date('2000-01-01') })
+            .where(eq(undoJournal.token, selectedToken));
+          await expect(
+            controller.revertAction({ id: mailboxId }, selectedToken),
+          ).rejects.toMatchObject({ response: { code: 'GONE' } });
+          expect(queue.jobIds).toHaveLength(0);
+          await db
+            .update(undoJournal)
+            .set({ expiresAt: new Date('2099-01-01') })
+            .where(eq(undoJournal.token, selectedToken));
+        }
+
+        if (scope) await controller.revertAction({ id: mailboxId }, selectedToken);
+        else await controller.revert({ id: mailboxId }, selectedToken);
+        const expectedTokens = scope ? [selectedToken] : [u1!.token, u2!.token];
+        expect([...queue.jobIds].sort()).toEqual(expectedTokens.map(reverseQueueJobId).sort());
+        const reversed = await db
+          .select()
+          .from(actionJobs)
+          .where(eq(actionJobs.direction, 'reverse'));
+        expect(reversed).toHaveLength(expectedTokens.length);
+        expect(reversed.flatMap((r) => r.resolvedMessageIds).sort()).toEqual(
+          scope === 'other-action' ? ['s2-a'] : scope ? ['s1-a'] : ['s1-a', 's2-a'],
+        );
+      },
+    );
   });
 
   describe('recordUnsubscribeIntent (D38 + 2026-06-05 brainstorm)', () => {

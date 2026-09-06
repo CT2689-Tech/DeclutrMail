@@ -36,6 +36,10 @@ import {
   type ActionRecoveryPreviewResult,
 } from '@/lib/api/actions';
 
+import { useOptionalAuth } from '@/features/auth/auth-provider';
+import { undoKeys } from '@/features/undo/query-keys';
+import { sendersKeys } from '@/features/senders/api/query-keys';
+
 import { activityKeys } from './query-keys';
 import { activityInfiniteQueryOptions, activityWeeklyReviewQueryOptions } from './query-options';
 
@@ -85,30 +89,20 @@ export function useActivityWeeklyReview(senderQuery = '') {
   );
 }
 
-/**
- * `useRevertActivity` — mutation for the Activity feed's per-row Undo
- * button (single-row B-track), and the parallelized bulk-undo loop
- * (B7). POSTs `/api/undo/:token` and invalidates the Activity list on
- * success so the row flips to `executed` on the next refetch.
- *
- * No optimistic update (the BE revert is async — a reverse `action_jobs`
- * row is enqueued and the worker reconciles later). The Activity row's
- * `undoState` only flips to `executed` once the worker confirms; the
- * mutation completes when the BE accepts the enqueue, not when the
- * Gmail mutation lands. Showing the row as "Undone" immediately would
- * be a fake-completion (CLAUDE.md §10) — we wait for the refetch.
- *
- * Errors propagate to the caller so the row can render a "Try again"
- * pill (B13). The hook does NOT swallow them.
- */
+/** Activity Undo stays pending until the reverse job confirms completion. */
 export function useRevertActivity() {
   const queryClient = useQueryClient();
+  const mailboxId = useOptionalAuth()?.me?.activeMailboxId ?? undefined;
   return useMutation<void, Error, string>({
-    mutationFn: (token) => revertActivityUndo(token),
-    onSuccess: () => {
-      // Invalidate every Activity list cache — the mailbox switcher's
-      // `resetMailboxScopedCache` walks the same prefix.
+    mutationKey: ['activity-undo', mailboxId],
+    mutationFn: (token) => revertActivityUndo(token, mailboxId),
+    onSettled: () => {
+      // A failure may have restored a subset; reconcile on both outcomes.
       void queryClient.invalidateQueries({ queryKey: activityKeys.all });
+      void queryClient.invalidateQueries({ queryKey: sendersKeys.all });
+      void queryClient.invalidateQueries({ queryKey: undoKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ['composite-preview'] });
+      void queryClient.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     },
   });
 }
