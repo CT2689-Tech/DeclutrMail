@@ -133,7 +133,10 @@ export function PricingScreen() {
           color: color.fgMuted,
         }}
       >
-        {OAUTH_SCOPE_DISCLOSURE}
+        {OAUTH_SCOPE_DISCLOSURE}{' '}
+        <a href="/sign-in" style={{ color: color.primary, textDecoration: 'underline' }}>
+          Review Gmail permissions before connecting →
+        </a>
       </p>
 
       <section

@@ -37,12 +37,10 @@ async function renderLanding() {
 }
 
 describe('landing page — D134', () => {
-  it('renders the locked D250 headline as the page h1', async () => {
+  it('renders the launch headline as the page h1', async () => {
     await renderLanding();
     const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.textContent).toBe(
-      'Clear thousands of emails by sender — and see exactly what moves.',
-    );
+    expect(h1.textContent).toBe('Clear years of clutter. One sender at a time.');
   });
 
   it('mounts the D228 trust copy from the locked module (trust strip + privacy section)', async () => {
@@ -154,9 +152,9 @@ describe('landing page — D134', () => {
     }
   });
 
-  it('carries the D250 positioning into page metadata', () => {
-    expect(metadata.description).toContain('Keep, Archive, Unsubscribe, Later, and Delete');
-    expect(JSON.stringify(metadata.title)).toContain('Preview Gmail cleanup by sender');
+  it('carries sender cleanup and preview positioning into page metadata', () => {
+    expect(metadata.description).toContain('Preview which emails will move before you confirm');
+    expect(JSON.stringify(metadata.title)).toContain('Clean up Gmail, one sender at a time');
   });
 
   describe('D138 trust strip — the verification item the visitor can check', () => {
@@ -215,18 +213,10 @@ describe('landing page — D134', () => {
   });
 });
 
-describe('Hero subhead — names the tier for a Plus-only claim', () => {
-  it('names Plus when describing Autopilot rules (bypasses renderLanding — Hero has no server data dependency)', () => {
-    render(<Hero />);
-    const subhead = screen.getByText(/turn on a rule/i);
-    expect(subhead.textContent).toMatch(/plus/i);
-  });
-});
-
 describe('Hero disclaimer — states the Free-tier cap (QA-sign-in-05)', () => {
   it('mentions the monthly cleanup-action cap alongside the undo window', () => {
     render(<Hero />);
-    const disclaimer = screen.getByText(/no card/i);
+    const disclaimer = screen.getByText(/No credit card/i);
     expect(disclaimer.textContent).toMatch(/50 cleanup actions a month/i);
   });
 });

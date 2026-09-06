@@ -1,3 +1,4 @@
+/* global document, window -- evaluated inside Playwright browser callbacks */
 /**
  * Read-only product route smoke against an isolated, seeded local API.
  * Requires seed-billing.ts applied to a disposable DB and dev auth enabled.

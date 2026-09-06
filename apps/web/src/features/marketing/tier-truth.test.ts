@@ -23,6 +23,8 @@
 // asserted before any claim is checked. Starve the input and this file
 // goes red, which is the whole point.
 
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   minimumTierForCapability,
@@ -64,6 +66,8 @@ const CORPUS: readonly string[] = [
   // can handle future matches automatically" for a day after both
   // behaviours moved to Plus — a false sentence on the pricing page that
   // this file, scoped to the learn/comparison modules, could not see.
+  // Crawler guidance is current product copy too, not a historical record.
+  ...readFileSync(resolve(process.cwd(), 'public/llms.txt'), 'utf8').split('\n').filter(Boolean),
   ACTION_SAFETY_SUMMARY,
   ...Object.values(TIER_JOBS),
   // Content modules come from the shared registry (2026-08-27). Naming
