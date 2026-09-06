@@ -16,16 +16,17 @@ advanced-filter detail (Slices 2–3) are sketched, not frozen.
 `CurrentMailboxGuard` (a `409 SELECT_MAILBOX` / `NO_ACTIVE_MAILBOX` is a **designed
 state**, not an error to retry — FE renders the gate; reads do not retry 4xx).
 
-| Param       | Type         | Default | Notes                                                                                                                         |
-| ----------- | ------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `limit`     | int          | 50      | server-clamped to max 100                                                                                                     |
-| `cursor`    | string\|null | null    | opaque keyset cursor (see below); omit for page 1                                                                             |
-| `sort`      | enum         | `total` | `total` \| `read` \| `last_seen` \| `first_seen` \| `name` \| `recommended`                                                   |
-| `direction` | enum         | `desc`  | `asc` \| `desc`; server applies a sane default per `sort` if omitted                                                          |
-| `protected` | bool         | —       | **Slice 0.** `true` → only `is_protected` senders                                                                             |
-| `category`  | enum         | —       | existing Gmail-category filter (kept)                                                                                         |
-| `search`    | string       | —       | **Slice 2.** sender name/domain prefix + DSL (`vol:>500 read:never`); bad query degrades to plain text, never errors the list |
-| `filters`   | repeated     | —       | **Slice 3.** predicate chips (`unopened`, `dormant`, `has_mailto`, …); compose with `search` + `sort`                         |
+| Param               | Type         | Default | Notes                                                                                                                                                                                                 |
+| ------------------- | ------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `limit`             | int          | 50      | server-clamped to max 100                                                                                                                                                                             |
+| `cursor`            | string\|null | null    | opaque keyset cursor (see below); omit for page 1                                                                                                                                                     |
+| `sort`              | enum         | `total` | `total` \| `read` \| `last_seen` \| `first_seen` \| `name` \| `recommended`                                                                                                                           |
+| `direction`         | enum         | `desc`  | `asc` \| `desc`; server applies a sane default per `sort` if omitted                                                                                                                                  |
+| `protected`         | bool         | —       | **Slice 0.** `true` → only `is_protected` senders                                                                                                                                                     |
+| `category`          | enum         | —       | existing Gmail-category filter (kept)                                                                                                                                                                 |
+| `current_mail_only` | bool         | false   | Cleanup screen sends `true`: require indexed inbound mail outside Trash, Spam, Draft and Chat. Applies to rows, matching count and filter counts before pagination. Policy/history consumers omit it. |
+| `search`            | string       | —       | **Slice 2.** sender name/domain prefix + DSL (`vol:>500 read:never`); bad query degrades to plain text, never errors the list                                                                         |
+| `filters`           | repeated     | —       | **Slice 3.** predicate chips (`unopened`, `dormant`, `has_mailto`, …); compose with `search` + `sort`                                                                                                 |
 
 Cursor is **bound to `(sort, direction, filters, search)`** — changing any of them
 **resets to page 1** (cursor must be discarded client-side on any criteria change).

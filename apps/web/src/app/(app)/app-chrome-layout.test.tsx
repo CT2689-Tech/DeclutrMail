@@ -160,7 +160,8 @@ function authedHandlers(opts: {
         ok({
           data: {
             totalSenders: 1,
-            activeSenders: 1,
+            activeSenders: 9,
+            cleanupActiveSenders: 1,
             last30dVolume: 0,
             noiseReducible: 0,
             protected: 0,
@@ -373,7 +374,8 @@ describe('(app) layout integration mounts — U-NAV', () => {
       ok({
         data: {
           totalSenders: 1,
-          activeSenders: 1,
+          activeSenders: 9,
+          cleanupActiveSenders: 1,
           last30dVolume: 0,
           noiseReducible: 0,
           protected: 0,

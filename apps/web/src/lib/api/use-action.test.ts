@@ -11,6 +11,8 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { sendersKeys } from '@/features/senders/api/query-keys';
+import { activityKeys } from '@/features/activity/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import type { ActionStatusResult } from '@/lib/api/actions';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
@@ -96,6 +98,10 @@ describe('terminal action invalidation', () => {
 
     await waitFor(() => expect(result.current.data?.status).toBe('done'));
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: undoKeys.all }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: activityKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['composite-preview'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['bulk-action-preview'] });
     expect(mailboxHeaders).toEqual(['mailbox-a']);
   });
 
@@ -132,6 +138,10 @@ describe('terminal action invalidation', () => {
     await waitFor(() => expect(result.current.data?.status).toBe('failed'));
     expect(mailboxHeaders).toEqual(['mailbox-a']);
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: undoKeys.all }));
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: activityKeys.all });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['composite-preview'] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['bulk-action-preview'] });
   });
 });
 

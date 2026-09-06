@@ -147,6 +147,23 @@ const DEFAULT_DIRECTION_BY_SORT: Record<SenderListSort, SenderListDirection> = {
   recommended: 'desc',
 };
 
+/** Same current-mail scope as Delete's Inbox + archived preview. Historical
+ * totals and sender records remain intact for details, policies and recovery.
+ * EXISTS uses the mailbox/sender index and also handles Undo and new arrivals.
+ */
+function hasCurrentMail(
+  mailbox: SQL = sql`${senders.mailboxAccountId}`,
+  sender: SQL = sql`${senders.senderKey}`,
+): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM ${mailMessages}
+    WHERE ${mailMessages.mailboxAccountId} = ${mailbox}
+      AND ${mailMessages.senderKey} = ${sender}
+      AND ${mailMessages.isOutbound} = false
+      AND NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])
+  )`;
+}
+
 /**
  * Build the server-side search predicate for the senders list (#145).
  * Matches the query case-insensitively (substring) against the three
@@ -417,6 +434,8 @@ export class SendersReadService {
    */
   async listSenders(args: {
     mailboxAccountId: string;
+    /** Cleanup lists exclude senders with no current inbound mail. */
+    currentMailOnly?: boolean;
     category: GmailCategory | null;
     /**
      * When `true`, return only senders with a standing Protect policy
@@ -615,6 +634,7 @@ export class SendersReadService {
     // + the `ORDER BY` clause below are built together so direction
     // never drifts between them.
     const conditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
+    if (args.currentMailOnly) conditions.push(hasCurrentMail());
     if (category) {
       conditions.push(eq(senders.gmailCategory, category));
     }
@@ -920,6 +940,7 @@ export class SendersReadService {
    */
   async getSenderListQueryMeta(args: {
     mailboxAccountId: string;
+    currentMailOnly?: boolean;
     category: GmailCategory | null;
     isProtected?: boolean | null;
     /** Search term (#145) — `totalMatching` must reflect the same filter
@@ -939,6 +960,7 @@ export class SendersReadService {
     const { mailboxAccountId, category, isProtected } = args;
 
     const totalMatchingConditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
+    if (args.currentMailOnly) totalMatchingConditions.push(hasCurrentMail());
     if (category) {
       totalMatchingConditions.push(eq(senders.gmailCategory, category));
     }
@@ -1057,7 +1079,12 @@ export class SendersReadService {
           eq(senderPolicies.senderKey, senders.senderKey),
         ),
       )
-      .where(eq(senders.mailboxAccountId, mailboxAccountId));
+      .where(
+        and(
+          eq(senders.mailboxAccountId, mailboxAccountId),
+          args.currentMailOnly ? hasCurrentMail() : undefined,
+        ),
+      );
 
     const [totalRow, countsRow] = await Promise.all([totalMatchingQuery, filterCountsQuery]);
     const totalMatching = ensureSafeIntegerNumber(totalRow[0]?.count ?? 0, 'totalMatching');
@@ -1176,6 +1203,7 @@ export class SendersReadService {
     type SummaryRow = {
       total_senders: number | string;
       active_senders: number | string;
+      cleanup_active_senders: number | string;
       last30d_volume: number | string;
       cleanup_recent_volume: number | string;
       one_time_count: number | string;
@@ -1257,6 +1285,8 @@ export class SendersReadService {
           s.sender_key,
           s.last_seen_at,
           s.total_received,
+          (s.last_seen_at >= now() - (${WINDOWS.ACTIVE_DAYS} || ' days')::interval
+            AND ${hasCurrentMail(sql`s.mailbox_account_id`, sql`s.sender_key`)}) AS cleanup_active,
           COALESCE(l30.msgs30, 0)                                    AS msgs30,
           CASE
             -- Priority 1: one-time (lifetime ≤ N msgs)
@@ -1347,6 +1377,7 @@ export class SendersReadService {
       SELECT
         COUNT(*)::bigint                                                              AS total_senders,
         COUNT(*) FILTER (WHERE msgs30 >= 1)::bigint                                   AS active_senders,
+        COUNT(*) FILTER (WHERE cleanup_active)::bigint                               AS cleanup_active_senders,
         COALESCE(SUM(msgs30), 0)::bigint                                              AS last30d_volume,
         COALESCE(SUM(msgs30) FILTER (WHERE bucket = 'needs_review'), 0)::bigint       AS cleanup_recent_volume,
         COUNT(*) FILTER (WHERE bucket = 'one_time')::bigint                           AS one_time_count,
@@ -1396,6 +1427,10 @@ export class SendersReadService {
     return {
       totalSenders,
       activeSenders,
+      cleanupActiveSenders: ensureSafeIntegerNumber(
+        row.cleanup_active_senders,
+        'cleanupActiveSenders',
+      ),
       last30dVolume,
       noiseReducible,
       protected: protectCount,

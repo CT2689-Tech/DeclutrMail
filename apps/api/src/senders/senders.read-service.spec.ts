@@ -204,6 +204,112 @@ describe('SendersReadService', () => {
     svc = new SendersReadService(db as never);
   });
 
+  it('removes cleared senders from cleanup rows and counts, and restores them on Undo or new mail', async () => {
+    const sender = await seedSender(db, {
+      mailboxAccountId: mailboxId,
+      email: 'cleanup@example.com',
+      lastSeenAt: new Date(),
+    });
+    await db.update(senders).set({ totalReceived: 313 }).where(eq(senders.id, sender.id));
+    const messageId = await seedMessage(db, {
+      mailboxAccountId: mailboxId,
+      senderKey: sender.senderKey,
+      internalDate: new Date(),
+      labelIds: ['INBOX'],
+    });
+    const query = {
+      mailboxAccountId: mailboxId,
+      category: null,
+      cursor: null,
+      limit: 25,
+      currentMailOnly: true,
+    };
+    expect((await svc.listSenders(query)).map((r) => r.id)).toEqual([sender.id]);
+
+    // Archiving still leaves current mail to manage.
+    await db.update(mailMessages).set({ labelIds: [] }).where(eq(mailMessages.id, messageId));
+    expect(await svc.listSenders(query)).toHaveLength(1);
+    await db
+      .update(mailMessages)
+      .set({ labelIds: ['TRASH'] })
+      .where(eq(mailMessages.id, messageId));
+    expect(await svc.listSenders(query)).toHaveLength(0);
+    const meta = await svc.getSenderListQueryMeta(query);
+    expect(meta.totalMatching).toBe(0);
+    expect(meta.filterCounts?.total).toBe(0);
+    expect(meta.filterCounts?.active).toBe(0);
+    expect((await svc.getSenderSummary({ mailboxAccountId: mailboxId })).cleanupActiveSenders).toBe(
+      0,
+    );
+    // Policy/history consumers can still retrieve the record and historical volume.
+    expect((await svc.listSenders({ ...query, currentMailOnly: false }))[0]?.totalReceived).toBe(
+      313,
+    );
+    expect(await svc.getSenderDetail(mailboxId, sender.id)).not.toBeNull();
+
+    // Same sender key in another mailbox must not resurrect the cleared sender.
+    const otherMailbox = await seedMailbox(db, 'b');
+    await seedMessage(db, {
+      mailboxAccountId: otherMailbox,
+      senderKey: sender.senderKey,
+      internalDate: new Date(),
+      labelIds: ['INBOX'],
+    });
+    expect(await svc.listSenders(query)).toHaveLength(0);
+    // Undo restores the prior archived location.
+    await db.update(mailMessages).set({ labelIds: [] }).where(eq(mailMessages.id, messageId));
+    expect(await svc.listSenders(query)).toHaveLength(1);
+    await db
+      .update(mailMessages)
+      .set({ labelIds: ['TRASH'] })
+      .where(eq(mailMessages.id, messageId));
+    await seedMessage(db, {
+      mailboxAccountId: mailboxId,
+      senderKey: sender.senderKey,
+      internalDate: new Date(),
+      labelIds: ['INBOX'],
+    });
+    expect(await svc.listSenders(query)).toHaveLength(1);
+    expect((await svc.getSenderListQueryMeta(query)).totalMatching).toBe(1);
+    expect((await svc.getSenderSummary({ mailboxAccountId: mailboxId })).cleanupActiveSenders).toBe(
+      1,
+    );
+  });
+
+  it('does not count Trash, Spam, drafts, chats, outbound, or absent messages as current mail', async () => {
+    for (const [name, labels, outbound] of [
+      ['trash', ['TRASH'], false],
+      ['spam', ['SPAM'], false],
+      ['draft', ['DRAFT'], false],
+      ['chat', ['CHAT'], false],
+      ['sent', ['SENT'], true],
+      ['empty', null, false],
+    ] as const) {
+      const sender = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: `${name}@example.com`,
+        lastSeenAt: new Date(),
+      });
+      if (labels)
+        await seedMessage(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: sender.senderKey,
+          internalDate: new Date(),
+          labelIds: [...labels],
+          isOutbound: outbound,
+        });
+    }
+    const query = {
+      mailboxAccountId: mailboxId,
+      category: null,
+      cursor: null,
+      limit: 25,
+      currentMailOnly: true,
+    };
+    expect(await svc.listSenders(query)).toEqual([]);
+    expect((await svc.getSenderListQueryMeta(query)).totalMatching).toBe(0);
+  });
+
   describe('listSenders', () => {
     it('returns rows ordered by last_seen_at DESC and supports cursor round-trip', async () => {
       // Seed three senders with strictly distinct last_seen_at so the

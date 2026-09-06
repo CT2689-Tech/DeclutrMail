@@ -29,6 +29,7 @@ export function sendersListQueryFromScreen(
 ): SendersQueryOptions {
   return {
     limit,
+    currentMailOnly: true,
     sort: scope.sort,
     direction: scope.direction,
     q: scope.q,

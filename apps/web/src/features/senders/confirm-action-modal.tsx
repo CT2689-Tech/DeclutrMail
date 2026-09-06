@@ -485,17 +485,24 @@ export function ConfirmActionModal({
     : verb
       ? verbDisplay(verb).label
       : null;
-  const inboxScopeCopy = inboxScopeVerbLabel
-    ? inboxScopeNoticeCopy(
-        inboxScopeNotice,
-        inboxScopeVerbLabel,
-        isBulk ? 'these senders' : 'this sender',
-        // With the reach chips on screen, "only acts on mail still in
-        // the inbox" would be false one sentence before the hint that
-        // says how to reach past it (ADR-0028).
-        { verbActsBeyondInbox: reachAvailable },
-      )
-    : null;
+  const nothingLeftToDelete =
+    isDeleteVerb &&
+    livePreviewReady &&
+    compositePreview?.counts.all === 0 &&
+    compositePreview?.allMail?.counts.all === 0;
+  const inboxScopeCopy = nothingLeftToDelete
+    ? 'No emails left to move to Trash. There is no email from this sender in Inbox or archived.'
+    : inboxScopeVerbLabel
+      ? inboxScopeNoticeCopy(
+          inboxScopeNotice,
+          inboxScopeVerbLabel,
+          isBulk ? 'these senders' : 'this sender',
+          // With the reach chips on screen, "only acts on mail still in
+          // the inbox" would be false one sentence before the hint that
+          // says how to reach past it (ADR-0028).
+          { verbActsBeyondInbox: reachAvailable },
+        )
+      : null;
   // ADR-0028 — when the inbox is empty but the mailbox still holds mail
   // this Delete COULD reach, point at the chip that reaches it. Modal-
   // local on purpose: the shared notice is also rendered by surfaces

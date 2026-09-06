@@ -24,6 +24,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { undoKeys } from '@/features/undo/query-keys';
+import { sendersKeys } from '@/features/senders/api/query-keys';
+import { activityKeys } from '@/features/activity/api/query-keys';
 
 import {
   enqueueBulkAction,
@@ -109,6 +111,12 @@ export function useActionStatus(actionId: string | null, mailboxId?: string) {
   useEffect(() => {
     if (query.data && isTerminalStatus(query.data.status)) {
       void qc.invalidateQueries({ queryKey: undoKeys.all });
+      // A failed job can have applied a subset. Reconcile every terminal
+      // result, including Undo, across all action entry points.
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+      void qc.invalidateQueries({ queryKey: ['composite-preview'] });
+      void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     }
   }, [actionId, mailboxId, qc, query.data]);
 
@@ -278,6 +286,12 @@ export function useBatchStatus(batchId: string | null, mailboxId?: string) {
   useEffect(() => {
     if (query.data && isTerminalStatus(query.data.status)) {
       void qc.invalidateQueries({ queryKey: undoKeys.all });
+      // A failed job can have applied a subset. Reconcile every terminal
+      // result, including Undo, across all action entry points.
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
+      void qc.invalidateQueries({ queryKey: ['composite-preview'] });
+      void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     }
   }, [batchId, mailboxId, qc, query.data]);
 

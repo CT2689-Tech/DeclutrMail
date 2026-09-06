@@ -160,6 +160,7 @@ export class SendersController {
     @Query('window') rawWindow: string | undefined,
     @Query('domain') rawDomain: string | undefined,
     @Query('unsub_ignored') rawUnsubIgnored: string | undefined,
+    @Query('current_mail_only') rawCurrentMailOnly?: string,
   ): Promise<SenderListEnvelope> {
     const accountId = mailbox.id;
     const category = parseCategory(rawCategory);
@@ -177,6 +178,7 @@ export class SendersController {
     // D51 — "unsub'd, still emailing". `true`-only (no negated surface),
     // mirroring the protected flag's stance.
     const unsubIgnored = rawUnsubIgnored === 'true' ? true : null;
+    const currentMailOnly = parseTriState(rawCurrentMailOnly) === true;
 
     const cursorRaw = decodeCursor(rawCursor);
     if (rawCursor && cursorRaw === null) {
@@ -208,6 +210,7 @@ export class SendersController {
     const isFirstPage = cursor === null;
     const [rows, query] = await Promise.all([
       this.reads.listSenders({
+        ...(currentMailOnly ? { currentMailOnly: true } : {}),
         mailboxAccountId: accountId,
         category,
         isProtected,
@@ -225,6 +228,7 @@ export class SendersController {
       }),
       isFirstPage
         ? this.reads.getSenderListQueryMeta({
+            ...(currentMailOnly ? { currentMailOnly: true } : {}),
             mailboxAccountId: accountId,
             category,
             isProtected,

@@ -59,6 +59,7 @@ export const sendersKeys = {
       domain?: string | undefined;
       /** D51 — "unsub'd, still emailing" axis. */
       unsubIgnored?: boolean | undefined;
+      currentMailOnly?: boolean | undefined;
     } = {},
   ) => ['senders', 'list', params] as const,
   /**

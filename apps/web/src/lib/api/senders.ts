@@ -368,6 +368,8 @@ export interface SenderSummaryDto {
   totalSenders: number;
   /** Senders with ≥1 inbound msg in last 30 days. */
   activeSenders: number;
+  /** Active senders with current mail; absent until the matching API is deployed. */
+  cleanupActiveSenders?: number;
   /** Inbound msg count in last 30 days (mailbox-wide). */
   last30dVolume: number;
   /** 0..100 integer percent — share of `last30dVolume` from senders in
@@ -510,6 +512,8 @@ export interface ListSendersParams {
    * negated form (not a surface). Maps to wire `?unsub_ignored=true`.
    */
   unsubIgnored?: boolean | undefined;
+  /** Exclude senders whose inbound mail is entirely outside Inbox + archived. */
+  currentMailOnly?: boolean | undefined;
 }
 
 /**
@@ -615,6 +619,7 @@ export function sendersListRequestQuery(
     window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
     domain: params.domain ? params.domain : undefined,
     unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
+    current_mail_only: params.currentMailOnly === true ? 'true' : undefined,
   };
 }
 
