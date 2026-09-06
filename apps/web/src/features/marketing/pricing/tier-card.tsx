@@ -135,7 +135,7 @@ export function TierCard({
       ) : null}
 
       <div>
-        <h3
+        <h2
           style={{
             margin: 0,
             fontFamily: font.display,
@@ -145,7 +145,7 @@ export function TierCard({
           }}
         >
           {tier.name}
-        </h3>
+        </h2>
         <p style={{ margin: '4px 0 0', fontFamily: font.sans, fontSize: 13, color: color.fgSoft }}>
           {TIER_JOBS[tier.id]}
         </p>

@@ -102,3 +102,26 @@ verify a deployed journey, inspect owner-accessible search/indexing reports, and
 collect real product evidence with permission. Do not invent testimonials,
 conversion lift, or user counts. No outreach messages or directory submissions
 were sent in this session.
+
+## Lighthouse follow-up
+
+The production build passed the repository's Lighthouse thresholds using three
+desktop runs per URL (local lab measurements, not production field data).
+
+| Page                            | Performance | Accessibility | Best practices | SEO |
+| ------------------------------- | ----------- | ------------- | -------------- | --- |
+| `/`                             | 100         | 100           | 100            | 100 |
+| `/pricing`                      | 100         | 100           | 100            | 91  |
+| `/security`                     | 100         | 100           | 100            | 100 |
+| `/how-to/clean-gmail-by-sender` | 100         | 100           | 100            | 100 |
+
+Pricing initially scored 98 for accessibility because its plan headings jumped
+from H1 to H3. They now use H2 with unchanged visual styles. After rebuilding,
+three pricing runs score 100 for accessibility; all 44 pricing tests, 48 browser
+checks, and the 46-page site audit pass again.
+
+Pricing's SEO score of 91 reflects the existing dynamic route's streamed meta
+description for normal browser requests. It preserves region-aware pricing.
+Social-crawler requests were separately verified to receive metadata in the
+raw head. This is a recorded implementation tradeoff, not a missing canonical
+or a failed crawler fetch; no promise about search indexing follows from it.
