@@ -26,6 +26,6 @@ describe('useSetActiveMailbox', () => {
     result.current.mutate('mb-2');
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.getQueryState(['senders', 'list'])?.isInvalidated).toBe(true);
+    expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
   });
 });

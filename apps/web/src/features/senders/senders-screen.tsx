@@ -1,5 +1,6 @@
 'use client';
 
+import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
@@ -617,6 +618,7 @@ function SendersScreenContent({
 }) {
   const { me } = useAuth();
   const tier = me.tier ?? 'free';
+  const actionMailboxId = me.activeMailboxId ?? undefined;
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   // Codex round-1 review of QA-senders-filtering-20260901-01: the server
   // never sees a whitespace-only search box (the request debounces off
@@ -643,7 +645,9 @@ function SendersScreenContent({
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
-  const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
+  const [receipt, setReceipt] = useState<
+    (ActionReceipt & { mailboxId: string | undefined }) | null
+  >(null);
 
   // P6 — real single-sender actions (D226). `activeAction` holds the
   // in-flight handle that `actionStatus` polls to a terminal state;
@@ -670,6 +674,7 @@ function SendersScreenContent({
   const saveViews = useSaveSenderViews();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
+    mailboxId: string | undefined;
     actionId: string;
     // The subject sender — while this handle is active OR parked
     // overdue, that sender may not receive a second dispatch
@@ -684,6 +689,7 @@ function SendersScreenContent({
   } | null>(null);
   // D52 — the in-flight bulk batch the status effect polls to terminal.
   const [activeBatch, setActiveBatch] = useState<{
+    mailboxId: string | undefined;
     batchId: string;
     verb: 'Archive' | 'Delete' | 'Later';
     /** Requested subject senders — locked against re-dispatch while
@@ -695,12 +701,14 @@ function SendersScreenContent({
     wakeAt: string | null;
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  const [revertMailboxId, setRevertMailboxId] = useState<string | undefined>();
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution (single-
   // sender path). Polled to terminal so the toast states the REAL
   // outcome ("confirming…" → unsubscribed / refused / unconfirmed),
   // never a promise. Bulk unsub doesn't poll per-execution — the
   // per-row chips carry each sender's state on refetch.
   const [activeUnsub, setActiveUnsub] = useState<{
+    mailboxId: string | undefined;
     actionId: string;
     senderName: string;
     domain: string;
@@ -708,18 +716,20 @@ function SendersScreenContent({
   // D230 manual path — the post-confirm "finish in Gmail" callout for
   // a mailto sender. Dismissible; rendered next to the receipt strip.
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    mailboxId: string | undefined;
     senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
   const [bulkMailtoFollowups, setBulkMailtoFollowups] = useState<
-    Array<{ senderName: string; mailtoUrl: string }>
+    Array<{ senderName: string; mailtoUrl: string; mailboxId: string | undefined }>
   >([]);
   // D248 — the in-flight multi-sender unsubscribe batch. Separate from
   // `activeBatch` because its receipt is a different shape: three
   // terminal outcomes, no undo (D58), plus the capability split of the
   // selection so the senders it could NOT send for stay named.
   const [activeUnsubBatch, setActiveUnsubBatch] = useState<{
+    mailboxId: string | undefined;
     batchId: string;
     /** Requested subject senders — locked against re-dispatch while
      *  this handle is active or parked overdue. */
@@ -728,17 +738,21 @@ function SendersScreenContent({
     skipped: UnsubBatchReceiptData['skipped'];
   } | null>(null);
   const [unsubBatchReceipt, setUnsubBatchReceipt] = useState<UnsubBatchReceiptData | null>(null);
-  const actionStatus = useActionStatus(activeAction?.actionId ?? null);
-  const batchStatus = useBatchStatus(activeBatch?.batchId ?? null);
-  const unsubBatchStatus = useBatchStatus(activeUnsubBatch?.batchId ?? null);
-  const revertStatus = useActionStatus(revertActionId);
-  const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
+  const actionStatus = useActionStatus(activeAction?.actionId ?? null, activeAction?.mailboxId);
+  const batchStatus = useBatchStatus(activeBatch?.batchId ?? null, activeBatch?.mailboxId);
+  const unsubBatchStatus = useBatchStatus(
+    activeUnsubBatch?.batchId ?? null,
+    activeUnsubBatch?.mailboxId,
+  );
+  const revertStatus = useActionStatus(revertActionId, revertMailboxId);
+  const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null, activeUnsub?.mailboxId);
   // QA-delete-20260829-05, Codex round 2 — same dedup as sender-detail-page.tsx:
   // a revert this screen did NOT initiate polls through its OWN quiet handle
   // instead of `revertActionId`, so the tray's own completion toast is not
   // duplicated here.
   const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
-  const externalRevertStatus = useActionStatus(externalRevertActionId);
+  const [externalRevertMailboxId, setExternalRevertMailboxId] = useState<string | undefined>();
+  const externalRevertStatus = useActionStatus(externalRevertActionId, externalRevertMailboxId);
   // Overdue parking slots (ACTION_OVERDUE_MS, 2026-08-12 incident) —
   // one slot per latch, free-slot rule: a handle parks only while its
   // slot is EMPTY (an occupied slot holds the active timer instead, so
@@ -755,9 +769,25 @@ function SendersScreenContent({
   const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
   const [overdueBatch, setOverdueBatch] = useState<typeof activeBatch>(null);
   const [overdueUnsubBatch, setOverdueUnsubBatch] = useState<typeof activeUnsubBatch>(null);
-  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
-  const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null);
-  const overdueUnsubBatchStatus = useBatchStatus(overdueUnsubBatch?.batchId ?? null);
+  const overdueActionStatus = useActionStatus(
+    overdueAction?.actionId ?? null,
+    overdueAction?.mailboxId,
+  );
+  const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null, overdueBatch?.mailboxId);
+  const overdueUnsubBatchStatus = useBatchStatus(
+    overdueUnsubBatch?.batchId ?? null,
+    overdueUnsubBatch?.mailboxId,
+  );
+
+  const resetPendingScope = useCallback(() => {
+    setPendingAction(null);
+    setSelected(new Set());
+    setReceipt(null);
+    setMailtoFollowup(null);
+    setBulkMailtoFollowups([]);
+    setUnsubBatchReceipt(null);
+  }, []);
+  useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
   // Senders an in-flight OR parked single handle still owns, plus every
   // sender of a parked batch — they may not receive a NEW dispatch
@@ -1105,6 +1135,7 @@ function SendersScreenContent({
         toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
           {
+            mailboxId: actionMailboxId,
             senderId: sender.id,
             primary: {
               type: primaryType,
@@ -1132,6 +1163,7 @@ function SendersScreenContent({
           {
             onSuccess: (res) =>
               setActiveAction({
+                mailboxId: actionMailboxId,
                 actionId: res.actionId,
                 senderId: sender.id,
                 senderName: sender.name,
@@ -1211,7 +1243,11 @@ function SendersScreenContent({
         if (!isBulk) {
           const sref = senderRefs[0]!;
           recordUnsubIntent.mutate(
-            { senderId: sref.id, includesBacklogAction: secondary != null },
+            {
+              mailboxId: actionMailboxId,
+              senderId: sref.id,
+              includesBacklogAction: secondary != null,
+            },
             {
               onSuccess: (res) => {
                 void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -1219,6 +1255,7 @@ function SendersScreenContent({
                 if (res.method === 'one_click' && res.executionActionId) {
                   toast(`Unsubscribe requested — confirming with ${sref.domain}…`, 'info');
                   setActiveUnsub({
+                    mailboxId: actionMailboxId,
                     actionId: res.executionActionId,
                     senderName: sref.name,
                     domain: sref.domain,
@@ -1227,6 +1264,7 @@ function SendersScreenContent({
                   // The callout is the feedback — it carries the manual
                   // step the toast can't (a compose link).
                   setMailtoFollowup({
+                    mailboxId: actionMailboxId,
                     senderId: sref.id,
                     senderName: sref.name,
                     mailtoUrl: res.mailtoUrl,
@@ -1245,6 +1283,7 @@ function SendersScreenContent({
                 if (secondary) {
                   enqueueComposite.mutate(
                     {
+                      mailboxId: actionMailboxId,
                       senderId: sref.id,
                       primary: {
                         type: secondary.type,
@@ -1269,6 +1308,7 @@ function SendersScreenContent({
                     {
                       onSuccess: (cres) =>
                         setActiveAction({
+                          mailboxId: actionMailboxId,
                           actionId: cres.actionId,
                           senderId: sref.id,
                           senderName: sref.name,
@@ -1319,6 +1359,7 @@ function SendersScreenContent({
         // send, `unknown` has not been checked yet.
         enqueueBulk.mutate(
           {
+            mailboxId: actionMailboxId,
             senderIds: senderRefs.map((sref) => sref.id),
             primary: { type: 'unsubscribe' },
           },
@@ -1330,6 +1371,7 @@ function SendersScreenContent({
                   skip.reason === 'mailto' && skip.mailtoUrl
                     ? [
                         {
+                          mailboxId: actionMailboxId,
                           senderName: nameById.get(skip.senderId) ?? 'This sender',
                           mailtoUrl: skip.mailtoUrl,
                         },
@@ -1343,6 +1385,7 @@ function SendersScreenContent({
               // and let a stale list narrate a split that never happened.
               const skipped = res.skipped.map((skip) => ({ reason: skip.reason }));
               setActiveUnsubBatch({
+                mailboxId: actionMailboxId,
                 batchId: res.batchId,
                 senderIds: senderRefs.map((sref) => sref.id),
                 senderCount: res.senderCount,
@@ -1366,12 +1409,14 @@ function SendersScreenContent({
               if (!secondary) return;
               enqueueBulk.mutate(
                 {
+                  mailboxId: actionMailboxId,
                   senderIds: senderRefs.map((sref) => sref.id),
                   primary: { type: secondary.type, olderThanDays: secondary.olderThanDays ?? null },
                 },
                 {
                   onSuccess: (bres) =>
                     setActiveBatch({
+                      mailboxId: actionMailboxId,
                       batchId: bres.batchId,
                       verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
                       senderIds: senderRefs.map((sref) => sref.id),
@@ -1494,6 +1539,7 @@ function SendersScreenContent({
         );
         enqueueBulk.mutate(
           {
+            mailboxId: actionMailboxId,
             senderIds: senders.map((s) => s.id),
             primary: {
               type: primaryType,
@@ -1520,6 +1566,7 @@ function SendersScreenContent({
                 );
               }
               setActiveBatch({
+                mailboxId: actionMailboxId,
                 batchId: res.batchId,
                 verb,
                 senderIds: senders.map((s) => s.id),
@@ -1567,7 +1614,7 @@ function SendersScreenContent({
       // bucket. Protect stays a standing-policy toggle on Sender
       // Detail; no Senders-screen surface emits it as a verb.
     },
-    [enqueueBulk, lockedSenderIds, anythingParked],
+    [enqueueBulk, lockedSenderIds, anythingParked, actionMailboxId],
   );
 
   // P6 — drive the Archive lifecycle off the polled status. On `done`,
@@ -1597,7 +1644,11 @@ function SendersScreenContent({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
+    setReceipt({
+      ...buildActionReceiptResult(data),
+      senderCount: 1,
+      mailboxId: activeAction.mailboxId,
+    });
     if (data.status === 'done') {
       // Verb-correct copy — the composite path runs the SAME done-handler
       // for Archive / Delete / Later, so the receipt + toast must read
@@ -1656,7 +1707,11 @@ function SendersScreenContent({
     // next-opened) confirm surface describes: its preview must re-count.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
-    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
+    setReceipt({
+      ...buildActionReceiptResult(data),
+      senderCount: 1,
+      mailboxId: overdueAction.mailboxId,
+    });
     if (data.status === 'done') {
       if (data.affectedCount === 0 || !data.undoToken) {
         toast(
@@ -1830,6 +1885,7 @@ function SendersScreenContent({
     const data = batchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     setReceipt({
+      mailboxId: activeBatch.mailboxId,
       ...buildActionReceiptResult({
         actionId: data.batchId,
         verb: activeBatch.verb.toLowerCase() as 'archive' | 'later' | 'delete',
@@ -1903,6 +1959,7 @@ function SendersScreenContent({
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     setReceipt({
+      mailboxId: overdueBatch.mailboxId,
       ...buildActionReceiptResult({
         actionId: data.batchId,
         verb: overdueBatch.verb.toLowerCase() as 'archive' | 'later' | 'delete',
@@ -1989,6 +2046,7 @@ function SendersScreenContent({
   // an already-reverted token resolves immediately. Tracer receipts (no
   // token) keep the old log-only behavior.
   const onUndo = useCallback(() => {
+    if (receipt?.mailboxId !== actionMailboxId) return;
     const token = receipt?.activityUndo.token;
     if (!token) {
       // Tokenless receipts shouldn't surface a fake "Reverted" — the
@@ -2001,7 +2059,7 @@ function SendersScreenContent({
     }
     toast('Restoring…', 'info');
     revert.mutate(
-      { token },
+      { token, mailboxId: receipt?.mailboxId },
       {
         onSuccess: (res) => {
           if (res.reverted) {
@@ -2010,6 +2068,7 @@ function SendersScreenContent({
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
             void qc.invalidateQueries({ queryKey: activityKeys.all });
           } else if (res.actionId) {
+            setRevertMailboxId(receipt?.mailboxId);
             setRevertActionId(res.actionId);
           }
         },
@@ -2029,7 +2088,7 @@ function SendersScreenContent({
         },
       },
     );
-  }, [receipt, revert, qc]);
+  }, [receipt, revert, qc, actionMailboxId]);
 
   // QA-delete-20260829-05 — same staleness gap as `sender-detail-page.tsx`'s
   // sibling receipt: this screen's `receipt` is local state that only heard
@@ -2045,13 +2104,15 @@ function SendersScreenContent({
     if (!token) return;
     return qc.getMutationCache().subscribe((event) => {
       if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
-      const variables = event.mutation.state.variables as { token?: string } | undefined;
+      const variables = event.mutation.state.variables as
+        { token?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
         { reverted?: boolean; actionId?: string | null } | undefined;
       if (variables?.token !== token) return;
       if (result?.reverted) {
         setReceipt(null);
       } else if (result?.actionId) {
+        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
         setExternalRevertActionId(result.actionId);
       }
     });
@@ -2403,7 +2464,11 @@ function SendersScreenContent({
         }}
       />
 
-      <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+      <ReceiptStrip
+        receipt={receipt?.mailboxId === actionMailboxId ? receipt : null}
+        onUndo={onUndo}
+        onDismiss={() => setReceipt(null)}
+      />
 
       {/* D248 — multi-sender unsubscribe result. Its own surface: three
           terminal outcomes, no Undo (a delivered request is one-way). */}
@@ -2411,7 +2476,7 @@ function SendersScreenContent({
 
       {/* D230 manual path — the post-confirm "finish in Gmail" step for
           a mailto sender. The user sends the opt-out; never auto-sent. */}
-      {mailtoFollowup && (
+      {mailtoFollowup && mailtoFollowup.mailboxId === actionMailboxId && (
         <UnsubMailtoCallout
           senderId={mailtoFollowup.senderId}
           senderName={mailtoFollowup.senderName}
@@ -2419,7 +2484,7 @@ function SendersScreenContent({
           onDismiss={() => setMailtoFollowup(null)}
         />
       )}
-      {bulkMailtoFollowups.length > 0 && (
+      {bulkMailtoFollowups.some((item) => item.mailboxId === actionMailboxId) && (
         <UnsubMailtoChecklist
           items={bulkMailtoFollowups}
           onDismiss={() => setBulkMailtoFollowups([])}

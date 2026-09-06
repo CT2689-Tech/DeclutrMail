@@ -105,9 +105,21 @@ function movedPast(current: string | null, base: string | null): boolean {
 }
 
 export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } = {}) {
+  // A completion baseline belongs to one mailbox, including across A→B→A.
+  return <MailboxSyncNowButton key={mailboxId ?? 'active'} mailboxId={mailboxId} />;
+}
+
+function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) {
   const status = useSyncStatus(mailboxId);
-  const sync = useSyncNow('app_shell');
+  const sync = useSyncNow('app_shell', mailboxId);
   const qc = useQueryClient();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const baselineRef = useRef<WatchBaseline | null>(null);
   // `arming` covers the pre-mutate baseline refetch; `watching` covers
@@ -149,7 +161,7 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
     const baseline = baselineRef.current;
     if (baseline === null) return;
 
-    if (movedPast(lastErrorAt, baseline.error)) {
+    if (movedPast(lastErrorAt, baseline.error) && !movedPast(lastSyncedAt, lastErrorAt)) {
       setWatching(false);
       toast('Sync failed — check the mailbox connection and try again.', 'danger');
       return;
@@ -203,27 +215,35 @@ export function SyncNowButton({ mailboxId }: { mailboxId?: string | undefined } 
   const startSync = async () => {
     if (busy) return;
     setArming(true);
-    // Baseline from a FRESH read, not the mounted cache: the status
-    // query stops refetching once ready, so the cached stamp can be
-    // hours old — an unrelated drift-sweep in between would otherwise
-    // false-positive the completion check on the first poll.
-    let fresh: WatchBaseline = { synced: lastSyncedAt, error: lastErrorAt };
+    // A failed baseline read cannot prove a later stamp came from this
+    // request. Do not enqueue against an unknown or newly failed mailbox.
+    let fresh: WatchBaseline;
     try {
       const r = await status.refetch();
-      if (r.data) {
-        fresh = {
-          synced: r.data.last_synced_at ?? null,
-          error: r.data.last_sync_error_at ?? null,
-        };
+      if (!mounted.current) return;
+      if (r.isError || !r.data) throw new Error('Sync baseline unavailable');
+      if (r.data.readiness_status !== 'ready' || syncStatusNeedsReconnect(r.data)) {
+        setArming(false);
+        return;
       }
+      fresh = {
+        synced: r.data.last_synced_at ?? null,
+        error: r.data.last_sync_error_at ?? null,
+      };
     } catch {
-      // Refetch failure → fall back to the cached snapshot; the 90s
-      // timeout still bounds the worst case.
+      if (!mounted.current) return;
+      setArming(false);
+      toast("Couldn't check the inbox's sync status. Please try again.", 'danger');
+      return;
     }
     baselineRef.current = fresh;
     sync.mutate(undefined, {
-      onSuccess: () => setWatching(true),
-      onSettled: () => setArming(false),
+      onSuccess: () => {
+        if (mounted.current) setWatching(true);
+      },
+      onSettled: () => {
+        if (mounted.current) setArming(false);
+      },
     });
   };
 

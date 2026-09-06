@@ -33,9 +33,7 @@ describe('useDisconnectMailbox', () => {
     result.current.mutate('mb-1');
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    // The previous mailbox's senders data must be invalidated so it
-    // refetches — the core fix. (`invalidateQueries` marks it stale +
-    // refetches active observers; it doesn't delete the cache entry.)
-    expect(client.getQueryState(['senders', 'list'])?.isInvalidated).toBe(true);
+    // Unmounted routes must not retain data from the previous mailbox.
+    expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
   });
 });

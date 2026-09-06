@@ -43,8 +43,9 @@
  * stalled-job recovery owns the case where a worker died holding one.
  */
 
-import { providerSyncState } from '@declutrmail/db';
-import { and, eq, lt } from 'drizzle-orm';
+import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
+import { deletionPendingSql } from '@declutrmail/workers';
+import { and, eq, lt, sql } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../db/db.module.js';
 
@@ -104,11 +105,15 @@ export async function reconcileInitialSyncs(deps: ReconcileDeps): Promise<Reconc
   } = deps;
 
   const staleBefore = new Date(now().getTime() - staleSyncingAfterMs);
+  // Filter before LIMIT: skipped inactive/paused jobs leave their durable
+  // intent intact and would otherwise consume the same batch every tick.
+  const eligible = and(eq(mailboxAccounts.status, 'active'), sql`NOT (${deletionPendingSql})`);
 
   const queuedRows = await db
     .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
     .from(providerSyncState)
-    .where(eq(providerSyncState.readinessStatus, 'queued'))
+    .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, providerSyncState.mailboxAccountId))
+    .where(and(eq(providerSyncState.readinessStatus, 'queued'), eligible))
     .limit(batchSize);
 
   // Age-gated: `syncing` is the healthy in-flight state too, so the
@@ -116,10 +121,12 @@ export async function reconcileInitialSyncs(deps: ReconcileDeps): Promise<Reconc
   const staleSyncingRows = await db
     .select({ mailboxAccountId: providerSyncState.mailboxAccountId })
     .from(providerSyncState)
+    .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, providerSyncState.mailboxAccountId))
     .where(
       and(
         eq(providerSyncState.readinessStatus, 'syncing'),
         lt(providerSyncState.updatedAt, staleBefore),
+        eligible,
       ),
     )
     .limit(batchSize);

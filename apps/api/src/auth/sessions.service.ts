@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import { Redis } from 'ioredis';
 import { and, eq } from 'drizzle-orm';
 
@@ -183,7 +189,7 @@ export class SessionsService implements OnModuleDestroy {
         .limit(1);
       if (!row) {
         // Nothing to persist on this branch, so a throw is correct here.
-        throw new Error('Session not found or revoked.');
+        throw new UnauthorizedException('Session not found or revoked.');
       }
 
       const isCurrent = row.refreshTokenHash === presented;
@@ -240,7 +246,7 @@ export class SessionsService implements OnModuleDestroy {
       // the jti within the TTL, THEN reject the request. The controller
       // catches this, clears cookies and answers 401 — unchanged.
       await this.markRevokedInCache(outcome.revokedJti);
-      throw new Error('Refresh token reuse detected — session revoked.');
+      throw new UnauthorizedException('Refresh token reuse detected — session revoked.');
     }
 
     if (outcome.viaGrace) {
@@ -392,7 +398,7 @@ export class SessionsService implements OnModuleDestroy {
       .where(eq(users.id, userId))
       .limit(1);
     if (!row) {
-      throw new Error(`User ${userId} not found while rotating session.`);
+      throw new UnauthorizedException('User no longer exists.');
     }
     return row.workspaceId;
   }

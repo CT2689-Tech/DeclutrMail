@@ -1,5 +1,6 @@
 'use client';
 
+import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
@@ -326,6 +327,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
 
 function ReadyState({ initial }: { initial: SenderDetail }) {
   const auth = useOptionalAuth();
+  const actionMailboxId = auth?.me.activeMailboxId ?? undefined;
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   // Hydration-safe clock for the Decision Timeline's relative-time
   // labels (same reasoning as `recent-messages.tsx`'s `useNow()` gate)
@@ -342,7 +344,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // refetch of `initial` agreeing with it is a no-op.
   const [detail, setDetail] = useState<SenderDetail>(initial);
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
-  const [receipt, setReceipt] = useState<ActionReceipt | null>(null);
+  const [receipt, setReceipt] = useState<
+    (ActionReceipt & { mailboxId: string | undefined }) | null
+  >(null);
   // D226 + D232 real-mutation wiring (FOUNDER-FOLLOWUPS 2026-06-06 —
   // performAction tracer retirement). Mirrors senders-screen.tsx:330-352.
   // `activeAction` holds the in-flight handle that `actionStatus` polls
@@ -355,16 +359,19 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const setPolicy = useSetSenderPolicy();
   const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
+    mailboxId: string | undefined;
     actionId: string;
     senderName: string;
     verb: 'Archive' | 'Delete' | 'Later';
   } | null>(null);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
+  const [revertMailboxId, setRevertMailboxId] = useState<string | undefined>();
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Polled to
   // terminal so the toast states the real outcome. The mailto manual
   // path needs no poll: its callout renders persistently below the
   // toolbar off `detail.unsubscribeMailtoUrl` + the standing policy.
   const [activeUnsub, setActiveUnsub] = useState<{
+    mailboxId: string | undefined;
     actionId: string;
     senderName: string;
   } | null>(null);
@@ -372,13 +379,14 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // the gap until the invalidation refetch flips `detail.policyType`
   // (which then renders the persistent callout below).
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    mailboxId: string | undefined;
     senderId: string;
     senderName: string;
     mailtoUrl: string;
   } | null>(null);
-  const actionStatus = useActionStatus(activeAction?.actionId ?? null);
-  const revertStatus = useActionStatus(revertActionId);
-  const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null);
+  const actionStatus = useActionStatus(activeAction?.actionId ?? null, activeAction?.mailboxId);
+  const revertStatus = useActionStatus(revertActionId, revertMailboxId);
+  const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null, activeUnsub?.mailboxId);
   // QA-delete-20260829-05, Codex round 2 — a revert this page did NOT
   // initiate (the global tray's own `useRevertUndo()`) is polled here too
   // (see the `externalRevertActionId` effect below), but through a
@@ -388,7 +396,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // `invalidateAfterUndo` had already invalidated — both harmless except
   // the duplicate toast, which is real and user-visible.
   const [externalRevertActionId, setExternalRevertActionId] = useState<string | null>(null);
-  const externalRevertStatus = useActionStatus(externalRevertActionId);
+  const [externalRevertMailboxId, setExternalRevertMailboxId] = useState<string | undefined>();
+  const externalRevertStatus = useActionStatus(externalRevertActionId, externalRevertMailboxId);
   // Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident). A
   // handle that stays non-terminal past the deadline moves here; the
   // parked poll keeps running and its terminal side effects still land
@@ -403,7 +412,17 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // a second Unsubscribe on this page (see the Unsubscribe branch), but
   // its stall risk sits in the intent mutation, not this poll.
   const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
-  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
+  const overdueActionStatus = useActionStatus(
+    overdueAction?.actionId ?? null,
+    overdueAction?.mailboxId,
+  );
+
+  const resetPendingScope = useCallback(() => {
+    setPendingAction(null);
+    setReceipt(null);
+    setMailtoFollowup(null);
+  }, []);
+  useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
   // Overdue-release timer. Cleanup cancels the deadline whenever the
   // handle clears normally, so only a genuinely stuck handle parks.
@@ -619,6 +638,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
           {
+            mailboxId: actionMailboxId,
             senderId: sender.id,
             primary: {
               type: primaryType,
@@ -645,6 +665,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           {
             onSuccess: (res) =>
               setActiveAction({
+                mailboxId: actionMailboxId,
                 actionId: res.actionId,
                 senderName: sender.name,
                 verb:
@@ -709,18 +730,27 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         // with exactly what the user confirmed.
         const secondary = opts?.secondary ?? null;
         recordUnsubIntent.mutate(
-          { senderId: sender.id, includesBacklogAction: secondary != null },
+          {
+            mailboxId: actionMailboxId,
+            senderId: sender.id,
+            includesBacklogAction: secondary != null,
+          },
           {
             onSuccess: (res) => {
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
               if (res.method === 'one_click' && res.executionActionId) {
                 toast(`Unsubscribe requested — confirming with ${sender.domain}…`, 'info');
-                setActiveUnsub({ actionId: res.executionActionId, senderName: sender.name });
+                setActiveUnsub({
+                  mailboxId: actionMailboxId,
+                  actionId: res.executionActionId,
+                  senderName: sender.name,
+                });
               } else if (res.method === 'mailto' && res.mailtoUrl) {
                 // The callout (rendered below the toolbar) is the
                 // feedback — it carries the compose link a toast can't.
                 setMailtoFollowup({
+                  mailboxId: actionMailboxId,
                   senderId: sender.id,
                   senderName: sender.name,
                   mailtoUrl: res.mailtoUrl,
@@ -740,6 +770,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               if (secondary) {
                 enqueueComposite.mutate(
                   {
+                    mailboxId: actionMailboxId,
                     senderId: sender.id,
                     primary: {
                       type: secondary.type,
@@ -764,6 +795,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                   {
                     onSuccess: (cres) =>
                       setActiveAction({
+                        mailboxId: actionMailboxId,
                         actionId: cres.actionId,
                         senderName: sender.name,
                         verb: secondary.type === 'delete' ? 'Delete' : 'Archive',
@@ -794,7 +826,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         return;
       }
     },
-    [enqueueComposite, recordUnsubIntent, setPolicy, qc, activeAction, overdueAction, activeUnsub],
+    [
+      enqueueComposite,
+      recordUnsubIntent,
+      setPolicy,
+      qc,
+      activeAction,
+      overdueAction,
+      activeUnsub,
+      actionMailboxId,
+    ],
   );
 
   // Route every destructive verb through the modal (D226 — preview is
@@ -846,7 +887,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
-    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
+    setReceipt({
+      ...buildActionReceiptResult(data),
+      senderCount: 1,
+      mailboxId: activeAction.mailboxId,
+    });
     if (data.status === 'done') {
       const verbLowercase = activeAction.verb.toLowerCase();
       if (data.affectedCount === 0 || !data.undoToken) {
@@ -891,7 +936,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     // before the freed guard lets it dispatch.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
-    setReceipt({ ...buildActionReceiptResult(data), senderCount: 1 });
+    setReceipt({
+      ...buildActionReceiptResult(data),
+      senderCount: 1,
+      mailboxId: overdueAction.mailboxId,
+    });
     if (data.status === 'done') {
       if (data.affectedCount === 0 || !data.undoToken) {
         toast(
@@ -985,6 +1034,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
    * fix — would have fallen back to the log-only path.
    */
   const onUndo = useCallback(() => {
+    if (receipt?.mailboxId !== actionMailboxId) return;
     const token = receipt?.activityUndo.token;
     if (!token) {
       // Defensive: no real-mutation path leaves a tokenless receipt;
@@ -995,7 +1045,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     }
     toast('Restoring…', 'info');
     revert.mutate(
-      { token },
+      { token, mailboxId: receipt?.mailboxId },
       {
         onSuccess: (res) => {
           if (res.reverted) {
@@ -1004,6 +1054,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
             void qc.invalidateQueries({ queryKey: activityKeys.all });
           } else if (res.actionId) {
+            setRevertMailboxId(receipt?.mailboxId);
             setRevertActionId(res.actionId);
           } else {
             // BE-designed terminal: nothing to revert (the composite
@@ -1026,7 +1077,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         },
       },
     );
-  }, [receipt, revert, qc]);
+  }, [receipt, revert, qc, actionMailboxId]);
 
   // QA-delete-20260829-05 — `receipt` is local component state, so it only
   // knows about a revert THIS page's own `onUndo` performed. The global
@@ -1051,13 +1102,15 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     if (!token) return;
     return qc.getMutationCache().subscribe((event) => {
       if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
-      const variables = event.mutation.state.variables as { token?: string } | undefined;
+      const variables = event.mutation.state.variables as
+        { token?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
         { reverted?: boolean; actionId?: string | null } | undefined;
       if (variables?.token !== token) return;
       if (result?.reverted) {
         setReceipt(null);
       } else if (result?.actionId) {
+        setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
         setExternalRevertActionId(result.actionId);
       }
     });
@@ -1151,7 +1204,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         fontFamily: font.sans,
       }}
     >
-      <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+      <ReceiptStrip
+        receipt={receipt?.mailboxId === actionMailboxId ? receipt : null}
+        onUndo={onUndo}
+        onDismiss={() => setReceipt(null)}
+      />
 
       {/* D230 manual path — the "finish in Gmail" step for a mailto
           sender. Transient right after this tab's confirm; persistent

@@ -10,9 +10,12 @@ export function FinalCta() {
   return (
     <section className="dm-mkt-final dm-mkt-shell">
       <p className="dm-mkt-eyebrow" style={{ justifyContent: 'center' }}>
-        Last step
+        Your first step
       </p>
-      <h2 className="dm-mkt-h2">Your inbox is a few hundred decisions away.</h2>
+      <h2 className="dm-mkt-h2">Start with one sender.</h2>
+      <p className="dm-mkt-final-sub">
+        Find the clutter, preview the cleanup, and make your first decision. You stay in control.
+      </p>
       <div className="dm-mkt-hero-ctas" style={{ justifyContent: 'center' }}>
         <TrackedCta
           href={oauthStartUrl()}
@@ -20,7 +23,7 @@ export function FinalCta() {
           placement="final"
           className="dm-mkt-cta dm-mkt-cta-primary"
         >
-          Connect your Gmail
+          Start cleaning for free
           <span className="dm-mkt-cta-arrow" aria-hidden="true">
             →
           </span>

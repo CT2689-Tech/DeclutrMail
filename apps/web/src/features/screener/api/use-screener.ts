@@ -66,6 +66,7 @@ export function useScreenerDecide() {
     ScreenerDecideResult,
     Error,
     {
+      mailboxId?: string | undefined;
       senderId: string;
       verb: ScreenerDecideVerb;
       olderThanDays?: number | null;
@@ -80,7 +81,7 @@ export function useScreenerDecide() {
       override?: boolean;
     }
   >({
-    mutationFn: async ({ senderId, verb, olderThanDays, reach, wakeAt, override }) => {
+    mutationFn: async ({ mailboxId, senderId, verb, olderThanDays, reach, wakeAt, override }) => {
       const envelope = await apiPost<ScreenerDecideResult>(
         '/api/screener/decide',
         {
@@ -91,7 +92,7 @@ export function useScreenerDecide() {
           ...(verb === 'later' ? { wakeAt: wakeAt ?? defaultLaterWakeAt() } : {}),
           ...(override === true ? { override: true } : {}),
         },
-        { headers: { 'Idempotency-Key': newIdempotencyKey() } },
+        { headers: { 'Idempotency-Key': newIdempotencyKey() }, mailboxId },
       );
       return envelope.data;
     },

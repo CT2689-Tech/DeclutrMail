@@ -24,9 +24,9 @@ export const MAILBOX_SCOPE_RESET_EVENT = 'declutrmail:mailbox-scope-reset';
  * removed. `invalidateQueries()` with no filter marks every query stale
  * and, with the default `refetchType: 'active'`, immediately refetches
  * all mounted queries — so `me` (→ new active mailbox) and the feature
- * lists update live. Inactive queries on other routes are marked stale
- * and refetch on next navigation. The brief reload is acceptable for this
- * rare, deliberate action.
+ * lists update live. Queries without mounted observers are removed so
+ * navigating to another route cannot first paint the previous mailbox's
+ * cached data while its fresh request is pending.
  *
  * The event fires BEFORE `invalidateQueries()`, not after (Codex review
  * 2026-09-03). Listeners use it to mark a "no cached state from before
@@ -64,6 +64,7 @@ export async function resetMailboxScopedCache(qc: QueryClient): Promise<void> {
     window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
   }
   await qc.cancelQueries();
+  qc.removeQueries({ predicate: (query) => query.getObserversCount() === 0 });
   await qc.invalidateQueries();
 }
 

@@ -15,7 +15,7 @@
 //     allowed form.
 //   - The Pro upsell (D77) uses only D194-approved framing.
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -45,6 +45,20 @@ function assertNoScreenVerb(html: string): void {
   expect(text).not.toMatch(/\bScreen\b(?!er)/);
   expect(text).not.toMatch(/\bscreen\b(?!er)/);
 }
+
+const authState = vi.hoisted(() => ({ readiness: 'ready' }));
+vi.mock('@/features/auth/auth-provider', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  useOptionalAuth: () => ({
+    me: {
+      activeMailboxId: 'mailbox-a',
+      mailboxes: [{ id: 'mailbox-a', email: 'owner@example.com', readiness: authState.readiness }],
+    },
+  }),
+}));
+beforeEach(() => {
+  authState.readiness = 'ready';
+});
 
 describe('ScreenerScreen — ready state', () => {
   const state: ScreenerScreenState = { kind: 'ready', rows: [...SCREENER_QUEUE] };
@@ -104,6 +118,24 @@ describe('ScreenerScreen — ready state', () => {
 });
 
 describe('ScreenerScreen — empty / loading / error states', () => {
+  it.each(['queued', 'syncing'])(
+    'does not claim the queue is clear while the mailbox is %s',
+    (readiness) => {
+      authState.readiness = readiness;
+      const html = renderState({ kind: 'empty' });
+      expect(html).toContain('Your Gmail account is still syncing.');
+      expect(html).not.toContain('No unknown senders.');
+    },
+  );
+
+  it('does not claim the queue is clear when the scan failed', () => {
+    authState.readiness = 'failed';
+    const html = renderState({ kind: 'empty' });
+    expect(html).toContain('Your Gmail scan needs attention.');
+    expect(html).toContain('href="/settings"');
+    expect(html).not.toContain('No unknown senders.');
+  });
+
   it('empty state is the D76-locked copy, verbatim', () => {
     const html = renderState({ kind: 'empty' });
     expect(html).toContain('No unknown senders.');

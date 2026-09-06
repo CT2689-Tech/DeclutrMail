@@ -27,8 +27,15 @@ describe('SyncService.retryFailedInitialSync', () => {
       select: vi.fn(() => ({
         from: () => ({ where: () => ({ limit: () => Promise.resolve(rows) }) }),
       })),
-      insert: vi.fn(() => ({
-        values: () => ({ onConflictDoUpdate: () => Promise.resolve(undefined) }),
+      update: vi.fn(() => ({
+        set: () => ({
+          where: () => ({
+            returning: () =>
+              Promise.resolve(
+                rows[0]?.readinessStatus === 'failed' ? [{ mailboxAccountId: 'mb-1' }] : [],
+              ),
+          }),
+        }),
       })),
     };
     const initialQueue = {
@@ -47,7 +54,7 @@ describe('SyncService.retryFailedInitialSync', () => {
     const { svc, db, initialQueue } = service([{ readinessStatus: 'failed' }]);
     await expect(svc.retryFailedInitialSync('mb-1')).resolves.toBe('requeued');
     // Both halves of the durable intent: the `queued` row AND the job.
-    expect(db.insert).toHaveBeenCalled();
+    expect(db.update).toHaveBeenCalled();
     expect(initialQueue.add).toHaveBeenCalled();
   });
 
@@ -59,20 +66,18 @@ describe('SyncService.retryFailedInitialSync', () => {
     const { svc, db, initialQueue } = service([{ readinessStatus: 'failed' }]);
     initialQueue.add.mockRejectedValueOnce(new Error('redis down'));
     await expect(svc.retryFailedInitialSync('mb-1')).resolves.toBe('requeued');
-    expect(db.insert).toHaveBeenCalled();
+    expect(db.update).toHaveBeenCalled();
   });
 
   it('refuses a SYNCING mailbox — re-queuing would race the live worker', async () => {
-    const { svc, db, initialQueue } = service([{ readinessStatus: 'syncing' }]);
+    const { svc, initialQueue } = service([{ readinessStatus: 'syncing' }]);
     await expect(svc.retryFailedInitialSync('mb-1')).resolves.toBe('not_failed');
-    expect(db.insert).not.toHaveBeenCalled();
     expect(initialQueue.add).not.toHaveBeenCalled();
   });
 
   it('refuses a READY mailbox — re-queuing would wipe the applied cursor', async () => {
-    const { svc, db, initialQueue } = service([{ readinessStatus: 'ready' }]);
+    const { svc, initialQueue } = service([{ readinessStatus: 'ready' }]);
     await expect(svc.retryFailedInitialSync('mb-1')).resolves.toBe('not_failed');
-    expect(db.insert).not.toHaveBeenCalled();
     expect(initialQueue.add).not.toHaveBeenCalled();
   });
 

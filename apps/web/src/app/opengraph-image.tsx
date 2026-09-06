@@ -4,16 +4,14 @@ import { ogMarkDataUri } from '@/features/marketing/og/brand-mark';
 import { ogFonts } from '@/features/marketing/og/fonts';
 
 /**
- * Default Open Graph card (D134 SEO, D250 headline — reverses D223,
- * D1/D2 palette).
+ * Default Open Graph card for the public launch surface.
  *
  * Programmatic — rendered by Satori at request/build time so the card
- * always carries the locked headline. Lives at the app root so every
+ * carries the landing-page positioning. Lives at the app root so every
  * route (marketing + legal) inherits it until a page overrides.
  */
 
-export const alt =
-  'DeclutrMail — Clear thousands of emails by sender — and see exactly what moves.';
+export const alt = 'DeclutrMail — Clear years of clutter. One sender at a time.';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -94,7 +92,7 @@ export default async function OpenGraphImage() {
           </div>
         </div>
         <span style={{ fontSize: 26, color: MUTED, letterSpacing: 4 }}>
-          FOR INBOXES YOU GAVE UP ON
+          A FRESH START FOR GMAIL
         </span>
       </div>
 
@@ -104,8 +102,7 @@ export default async function OpenGraphImage() {
           flexDirection: 'column',
           flex: 1,
           justifyContent: 'center',
-          // 72px fits the locked three-line headline inside 630px with
-          // the eyebrow + badge footer (was 92px for the two-line D223).
+          // Keep the two-line headline readable in social-link previews.
           fontFamily: 'Fraunces',
           fontSize: 72,
           fontWeight: 800,
@@ -114,13 +111,8 @@ export default async function OpenGraphImage() {
           letterSpacing: -2,
         }}
       >
-        <span>Clear thousands of emails</span>
-        <span>
-          {/* Margins, not literal spaces: Satori lays element children
-              out as flex items and drops the whitespace between them. */}
-          by <span style={{ color: TEAL, margin: '0 18px' }}>sender</span> — and see
-        </span>
-        <span>exactly what moves.</span>
+        <span>Clear years of clutter.</span>
+        <span style={{ color: TEAL }}>One sender at a time.</span>
       </div>
 
       <div

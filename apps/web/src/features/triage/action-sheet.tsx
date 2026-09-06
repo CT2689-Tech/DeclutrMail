@@ -55,6 +55,8 @@ export function ActionSheet({
   onCancel,
   onConfirm,
   onRetryPreview,
+  previewSenderGone = false,
+  onRefreshTriage,
   detail,
   quotaRemaining,
 }: {
@@ -79,6 +81,8 @@ export function ActionSheet({
   onCancel: () => void;
   onConfirm: (details: ConfirmDetails) => void;
   onRetryPreview?: (() => void) | undefined;
+  previewSenderGone?: boolean | undefined;
+  onRefreshTriage?: (() => void) | undefined;
   /** Verification detail for the D226 preview (parity with senders). */
   detail?: ActionPreviewDetail | undefined;
   /**
@@ -135,6 +139,7 @@ export function ActionSheet({
   const primaryActsOnInbox = verb === 'Archive' || verb === 'Later' || verb === 'Delete';
   const nothingToActOn = primaryActsOnInbox && inboxCount === 0;
   const confirmDisabled =
+    previewSenderGone ||
     (requiresLivePreview && (previewPending || previewUnavailable)) ||
     nothingToActOn ||
     wakeAtInvalid;
@@ -422,13 +427,15 @@ export function ActionSheet({
                 it by design. Only the archived backlog is undoable.
                 Archive/Later are fully reversible (D232). */}
             {confirmDisabled
-              ? nothingToActOn
-                ? 'No matching email in Inbox right now — nothing to act on.'
-                : wakeAtInvalid
-                  ? 'Later needs a future return time before you can confirm.'
-                  : inboxCount === 'unavailable'
-                    ? "Couldn't load a live preview. Close and retry — no inbox email can move without one."
-                    : 'Counting inbox email — confirm unlocks after the live preview loads.'
+              ? previewSenderGone
+                ? 'This sender is no longer available. Refresh triage to continue.'
+                : nothingToActOn
+                  ? 'No matching email in Inbox right now — nothing to act on.'
+                  : wakeAtInvalid
+                    ? 'Later needs a future return time before you can confirm.'
+                    : inboxCount === 'unavailable'
+                      ? "Couldn't load a live preview. Close and retry — no inbox email can move without one."
+                      : 'Counting inbox email — confirm unlocks after the live preview loads.'
               : verb === 'Unsubscribe'
                 ? effectiveArchiveHistoric
                   ? UNIFORM_UNDO_WINDOW_DAYS === null
@@ -444,7 +451,12 @@ export function ActionSheet({
                     : `Reversible for the ${UNIFORM_UNDO_WINDOW_DAYS}-day undo window from Activity.`}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            {previewUnavailable && onRetryPreview && (
+            {previewSenderGone && onRefreshTriage && (
+              <Button tone="default" onClick={onRefreshTriage}>
+                Refresh triage
+              </Button>
+            )}
+            {previewUnavailable && !previewSenderGone && onRetryPreview && (
               <Button tone="default" onClick={onRetryPreview}>
                 Retry preview
               </Button>

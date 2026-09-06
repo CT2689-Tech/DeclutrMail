@@ -97,15 +97,17 @@ type Source = EventPayloads['sync_now_clicked']['source'];
  * production "I clicked but nothing happened" report has the full
  * timeline (D159).
  */
-export function useSyncNow(source: Source) {
+export function useSyncNow(source: Source, mailboxId?: string) {
   const qc = useQueryClient();
   const { me } = useAuth();
-  const activeMailboxId = me.activeMailboxId ?? null;
+  const activeMailboxId = mailboxId ?? me.activeMailboxId ?? null;
 
   return useMutation<SyncNowResponse, SyncNowError, void>({
     mutationFn: async () => {
       try {
-        const envelope = await apiPost<SyncNowResponse>('/api/v1/sync/incremental');
+        const envelope = await apiPost<SyncNowResponse>('/api/v1/sync/incremental', undefined, {
+          mailboxId: activeMailboxId ?? undefined,
+        });
         return envelope.data;
       } catch (err) {
         // Translate the wire error into the typed SyncNowError so toast

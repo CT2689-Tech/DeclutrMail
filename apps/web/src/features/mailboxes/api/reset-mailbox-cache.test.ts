@@ -14,7 +14,7 @@
 import { createElement, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, QueryObserver, useQuery } from '@tanstack/react-query';
 import { MAILBOX_SCOPE_RESET_EVENT, resetMailboxScopedCache } from './reset-mailbox-cache';
 
 describe('resetMailboxScopedCache', () => {
@@ -33,15 +33,35 @@ describe('resetMailboxScopedCache', () => {
     expect(clearSpy).not.toHaveBeenCalled();
   });
 
-  it('marks existing mailbox-scoped queries stale so they refetch', async () => {
+  it('removes inactive data before navigating to another mailbox-scoped screen', async () => {
     const qc = new QueryClient();
-    qc.setQueryData(['senders', 'list'], [{ id: 'a' }]);
-    qc.setQueryData(['triage', 'queue'], [{ id: 'q' }]);
-
+    qc.setQueryData(['activity'], { mailbox: 'A' });
     await resetMailboxScopedCache(qc);
 
-    expect(qc.getQueryState(['senders', 'list'])?.isInvalidated).toBe(true);
-    expect(qc.getQueryState(['triage', 'queue'])?.isInvalidated).toBe(true);
+    const observer = new QueryObserver(qc, {
+      queryKey: ['activity'],
+      queryFn: async () => ({ mailbox: 'B' }),
+    });
+    expect(observer.getCurrentResult().data).toBeUndefined();
+    const unsubscribe = observer.subscribe(() => {});
+    await waitFor(() => expect(observer.getCurrentResult().data).toEqual({ mailbox: 'B' }));
+    unsubscribe();
+    qc.clear();
+  });
+
+  it('keeps mounted observers connected and refetches their new mailbox data', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(['senders'], { mailbox: 'A' });
+    const observer = new QueryObserver(qc, {
+      queryKey: ['senders'],
+      queryFn: async () => ({ mailbox: 'B' }),
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    await resetMailboxScopedCache(qc);
+    expect(observer.getCurrentResult().data).toEqual({ mailbox: 'B' });
+    unsubscribe();
+    qc.clear();
   });
 
   it('notifies the app shell to refresh mailbox-scoped server payloads', async () => {

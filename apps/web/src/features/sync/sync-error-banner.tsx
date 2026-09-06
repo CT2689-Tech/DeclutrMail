@@ -82,7 +82,7 @@ export function syncStatusReadUnavailable(
 
 export function SyncErrorBanner({ mailboxId }: { mailboxId: string }) {
   const status = useSyncStatus(mailboxId);
-  const sync = useSyncNow('app_shell');
+  const sync = useSyncNow('app_shell', mailboxId);
   const now = useNow(60_000);
 
   const errorAt = status.data?.last_sync_error_at ?? null;

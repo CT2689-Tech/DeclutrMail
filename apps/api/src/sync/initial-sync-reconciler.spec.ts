@@ -13,7 +13,13 @@
  * WHICH rows get routed to it, not BullMQ.
  */
 
-import { mailboxAccounts, providerSyncState, users, workspaces } from '@declutrmail/db';
+import {
+  accountDeletionRequests,
+  mailboxAccounts,
+  providerSyncState,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -105,6 +111,50 @@ beforeEach(async () => {
 });
 
 describe('reconcileInitialSyncs', () => {
+  it('leaves paused sync intent intact and resumes it after deletion is cancelled', async () => {
+    const paused = await seedSyncState('paused@x.test', 'queued', STALE);
+    const [mailbox] = await db.select().from(mailboxAccounts).where(eq(mailboxAccounts.id, paused));
+    const [request] = await db
+      .insert(accountDeletionRequests)
+      .values({
+        userId: mailbox!.userId,
+        effectiveAt: NOW,
+        basis: 'flat-grace',
+        status: 'pending',
+      })
+      .returning();
+    const schedule = vi.fn().mockResolvedValue('added');
+    await run(schedule);
+    expect(schedule).not.toHaveBeenCalled();
+
+    await db
+      .update(accountDeletionRequests)
+      .set({ status: 'cancelled' })
+      .where(eq(accountDeletionRequests.id, request!.id));
+    await run(schedule);
+    expect(schedule).toHaveBeenCalledWith(paused);
+  });
+
+  it('does not let a disconnected mailbox consume the bounded recovery batch', async () => {
+    const inactive = await seedSyncState('disconnected@x.test', 'queued', STALE);
+    await db
+      .update(mailboxAccounts)
+      .set({ status: 'disconnected' })
+      .where(eq(mailboxAccounts.id, inactive));
+    const active = await seedSyncState('recover-me@x.test', 'queued', STALE);
+    const schedule = vi.fn().mockResolvedValue('added');
+
+    await reconcileInitialSyncs({
+      db: db as never,
+      schedule,
+      isShuttingDown: () => false,
+      now: () => NOW,
+      batchSize: 1,
+    });
+
+    expect(schedule.mock.calls).toEqual([[active]]);
+  });
+
   it('sweeps a `syncing` row whose heartbeat went stale', async () => {
     const stuck = await seedSyncState('stuck@x.test', 'syncing', STALE);
     const schedule = vi.fn().mockResolvedValue('added');
