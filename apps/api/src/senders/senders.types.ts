@@ -483,6 +483,8 @@ export interface SenderSummary {
   totalSenders: number;
   /** Senders with ≥1 inbound msg in last `WINDOWS.ACTIVE_DAYS`. */
   activeSenders: number;
+  /** Active senders with current mail, matching the cleanup screen's default scope. */
+  cleanupActiveSenders?: number;
   /** Inbound msg count in last `WINDOWS.VOLUME_DAYS`. */
   last30dVolume: number;
   /** 0..100 integer percent — share of `last30dVolume` from senders in

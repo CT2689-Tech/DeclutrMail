@@ -657,6 +657,23 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     );
   }
 
+  it('says nothing is left to move when both Inbox and archived are empty', () => {
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders: [makeSender()] }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          counts: emptyInbox,
+          allMail: { counts: emptyInbox, recentMessages: subjects },
+        }}
+      />,
+    );
+    expect(screen.getByText(/No emails left to move to Trash/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
+  });
+
   it('explains a zero count instead of leaving it to contradict the volume figure', () => {
     renderDelete(emptyInbox, 71);
     expect(

@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import Link from 'next/link';
 import { getActionSemantics, type ActionReceiptResult } from '@declutrmail/shared/actions';
 
 const { color, font } = tokens;
@@ -9,6 +10,7 @@ const { color, font } = tokens;
 export type ActionReceipt = ActionReceiptResult & {
   /** Senders accepted into the action pipeline. */
   senderCount: number;
+  senderName?: string;
   /** Original bulk selection, when different from accepted scope. */
   selectedCount?: number;
   /** Protected or no-longer-present senders skipped at enqueue time. */
@@ -36,6 +38,8 @@ export function ReceiptStrip({
   const canUndo = undo.state === 'available' || undo.state === 'unknown';
   const countCopy = receiptCountCopy(receipt);
   const statusCopy = receiptStatusCopy(receipt);
+  const needsAttention = receipt.state === 'failed' || receipt.outcome === 'partial';
+  const noOp = receipt.outcome === 'no-op';
   // Same floor as the preview's schedule line (`presentationSchedule`):
   // the wake sweep runs every 15 minutes and a due timer on a
   // disconnected mailbox lies dormant until reconnect, so this moment is
@@ -49,14 +53,15 @@ export function ReceiptStrip({
 
   return (
     <div
-      role={receipt.state === 'failed' ? 'alert' : 'status'}
+      role={needsAttention ? 'alert' : 'status'}
       style={{
         display: 'flex',
+        flexWrap: 'wrap',
         alignItems: 'center',
         gap: 12,
         padding: '10px 12px 10px 14px',
-        background: receipt.state === 'failed' ? color.redBg : color.emeraldBg,
-        border: `1px solid ${receipt.state === 'failed' ? color.redBorder : 'rgba(5,150,105,0.25)'}`,
+        background: needsAttention ? color.redBg : color.card,
+        border: `1px solid ${needsAttention ? color.redBorder : 'rgba(5,150,105,0.25)'}`,
         borderRadius: 10,
       }}
     >
@@ -66,7 +71,7 @@ export function ReceiptStrip({
           width: 22,
           height: 22,
           borderRadius: 9999,
-          background: receipt.state === 'failed' ? color.red : color.emerald,
+          background: needsAttention ? color.red : noOp ? color.fgMuted : color.emerald,
           color: color.fgInverse,
           display: 'inline-flex',
           alignItems: 'center',
@@ -75,12 +80,20 @@ export function ReceiptStrip({
           fontWeight: 700,
         }}
       >
-        {receipt.state === 'failed' ? '!' : '✓'}
+        {needsAttention ? '!' : noOp ? '–' : '✓'}
       </span>
 
       <span style={{ flex: 1, fontSize: 13, color: color.fg, lineHeight: 1.45 }}>
         <strong style={{ fontWeight: 600 }}>
-          {receipt.state === 'failed' ? `${semantics.label} failed` : semantics.resultLabel}
+          {receipt.state === 'failed'
+            ? `${semantics.label} failed`
+            : noOp
+              ? 'Nothing to change'
+              : receipt.outcome === 'partial'
+                ? `${semantics.label} partially completed`
+                : receipt.verb === 'delete'
+                  ? 'Moved to Gmail Trash'
+                  : semantics.resultLabel}
         </strong>{' '}
         <span style={{ color: color.fgSoft }}>{countCopy}</span>
         <span
@@ -126,6 +139,9 @@ export function ReceiptStrip({
           Undo
         </button>
       )}
+      <Link href="/activity" style={{ color: color.emerald, fontSize: 12 }}>
+        View activity
+      </Link>
       <button
         onClick={onDismiss}
         aria-label={`Dismiss ${semantics.label} result`}
@@ -146,8 +162,9 @@ export function ReceiptStrip({
 }
 
 function receiptCountCopy(receipt: ActionReceipt): string {
-  const senderCopy = `${receipt.senderCount} sender${receipt.senderCount === 1 ? '' : 's'}`;
-  if (receipt.outcome === 'no-op') return `· No matching inbox email moved · ${senderCopy}`;
+  const senderCopy =
+    receipt.senderName ?? `${receipt.senderCount} sender${receipt.senderCount === 1 ? '' : 's'}`;
+  if (receipt.outcome === 'no-op') return `· No matching email moved · ${senderCopy}`;
   if (receipt.outcome === 'partial') {
     return `· ${receipt.affectedCount.toLocaleString('en-US')} of ${receipt.requestedCount.toLocaleString('en-US')} emails changed · ${senderCopy}`;
   }

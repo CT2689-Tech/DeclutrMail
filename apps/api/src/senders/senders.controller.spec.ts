@@ -176,6 +176,34 @@ describe('SendersController', () => {
   });
 
   describe('list — envelope + cursor', () => {
+    it('applies current-mail scope to both rows and matching counts', async () => {
+      reads.listSenders.mockResolvedValue([]);
+      await ctrl.list(
+        MAILBOX,
+        undefined,
+        '10',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'true',
+      );
+      expect(reads.listSenders).toHaveBeenCalledWith(
+        expect.objectContaining({ currentMailOnly: true }),
+      );
+      expect(reads.getSenderListQueryMeta).toHaveBeenCalledWith(
+        expect.objectContaining({ currentMailOnly: true }),
+      );
+    });
+
     it('returns the D202 paginated envelope with hasMore=false when the service returns ≤ limit rows', async () => {
       reads.listSenders.mockResolvedValue([makeSenderRow()]);
       const res = await ctrl.list(

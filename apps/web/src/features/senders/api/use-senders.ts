@@ -66,6 +66,7 @@ export interface UseSendersOptions {
   domain?: string | undefined;
   /** D51 compose strip — "unsub'd, still emailing" (true / omit). */
   unsubIgnored?: boolean | undefined;
+  currentMailOnly?: boolean | undefined;
   /**
    * Gate the query. Pass `false` when there's no active mailbox so the
    * list doesn't fire a `NO_ACTIVE_MAILBOX` 409 (the app shell renders

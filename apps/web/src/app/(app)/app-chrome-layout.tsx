@@ -175,7 +175,7 @@ function AppChrome({ children }: { children: ReactNode }) {
   // races a nested route hydration boundary. It is exact (not a first-page
   // `50+` approximation) and the Senders screen reuses the same cache entry.
   const sendersSummary = useSendersSummary({}, { enabled: hasActiveMailbox });
-  const sendersCount = sendersSummary.data?.data.activeSenders;
+  const sendersCount = sendersSummary.data?.data.cleanupActiveSenders;
 
   // Screener badge (D74) — Screener is granted at Plus (D77, reversed
   // by D251), so the count query is gated on the tier capability: a

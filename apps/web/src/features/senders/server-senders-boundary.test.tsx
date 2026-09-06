@@ -79,7 +79,7 @@ describe('ServerSendersBoundary', () => {
     expect(screen.getByText('Senders ready')).toBeInTheDocument();
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
-      'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&activity=active',
+      'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&activity=active&current_mail_only=true',
       'http://localhost:4000/api/senders/summary',
       'http://localhost:4000/api/me/settings',
     ]);
@@ -117,7 +117,7 @@ describe('ServerSendersBoundary', () => {
       hashKey(sendersKeys.list(DEFAULT_SENDERS_QUERY)),
     );
     expect(sendersListPath(DEFAULT_SENDERS_QUERY)).toBe(
-      '/api/senders?limit=50&sort=total&direction=desc&activity=active',
+      '/api/senders?limit=50&sort=total&direction=desc&activity=active&current_mail_only=true',
     );
   });
 
@@ -174,7 +174,7 @@ describe('ServerSendersBoundary', () => {
 
     expect(screen.getByText('Filtered ready')).toBeInTheDocument();
     expect(fetchSpy.mock.calls.map(([input]) => String(input))).toEqual([
-      'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&q=amazon.com',
+      'http://localhost:4000/api/senders?limit=50&sort=total&direction=desc&q=amazon.com&current_mail_only=true',
       'http://localhost:4000/api/senders/summary?q=amazon.com',
       'http://localhost:4000/api/me/settings',
     ]);

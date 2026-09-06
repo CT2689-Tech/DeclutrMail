@@ -1306,13 +1306,99 @@ describe('SendersScreen — edge states', () => {
     const receipt = await screen.findByRole('status');
     expect(archivePosted).toBe(true);
     expect(receipt).toHaveTextContent(/archived/i);
-    expect(receipt).toHaveTextContent(/1 sender/i);
+    expect(receipt).toHaveTextContent(/Sender A/i);
     const undoBtn = screen.getByRole('button', { name: /^undo$/i });
 
     // Undo reverses for real (token → reverse job → poll) and clears the receipt.
     fireEvent.click(undoBtn);
     await waitFor(() => expect(screen.queryByText(/archived 1 sender/i)).toBeNull());
     expect(undoPosted).toBe(true);
+  });
+
+  it('confirms Delete, removes the cleared card and updates counts, then returns it after Undo', async () => {
+    let trashed = false;
+    let currentMailOnly: string | null = null;
+    installFetchStub([
+      sendersSummaryHandler(),
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          currentMailOnly = url.searchParams.get('current_mail_only');
+          return jsonOk({
+            data: trashed ? [] : [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: {
+                totalMatching: trashed ? 0 : 1,
+                globalMaxTotal: 313,
+                asOf: '2026-09-06T00:00:00.000Z',
+              },
+            },
+          });
+        },
+      },
+      compositePreviewHandler(313),
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: () =>
+          jsonOk({ data: { actionId: 'delete-1', requestedCount: 313, status: 'queued' } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/[^/]+$/,
+        respond: (_req, url) => {
+          const reverse = url.pathname.endsWith('reverse-1');
+          trashed = !reverse;
+          return jsonOk({
+            data: {
+              ...archiveStatus({
+                actionId: reverse ? 'reverse-1' : 'delete-1',
+                requestedCount: 313,
+                affectedCount: 313,
+              }),
+              verb: 'delete',
+              direction: reverse ? 'reverse' : 'forward',
+            },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/undo/tok-1',
+        respond: () =>
+          jsonOk({
+            data: {
+              token: 'tok-1',
+              actionKind: 'delete',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: 'reverse-1',
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.keyDown(document.body, { key: 'd' });
+    await screen.findByText(/currently match.*Trash/i);
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('radio', { name: /All inbox/i }));
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    const receipt = await screen.findByRole('status');
+    expect(receipt).toHaveTextContent(/Moved to Gmail Trash.*313 emails.*Sender A/i);
+    expect(within(receipt).getByRole('link', { name: 'View activity' })).toHaveAttribute(
+      'href',
+      '/activity',
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('checkbox', { name: /select sender a/i })).toBeNull(),
+    );
+    expect(currentMailOnly).toBe('true');
+    fireEvent.click(within(receipt).getByRole('button', { name: 'Undo' }));
+    await screen.findByRole('checkbox', { name: /select sender a/i });
+    await waitFor(() => expect(screen.queryByText('Moved to Gmail Trash')).toBeNull());
   });
 
   // QA-delete-20260829-05 — the same staleness gap `sender-detail-page.tsx`
@@ -1556,7 +1642,7 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(statusPolled).toBe(true));
     // The canonical result preserves the no-op, but never offers a dead Undo.
     const noOp = await screen.findByRole('status');
-    expect(noOp).toHaveTextContent(/no matching inbox email moved/i);
+    expect(noOp).toHaveTextContent(/no matching email moved/i);
     expect(screen.queryByRole('button', { name: /^undo$/i })).toBeNull();
   });
 
@@ -2818,7 +2904,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     // One sender failing never hides the other's real result — the
     // receipt reflects what DID move and stays undoable.
-    const receipt = await screen.findByRole('status');
+    const receipt = await screen.findByRole('alert');
     expect(receipt).toHaveTextContent(/12 of 30 emails changed/i);
     expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
   });

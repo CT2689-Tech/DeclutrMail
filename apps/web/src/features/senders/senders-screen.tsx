@@ -1648,6 +1648,7 @@ function SendersScreenContent({
       ...buildActionReceiptResult(data),
       senderCount: 1,
       mailboxId: activeAction.mailboxId,
+      senderName: activeAction.senderName,
     });
     if (data.status === 'done') {
       // Verb-correct copy — the composite path runs the SAME done-handler
@@ -1655,12 +1656,12 @@ function SendersScreenContent({
       // from the polled handle's recorded verb, not a hardcoded one.
       const verbPast = VERB_PAST[activeAction.verb];
       const verbLowercase = activeAction.verb.toLowerCase();
-      if (data.affectedCount === 0 || !data.undoToken) {
+      if (data.affectedCount === 0) {
         // No-op: the sender is in the directory by LIFETIME volume but has
         // no mail in the inbox right now, so the worker did nothing and
         // issued no undo token. Never show a "reversible" receipt with a
         // dead Undo — say plainly that there was nothing to do.
-        toast(`No inbox email from ${activeAction.senderName} to ${verbLowercase}`, 'info');
+        toast(`No matching email from ${activeAction.senderName} to ${verbLowercase}`, 'info');
         // The worker still wrote a 0-affected `activity_log` row
         // (label-action.worker.ts:248 — the audit-trail consistency
         // fix 2026-06-05). Invalidate Activity so a user navigating
@@ -1668,8 +1669,8 @@ function SendersScreenContent({
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         toast(
-          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
-          'success',
+          `${activeAction.verb === 'Delete' ? 'Moved' : verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}${activeAction.verb === 'Delete' ? ' to Trash' : ''}${data.affectedCount < data.requestedCount ? ' · Some matching emails were not changed; see Activity' : ''}`,
+          data.affectedCount < data.requestedCount ? 'warn' : 'success',
         );
         // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
         // Activity feed (new activity_log row from the worker). Missing
@@ -1711,11 +1712,12 @@ function SendersScreenContent({
       ...buildActionReceiptResult(data),
       senderCount: 1,
       mailboxId: overdueAction.mailboxId,
+      senderName: overdueAction.senderName,
     });
     if (data.status === 'done') {
-      if (data.affectedCount === 0 || !data.undoToken) {
+      if (data.affectedCount === 0) {
         toast(
-          `No inbox email from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
+          `No matching email from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
           'info',
         );
         void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -1919,15 +1921,15 @@ function SendersScreenContent({
         // senders that DID move (their undo tokens are in the cascade).
         toast(`${data.failed} of ${data.total} actions failed — see Activity`, 'warn');
       }
-      if (data.affectedCount === 0 || !data.undoToken) {
+      if (data.affectedCount === 0) {
         // No-op batch: nothing was in the inbox for any selected sender,
         // so no undo token exists. Never show a receipt with a dead Undo.
-        toast(`No inbox email from these senders to ${verbLowercase}`, 'info');
+        toast(`No matching email from these senders to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         toast(
-          `${verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeBatch.senderCount} senders`,
-          'success',
+          `${activeBatch.verb === 'Delete' ? 'Moved' : verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeBatch.senderCount} senders${activeBatch.verb === 'Delete' ? ' to Trash' : ''}`,
+          data.failed > 0 || data.affectedCount < data.requestedCount ? 'warn' : 'success',
         );
         void qc.invalidateQueries({ queryKey: sendersKeys.all });
         void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -1989,8 +1991,8 @@ function SendersScreenContent({
       if (data.failed > 0) {
         toast(`${data.failed} of ${data.total} actions failed — see Activity`, 'warn');
       }
-      if (data.affectedCount === 0 || !data.undoToken) {
-        toast(`No inbox email from these senders to ${verbLowercase}`, 'info');
+      if (data.affectedCount === 0) {
+        toast(`No matching email from these senders to ${verbLowercase}`, 'info');
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         // No success toast — the receipt above still carries the undo.
@@ -2028,7 +2030,7 @@ function SendersScreenContent({
     const data = revertStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      toast('Restored to your inbox', 'success');
+      toast('Undo complete — emails restored to their previous locations', 'success');
       setReceipt(null);
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
       // Revert wrote a fresh activity_log row + flipped the original
@@ -2063,7 +2065,7 @@ function SendersScreenContent({
       {
         onSuccess: (res) => {
           if (res.reverted) {
-            toast('Restored to your inbox', 'success');
+            toast('Undo complete — emails restored to their previous locations', 'success');
             setReceipt(null);
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
             void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -2457,18 +2459,18 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Review every person, list, and service that emails you, grouped by sender. Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches automatically."
+        body="Review senders with email in Inbox or archived. Senders with no remaining mail here disappear after cleanup; their history stays in Activity. Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches automatically."
         learnMore={{
           href: '/methodology#automation-method',
           label: 'Manual decisions vs automatic rules',
         }}
       />
 
-      <ReceiptStrip
-        receipt={receipt?.mailboxId === actionMailboxId ? receipt : null}
-        onUndo={onUndo}
-        onDismiss={() => setReceipt(null)}
-      />
+      {receipt?.mailboxId === actionMailboxId && (
+        <div style={{ position: 'sticky', top: 12, zIndex: 30 }}>
+          <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+        </div>
+      )}
 
       {/* D248 — multi-sender unsubscribe result. Its own surface: three
           terminal outcomes, no Undo (a delivered request is one-way). */}
