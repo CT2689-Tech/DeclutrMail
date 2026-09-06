@@ -29,7 +29,8 @@ phone widths with no Gmail credentials:
 
 OAuth is intercepted at the request boundary; no Google consent, account
 creation, payment, or real email change occurs. The demo uses its own synthetic
-state. The product's actual provider operations are a separate release rehearsal.
+state. Actual Gmail and billing rehearsals were completed previously on
+founder-owned accounts; this pass does not repeat those operations.
 
 ## Verification
 
@@ -97,8 +98,14 @@ attribution. Define and implement email/campaign attribution before claiming
 campaign-level outreach reporting. Analytics remains consent-gated; the browser
 journeys prove referral preservation only to the OAuth entry boundary.
 
-Before scaling outreach: complete the live Gmail and sandbox billing rehearsals,
-verify a deployed journey, inspect owner-accessible search/indexing reports, and
+Live Gmail and billing rehearsals are already complete, reconfirmed by the
+founder on 2026-09-05. `FOUNDER-FOLLOWUPS.md` records billing completion on
+2026-09-01; `docs/qa/launch-qa.md` records real Gmail sync checks. Direct Paddle
+transaction re-verification in this session stopped at the browser login screen.
+These are prior completed rehearsals, not new provider checks from this audit.
+
+Before scaling outreach: verify the changed deployed journey, inspect
+owner-accessible search/indexing reports, and
 collect real product evidence with permission. Do not invent testimonials,
 conversion lift, or user counts. No outreach messages or directory submissions
 were sent in this session.

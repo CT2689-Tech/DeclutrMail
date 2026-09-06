@@ -116,8 +116,13 @@ CTAs span the available width. Pricing limits and undo use the existing shared
 constants; OAuth permissions and shared privacy disclosures remain intact.
 
 This completes the local code and smoke pass, not a production certification.
-Live Gmail mutation/undo, provider sync, and paid checkout/webhook/refund flows
-still require a controlled rehearsal with the corresponding external systems.
+Live Gmail and billing rehearsals were already completed on founder-owned
+accounts, reconfirmed by the founder on 2026-09-05. They were not repeated in
+this local pass; that is a scope limit, not an outstanding rehearsal blocker.
+The billing completion is also recorded in `FOUNDER-FOLLOWUPS.md` on
+2026-09-01, and `docs/qa/launch-qa.md` records real Gmail sync verification.
+Direct Paddle transaction re-verification on 2026-09-05 was blocked by its
+browser login screen; no fresh provider-state verification is claimed.
 
 Final landing verification: all 44 public accessibility/hydration checks pass
 again after the edits. Desktop and phone browser checks also pass for both
