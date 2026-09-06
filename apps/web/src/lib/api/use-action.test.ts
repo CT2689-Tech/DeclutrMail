@@ -99,13 +99,15 @@ describe('terminal action invalidation', () => {
     expect(mailboxHeaders).toEqual(['mailbox-a']);
   });
 
-  it('invalidates the global undo root when a batch becomes terminal', async () => {
+  it('pins the batch mailbox and invalidates the undo root when it becomes terminal', async () => {
+    const mailboxHeaders: Array<string | null> = [];
     installFetchStub([
       {
         method: 'GET',
         path: '/api/actions/batch/b-1',
-        respond: () =>
-          jsonOk({
+        respond: (req) => {
+          mailboxHeaders.push(req.headers.get('X-Active-Mailbox-Id'));
+          return jsonOk({
             data: {
               batchId: 'b-1',
               status: 'failed',
@@ -116,7 +118,8 @@ describe('terminal action invalidation', () => {
               affectedCount: 1,
               undoToken: null,
             },
-          }),
+          });
+        },
       },
     ]);
     const client = createTestQueryClient();
@@ -124,9 +127,10 @@ describe('terminal action invalidation', () => {
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, children);
 
-    const { result } = renderHook(() => useBatchStatus('b-1'), { wrapper });
+    const { result } = renderHook(() => useBatchStatus('b-1', 'mailbox-a'), { wrapper });
 
     await waitFor(() => expect(result.current.data?.status).toBe('failed'));
+    expect(mailboxHeaders).toEqual(['mailbox-a']);
     await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: undoKeys.all }));
   });
 });

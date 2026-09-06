@@ -295,15 +295,6 @@
 .dm-mkt-h1 {
   font-family: var(--dm-font-display);
   font-weight: 600;
-  /* Cap 64px, not 68px. The D250 headline is 11 words and the hero's left
-     column settles at 583px on a wide screen, where 68px wrapped to FIVE
-     lines (347px of headline) and broke as "sender — and / see exactly",
-     stranding the em-dash at a line end. 64px is the largest size that
-     still fits four lines: 86px shorter for 4px of display size.
-     That height was also what stranded the ledger demo — the left column
-     ran 681px against the demo's 394px, so `align-items: center` floated
-     the card in ~143px of dead space. Widening the column to 8fr fixes the
-     wrap too, but only by shrinking the demo, which is the wrong trade. */
   font-size: clamp(38px, 6.2vw, 64px);
   line-height: 1.02;
   letter-spacing: -0.02em;
@@ -1398,4 +1389,42 @@ a.dm-mkt-trust-item:focus-visible {
   color: var(--mkt-ink-muted);
   margin-top: 20px;
   line-height: 1.8;
+}
+
+/* Keep the next step and recovery promise readable beside the product demo. */
+.dm-mkt-hero-reassurance {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--mkt-ink-soft);
+  margin: 20px 0 0;
+  max-width: 44ch;
+}
+
+.dm-mkt-hero-reassurance > span {
+  color: var(--mkt-accent);
+  font-size: 20px;
+}
+
+.dm-mkt-final-sub {
+  max-width: 48ch;
+  margin: 20px auto 0;
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--mkt-ink-soft);
+}
+
+@media (max-width: 560px) {
+  .dm-mkt-hero-ctas {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .dm-mkt-hero-ctas .dm-mkt-cta {
+    justify-content: center;
+    text-align: center;
+  }
 }

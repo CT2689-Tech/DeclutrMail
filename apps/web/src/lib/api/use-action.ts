@@ -117,7 +117,7 @@ export function useActionStatus(actionId: string | null, mailboxId?: string) {
 
 /** Reverse a completed action by its undo token (the D226 undo loop). */
 export function useRevertUndo() {
-  return useMutation<UndoRevertResult, Error, { token: string; mailboxId?: string }>({
+  return useMutation<UndoRevertResult, Error, { token: string; mailboxId?: string | undefined }>({
     mutationFn: ({ token, mailboxId }) => revertUndo(token, mailboxId ? { mailboxId } : undefined),
   });
 }
@@ -134,6 +134,7 @@ export function useEnqueueComposite() {
     CompositeActionEnqueueResult,
     Error,
     {
+      mailboxId?: string | undefined;
       senderId: string;
       primary: {
         // D248 — single-sender composite is label verbs only; the
@@ -148,8 +149,9 @@ export function useEnqueueComposite() {
       override?: boolean;
     }
   >({
-    mutationFn: ({ senderId, primary, secondary, override }) =>
+    mutationFn: ({ mailboxId, senderId, primary, secondary, override }) =>
       enqueueCompositeAction({
+        mailboxId,
         senderId,
         primary,
         ...(secondary ? { secondary } : {}),
@@ -195,13 +197,15 @@ export function useEnqueueBulkAction() {
     BulkActionEnqueueResult,
     Error,
     {
+      mailboxId?: string | undefined;
       senderIds: string[];
       primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     }
   >({
-    mutationFn: ({ senderIds, primary, secondary }) =>
+    mutationFn: ({ mailboxId, senderIds, primary, secondary }) =>
       enqueueBulkAction({
+        mailboxId,
         senderIds,
         primary,
         ...(secondary ? { secondary } : {}),
@@ -254,11 +258,11 @@ export function batchRefetchInterval(
  * every sibling row of the fan-out. `retry: false` — a read 4xx is a
  * designed state, never something to hammer (§8).
  */
-export function useBatchStatus(batchId: string | null) {
+export function useBatchStatus(batchId: string | null, mailboxId?: string) {
   const qc = useQueryClient();
   const query = useQuery({
-    queryKey: ['batch-status', batchId] as const,
-    queryFn: () => getBatchStatus(batchId as string),
+    queryKey: ['batch-status', batchId, { mailboxId: mailboxId ?? null }] as const,
+    queryFn: () => getBatchStatus(batchId as string, mailboxId ? { mailboxId } : undefined),
     enabled: batchId !== null,
     refetchInterval: (query) =>
       batchRefetchInterval(query.state.data, query.state.status === 'error'),
@@ -275,7 +279,7 @@ export function useBatchStatus(batchId: string | null) {
     if (query.data && isTerminalStatus(query.data.status)) {
       void qc.invalidateQueries({ queryKey: undoKeys.all });
     }
-  }, [batchId, qc, query.data]);
+  }, [batchId, mailboxId, qc, query.data]);
 
   return query;
 }
@@ -291,10 +295,11 @@ export function useRecordUnsubscribeIntent() {
   return useMutation<
     UnsubscribeIntentResult,
     Error,
-    { senderId: string; includesBacklogAction?: boolean }
+    { senderId: string; includesBacklogAction?: boolean; mailboxId?: string | undefined }
   >({
-    mutationFn: ({ senderId, includesBacklogAction }) =>
+    mutationFn: ({ mailboxId, senderId, includesBacklogAction }) =>
       recordUnsubscribeIntent(senderId, {
+        mailboxId,
         ...(includesBacklogAction !== undefined ? { includesBacklogAction } : {}),
       }),
   });

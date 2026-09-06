@@ -238,6 +238,9 @@ export function AccountMenu() {
                       // and recovery context stay useful even before Gmail is
                       // re-authorized. Only Gmail-dependent actions pause.
                       setActive.mutate(m.id, {
+                        onError: () => {
+                          toast('Could not switch Gmail accounts. Please try again.', 'warn');
+                        },
                         onSuccess: () => {
                           setOpen(false);
                           triggerRef.current?.focus();

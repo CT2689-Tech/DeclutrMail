@@ -1,5 +1,6 @@
 'use client';
 
+import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
@@ -143,6 +144,7 @@ export const ACTION_OVERDUE_MS = 120_000;
  * parking slot when the worker outlives ACTION_OVERDUE_MS.
  */
 interface ActionHandle {
+  mailboxId: string | undefined;
   actionId: string;
   rowId: string;
   senderName: string;
@@ -157,6 +159,7 @@ interface ActionHandle {
 
 /** Handle for one enqueued domain-batch composite — same lifecycle. */
 interface BatchHandle {
+  mailboxId: string | undefined;
   batchId: string;
   domain: string;
   verb: BatchVerb;
@@ -186,6 +189,9 @@ export function TriageScreen({
 }) {
   const qc = useQueryClient();
   const auth = useOptionalAuth();
+  const actionMailboxId = auth?.me.activeMailboxId ?? undefined;
+  const currentMailboxRef = useRef(actionMailboxId);
+  currentMailboxRef.current = actionMailboxId;
   const activeEmail = auth ? getActiveMailboxEmail(auth.me) : undefined;
   // QA-sync-20260831-01: Triage otherwise has zero sync awareness — the
   // resting-queue empty state must not claim "nothing to do" while the
@@ -251,7 +257,7 @@ export function TriageScreen({
    */
   const [activeAction, setActiveAction] = useState<ActionHandle | null>(null);
   const [intentRowId, setIntentRowId] = useState<string | null>(null);
-  const actionStatus = useActionStatus(activeAction?.actionId ?? null);
+  const actionStatus = useActionStatus(activeAction?.actionId ?? null, activeAction?.mailboxId);
   // 2026-08-12 — the overdue parking slot. An activeAction that outlives
   // ACTION_OVERDUE_MS moves here so the latch releases while this poll
   // (same query key, so it dedupes with the one above) keeps watching
@@ -260,7 +266,10 @@ export function TriageScreen({
   // frees (the effect keys on both) — displacing would stop the parked
   // poll and silently re-arm a row whose job is still running.
   const [overdueAction, setOverdueAction] = useState<ActionHandle | null>(null);
-  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
+  const overdueActionStatus = useActionStatus(
+    overdueAction?.actionId ?? null,
+    overdueAction?.mailboxId,
+  );
 
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Watched
   // OUTSIDE the single-slot re-entry latch: the decision row already
@@ -268,13 +277,15 @@ export function TriageScreen({
   // background. Toast discipline (D35) holds — `done` stays silent
   // (the row leaving the queue was the feedback), failures DO toast.
   const [unsubWatch, setUnsubWatch] = useState<{
+    mailboxId: string | undefined;
     actionId: string;
     senderName: string;
   } | null>(null);
-  const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null);
+  const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null, unsubWatch?.mailboxId);
   // D230 manual path — the "finish in Gmail" callout for a mailto
   // sender, rendered above the queue after U confirms. Dismissible.
   const [mailtoFollowup, setMailtoFollowup] = useState<{
+    mailboxId: string | undefined;
     senderId: string;
     senderName: string;
     mailtoUrl: string;
@@ -291,10 +302,18 @@ export function TriageScreen({
   } | null>(null);
   const [batchAction, setBatchAction] = useState<BatchHandle | null>(null);
   const enqueueBulk = useEnqueueBulkAction();
-  const batchStatus = useBatchStatus(batchAction?.batchId ?? null);
+  const batchStatus = useBatchStatus(batchAction?.batchId ?? null, batchAction?.mailboxId);
   // Batch counterpart of `overdueAction` — same parking contract.
   const [overdueBatch, setOverdueBatch] = useState<BatchHandle | null>(null);
-  const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null);
+  const overdueBatchStatus = useBatchStatus(overdueBatch?.batchId ?? null, overdueBatch?.mailboxId);
+
+  const resetPendingScope = useCallback(() => {
+    clearPending();
+    setPendingBatch(null);
+    setExpandedRow(null);
+    setMailtoFollowup(null);
+  }, [clearPending, setExpandedRow]);
+  useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
   // D226 — the batch sheet's REAL aggregated counts. A batch is only
   // constructed with ≥MIN_BATCH_RUN eligible rows (domain-batch.ts), so
@@ -332,6 +351,11 @@ export function TriageScreen({
     }
     const data = batchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    if (batchAction.mailboxId !== actionMailboxId) {
+      invalidateAfterDecision(qc);
+      setBatchAction(null);
+      return;
+    }
     if (data.status === 'done') {
       // Partial failures keep status 'done' and surface via failed > 0
       // — those senders stay in the queue, so say so (failures DO
@@ -361,6 +385,7 @@ export function TriageScreen({
     }
     setBatchAction(null);
   }, [
+    actionMailboxId,
     batchStatus.data,
     batchStatus.isError,
     batchStatus.error,
@@ -383,6 +408,11 @@ export function TriageScreen({
     }
     const data = unsubExecStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    if (unsubWatch.mailboxId !== actionMailboxId) {
+      invalidateAfterDecision(qc);
+      setUnsubWatch(null);
+      return;
+    }
     if (data.status === 'done') {
       toast(
         `${unsubWatch.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
@@ -401,7 +431,14 @@ export function TriageScreen({
       );
     }
     setUnsubWatch(null);
-  }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
+  }, [
+    actionMailboxId,
+    unsubExecStatus.data,
+    unsubExecStatus.isError,
+    unsubExecStatus.error,
+    unsubWatch,
+    qc,
+  ]);
 
   // Find the row the pending action targets — the sheet needs it for
   // the preview body.
@@ -548,6 +585,11 @@ export function TriageScreen({
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    if (activeAction.mailboxId !== actionMailboxId) {
+      invalidateAfterDecision(qc);
+      setActiveAction(null);
+      return;
+    }
     if (data.status === 'done') {
       // No success toast (D35 — the tray is the feedback channel).
       invalidateAfterDecision(qc);
@@ -568,6 +610,7 @@ export function TriageScreen({
     }
     setActiveAction(null);
   }, [
+    actionMailboxId,
     actionStatus.data,
     actionStatus.isError,
     actionStatus.error,
@@ -644,6 +687,11 @@ export function TriageScreen({
     }
     const data = overdueActionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    if (overdueAction.mailboxId !== actionMailboxId) {
+      invalidateAfterDecision(qc);
+      setOverdueAction(null);
+      return;
+    }
     if (data.status === 'done') {
       invalidateAfterDecision(qc);
       if (!overdueAction.followOn) {
@@ -660,6 +708,7 @@ export function TriageScreen({
     }
     setOverdueAction(null);
   }, [
+    actionMailboxId,
     overdueActionStatus.data,
     overdueActionStatus.isError,
     overdueActionStatus.error,
@@ -685,6 +734,11 @@ export function TriageScreen({
     }
     const data = overdueBatchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    if (overdueBatch.mailboxId !== actionMailboxId) {
+      invalidateAfterDecision(qc);
+      setOverdueBatch(null);
+      return;
+    }
     if (data.status === 'done') {
       if (data.failed > 0) {
         toast(
@@ -710,6 +764,7 @@ export function TriageScreen({
     }
     setOverdueBatch(null);
   }, [
+    actionMailboxId,
     overdueBatchStatus.data,
     overdueBatchStatus.isError,
     overdueBatchStatus.error,
@@ -817,7 +872,7 @@ export function TriageScreen({
               });
               void track('action_confirmed', { journey, verb: 'keep' });
               invalidateAfterDecision(qc);
-              incrementSessionDecided();
+              if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
             },
             onError: (err) => {
@@ -848,6 +903,7 @@ export function TriageScreen({
         setIntentRowId(row.id);
         unsubIntent.mutate(
           {
+            mailboxId: actionMailboxId,
             senderId: row.senderId,
             includesBacklogAction: Boolean(details?.archiveHistoric),
           },
@@ -866,15 +922,17 @@ export function TriageScreen({
               });
               void track('action_confirmed', { journey, verb: 'unsubscribe' });
               invalidateAfterDecision(qc);
-              incrementSessionDecided();
+              if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
               if (res.method === 'one_click' && res.executionActionId) {
                 setUnsubWatch({
+                  mailboxId: actionMailboxId,
                   actionId: res.executionActionId,
                   senderName: row.senderName,
                 });
               } else if (res.method === 'mailto' && res.mailtoUrl) {
                 setMailtoFollowup({
+                  mailboxId: actionMailboxId,
                   senderId: row.senderId,
                   senderName: row.senderName,
                   mailtoUrl: res.mailtoUrl,
@@ -883,6 +941,7 @@ export function TriageScreen({
               if (details?.archiveHistoric) {
                 enqueueComposite.mutate(
                   {
+                    mailboxId: actionMailboxId,
                     senderId: row.senderId,
                     primary: { type: 'archive', olderThanDays: null },
                     // Triage rides the SHARED composite endpoint, which
@@ -896,6 +955,7 @@ export function TriageScreen({
                   {
                     onSuccess: (res) =>
                       setActiveAction({
+                        mailboxId: actionMailboxId,
                         actionId: res.actionId,
                         rowId: row.id,
                         senderName: row.senderName,
@@ -954,6 +1014,7 @@ export function TriageScreen({
       const primaryType = verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete';
       enqueueComposite.mutate(
         {
+          mailboxId: actionMailboxId,
           senderId: row.senderId,
           primary: {
             type: primaryType,
@@ -977,6 +1038,7 @@ export function TriageScreen({
             });
             void track('action_confirmed', { journey, verb: primaryType });
             setActiveAction({
+              mailboxId: actionMailboxId,
               actionId: res.actionId,
               rowId: row.id,
               senderName: row.senderName,
@@ -1035,6 +1097,7 @@ export function TriageScreen({
       intentRowId,
       batchAction,
       enqueueBulk.isPending,
+      actionMailboxId,
       enqueueComposite,
       keepIntent,
       unsubIntent,
@@ -1198,6 +1261,7 @@ export function TriageScreen({
     setPendingBatch(null);
     enqueueBulk.mutate(
       {
+        mailboxId: actionMailboxId,
         senderIds: eligible.map((r) => r.senderId),
         primary: {
           type: verb === 'Archive' ? 'archive' : 'later',
@@ -1217,6 +1281,7 @@ export function TriageScreen({
             source: 'triage_domain_batch',
           });
           setBatchAction({
+            mailboxId: actionMailboxId,
             batchId: res.batchId,
             domain: batch.domain,
             verb,
@@ -1240,7 +1305,7 @@ export function TriageScreen({
         },
       },
     );
-  }, [pendingBatch, enqueueBulk, bulkPreview.data]);
+  }, [pendingBatch, enqueueBulk, bulkPreview.data, actionMailboxId]);
 
   /**
    * Escape clears an INLINE pending preview — the contract the comment
@@ -1350,7 +1415,7 @@ export function TriageScreen({
 
       {/* D230 manual path — after U on a mailto sender, the user sends
           the opt-out from a prefilled Gmail compose. Never auto-sent. */}
-      {mailtoFollowup && (
+      {mailtoFollowup && mailtoFollowup.mailboxId === actionMailboxId && (
         <UnsubMailtoCallout
           senderId={mailtoFollowup.senderId}
           senderName={mailtoFollowup.senderName}
@@ -1456,6 +1521,11 @@ export function TriageScreen({
         onCancel={clearPending}
         onConfirm={onSheetConfirm}
         onRetryPreview={() => void compositePreview.refetch()}
+        previewSenderGone={apiErrorCode(compositePreview.error) === 'SENDER_NOT_FOUND'}
+        onRefreshTriage={() => {
+          clearPending();
+          void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+        }}
         detail={previewDetail}
         // Unconditional: `previewDetail` is undefined until the composite
         // preview resolves, and Unsubscribe confirms without waiting for it.

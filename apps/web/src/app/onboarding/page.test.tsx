@@ -50,6 +50,12 @@ const me401: FetchStubHandler = {
   respond: () => json({ message: 'unauthenticated' }, 401),
 };
 
+const refresh401: FetchStubHandler = {
+  method: 'POST',
+  path: '/api/auth/refresh',
+  respond: () => json({ message: 'unauthenticated' }, 401),
+};
+
 const meAuthed = (readiness: 'ready' | 'syncing', tier: TierId = 'pro'): FetchStubHandler => ({
   method: 'GET',
   path: '/api/auth/me',
@@ -183,7 +189,7 @@ function renderPage() {
 
 describe('onboarding page — pre-auth boundary (D107/D108)', () => {
   it('unauthed visitor sees the promise screen with the D228 trust copy — no OAuth bounce', async () => {
-    installFetchStub([me401]);
+    installFetchStub([me401, refresh401]);
     renderPage();
 
     expect(
@@ -196,7 +202,7 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
   });
 
   it('promise → connect is a local hop; step 2 explains access and data use', async () => {
-    installFetchStub([me401]);
+    installFetchStub([me401, refresh401]);
     renderPage();
 
     await userEvent.click(await screen.findByRole('button', { name: /Connect Gmail/ }));
@@ -421,7 +427,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
 
   it.each([
     ['normal secondary connect', '', '/senders'],
-    ['targeted reconnect', '1', '/settings?reconnect_result=success#mailbox-mb2'],
+    ['targeted reconnect', '1', '/settings'],
   ])(
     'uses the correct fixed exit from the escape hatch for %s',
     async (_label, reconnect, exit) => {

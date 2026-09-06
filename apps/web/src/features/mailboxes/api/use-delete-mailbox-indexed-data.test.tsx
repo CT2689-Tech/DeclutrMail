@@ -50,6 +50,6 @@ describe('useDeleteMailboxIndexedData', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(posted).toEqual({ confirmPhrase: 'DELETE person@example.com' });
-    expect(client.getQueryState(['senders', 'list'])?.isInvalidated).toBe(true);
+    expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
   });
 });

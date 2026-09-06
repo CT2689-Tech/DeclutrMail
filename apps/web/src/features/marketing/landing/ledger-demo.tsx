@@ -40,9 +40,9 @@ export function LedgerDemo({ verbs }: { verbs: readonly LedgerVerb[] }) {
         <div className="dm-mkt-ledger-head">
           <span>
             <span className="dm-mkt-ledger-dot" aria-hidden="true" />
-            Sender review — decision 1 of 14
+            Example cleanup — one sender
           </span>
-          <span>this week</span>
+          <span>Interactive demo</span>
         </div>
         <div className="dm-mkt-ledger-body">
           <div className="dm-mkt-ledger-row">

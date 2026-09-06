@@ -43,7 +43,11 @@ import { getActionFailureCopy } from '@/lib/action-error-copy';
 // decisions never success-toast), so failure tests must assert the
 // exact message + tone. Partial mock: everything else from the shared
 // package stays real (Button, tokens, the sheet's primitives, …).
-const h = vi.hoisted(() => ({ toast: vi.fn(), captureFeatureException: vi.fn() }));
+const h = vi.hoisted(() => ({
+  toast: vi.fn(),
+  captureFeatureException: vi.fn(),
+  mailbox: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+}));
 vi.mock('@declutrmail/shared', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return { ...actual, toast: h.toast };
@@ -58,7 +62,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
   getActiveMailboxEmail: () => 'owner@gmail.com',
   useOptionalAuth: () => ({
     me: {
-      activeMailboxId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      activeMailboxId: h.mailbox,
       user: { email: 'owner@gmail.com' },
       mailboxes: [
         {
@@ -125,6 +129,7 @@ async function confirmOpenSheet(
 
 describe('TriageScreen — D226 mutation wiring', () => {
   beforeEach(() => {
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     resetTriageStore();
     h.toast.mockClear();
     h.captureFeatureException.mockClear();
@@ -138,6 +143,110 @@ describe('TriageScreen — D226 mutation wiring', () => {
   });
   afterEach(() => {
     resetFetchStub();
+  });
+
+  it('keeps a delayed action on its original mailbox after the user switches', async () => {
+    const originalMailbox = h.mailbox;
+    let finish!: (response: Response) => void;
+    const enqueued = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    let postMailbox: string | null | undefined;
+    const polledMailboxes: Array<string | null> = [];
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: (req) => {
+          postMailbox = req.headers.get('X-Active-Mailbox-Id');
+          return enqueued;
+        },
+      },
+      {
+        method: 'GET',
+        path: `/api/actions/${ACTION_ID}`,
+        respond: (req) => {
+          polledMailboxes.push(req.headers.get('X-Active-Mailbox-Id'));
+          return jsonOk({
+            data: {
+              actionId: ACTION_ID,
+              status: 'done',
+              requestedCount: 47,
+              affectedCount: 47,
+              undoToken: null,
+              errorCode: null,
+            },
+          });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    await confirmOpenSheet('Archive');
+    await waitFor(() => expect(postMailbox).toBeDefined());
+    h.mailbox = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageScreen
+          state={{ kind: 'ready', rows: [GROUPON, LINKEDIN], stats: TRIAGE_SESSION_STATS }}
+        />
+      </QueryWrapper>,
+    );
+    await act(async () => {
+      finish(
+        jsonOk({
+          data: {
+            actionId: ACTION_ID,
+            compositeId: ACTION_ID,
+            secondaryId: null,
+            status: 'queued',
+            primaryCount: 47,
+            secondaryCount: null,
+          },
+        }),
+      );
+    });
+    await waitFor(() => expect(polledMailboxes.length).toBeGreaterThan(0));
+    expect(postMailbox).toBe(originalMailbox);
+    expect(polledMailboxes.every((mailbox) => mailbox === originalMailbox)).toBe(true);
+    await waitFor(() => {
+      const row = screen
+        .getByRole('button', { name: `${GROUPON.senderName} — expand triage detail` })
+        .closest('[aria-busy]');
+      expect(row).toHaveAttribute('aria-busy', 'false');
+    });
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+    expect(useTriageStore.getState().sessionMessagesMoved).toBe(0);
+  });
+
+  it('offers queue recovery instead of retrying a preview for a missing sender', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'SENDER_NOT_FOUND', message: 'Sender not found.' },
+            }),
+            { status: 404, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'a' });
+    const dialog = await screen.findByRole('dialog');
+    const refresh = await within(dialog).findByRole('button', { name: 'Refresh triage' });
+    expect(within(dialog).queryByRole('button', { name: 'Retry preview' })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: /^Archive/i })).toBeDisabled();
+    fireEvent.click(refresh);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
   });
 
   it('a reopened sheet stays locked on cached counts until the fresh preview lands', async () => {
@@ -842,6 +951,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
   const EXEC_ID = '99999999-9999-4999-8999-999999999999';
 
   beforeEach(() => {
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     resetTriageStore();
     h.toast.mockClear();
     h.captureFeatureException.mockClear();
@@ -1018,6 +1128,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
  */
 describe('TriageScreen — inline pending preview clears on Escape (D226, D34)', () => {
   beforeEach(() => {
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     resetTriageStore();
     h.toast.mockClear();
     h.captureFeatureException.mockClear();
@@ -1216,6 +1327,7 @@ describe('TriageScreen — Protected rows act with an explicit override (D245/D4
   }
 
   beforeEach(() => {
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     resetTriageStore();
     h.toast.mockClear();
     installFetchStub([
@@ -1304,6 +1416,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
   };
 
   beforeEach(() => {
+    h.mailbox = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
     resetTriageStore();
     h.toast.mockClear();
     h.captureFeatureException.mockClear();

@@ -13,23 +13,9 @@ import { TrackedCta } from './tracked-cta';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 /**
- * Hero (D250 locked headline — reverses D223; decision record in
- * docs/execution/packaging-2026-08-02.md and the spec's DECISIONS
- * LOCKED block) + animated ledger card (D135 adapted) + trust strip
- * (D138 reverbed by D228 — shared privacy copy only, no restated list).
- *
- * Copy contracts (do not edit casually):
- *   - The kicker carries NO privacy claim — its job is recognition in
- *     the buyer's own language. Privacy lives in the generated
- *     PrivacyBadge in PrivacyDesk (§03) below; never paraphrase it upward.
- *   - The H1 must stay true for a FREE user (the CTA signs up Free) —
- *     "rules find it for you" claims are Plus-only and live in the
- *     subhead with the tier named.
- *
- * The hero stays a Server Component. Its small `LedgerDemo` client
- * island owns pause/replay state around the CSS timeline; the global
- * `prefers-reduced-motion` override collapses that timeline to its
- * informative completed state.
+ * Free-tier signup stays the primary path. Keep permission disclosure beside
+ * OAuth and use shared constants for limits and privacy claims.
+ * The ledger demo is the only interactive island in the server-rendered hero.
  */
 export function Hero() {
   return (
@@ -37,15 +23,14 @@ export function Hero() {
       <section className="dm-mkt-hero">
         <div>
           <p className="dm-mkt-hero-kicker dm-mkt-reveal">
-            For inboxes you <b>gave up on</b>
+            A fresh start for your <b>Gmail inbox</b>
           </p>
           <h1 className="dm-mkt-h1 dm-mkt-reveal">
-            Clear thousands of emails by <em>sender</em> — and see exactly what moves.
+            Clear years of clutter. <em>One sender at a time.</em>
           </h1>
           <p className="dm-mkt-hero-sub dm-mkt-reveal-2 dm-mkt-reveal">
-            One decision per sender clears thousands of emails at once — you see the count and what
-            changes in Gmail first. On Plus, turn on a rule and it keeps doing it, only after
-            showing you what it would do.
+            Review newsletters, notifications, and promotions together by sender. Preview which
+            emails will move, then decide what stays in your inbox.
           </p>
           <div className="dm-mkt-hero-ctas dm-mkt-reveal-3 dm-mkt-reveal">
             <TrackedCta
@@ -54,7 +39,7 @@ export function Hero() {
               placement="hero"
               className="dm-mkt-cta dm-mkt-cta-primary"
             >
-              Review my Gmail senders
+              Start cleaning for free
               <span className="dm-mkt-cta-arrow" aria-hidden="true">
                 →
               </span>
@@ -69,8 +54,12 @@ export function Hero() {
             </TrackedCta>
           </div>
           <p className="dm-mkt-hero-note dm-mkt-reveal-4 dm-mkt-reveal">
-            Free · no card · {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month ·{' '}
-            {MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later and Delete
+            {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month, free. No credit
+            card.
+          </p>
+          <p className="dm-mkt-hero-reassurance dm-mkt-reveal">
+            <span aria-hidden="true">↶</span> Changed your mind? Undo Archive, Later, or Delete for{' '}
+            {MIN_UNDO_WINDOW_DAYS} days.
           </p>
           {/* Connect CTAs link straight to Google's consent screen, so the
               permission explanation stays beside the click. */}

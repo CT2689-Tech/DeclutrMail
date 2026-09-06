@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { Queue } from 'bullmq';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { providerSyncState } from '@declutrmail/db';
 import {
   ensureIncrementalSyncJob,
@@ -201,23 +201,41 @@ export class SyncService {
    * Retry a terminally-failed INITIAL sync. See
    * {@link InitialSyncRetryOutcome} for why this is gated to `failed`.
    *
-   * Idempotent by construction: the guard reads the CURRENT readiness
-   * inside the same call that re-queues, so a double-click makes the
-   * second attempt a `not_failed` no-op rather than a second full sync.
+   * Compare and update in one statement: concurrent retries must not
+   * overwrite a newly queued/running scan or clear its captured cursor.
    */
   async retryFailedInitialSync(mailboxAccountId: string): Promise<InitialSyncRetryOutcome> {
+    const claimed = await this.db
+      .update(providerSyncState)
+      .set({
+        currentStage: 'queued',
+        readinessStatus: 'queued',
+        progressPct: 0,
+        errorCode: null,
+        lastHistoryId: null,
+        historyIdUpdatedAt: null,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(providerSyncState.mailboxAccountId, mailboxAccountId),
+          eq(providerSyncState.readinessStatus, 'failed'),
+        ),
+      )
+      .returning({ mailboxAccountId: providerSyncState.mailboxAccountId });
+
+    if (claimed.length > 0) {
+      await this.schedule(mailboxAccountId);
+      return 'requeued';
+    }
+
     const rows = await this.db
       .select({ readinessStatus: providerSyncState.readinessStatus })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
       .limit(1);
 
-    const current = rows[0];
-    if (!current) return 'no_state';
-    if (current.readinessStatus !== 'failed') return 'not_failed';
-
-    await this.enqueueInitialSync(mailboxAccountId);
-    return 'requeued';
+    return rows.length === 0 ? 'no_state' : 'not_failed';
   }
 
   /**

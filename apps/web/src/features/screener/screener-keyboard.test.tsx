@@ -9,6 +9,7 @@
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
@@ -266,26 +267,33 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     ]);
   }
 
-  it('Enter with a reach chip focused confirms the decision — the chip never owns Enter', async () => {
+  it('Enter on a reach chip selects the scope without submitting Delete', async () => {
     const bodies: Record<string, unknown>[] = [];
     installDecideStub({ allMailTotal: 9, bodies });
-
+    const user = userEvent.setup();
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
     const allMailChip = await screen.findByRole('radio', { name: /Inbox \+ archived/ });
-    fireEvent.click(allMailChip);
-    await screen.findByText(/across inbox \+ archived/i);
-
-    // Enter while the chip has focus: the screen handler claims the key
-    // (defaultPrevented → fireEvent returns false), so in a real
-    // browser the button's native Enter-activation cannot re-toggle the
-    // chip — the decision confirms instead.
     allMailChip.focus();
-    const notPrevented = fireEvent.keyDown(allMailChip, { key: 'Enter' });
-    expect(notPrevented).toBe(false);
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toMatchObject({ verb: 'delete', reach: 'all_mail' });
+    await user.keyboard('{Enter}');
+    expect(allMailChip).toHaveAttribute('aria-checked', 'true');
+    expect(bodies).toHaveLength(0);
+    expect(screen.getByRole('button', { name: /Confirm Delete for/ })).toBeEnabled();
+  });
+
+  it('Enter on Cancel cancels the preview without submitting Delete', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installDecideStub({ allMailTotal: 9, bodies });
+    const user = userEvent.setup();
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByRole('radio', { name: /Inbox only/ });
+    screen.getByRole('button', { name: 'Cancel' }).focus();
+    await user.keyboard('{Enter}');
+    expect(bodies).toHaveLength(0);
+    expect(screen.queryByRole('region', { name: /Preview/ })).toBeNull();
   });
 
   it('the default reach travels as NO field at all (pre-reach wire shape)', async () => {

@@ -21,6 +21,8 @@ const { chromium, expect } = requireE2e('@playwright/test');
   ]) {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const page = await context.newPage();
+    page.setDefaultTimeout(15000);
+    page.setDefaultNavigationTimeout(30000);
     page.on('pageerror', (e) => failures.push(e.message));
     let healthy = false,
       requests = 0;
@@ -83,9 +85,13 @@ const { chromium, expect } = requireE2e('@playwright/test');
         ),
       });
     });
-    await page.goto('http://localhost:3109/onboarding' + (secondary ? '?mailbox=mb2' : ''));
-    if (await page.getByRole('button', { name: 'Essential only' }).isVisible())
-      await page.getByRole('button', { name: 'Essential only' }).click();
+    await page.goto(
+      (process.env.SMOKE_WEB_URL || 'http://localhost:3109') +
+        '/onboarding' +
+        (secondary ? '?mailbox=mb2' : ''),
+    );
+    await expect(page.getByRole('button', { name: 'Essential only' })).toBeVisible();
+    await page.getByRole('button', { name: 'Essential only' }).click();
     if (scenario === 'permission-reconnect') {
       await expect(page.getByRole('button', { name: 'Reconnect Gmail' })).toBeVisible({
         timeout: 30000,

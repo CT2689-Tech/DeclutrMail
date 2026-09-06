@@ -33,6 +33,12 @@ let me: Me;
 let healthById: Record<string, MailboxHealth | undefined>;
 let entitlements: TierEntitlements;
 
+const { toastSpy } = vi.hoisted(() => ({ toastSpy: vi.fn() }));
+vi.mock('@declutrmail/shared', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  toast: toastSpy,
+}));
+
 const startMailboxConnectSpy = vi.fn();
 const startMailboxReactivationSpy = vi.fn();
 const setActiveMutateSpy = vi.fn();
@@ -100,6 +106,7 @@ async function renderOpenMenu() {
 
 describe('AccountMenu Gmail reconnect health', () => {
   beforeEach(() => {
+    toastSpy.mockClear();
     me = makeMe();
     healthById = {};
     entitlements = {
@@ -117,6 +124,20 @@ describe('AccountMenu Gmail reconnect health', () => {
     deleteIndexedDataMutateSpy.mockClear();
     logoutMutateSpy.mockClear();
     useMailboxesHealthSpy.mockClear();
+  });
+
+  it('reports a failed switch and leaves the account picker available to retry', async () => {
+    const { user } = await renderOpenMenu();
+    const selector = screen.getByRole('button', { name: `Switch to mailbox ${MAILBOX_B.email}` });
+    await user.click(selector);
+    const callbacks = setActiveMutateSpy.mock.calls.at(-1)?.[1];
+    act(() => callbacks?.onError?.(new Error('Network unavailable')));
+    expect(toastSpy).toHaveBeenCalledWith(
+      'Could not switch Gmail accounts. Please try again.',
+      'warn',
+    );
+    expect(screen.getByRole('dialog', { name: 'Gmail accounts' })).toBeInTheDocument();
+    expect(selector).toBeEnabled();
   });
 
   it('shows selected revoked health, target reconnect at 2/2, and keeps data controls reachable', async () => {

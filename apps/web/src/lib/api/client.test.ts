@@ -204,6 +204,61 @@ describe('apiGet — terminal 401 redirect (D155, QA-onboarding-20260828-02)', (
     resetFetchStub();
   });
 
+  it.each([429, 500, 503])(
+    'keeps the session when refresh temporarily returns %s',
+    async (status) => {
+      installFetchStub([
+        { method: 'GET', path: '/api/a', respond: () => new Response(null, { status: 401 }) },
+        {
+          method: 'POST',
+          path: '/api/auth/refresh',
+          respond: () => new Response(null, { status }),
+        },
+      ]);
+      const assign = vi.fn();
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: { ...window.location, assign },
+      });
+      const fresh = await import('./client');
+      await expect(fresh.apiGet('/api/a')).rejects.toMatchObject({ status });
+      expect(assign).not.toHaveBeenCalled();
+      await expect(fresh.recoverFromUnauthorized()).rejects.toMatchObject({ status });
+      expect(assign).not.toHaveBeenCalled();
+    },
+  );
+
+  it('preserves a network failure and allows the next refresh to succeed', async () => {
+    let reads = 0;
+    let refreshes = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/a',
+        respond: () =>
+          ++reads <= 2 ? new Response(null, { status: 401 }) : jsonOk({ data: { ok: true } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => {
+          if (++refreshes === 1) throw new TypeError('Network unavailable');
+          return jsonOk({ data: { ok: true } });
+        },
+      },
+    ]);
+    const assign = vi.fn();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...window.location, assign },
+    });
+    const fresh = await import('./client');
+    await expect(fresh.apiGet('/api/a')).rejects.toThrow('Network unavailable');
+    expect(assign).not.toHaveBeenCalled();
+    await expect(fresh.apiGet('/api/a')).resolves.toMatchObject({ data: { ok: true } });
+    expect(refreshes).toBe(2);
+  });
+
   it('navigates to Google OAuth start exactly once, even when two requests terminal-401 at the same time', async () => {
     installFetchStub([
       {

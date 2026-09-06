@@ -234,10 +234,8 @@ async function apiRequest<T>(
 
   if (!res.ok) {
     // 401 → attempt refresh once. If the refresh succeeds the caller's
-    // request is replayed; if it fails the session is truly dead, so
-    // redirect to the OAuth start endpoint rather than failing
-    // silently (a mutation 401 with no UI feedback reads as "the
-    // button did nothing" — Codex smoke 2026-05-27).
+    // request is replayed. Only an explicitly rejected refresh proves
+    // the session dead; temporary refresh errors propagate for recovery.
     if (res.status === 401 && path !== '/api/auth/refresh') {
       if (!options._isRetry) {
         const refreshed = await attemptRefresh();
@@ -296,9 +294,12 @@ async function attemptRefresh(): Promise<boolean> {
         credentials: 'include',
         headers: { Accept: 'application/json' },
       });
-      return res.ok;
-    } catch {
-      return false;
+      if (res.ok) return true;
+      if (res.status === 401) return false;
+      // Rate limits, outages, and network errors must not become a
+      // terminal 401: AuthProvider would hide the app and OAuth would
+      // replace a session that may still be valid.
+      throw new ApiError(res.status, null, `Session refresh failed: ${res.status}`);
     } finally {
       pendingRefresh = null;
     }
@@ -316,13 +317,14 @@ async function attemptRefresh(): Promise<boolean> {
  * blamed the export rate limit and told the user to wait, which is a
  * wrong diagnosis they can never act their way out of.
  *
- * Returns true when the session was refreshed and the caller should
+ * Temporary refresh failures reject without redirecting. Returns true
+ * when the session was refreshed and the caller should
  * replay its request once; false after starting the hard redirect to
  * re-auth (the caller's own throw then races a navigation, which is
  * fine — the page is leaving).
  */
-export async function recoverFromUnauthorized(): Promise<boolean> {
-  if (await attemptRefresh()) return true;
+export async function recoverFromUnauthorized(alreadyRetried = false): Promise<boolean> {
+  if (!alreadyRetried && (await attemptRefresh())) return true;
   redirectToLogin();
   return false;
 }

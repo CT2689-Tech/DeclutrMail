@@ -66,6 +66,7 @@ import { launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
 import { annualMonthsFree, quotedPlanPrice, REFUND_SETTLING_POLL_MS } from './billing-model';
 import { BillingScreen } from './billing-screen';
+import { BillingInvoiceHistoryGate } from './billing-invoice-history-gate';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
 
 const FREE_BODY: BillingSubscription = {
@@ -217,6 +218,24 @@ beforeEach(() => {
 afterEach(() => resetFetchStub());
 
 describe('BillingScreen — designed states', () => {
+  it('does not loop failed subscription reads when the streamed invoice gate mounts', async () => {
+    let reads = 0;
+    stubSubscription(() => {
+      reads++;
+      return billingDisabled503();
+    });
+    const client = createTestQueryClient();
+    render(
+      <QueryWrapper client={client}>
+        <BillingScreen invoiceHistory={<BillingInvoiceHistoryGate />} />
+      </QueryWrapper>,
+    );
+    await screen.findByTestId('billing-disabled-notice');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(reads).toBe(1);
+    expect(screen.getByTestId('billing-disabled-notice')).toBeInTheDocument();
+  });
+
   it('shows a loading skeleton while the subscription fetch is in flight', () => {
     stubSubscription(() => new Promise<Response>(() => {}));
     renderScreen();

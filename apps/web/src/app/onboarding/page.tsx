@@ -364,7 +364,11 @@ function SecondaryConnectGate({
         returnToEmail: other.email,
         returning: setActive.isPending,
         onReturn: () => {
-          setActive.mutate(other.id, { onSuccess: () => router.replace(exitPath) });
+          // Leaving a scan early is not evidence of a successful reconnect.
+          setActive.mutate(other.id, {
+            onSuccess: () => router.replace(isTargetedReconnect ? '/settings' : '/senders'),
+            onError: () => toast("Couldn't switch accounts. Please try again.", 'danger'),
+          });
         },
       }
     : undefined;

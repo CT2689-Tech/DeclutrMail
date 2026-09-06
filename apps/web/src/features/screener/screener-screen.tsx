@@ -9,6 +9,8 @@ import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/
 // — only the keys cross the boundary, never behavior (same precedent
 // as the Triage screen).
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { useOptionalAuth } from '@/features/auth/auth-provider';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // same precedent as Triage importing the senders-owned callout.
@@ -35,7 +37,7 @@ import {
   type ScreenerQueueRow,
   type ScreenerScreenState,
 } from './data';
-import { ScreenerEmptyState } from './empty-state';
+import { ScreenerEmptyState, screenerEmptyTitle } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
 
@@ -106,6 +108,10 @@ export function ScreenerScreen({
   totalPending?: number | null;
 }) {
   const qc = useQueryClient();
+  const auth = useOptionalAuth();
+  const activeMailbox = auth?.me.mailboxes.find(
+    (mailbox) => mailbox.id === auth.me.activeMailboxId,
+  );
   const decide = useScreenerDecide();
 
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
@@ -144,6 +150,7 @@ export function ScreenerScreen({
 
   /** The verb awaiting preview-confirm (D226) — one row at a time. */
   const [pending, setPending] = useState<{
+    mailboxId: string | undefined;
     rowId: string;
     verb: ScreenerDecideVerb;
     wakeAt: string | null;
@@ -152,6 +159,7 @@ export function ScreenerScreen({
   } | null>(null);
   /** The enqueued label-modify action being polled to terminal. */
   const [activeAction, setActiveAction] = useState<{
+    mailboxId: string | undefined;
     actionId: string;
     rowId: string;
     senderName: string;
@@ -166,12 +174,27 @@ export function ScreenerScreen({
     mailtoUrl: string;
   } | null>(null);
   /** Background watch for a one-click unsubscribe execution (D9 Wave 2). */
-  const [unsubWatch, setUnsubWatch] = useState<{ actionId: string; senderName: string } | null>(
-    null,
-  );
+  const [unsubWatch, setUnsubWatch] = useState<{
+    actionId: string;
+    senderName: string;
+    mailboxId: string | undefined;
+  } | null>(null);
 
-  const actionStatus = useActionStatus(activeAction?.actionId ?? null);
-  const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null);
+  const scopeGeneration = useRef(0);
+  const resetScope = useCallback(() => {
+    scopeGeneration.current += 1;
+    setPending(null);
+    setExpandedRowId(null);
+    setMailtoFollowup(null);
+  }, []);
+  useEffect(() => {
+    window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
+    return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
+  }, [resetScope]);
+  useEffect(resetScope, [resetScope, activeMailbox?.id]);
+
+  const actionStatus = useActionStatus(activeAction?.actionId ?? null, activeAction?.mailboxId);
+  const unsubExecStatus = useActionStatus(unsubWatch?.actionId ?? null, unsubWatch?.mailboxId);
   // Overdue parking slot (ACTION_OVERDUE_MS, 2026-08-12 incident) —
   // single slot, replaced on collision. A handle that stays
   // non-terminal past the deadline moves here so `busyRowId` releases;
@@ -179,7 +202,10 @@ export function ScreenerScreen({
   // failure toasts still land. `unsubWatch` gets no parked slot — it is
   // an explicit background watcher that never blocks the queue.
   const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
-  const overdueActionStatus = useActionStatus(overdueAction?.actionId ?? null);
+  const overdueActionStatus = useActionStatus(
+    overdueAction?.actionId ?? null,
+    overdueAction?.mailboxId,
+  );
 
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
@@ -280,7 +306,7 @@ export function ScreenerScreen({
     if (data.status === 'done') {
       // No success toast (D35) — the row leaving the queue is the feedback.
       invalidateAfterDecision(qc);
-      setExpandedRowId(null);
+      if (activeAction.mailboxId === activeMailbox?.id) setExpandedRowId(null);
     } else {
       toast(
         `Couldn't ${VERB_LABEL[activeAction.verb].toLowerCase()} ${activeAction.senderName} — see Activity`,
@@ -289,7 +315,14 @@ export function ScreenerScreen({
       invalidateAfterDecision(qc);
     }
     setActiveAction(null);
-  }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
+  }, [
+    actionStatus.data,
+    actionStatus.isError,
+    actionStatus.error,
+    activeAction,
+    activeMailbox?.id,
+    qc,
+  ]);
 
   // Overdue-release timer (ACTION_OVERDUE_MS). Cleanup cancels the
   // deadline whenever the handle clears normally, so only a genuinely
@@ -396,6 +429,7 @@ export function ScreenerScreen({
       if (row.id === busyRowId || row.id === parkedRowId) return;
       if (verb === 'unsubscribe' && !canScreenerUnsubscribe(row)) return;
       setPending({
+        mailboxId: activeMailbox?.id,
         rowId: row.id,
         verb,
         wakeAt: verb === 'later' ? defaultLaterWakeAtIso() : null,
@@ -403,13 +437,14 @@ export function ScreenerScreen({
       });
       setExpandedRowId(row.id);
     },
-    [busyRowId, parkedRowId],
+    [busyRowId, parkedRowId, activeMailbox?.id],
   );
 
   /** Preview confirm — the only place the decide mutation fires. */
   const onConfirm = useCallback(
     (row: ScreenerQueueRow) => {
       if (pending == null || pending.rowId !== row.id) return;
+      if (pending.mailboxId !== activeMailbox?.id) return;
       if (pendingPreviewBlocked) return;
       // `parkedRowId` joins the guard for THIS row only (a preview can
       // stay open across the park): the parked row may not re-dispatch,
@@ -420,10 +455,13 @@ export function ScreenerScreen({
         return;
       }
       const verb = pending.verb;
+      const mailboxId = pending.mailboxId;
+      const generation = scopeGeneration.current;
       setPending(null);
       setDecidingRowId(row.id);
       decide.mutate(
         {
+          mailboxId,
           senderId: row.senderId,
           verb,
           // QA-delete-20260829-01 — Delete's default window travels with
@@ -452,6 +490,7 @@ export function ScreenerScreen({
             if (res.execution.kind === 'enqueued') {
               // Worker confirms in the background; row stays busy.
               setActiveAction({
+                mailboxId,
                 actionId: res.execution.actionId,
                 rowId: row.id,
                 senderName: row.senderName,
@@ -462,10 +501,15 @@ export function ScreenerScreen({
             if (res.execution.kind === 'unsubscribe') {
               if (res.execution.method === 'one_click' && res.execution.executionActionId) {
                 setUnsubWatch({
+                  mailboxId,
                   actionId: res.execution.executionActionId,
                   senderName: row.senderName,
                 });
-              } else if (res.execution.method === 'mailto' && res.execution.mailtoUrl) {
+              } else if (
+                res.execution.method === 'mailto' &&
+                res.execution.mailtoUrl &&
+                generation === scopeGeneration.current
+              ) {
                 setMailtoFollowup({
                   senderId: row.senderId,
                   senderName: row.senderName,
@@ -474,7 +518,7 @@ export function ScreenerScreen({
               }
             }
             invalidateAfterDecision(qc);
-            setExpandedRowId(null);
+            if (generation === scopeGeneration.current) setExpandedRowId(null);
           },
           onError: (err) => {
             // 402 FREE_CAP_REACHED already surfaced the upgrade prompt
@@ -507,7 +551,16 @@ export function ScreenerScreen({
         },
       );
     },
-    [pending, pendingPreviewBlocked, previewAllMailCount, busyRowId, parkedRowId, decide, qc],
+    [
+      pending,
+      pendingPreviewBlocked,
+      previewAllMailCount,
+      busyRowId,
+      parkedRowId,
+      decide,
+      qc,
+      activeMailbox?.id,
+    ],
   );
 
   // Keyboard shortcuts (Triage parity, D29/D227). Act on the EXPANDED
@@ -520,14 +573,19 @@ export function ScreenerScreen({
     if (state.kind !== 'ready') return;
     const rows = state.rows;
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
+      if (e.defaultPrevented) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
       if (target) {
         const tag = target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable)
+          return;
       }
       // Preview open → Enter/Escape own the interaction.
       if (pending != null && pendingRow != null) {
         if (e.key === 'Enter') {
+          // Native controls own Enter: activating Cancel or changing a
+          // scope chip must never submit the pending destructive action.
+          if (target?.closest('button, a, select, [role="button"], [role="radio"]')) return;
           e.preventDefault();
           if (!pendingPreviewBlocked) onConfirm(pendingRow);
         } else if (e.key === 'Escape') {
@@ -590,7 +648,7 @@ export function ScreenerScreen({
               ? `${totalPending} new sender${totalPending === 1 ? '' : 's'} waiting.`
               : 'New senders waiting.'
             : state.kind === 'empty'
-              ? 'No unknown senders.'
+              ? screenerEmptyTitle(activeMailbox?.readiness)
               : state.kind === 'error'
                 ? "Couldn't load the Screener."
                 : 'Loading the Screener…'}
@@ -619,8 +677,9 @@ export function ScreenerScreen({
 
       {state.kind === 'loading' && <LoadingState />}
       {state.kind === 'error' && <ScreenerErrorState error={state.error} onRetry={state.retry} />}
-      {state.kind === 'empty' && <ScreenerEmptyState />}
-      {state.kind === 'ready' && state.rows.length === 0 && <ScreenerEmptyState />}
+      {(state.kind === 'empty' || (state.kind === 'ready' && state.rows.length === 0)) && (
+        <ScreenerEmptyState readiness={activeMailbox?.readiness} />
+      )}
       {state.kind === 'ready' && state.rows.length > 0 && (
         <div
           role="list"

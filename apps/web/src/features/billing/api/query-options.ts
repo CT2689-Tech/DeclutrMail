@@ -10,6 +10,11 @@ export function billingSubscriptionQueryOptions(reader: BillingReader<BillingSub
     queryKey: billingKeys.subscription(),
     queryFn: ({ signal }) => reader(signal),
     retry: false,
+    // The invoice gate observes this same query after the billing screen
+    // settles. Retrying its error on that mount makes the parent loading
+    // again, unmounts the gate, then repeats indefinitely on the next 503.
+    // Explicit refetch/invalidation still recovers a failed reading.
+    retryOnMount: false,
     staleTime: 60_000,
   });
 }

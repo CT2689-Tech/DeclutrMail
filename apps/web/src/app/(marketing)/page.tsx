@@ -14,7 +14,7 @@ import { FinalCta } from '@/features/marketing/landing/footer';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 /**
- * Public landing page at `/` (D134 structure, D223 locked headline).
+ * Public landing page at `/`.
  *
  * Renders inside the `(marketing)` route group — NO AuthProvider in
  * the chain, no auth round-trip before paint. The only session
@@ -27,9 +27,9 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  * comparisons live on their source-backed dedicated routes.
  */
 
-const TITLE = 'Preview Gmail cleanup by sender — DeclutrMail';
+const TITLE = 'Clean up Gmail, one sender at a time — DeclutrMail';
 const DESCRIPTION =
-  'Review Gmail by sender with Keep, Archive, Unsubscribe, Later, and Delete. See the exact count and Gmail changes before a manual move, then verify in Activity.';
+  'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.';
 
 // metadataBase is inherited from the root layout (D128 origin).
 export const metadata: Metadata = marketingPageMetadata({

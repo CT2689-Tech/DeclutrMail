@@ -40,7 +40,12 @@ function statusOf(overrides: Partial<SyncStatus>): SyncStatus {
 }
 
 // Mutable cell the mocked hooks read — tests mutate + rerender.
-const statusCell: { data: SyncStatus; refetchData: SyncStatus | null } = {
+const statusCell: {
+  data: SyncStatus;
+  refetchData: SyncStatus | null;
+  refetchError?: boolean;
+  waitForRefetch?: Promise<void> | undefined;
+} = {
   data: statusOf({}),
   refetchData: null,
 };
@@ -49,17 +54,26 @@ vi.mock('@/features/onboarding/api/use-sync-status', () => ({
   SYNC_STATUS_KEY: ['sync', 'status'] as const,
   useSyncStatus: () => ({
     data: statusCell.data,
-    refetch: async () => ({ data: statusCell.refetchData ?? statusCell.data }),
+    refetch: async () => {
+      await statusCell.waitForRefetch;
+      return {
+        data: statusCell.refetchData ?? statusCell.data,
+        isError: statusCell.refetchError ?? false,
+      };
+    },
   }),
 }));
 
+const syncMutate = vi.fn(
+  (_vars: undefined, opts?: { onSuccess?: () => void; onSettled?: () => void }) => {
+    opts?.onSuccess?.();
+    opts?.onSettled?.();
+  },
+);
 vi.mock('./api/use-sync-now', () => ({
   useSyncNow: () => ({
     isPending: false,
-    mutate: (_vars: undefined, opts?: { onSuccess?: () => void; onSettled?: () => void }) => {
-      opts?.onSuccess?.();
-      opts?.onSettled?.();
-    },
+    mutate: syncMutate,
   }),
 }));
 
@@ -111,6 +125,9 @@ function pushStatus(next: SyncStatus) {
 
 describe('SyncNowButton completion watch', () => {
   beforeEach(() => {
+    syncMutate.mockClear();
+    statusCell.refetchError = false;
+    statusCell.waitForRefetch = undefined;
     vi.mocked(toast).mockClear();
     statusCell.data = statusOf({ last_synced_at: '2026-07-07T10:00:00.000Z' });
     statusCell.refetchData = null;
@@ -143,6 +160,61 @@ describe('SyncNowButton completion watch', () => {
     renderButton();
 
     expect(screen.getByRole('button', { name: /check gmail for new emails/i })).toBeInTheDocument();
+  });
+
+  it('does not queue work when the fresh status read fails', async () => {
+    statusCell.refetchError = true;
+    renderButton('mb1');
+    await clickSyncNow();
+    expect(syncMutate).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining("Couldn't check"), 'danger');
+  });
+
+  it('does not enqueue after leaving the mailbox while its preflight read is pending', async () => {
+    let release!: () => void;
+    statusCell.waitForRefetch = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const view = renderButton('mb1');
+    fireEvent.click(screen.getByRole('button', { name: /check gmail for new emails/i }));
+    view.unmount();
+    await act(async () => {
+      release();
+    });
+    expect(syncMutate).not.toHaveBeenCalled();
+  });
+
+  it('does not queue incremental work when the fresh read discovers a failed scan', async () => {
+    statusCell.refetchData = statusOf({ readiness_status: 'failed', is_ready_for_triage: false });
+    renderButton('mb1');
+    await clickSyncNow();
+    expect(syncMutate).not.toHaveBeenCalled();
+  });
+
+  it('uses the latest outcome when a failed attempt recovers between polls', async () => {
+    renderButton('mb1');
+    await clickSyncNow();
+    pushStatus(
+      statusOf({
+        last_sync_error_at: '2026-07-07T10:01:00.000Z',
+        last_synced_at: '2026-07-07T10:02:00.000Z',
+      }),
+    );
+    expect(toast).toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
+    expect(toast).not.toHaveBeenCalledWith(expect.stringContaining('Sync failed'), 'danger');
+  });
+
+  it('does not report the next mailbox freshness as completion of the previous mailbox sync', async () => {
+    const view = renderButton('mb1');
+    await clickSyncNow();
+    statusCell.data = statusOf({ last_synced_at: '2026-07-07T11:00:00.000Z' });
+    view.rerender(
+      <QueryWrapper client={createTestQueryClient()}>
+        <Harness mailboxId="mb2" />
+      </QueryWrapper>,
+    );
+    expect(toast).not.toHaveBeenCalledWith('Inbox up to date — synced just now.', 'success');
+    expect(screen.getByRole('button', { name: /check gmail for new emails/i })).toBeEnabled();
   });
 
   it('success — toasts "up to date" when last_synced_at moves past the baseline', async () => {

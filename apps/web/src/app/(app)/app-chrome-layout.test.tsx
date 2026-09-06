@@ -238,6 +238,11 @@ describe('(app) layout auth boundary — D134', () => {
 
     installFetchStub([
       {
+        method: 'POST',
+        path: '/api/auth/refresh',
+        respond: () => new Response(null, { status: 401 }),
+      },
+      {
         method: 'GET',
         path: '/api/auth/me',
         respond: () =>

@@ -5,6 +5,7 @@ import {
   Post,
   Req,
   Res,
+  ServiceUnavailableException,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
@@ -196,7 +197,11 @@ export class AuthController {
       setSessionCookies(res, tokens, this.csrf.issue());
       return ok({ ok: true });
     } catch (err) {
-      this.logger.warn(`refresh rotate failed: ${err instanceof Error ? err.message : err}`);
+      if (!(err instanceof UnauthorizedException)) {
+        this.logger.error('Session rotation temporarily failed.');
+        throw new ServiceUnavailableException('Session refresh temporarily unavailable.');
+      }
+      this.logger.warn('Session rotation denied.');
       clearSessionCookies(res);
       throw new UnauthorizedException('Refresh denied.');
     }
