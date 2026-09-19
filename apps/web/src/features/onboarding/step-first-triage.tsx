@@ -126,7 +126,7 @@ export function StepFirstTriage({
             margin: '6px 0 4px',
           }}
         >
-          {meta.pinned === 0 ? 'Nothing to clean up here.' : 'You’re done for today.'}
+          {meta.pinned === 0 ? 'No decisions waiting.' : 'You’re done for today.'}
         </h1>
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0

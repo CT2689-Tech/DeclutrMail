@@ -170,6 +170,15 @@ export function UpgradeModal() {
                   : ''}
                 . {TIER_MANIFEST.plus.name} removes the monthly cap for{' '}
                 {quotedPlanPrice('plus', 'monthly', regionProvider)}.
+                {/* The one-line Plus pitch no longer names Pro; this keeps the
+                    other plans one click away (same link as <TierGate>). */}{' '}
+                <Link
+                  href="/pricing"
+                  onClick={dismiss}
+                  style={{ color: color.primary, textDecoration: 'none' }}
+                >
+                  Compare plans →
+                </Link>
               </>
             ) : hit.reason === 'action_tier' ? (
               <>

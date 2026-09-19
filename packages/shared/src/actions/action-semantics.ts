@@ -493,7 +493,7 @@ export interface ActionPresentationInput {
   readonly liveCount: number | null;
   readonly planUndoDeadline: string | null;
   readonly wakeAt: string | null;
-  readonly unsubscribeChannel: UnsubscribeChannel | null;
+  readonly unsubscribeChannel: UnsubscribeChannel | 'varies' | null;
   readonly secondaryAction?: SecondaryActionPresentationInput | null;
   /**
    * Which clock absolute times are printed in.
@@ -527,6 +527,8 @@ export type ActionPresentationActivityUndo =
 
 export type ActionPresentationUnsubscribeChannel =
   | { readonly kind: 'not-applicable' }
+  /** One presentation covering many senders (an Autopilot rule): no single channel. */
+  | { readonly kind: 'varies' }
   | {
       readonly kind: UnsubscribeChannel;
       readonly summary: string;
@@ -627,7 +629,7 @@ interface PresentActionInput {
   readonly liveCount: number | null;
   readonly planUndoDeadline: string | null;
   readonly wakeAt: string | null;
-  readonly unsubscribeChannel: UnsubscribeChannel | null;
+  readonly unsubscribeChannel: UnsubscribeChannel | 'varies' | null;
   /**
    * Set only when this action is the SECONDARY half of a composite. The
    * primary's semantics decide which of this action's standalone facts
@@ -687,7 +689,7 @@ function presentAction(input: PresentActionInput): PresentedAction {
       : semantics.currentMail;
   const surviving = composedUnder === null ? null : secondaryFactsUnder(semantics, composedUnder);
   const futureMailSummary =
-    unsubscribeChannel.kind === 'not-applicable'
+    unsubscribeChannel.kind === 'not-applicable' || unsubscribeChannel.kind === 'varies'
       ? semantics.futureMail.summary
       : unsubscribeChannel.summary;
   // `inPreview` — a preview states "what does not change" only where the
@@ -896,10 +898,18 @@ function formatIsoUtc(value: string): string {
 
 function presentationUnsubscribeChannel(
   verb: ActionVerb,
-  channel: UnsubscribeChannel | null,
+  channel: UnsubscribeChannel | 'varies' | null,
 ): ActionPresentationUnsubscribeChannel {
   if (verb !== 'unsubscribe') {
     return { kind: 'not-applicable' };
+  }
+  // A rule-level caller describes MANY senders. `null` would read as
+  // "unknown" and print "This sender has not been checked for an
+  // unsubscribe option yet" — a claim about one sender that was never
+  // looked up, on a dialog about all of them. The verb's generic
+  // future-mail sentence (one-click, or a draft you send) is the true one.
+  if (channel === 'varies') {
+    return { kind: 'varies' };
   }
   // D248: a caller with no channel fact is in the SAME state as a sender
   // the index has not derived one for — unknown. It is never `none`.

@@ -19,6 +19,7 @@ import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE, type ActionReach } from '@/lib/api/actions';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 
@@ -673,7 +674,7 @@ export function ScreenerScreen({
       )}
 
       {state.kind === 'loading' && <LoadingState />}
-      {state.kind === 'error' && <ScreenerErrorState onRetry={state.retry} />}
+      {state.kind === 'error' && <ScreenerErrorState error={state.error} onRetry={state.retry} />}
       {(state.kind === 'empty' || (state.kind === 'ready' && state.rows.length === 0)) && (
         <ScreenerEmptyState readiness={activeMailbox?.readiness} />
       )}
@@ -714,11 +715,11 @@ export function ScreenerScreen({
 }
 
 /** Query-failure state (D211) — explicit retry only (reads never auto-retry 4xx). */
-function ScreenerErrorState({ onRetry }: { onRetry: () => void }) {
+function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <ErrorState
       title="Your pending senders didn't load"
-      description="Try again in a moment."
+      description={loadErrorDescription(error)}
       onRetry={onRetry}
     />
   );

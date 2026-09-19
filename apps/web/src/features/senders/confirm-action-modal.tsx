@@ -809,6 +809,14 @@ export function ConfirmActionModal({
     .filter((action): action is PresentedAction => action !== null)
     .map((action) => action.effectCopy)
     .join(' Also: ');
+  // A zero no control on this sheet can change (no window to widen, no
+  // archived reach to switch to): the notice under the figure is the
+  // disabled reason, so a lead describing the move is noise about an
+  // action that cannot run.
+  const zeroDeadEnd =
+    nothingToActOn &&
+    (nothingLeftToDelete ||
+      (inboxScopeNotice.kind === 'empty-inbox' && archivedReachHint === null));
 
   const numberStyle: CSSProperties = {
     fontFamily: font.display,
@@ -925,7 +933,7 @@ export function ConfirmActionModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-confirm-title"
-        aria-describedby="dm-confirm-lead"
+        aria-describedby={zeroDeadEnd ? undefined : 'dm-confirm-lead'}
         style={
           variant === 'sheet'
             ? {
@@ -1044,12 +1052,14 @@ export function ConfirmActionModal({
               })()}
             </div>
           )}
-          <p
-            id="dm-confirm-lead"
-            style={{ fontSize: 13, color: color.fgSoft, margin: '10px 0 0', lineHeight: 1.5 }}
-          >
-            {lead}
-          </p>
+          {!zeroDeadEnd && (
+            <p
+              id="dm-confirm-lead"
+              style={{ fontSize: 13, color: color.fgSoft, margin: '10px 0 0', lineHeight: 1.5 }}
+            >
+              {lead}
+            </p>
+          )}
           {/* D248 — the per-state split, never one aggregate number. It
               is the last reversible moment: a delivered unsubscribe
               cannot be recalled (D58), so what will and will not be
@@ -1848,13 +1858,16 @@ export function ConfirmActionModal({
                 : ''
               : nothingActionableBulk
                 ? 'Every selected sender is now Protected or gone. Close and refresh.'
-                : quotaCappedFrom
-                  ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
-                  : quotaShort
-                    ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-                    : quotaRemaining !== null
-                      ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
-                      : ''}
+                : nothingToActOn
+                  ? // A no-op spends no cleanup action; the notice above is the reason.
+                    ''
+                  : quotaCappedFrom
+                    ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
+                    : quotaShort
+                      ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
+                      : quotaRemaining !== null
+                        ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
+                        : ''}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {livePreviewUnavailable &&

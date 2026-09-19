@@ -422,7 +422,7 @@ export function ActionSheet({
               ? previewSenderGone
                 ? 'This sender is no longer in this mailbox. Close and refresh.'
                 : nothingToActOn
-                  ? 'No matching email in Inbox right now — nothing to act on.'
+                  ? 'Nothing in Inbox to act on.'
                   : wakeAtInvalid
                     ? 'Later needs a future return time before you can confirm.'
                     : inboxCount === 'unavailable'

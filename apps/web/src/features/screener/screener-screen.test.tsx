@@ -18,6 +18,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
+import { ApiError } from '@/lib/api/client';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { SCREENER_QUEUE, type ScreenerScreenState } from './data';
@@ -154,6 +155,19 @@ describe('ScreenerScreen — empty / loading / error states', () => {
     expect(html).toContain('Needs attention');
     expect(html).toContain('Try again');
     assertNoScreenVerb(html);
+  });
+
+  it('error state names the server only when the server answered', () => {
+    const served = renderState({
+      kind: 'error',
+      error: new ApiError(500, null, 'GET /api/screener failed: 500'),
+      retry: () => {},
+    });
+    expect(served).toContain('server returned an error');
+    expect(served).not.toContain('/api/');
+    const unknown = renderState({ kind: 'error', error: new Error('boom'), retry: () => {} });
+    expect(unknown).not.toContain('server returned an error');
+    expect(unknown).not.toContain('boom');
   });
 
   it('loading state renders the skeleton status', () => {

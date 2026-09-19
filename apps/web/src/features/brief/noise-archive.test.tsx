@@ -331,6 +331,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     // preview must state the number that is about to move.
     await within(dialog).findByText('351');
     expect(within(dialog).getByText(/in Inbox now/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/This archives everything/i)).toBeInTheDocument();
   });
 
   it('blocks confirm when nothing from those senders is in the inbox', async () => {
@@ -358,6 +359,10 @@ describe('Brief Noise bulk archive (D65)', () => {
     // The headline and every per-sender row all read 0.
     expect(within(dialog).getAllByText('0').length).toBeGreaterThan(0);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
+    // The footer reason is the whole story — no lead describing a move
+    // that cannot run, no "rechecked when it runs".
+    expect(within(dialog).queryByText(/This archives everything/i)).toBeNull();
+    expect(within(dialog).queryByText(/when it runs/i)).toBeNull();
     expect(enqueued).toHaveLength(0);
   });
 

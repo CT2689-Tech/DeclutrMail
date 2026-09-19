@@ -71,6 +71,7 @@ import {
   isUnsubSendDisabled,
   UNSUB_SEND_DISABLED_MESSAGE,
 } from '@/features/triage/unsub-send-disabled';
+import { UNDO_DONE_TOAST } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
@@ -2026,7 +2027,7 @@ function SendersScreenContent({
     const data = revertStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      toast('Undo complete — emails restored to their previous locations', 'success');
+      toast(UNDO_DONE_TOAST, 'success');
       setReceipt(null);
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
       // Revert wrote a fresh activity_log row + flipped the original
@@ -2061,7 +2062,7 @@ function SendersScreenContent({
       {
         onSuccess: (res) => {
           if (res.reverted) {
-            toast('Undo complete — emails restored to their previous locations', 'success');
+            toast(UNDO_DONE_TOAST, 'success');
             setReceipt(null);
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
             void qc.invalidateQueries({ queryKey: activityKeys.all });

@@ -192,7 +192,9 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // and the sender's live inbox count is back (the worker reversed
   // the Gmail mutation; the composite preview reads the same live
   // count the D226 preview used).
-  await expect(page.getByText('Restored to your inbox')).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText('Undone — email is back where it was.')).toBeVisible({
+    timeout: 90_000,
+  });
   undone = true;
   await expect
     .poll(async () => (await api.get<{ token: string }[]>('/api/undo')).map((e) => e.token), {

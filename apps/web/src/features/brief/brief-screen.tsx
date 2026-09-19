@@ -36,6 +36,7 @@ import {
   type NoiseTarget,
 } from './api/use-noise-archive';
 import { NoiseArchiveSheet } from './noise-archive-sheet';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
@@ -119,7 +120,9 @@ export function BriefScreen() {
     // Non-404 → log to Sentry as a feature exception so the dashboard
     // separates 'brief failed to load' from 'brief is just late'.
     captureFeatureException(query.error, { surface: 'brief', reason: 'fetch_failed' });
-    return <BriefErrorState onRetry={() => handleBriefRefresh(query.refetch)} />;
+    return (
+      <BriefErrorState error={query.error} onRetry={() => handleBriefRefresh(query.refetch)} />
+    );
   }
 
   const brief = query.data;
@@ -1091,12 +1094,12 @@ function LoadingState() {
   );
 }
 
-function BriefErrorState({ onRetry }: { onRetry: () => void }) {
+function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <RetryableErrorState
         title="We couldn't load your Brief"
-        description="Try again in a moment."
+        description={loadErrorDescription(error)}
         onRetry={onRetry}
       />
     </div>

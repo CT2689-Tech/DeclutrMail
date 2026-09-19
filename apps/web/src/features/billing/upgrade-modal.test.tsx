@@ -132,6 +132,11 @@ describe('UpgradeModal', () => {
       'href',
       '/billing?plan=plus&cycle=monthly',
     );
+    // The pitch names only Plus, so the other plans stay one click away.
+    const compare = screen.getByRole('link', { name: /compare plans/i });
+    expect(compare).toHaveAttribute('href', '/pricing');
+    fireEvent.click(compare);
+    expect(useUpgradeGateStore.getState().hit).toBeNull();
   });
 
   it('free_cap (partial): bulk-needs-more headline', () => {

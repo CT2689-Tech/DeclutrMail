@@ -131,7 +131,10 @@ export function ActionPreviewPresentation({
               ? `Move inbox email from ${subject} to Gmail Trash`
               : `Keep ${subject}`;
 
-  const lead = presentation.previewCopy;
+  // Zero matches: the title already says nothing moves, the figure below
+  // shows the 0, and the footer states why confirm is disabled. A lead
+  // describing a move and its undo is noise about an action that cannot run.
+  const lead = movesCurrentInbox && liveCount === 0 ? null : presentation.previewCopy;
 
   // The server charges a second unit for a backlog verb riding an
   // Unsubscribe (`recordUnsubIntent` preflights `includesBacklogAction
@@ -205,16 +208,18 @@ export function ActionPreviewPresentation({
         >
           {title}
         </h3>
-        <p
-          style={{
-            fontSize: 12.5,
-            color: color.fgSoft,
-            margin: '4px 0 0',
-            lineHeight: 1.5,
-          }}
-        >
-          {lead}
-        </p>
+        {lead !== null && (
+          <p
+            style={{
+              fontSize: 12.5,
+              color: color.fgSoft,
+              margin: '4px 0 0',
+              lineHeight: 1.5,
+            }}
+          >
+            {lead}
+          </p>
+        )}
       </div>
 
       {/* Current match count, fetched server-side. */}

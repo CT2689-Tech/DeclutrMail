@@ -161,7 +161,71 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Protected or gone — close and refresh/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or gone/i)).toBeInTheDocument();
+  });
+
+  it('disables confirm when the senders are actionable but none has inbox email', () => {
+    const onConfirm = vi.fn();
+    const zeroTotal: BulkActionPreviewResult = {
+      senders: readyPreview.senders.map((s) => ({
+        ...s,
+        protected: false,
+        counts: { ...s.counts, all: 0 },
+      })),
+      totals: { ...readyPreview.totals, all: 0 },
+      protectedCount: 0,
+    };
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={zeroTotal}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+      />,
+    );
+    // A no-op that would still spend cleanup actions on Free.
+    const confirm = screen.getByRole('button', { name: /^Archive all/ });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(screen.getByText(/nothing in inbox to act on/i)).toBeInTheDocument();
+  });
+
+  // The footer used to say "close and refresh" with no control that did
+  // either — the single-sender sheet's Refresh, on the batch dead end.
+  it('offers Refresh triage as the route out when nothing is actionable', () => {
+    const onRefreshTriage = vi.fn();
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={{ senders: [], totals: readyPreview.totals, protectedCount: 0 }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        onRefreshTriage={onRefreshTriage}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh triage' }));
+    expect(onRefreshTriage).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows no Refresh while the batch still has actionable senders', () => {
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={readyPreview}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        onRefreshTriage={() => {}}
+      />,
+    );
+    expect(screen.queryByRole('button', { name: 'Refresh triage' })).toBeNull();
   });
 
   it('disables confirm when the live preview resolves with every sender deleted since queuing', () => {
@@ -185,7 +249,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/Protected or gone — close and refresh/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or gone/i)).toBeInTheDocument();
   });
 });
 

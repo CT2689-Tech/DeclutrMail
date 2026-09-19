@@ -12,7 +12,6 @@ import {
   tokens,
 } from '@declutrmail/shared';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
-import { ApiError } from '@/lib/api/client';
 
 import type {
   AutopilotMatchDto,
@@ -46,6 +45,7 @@ import { PausedBanner } from './paused-banner';
 import { PatternSuggestionCard } from './pattern-suggestion-card';
 import { RuleCard } from './rule-card';
 import { SuggestionGroup } from './suggestion-group';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type {
@@ -115,11 +115,7 @@ export function AutopilotRoute() {
     }
     if (rulesQuery.isError || suggestionsQuery.isError || patternQuery.isError) {
       const err = rulesQuery.error ?? suggestionsQuery.error ?? patternQuery.error;
-      const message =
-        err instanceof ApiError
-          ? "We couldn't load Autopilot."
-          : "We couldn't load Autopilot right now.";
-      return { kind: 'error', message, retry };
+      return { kind: 'error', message: loadErrorDescription(err), retry };
     }
     const rules = rulesQuery.data ?? [];
     const matches = suggestionsQuery.data ?? [];

@@ -1,15 +1,17 @@
 import { apiErrorDisplayId } from '@/lib/api/client';
 
 /**
- * Plain-language error contract for the asynchronous action pipeline.
+ * Plain-language failure copy for the asynchronous action pipeline — one
+ * grammar for Triage, the undo tray, Activity and the Brief.
  *
- * Every failure names three things in order:
- *   1. what is known to have changed;
- *   2. what is known not to have changed (or is not yet confirmed);
- *   3. the safest next recovery step.
+ * One sentence: what is known about the outcome, then (after the dash)
+ * what that means for the reader. An accepted request whose outcome is
+ * unconfirmed sends them to Activity before retrying, because a blind
+ * retry can double-apply; a request that was never accepted says nothing
+ * changed.
  *
- * Transport messages and identifiers do not belong in `message`. Callers
- * may place `technicalErrorDetails()` inside `<TechnicalDetails>` when a
+ * Transport messages and identifiers do not belong here. Callers may
+ * place `technicalErrorDetails()` inside `<TechnicalDetails>` when a
  * support reference is useful.
  */
 export type ActionFailurePhase =
@@ -21,95 +23,56 @@ export type ActionFailurePhase =
   | 'revert-status'
   | 'revert-terminal';
 
-export interface ActionFailureCopy {
-  readonly title: string;
-  readonly whatChanged: string;
-  readonly whatDidNotChange: string;
-  readonly nextStep: string;
-  readonly message: string;
-}
-
 export interface ActionFailureCopyOptions {
-  /** Lowercase action phrase, for example "archive Acme". */
+  /** What failed, e.g. "Archive for Acme" or "the Noise archive". Revert phases say "undo". */
   readonly action?: string;
-  readonly whatChanged?: string;
-  readonly whatDidNotChange?: string;
-  readonly nextStep?: string;
+  /** Some of a batch completed — the sentence leads with the confirmed split. */
+  readonly partial?: { readonly done: number; readonly total: number; readonly unit: string };
+  /** Replaces the clause after the dash. Lowercase, no trailing period. */
+  readonly outcome?: string;
 }
 
-const DEFAULT_ACTION = 'the action';
+const CHECK_ACTIVITY = 'check Activity before retrying';
+const NOTHING_CHANGED = 'nothing changed';
 
 export function getActionFailureCopy(
   phase: ActionFailurePhase,
   options: ActionFailureCopyOptions = {},
-): ActionFailureCopy {
-  const action = options.action ?? DEFAULT_ACTION;
-  const defaults: Omit<ActionFailureCopy, 'message'> = (() => {
+): string {
+  const isRevert = phase.startsWith('revert-');
+  const action = isRevert ? 'undo' : (options.action ?? 'the action');
+
+  if (options.partial) {
+    const { done, total, unit } = options.partial;
+    const split = `${done.toLocaleString('en-US')} of ${total.toLocaleString('en-US')} ${unit} completed`;
+    const lead = isRevert || !options.action ? split : `${sentenceCase(action)}: ${split}`;
+    return `${lead} — ${options.outcome ?? 'check Activity for the rest'}.`;
+  }
+
+  const [lead, outcome] = ((): [string, string] => {
     switch (phase) {
       case 'preview':
-        return {
-          title: 'Preview unavailable.',
-          whatChanged: 'Nothing changed.',
-          whatDidNotChange: 'No email was moved and no request was sent.',
-          nextStep: 'Retry the preview before confirming.',
-        };
+        return ["Couldn't load the preview", NOTHING_CHANGED];
       case 'enqueue':
-        return {
-          title: `Couldn't start ${action}.`,
-          whatChanged: 'Nothing changed.',
-          whatDidNotChange: 'The request was not accepted, so Gmail was not changed.',
-          nextStep: 'Try again.',
-        };
-      case 'status':
-        return {
-          title: `Couldn't confirm ${action}.`,
-          whatChanged: 'The request was accepted, but its outcome is not confirmed.',
-          whatDidNotChange: "DeclutrMail hasn't marked it complete.",
-          nextStep: 'Check Activity before trying again.',
-        };
-      case 'terminal':
-        return {
-          title: `${sentenceCase(action)} failed.`,
-          whatChanged: 'The request finished without a confirmed change.',
-          whatDidNotChange: "DeclutrMail hasn't marked the action complete.",
-          nextStep: 'Check Activity, then try again if needed.',
-        };
       case 'revert-enqueue':
-        return {
-          title: "Couldn't start undo.",
-          whatChanged: 'Nothing changed.',
-          whatDidNotChange: 'The original action was not reversed.',
-          nextStep: 'Try again from Activity.',
-        };
+        return [`Couldn't start ${action}`, NOTHING_CHANGED];
+      case 'status':
       case 'revert-status':
-        return {
-          title: "Couldn't confirm undo.",
-          whatChanged: 'The undo request was accepted, but its outcome is not confirmed.',
-          whatDidNotChange: "DeclutrMail hasn't marked the original action as restored.",
-          nextStep: 'Check Activity before trying again.',
-        };
+        return [`Couldn't confirm ${action}`, CHECK_ACTIVITY];
+      case 'terminal':
       case 'revert-terminal':
-        return {
-          title: 'Undo failed.',
-          whatChanged: 'The undo finished without a confirmed restoration.',
-          whatDidNotChange: 'The original action was not reversed.',
-          nextStep: 'Try again from Activity.',
-        };
+        return [`${sentenceCase(action)} failed`, CHECK_ACTIVITY];
     }
   })();
-
-  const copy = {
-    ...defaults,
-    ...(options.whatChanged ? { whatChanged: options.whatChanged } : {}),
-    ...(options.whatDidNotChange ? { whatDidNotChange: options.whatDidNotChange } : {}),
-    ...(options.nextStep ? { nextStep: options.nextStep } : {}),
-  };
-
-  return {
-    ...copy,
-    message: [copy.title, copy.whatChanged, copy.whatDidNotChange, copy.nextStep].join(' '),
-  };
+  return `${lead} — ${options.outcome ?? outcome}.`;
 }
+
+/**
+ * The one undo-completion toast. Not "restored to your inbox": undo puts
+ * each email back where it was, and that is not the inbox for the archived
+ * half of an all-mail Delete (ADR-0028) or for an undone restore.
+ */
+export const UNDO_DONE_TOAST = 'Undone — email is back where it was.';
 
 /** Extract support-only diagnostics without putting them in primary copy. */
 export function technicalErrorDetails(error: unknown): string {

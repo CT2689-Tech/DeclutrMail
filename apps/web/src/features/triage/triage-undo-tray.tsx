@@ -14,7 +14,7 @@ import { undoEntriesQueryOptions } from '@/features/undo/query-options';
 import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
-import { getActionFailureCopy } from '@/lib/action-error-copy';
+import { getActionFailureCopy, UNDO_DONE_TOAST } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
 
@@ -143,7 +143,7 @@ export function ProductUndoTray({
         if (mailboxGeneration.current !== generation) return;
         if (res.reverted) {
           // Idempotent replay — already reverted server-side.
-          toast('Restored to your inbox', 'success');
+          toast(UNDO_DONE_TOAST, 'success');
           setInFlight(null);
           invalidateAfterUndo(qc);
         } else if (res.actionId) {
@@ -160,7 +160,7 @@ export function ProductUndoTray({
         toast(
           err instanceof ApiError && err.status === 410
             ? 'Undo window has expired'
-            : getActionFailureCopy('revert-enqueue').message,
+            : getActionFailureCopy('revert-enqueue'),
           'warn',
         );
         setInFlight(null);
@@ -177,7 +177,7 @@ export function ProductUndoTray({
   useEffect(() => {
     if (!inFlight?.actionId) return;
     if (revertStatus.isError) {
-      toast(getActionFailureCopy('revert-status').message, 'warn');
+      toast(getActionFailureCopy('revert-status'), 'warn');
       setInFlight(null);
       void qc.invalidateQueries({ queryKey: undoKeys.all });
       return;
@@ -185,10 +185,10 @@ export function ProductUndoTray({
     const data = revertStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
-      toast('Restored to your inbox', 'success');
+      toast(UNDO_DONE_TOAST, 'success');
       invalidateAfterUndo(qc);
     } else {
-      toast(getActionFailureCopy('revert-terminal').message, 'warn');
+      toast(getActionFailureCopy('revert-terminal'), 'warn');
       void qc.invalidateQueries({ queryKey: undoKeys.all });
     }
     setInFlight(null);
@@ -214,7 +214,7 @@ export function ProductUndoTray({
    * an effect would flash the stale rows for a frame on every route
    * change. Self-limiting — the scope check is false immediately after.
    */
-  const trayScope = `${pathname} ${mailboxId ?? ''}`;
+  const trayScope = `${pathname}\u0000${mailboxId ?? ''}`;
   const [baseline, setBaseline] = useState<{
     scope: string;
     tokens: ReadonlySet<string>;

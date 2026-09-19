@@ -17,7 +17,9 @@ import {
 } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
+import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
@@ -137,20 +139,7 @@ function openPricing(): void {
  */
 export const ACTION_OVERDUE_MS = 120_000;
 
-/**
- * Failure toasts — one sentence each (a four-sentence toast auto-dismisses
- * unread). `subject` is a sender name or "the <domain> batch". An outcome
- * the client could not confirm still says so and points at Activity, so
- * nobody retries a move that may already have happened.
- */
-const unconfirmedToast = (verb: string, subject: string): string =>
-  `Couldn't confirm ${verb} for ${subject} — check Activity before retrying.`;
-const failedToast = (verb: string, subject: string): string =>
-  `${verb} for ${subject} failed — check Activity before retrying.`;
-const notStartedToast = (verb: string, subject: string): string =>
-  `Couldn't start ${verb} for ${subject} — nothing changed.`;
-const partialBatchToast = (verb: string, done: number, total: number): string =>
-  `${verb}: ${done} of ${total} senders completed — check Activity for the rest.`;
+/** Overdue is a status, not a failure — same wording as Senders and the Screener. */
 const stillRunningToast = (verb: string, subject: string): string =>
   `${verb} for ${subject} is still running — see Activity.`;
 
@@ -358,7 +347,12 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(unconfirmedToast(batchAction.verb, `the ${batchAction.domain} batch`), 'warn');
+      toast(
+        getActionFailureCopy('status', {
+          action: `${batchAction.verb} for the ${batchAction.domain} batch`,
+        }),
+        'warn',
+      );
       setBatchAction(null);
       return;
     }
@@ -374,14 +368,25 @@ export function TriageScreen({
       // — those senders stay in the queue, so say so (failures DO
       // toast; clean success stays silent per D35).
       if (data.failed > 0) {
-        toast(partialBatchToast(batchAction.verb, data.done, data.total), 'warn');
+        toast(
+          getActionFailureCopy('terminal', {
+            action: batchAction.verb,
+            partial: { done: data.done, total: data.total, unit: 'senders' },
+          }),
+          'warn',
+        );
       }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
     } else {
-      toast(failedToast(batchAction.verb, `the ${batchAction.domain} batch`), 'warn');
+      toast(
+        getActionFailureCopy('terminal', {
+          action: `${batchAction.verb} for the ${batchAction.domain} batch`,
+        }),
+        'warn',
+      );
     }
     setBatchAction(null);
   }, [
@@ -571,7 +576,12 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(unconfirmedToast(activeAction.verb, activeAction.senderName), 'warn');
+      toast(
+        getActionFailureCopy('status', {
+          action: `${activeAction.verb} for ${activeAction.senderName}`,
+        }),
+        'warn',
+      );
       setActiveAction(null);
       return;
     }
@@ -593,7 +603,12 @@ export function TriageScreen({
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
     } else {
-      toast(failedToast(activeAction.verb, activeAction.senderName), 'warn');
+      toast(
+        getActionFailureCopy('terminal', {
+          action: `${activeAction.verb} for ${activeAction.senderName}`,
+        }),
+        'warn',
+      );
     }
     setActiveAction(null);
   }, [
@@ -657,7 +672,12 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(unconfirmedToast(overdueAction.verb, overdueAction.senderName), 'warn');
+      toast(
+        getActionFailureCopy('status', {
+          action: `${overdueAction.verb} for ${overdueAction.senderName}`,
+        }),
+        'warn',
+      );
       setOverdueAction(null);
       return;
     }
@@ -675,7 +695,12 @@ export function TriageScreen({
       }
       addSessionMessagesMoved(data.affectedCount);
     } else {
-      toast(failedToast(overdueAction.verb, overdueAction.senderName), 'warn');
+      toast(
+        getActionFailureCopy('terminal', {
+          action: `${overdueAction.verb} for ${overdueAction.senderName}`,
+        }),
+        'warn',
+      );
     }
     setOverdueAction(null);
   }, [
@@ -696,7 +721,12 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(unconfirmedToast(overdueBatch.verb, `the ${overdueBatch.domain} batch`), 'warn');
+      toast(
+        getActionFailureCopy('status', {
+          action: `${overdueBatch.verb} for the ${overdueBatch.domain} batch`,
+        }),
+        'warn',
+      );
       setOverdueBatch(null);
       return;
     }
@@ -709,13 +739,24 @@ export function TriageScreen({
     }
     if (data.status === 'done') {
       if (data.failed > 0) {
-        toast(partialBatchToast(overdueBatch.verb, data.done, data.total), 'warn');
+        toast(
+          getActionFailureCopy('terminal', {
+            action: overdueBatch.verb,
+            partial: { done: data.done, total: data.total, unit: 'senders' },
+          }),
+          'warn',
+        );
       }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
     } else {
-      toast(failedToast(overdueBatch.verb, `the ${overdueBatch.domain} batch`), 'warn');
+      toast(
+        getActionFailureCopy('terminal', {
+          action: `${overdueBatch.verb} for the ${overdueBatch.domain} batch`,
+        }),
+        'warn',
+      );
     }
     setOverdueBatch(null);
   }, [
@@ -939,7 +980,10 @@ export function TriageScreen({
               }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
               toast(
-                `Couldn't start Unsubscribe for ${row.senderName} — no request was sent.`,
+                getActionFailureCopy('enqueue', {
+                  action: `Unsubscribe for ${row.senderName}`,
+                  outcome: 'no request was sent',
+                }),
                 'warn',
               );
             },
@@ -1022,7 +1066,7 @@ export function TriageScreen({
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : sendDisabled
                   ? UNSUB_SEND_DISABLED_MESSAGE
-                  : notStartedToast(verb, row.senderName),
+                  : getActionFailureCopy('enqueue', { action: `${verb} for ${row.senderName}` }),
               'warn',
             );
           },
@@ -1235,7 +1279,10 @@ export function TriageScreen({
             surface: 'triage',
             reason: 'enqueue_domain_batch',
           });
-          toast(notStartedToast(verb, `the ${batch.domain} batch`), 'warn');
+          toast(
+            getActionFailureCopy('enqueue', { action: `${verb} for the ${batch.domain} batch` }),
+            'warn',
+          );
         },
       },
     );
@@ -1494,6 +1541,10 @@ export function TriageScreen({
         onCancel={() => setPendingBatch(null)}
         onConfirm={onBatchConfirm}
         onRetryPreview={() => void bulkPreview.refetch()}
+        onRefreshTriage={() => {
+          setPendingBatch(null);
+          void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
+        }}
         // The join #652 left out. `BatchActionSheet` grew the prop and
         // three passing tests that hand it the value directly, while this
         // call site never passed it — so production stated no cost and the
@@ -1514,11 +1565,13 @@ export function TriageScreen({
  * layout owns).
  */
 function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? "We couldn't load Triage. Try again in a moment."
-      : "We couldn't load your triage queue right now. Try again in a moment.";
-  return <ErrorState title="Your queue didn't load" description={message} onRetry={onRetry} />;
+  return (
+    <ErrorState
+      title="Your queue didn't load"
+      description={loadErrorDescription(error)}
+      onRetry={onRetry}
+    />
+  );
 }
 
 /** Skeleton stack — matches the row's vertical rhythm. */

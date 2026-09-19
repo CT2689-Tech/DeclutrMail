@@ -171,7 +171,14 @@ export function DecidePreview({
                 ? `Delete ${name}'s inbox + archived email`
                 : `Delete ${name}'s inbox email`;
 
-  const lead = presentation.previewCopy;
+  // Zero matches: nothing moves, but Confirm is still live — it resolves
+  // the quarantine row (`ScreenerService.decide` sets `decided_at` even on
+  // a 0-message enqueue), so the sender leaves this queue. Say that; a
+  // live button over "Nothing to move" otherwise reads as a no-op.
+  const lead =
+    moves && confidentZeroMatch
+      ? `Confirming records your decision and removes ${name} from the Screener.`
+      : presentation.previewCopy;
 
   const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
   const confirmDisabled = confirming || previewBlocked;

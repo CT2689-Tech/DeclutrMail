@@ -300,6 +300,21 @@ export const Empty: Story<typeof ActivityScreen> = {
 };
 
 /**
+ * Empty BECAUSE of filters — the route out is "Reset filters", which
+ * clears every filter that can produce this state.
+ */
+export const EmptyFiltered: Story<typeof ActivityScreen> = {
+  parameters: {
+    nextjs: {
+      appDirectory: true,
+      navigation: { pathname: '/activity', query: { source: 'autopilot' } },
+    },
+  },
+  render: (_args: ComponentProps<typeof ActivityScreen>) =>
+    frame(makeClient([], '30d', 'autopilot')),
+};
+
+/**
  * Mobile (< sm) — the 7-column desktop row grid restacks into cards and
  * the 5-tile metrics strip collapses to 3-per-row. Driven by
  * `useIsAtMost('sm')` reading the resized story viewport's matchMedia.

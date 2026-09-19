@@ -632,6 +632,47 @@ describe('ScoreWorker — LLM port', () => {
     expect(Number(row?.producedAt)).toBe(T0 + 60_000);
   });
 
+  it('does NOT reuse stored LLM reasoning that runs past the word ceiling', async () => {
+    const db = await freshDb();
+    const { mailboxAccountId } = await seedMailbox(db);
+    const senderKey = await seedSender(db, mailboxAccountId, 'longwinded@test.test', {
+      gmailCategory: 'primary',
+    });
+
+    // Run 1 stands in for a row written before the ceiling existed: a
+    // port that returns a paragraph unchecked.
+    const paragraph = Array.from({ length: 50 }, (_, i) => `word${i}`).join(' ');
+    let calls = 0;
+    const llm: ReasoningLlmPort = {
+      explain: async () => {
+        calls += 1;
+        return calls === 1 ? paragraph : 'Short reason.';
+      },
+    };
+    const T0 = Date.parse('2026-05-22T00:00:00Z');
+    const worker = new ScoreWorker({ db, llm, now: () => new Date('2026-05-23T00:00:00Z') });
+
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'sync_complete', producedAtMs: T0 },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(1);
+
+    // Same verdict, unexpired, LLM-generated — reusable on every other
+    // count. The word ceiling alone sends it back for a fresh answer.
+    await worker.processJob(
+      { mailboxAccountId, senderKey, trigger: 'cron_sweep', producedAtMs: T0 + 60_000 },
+      FAKE_CTX,
+    );
+    expect(calls).toBe(2);
+
+    const [row] = await db
+      .select()
+      .from(triageDecisions)
+      .where(eq(triageDecisions.senderKey, senderKey));
+    expect(row?.reasoning).toBe('Short reason.');
+  });
+
   it('does NOT reuse a template row — the next sweep retries the LLM', async () => {
     const db = await freshDb();
     const { mailboxAccountId } = await seedMailbox(db);

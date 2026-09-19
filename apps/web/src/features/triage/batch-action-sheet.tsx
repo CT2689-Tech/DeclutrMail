@@ -37,6 +37,7 @@ export function BatchActionSheet({
   onCancel,
   onConfirm,
   onRetryPreview,
+  onRefreshTriage,
   quotaRemaining,
 }: {
   open: boolean;
@@ -51,6 +52,8 @@ export function BatchActionSheet({
   onCancel: () => void;
   onConfirm: () => void;
   onRetryPreview?: (() => void) | undefined;
+  /** Route out of the zero-actionable dead end — same control as the single sheet. */
+  onRefreshTriage?: (() => void) | undefined;
   /**
    * Cleanup actions left this month; `null` on an unmetered tier.
    *
@@ -77,8 +80,18 @@ export function BatchActionSheet({
         ? preview.senders.filter((s) => !s.protected).length
         : batch.eligibleRows.length;
   const nothingActionable = typeof preview === 'object' && actionableCount === 0;
+  // Senders are actionable but none has email in the inbox: both batch
+  // verbs only move inbox email, so confirming is a no-op that still costs
+  // cleanup actions on Free. The single-sender sheet refuses the same case
+  // (`nothingToActOn` in action-sheet.tsx).
+  const nothingToMove =
+    typeof preview === 'object' && !nothingActionable && preview.totals.all === 0;
   const confirmDisabled =
-    preview === 'loading' || preview === 'unavailable' || wakeAtInvalid || nothingActionable;
+    preview === 'loading' ||
+    preview === 'unavailable' ||
+    wakeAtInvalid ||
+    nothingActionable ||
+    nothingToMove;
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -314,8 +327,10 @@ export function BatchActionSheet({
                 : preview === 'unavailable'
                   ? "Couldn't load the preview."
                   : nothingActionable
-                    ? 'Every sender here is now Protected or gone — close and refresh.'
-                    : 'Loading preview…'
+                    ? 'Every sender here is now Protected or gone.'
+                    : nothingToMove
+                      ? 'Nothing in Inbox to act on.'
+                      : 'Loading preview…'
               : quotaShort
                 ? `This needs ${unitsNeeded.toLocaleString('en-US')} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining!.toLocaleString('en-US')} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
                 : `${quotaLine}${quotaLine === '' ? '' : ' '}${
@@ -325,6 +340,11 @@ export function BatchActionSheet({
                   }`}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
+            {nothingActionable && onRefreshTriage && (
+              <Button tone="default" onClick={onRefreshTriage}>
+                Refresh triage
+              </Button>
+            )}
             {preview === 'unavailable' && onRetryPreview && (
               <Button tone="default" onClick={onRetryPreview}>
                 Retry preview

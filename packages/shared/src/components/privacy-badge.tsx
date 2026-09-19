@@ -15,10 +15,11 @@ import {
  * Layout density.
  *
  * - `card` (default) — full trust card with lead paragraph + both
- *   lists. Used on landing, onboarding step 1, Privacy & Data
- *   settings (D109, D217, D223).
+ *   lists. Used on landing, the auth entry and product-story pages,
+ *   onboarding step 1, and Privacy & Data settings (D109, D217, D223).
  * - `inline` — compact one-line version with headline + storage list
- *   only, for footers and tooltips. Still uses the D228 wording.
+ *   only. Used in the public footer and the onboarding sync gate. Still
+ *   uses the D228 wording.
  */
 export type PrivacyBadgeVariant = 'card' | 'inline';
 

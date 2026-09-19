@@ -362,6 +362,28 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
       expect(
         screen.getByText(`Nothing to move from ${row.senderName} right now`),
       ).toBeInTheDocument();
+      // The title says it once — no lead describing the move and its undo.
+      expect(screen.queryByText(/undo/i)).toBeNull();
+      // Confirm stays live at zero, so the sheet says what it does.
+      expect(screen.getByText(/removes .* from the Screener/i)).toBeInTheDocument();
+    },
+  );
+
+  it.each(['archive', 'later', 'delete'] as const)(
+    'keeps the lead (where it goes, how to undo) when %s has email to move',
+    (verb) => {
+      render(
+        <DecidePreview
+          verb={verb}
+          row={row}
+          inboxCount={2}
+          wakeAt="2099-01-01T09:00:00.000Z"
+          confirming={false}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+        />,
+      );
+      expect(screen.getAllByText(/undo/i).length).toBeGreaterThan(0);
     },
   );
 

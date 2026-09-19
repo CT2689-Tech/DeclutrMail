@@ -143,11 +143,10 @@ export function SendersPoliciesScreen() {
               Gmail's own filters, spam and categories are outside our
               reach, and a single action the user takes still applies.
               Describe the guard, not an outcome we do not control. */}
-          DeclutrMail&apos;s bulk and automatic actions skip these senders; an action you take on
-          one sender yourself still applies. DeclutrMail protects a sender when you write to them
-          repeatedly and hear back, star their email, or Gmail keeps marking it important — or you
-          can protect one yourself. Each row shows its reason. Unprotect removes it, and automatic
-          protection won&apos;t re-apply.
+          DeclutrMail protects a sender when you write to them at least three times and hear back,
+          star their email, or Gmail keeps marking it important — or you can protect one yourself.
+          Each row shows its reason. Unprotect removes it, and automatic protection won&apos;t
+          re-apply.
         </p>
       </div>
 
@@ -197,7 +196,8 @@ export function SendersPoliciesScreen() {
                   field is optional on the wire — against an API that
                   does not send it the sort silently collapses to name
                   order while this line still claims otherwise. */}
-              Bulk and automatic actions skip these senders.{' '}
+              Bulk and automatic actions skip these senders; an action you take on one sender
+              yourself still applies.{' '}
               {!ordered
                 ? ''
                 : hasNextPage

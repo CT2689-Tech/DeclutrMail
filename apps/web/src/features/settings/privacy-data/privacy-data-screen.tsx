@@ -36,9 +36,10 @@ const { color, font } = tokens;
  * Settings → Privacy & Data (D116 + D217 + D228) — the dedicated
  * trust sub-page.
  *
- *   1. <PrivacyBadge variant="card"> — the D228 locked copy ("Full
- *      bodies fetched: 0" + the explicit storage list). Copy literals
- *      live ONLY in packages/shared/src/copy/privacy.ts.
+ *   1. <PrivacyBadge variant="card"> — the D228 locked copy ("We never
+ *      fetch or store full email contents." + the explicit storage
+ *      list). Copy literals live ONLY in
+ *      packages/shared/src/copy/privacy.ts.
  *   2. Indexed mailboxes — which accounts the storage list applies to.
  *   3. Undo retention — how long reversible actions stay reversible.
  *   4. Data export — mailbox metadata grouped as JSON plus per-dataset

@@ -25,7 +25,10 @@ import {
   useIsAtMost,
 } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
-import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
+import {
+  activityActionLabel as sharedActivityActionLabel,
+  getActionSemantics,
+} from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
@@ -214,6 +217,28 @@ export function ActivityScreen() {
     },
     [writeUrl],
   );
+  // Every filter that can NARROW the list below the default view. A
+  // 90-day / all-time window only widens it, so on its own it offers
+  // nothing to reset. Group mode is a layout choice, not a filter.
+  const hasNarrowingFilters =
+    filters.window === '7d' ||
+    (filters.source ?? 'all') !== 'all' ||
+    (filters.verbs?.length ?? 0) > 0 ||
+    (filters.senderQuery ?? '') !== '' ||
+    Boolean(filters.dateFrom) ||
+    Boolean(filters.dateTo) ||
+    (filters.outcomes?.length ?? 0) > 0;
+  const resetFilters = useCallback(() => {
+    writeUrl({
+      window: null,
+      source: null,
+      verb: null,
+      sender_q: null,
+      date_from: null,
+      date_to: null,
+      outcome: null,
+    });
+  }, [writeUrl]);
 
   // ── Multi-select state (local, NOT URL-persisted) ──────────────────
   // Selection lives in component state because:
@@ -419,8 +444,27 @@ export function ActivityScreen() {
           >
             {rows.length === 0 ? (
               <EmptyState
-                title="No activity in this window."
-                description={<>Widen the time range or clear a filter.</>}
+                // All time with no filters means there is no activity at
+                // all — "in this window" would contradict the window.
+                title={
+                  filters.window === 'all' && !hasNarrowingFilters
+                    ? 'No activity yet.'
+                    : 'No activity in this window.'
+                }
+                description={
+                  hasNarrowingFilters
+                    ? undefined
+                    : filters.window === 'all'
+                      ? 'Decisions you make in Triage or Senders show up here.'
+                      : 'Try a longer time range.'
+                }
+                action={
+                  hasNarrowingFilters ? (
+                    <Button tone="default" onClick={resetFilters}>
+                      Reset filters
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : groupMode === 'sender' ? (
               <GroupedList
@@ -1823,10 +1867,13 @@ function BulkActionBar({
     if (failedTokenList.length > 0) {
       onSetBulkError(
         getActionFailureCopy('revert-terminal', {
-          whatChanged: `${targets.length - failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} completed.`,
-          whatDidNotChange: `Completion could not be confirmed for ${failedTokenList.length} action${failedTokenList.length === 1 ? '' : 's'}. Some emails may have been restored.`,
-          nextStep: 'Use Try again on each failed row.',
-        }).message,
+          partial: {
+            done: targets.length - failedTokenList.length,
+            total: targets.length,
+            unit: targets.length === 1 ? 'undo' : 'undos',
+          },
+          outcome: 'use Try again on each failed row',
+        }),
       );
       // Persist failed tokens to ActivityScreen state so per-row
       // UndoCell renders the "Try again" pill on each failed row
@@ -2899,7 +2946,7 @@ function ActionRecoveryDialog({
             id="action-recovery-title"
             style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}
           >
-            Review failed {sharedActivityActionLabel(row.action, null).toLowerCase()}
+            {recoveryDialogTitle(row.action)}
           </h2>
           <p style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}>
             We check Gmail&apos;s current label state before offering another attempt.
@@ -3584,6 +3631,21 @@ const SOURCE_LABEL: Record<ActivityRowWire['source'], string> = {
   autopilot: 'Autopilot',
   screener: 'Screener',
 };
+
+/**
+ * Title of the failed-action recovery dialog. It names the canonical
+ * verb ("Review failed Archive"), not the lower-cased RESULT label —
+ * that read "Review failed archived" / "Review failed moved to later".
+ * Only the three label verbs can be retried from Activity; any other
+ * action that reaches the dialog gets a verb-free title instead of a
+ * result label bent into a noun. Exported for the per-action unit test.
+ */
+export function recoveryDialogTitle(action: ActivityActionWire): string {
+  if (action === 'archive' || action === 'later' || action === 'delete') {
+    return `Review failed ${getActionSemantics(action).label}`;
+  }
+  return 'Review failed action';
+}
 
 function readGroupMode(raw: string | null): GroupMode {
   return raw === 'sender' ? 'sender' : 'none';

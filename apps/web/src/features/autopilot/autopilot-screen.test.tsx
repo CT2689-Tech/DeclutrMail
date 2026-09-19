@@ -1177,6 +1177,10 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     ).toBeInTheDocument();
     expect(within(dialog).getByText(/unsubscribe requests cannot be undone/i)).toBeInTheDocument();
     expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
+    // The Recovery line owns the one-way fact; the "For each new match"
+    // line above it must not state it a second time.
+    const text = dialog.textContent ?? '';
+    expect(text.match(/cannot be (undone|recalled)/gi)).toHaveLength(1);
   });
 
   // The backlog clause had NO test until 2026-08-24, which is how it
@@ -1274,6 +1278,26 @@ describe('ActivateRuleModal — action-specific recovery', () => {
 describe('AutopilotScreen — approve flow (D104 + D226)', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
+
+  it('never describes a many-sender Unsubscribe rule as one unchecked sender', () => {
+    render(
+      <ApproveConfirmModal
+        rule={AUTO_UNSUBSCRIBE_NOISY}
+        matches={[]}
+        kind="all"
+        pendingTotal={null}
+        pendingApproximate={false}
+        mailboxEmail="me@example.com"
+        isApproving={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    const text = screen.getByRole('dialog').textContent ?? '';
+    expect(text).not.toMatch(/this sender has not been checked/i);
+    expect(text).toMatch(/one-click request/i);
+  });
 
   it('states the one-way unsubscribe fact once in the approve footnote', () => {
     render(

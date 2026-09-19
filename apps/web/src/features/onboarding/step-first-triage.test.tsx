@@ -121,6 +121,22 @@ describe('StepFirstTriage', () => {
     expect(screen.queryByText(/Triage keeps a queue ready/i)).not.toBeInTheDocument();
   });
 
+  it('titles the nothing-found panel without the forbidden verb "clean"', () => {
+    // D209: "clean" is never a verb on the user's mail. D221: count
+    // decisions. The hook's word list missed this heading once.
+    onboarding.firstTriage.data = {
+      rows: [] as typeof TRIAGE_QUEUE,
+      meta: { pinned: 0, decided: 0 },
+    };
+
+    render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
+
+    const title = screen.getByRole('heading', { level: 1 });
+    expect(title).toHaveTextContent(/decisions/i);
+    expect(title).not.toHaveTextContent(/\bclean/i);
+    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
+  });
+
   it('stays retryable when the completion POST fails', () => {
     // Same trap as the protection review: `finished` latched before the
     // completion write, so a transient failure stranded the user on a

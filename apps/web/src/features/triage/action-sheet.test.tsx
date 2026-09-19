@@ -564,7 +564,7 @@ describe('ActionSheet — zero-count no-op gate', () => {
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       expect(onConfirm).not.toHaveBeenCalled();
       // The gate has to SAY why, or a dead button reads as a broken one.
-      expect(screen.getByText(/nothing to act on/i)).toBeInTheDocument();
+      expect(screen.getByText(/nothing in inbox to act on/i)).toBeInTheDocument();
 
       // One matching email is enough to make it real work again.
       rerender(
@@ -604,7 +604,7 @@ describe('ActionSheet — zero-count no-op gate', () => {
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/nothing to act on/i)).toBeNull();
+    expect(screen.queryByText(/nothing in inbox to act on/i)).toBeNull();
   });
 });
 

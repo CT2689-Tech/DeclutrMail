@@ -336,7 +336,9 @@ function recoveryCopy(rule: AutopilotRuleDto, undoWindowDays: number): string {
   if (rule.actionKind === 'later') {
     return `Recovery: Later results return automatically at their scheduled time and can be undone from Activity for ${undoWindowDays} days.`;
   }
-  return 'Recovery: unsubscribe requests cannot be undone. Existing messages stay in your inbox unless a separate archive action applies.';
+  // Existing email staying put is already said twice above (the "For each
+  // new match" line and the activation report).
+  return 'Recovery: unsubscribe requests cannot be undone.';
 }
 
 /** Verb-honest description of Active mode (D227 canonical verbs; D230 mailto stays manual). */
@@ -346,10 +348,13 @@ function goingForwardCopy(rule: AutopilotRuleDto): string {
     liveCount: null,
     planUndoDeadline: null,
     wakeAt: rule.actionKind === 'later' ? defaultLaterWakeAtIso() : null,
-    unsubscribeChannel: null,
+    unsubscribeChannel: 'varies',
     // Absolute times render in the reader's own clock: every one of
     // these surfaces is opened by a click, never server-rendered.
     timeZone: 'viewer',
   });
-  return `For each new match: ${presentation.previewCopy}`;
+  // `effectCopy`, not `previewCopy`: the Recovery line below owns the undo
+  // facts, and `previewCopy` carries those same sentences — an Unsubscribe
+  // rule printed "cannot be undone" twice.
+  return `For each new match: ${presentation.primary.effectCopy}`;
 }

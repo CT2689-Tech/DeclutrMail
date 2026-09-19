@@ -16,6 +16,7 @@ import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import { ApiError } from '@/lib/api/client';
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 
 import { useSetSnooze, useSnoozed, useWakeNow } from './api/use-snoozed';
@@ -659,13 +660,13 @@ function LoadingState() {
 }
 
 function SnoozedErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? "We couldn't load your Later senders. Try again in a moment."
-      : "We couldn't load your Later senders right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <ErrorState title="We couldn't load Later" description={message} onRetry={onRetry} />
+      <ErrorState
+        title="We couldn't load Later"
+        description={loadErrorDescription(error)}
+        onRetry={onRetry}
+      />
     </div>
   );
 }

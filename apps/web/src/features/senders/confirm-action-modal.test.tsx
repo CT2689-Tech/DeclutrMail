@@ -802,6 +802,40 @@ describe('ConfirmActionModal — no-op confirm gate', () => {
     },
   );
 
+  // The notice under the 0 is the disabled reason. A lead describing the
+  // move, and a footer charging a cleanup action, are both about an
+  // action that cannot run.
+  it.each(['Archive', 'Later'] as const)(
+    'says the dead-end zero once for %s: no lead, no cleanup-action charge',
+    (verb) => {
+      render(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          compositePreview={emptyPreview}
+          cleanupQuota={{ remaining: 12, resetsAt: null }}
+        />,
+      );
+      expect(document.getElementById('dm-confirm-lead')).toBeNull();
+      expect(screen.queryByText(/cleanup action/)).toBeNull();
+      expect(screen.getByText(/in your inbox now/)).toBeInTheDocument();
+    },
+  );
+
+  it('keeps the lead while a control on the sheet can still change the zero', () => {
+    // 9 in the inbox, none inside the default Delete window → widen it.
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{ ...livePreview, counts: { ...emptyInbox, all: 9 } }}
+      />,
+    );
+    expect(document.getElementById('dm-confirm-lead')).not.toBeNull();
+  });
+
   it('keeps Unsubscribe confirmable at a zero backlog — it cuts future mail', () => {
     render(
       <ConfirmActionModal

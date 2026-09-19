@@ -138,7 +138,8 @@ export interface SenderListRow {
   /** Recent monthly cadence — most recent month's `sender_timeseries.volume`. */
   monthlyVolume: number | null;
   /**
-   * Read-state proxy — `read_count / volume` for the latest month.
+   * Read-state proxy — `read_count / volume` over the last 90 days
+   * (the engine window; it was a per-month figure before ADR-0037).
    * 0..1. Counts messages WITHOUT the UNREAD label (NOT email opens —
    * Gmail exposes no open events). `null` when there's no timeseries
    * row or `volume = 0`. The FE labels this as "marked read", never
@@ -146,8 +147,9 @@ export interface SenderListRow {
    */
   readRate: number | null;
   /**
-   * How many of the last 30 days' messages were marked read by a known
-   * third-party inbox tool rather than by the user (F012).
+   * How many of the last 90 days' messages (the engine window, same as
+   * `readRate`) were marked read by a known third-party inbox tool
+   * rather than by the user (F012).
    *
    * Already EXCLUDED from `readRate`. Present so a surface can explain a
    * number that looks lower than expected instead of silently
