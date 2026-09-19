@@ -570,6 +570,12 @@ export class TriageReadService {
         AND al.sender_key = triage_decisions.sender_key
         AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
         AND al.occurred_at >= now() - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
+        /* Reads the reversal from undo_journal, which is PRUNED after the
+           undo window, rather than the durable al.reverted_at. Safe only
+           because undoWindowDays is 30 on every tier, which outlasts this 7-day
+           decided window, so no row in range can have lost its journal
+           row. Shrink one or widen the other and this reads an undone
+           decision as standing. Sibling: lapse-reengagement.worker.ts. */
         AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
     )`;
 
@@ -1075,7 +1081,10 @@ export class TriageReadService {
     const tier: TriageSessionStats['tier'] =
       tierEnum === 'plus' ? 'plus' : tierEnum === 'free' ? 'free' : 'pro';
 
-    // Today's decision counts by verb.
+    // Today's decision counts by verb. Net of reversals, like every
+    // other windowed `activity_log` count (QA-undo-20260828-01): an
+    // action the user undid is not a decision that stands, and the strip
+    // kept crediting it (QA-activity-20260918-03).
     const todayCounts = await this.db
       .select({ action: activityLog.action, n: count() })
       .from(activityLog)
@@ -1083,6 +1092,7 @@ export class TriageReadService {
         and(
           eq(activityLog.mailboxAccountId, input.mailboxAccountId),
           gte(activityLog.occurredAt, todayStartUtc),
+          isNull(activityLog.revertedAt),
         ),
       )
       .groupBy(activityLog.action);
@@ -1218,6 +1228,7 @@ export class TriageReadService {
           eq(activityLog.mailboxAccountId, input.mailboxAccountId),
           eq(activityLog.source, 'autopilot'),
           gte(activityLog.occurredAt, todayStartUtc),
+          isNull(activityLog.revertedAt),
         ),
       );
 

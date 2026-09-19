@@ -5,7 +5,9 @@
 - **Amended:** 2026-08-17 (official-site + Brandfetch cached fallback;
   organizational-domain and verified-alias canonicalization);
   2026-08-19 (third-party logo CDNs reconsidered and rejected — see
-  §Alternatives reconsidered)
+  §Alternatives reconsidered);
+  2026-09-19 (the Brandfetch tier is live in production and now
+  disclosed — see the amendment under tier 3)
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D7/D228 (privacy posture — the trust wedge),
   D1/D2 (Geist + cool/editorial palette), D156 (rate limiting),
@@ -295,6 +297,28 @@ to one job while a new discovery strategy bypasses the old completed job):
    agreement; a developer key alone is not that agreement. Production
    must leave the key unbound until that permission and an acceptable
    subscription plan are documented.
+
+   **[AMENDMENT 2026-09-19 — the paragraph above no longer describes
+   production.]** PR #562 (merged 2026-08-19) bound
+   `BRANDFETCH_API_KEY` to the production worker, and
+   `QA-activity-20260918-01` confirmed against the running Cloud Run
+   revision that it is still bound. The ADR was not amended at the time,
+   so for a month it asserted the opposite of what ran, and no public
+   page named Brandfetch. What changed on 2026-09-19 (founder decision:
+   disclose, keep the tier):
+   - `/privacy` Section 8 lists Brandfetch and says exactly what it
+     receives — the sender's email domain, nothing else.
+   - The Gmail-data registry carries a `sender-logo-lookup` dataset with
+     `transmittedTo: ['DeclutrMail', 'Brandfetch']`, and the in-app
+     Privacy & data screen renders it.
+   - `external-origins.contract.spec.ts` fails by name when the API or a
+     worker names an origin with no `/privacy` subprocessor row.
+
+   **Still open, and not resolved by disclosure:** the written-agreement
+   and plan question in the paragraph above. This amendment records that
+   the tier runs in production; it does not claim the permission exists.
+   Tracked in `FOUNDER-FOLLOWUPS.md` (2026-09-19).
+
 4. Neither → `status='none'`.
 
 Every cache row also records the resolver version. A fresh negative

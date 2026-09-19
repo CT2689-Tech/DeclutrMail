@@ -1898,6 +1898,7 @@ export class SendersReadService {
         source: activityLog.source,
         occurredAt: activityLog.occurredAt,
         affectedCount: activityLog.affectedCount,
+        revertedAt: activityLog.revertedAt,
       })
       .from(activityLog)
       .where(and(...conditions))
@@ -1913,6 +1914,7 @@ export class SendersReadService {
       source: row.source,
       occurredAt: row.occurredAt.toISOString(),
       affectedCount: row.affectedCount,
+      revertedAt: row.revertedAt ? row.revertedAt.toISOString() : null,
     }));
   }
 

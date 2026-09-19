@@ -27,7 +27,7 @@ export const GMAIL_DATA_RETENTION = {
 export type GmailDataCategory = 'connection' | 'message' | 'derived';
 export type GmailDataExportFormat =
   'json' | 'csv' | 'senders-csv' | 'decisions-csv' | 'activity-support-bundle';
-export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic';
+export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic' | 'Brandfetch';
 export type GmailDataRemovalTrigger =
   'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 
@@ -59,7 +59,20 @@ export const GMAIL_DATA_PROCESSORS = {
     privacyUrl:
       'https://privacy.anthropic.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data',
   },
-} as const;
+  Brandfetch: {
+    purpose:
+      "Find a logo for a sender's email domain when neither the sender's own published logo record (BIMI) nor its website gives us a usable one. Receives the domain only.",
+    // Read 2026-09-19: Brandfetch's policy states a general retention
+    // principle and no figure for API request logs. `unknown` stays
+    // unknown — do not round it to a number.
+    retention:
+      "Brandfetch's privacy policy does not state a retention period for API request logs (read 2026-09-19). A domain is looked up for all DeclutrMail users at once rather than once per user, and re-checked after its cache period.",
+    privacyUrl: 'https://brandfetch.com/privacy',
+  },
+} as const satisfies Record<
+  GmailDataProcessor,
+  { purpose: string; retention: string; privacyUrl: string }
+>;
 
 export interface GmailDataInventoryItem {
   /** Stable identifier used by copy, tests, and deletion/export manifests. */
@@ -421,6 +434,34 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json'],
     transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+  {
+    // Sender logos (ADR-0034). The lookup key is the sender's email
+    // DOMAIN and nothing else: no user, mailbox, address or message
+    // accompanies it, and the cache row is shared by every user who
+    // receives mail from that domain — which is why it is not
+    // mailbox-scoped and survives a mailbox purge. It is in this
+    // registry because the domain is derived from the Gmail `From`
+    // header, and a third party receives it (QA-activity-20260918-01).
+    id: 'sender-logo-lookup',
+    category: 'derived',
+    label: 'Sender logo cache, keyed by email domain and shared across all users',
+    fetchedFrom: ['sender-identity'],
+    storageRefs: ['domain_icons.*'],
+    derived: true,
+    purpose:
+      "Show a logo beside a sender. The email domain of a sender shown in the app may be looked up, whether or not it is a brand — first against the sender's own published logo record and website, and only when neither of those gives us a usable logo, the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.",
+    // Every verb here names a mechanism that exists. There is no sweep and
+    // no DELETE against `domain_icons`: a row is re-resolved in place the
+    // next time someone views that domain after its cache window, and a
+    // domain nobody views again simply stays. An earlier draft said rows
+    // were "dropped on a rolling schedule" — no such schedule exists.
+    retention:
+      'Cache rows are keyed by domain, shared across all users, and hold no link to you or your mailbox, so deleting your data has nothing of yours to remove from them. A row may be looked up again when that sender is shown after its cache period has passed; rows are never deleted.',
+    removalTrigger: 'retention-policy',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail', 'Brandfetch'],
     showInMessageStorageList: false,
   },
 ] as const satisfies readonly GmailDataInventoryItem[];

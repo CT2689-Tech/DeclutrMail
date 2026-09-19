@@ -96,7 +96,7 @@ export function FollowupsScreen() {
     >
       <ScreenIntro
         id="followups"
-        title="Followups"
+        title="Follow-ups"
         body="Based on your sent email: conversations where you wrote last and haven't heard back."
       />
 

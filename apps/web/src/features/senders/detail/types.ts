@@ -80,6 +80,8 @@ export interface DecisionHistoryRow {
   opId: string;
   /** When undo is still available (≤7d window). */
   undoExpiresAt?: string;
+  /** ISO-8601 — set when the user undid this action. Absent while it stands. */
+  undoneAt?: string;
 }
 
 /** Optional secondary suggestion payload, returned by the engine per sender. */

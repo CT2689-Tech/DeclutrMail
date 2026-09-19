@@ -1186,10 +1186,15 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // Adapt history rows to the DecisionTimeline shape. Newest first; the
   // most-recent row carries the `current` flag so its node renders
   // filled + with a soft halo per ADR-0010.
-  const timelineItems = useMemo<TimelineItem[]>(
-    () => history.map((row, i) => historyRowToTimelineItem(row, i === 0, now)),
-    [history, now],
-  );
+  const timelineItems = useMemo<TimelineItem[]>(() => {
+    // "Current" is the newest action that still stands. An undone row
+    // is history, never the sender's present state. Only the first page
+    // (10 rows) is loaded here, so if every one of them was undone no
+    // row is marked: saying nothing beats promoting an undone row, and
+    // an older standing decision is not on screen to point at.
+    const currentIndex = history.findIndex((row) => row.undoneAt == null);
+    return history.map((row, i) => historyRowToTimelineItem(row, i === currentIndex, now));
+  }, [history, now]);
 
   return (
     <div
@@ -1822,6 +1827,11 @@ function historyRowToTimelineItem(
         <span style={{ color: '#4B5552' }}>{row.source}</span> · <strong>{row.action}</strong>
         {row.count != null && (
           <span style={{ color: '#646D69', fontSize: 11.5 }}> · {row.count} messages</span>
+        )}
+        {/* Same fact, same word as Activity's row — the two surfaces read
+            one `activity_log.reverted_at` and must not disagree. */}
+        {row.undoneAt != null && (
+          <span style={{ color: '#646D69', fontSize: 11.5 }}> · Undone</span>
         )}
       </span>
     ),

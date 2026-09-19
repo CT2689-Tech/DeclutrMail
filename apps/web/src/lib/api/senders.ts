@@ -447,6 +447,12 @@ export interface DecisionHistoryRowDto {
   occurredAt: string;
   /** Messages moved. 0 for policy-only verbs (Keep, Protect toggles). */
   affectedCount: number;
+  /**
+   * ISO-8601 — when the user undid this action; null while it stands.
+   * Optional on purpose: a web deploy can land ahead of the API that
+   * sends it, and an absent key must read as "stands", not crash.
+   */
+  revertedAt?: string | null;
 }
 
 // ── Fetchers ────────────────────────────────────────────────────────

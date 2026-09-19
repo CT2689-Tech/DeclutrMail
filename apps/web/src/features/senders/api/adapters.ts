@@ -276,5 +276,6 @@ export function adaptDecisionHistoryRow(row: DecisionHistoryRowDto): DecisionHis
     action,
     ...(row.affectedCount > 0 ? { count: row.affectedCount } : {}),
     opId: row.id,
+    ...(row.revertedAt ? { undoneAt: row.revertedAt } : {}),
   };
 }

@@ -135,6 +135,7 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
             <li
               className="dm-decision-timeline-item"
               key={item.id}
+              data-current={item.current ? 'true' : undefined}
               style={{
                 display: 'grid',
                 gridTemplateColumns: '84px 18px 1fr',

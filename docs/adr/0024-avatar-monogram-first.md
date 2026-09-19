@@ -60,7 +60,7 @@ domain per session, and `sender-table` rows rendered no avatar at all
 
 ### Positive
 
-- Zero third-party requests from sender surfaces — the trust-wedge
+- Zero third-party requests **from the browser** on sender surfaces (logo resolution is server-side — ADR-0034 tier 3) — the trust-wedge
   contradiction is gone, and so are the waterfall's 404 round-trips.
 - Page-level visual coherence: one avatar silhouette and one neutral
   fallback treatment in both themes. Stable identity per brand across
