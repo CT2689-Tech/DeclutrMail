@@ -180,7 +180,7 @@ describe('SyncErrorBanner', () => {
 
     expect(screen.getByTestId('sync-error-banner')).toBeInTheDocument();
     expect(screen.getByText(/gmail access needs renewing/i)).toBeInTheDocument();
-    expect(screen.getByText(/existing declutrmail history is safe/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
   });
 
   it('hides a revoked-grant banner after a newer success proves reconnection', () => {

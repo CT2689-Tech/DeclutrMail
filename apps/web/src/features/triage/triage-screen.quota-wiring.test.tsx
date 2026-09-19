@@ -268,7 +268,7 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
     releaseRefetch();
     await waitFor(() =>
       expect(
-        within(dialog).getByText(/close and refresh to see what changed/i),
+        within(dialog).getByText(/Protected or gone — close and refresh/i),
       ).toBeInTheDocument(),
     );
     expect(within(dialog).getByRole('button', { name: /^Archive all/ })).toBeDisabled();

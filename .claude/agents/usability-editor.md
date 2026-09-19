@@ -81,7 +81,7 @@ The product is wordy. Judge against budgets, not taste.
 | Button / menu item | ≤ 3 words |
 | Toast | 1 sentence |
 | Error | cause + next action, ≤ 2 sentences |
-| Empty state | ≤ 2 sentences + 1 action |
+| Empty state | a title + at most 1 sentence or 1 action |
 | Preview | the numbers and the reversal. Nothing else |
 
 Four cuts to attempt on every screen:
@@ -96,6 +96,16 @@ Four cuts to attempt on every screen:
   stops being read. Say it once, where the decision is made.
 - **Same thing twice on one screen** — header subtitle *and* inline hint *and*
   tooltip. Pick one.
+
+**When truth and budget collide, cut the claim; do not qualify it.** Checks
+2 and 4 push copy longer (state the population, carry the consequence) and
+this check pushes it shorter. The tie-break is CLAUDE.md §8: a claim that
+needs a qualifier to be true is first a candidate for deletion. Never
+propose a caveat clause as the fix for an untrue sentence without first
+testing whether the sentence can go. A preview owes the count, where the
+email goes and how to undo — "what does not change" only where the user
+would plausibly fear it (CLAUDE.md §2.3). Trust and privacy copy once per
+flow, at the decision point.
 
 Also: hedges (*may*, *should*, *typically*, *usually*) — state it or drop it.
 And scroll cost: if explanation pushes the primary action below the fold, the

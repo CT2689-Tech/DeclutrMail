@@ -15,7 +15,6 @@ import {
 import {
   buildActionReceiptResult,
   countUnsubscribeCapabilities,
-  unsubscribeCapabilityBreakdown,
 } from '@declutrmail/shared/actions';
 import {
   canBulkArchive,
@@ -824,7 +823,7 @@ function SendersScreenContent({
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
       toast(
-        `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        `${activeAction.verb} for ${activeAction.senderName} is still running — see Activity.`,
         'info',
       );
       setOverdueAction(activeAction);
@@ -837,7 +836,7 @@ function SendersScreenContent({
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'batch', verb: activeBatch.verb.toLowerCase() });
       toast(
-        `${activeBatch.verb} for ${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        `${activeBatch.verb} for ${activeBatch.senderCount} sender${activeBatch.senderCount === 1 ? '' : 's'} is still running — see Activity.`,
         'info',
       );
       setOverdueBatch(activeBatch);
@@ -850,7 +849,7 @@ function SendersScreenContent({
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'batch', verb: 'unsubscribe' });
       toast(
-        `Unsubscribe for ${activeUnsubBatch.senderCount} sender${activeUnsubBatch.senderCount === 1 ? '' : 's'} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        `Unsubscribe for ${activeUnsubBatch.senderCount} sender${activeUnsubBatch.senderCount === 1 ? '' : 's'} is still running — see Activity.`,
         'info',
       );
       setOverdueUnsubBatch(activeUnsubBatch);
@@ -1323,7 +1322,7 @@ function SendersScreenContent({
                           reason: `enqueue_${secondary.type}_after_unsub`,
                         });
                         toast(
-                          `Unsubscribe queued, but couldn't ${secondary.type} the older email from ${sref.name}`,
+                          `Unsubscribe started, but couldn't ${secondary.type} the older email from ${sref.name}`,
                           'warn',
                         );
                       },
@@ -1435,7 +1434,7 @@ function SendersScreenContent({
                       });
                     }
                     toast(
-                      `Unsubscribes queued, but couldn't ${secondary.type} the older email — see Activity`,
+                      `Unsubscribes started, but couldn't ${secondary.type} the older email — see Activity`,
                       'warn',
                     );
                   },
@@ -1758,19 +1757,16 @@ function SendersScreenContent({
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       toast(
-        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
         'success',
       );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
+        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
         'warn',
       );
     } else {
-      toast(
-        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
-        'warn',
-      );
+      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
     }
     void qc.invalidateQueries({ queryKey: sendersKeys.all });
     void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -2213,9 +2209,7 @@ function SendersScreenContent({
         const capabilities = countUnsubscribeCapabilities(eligible.map((s) => s.unsubscribeMethod));
         if (capabilities.one_click === 0) {
           toast(
-            `No selected sender has an unsubscribe DeclutrMail can send — ${unsubscribeCapabilityBreakdown(
-              capabilities,
-            ).join(' · ')}. Open each one to send it yourself.`,
+            'No selected sender has an unsubscribe DeclutrMail can send — open each one for its options.',
             'warn',
           );
           return;
@@ -2459,7 +2453,7 @@ function SendersScreenContent({
       <ScreenIntro
         id="senders"
         title="How Senders works"
-        body="Review senders with email in Inbox or archived. Senders with no remaining mail here disappear after cleanup; their history stays in Activity. Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches automatically."
+        body="Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches."
         learnMore={{
           href: '/methodology#automation-method',
           label: 'Manual decisions vs automatic rules',
@@ -2563,7 +2557,6 @@ function SendersScreenContent({
       {asOf && (
         <SenderResultsFreshness
           asOf={asOf}
-          mailboxEmail={activeEmail}
           totalSenders={filterCounts?.total ?? null}
           updating={countsMayBeStale}
           rowsReadOnly={showingStaleRows}
@@ -2809,7 +2802,7 @@ function SendersScreenContent({
               // filter-only branch further down was fixed for, one
               // branch over.
               hasQuery || !isDefaultCompose(compose)
-                ? "Your mailbox is still syncing, so this search can't be answered yet. Try again once the scan finishes."
+                ? "Your mailbox is still syncing, so this search can't be answered yet."
                 : 'Your mailbox is still syncing. This list will update as the scan finishes.'
             }
           />
@@ -2827,8 +2820,8 @@ function SendersScreenContent({
               // branch above — `hasAnyFilter(compose)` alone would also
               // match the plain default view.
               hasQuery || !isDefaultCompose(compose)
-                ? "This mailbox's last scan didn't finish, so this search can't be answered. Your Gmail is untouched — see Settings → Gmail accounts to try again."
-                : "This mailbox's last scan didn't finish, so this list may be incomplete. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+                ? "The last scan didn't finish, so this search can't be answered. Retry in Settings → Gmail accounts."
+                : "The last scan didn't finish, so this list may be incomplete. Retry in Settings → Gmail accounts."
             }
           />
         ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
@@ -2837,7 +2830,7 @@ function SendersScreenContent({
           // mistake — name the default and offer the full list.
           <EmptyState
             title="No active senders"
-            body="No sender has mailed you recently. You can look at every sender instead — including quiet and dormant ones."
+            body="No sender has mailed you recently."
             action={
               <Button
                 onClick={() => {
@@ -3089,7 +3082,6 @@ function SendersScreenContent({
  */
 function SenderResultsFreshness({
   asOf,
-  mailboxEmail,
   totalSenders,
   updating,
   rowsReadOnly,
@@ -3097,7 +3089,6 @@ function SenderResultsFreshness({
   syncFailed,
 }: {
   asOf: string;
-  mailboxEmail: string;
   totalSenders: number | null;
   updating: boolean;
   /**
@@ -3147,8 +3138,8 @@ function SenderResultsFreshness({
           <strong style={{ fontWeight: 600 }}>Scan failed</strong>
           <span>
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`
-              : `Senders in this mailbox for ${mailboxEmail} — this scan didn't finish, so the list may be incomplete or stale. See Settings to try again.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders · list may be incomplete or stale. Retry in Settings → Gmail accounts.`
+              : 'List may be incomplete or stale. Retry in Settings → Gmail accounts.'}
           </span>
           {/* Codex round-2 review of QA-senders-20260901-01: a filter/
               search change can flip `rowsReadOnly` true WHILE the scan
@@ -3187,8 +3178,8 @@ function SenderResultsFreshness({
                 sanctioned term for this event, same as the empty-state
                 copy above and the onboarding gate's own vocabulary. */}
             {totalSenders !== null
-              ? `${totalSenders.toLocaleString('en-US')} senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`
-              : `Senders in this mailbox for ${mailboxEmail} — this scan hasn't finished, so the list may be incomplete or stale, and may change once it's done.`}
+              ? `${totalSenders.toLocaleString('en-US')} senders · list may be incomplete or stale.`
+              : 'List may be incomplete or stale.'}
           </span>
           {rowsReadOnly && (
             <span>These rows are temporarily read-only while the new filter loads.</span>
@@ -3197,13 +3188,9 @@ function SenderResultsFreshness({
       ) : updating ? (
         <>
           <strong style={{ fontWeight: 600 }}>Updating results…</strong>
+          {rowsReadOnly && <span>Previous rows are read-only.</span>}
           <span>
-            {rowsReadOnly
-              ? 'Previous count and rows are read-only.'
-              : 'Counts may be a moment behind.'}
-          </span>
-          <span>
-            Previous snapshot <time dateTime={asOf}>{label}</time>.
+            Showing results as of <time dateTime={asOf}>{label}</time>.
           </span>
         </>
       ) : (

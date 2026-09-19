@@ -141,7 +141,7 @@ export function ActivateRuleModal({
       }
       footnote="Pause any time — the rule card's toggle or Pause all."
       confirmLabel={
-        enablingToAct ? 'Turn on and run it' : enabling ? 'Turn on and watch' : 'Switch to Active'
+        enablingToAct ? 'Turn on and run' : enabling ? 'Turn on and watch' : 'Switch to Active'
       }
       confirmBusyLabel={enabling ? 'Turning on…' : 'Switching…'}
       canConfirm={preview.status === 'ready'}
@@ -196,16 +196,14 @@ export function ActivateRuleModal({
                 ? 'Already-collected suggestions are covered and clear from the pending list.'
                 : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                     pendingCount === 1 ? 'is' : 'are'
-                  } covered by this — the rule acts on ${
-                    pendingCount === 1 ? 'it' : 'them'
-                  } itself and ${pendingCount === 1 ? 'it clears' : 'they clear'} from the pending list.`
+                  } covered by this and ${
+                    pendingCount === 1 ? 'clears' : 'clear'
+                  } from the pending list.`
               : pendingApproximate
                 ? 'Already-collected suggestions stay pending. Approve or skip them separately.'
                 : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                     pendingCount === 1 ? 'stays' : 'stay'
-                  } pending below — turning the rule on does not approve ${
-                    pendingCount === 1 ? 'it' : 'them'
-                  }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
+                  } pending below. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
           </li>
         ) : null}
         {/* The secondary button's different outcome, stated where the
@@ -224,8 +222,7 @@ export function ActivateRuleModal({
         ) : null}
         {!pendingApproximate && pendingCount === 0 && enablingToAct ? (
           <li>
-            Prefer to look before it acts? <strong>Watch first</strong> turns the rule on in
-            Observe: it collects matches for your approval and moves nothing until you say so.
+            <strong>Watch first</strong> collects matches for your approval instead of acting.
           </li>
         ) : null}
         <li>Senders you mark Protected are always skipped.</li>

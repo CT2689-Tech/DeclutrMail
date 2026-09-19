@@ -44,12 +44,9 @@ export function VerdictBatchBanner({
       }}
     >
       <p style={{ margin: 0, flex: 1, minWidth: 220, fontSize: 13, color: color.fg }}>
-        <strong>{n} of these decisions are the same:</strong>{' '}
-        {verdict === 'archive' ? (
-          <>DeclutrMail suggests Archive for all {n}. Review them together before confirming.</>
-        ) : (
-          <>DeclutrMail suggests Later for all {n}. Review them together before confirming.</>
-        )}
+        <strong>
+          DeclutrMail suggests {verb} for {n} senders.
+        </strong>
       </p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <Button

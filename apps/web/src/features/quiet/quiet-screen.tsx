@@ -68,10 +68,6 @@ export function QuietRoute() {
       ) : (
         mailboxes.map((mailbox) => <QuietHoursCardContainer key={mailbox.id} mailbox={mailbox} />)
       )}
-      <p style={{ fontFamily: font.sans, fontSize: 12, color: color.fgMuted, margin: 0 }}>
-        Quiet hours pause Autopilot only — deferred actions run after the window ends. Nothing is
-        skipped or dropped.
-      </p>
     </div>
   );
 }
@@ -159,7 +155,7 @@ function QuietQueueSummary({
   if (!activeNow && heldCount > 0) {
     summary = (
       <>
-        Quiet is off. {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} awaiting execution;{' '}
+        Quiet is off. {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} waiting to run;{' '}
         quiet is not delaying {heldCount === 1 ? 'it' : 'them'}.
       </>
     );
@@ -171,20 +167,18 @@ function QuietQueueSummary({
       </>
     );
   } else if (activeNow && heldCount === 0) {
-    summary = <>No Autopilot actions are held. No automatic release time is available.</>;
+    summary = <>No Autopilot actions are held.</>;
   } else if (activeNow && endLabel) {
     summary = (
       <>
-        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held. Quiet ends at{' '}
-        <time dateTime={endsAt ?? undefined}>{endLabel}</time>. Autopilot will run{' '}
-        {heldCount === 1 ? 'it' : 'them'} afterward.
+        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held until quiet ends at{' '}
+        <time dateTime={endsAt ?? undefined}>{endLabel}</time>.
       </>
     );
   } else if (activeNow) {
     summary = (
       <>
-        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held. No automatic release time
-        is available; {heldCount === 1 ? 'it' : 'they'} will stay held until quiet ends.
+        {heldCount} {actionLabel} {heldCount === 1 ? 'is' : 'are'} held until quiet ends.
       </>
     );
   }

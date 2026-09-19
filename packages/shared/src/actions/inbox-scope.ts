@@ -170,7 +170,7 @@ export function inboxScopeNoticeCopy(
   if (notice.kind === 'none') return null;
 
   if (notice.kind === 'empty-inbox') {
-    const opener = `Nothing from ${subject} is in your inbox right now.`;
+    const opener = `Nothing from ${subject} in your inbox now.`;
     const tail = options.verbActsBeyondInbox
       ? `${verbLabel} acts on inbox email by default.`
       : `${verbLabel} only acts on email still in the inbox.`;
@@ -192,10 +192,10 @@ export function inboxScopeNoticeCopy(
     // have been flatly wrong). Measured the same day: of 2,025 recent
     // non-INBOX messages, 19 were SPAM and 1 TRASH.
     //
-    // "though" carries the tension the reader needs without asserting a
-    // cause, a destination, or a history.
+    // Two facts side by side carry the tension the reader needs without
+    // asserting a cause, a destination, or a history.
     const arrivals = `${notice.recentArrivals.toLocaleString('en-US')} arrived in the last 90 days`;
-    return `${opener.replace(/\.$/, '')} — though ${arrivals}. ${tail}`;
+    return `${opener.replace(/\.$/, '')} \u00b7 ${arrivals}. ${tail}`;
   }
 
   const { inboxTotal, olderThanDays } = notice;
@@ -211,11 +211,9 @@ export function inboxScopeNoticeCopy(
     presetLabel !== undefined
       ? `the ${presetLabel} window`
       : `${olderThanDays.toLocaleString('en-US')} day${olderThanDays === 1 ? '' : 's'}`;
-  return (
-    `${inboxTotal.toLocaleString('en-US')} email${one ? '' : 's'} from ${subject} ${one ? 'is' : 'are'} in your inbox, ` +
-    `but ${one ? `it is not older than ${threshold}` : `none are older than ${threshold}`}. ` +
-    `Widen the window to include ${one ? 'it' : 'them'}.`
-  );
+  return one
+    ? `The 1 inbox email from ${subject} is not older than ${threshold}. Widen the window to include it.`
+    : `None of the ${inboxTotal.toLocaleString('en-US')} inbox emails from ${subject} are older than ${threshold}. Widen the window to include them.`;
 }
 
 /** Day-count → the same preset label every window chip renders for it. */
@@ -305,9 +303,7 @@ export function mailLocationCopy(input: MailLocationInput): string | null {
   const binned = receivedTotal === null ? 0 : Math.max(0, receivedTotal - allMailNow);
   const parts = [`${n(inboxNow)} ${plural(inboxNow)} in your inbox`];
   if (elsewhere > 0) {
-    parts.push(
-      `${n(elsewhere)} ${plural(elsewhere)} elsewhere in Gmail (archived or under a label)`,
-    );
+    parts.push(`${n(elsewhere)} ${plural(elsewhere)} elsewhere in Gmail`);
   }
   // Named only when it exists. A "0 in Trash or Spam" segment is a fact
   // nobody asked for, and printing the gap when there is none is how a
@@ -320,5 +316,5 @@ export function mailLocationCopy(input: MailLocationInput): string | null {
   // the same way an unresolved reach or a genuinely empty mailbox does
   // above, rather than dressing up "no gap" as a sentence.
   if (parts.length === 1) return null;
-  return `Where this sender's mail is now: ${parts.join(' \u00b7 ')}.`;
+  return `Where it is now: ${parts.join(' \u00b7 ')}.`;
 }

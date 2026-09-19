@@ -145,7 +145,7 @@ export function ActionToolbar({
         // explanation, though the screen already knows exactly why.
         const buttonTitle =
           verb === 'Unsubscribe' && disabled
-            ? "No unsubscribe link in this sender's emails — Archive is the reliable fallback."
+            ? "No unsubscribe link in this sender's emails — Archive still works."
             : isHighlighted
               ? primaryVerbReason(sender, verdict)
               : null;

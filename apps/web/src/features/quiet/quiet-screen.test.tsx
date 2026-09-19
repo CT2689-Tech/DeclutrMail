@@ -150,8 +150,7 @@ describe('QuietRoute', () => {
     renderRoute();
 
     const summary = await screen.findByRole('status');
-    expect(summary).toHaveTextContent('2 Autopilot actions are held.');
-    expect(summary).toHaveTextContent('Autopilot will run them afterward.');
+    expect(summary).toHaveTextContent('2 Autopilot actions are held until quiet ends at');
     expect(summary.querySelector('time')).toHaveAttribute('datetime', endsAt);
   });
 
@@ -168,9 +167,9 @@ describe('QuietRoute', () => {
 
     renderRoute();
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      '1 Autopilot action is held. No automatic release time is available; it will stay held until quiet ends.',
-    );
+    const summary = await screen.findByRole('status');
+    expect(summary).toHaveTextContent('1 Autopilot action is held until quiet ends.');
+    expect(summary.querySelector('time')).toBeNull();
   });
 
   it('shows the active zero-held state', async () => {
@@ -205,7 +204,7 @@ describe('QuietRoute', () => {
     renderRoute();
 
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Quiet is off. 2 Autopilot actions are awaiting execution; quiet is not delaying them.',
+      'Quiet is off. 2 Autopilot actions are waiting to run; quiet is not delaying them.',
     );
   });
 });

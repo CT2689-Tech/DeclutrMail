@@ -22,8 +22,8 @@ export const TRUST_CLAIMS = [
     destination: 'activity',
     title:
       UNIFORM_UNDO_WINDOW_DAYS === null
-        ? "Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and normally lasts up to 30 days. Delivered unsubscribe requests can't be recalled."
-        : `Archive, Later, and Delete can be undone from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days. Gmail Trash recovery is separate and normally lasts up to 30 days. Delivered unsubscribe requests can't be recalled.`,
+        ? "Archive, Later, and Delete use your plan's Activity Undo window. Gmail Trash recovery is separate and lasts up to 30 days. Delivered unsubscribe requests can't be recalled."
+        : `Archive, Later, and Delete can be undone from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days. Gmail Trash recovery is separate and lasts up to 30 days. Delivered unsubscribe requests can't be recalled.`,
   },
   {
     label: 'Stored Gmail data',

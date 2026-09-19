@@ -370,8 +370,8 @@ export function SenderCard({
           <span
             title={
               sender.inboxCount !== undefined && sender.inboxCount !== null
-                ? "Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. 'In inbox' is what Keep/Archive/Delete can reach right now."
-                : "Emails received from this sender, within DeclutrMail's retention — what 'Most emails' sorts by. Not inbox-only; deleted email drops out."
+                ? "Emails received, within retention — what 'Most received' sorts by."
+                : "Emails received, within retention — what 'Most received' sorts by. Not inbox-only; deleted email drops out."
             }
             style={{
               fontFamily: font.mono,

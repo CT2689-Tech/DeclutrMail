@@ -161,7 +161,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/close and refresh to see what changed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or gone — close and refresh/i)).toBeInTheDocument();
   });
 
   it('disables confirm when the live preview resolves with every sender deleted since queuing', () => {
@@ -185,7 +185,7 @@ describe('BatchActionSheet — live-preview confirm gate', () => {
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getByText(/close and refresh to see what changed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected or gone — close and refresh/i)).toBeInTheDocument();
   });
 });
 

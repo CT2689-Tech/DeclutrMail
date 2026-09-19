@@ -107,8 +107,10 @@ describe('MailboxDataControlsDialog', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/past Gmail actions stay applied/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Gmail is unchanged/i).length).toBeGreaterThan(0);
-    expect(screen.getByText('Which mailbox exit should I choose?')).toBeInTheDocument();
-    expect(screen.getByText(/Keep saved data if you may reconnect/i)).toBeInTheDocument();
+    // The options state their own consequences once — no help block restating both.
+    expect(screen.queryByText('Which mailbox exit should I choose?')).not.toBeInTheDocument();
+    expect(screen.getByText(/reconnecting continues with this history/i)).toBeInTheDocument();
+    expect(screen.getByText(/remaining Activity Undo for this mailbox ends/i)).toBeInTheDocument();
   });
 
   it('runs standard disconnect without requiring the destructive phrase', () => {

@@ -341,10 +341,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     if (!inFlight) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: inFlight.kind, verb: 'archive' });
-      toast(
-        'The Noise archive is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
-        'info',
-      );
+      toast('The Noise archive is still running — see Activity.', 'info');
       setOverdueInFlight(inFlight);
       setInFlight(null);
     }, ACTION_OVERDUE_MS);

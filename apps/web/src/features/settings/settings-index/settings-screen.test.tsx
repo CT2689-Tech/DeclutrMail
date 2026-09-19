@@ -842,7 +842,7 @@ describe('SettingsScreen', () => {
     {
       result: 'account_mismatch',
       message:
-        'That was a different Google account. Retry Reconnect next to the Gmail address you intended to restore.',
+        'That was a different Google account. Retry Reconnect next to the mailbox you meant.',
       tone: 'danger',
       liveRole: 'alert',
     },
@@ -898,14 +898,13 @@ describe('SettingsScreen', () => {
     {
       result: 'inbox_limit',
       message:
-        'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
+        'Your plan’s Gmail limit is in use. Review your plan or disconnect a mailbox, then try again.',
       tone: 'warn',
       liveRole: 'status',
     },
     {
       result: 'session_retry',
-      message:
-        'We couldn’t verify your session for that Gmail connection attempt. Your session is active now—try again.',
+      message: 'We couldn’t verify your session for that Gmail connection. Try again.',
       tone: 'warn',
       liveRole: 'status',
     },

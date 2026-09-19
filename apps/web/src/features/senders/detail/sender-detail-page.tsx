@@ -431,7 +431,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb.toLowerCase() });
       toast(
-        `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        `${activeAction.verb} for ${activeAction.senderName} is still running — see Activity.`,
         'info',
       );
       setOverdueAction(activeAction);
@@ -464,15 +464,14 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
   // QA-sender-detail-20260902-15: D245 requires showing the EXACT
   // protection reason, and the only place it lived was a `title=`
-  // tooltip — which never opens on touch. Computed once here so both
-  // the tooltip and the new visible line below the header read the
-  // same clause.
+  // tooltip — which never opens on touch. Rendered once, as the visible
+  // line below the header; the toggle beside it is the way to unprotect.
   const protectionReasonText = detail.isProtected
     ? (() => {
         const reason = normalizeProtectionReason(detail.protectionReason);
-        return reason === null
-          ? 'Protected. Select to remove protection.'
-          : `Protected — ${protectionReasonClause(reason)}. Select to remove protection.`;
+        // No recorded reason → no line: the pressed "Protected" toggle
+        // already says the state.
+        return reason === null ? null : `Protected — ${protectionReasonClause(reason)}.`;
       })()
     : null;
   const openAllInGmailHref = activeMailboxEmail
@@ -756,10 +755,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                   mailtoUrl: res.mailtoUrl,
                 });
               } else {
-                toast(
-                  `${sender.name} offers no unsubscribe channel — Archive is the reliable fallback`,
-                  'info',
-                );
+                toast(`${sender.name} has no unsubscribe link — Archive still works.`, 'info');
               }
               // Secondary historic action (Archive/Delete the backlog) —
               // the unsub intent has no composite primary on the BE, so
@@ -809,7 +805,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                         reason: `enqueue_${secondary.type}_after_unsub`,
                       });
                       toast(
-                        `Unsubscribe queued, but couldn't ${secondary.type} the older email from ${sender.name}`,
+                        `Couldn't ${secondary.type} the older email from ${sender.name}`,
                         'warn',
                       );
                     },
@@ -982,19 +978,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       toast(
-        `${activeUnsub.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        `${activeUnsub.senderName} accepted the unsubscribe request — stopping is up to them.`,
         'success',
       );
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${activeUnsub.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
+        `Unsubscribe from ${activeUnsub.senderName} is unconfirmed — watch for new email.`,
         'warn',
       );
     } else {
-      toast(
-        `${activeUnsub.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
-        'warn',
-      );
+      toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
     }
     void qc.invalidateQueries({ queryKey: sendersKeys.all });
     void qc.invalidateQueries({ queryKey: activityKeys.all });
@@ -1425,10 +1418,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               onClick={toggleProtect}
               ariaPressed={detail.isProtected}
               disabled={setPolicy.isPending}
-              title={
-                protectionReasonText ??
-                'Protect this sender from bulk and automatic actions that move email.'
-              }
+              {...(detail.isProtected
+                ? {}
+                : {
+                    title: 'Protect this sender from bulk and automatic actions that move email.',
+                  })}
             >
               {/* QA-sender-detail-20260902-15: labelled "Protect" even
                   while already protected — a diamond glyph was the only
@@ -1514,18 +1508,18 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               {latestIsCurrentMonth ? (
                 <>
                   <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span>{' '}
-                  {latestPoint.volume === 1 ? 'email' : 'emails'} so far in {latestMonthAbbrev}.
+                  {latestPoint.volume === 1 ? 'email' : 'emails'} so far in {latestMonthAbbrev}
                 </>
               ) : (
                 <>
                   Last mailed you in {latestMonthAbbrev} —{' '}
                   <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span>{' '}
-                  {latestPoint.volume === 1 ? 'email' : 'emails'} that month.
+                  {latestPoint.volume === 1 ? 'email' : 'emails'} that month
                 </>
               )}
               {stats.readRate !== null && (
                 <>
-                  {' '}
+                  {' · '}
                   <span style={{ color: color.fg, fontWeight: 600 }}>
                     {formatReadRatePct(stats.readRate)}%
                   </span>{' '}
@@ -1544,34 +1538,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       from server-side (`senders.read-service.ts`'s
                       `last90dMsgs`), so this names the real population
                       rather than adding a second, disconnected query. */}
-                  of the{' '}
+                  of{' '}
                   <span style={{ color: color.fg, fontWeight: 600 }}>{sender.monthlyVolume}</span>{' '}
-                  {sender.monthlyVolume === 1 ? 'email' : 'emails'} they sent in the last 90 days{' '}
-                  {/* Codex adversarial review: "N emails ... was marked
-                      read" disagrees for any N !== 1 — "64 emails ... was"
-                      instead of "were". */}
-                  {sender.monthlyVolume === 1 ? 'was' : 'were'} marked read.
-                  {/* THE SPLIT (F012). A third-party sweeper can mark
-                      mail read through the API, and on the mailbox this
-                      was measured against one did so 20,819 times — 27.5%
-                      of everything we counted as read. Those are already
-                      out of the percentage above; saying so is what lets
-                      the product EXPLAIN a number that looks lower than
-                      the user expects, instead of silently compensating
-                      and leaving them to wonder. Rendered only when there
-                      is something to disclose. */}
-                  {(stats.readRateSweeperMarked ?? 0) > 0 && (
-                    <>
-                      {' '}
-                      A further{' '}
-                      <span style={{ color: color.fg, fontWeight: 600 }}>
-                        {stats.readRateSweeperMarked!.toLocaleString('en-US')}
-                      </span>{' '}
-                      {stats.readRateSweeperMarked === 1 ? 'was' : 'were'} marked read by another
-                      tool, so {stats.readRateSweeperMarked === 1 ? 'it is' : 'they are'} not
-                      counted here.
-                    </>
-                  )}
+                  marked read in the last 90 days
                 </>
               )}
             </>
@@ -1581,6 +1550,34 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             <>Hasn&rsquo;t mailed you yet.</>
           )}
         </p>
+
+        {/* THE SPLIT (F012). A third-party sweeper can mark mail read
+            through the API, and on the mailbox this was measured against
+            one did so 20,819 times — 27.5% of everything we counted as
+            read. Those are already out of the percentage above; saying so
+            is what lets the product EXPLAIN a number that looks lower than
+            the user expects, instead of silently compensating and leaving
+            them to wonder. Rendered only when there is something to
+            disclose, and only beside the percentage it explains. A visible
+            footnote (same muted line style as the protection reason), not
+            hero type. */}
+        {latestPoint != null &&
+          stats.readRate !== null &&
+          (stats.readRateSweeperMarked ?? 0) > 0 && (
+            <p
+              style={{
+                position: 'relative',
+                margin: '-6px 0 14px',
+                fontSize: 12,
+                color: color.fgMuted,
+                fontFamily: font.sans,
+              }}
+            >
+              {stats.readRateSweeperMarked!.toLocaleString('en-US')} more{' '}
+              {stats.readRateSweeperMarked === 1 ? 'was' : 'were'} marked read by another tool and{' '}
+              {stats.readRateSweeperMarked === 1 ? 'is' : 'are'} not counted.
+            </p>
+          )}
 
         {/* "Estimated reading cost" line RETIRED per spec v1.2 Decision 6
             (ban editorial inference). The 1.6 min/msg coefficient was
@@ -1685,8 +1682,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         heading="Decision timeline"
         empty={
           <EmptyState
-            title="No actions on this sender yet"
-            description="Keep, Archive, Unsubscribe, Later and Delete all land here — and in Activity — the moment you use one."
+            title="Nothing decided yet"
+            description="Pick an action above and it shows up here."
           />
         }
         // Cross-link into the Activity feed pre-filtered to this sender.
@@ -1903,7 +1900,7 @@ function NotFoundState() {
     >
       <EmptyState
         title="Sender not found"
-        body="This sender isn't in your mailbox — either this link is out of date, or the sender hasn't mailed you yet."
+        body="This sender isn't in this mailbox."
         action={
           <Button tone="primary" onClick={() => window.history.back()}>
             Back to Senders
@@ -1955,7 +1952,7 @@ function SenderDetailErrorState({
     >
       <RecoverableErrorState
         title="We couldn't load this sender"
-        description="Nothing in your mailbox changed. Try again in a moment."
+        description="Nothing in your mailbox changed."
         onRetry={handleRetry}
       />
       {/* QA-sender-detail-20260902-17: "Try again" was the only action —

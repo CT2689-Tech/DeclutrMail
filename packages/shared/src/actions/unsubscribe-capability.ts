@@ -91,7 +91,7 @@ export function unsubscribeUnavailableReason(
     case 'none':
       return 'No unsubscribe channel found — Archive handles senders like this.';
     case 'unknown':
-      return "We haven't checked this sender for an unsubscribe option yet — Archive works in the meantime.";
+      return 'Not checked for an unsubscribe option yet — Archive works meanwhile.';
   }
 }
 

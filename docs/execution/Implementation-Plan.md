@@ -10868,3 +10868,57 @@ that is the line this decision does not cross.
 **Rejected: a speculative index.** The narrow lookup is covered by existing
 mailbox keys. Any further index waits for production `EXPLAIN` evidence,
 per the same discipline D235 applies to partitioning.
+
+---
+
+### [PATCH 2026-09-19 on D208 and D209 — a preview has a ceiling, not only a floor]
+
+**Founder decision, 2026-09-19.**
+
+D208 lists four things a preview must contain, and D209 requires
+automation copy to "state mechanism, state reversibility, state
+retention." Both are floors with no ceiling, and both were read per
+_component_. The shared action wording turned every "does NOT change"
+fact into its own sentence, so an Archive preview denied deleting and
+unsubscribing, and one Delete sheet explained Gmail Trash retention three
+times. A 2026-09-19 audit measured about half of all preview strings over
+budget, with a Delete confirm costing roughly 90 words for one click.
+
+A preview owes the user three things, each stated once: **the count,
+where the email goes, and how to undo it** (route and window). D208's
+item 2, "what does NOT change", appears only where the user would
+plausibly fear it — Delete keeps "Future email is unchanged"; Archive and
+Later do not deny deleting or unsubscribing. D209's mechanism /
+reversibility / retention is read per **flow**, never per component.
+
+Unchanged: the preview itself stays mandatory (D226), and the statement
+that a sent unsubscribe cannot be recalled stays on every surface that
+can send one (ADR-0030). Current rule text: CLAUDE.md §2.3.
+
+---
+
+### [PATCH 2026-09-19 on D212 and D221 — empty states are short]
+
+**Founder decision, 2026-09-19.**
+
+D212 asks an empty state to "reinforce product mental model", and D221
+blesses a 27-word canonical Triage empty string. Together they ruled out
+short empty states; the same audit found about half of them over budget,
+several explaining how the system works while offering no next step.
+
+An empty state is **a title plus at most one sentence or one action.**
+"Reinforce the mental model" is met by the title. D221's canonical Triage
+empty-state string is retired; D221's actual rule — count **decisions**,
+not senders or emails — is unchanged. D212's other three requirements
+(calm, next-step framing, never look like an error) are unchanged.
+
+---
+
+### [PATCH 2026-09-19 on ADR-0011 — the trust-cue checklist line is removed]
+
+**Founder decision, 2026-09-19.** ADR-0011's checklist required the cue
+"No message bodies · Reversible for 7 days" on or near every hero and
+empty state. It was enforced nowhere, its wording appeared nowhere in
+source, and ADR-0030 now bans both halves (a blanket reversibility claim;
+a compressed privacy claim). Trust and privacy copy renders once per
+flow, at the decision point. See the struck line in the ADR itself.

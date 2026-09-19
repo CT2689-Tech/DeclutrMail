@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
+import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
@@ -350,6 +351,10 @@ export function ConfirmActionModal({
       ? isStandingProtected(request.senders[0])
       : false;
   const needsProtectedOverride = protectedSingle && verb !== 'Keep';
+  // D245: show the exact reason when the wire carries one this build knows.
+  const protectedReason = normalizeProtectionReason(
+    request?.senders[0]?.protectionFlags.protectionReason,
+  );
 
   // D248 — a selection's unsubscribe capability is a PARTITION over four
   // states, never one aggregate. Only `one_click` senders are ones
@@ -421,6 +426,13 @@ export function ConfirmActionModal({
   const livePreviewLoading = requiresLivePreview && !livePreviewUnavailable && !livePreviewReady;
   const livePreviewBlocksConfirm =
     requiresLivePreview && (livePreviewLoading || livePreviewUnavailable);
+  const previewStateCopy = livePreviewUnavailable
+    ? previewSenderGone
+      ? 'This sender is no longer in this mailbox. Close and refresh.'
+      : "Couldn't load the preview — nothing can run without one."
+    : livePreviewLoading
+      ? 'Loading preview…'
+      : null;
 
   // Preview bucket count under the current chip selection — the ONE
   // count source: it feeds the headline, the zero-state gate and (via
@@ -1127,8 +1139,17 @@ export function ConfirmActionModal({
               color: color.danger,
             }}
           >
-            This sender is <strong>Protected</strong> — it is normally kept out of bulk and
-            automatic actions. This action applies to this sender only.
+            {protectedReason !== null ? (
+              <>
+                <strong>Protected</strong> — {protectionReasonClause(protectedReason)}. This action
+                applies anyway.
+              </>
+            ) : (
+              <>
+                <strong>Protected.</strong> Bulk and automatic actions skip this sender; this action
+                will not.
+              </>
+            )}
           </div>
         )}
 
@@ -1378,8 +1399,8 @@ export function ConfirmActionModal({
               </div>
               {activeReach === 'all_mail' && (
                 <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
-                  Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo
-                  restores every email — inbox email to the inbox, archived email to the archive.
+                  Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo puts
+                  each email back where it was.
                 </span>
               )}
             </div>
@@ -1564,16 +1585,14 @@ export function ConfirmActionModal({
                   if (livePreviewUnavailable) {
                     return (
                       <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                        {previewSenderGone
-                          ? 'This sender is no longer in this mailbox — the list you are looking at is out of date. Refresh to see what is there now.'
-                          : 'Couldn’t load a live preview. Close and retry — no inbox email can move without one.'}
+                        {previewStateCopy}
                       </span>
                     );
                   }
                   if (livePreviewLoading) {
                     return (
                       <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                        Loading the live preview… Confirm unlocks when it is ready.
+                        {previewStateCopy}
                       </span>
                     );
                   }
@@ -1689,7 +1708,7 @@ export function ConfirmActionModal({
 
               {/* D — let the reader verify the real set in Gmail BEFORE
                 confirming. Single-sender only: a bulk sheet has no one
-                `from:` to search. The copy says "roughly" on purpose —
+                `from:` to search. The copy says "Approximate" on purpose —
                 Gmail's `older_than:` is day-granular and resolves live,
                 so its result count can differ from the preview's exact
                 `internal_date` filter. Never claim the two match. */}
@@ -1707,7 +1726,7 @@ export function ConfirmActionModal({
                     fontWeight: 600,
                     textDecoration: 'none',
                   }}
-                  title="Opens a Gmail search roughly matching this preview. Gmail filters by whole days and searches live, so its count can differ slightly."
+                  title="Approximate — Gmail filters by whole days."
                 >
                   Check these in Gmail first ↗
                 </a>
@@ -1821,21 +1840,21 @@ export function ConfirmActionModal({
               fontWeight: livePreviewBlocksConfirm ? 600 : 400,
             }}
           >
-            {livePreviewUnavailable
-              ? previewSenderGone
-                ? 'This sender is no longer in this mailbox — nothing can be previewed or moved.'
-                : "Couldn't load the live preview — close and retry before confirming."
-              : livePreviewLoading
-                ? 'Loading the live preview — confirm stays locked until it is ready.'
-                : nothingActionableBulk
-                  ? 'Every sender in this selection is now Protected or no longer in your senders list — close and refresh to see what changed.'
-                  : quotaCappedFrom
-                    ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — every cleanup action you have left this month. The rest stay untouched.`
-                    : quotaShort
-                      ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
-                      : quotaRemaining !== null
-                        ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
-                        : ''}
+            {previewStateCopy !== null
+              ? // Said once: the summary panel above carries it, except when
+                // that panel is hidden (Unsubscribe that moves no mail).
+                unsubscribeMovesNothing
+                ? previewStateCopy
+                : ''
+              : nothingActionableBulk
+                ? 'Every selected sender is now Protected or gone. Close and refresh.'
+                : quotaCappedFrom
+                  ? `${unitsNeeded} of ${quotaCappedFrom} eligible senders — all you have left this month.`
+                  : quotaShort
+                    ? `This needs ${unitsNeeded} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
+                    : quotaRemaining !== null
+                      ? `Uses ${unitsNeeded} of your ${quotaRemaining} cleanup action${quotaRemaining === 1 ? '' : 's'} left this month.`
+                      : ''}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {livePreviewUnavailable &&

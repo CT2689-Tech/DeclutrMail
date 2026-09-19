@@ -153,6 +153,13 @@ The preview is **MANDATORY**. The action sheet may be skipped (via D34's
 "remember preference" toggle) but the preview always renders — either
 modal (inside sheet) or inline (when sheet is skipped).
 
+**What a preview owes the user** (founder decision 2026-09-19, amends
+D208): the count, where the email goes, and how to undo it — each stated
+once. "What does not change" appears only where the user would plausibly
+fear it (Delete → "Future email is unchanged"); an Archive preview does
+not deny deleting or unsubscribing. D209's "state mechanism, reversibility,
+retention" is read per flow, never per component.
+
 Enforced by `require-preview-before-mutation.sh` hook + `architecture-guardian`.
 
 ### 2.4 Auto-Protect via category prediction REJECTED (D222)
@@ -547,7 +554,7 @@ Actual enforcement lives in:
 
 ## 7. Gate network (subagents)
 
-Pre-merge gates that run on every PR. **5 must-pass + 4 advisory.**
+Pre-merge gates that run on every PR. **5 must-pass + 5 advisory.**
 
 | Agent | Tier | Must pass for PRs touching |
 |---|---|---|
@@ -560,6 +567,7 @@ Pre-merge gates that run on every PR. **5 must-pass + 4 advisory.**
 | `silent-failure-hunter` | advisory | All TS files |
 | `type-design-analyzer` | advisory | Type-heavy files (action intents, undo tokens, etc.) |
 | `flow-completeness-auditor` | advisory | Lifecycle/state-machine flows — `apps/web/src/features/**`, mailbox/sync flows |
+| `usability-editor` | advisory | Any PR that changes user-facing copy under `apps/web/src/features/**` or `packages/shared/src/{actions,components,copy}/**` — judges against the §8 copy budgets |
 
 Definitions live in `.claude/agents/`. If a gate fires, **fix the issue
 — do not bypass.**
@@ -698,6 +706,25 @@ component that proves it. If none exists, say "unverified" — never round up
 to a confident claim. This is the general form of Tier 1b (§2.0): Tier 1b
 governs published claims about the product; this rule governs every other
 sentence a surface renders about its own state.
+
+**A claim you cannot prove has three exits, in this order: delete it,
+prove it, mark it unverified** (founder decision 2026-09-19). Accuracy is
+never a reason to add a clause. If a sentence needs a qualifier to be
+true, first ask whether the user would act differently without the
+sentence at all. The logged review loops (2026-08-04 PR #465, five rounds
+on one sentence; 2026-08-27 PRs #657–#660, four drafts) each ended in a
+longer, qualified sentence pinned by a test — and in none of them was
+deleting the sentence recorded as an option. A 2026-09-19 audit found ~29%
+of in-app strings over budget for this reason: every reviewer with teeth
+checks truth, none checks length, so a caveat is the cheapest way to pass.
+
+**Copy budgets** (same decision): button or menu item ≤ 3 words · toast 1
+sentence · error = cause + next action, ≤ 2 sentences · empty state = a
+title plus at most one sentence or one action · trust and privacy copy
+once per flow, at the decision point, never on heroes, banners or empty
+states. When truth and budget collide, cut the claim; do not qualify it.
+Tests pin facts (digits, the verb, a short fragment), not whole sentences
+— a pinned sentence makes every later cut read as a regression.
 
 ### Fix the class, not the instance (2026-08-30)
 

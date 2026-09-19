@@ -316,7 +316,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/couldn’t load a live preview/i);
+    await within(dialog).findByText(/couldn’t load the preview/i);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     expect(within(dialog).getByRole('button', { name: /retry preview/i })).toBeInTheDocument();
     expect(enqueued).toHaveLength(0);
@@ -354,7 +354,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/nothing to archive/i);
+    await within(dialog).findByText(/Nothing from these senders is in your inbox/i);
     // The headline and every per-sender row all read 0.
     expect(within(dialog).getAllByText('0').length).toBeGreaterThan(0);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
@@ -717,9 +717,7 @@ describe('Brief Noise bulk archive (D65)', () => {
       // deliberately STAYS — the section must not assert idle while the
       // parked archive may still be moving these very senders.
       await tick(ACTION_OVERDUE_MS);
-      screen.getByText(
-        'The Noise archive is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
-      );
+      screen.getByText('The Noise archive is still running — see Activity.');
       expect(screen.getByRole('button', { name: /Archiving…/ })).toBeDisabled();
 
       // Parked terminal `done` still settles: Done ✓ marks, the real

@@ -105,18 +105,15 @@ function activeStageIndex(status: SyncStatus): number {
  */
 
 const ERROR_COPY: Record<string, string> = {
-  RateLimitError:
-    'Gmail was rate-limiting the scan, so we stopped. Waiting a minute before trying again usually clears it.',
+  RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
   AuthExpiredError:
     'Google stopped accepting our access partway through. Reconnecting the account restores it.',
   InvalidGrantError:
     'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
-  TransientError:
-    'The scan kept losing its connection to Gmail and ran out of attempts. Starting it again usually works.',
-  PermanentError:
-    'Gmail refused part of the scan, so it stopped. Trying again is safe — if it stops here twice, contact support and we will finish it manually.',
+  TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
+  PermanentError: 'Gmail refused part of the scan. Try again — if it fails twice, contact support.',
   ValidationError:
-    'The scan stopped on something we could not process. Trying again is safe; if it stops here twice, contact support.',
+    'The scan stopped on something we could not process. Try again — if it fails twice, contact support.',
 };
 
 /**
@@ -262,7 +259,7 @@ function SyncProgress({
         })}
       </ol>
 
-      <PrivacyBadge style={PRIVACY_BADGE_STYLE} />
+      <PrivacyBadge variant="inline" style={PRIVACY_BADGE_STYLE} />
       {escape && <SyncEscapeHatch escape={escape} />}
     </Shell>
   );
@@ -326,7 +323,7 @@ function SyncFailed({
     status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code);
   const copy =
     (status.error_code && ERROR_COPY[status.error_code]) ??
-    'Something interrupted the scan and it stopped. Your Gmail is untouched — starting it again is safe.';
+    'Something interrupted the scan. Your Gmail is untouched — try again.';
   return (
     <Shell>
       <Eyebrow tone="amber">Scan interrupted</Eyebrow>
@@ -401,15 +398,16 @@ function SyncFailed({
           </>
         )}
       </div>
-      <PrivacyBadge style={PRIVACY_BADGE_STYLE} />
+      <PrivacyBadge variant="inline" style={PRIVACY_BADGE_STYLE} />
     </Shell>
   );
 }
 
 /**
- * Gate placement for the shared trust card (D228): full-width within the
- * 460px shell column, left-aligned (the Shell centers text for the
- * heading/stages — the badge's lists read as lists, not centered copy).
+ * Gate placement for the shared trust badge (D228), `inline` variant —
+ * the full card renders once, at the decision point (step-promise).
+ * Full-width within the 460px shell column, left-aligned (the Shell
+ * centers text for the heading/stages).
  */
 const PRIVACY_BADGE_STYLE: React.CSSProperties = {
   marginTop: 26,

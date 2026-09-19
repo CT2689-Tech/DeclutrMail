@@ -70,7 +70,7 @@ export function MailboxReconnectBanner() {
               minWidth: 0,
             }}
           >
-            {`Gmail access expired for ${mailbox.email}. That account has stopped syncing — reconnect it to resume. Your existing DeclutrMail history is safe.`}
+            {`Gmail access expired for ${mailbox.email} — reconnect to resume syncing.`}
           </span>
           <Button tone="default" size="sm" onClick={() => startMailboxConnect(mailbox.id)}>
             Reconnect

@@ -333,6 +333,50 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByText(/^Sent \d/)).not.toBeInTheDocument();
   });
 
+  // F012 / ADR-0037 — the sweeper split must stay VISIBLE (a footnote
+  // line, not a tooltip), and the hero keeps its two truth-required
+  // window labels. Facts pinned, not the sentence.
+  it('keeps the read-rate window labels and shows the sweeper split as visible text', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => jsonOk({ data: { ...DETAIL, readRateSweeperMarked: 20819 } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [{ yearMonth: '2020-01', volume: 5, readCount: 1 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    await waitFor(() =>
+      expect(screen.getByText(/marked read in the last 90 days/)).toBeInTheDocument(),
+    );
+    const note = screen.getByText(/marked read by another tool/);
+    expect(note).toHaveTextContent('20,819');
+    expect(note).toHaveTextContent(/not counted/);
+  });
+
   it('shows "Last mailed you in" framing for a stale (non-current) latest month', async () => {
     installFetchStub([
       { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
@@ -558,9 +602,7 @@ describe('SenderDetailRoute', () => {
     ]);
     renderDetail();
 
-    await waitFor(() =>
-      expect(screen.getByText(/No actions on this sender yet/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/Nothing decided yet/i)).toBeInTheDocument());
     for (const claim of [
       'Keep decision saved',
       'Archived',
@@ -1108,12 +1150,9 @@ describe('SenderDetailRoute', () => {
       // owns this sender. The toggle said only "Protect", so a user
       // looking at an automatically-protected sender had no way to
       // learn why (three of the four reasons are automatic).
-      expect(screen.getByRole('button', { name: 'Protected' })).toHaveAttribute(
-        'title',
-        expect.stringMatching(
-          /^Protected — .+\. Select to remove protection\.$/,
-        ) as unknown as string,
-      );
+      // Rendered ONCE, as the visible line — not repeated as a tooltip.
+      expect(screen.getByText(/^Protected — .+\.$/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Protected' })).not.toHaveAttribute('title');
 
       // Second toggle (unprotect) fails → rollback to the set chip.
       fail = true;
@@ -1333,7 +1372,7 @@ describe('SenderDetailRoute', () => {
         // so the parked handle still owns the ONLY subject.
         await tick(ACTION_OVERDUE_MS);
         expect(h.toast).toHaveBeenCalledWith(
-          'Archive for LinkedIn is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+          expect.stringMatching(/^Archive for LinkedIn is still running/),
           'info',
         );
 

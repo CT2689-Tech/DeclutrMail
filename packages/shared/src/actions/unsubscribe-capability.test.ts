@@ -120,9 +120,8 @@ describe('unsubscribeUnavailableReason', () => {
 
   it('says not-yet-checked for a sender with no derived method', () => {
     const reason = unsubscribeUnavailableReason(null);
-    expect(reason).toBe(
-      "We haven't checked this sender for an unsubscribe option yet — Archive works in the meantime.",
-    );
+    expect(reason).toContain('Not checked');
+    expect(reason).toContain('Archive');
     expect(reason).not.toContain('No unsubscribe channel found');
   });
 });

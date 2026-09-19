@@ -149,12 +149,13 @@ describe('DeleteAccountModal', () => {
 
     expect(screen.getByText(/3 undoable actions/i)).toBeInTheDocument();
     expect(screen.getByText(/undo windows end/i)).toBeInTheDocument();
-    // The extended date is now the NORM, not an exception, so the copy
-    // leads with the real date and names the ceiling instead of framing
-    // it as a delay past the usual grace period.
-    expect(screen.getByText(/rather than after the usual 7 days/i)).toBeInTheDocument();
-    expect(screen.getByText(/undo windows run up to 30 days/i)).toBeInTheDocument();
-    expect(screen.getByText(/immediate option below skips the wait/i)).toBeInTheDocument();
+    // Three facts (copy-tokens.md §3): why the date is later than 7
+    // days, that undo keeps working, and that you can cancel.
+    expect(
+      screen.getByText(/open undo windows, so it runs .* instead of in 7 days/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/undo keeps working until then/i)).toBeInTheDocument();
+    expect(screen.getByText(/you can cancel any time/i)).toBeInTheDocument();
   });
 
   it('shows the submit error and keeps the modal open', () => {

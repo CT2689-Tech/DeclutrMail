@@ -180,17 +180,14 @@ describe('FollowupsScreen — populated list', () => {
       .getByText('Why a thread may still appear — and how to hide it')
       .closest('details');
     expect(disclosure).not.toBeNull();
-    expect(disclosure).toHaveTextContent(/checks run about every six hours/i);
-    expect(disclosure).toHaveTextContent(/sent email from the last 60 days/i);
+    expect(disclosure).toHaveTextContent(/run about every six\s+hours/i);
+    expect(disclosure).toHaveTextContent(/last 60 days/i);
     expect(disclosure).toHaveTextContent(/does not mark a recipient reply or change Gmail/i);
     expect(
       screen.getByRole('button', {
-        name: /mark resolved in declutrmail — big boss; does not mark a recipient reply/i,
+        name: /mark resolved in declutrmail — big boss/i,
       }),
-    ).toHaveAttribute(
-      'title',
-      'Mark resolved in DeclutrMail — this does not mark a recipient reply',
-    );
+    ).toHaveAttribute('title', 'Mark resolved in DeclutrMail');
   });
 });
 

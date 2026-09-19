@@ -112,7 +112,7 @@ describe('UpgradeModal', () => {
     }
   });
 
-  it('free_cap (spent): headline + Plus/Pro pitch + money-back note + Plus deep link', () => {
+  it('free_cap (spent): headline + Plus pitch + money-back note + Plus deep link', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
       details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
@@ -123,9 +123,9 @@ describe('UpgradeModal', () => {
     expect(
       screen.getByText("You've used all 50 cleanup actions for this month"),
     ).toBeInTheDocument();
-    // Manifest-derived prices (D19): Plus $9/mo, Pro $19/mo.
-    expect(screen.getByText(/Plus unlocks unlimited cleanup for \$9\/mo/)).toBeInTheDocument();
-    expect(screen.getByText(/\$19\/mo — 30-day money-back guarantee/)).toBeInTheDocument();
+    // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
+    expect(screen.getByText(/Plus removes the monthly cap for \$9\/mo/)).toBeInTheDocument();
+    expect(screen.getByText(/\$9\/mo — 30-day money-back guarantee/)).toBeInTheDocument();
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
     // /billing's confirm step via the validated billing intent.
     expect(screen.getByRole('link', { name: 'Upgrade to Plus' })).toHaveAttribute(

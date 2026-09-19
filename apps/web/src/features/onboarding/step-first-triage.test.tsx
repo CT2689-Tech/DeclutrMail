@@ -66,7 +66,6 @@ describe('StepFirstTriage', () => {
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
     expect(screen.getByText(/Review senders/i)).toBeInTheDocument();
-    expect(screen.getByText(/up to five senders/i)).toBeInTheDocument();
     expect(screen.getByText(/recurring newsletters/i)).toBeInTheDocument();
     expect(screen.getByText(/Review 1 of 3/i)).toBeInTheDocument();
     expect(screen.getByTestId('triage-screen')).toHaveAttribute('data-journey', 'first_relief');
@@ -84,7 +83,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByText(/where one decision can make a noticeable difference/i)).toBeVisible();
+    expect(screen.getByText(/shows what changes before you confirm/i)).toBeVisible();
     expect(screen.queryByText(/real sender decisions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/practice run|first-triage candidates/i)).not.toBeInTheDocument();
   });
@@ -94,10 +93,10 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    // Post-A3 (#401): Triage is Free — the caveat is the monthly meter,
-    // never a claim that Triage needs Plus.
-    expect(screen.getByText(/Senders and Triage both stay available/i)).toBeInTheDocument();
-    expect(screen.getByText(/metered monthly/i)).toBeInTheDocument();
+    // Post-A3 (#401): Triage is Free — the completion panel makes no
+    // tier claim (the quota surfaces at the cap, not here).
+    expect(screen.getByText(/can be undone from Activity/i)).toBeInTheDocument();
+    expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/require Plus/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
   });
@@ -107,7 +106,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByText(/Triage keeps a queue ready/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/On Free/i)).not.toBeInTheDocument();
   });
@@ -117,7 +116,7 @@ describe('StepFirstTriage', () => {
 
     render(<StepFirstTriage onComplete={() => {}} completing={false} goal="reduce_newsletters" />);
 
-    expect(screen.getByText(/Senders stays available after onboarding\./i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Continue to Senders/i })).toBeInTheDocument();
     expect(screen.queryByText(/metered monthly/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Triage keeps a queue ready/i)).not.toBeInTheDocument();
   });

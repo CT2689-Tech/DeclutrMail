@@ -130,17 +130,8 @@ export function StepFirstTriage({
         </h1>
         <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
           {meta.pinned === 0
-            ? "We didn't find enough repeated email to make this step worthwhile. Continue to Senders to explore everything DeclutrMail found."
-            : `You reviewed ${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'}. Archive, Later, and Delete affected matching inbox email only after you confirmed. Unsubscribe requests affect future delivery and cannot be recalled. Eligible moves can still be undone from Activity. Welcome aboard.`}
-        </p>
-        <p style={{ color: color.fgMuted, fontSize: 13, margin: '-12px 0 24px', maxWidth: 500 }}>
-          {/* Tier-aware: the Free caveat is untrue for Plus/Pro. Unknown
-              tier (stats hiccup) gets the tier-free sentence only. */}
-          {stats.data?.tier === 'free'
-            ? 'Senders and Triage both stay available after onboarding. On Free, cleanup actions are metered monthly — the counter resets on your signup anniversary.'
-            : stats.data
-              ? 'Senders stays available after onboarding, and Triage keeps a queue ready whenever you want it.'
-              : 'Senders stays available after onboarding.'}
+            ? "We didn't find enough repeated email to review here."
+            : `You reviewed ${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'}. Archive, Later and Delete can be undone from Activity.`}
         </p>
         <Button
           tone="primary"
@@ -182,10 +173,8 @@ export function StepFirstTriage({
         <div>
           <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            {GOAL_FRAMING[goal]} We&rsquo;ll start with up to five senders where one decision can
-            make a noticeable difference. Review {Math.min(meta.decided + 1, meta.pinned)} of{' '}
-            {meta.pinned}. Before you confirm, you&rsquo;ll see which messages are affected and what
-            can be undone.
+            {GOAL_FRAMING[goal]} Review {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}.
+            Each one shows what changes before you confirm.
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

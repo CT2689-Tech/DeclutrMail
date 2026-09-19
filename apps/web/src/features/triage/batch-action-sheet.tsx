@@ -5,7 +5,6 @@ import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
 import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
@@ -207,8 +206,7 @@ export function BatchActionSheet({
               <span style={{ fontSize: 12, color: color.fgSoft }}>Counting the inbox…</span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12, color: color.fgSoft }}>
-                Couldn&rsquo;t load a live preview. Close and retry — no inbox email can move
-                without one.
+                Couldn&rsquo;t load the preview. Nothing can move until it loads.
               </span>
             ) : (
               <>
@@ -225,8 +223,7 @@ export function BatchActionSheet({
                   {preview.totals.all.toLocaleString('en-US')}
                 </strong>
                 <span style={{ fontSize: 12, color: color.fgSoft }}>
-                  email{preview.totals.all === 1 ? '' : 's'} in Inbox now. Rechecked when it runs,
-                  so the final count can differ.
+                  email{preview.totals.all === 1 ? '' : 's'} in Inbox now. Rechecked when it runs.
                 </span>
               </>
             )}
@@ -315,16 +312,16 @@ export function BatchActionSheet({
               ? wakeAtInvalid
                 ? 'Choose a future return time before confirming Later.'
                 : preview === 'unavailable'
-                  ? 'Preview unavailable — close and retry.'
+                  ? "Couldn't load the preview."
                   : nothingActionable
-                    ? 'Every sender in this batch is now Protected or no longer in your senders list — close and refresh to see what changed.'
-                    : 'Counting inbox email — confirm unlocks after the live preview loads.'
+                    ? 'Every sender here is now Protected or gone — close and refresh.'
+                    : 'Loading preview…'
               : quotaShort
                 ? `This needs ${unitsNeeded.toLocaleString('en-US')} cleanup action${unitsNeeded === 1 ? '' : 's'} but only ${quotaRemaining!.toLocaleString('en-US')} ${quotaRemaining === 1 ? 'is' : 'are'} left this month.`
                 : `${quotaLine}${quotaLine === '' ? '' : ' '}${
-                    UNIFORM_UNDO_WINDOW_DAYS === null
-                      ? "One undo reverses the whole batch during your plan's Activity window."
-                      : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`
+                    // The window is in the preview lead above; this adds
+                    // the one fact a batch changes.
+                    'One undo reverses the whole batch.'
                   }`}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>

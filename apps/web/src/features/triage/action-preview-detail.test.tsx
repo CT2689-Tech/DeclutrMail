@@ -13,7 +13,7 @@ const row = TRIAGE_QUEUE[0]!;
 
 const detail: ActionPreviewDetail = {
   mailLocationLine:
-    "Where this sender's mail is now: 17 emails in your inbox · 885 emails elsewhere in Gmail (archived or under a label).",
+    'Where it is now: 17 emails in your inbox · 885 emails elsewhere in Gmail (archived or under a label).',
   matchSample: {
     rows: [
       { subject: 'Your weekly digest', date: '2026-08-20' },

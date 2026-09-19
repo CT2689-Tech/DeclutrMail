@@ -318,9 +318,8 @@ function unsupportedClause(split: OnboardingProtectionSplit): string {
   if (stale === 0) return '';
   const they = stale === 1 ? 'It is' : 'They are';
   return (
-    `${senders(stale)} ${stale === 1 ? 'was' : 'were'} protected because we counted messages you ` +
-    `sent — but we were counting any email in a shared conversation, not email addressed to them. ` +
-    `${they} still protected; we have not changed anything. Keep or unprotect each one here.`
+    `${senders(stale)} ${stale === 1 ? 'was' : 'were'} protected on a reply count we can no longer ` +
+    `confirm. ${they} still protected; we have not changed anything. Keep or unprotect each one here.`
   );
 }
 
@@ -352,8 +351,7 @@ function reviewBody(
       : '';
   if (split.strong > 0) {
     return [
-      `Writing to someone who writes back is a two-way relationship, so those stay out of bulk ` +
-        `and automatic cleanup without you doing anything.`,
+      `Senders you write back to stay out of bulk and automatic cleanup.`,
       stale,
       weakClause,
       ordering,
@@ -409,8 +407,7 @@ function donePanel(
     remaining > 0
       ? `${senders(remaining)} ${remaining === 1 ? 'is' : 'are'} still protected on a signal ` +
         `worth a look — one star, a Gmail importance flag, or an old reply count we can no ` +
-        `longer confirm. Settings → Protected senders shows every protected sender with its ` +
-        `reason, so you can find them there whenever you want.`
+        `longer confirm. Find them, each with its reason, in Settings → Protected senders.`
       : '';
 
   if (split === null) {
@@ -425,7 +422,7 @@ function donePanel(
       headline: 'Protection reviewed.',
       body:
         `Protected senders stay out of bulk and automatic cleanup, and anything you moved just ` +
-        `now can be undone from Activity.${stillWeak ? ` ${stillWeak}` : ''} Welcome aboard.`,
+        `now can be undone from Activity.${stillWeak ? ` ${stillWeak}` : ''}`,
     };
   }
 
@@ -458,19 +455,16 @@ function donePanel(
     return {
       headline: `You’ve protected ${senders(split.manual)} yourself.`,
       body:
-        `They stay out of bulk and automatic cleanup, and they are yours to change whenever ` +
-        `you like. Nothing has been protected automatically yet — that takes writing to a ` +
-        `sender at least three times and hearing back, a starred message, or repeated Gmail ` +
-        `importance — so there is nothing here to review.`,
+        `They stay out of bulk and automatic cleanup. Nothing has been protected automatically ` +
+        `yet, so there is nothing here to review.`,
     };
   }
 
   return {
     headline: 'Nothing is protected yet.',
     body:
-      `Protection turns itself on only for strong evidence — writing to a sender at least three ` +
-      `times and hearing back, a starred message, or repeated Gmail importance. Nothing in this ` +
-      `mailbox has reached that yet, so nothing is being held back from cleanup.`,
+      `Automatic protection takes writing to a sender at least three times and hearing back, a ` +
+      `starred message, or repeated Gmail importance. Nothing in this mailbox has reached that yet.`,
   };
 }
 

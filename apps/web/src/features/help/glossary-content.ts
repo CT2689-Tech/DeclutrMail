@@ -64,7 +64,7 @@ export const GLOSSARY_TERMS = {
   gmailTrashRecovery: {
     term: 'Gmail Trash recovery',
     definition:
-      'Gmail’s separate recovery path for email moved to Trash. It normally lasts up to 30 days and is not the same as DeclutrMail’s Activity Undo window.',
+      'Gmail’s separate recovery path for email moved to Trash. It lasts up to 30 days and is not the same as DeclutrMail’s Activity Undo window.',
   },
   later: {
     term: 'Later',

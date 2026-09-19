@@ -4,8 +4,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
 import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
-import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
-import { ContextualHelp } from '@/features/help/contextual-help';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import {
   ActionPreviewDetailBlock,
@@ -272,12 +270,6 @@ export function ActionSheet({
             }
           />
 
-          <ContextualHelp question="Why do I review this before confirming?">
-            The preview uses the current mailbox count and separates what will change from what will
-            stay unchanged. DeclutrMail sends the action only after this preview loads and you
-            confirm; Cancel changes nothing.
-          </ContextualHelp>
-
           {verb === 'Later' && (
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
               <span style={{ color: color.fg, fontWeight: 600 }}>Return to Inbox</span>
@@ -412,7 +404,7 @@ export function ActionSheet({
             borderTop: `1px solid ${color.line}`,
             // Sticky, not just the last flow child: the dialog scrolls
             // (`overflow: 'auto'` above) and its content stack — preview,
-            // contextual help, verb-specific toggles, protected notice —
+            // verb-specific toggles, protected notice —
             // exceeds 76vh on a 375px phone, so Cancel/Confirm and the
             // reversibility line sat below the fold with no visible cue
             // that more content existed (QA-triage-20260827-11).
@@ -428,27 +420,22 @@ export function ActionSheet({
                 Archive/Later are fully reversible (D232). */}
             {confirmDisabled
               ? previewSenderGone
-                ? 'This sender is no longer available. Refresh triage to continue.'
+                ? 'This sender is no longer in this mailbox. Close and refresh.'
                 : nothingToActOn
                   ? 'No matching email in Inbox right now — nothing to act on.'
                   : wakeAtInvalid
                     ? 'Later needs a future return time before you can confirm.'
                     : inboxCount === 'unavailable'
-                      ? "Couldn't load a live preview. Close and retry — no inbox email can move without one."
-                      : 'Counting inbox email — confirm unlocks after the live preview loads.'
+                      ? "Couldn't load the preview."
+                      : 'Loading preview…'
               : verb === 'Unsubscribe'
                 ? effectiveArchiveHistoric
-                  ? UNIFORM_UNDO_WINDOW_DAYS === null
-                    ? "The unsubscribe itself can't be undone — the archived email uses your plan's Activity undo window."
-                    : `The unsubscribe itself can't be undone — the archived email uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity undo window.`
-                  : "The unsubscribe request can't be undone. Existing inbox email stays put."
-                : verb === 'Delete'
-                  ? UNIFORM_UNDO_WINDOW_DAYS === null
-                    ? "Moves matching inbox email to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days."
-                    : `Moves matching inbox email to Gmail Trash. Activity Undo uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day window; Gmail normally keeps Trash for up to 30 days.`
-                  : UNIFORM_UNDO_WINDOW_DAYS === null
-                    ? "Reversible for your plan's undo window from Activity."
-                    : `Reversible for the ${UNIFORM_UNDO_WINDOW_DAYS}-day undo window from Activity.`}
+                  ? "The unsubscribe can't be undone. The archived email can, from Activity."
+                  : "The unsubscribe request can't be undone."
+                : // Archive, Later and Delete: the preview above already
+                  // states the undo route and window (and Gmail Trash for
+                  // Delete) — once per sheet.
+                  null}
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             {previewSenderGone && onRefreshTriage && (

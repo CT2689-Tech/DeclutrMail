@@ -37,13 +37,12 @@ const RULE_PHRASE = {
   starred_recently: "Kept because you've starred a message from them this year.",
   high_read_rate: 'Kept because you open more than half of their messages.',
   long_relationship_engaged: 'Kept because of a long, engaged relationship.',
-  insufficient_signal: 'Recommended: decide later — not enough signal yet.',
-  score_archive: 'Recommended: archive to keep them out of your inbox.',
-  score_unsubscribe: 'Recommended: unsubscribe to stop the stream.',
-  score_inconclusive: 'Recommended: decide later — signals are mixed.',
-  score_no_unsub_channel: 'Recommended: decide later — this sender offers no unsubscribe link.',
-  score_quiet_stream:
-    'Recommended: decide later — too quiet a stream to be worth unsubscribing from.',
+  insufficient_signal: 'Recommended: Later — not enough signal yet.',
+  score_archive: 'Recommended: Archive.',
+  score_unsubscribe: 'Recommended: Unsubscribe.',
+  score_inconclusive: 'Recommended: Later — signals are mixed.',
+  score_no_unsub_channel: 'Recommended: Later — no unsubscribe link.',
+  score_quiet_stream: 'Recommended: Later — too quiet to unsubscribe.',
 } as const satisfies Record<CascadeRuleId, string>;
 
 /**

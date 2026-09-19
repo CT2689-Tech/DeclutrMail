@@ -321,7 +321,7 @@ function ImpactFigure({
     return (
       <>
         <strong style={strongStyle}>0</strong>
-        <span style={captionStyle}>emails move — everything in the inbox stays where it is.</span>
+        <span style={captionStyle}>emails move.</span>
       </>
     );
   }
@@ -330,17 +330,14 @@ function ImpactFigure({
   }
   if (inboxCount === 'unavailable') {
     return (
-      <span style={captionStyle}>
-        Couldn't load a live preview. Close and retry — no inbox email can move without one.
-      </span>
+      <span style={captionStyle}>Couldn't load the preview. Nothing can move until it loads.</span>
     );
   }
   return (
     <>
       <strong style={strongStyle}>{inboxCount.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} in Inbox now. Rechecked when it runs, so the final count
-        can differ.
+        email{inboxCount === 1 ? '' : 's'} in Inbox now. Rechecked when it runs.
       </span>
     </>
   );

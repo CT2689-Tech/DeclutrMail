@@ -398,7 +398,7 @@ describe('InboxSimulatorScreen', () => {
    *  then deletes Groupon (step 4) — landing on `DemoCompletion`. */
   function finishFromRuleStep() {
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run it/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
     fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
     fireEvent.click(
       within(screen.getByRole('dialog', { name: 'Groupon' })).getByRole('button', {
@@ -424,10 +424,10 @@ describe('InboxSimulatorScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    // Real ActivateRuleModal copy — "Turn on and run it" is the actual
+    // Real ActivateRuleModal copy — "Turn on and run" is the actual
     // confirmLabel for an entitled enable (activate-rule-modal.tsx),
     // not the brief's illustrative "Turn it on".
-    expect(screen.getByRole('button', { name: /Turn on and run it/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Turn on and run/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Watch first/i })).toBeInTheDocument();
     expect(screen.getByText(/\bPlus\b/)).toBeInTheDocument();
   });
@@ -449,7 +449,7 @@ describe('InboxSimulatorScreen', () => {
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run it/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
@@ -476,7 +476,7 @@ describe('InboxSimulatorScreen', () => {
     const { unmount } = render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run it/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
 
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({

@@ -154,7 +154,7 @@ export function StepPresetPick({
     <StepShell
       eyebrow="Step 4 of 5 · Optional suggestions"
       title="Choose what DeclutrMail should suggest."
-      sub="These are suggestions only. Nothing changes until you approve it. You can turn on automation later in Autopilot."
+      sub="Suggestions only — nothing changes until you approve it. You can turn on automation later in Autopilot."
       maxWidth={560}
       corner={corner}
     >

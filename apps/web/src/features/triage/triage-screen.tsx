@@ -18,7 +18,6 @@ import {
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions';
 import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-disabled';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
-import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
@@ -137,6 +136,23 @@ function openPricing(): void {
  * polled — the outcome lands either way) and the latch releases.
  */
 export const ACTION_OVERDUE_MS = 120_000;
+
+/**
+ * Failure toasts — one sentence each (a four-sentence toast auto-dismisses
+ * unread). `subject` is a sender name or "the <domain> batch". An outcome
+ * the client could not confirm still says so and points at Activity, so
+ * nobody retries a move that may already have happened.
+ */
+const unconfirmedToast = (verb: string, subject: string): string =>
+  `Couldn't confirm ${verb} for ${subject} — check Activity before retrying.`;
+const failedToast = (verb: string, subject: string): string =>
+  `${verb} for ${subject} failed — check Activity before retrying.`;
+const notStartedToast = (verb: string, subject: string): string =>
+  `Couldn't start ${verb} for ${subject} — nothing changed.`;
+const partialBatchToast = (verb: string, done: number, total: number): string =>
+  `${verb}: ${done} of ${total} senders completed — check Activity for the rest.`;
+const stillRunningToast = (verb: string, subject: string): string =>
+  `${verb} for ${subject} is still running — see Activity.`;
 
 /**
  * Handle for one enqueued async action (enqueue → worker → poll).
@@ -342,10 +358,7 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', { action: `the ${batchAction.domain} batch` }).message,
-        'warn',
-      );
+      toast(unconfirmedToast(batchAction.verb, `the ${batchAction.domain} batch`), 'warn');
       setBatchAction(null);
       return;
     }
@@ -361,27 +374,14 @@ export function TriageScreen({
       // — those senders stay in the queue, so say so (failures DO
       // toast; clean success stays silent per D35).
       if (data.failed > 0) {
-        toast(
-          getActionFailureCopy('terminal', {
-            action: `${batchAction.verb.toLowerCase()} the ${batchAction.domain} batch`,
-            whatChanged: `${data.done} of ${data.total} senders completed.`,
-            whatDidNotChange: `${data.failed} senders did not complete.`,
-            nextStep: 'Check Activity for the affected senders, then retry if needed.',
-          }).message,
-          'warn',
-        );
+        toast(partialBatchToast(batchAction.verb, data.done, data.total), 'warn');
       }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
     } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: `${batchAction.verb.toLowerCase()} the ${batchAction.domain} batch`,
-        }).message,
-        'warn',
-      );
+      toast(failedToast(batchAction.verb, `the ${batchAction.domain} batch`), 'warn');
     }
     setBatchAction(null);
   }, [
@@ -415,20 +415,17 @@ export function TriageScreen({
     }
     if (data.status === 'done') {
       toast(
-        `${unsubWatch.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
         'success',
       );
       invalidateAfterDecision(qc);
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
+        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
         'warn',
       );
     } else {
-      toast(
-        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
-        'warn',
-      );
+      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
     }
     setUnsubWatch(null);
   }, [
@@ -574,12 +571,7 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: `${activeAction.verb.toLowerCase()} ${activeAction.senderName}`,
-        }).message,
-        'warn',
-      );
+      toast(unconfirmedToast(activeAction.verb, activeAction.senderName), 'warn');
       setActiveAction(null);
       return;
     }
@@ -601,12 +593,7 @@ export function TriageScreen({
       addSessionMessagesMoved(data.affectedCount);
       setExpandedRow(null);
     } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: `${activeAction.verb.toLowerCase()} ${activeAction.senderName}`,
-        }).message,
-        'warn',
-      );
+      toast(failedToast(activeAction.verb, activeAction.senderName), 'warn');
     }
     setActiveAction(null);
   }, [
@@ -636,10 +623,7 @@ export function TriageScreen({
     // fresh deadline) when the slot frees.
     if (!activeAction || overdueAction != null) return;
     const timer = setTimeout(() => {
-      toast(
-        `${activeAction.verb} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
-        'info',
-      );
+      toast(stillRunningToast(activeAction.verb, activeAction.senderName), 'info');
       // Parking is the one moment the client KNOWS a backend hang
       // happened (the 2026-08-12 incident was invisible until a human
       // noticed) — measure recurrence.
@@ -654,10 +638,7 @@ export function TriageScreen({
     // Same free-slot rule as the single-action park above.
     if (!batchAction || overdueBatch != null) return;
     const timer = setTimeout(() => {
-      toast(
-        `${batchAction.verb} for the ${batchAction.domain} batch is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
-        'info',
-      );
+      toast(stillRunningToast(batchAction.verb, `the ${batchAction.domain} batch`), 'info');
       void track('action_overdue', { kind: 'batch', verb: batchAction.verb.toLowerCase() });
       setOverdueBatch(batchAction);
       setBatchAction(null);
@@ -676,12 +657,7 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'action_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', {
-          action: `${overdueAction.verb.toLowerCase()} ${overdueAction.senderName}`,
-        }).message,
-        'warn',
-      );
+      toast(unconfirmedToast(overdueAction.verb, overdueAction.senderName), 'warn');
       setOverdueAction(null);
       return;
     }
@@ -699,12 +675,7 @@ export function TriageScreen({
       }
       addSessionMessagesMoved(data.affectedCount);
     } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: `${overdueAction.verb.toLowerCase()} ${overdueAction.senderName}`,
-        }).message,
-        'warn',
-      );
+      toast(failedToast(overdueAction.verb, overdueAction.senderName), 'warn');
     }
     setOverdueAction(null);
   }, [
@@ -725,10 +696,7 @@ export function TriageScreen({
         surface: 'triage',
         reason: 'batch_status_poll',
       });
-      toast(
-        getActionFailureCopy('status', { action: `the ${overdueBatch.domain} batch` }).message,
-        'warn',
-      );
+      toast(unconfirmedToast(overdueBatch.verb, `the ${overdueBatch.domain} batch`), 'warn');
       setOverdueBatch(null);
       return;
     }
@@ -741,26 +709,13 @@ export function TriageScreen({
     }
     if (data.status === 'done') {
       if (data.failed > 0) {
-        toast(
-          getActionFailureCopy('terminal', {
-            action: `${overdueBatch.verb.toLowerCase()} the ${overdueBatch.domain} batch`,
-            whatChanged: `${data.done} of ${data.total} senders completed.`,
-            whatDidNotChange: `${data.failed} senders did not complete.`,
-            nextStep: 'Check Activity for the affected senders, then retry if needed.',
-          }).message,
-          'warn',
-        );
+        toast(partialBatchToast(overdueBatch.verb, data.done, data.total), 'warn');
       }
       invalidateAfterDecision(qc);
       incrementSessionDecided(data.done);
       addSessionMessagesMoved(data.affectedCount);
     } else {
-      toast(
-        getActionFailureCopy('terminal', {
-          action: `${overdueBatch.verb.toLowerCase()} the ${overdueBatch.domain} batch`,
-        }).message,
-        'warn',
-      );
+      toast(failedToast(overdueBatch.verb, `the ${overdueBatch.domain} batch`), 'warn');
     }
     setOverdueBatch(null);
   }, [
@@ -877,13 +832,7 @@ export function TriageScreen({
             },
             onError: (err) => {
               captureFeatureException(err, { surface: 'triage', reason: 'keep_intent' });
-              toast(
-                getActionFailureCopy('enqueue', {
-                  action: `keep ${row.senderName}`,
-                  whatDidNotChange: 'The Keep policy was not saved.',
-                }).message,
-                'warn',
-              );
+              toast(`Couldn't save Keep for ${row.senderName} — nothing changed.`, 'warn');
             },
             onSettled: () => setIntentRowId(null),
           },
@@ -974,12 +923,7 @@ export function TriageScreen({
                         reason: 'enqueue_archive_after_unsub',
                       });
                       toast(
-                        getActionFailureCopy('enqueue', {
-                          action: `archive the older email from ${row.senderName}`,
-                          whatChanged: 'The unsubscribe request was queued.',
-                          whatDidNotChange: 'The older email was not archived.',
-                          nextStep: 'Archive it from Senders if you still want to move it.',
-                        }).message,
+                        `Unsubscribe request recorded, but older email from ${row.senderName} wasn't archived — Archive it from Senders.`,
                         'warn',
                       );
                     },
@@ -995,10 +939,7 @@ export function TriageScreen({
               }
               captureFeatureException(err, { surface: 'triage', reason: 'record_unsub' });
               toast(
-                getActionFailureCopy('enqueue', {
-                  action: `unsubscribe from ${row.senderName}`,
-                  whatDidNotChange: 'No unsubscribe request was recorded or sent.',
-                }).message,
+                `Couldn't start Unsubscribe for ${row.senderName} — no request was sent.`,
                 'warn',
               );
             },
@@ -1081,9 +1022,7 @@ export function TriageScreen({
                 ? `${row.senderName} is Protected — reopen the action to confirm anyway`
                 : sendDisabled
                   ? UNSUB_SEND_DISABLED_MESSAGE
-                  : getActionFailureCopy('enqueue', {
-                      action: `${verb.toLowerCase()} ${row.senderName}`,
-                    }).message,
+                  : notStartedToast(verb, row.senderName),
               'warn',
             );
           },
@@ -1296,12 +1235,7 @@ export function TriageScreen({
             surface: 'triage',
             reason: 'enqueue_domain_batch',
           });
-          toast(
-            getActionFailureCopy('enqueue', {
-              action: `${verb.toLowerCase()} the ${batch.domain} batch`,
-            }).message,
-            'warn',
-          );
+          toast(notStartedToast(verb, `the ${batch.domain} batch`), 'warn');
         },
       },
     );

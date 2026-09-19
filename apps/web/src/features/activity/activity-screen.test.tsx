@@ -765,7 +765,8 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
 
     expect(await screen.findByText('Which Undo or recovery option applies?')).toBeInTheDocument();
-    expect(screen.getByText(/Gmail Trash recovery is a separate fallback/i)).toBeInTheDocument();
+    expect(screen.getByText(/Gmail Trash for up to 30 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/sent unsubscribe can't be recalled/i)).toBeInTheDocument();
 
     // D245 fix-wave: states the window instead of hedging with "your
     // DeclutrMail plan's window" once the ladder is uniform. Asserted
@@ -1218,16 +1219,16 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
     const dialog = await screen.findByRole('dialog', { name: /review failed archived/i });
-    expect(within(dialog).getByText(/checks Gmail's current label state/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/check Gmail's current label state/i)).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByText('2')).toBeInTheDocument());
     expect(within(dialog).getByText('1')).toBeInTheDocument();
 
-    const confirm = within(dialog).getByRole('button', { name: /try this action again/i });
+    const confirm = within(dialog).getByRole('button', { name: 'Try again' });
     await userEvent.dblClick(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      /could not confirm the retry went through/i,
+      /couldn't confirm the retry.*won't create a duplicate/i,
     );
     await userEvent.click(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(2));
@@ -1311,7 +1312,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     const dialog = await screen.findByRole('dialog', { name: /review failed moved to later/i });
     const wakeInput = within(dialog).getByLabelText(/new return time/i);
     expect((wakeInput as HTMLInputElement).value.length).toBeGreaterThan(0);
-    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(confirmedWakeAt).toBeDefined());
     expect(new Date(confirmedWakeAt!).getTime()).toBeGreaterThan(Date.now());
   });
@@ -1385,11 +1386,11 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
     const dialog = await screen.findByRole('dialog', { name: /review failed moved to later/i });
-    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
-      /saved return time has passed.*nothing was queued/i,
+      /saved return time has passed.*choose a new return time/i,
     );
-    expect(within(dialog).getByRole('button', { name: /try this action again/i })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeDisabled();
 
     await userEvent.click(within(dialog).getByRole('button', { name: /check Gmail again/i }));
     await waitFor(() => expect(previewStarts).toBe(2));
@@ -1453,7 +1454,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
     const dialog = await screen.findByRole('dialog', { name: /review failed archived/i });
-    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
 
     // The generic copy invites a retry that would 409 identically. An
     // expired review has to say so, close the retry, and offer the only
@@ -1461,7 +1462,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       /this review expired\. check gmail again/i,
     );
-    expect(within(dialog).getByRole('button', { name: /try this action again/i })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeDisabled();
     await userEvent.click(within(dialog).getByRole('button', { name: /check gmail again/i }));
     await waitFor(() => expect(previewStarts).toBe(2));
   });
@@ -1524,7 +1525,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/nothing is left to retry/i)).toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: /try this action again/i })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Try again' })).toBeNull();
   });
 
   it('never exposes generic recovery for an unsubscribe failure', async () => {
@@ -1606,7 +1607,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/return to Activity/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/try again in Activity/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: /reconnect Gmail/i }));
     expect(assignSpy).toHaveBeenCalledWith(
       expect.stringContaining(

@@ -54,8 +54,9 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
     // verb + sender. That label is the load-bearing signal the sheet
     // can't silently strip.
     expect(html).toContain(`aria-label="Preview · Archive ${row.senderName}"`);
-    expect(html).toContain('Why do I review this before confirming?');
-    expect(html).toContain('Cancel changes nothing');
+    // The preview already shows the count, the change and Cancel — the
+    // help block that re-explained it is gone.
+    expect(html).not.toContain('Why do I review this before confirming?');
     expect(html).toContain('aria-label="Gmail account: active@gmail.com"');
   });
 
@@ -196,8 +197,9 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
 
     expect(html).toContain(`aria-label="Preview · Delete ${row.senderName}"`);
     expect(html).toContain('Gmail Trash');
-    expect(html).toContain('Activity Undo');
-    expect(html).toContain('up to 30 days');
+    expect(html).toContain('Undo from Activity');
+    // Gmail's retention is stated once on the sheet, not three times.
+    expect(html.match(/up to 30 days/g)).toHaveLength(1);
     expect(html).not.toContain('Skip this dialog for');
   });
 
@@ -213,17 +215,12 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
         onConfirm={() => {}}
       />,
     );
-    // Scoped to the footer's own clause. Two things would otherwise make
-    // this pass whether or not the footer is fixed: `renderToStaticMarkup`
-    // escapes the apostrophe to `&#x27;`, so a literal-apostrophe
-    // `toContain("your plan's window")` never matches either version; and
-    // "30 days" already appears twice elsewhere on this sheet regardless
-    // of this footer — the mandatory preview's own (already-derived, per
-    // Task 1) "Undo from Activity for 30 days.", and Gmail's unrelated
-    // "up to 30 days" retention clause two sentences later.
-    expect(html).not.toContain('Activity Undo uses your plan');
+    // The footer's own Delete clause is gone (the preview lead states the
+    // window once). "Undo window" is the plan-dependent hedge's tail, and
+    // has no apostrophe for `renderToStaticMarkup` to escape.
+    expect(html).not.toContain('Undo window');
     if (UNIFORM_UNDO_WINDOW_DAYS === null) return;
-    expect(html).toContain(`Activity Undo uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day window`);
+    expect(html).toContain(`Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`);
   });
 });
 

@@ -25,7 +25,7 @@ describe('DecidePreview — live-preview confirm gate', () => {
       expect(confirm).toBeDisabled();
       fireEvent.click(confirm);
       expect(onConfirm).not.toHaveBeenCalled();
-      expect(screen.getByText(/Cancel and retry/i)).toBeInTheDocument();
+      expect(screen.getByText(/Couldn.t load the preview/i)).toBeInTheDocument();
     },
   );
 
@@ -180,7 +180,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(screen.getAllByText('9')).toHaveLength(2);
     expect(screen.getAllByText('2')).toHaveLength(1);
     expect(screen.getByText(/across inbox \+ archived/i)).toBeInTheDocument();
-    expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/i)).toBeInTheDocument();
+    expect(screen.getByText(/Undo puts each email back where it was/i)).toBeInTheDocument();
   });
 
   it('softens the empty-inbox notice when the reach control is on screen (ADR-0028 wording)', () => {
@@ -269,10 +269,12 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
     // window. A reader seeing a bare "0" with no explanation is exactly
     // the bug this fixes.
     expect(screen.queryByText(/is in your inbox right now/i)).toBeNull();
-    expect(
-      screen.getByText(/9 emails from this sender are in your inbox, but none are older than/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/the 6 months\+ window/i)).toBeInTheDocument();
+    // Pins the facts — the true inbox total and the window — not the
+    // shared sentence around them (packages/shared inbox-scope owns that).
+    const notice = screen.getByRole('status');
+    expect(notice).toHaveTextContent(/\b9\b/);
+    expect(notice).toHaveTextContent(/older than/i);
+    expect(notice).toHaveTextContent(/6 months\+/i);
     // Codex review 2026-09-03 (QA-delete-20260903-01): the zero-match
     // header must not contradict this exact notice — "Nothing to move"
     // would sit directly above "9 emails ... are in your inbox."

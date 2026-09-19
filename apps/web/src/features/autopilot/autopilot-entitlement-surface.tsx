@@ -96,9 +96,7 @@ export function AutopilotObservePreview() {
             lineHeight: 1.6,
           }}
         >
-          Observe records matches as suggestions; Active applies future matches automatically.
-          Review the preset rules installed for your mailbox, then run a read-only current-match
-          preview. Preview does not create suggestions or change Gmail.
+          See what each preset rule would match in your mailbox right now. Previews are read-only.
         </p>
       </div>
 
@@ -123,7 +121,7 @@ export function AutopilotObservePreview() {
         {rules.isError && (
           <EmptyState
             title="Couldn't load your preset rules"
-            description="Your mailbox was not changed. Try this preview again in a moment."
+            description="Try again in a moment."
           />
         )}
         {rules.data && rules.data.length === 0 && (
@@ -204,8 +202,8 @@ export function AutopilotObservePreview() {
             Rule matching and batch approval are part of {grantingName}.
           </strong>
           <span style={{ color: color.fgMuted, fontSize: 12.5 }}>
-            Letting rules act without per-batch approval is {actName}. Custom rule creation remains
-            unavailable; the launch surface uses preset rules only.
+            Rules that act without asking are part of {actName}. Preset rules only — custom rules
+            are not available.
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -246,7 +244,7 @@ function previewState(
 ): RulePreviewState {
   if (preview.isPending) return { status: 'loading' };
   if (preview.isError) {
-    return { status: 'error', message: 'Preview failed. Your mailbox was not changed.' };
+    return { status: 'error', message: 'Preview failed. Please retry.' };
   }
   if (preview.data?.ruleId === ruleId) return { status: 'ready', result: preview.data };
   return { status: 'loading' };

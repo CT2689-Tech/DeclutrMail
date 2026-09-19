@@ -15,7 +15,7 @@ import {
  * Layout density.
  *
  * - `card` (default) — full trust card with lead paragraph + both
- *   lists. Used on landing, onboarding sync gate, Privacy & Data
+ *   lists. Used on landing, onboarding step 1, Privacy & Data
  *   settings (D109, D217, D223).
  * - `inline` — compact one-line version with headline + storage list
  *   only, for footers and tooltips. Still uses the D228 wording.

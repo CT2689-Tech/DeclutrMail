@@ -65,11 +65,8 @@ export function AccountDeletionSection() {
         ) : (
           <>
             <p style={mutedTextStyle}>
-              Permanently deletes your DeclutrMail account and mailbox product data — including the
-              Gmail metadata index, sender decisions, automation rules, and undo history. Emails in
-              Gmail are not touched. Narrowly scoped pseudonymous security and deletion evidence
-              remains under the operational retention policy. Default: a 7-day grace period (longer
-              if an undo window is still open), with a cancel link by email.
+              Deletes your DeclutrMail account and the mailbox data it stored. Your Gmail email is
+              untouched. 7-day grace period (longer if an undo window is open); you can cancel.
             </p>
             <div style={{ marginTop: 12 }}>
               <Button tone="danger" onClick={() => setModalOpen(true)}>

@@ -36,9 +36,10 @@ const { color, font, radius } = tokens;
  *     higher plan (A3: only all-matching cleanup sits above Free).
  *
  * Copy is tier-appropriate per D123's nudge ladder: Free hears what
- * Plus/Pro unlock, Plus hears the Pro automation set, Pro gets the
+ * Plus removes, Plus hears the Pro automation set, Pro gets the
  * honest limit statement with NO upgrade nudge (nothing to sell).
- * Pro pricing lines carry the D121 30-day money-back note.
+ * The nudged plan's price line carries the D121 30-day money-back note
+ * (it applies to every paid plan — see `MONEY_BACK_NOTE`).
  *
  * Mounted once in the authed app chrome — never per feature screen.
  */
@@ -167,11 +168,8 @@ export function UpgradeModal() {
                 {hit.details.resetsAt
                   ? ` — your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
                   : ''}
-                . {TIER_MANIFEST.plus.name} unlocks unlimited cleanup for{' '}
-                {quotedPlanPrice('plus', 'monthly', regionProvider)}, with the Screener and
-                Autopilot rules that queue matches for your approval. On {TIER_MANIFEST.pro.name},
-                rules run without asking &mdash; plus Daily Brief and Quiet Hours &mdash; for{' '}
-                {proMonthly}.
+                . {TIER_MANIFEST.plus.name} removes the monthly cap for{' '}
+                {quotedPlanPrice('plus', 'monthly', regionProvider)}.
               </>
             ) : hit.reason === 'action_tier' ? (
               <>
@@ -196,7 +194,7 @@ export function UpgradeModal() {
           </p>
           {nudge ? (
             <p style={{ fontSize: 12, color: color.fgMuted, margin: '10px 0 0' }}>
-              {proMonthly} &mdash; {MONEY_BACK_NOTE}
+              {quotedPlanPrice(targetPlan, 'monthly', regionProvider)} &mdash; {MONEY_BACK_NOTE}
             </p>
           ) : null}
         </div>

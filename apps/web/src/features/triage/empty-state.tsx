@@ -66,15 +66,15 @@ export function TriageEmptyState({
   // first-class empty states.
   if (stats.decidedToday === 0 && syncFailed) {
     // "Nothing needs a decision" is a claim about the queue having been
-    // checked; a failed scan means it hasn't been. Same "Browse senders"
-    // escape hatch, honest headline.
+    // checked; a failed scan means it hasn't been. The button goes where
+    // the copy points — Settings → Gmail accounts.
     return (
       <EmptyState
         title="This mailbox's last scan didn't finish."
-        description="New decisions can't appear until it's rescanned. Your Gmail is untouched — see Settings → Gmail accounts to try again."
+        description="Your Gmail is untouched. Retry the scan in Settings → Gmail accounts."
         action={
           <a
-            href="/senders"
+            href="/settings#mailboxes"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -90,7 +90,7 @@ export function TriageEmptyState({
               textDecoration: 'none',
             }}
           >
-            Browse senders
+            Open Settings
           </a>
         }
       />
@@ -100,7 +100,7 @@ export function TriageEmptyState({
     return (
       <EmptyState
         title="Nothing needs a decision right now."
-        description="New decisions appear as previously-scored senders resurface, or a sync finds a new one. Come back whenever it’s useful."
+        description="New decisions appear as senders send again."
         action={
           <a
             href="/senders"
@@ -193,8 +193,7 @@ export function TriageEmptyState({
             maxWidth: 460,
           }}
         >
-          New decisions appear as previously-scored senders resurface, or a sync finds a new one.
-          Come back whenever it&rsquo;s useful.
+          New decisions appear as senders send again.
         </p>
       </div>
 
@@ -252,8 +251,7 @@ export function TriageEmptyState({
         </div>
       )}
 
-      {/* D33 Plus-tier nudge — single soft link, not a banner. The
-          copy is the D33 quote verbatim. Hidden for Pro users (no
+      {/* D33 Plus-tier nudge — single soft link, not a banner. Hidden for Pro users (no
           nudge shown). */}
       {showProNudge && (
         <button
@@ -274,7 +272,7 @@ export function TriageEmptyState({
             textDecorationColor: color.lineSoft,
           }}
         >
-          Pro could do this for you automatically. See Pro automation &rarr;
+          See Pro automation &rarr;
         </button>
       )}
     </div>

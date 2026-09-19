@@ -99,8 +99,8 @@ export function UnsubMailtoCallout({
         <strong style={{ fontWeight: 600 }}>One step left for {senderName}.</strong>{' '}
         <span style={{ color: color.fgSoft }}>
           {markedSent
-            ? 'You marked the prefilled unsubscribe email as sent. This records your report; future delivery still depends on the sender.'
-            : 'Their list takes unsubscribe requests by email. Open the prefilled Gmail draft, send it yourself, then mark it sent here.'}
+            ? 'You marked the unsubscribe email as sent — stopping is up to the sender.'
+            : 'Their list takes unsubscribe requests by email — send it yourself from Gmail.'}
         </span>
       </span>
       {!markedSent && (
@@ -213,8 +213,7 @@ export function UnsubMailtoChecklist({
             {drafts.length === 1 ? 'needs' : 'need'} you
           </strong>
           <p style={{ margin: '3px 0 0', color: color.fgSoft, fontSize: 12.5, lineHeight: 1.45 }}>
-            DeclutrMail recorded these decisions but did not send the email requests. Open each
-            prefilled Gmail draft and press Send from the subscribed account.
+            DeclutrMail did not send these. Open each draft and send it from the subscribed account.
           </p>
         </div>
         <button

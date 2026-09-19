@@ -369,7 +369,7 @@ describe('ScreenerScreen — overdue release (2026-08-12 incident)', () => {
       // the SAME still-open preview (kept, never cleared) now confirms.
       await tick(ACTION_OVERDUE_MS);
       expect(h.toast).toHaveBeenCalledWith(
-        `Delete for ${plainRow.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        `Delete for ${plainRow.senderName} is still running — see Activity.`,
         'info',
       );
       fireEvent.keyDown(window, { key: 'Enter' });

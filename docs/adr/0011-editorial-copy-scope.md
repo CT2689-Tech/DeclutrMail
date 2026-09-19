@@ -144,9 +144,16 @@ satisfy all):
 - [ ] Zero forbidden words anywhere on the surface
 - [ ] Copy survives the "would this read as a promise?" check
 - [ ] Copy survives the "would a power user roll their eyes?" check
-- [ ] Trust cue ("No message bodies · Reversible for 7 days") visible
-      on or near the surface — editorial framing is balanced by
-      explicit trust grounding
+- [ ] ~~Trust cue ("No message bodies · Reversible for 7 days") visible
+      on or near the surface~~ — **removed 2026-09-19 (founder
+      decision).** Trust and privacy copy renders once per flow, at the
+      decision point (the connect step, the action preview), never on
+      heroes or empty states. The struck line was enforced nowhere, its
+      wording appeared nowhere in source, and both halves are now banned
+      outright: ADR-0030 forbids a blanket reversibility claim (a sent
+      unsubscribe cannot be recalled) and forbids compressing the
+      generated privacy claim. Repeating reassurance on every surface is
+      also what makes it stop being read.
 
 **Codex review note (from session 2026-05-25).** The pushback on
 counter-tick animation (see ADR-0010) is paired with this ADR's

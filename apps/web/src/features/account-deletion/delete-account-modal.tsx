@@ -9,8 +9,6 @@ import {
   type AccountDeletionProjection,
 } from '@declutrmail/shared/contracts';
 
-import { MAX_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
-
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 
 const { color, font } = tokens;
@@ -195,9 +193,8 @@ export function DeleteAccountModal({
                 onChange={(e) => setAcknowledged(e.target.checked)}
                 style={{ marginTop: 2 }}
               />
-              I understand this permanently deletes my DeclutrMail account and mailbox product data,
-              does not delete Gmail email, and retains the minimal pseudonymous security and
-              deletion evidence described above under its operational policy.
+              I understand this permanently deletes my DeclutrMail account, does not delete my Gmail
+              email, and retains the security and deletion evidence listed above.
             </label>
           </div>
         ) : (
@@ -234,12 +231,9 @@ export function DeleteAccountModal({
                 }
                 detail={
                   undoExtends
-                    ? 'Deletion waits for your open undo windows, so it runs on ' +
-                      `${formatDate(projection!.latestUndoExpiresAt!, timeZone)} rather than after the ` +
-                      `usual 7 days. Undo windows run up to ${MAX_UNDO_WINDOW_DAYS} days, so a recent ` +
-                      'action can push this several weeks out. Undo keeps working the whole time, ' +
-                      'and you can cancel any time before then. The immediate option below skips ' +
-                      'the wait and gives up those undo windows.'
+                    ? 'Waits for your open undo windows, so it runs ' +
+                      `${formatDate(projection!.latestUndoExpiresAt!, timeZone)} instead of in 7 days. ` +
+                      'Undo keeps working until then, and you can cancel any time.'
                     : '7-day grace period. You can cancel any time before then.'
                 }
               />

@@ -121,7 +121,7 @@ export function NoiseArchiveSheet({
           </h2>
           <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}>
             This archives everything from these senders that is in your inbox now — not only
-            yesterday&rsquo;s mail. Nothing is deleted, and one undo reverses the whole batch.
+            yesterday&rsquo;s mail. Nothing is deleted.
           </p>
         </div>
 
@@ -143,9 +143,7 @@ export function NoiseArchiveSheet({
             }}
           >
             {preview === 'loading' ? (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Counting the inbox… Confirm unlocks when it is ready.
-              </span>
+              <span style={{ fontSize: 12.5, color: color.fgSoft }}>Counting the inbox…</span>
             ) : scopeConflict ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                 Your active mailbox changed while this was open, so these counts no longer apply.
@@ -153,14 +151,13 @@ export function NoiseArchiveSheet({
               </span>
             ) : preview === 'unavailable' ? (
               <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                Couldn&rsquo;t load a live preview. Retry — no inbox email can move without one.
+                Couldn&rsquo;t load the preview. Nothing can move until it loads.
               </span>
             ) : (
               <>
                 <NumericDisplay variant="stat" value={total!.toLocaleString('en-US')} />
                 <span style={{ fontSize: 12.5, color: color.fgSoft }}>
-                  email{total === 1 ? '' : 's'} in Inbox now. Rechecked when it runs, so the final
-                  count can differ.
+                  email{total === 1 ? '' : 's'} in Inbox now. Rechecked when it runs.
                 </span>
               </>
             )}
@@ -252,8 +249,8 @@ export function NoiseArchiveSheet({
                 : preview === 'unavailable'
                   ? 'Preview unavailable — retry before confirming.'
                   : nothingToActOn
-                    ? 'Nothing from these senders is in your inbox — there is nothing to archive.'
-                    : 'Counting inbox email — confirm unlocks after the live preview loads.'
+                    ? 'Nothing from these senders is in your inbox.'
+                    : 'Confirm unlocks once the count loads.'
               : UNIFORM_UNDO_WINDOW_DAYS === null
                 ? "One undo reverses the whole batch during your plan's Activity window."
                 : `One undo reverses the whole batch during the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity window.`}

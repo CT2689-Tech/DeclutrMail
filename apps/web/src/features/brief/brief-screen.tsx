@@ -119,9 +119,7 @@ export function BriefScreen() {
     // Non-404 → log to Sentry as a feature exception so the dashboard
     // separates 'brief failed to load' from 'brief is just late'.
     captureFeatureException(query.error, { surface: 'brief', reason: 'fetch_failed' });
-    return (
-      <BriefErrorState error={query.error} onRetry={() => handleBriefRefresh(query.refetch)} />
-    );
+    return <BriefErrorState onRetry={() => handleBriefRefresh(query.refetch)} />;
   }
 
   const brief = query.data;
@@ -397,7 +395,7 @@ function BriefReturnLinks() {
         color: color.fgMuted,
       }}
     >
-      <span>This Brief is a morning snapshot. Actions taken afterward appear in Activity.</span>
+      <span>Prepared in the morning — actions since then appear in Activity.</span>
       <Link
         href="/activity"
         onClick={() =>
@@ -647,16 +645,11 @@ export function NoiseArchiveBar({
             )}
           </>
         ) : (
-          <>
-            Archives everything from the checked senders that is in your inbox now — you see the
-            exact count before anything moves.
-            {excludedCount > 0 && (
-              <>
-                {' '}
-                {excludedCount} sender{excludedCount === 1 ? '' : 's'} below cannot be included.
-              </>
-            )}
-          </>
+          excludedCount > 0 && (
+            <>
+              {excludedCount} sender{excludedCount === 1 ? '' : 's'} below cannot be included.
+            </>
+          )
         )}
       </span>
       {/* No aria-label: the visible label already names the count, and a
@@ -1098,16 +1091,12 @@ function LoadingState() {
   );
 }
 
-function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? "We couldn't load your Brief. Try again in a moment."
-      : "We couldn't load your Brief right now. Try again in a moment.";
+function BriefErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
       <RetryableErrorState
         title="We couldn't load your Brief"
-        description={message}
+        description="Try again in a moment."
         onRetry={onRetry}
       />
     </div>
@@ -1127,12 +1116,7 @@ function NotYetState({ onRefresh }: { onRefresh: () => void }) {
       <Eyebrow>Daily Brief</Eyebrow>
       <EmptyState
         title="Your Brief lands soon"
-        description={
-          <>
-            We snapshot yesterday&rsquo;s email every morning. If you connected recently or
-            you&rsquo;re early in your time zone, refresh in a few minutes.
-          </>
-        }
+        description={<>The Brief is prepared each morning. Refresh in a few minutes.</>}
         action={
           <Button tone="primary" onClick={onRefresh}>
             Refresh
