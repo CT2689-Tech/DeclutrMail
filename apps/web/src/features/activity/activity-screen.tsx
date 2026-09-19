@@ -349,7 +349,7 @@ export function ActivityScreen() {
         error={weeklyQuery.isError}
         onRetry={() => void weeklyQuery.refetch()}
         activeOutcome={filters.outcomes?.[0] ?? null}
-        clearHref={clearOutcomeHref(filters)}
+        clearHref={clearOutcomeHref(filters, weeklyQuery.data ?? null)}
         senderQuery={filters.senderQuery ?? ''}
       />
 
@@ -424,28 +424,7 @@ export function ActivityScreen() {
             }}
           >
             {rows.length === 0 ? (
-              hasNoActivityEver(allTimeStats ?? null, filters.senderQuery ?? '') ? (
-                // Nothing recorded for this mailbox at all. Blaming filters
-                // here would name a cause that is not there and offer a
-                // way out that lands on the same empty screen.
-                <EmptyState
-                  title="No activity yet."
-                  description="Actions you, Autopilot, or your rules take will be recorded here."
-                />
-              ) : (
-                <EmptyState
-                  title="Nothing matches these filters."
-                  description="Your Activity history is still here — the filters are just narrow."
-                  action={
-                    <Link
-                      href="/activity?window=all"
-                      style={{ color: color.primary, fontWeight: 600 }}
-                    >
-                      Show all activity
-                    </Link>
-                  }
-                />
-              )
+              <ActivityEmptyState scope={emptyScope(filters)} window={filters.window ?? '30d'} />
             ) : groupMode === 'sender' ? (
               <GroupedList
                 rows={rows}
@@ -715,6 +694,10 @@ function MetricsHeader({
           grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
           gap: 12px 8px !important;
         }
+        .dm-activity-metric-label {
+          font-size: 9px !important;
+          letter-spacing: 0.04em !important;
+        }
       }`}</style>
       <div
         className="dm-activity-metrics-grid"
@@ -746,14 +729,17 @@ function MetricsHeader({
               }}
             >
               <span
+                className="dm-activity-metric-label"
                 style={{
                   fontFamily: font.mono,
                   // `body { overflow-wrap: break-word }` split "UNSUBSCRIBES"
                   // mid-word in the narrow 3-column grid. Forbidding the
                   // break alone makes it spill into the next tile at 320px,
-                  // so the label is tightened until it fits instead.
-                  fontSize: isMobile ? 9 : 10,
-                  letterSpacing: isMobile ? '0.04em' : '0.12em',
+                  // so the label is tightened below 900px until it fits —
+                  // in the CSS block above, with the grid restack, because
+                  // the `isMobile` JS flag is false until hydration.
+                  fontSize: 10,
+                  letterSpacing: '0.12em',
                   textTransform: 'uppercase',
                   color: color.fgMuted,
                   overflowWrap: 'normal',
@@ -799,7 +785,7 @@ function MetricsHeader({
           (QA-activity-20260918-05). */}
       <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
         Counts actions, not emails. Undone actions are not counted. Sender and date filters apply;
-        source and action filters do not.
+        source, action, and outcome filters do not.
       </p>
     </section>
   );
@@ -2632,10 +2618,14 @@ function RowActions({
   // The pill is a frame around controls. A sender-less row with nothing to
   // undo and no recovery state has none, and an empty bordered capsule is
   // the same defect as the empty segment (QA-activity-20260918-09).
+  // Built once and handed to the link, so the frame and the link decide
+  // from the same value instead of two copies of the same condition.
+  const gmailHref =
+    row.sender && mailboxEmail
+      ? GmailOpenLinkService.buildFromSearchLink({ mailboxEmail, from: row.sender.email })
+      : null;
   const hasControl =
-    row.executionState !== null ||
-    row.undoState.kind !== 'unavailable' ||
-    (row.sender !== null && mailboxEmail !== null);
+    row.executionState !== null || row.undoState.kind !== 'unavailable' || Boolean(gmailHref);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
       {hasControl && (
@@ -2658,7 +2648,7 @@ function RowActions({
           <UndoCell row={row} bulkFailedTokens={failedTokens} />
           <OpenInGmailLink
             row={row}
-            mailboxEmail={mailboxEmail}
+            href={gmailHref}
             // The divider separates the link from a control before it. With
             // no recovery cell and nothing to undo there is no such control.
             showDivider={row.executionState !== null || row.undoState.kind !== 'unavailable'}
@@ -2827,15 +2817,7 @@ function RecoveryCell({
       // A link, not a hover-only reason: `title` does not exist on touch,
       // and this is the row a worried user is reading
       // (QA-activity-20260918-08).
-      <a
-        href="/settings/help"
-        title={
-          isUnsubscribe
-            ? 'DeclutrMail cannot safely repeat an unsubscribe request without confirming its remote outcome.'
-            : 'This action cannot be retried safely from Activity.'
-        }
-        style={{ ...baseStyle, color: color.amber, textDecoration: 'none' }}
-      >
+      <a href="/settings/help" style={{ ...baseStyle, color: color.amber, textDecoration: 'none' }}>
         Contact support
       </a>
     );
@@ -3301,19 +3283,15 @@ function recoveryConfirmNeedsRecheck(error: Error): boolean {
  */
 function OpenInGmailLink({
   row,
-  mailboxEmail,
+  href,
   showDivider,
 }: {
   row: ActivityRowWire;
-  mailboxEmail: string | null;
+  /** Built by the caller; null when there is no sender or no mailbox to link into. */
+  href: string | null;
   showDivider: boolean;
 }) {
-  if (!row.sender || !mailboxEmail) return <span aria-hidden="true" />;
-  const href = GmailOpenLinkService.buildFromSearchLink({
-    mailboxEmail,
-    from: row.sender.email,
-  });
-  if (!href) return <span aria-hidden="true" />;
+  if (!href || !row.sender) return null;
   return (
     <>
       {showDivider && (
@@ -3671,46 +3649,98 @@ function failedActionNoun(action: ActivityRowWire['action']): string {
 }
 
 /**
- * True only when the all-time, UNFILTERED-by-sender stats are all zero.
- * `allTimeStats` is sender-scoped whenever a sender search is active, so
- * a zero there says nothing about the mailbox and must not read as
- * "you have never done anything".
+ * What an empty list can honestly claim, decided by WHICH list came back
+ * empty — never by the stats. The stats cannot see protection toggles,
+ * undone actions, Observe dismissals or in-flight actions, all of which
+ * are rows, so "every stat is zero" does not mean "no activity"
+ * (QA-activity-20260918-10, gate round two).
+ *
+ *  - `none`   the wholly unfiltered all-time list is empty: that IS the proof.
+ *  - `window` only the time window narrows it: say so, and keep the way out.
+ *  - `filter` anything else narrows it.
  */
-function hasNoActivityEver(allTime: ActivityStatsWire | null, senderQuery: string): boolean {
-  if (!allTime || senderQuery.trim() !== '') return false;
+type EmptyScope = 'none' | 'window' | 'filter';
+
+function emptyScope(filters: {
+  window?: ActivityWindowWire;
+  source?: ActivitySourceFilterWire;
+  verbs?: readonly unknown[];
+  outcomes?: readonly unknown[];
+  senderQuery?: string;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): EmptyScope {
+  const narrowedBeyondWindow =
+    (filters.source ?? 'all') !== 'all' ||
+    (filters.verbs?.length ?? 0) > 0 ||
+    (filters.outcomes?.length ?? 0) > 0 ||
+    (filters.senderQuery ?? '').trim() !== '' ||
+    Boolean(filters.dateFrom) ||
+    Boolean(filters.dateTo);
+  if (narrowedBeyondWindow) return 'filter';
+  return (filters.window ?? '30d') === 'all' ? 'none' : 'window';
+}
+
+function ActivityEmptyState({ scope, window }: { scope: EmptyScope; window: ActivityWindowWire }) {
+  if (scope === 'none') {
+    return (
+      <EmptyState
+        title="No activity yet."
+        description="Actions you, Autopilot, or your rules take will be recorded here."
+      />
+    );
+  }
+  const showAll = (
+    <Link href="/activity?window=all" style={{ color: color.primary, fontWeight: 600 }}>
+      Show all activity
+    </Link>
+  );
+  if (scope === 'window') {
+    return (
+      <EmptyState
+        title={`No activity in the ${windowToLabel(window, null, null).toLowerCase()}.`}
+        description="Older activity, if there is any, is one step away."
+        action={showAll}
+      />
+    );
+  }
   return (
-    allTime.archived === 0 &&
-    allTime.deleted === 0 &&
-    allTime.unsubscribed === 0 &&
-    allTime.kept === 0 &&
-    allTime.later === 0 &&
-    allTime.followupsDismissed === 0 &&
-    allTime.needsAttention === 0
+    <EmptyState
+      title="Nothing matches these filters."
+      description="Clear a filter, or show everything."
+      action={showAll}
+    />
   );
 }
 
-/** Why this failed row offers support instead of a retry, or null when it can retry. */
+/**
+ * Why this failed row offers support instead of a retry, or null when it
+ * can retry. Execution rows are only ever archive / later / delete, so
+ * there is no unsubscribe case to word here.
+ */
 function unsafeRetryReason(row: ActivityRowWire): string | null {
   if (row.executionState?.kind !== 'failed') return null;
-  if (row.action.startsWith('unsubscribe')) {
-    return 'We can’t safely repeat an unsubscribe without knowing whether the first one arrived.';
-  }
-  if (row.executionState.resolution === 'support') {
-    return 'This action can’t be retried safely from Activity.';
-  }
-  return null;
+  return row.executionState.resolution === 'support'
+    ? 'This action can’t be retried safely from Activity.'
+    : null;
 }
 
-function clearOutcomeHref(filters: {
-  window?: ActivityWindowWire;
-  dateFrom?: string | null;
-  dateTo?: string | null;
-  senderQuery?: string;
-}): string {
+function clearOutcomeHref(
+  filters: {
+    window?: ActivityWindowWire;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    senderQuery?: string;
+  },
+  cardRange: { from: string; to: string } | null,
+): string {
   const params = new URLSearchParams({ window: filters.window ?? '30d' });
-  // The 7-day card stamps its own from/to onto its links. Those dates are
-  // the card's, not a range the user picked, so clearing drops them.
-  if (filters.window === '7d') {
+  // The 7-day card stamps its own from/to onto its links. Dates that ARE
+  // the card's go with the outcome; a range the user picked stays. Checked,
+  // not inferred from the window — a custom range can sit under `7d` too.
+  const datesAreTheCards =
+    cardRange !== null && filters.dateFrom === cardRange.from && filters.dateTo === cardRange.to;
+  if (datesAreTheCards) {
     if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
     return `/activity?${params.toString()}`;
   }

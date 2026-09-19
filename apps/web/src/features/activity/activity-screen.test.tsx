@@ -204,7 +204,7 @@ describe('ActivityScreen — edge states', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: /nothing matches these filters/i }),
+        screen.getByRole('heading', { name: /no activity in the last 30 days/i }),
       ).toBeInTheDocument(),
     );
     expect(requests).toBe(2);
@@ -464,7 +464,7 @@ describe('ActivityScreen — edge states', () => {
     renderScreen();
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: /nothing matches these filters/i }),
+        screen.getByRole('heading', { name: /no activity in the last 30 days/i }),
       ).toBeInTheDocument(),
     );
   });
@@ -488,7 +488,7 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
 
     expect(
       await screen.findByText(
-        /Counts actions, not emails\. Undone actions are not counted\. Sender and date filters apply; source and action filters do not\./,
+        /Counts actions, not emails\. Undone actions are not counted\. Sender and date filters apply; source, action, and outcome filters do not\./,
       ),
     ).toBeInTheDocument();
     // Same window, narrowed to failures — not the 7-day card's window.
@@ -498,43 +498,60 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     );
   });
 
-  it('says "no activity yet" only when the mailbox has none, never for a narrow filter', async () => {
-    const NONE = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/activity',
-        respond: () =>
-          jsonOk({ data: [], meta: { ...META_BASE, stats: NONE, allTimeStats: NONE } }),
-      },
-    ]);
+  /**
+   * "No activity yet." is a claim about the whole mailbox, so it may only
+   * be made when the wholly unfiltered all-time list is the one that came
+   * back empty. The stats cannot back it: they do not count protection
+   * toggles, undone actions, Observe dismissals or in-flight actions, all
+   * of which are rows. ZERO stats are seeded throughout, so a regression
+   * to a stats-based guess goes red here.
+   */
+  const ZERO = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+  const emptyPage = (meta: Record<string, unknown>) => [
+    {
+      method: 'GET' as const,
+      path: '/api/activity',
+      respond: () =>
+        jsonOk({ data: [], meta: { ...META_BASE, stats: ZERO, allTimeStats: ZERO, ...meta } }),
+    },
+  ];
+
+  it('says "no activity yet" only for the unfiltered all-time list', async () => {
+    currentSearch = 'window=all';
+    installFetchStub(emptyPage({ window: 'all' }));
     renderScreen();
     expect(await screen.findByRole('heading', { name: /no activity yet/i })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /show all activity/i })).not.toBeInTheDocument();
   });
 
-  it('keeps the filter copy when a sender search makes the all-time stats zero', async () => {
-    const NONE = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
-    currentSearch = 'sender_q=nobody';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/activity',
-        respond: () =>
-          jsonOk({
-            data: [],
-            meta: { ...META_BASE, senderQuery: 'nobody', stats: NONE, allTimeStats: NONE },
-          }),
-      },
-    ]);
+  it('names the window, and keeps the way out, when only the window is narrow', async () => {
+    // Default 30-day window, all-zero stats: a mailbox whose whole history
+    // is older protection toggles looks exactly like this.
+    installFetchStub(emptyPage({}));
     renderScreen();
     expect(
-      await screen.findByRole('heading', { name: /nothing matches these filters/i }),
+      await screen.findByRole('heading', { name: /no activity in the last 30 days/i }),
     ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /no activity yet/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /show all activity/i })).toHaveAttribute(
       'href',
       '/activity?window=all',
     );
+  });
+
+  it.each([
+    ['a sender search', 'window=all&sender_q=nobody', { window: 'all', senderQuery: 'nobody' }],
+    ['an outcome filter', 'window=all&outcome=failed', { window: 'all', outcomes: ['failed'] }],
+    ['a source filter', 'window=all&source=autopilot', { window: 'all', source: 'autopilot' }],
+  ])('blames the filters, not the mailbox, under %s', async (_name, search, meta) => {
+    currentSearch = search;
+    installFetchStub(emptyPage(meta));
+    renderScreen();
+    expect(
+      await screen.findByRole('heading', { name: /nothing matches these filters/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /no activity yet/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /show all activity/i })).toBeInTheDocument();
   });
 
   it('renders no control frame at all for a sender-less row with nothing to undo', async () => {
