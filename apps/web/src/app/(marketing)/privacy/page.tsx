@@ -319,9 +319,11 @@ export default function PrivacyPolicyPage() {
               <td>Brandfetch</td>
               <td>
                 Sender logos. We send only a sender&rsquo;s email domain (for example,{' '}
-                <code>example.com</code>) — never your address, your account, or any message. Every
-                sender&rsquo;s domain is looked up, brand or not, once for all DeclutrMail users
-                rather than once per user.
+                <code>example.com</code>) — never your address, your account, or any message. A
+                sender&rsquo;s domain reaches Brandfetch only when the sender publishes no logo of
+                its own. Domains are looked up whether or not the sender is a brand, for all
+                DeclutrMail users at once rather than once per user, and re-checked after a cache
+                period.
               </td>
             </tr>
             <tr>

@@ -18,6 +18,7 @@ import {
   PrivacyBadge,
   ScreenIntro,
   tokens,
+  type GmailDataProcessor,
 } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -158,7 +159,14 @@ export function PrivacyDataView({
           </p>
           <p style={{ ...mutedTextStyle, marginTop: 8 }}>
             Brandfetch only ever receives a sender&rsquo;s email domain.{' '}
-            {GMAIL_DATA_PROCESSORS.Brandfetch.retention}
+            {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
+            <a
+              href={GMAIL_DATA_PROCESSORS.Brandfetch.privacyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Brandfetch&rsquo;s privacy policy
+            </a>
           </p>
         </div>
       </Card>
@@ -389,7 +397,7 @@ function inventoryDisplayItem(item: {
   purpose: string;
   retention: string;
   exportedIn: readonly string[];
-  transmittedTo: readonly string[];
+  transmittedTo: readonly GmailDataProcessor[];
   removalTrigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 }) {
   const exportDetail =
@@ -397,7 +405,7 @@ function inventoryDisplayItem(item: {
       ? `Included in: ${item.exportedIn.join(', ')}.`
       : 'Not currently included in a data export.';
   const processorDetail = item.transmittedTo
-    .map((processor) => PROCESSOR_SENTENCE[processor as keyof typeof PROCESSOR_SENTENCE] ?? '')
+    .map((processor) => PROCESSOR_SENTENCE[processor])
     .join('');
   const deletionDetail = deletionTriggerDetail(item.removalTrigger);
   return {
@@ -412,7 +420,7 @@ function inventoryDisplayItem(item: {
  * a processor there is a compile error here until it has a sentence —
  * the screen cannot silently omit a third party.
  */
-const PROCESSOR_SENTENCE: Record<keyof typeof GMAIL_DATA_PROCESSORS, string> = {
+const PROCESSOR_SENTENCE: Record<GmailDataProcessor, string> = {
   DeclutrMail: '',
   Anthropic: ' May be sent to Anthropic for generated text.',
   Brandfetch: ' The domain alone may be sent to Brandfetch to find a logo.',

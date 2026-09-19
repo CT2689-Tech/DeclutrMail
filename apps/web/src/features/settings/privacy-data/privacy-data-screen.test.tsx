@@ -206,9 +206,14 @@ describe('PrivacyDataView', () => {
 
   it('links the live Privacy Policy and Terms pages (both are published)', () => {
     renderView();
-    expect(screen.getByRole('link', { name: /privacy policy/i })).toHaveAttribute(
+    // Anchored: the Brandfetch line also links "Brandfetch's privacy policy".
+    expect(screen.getByRole('link', { name: /^privacy policy$/i })).toHaveAttribute(
       'href',
       '/privacy',
+    );
+    expect(screen.getByRole('link', { name: /brandfetch.s privacy policy/i })).toHaveAttribute(
+      'href',
+      'https://brandfetch.com/privacy',
     );
     expect(screen.getByRole('link', { name: /^terms$/i })).toHaveAttribute('href', '/terms');
     // The stale placeholder must be gone.
