@@ -446,6 +446,176 @@ describe('TriageScreen — D226 mutation wiring', () => {
     });
   });
 
+  describe('ADR-0028 — Delete may reach archived mail, by explicit choice', () => {
+    const PREVIEW_WITH_ALL_MAIL = {
+      ...PREVIEW_BODY,
+      allMail: {
+        counts: {
+          all: 412,
+          olderThan30d: 400,
+          olderThan90d: 380,
+          olderThan180d: 300,
+          olderThan365d: 90,
+        },
+        recentMessages: PREVIEW_BODY.recentMessages,
+      },
+    };
+    const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+    function installReachStub(enqueues: unknown[]) {
+      resetFetchStub();
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () => jsonOk({ data: PREVIEW_WITH_ALL_MAIL }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            enqueues.push(await req.json());
+            return jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                compositeId: ACTION_ID,
+                secondaryId: null,
+                status: 'queued',
+                primaryCount: 412,
+                secondaryCount: null,
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: `/api/actions/${ACTION_ID}`,
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: ACTION_ID,
+                status: 'executing',
+                requestedCount: 412,
+                affectedCount: 0,
+                undoToken: null,
+                errorCode: null,
+              },
+            }),
+        },
+      ]);
+    }
+
+    it('arms the archived count and sends reach all_mail only after the chip is chosen', async () => {
+      const enqueues: Array<{ primary?: { reach?: string } }> = [];
+      installReachStub(enqueues);
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'd' });
+
+      const dialog = await screen.findByRole('dialog');
+      const archived = await within(dialog).findByRole('radio', { name: /Inbox \+ archived/ });
+      // Safe default: inbox only, and the copy says so.
+      expect(within(dialog).getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
+      expect(within(dialog).getByText(/in Inbox now/)).toBeDefined();
+
+      fireEvent.click(archived);
+      expect(
+        within(dialog).getByText(
+          `Move inbox + archived email from ${GROUPON.senderName} to Gmail Trash`,
+        ),
+      ).toBeDefined();
+      expect(within(dialog).getByText(/across inbox \+ archived now/)).toBeDefined();
+      expect(within(dialog).getByText(/in Inbox or archived moves to Gmail Trash/)).toBeDefined();
+      // '412' = the chip AND the armed headline figure.
+      expect(within(dialog).getAllByText('412')).toHaveLength(2);
+
+      const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
+      await waitFor(() => expect(confirm).not.toBeDisabled());
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(enqueues).toHaveLength(1));
+      expect(enqueues[0]!.primary).toMatchObject({ type: 'delete', reach: 'all_mail' });
+    });
+
+    it('sends no reach when the default is left alone', async () => {
+      const enqueues: Array<{ primary?: { reach?: string } }> = [];
+      installReachStub(enqueues);
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'd' });
+      // '47' is on the Inbox-only chip AND the armed headline figure.
+      await waitFor(() => expect(screen.getAllByText('47')).toHaveLength(2));
+      await confirmOpenSheet('Delete', false);
+      await waitFor(() => expect(enqueues).toHaveLength(1));
+      expect(enqueues[0]!.primary).not.toHaveProperty('reach');
+    });
+
+    it('keeps Inbox only selected on an empty inbox and points at the archived chip', async () => {
+      resetFetchStub();
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            jsonOk({
+              data: {
+                ...PREVIEW_WITH_ALL_MAIL,
+                counts: {
+                  all: 0,
+                  olderThan30d: 0,
+                  olderThan90d: 0,
+                  olderThan180d: 0,
+                  olderThan365d: 0,
+                },
+              },
+            }),
+        },
+      ]);
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'd' });
+      const dialog = await screen.findByRole('dialog');
+      const inboxOnly = await within(dialog).findByRole('radio', { name: /Inbox only/ });
+      expect(inboxOnly).toHaveAttribute('aria-checked', 'true');
+      expect(within(dialog).getByText(/to reach 412 archived emails/)).toBeDefined();
+      const confirm = within(dialog).getByRole('button', { name: /^Delete/i });
+      expect(confirm).toBeDisabled();
+
+      // The wider delete is a deliberate click — and only then arms confirm.
+      fireEvent.click(within(dialog).getByRole('radio', { name: /Inbox \+ archived/ }));
+      await waitFor(() => expect(confirm).not.toBeDisabled());
+      expect(within(dialog).queryByText(/to reach 412 archived emails/)).toBeNull();
+    });
+
+    it('offers no reach choice on Archive', async () => {
+      installReachStub([]);
+      renderScreen(createTestQueryClient());
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'a' });
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByText('47')).toBeDefined());
+      expect(reachRow()).toBeNull();
+    });
+
+    it("hides the choice during onboarding's first cleanup", async () => {
+      installReachStub([]);
+      render(
+        <QueryWrapper client={createTestQueryClient()}>
+          <TriageScreen
+            journey="first_relief"
+            state={{ kind: 'ready', rows: [GROUPON, LINKEDIN], stats: TRIAGE_SESSION_STATS }}
+          />
+        </QueryWrapper>,
+      );
+      expandRow(GROUPON.senderName);
+      fireEvent.keyDown(window, { key: 'd' });
+      const dialog = await screen.findByRole('dialog');
+      await waitFor(() => expect(within(dialog).getByText('47')).toBeDefined());
+      expect(reachRow()).toBeNull();
+    });
+  });
+
   it('keeps the acted-on row busy (aria-busy) while the worker has not confirmed', async () => {
     addFetchHandlers([
       {

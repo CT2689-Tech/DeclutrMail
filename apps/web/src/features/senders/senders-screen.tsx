@@ -1411,7 +1411,15 @@ function SendersScreenContent({
                 {
                   mailboxId: actionMailboxId,
                   senderIds: senderRefs.map((sref) => sref.id),
-                  primary: { type: secondary.type, olderThanDays: secondary.olderThanDays ?? null },
+                  primary: {
+                    type: secondary.type,
+                    olderThanDays: secondary.olderThanDays ?? null,
+                    // ADR-0028 — the reach the user picked for "Delete
+                    // them" rides the backlog batch, never an Archive.
+                    ...(secondary.type === 'delete' && opts?.reach === 'all_mail'
+                      ? { reach: opts.reach }
+                      : {}),
+                  },
                 },
                 {
                   onSuccess: (bres) =>
@@ -1545,6 +1553,10 @@ function SendersScreenContent({
               type: primaryType,
               olderThanDays: opts?.olderThanDays ?? null,
               ...(primaryType === 'later' && opts?.wakeAt ? { wakeAt: opts.wakeAt } : {}),
+              // ADR-0028 — only Delete may carry the widened reach.
+              ...(primaryType === 'delete' && opts?.reach === 'all_mail'
+                ? { reach: opts.reach }
+                : {}),
             },
             ...(opts?.secondary
               ? {

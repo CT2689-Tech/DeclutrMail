@@ -20,7 +20,6 @@ import {
   activityLog,
   mailMessages,
   senderActionWhere,
-  senderInboxActionWhere,
   senderPolicies,
   senders,
   undoJournal,
@@ -564,8 +563,8 @@ export class ActionsService {
    * per-sender rows keep protected senders (flagged) so the modal can
    * show WHY a sender is excluded.
    *
-   * Counts mirror the worker's resolver (`resolveSenderInboxIds`:
-   * mailbox + senderKey + INBOX + window) via ONE grouped query.
+   * Counts mirror the worker's resolver (mailbox + senderKey + reach +
+   * window) via ONE grouped query per reach (ADR-0028).
    */
   async previewBulkComposite(input: {
     mailboxAccountId: string;
@@ -598,52 +597,73 @@ export class ActionsService {
       olderThan180d: 0,
       olderThan365d: 0,
     };
-    const countRows =
-      keys.length === 0
-        ? []
-        : await this.db
-            .select({
-              senderKey: mailMessages.senderKey,
-              all: sql<number>`count(*)::int`,
-              olderThan30d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '30 days')::int`,
-              olderThan90d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '90 days')::int`,
-              olderThan180d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '180 days')::int`,
-              olderThan365d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '365 days')::int`,
-            })
-            .from(mailMessages)
-            .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: keys }))
-            .groupBy(mailMessages.senderKey);
-    const countsByKey = new Map(countRows.map((r) => [r.senderKey, r] as const));
+    // Buckets resolved at BOTH reaches (ADR-0028), exactly like the
+    // single-sender preview: the inbox block is what every verb acts on;
+    // the all-mail block feeds the Delete modal's reach choice.
+    const bucketsByKey = async (
+      reach: SenderActionReach,
+    ): Promise<Map<string, BulkPreviewBuckets>> => {
+      if (keys.length === 0) return new Map();
+      const countRows = await this.db
+        .select({
+          senderKey: mailMessages.senderKey,
+          all: sql<number>`count(*)::int`,
+          olderThan30d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '30 days')::int`,
+          olderThan90d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '90 days')::int`,
+          olderThan180d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '180 days')::int`,
+          olderThan365d: sql<number>`count(*) FILTER (WHERE ${mailMessages.internalDate} <= now() - interval '365 days')::int`,
+        })
+        .from(mailMessages)
+        .where(senderActionWhere({ mailboxAccountId, senderKeys: keys, reach }))
+        .groupBy(mailMessages.senderKey);
+      return new Map(
+        countRows.map(
+          (r) =>
+            [
+              r.senderKey,
+              {
+                all: toCount(r.all),
+                olderThan30d: toCount(r.olderThan30d),
+                olderThan90d: toCount(r.olderThan90d),
+                olderThan180d: toCount(r.olderThan180d),
+                olderThan365d: toCount(r.olderThan365d),
+              },
+            ] as const,
+        ),
+      );
+    };
+    const [inboxByKey, allMailByKey] = await Promise.all([
+      bucketsByKey('inbox_only'),
+      bucketsByKey('all_mail'),
+    ]);
+    const addInto = (into: BulkPreviewBuckets, from: BulkPreviewBuckets): void => {
+      into.all += from.all;
+      into.olderThan30d += from.olderThan30d;
+      into.olderThan90d += from.olderThan90d;
+      into.olderThan180d += from.olderThan180d;
+      into.olderThan365d += from.olderThan365d;
+    };
 
     const totals: BulkPreviewBuckets = { ...ZERO };
+    const allMailTotals: BulkPreviewBuckets = { ...ZERO };
     const senderResults: BulkActionPreviewResult['senders'] = [];
     // Walk the request order (deduped) so the FE's lozenge list maps
     // positionally onto the user's selection.
     for (const id of uniqueIds) {
       const row = byId.get(id);
       if (!row) continue; // unknown / cross-mailbox — dropped
-      const raw = countsByKey.get(row.senderKey);
-      const counts: BulkPreviewBuckets = raw
-        ? {
-            all: toCount(raw.all),
-            olderThan30d: toCount(raw.olderThan30d),
-            olderThan90d: toCount(raw.olderThan90d),
-            olderThan180d: toCount(raw.olderThan180d),
-            olderThan365d: toCount(raw.olderThan365d),
-          }
-        : { ...ZERO };
+      const counts = inboxByKey.get(row.senderKey) ?? { ...ZERO };
+      const allMailCounts = allMailByKey.get(row.senderKey) ?? { ...ZERO };
       const isProtected = protectedKeys.has(row.senderKey);
       if (!isProtected) {
-        totals.all += counts.all;
-        totals.olderThan30d += counts.olderThan30d;
-        totals.olderThan90d += counts.olderThan90d;
-        totals.olderThan180d += counts.olderThan180d;
-        totals.olderThan365d += counts.olderThan365d;
+        addInto(totals, counts);
+        addInto(allMailTotals, allMailCounts);
       }
       senderResults.push({
         senderId: id,
         name: row.displayName,
         counts,
+        allMailCounts,
         protected: isProtected,
       });
     }
@@ -651,6 +671,7 @@ export class ActionsService {
     return {
       senders: senderResults,
       totals,
+      allMailTotals,
       protectedCount: senderResults.filter((s) => s.protected).length,
     };
   }
@@ -690,12 +711,24 @@ export class ActionsService {
       type: LabelCompositePrimaryVerb;
       olderThanDays?: number | null | undefined;
       wakeAt?: Date | null | undefined;
+      /** ADR-0028 — absent = `inbox_only`. `all_mail` is Delete-only. */
+      reach?: SenderActionReach | undefined;
     };
     secondary?:
       { type: CompositeSecondaryVerb; olderThanDays?: number | null | undefined } | undefined;
     idempotencyKey: string;
   }): Promise<BulkActionEnqueueResult> {
     const { mailboxAccountId, primary, secondary, idempotencyKey } = input;
+    // ADR-0028: same service-layer assert as `enqueueComposite` — the Zod
+    // boundary already rejected this, but a non-HTTP caller must not be
+    // able to widen a non-Delete verb. The secondary stays inbox-only.
+    const primaryReach: SenderActionReach = primary.reach ?? 'inbox_only';
+    if (primaryReach === 'all_mail' && primary.type !== 'delete') {
+      throw new BadRequestException({
+        code: 'INVALID_REACH',
+        message: 'Only Delete may reach past the inbox.',
+      });
+    }
     await this.entitlements.assertActionSelectorTier(
       mailboxAccountId,
       primary.type,
@@ -762,13 +795,19 @@ export class ActionsService {
     // window, not N queries. Pure reads that don't need the workspace
     // lock, so they stay OUTSIDE the transaction below.
     const keys = actionable.map((r) => r.senderKey);
-    const primaryCounts = await this.countSenderInboxGrouped(
+    const primaryCounts = await this.countSenderActionGrouped(
       mailboxAccountId,
       keys,
       primary.olderThanDays ?? null,
+      primaryReach,
     );
     const secondaryCounts = secondary
-      ? await this.countSenderInboxGrouped(mailboxAccountId, keys, secondary.olderThanDays ?? null)
+      ? await this.countSenderActionGrouped(
+          mailboxAccountId,
+          keys,
+          secondary.olderThanDays ?? null,
+          'inbox_only',
+        )
       : null;
 
     // A3 mandatory concurrency fix: the replay recheck, the capacity
@@ -798,10 +837,11 @@ export class ActionsService {
             verb: primary.type,
             direction: 'forward',
             selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
-            resolvedMessageIds: [], // worker resolves "in INBOX now" at execute
+            resolvedMessageIds: [], // worker resolves the live set at execute
             requestedCount: primaryCounts.get(sender.senderKey) ?? 0,
             idempotencyKey: primaryKey,
             olderThanDays: primary.olderThanDays ?? null,
+            reach: primaryReach,
             wakeAt: primary.wakeAt ?? null,
             compositeId: anchorId, // null only for the anchor itself
           },
@@ -1271,21 +1311,23 @@ export class ActionsService {
   }
 
   /**
-   * Per-sender INBOX counts narrowed by an optional time-window — the
-   * grouped sibling of `countSenderActionWithWindow` for the bulk
-   * fan-out. Mirrors the worker resolver's predicates so each row's
-   * `requestedCount` matches what its job will actually move.
+   * Per-sender counts narrowed by an optional time-window at an explicit
+   * reach (ADR-0028) — the grouped sibling of
+   * `countSenderActionWithWindow` for the bulk fan-out. Mirrors the
+   * worker resolver's predicates so each row's `requestedCount` matches
+   * what its job will actually move.
    */
-  private async countSenderInboxGrouped(
+  private async countSenderActionGrouped(
     mailboxAccountId: string,
     senderKeys: string[],
     olderThanDays: number | null,
+    reach: SenderActionReach,
   ): Promise<Map<string, number>> {
     if (senderKeys.length === 0) return new Map();
     const rows = await this.db
       .select({ senderKey: mailMessages.senderKey, n: count() })
       .from(mailMessages)
-      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys, olderThanDays }))
+      .where(senderActionWhere({ mailboxAccountId, senderKeys, olderThanDays, reach }))
       .groupBy(mailMessages.senderKey);
     return new Map(rows.map((r) => [r.senderKey, toCount(r.n)]));
   }

@@ -9,7 +9,8 @@
  * `inbox_only` — messages currently carrying INBOX (every verb's
  * original semantic, and the wire default when the field is absent).
  * `all_mail` — inbox + archived (TRASH/SPAM/DRAFT/CHAT excluded);
- * legal only on a single-sender Delete primary.
+ * legal only on a Delete primary (one sender, or the multi-sender
+ * fan-out per the ADR-0028 amendment of 2026-09-19).
  */
 export const ACTION_REACHES = ['inbox_only', 'all_mail'] as const;
 export type ActionReach = (typeof ACTION_REACHES)[number];

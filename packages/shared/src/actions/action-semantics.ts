@@ -1,4 +1,5 @@
 import type { ActionJobStatus } from '../contracts/action-job-status';
+import type { ActionReach } from '../contracts/action-reach';
 import type { ActionVerb } from '../contracts/verb-constants';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements/undo-window';
 import type { UnsubscribeCapability } from './unsubscribe-capability';
@@ -80,6 +81,12 @@ export interface ActionSemantics {
      * one, that clause is stale and reads as an unanswered condition.
      */
     readonly compositeSummary?: string;
+    /**
+     * Used instead of `summary` when the action runs at `all_mail` reach
+     * (ADR-0028). Present only on a verb that may act past the inbox —
+     * today Delete — so a reach handed to any other verb changes nothing.
+     */
+    readonly allMailSummary?: string;
   };
   readonly futureMail: {
     readonly effect: FutureMailEffect;
@@ -277,6 +284,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       scope: 'matching-current-inbox',
       destination: 'gmail-trash',
       summary: 'Matching email currently in Inbox moves to Gmail Trash.',
+      allMailSummary: 'Matching email in Inbox or archived moves to Gmail Trash.',
     },
     futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
     unchanged: [{ claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.' }],
@@ -482,6 +490,12 @@ export interface ActionPresentationInput {
   readonly unsubscribeChannel: UnsubscribeChannel | null;
   readonly secondaryAction?: SecondaryActionPresentationInput | null;
   /**
+   * ADR-0028 — the reach the user picked. It belongs to whichever half
+   * is the Delete (the primary, or an Unsubscribe's "Delete them"
+   * secondary); every other verb ignores it. Absent = `inbox_only`.
+   */
+  readonly reach?: ActionReach;
+  /**
    * Which clock absolute times are printed in.
    *
    * `'utc'` (the default) keeps every existing caller and any
@@ -580,6 +594,7 @@ export function buildActionPresentation(input: ActionPresentationInput): ActionP
     unsubscribeChannel: input.unsubscribeChannel,
     timeZone: input.timeZone ?? 'utc',
     hasSecondary: input.secondaryAction != null,
+    reach: input.reach ?? 'inbox_only',
   });
   const secondary = input.secondaryAction
     ? presentAction({
@@ -590,6 +605,7 @@ export function buildActionPresentation(input: ActionPresentationInput): ActionP
         unsubscribeChannel: input.unsubscribeChannel,
         timeZone: input.timeZone ?? 'utc',
         composedUnder: ACTION_SEMANTICS[input.verb],
+        reach: input.reach ?? 'inbox_only',
       })
     : null;
 
@@ -626,6 +642,7 @@ interface PresentActionInput {
    * give way to `currentMail.compositeSummary`.
    */
   readonly hasSecondary?: boolean;
+  readonly reach: ActionReach;
 }
 
 /**
@@ -670,7 +687,9 @@ function presentAction(input: PresentActionInput): PresentedAction {
   const currentMail =
     input.hasSecondary === true && semantics.currentMail.compositeSummary !== undefined
       ? { ...semantics.currentMail, summary: semantics.currentMail.compositeSummary }
-      : semantics.currentMail;
+      : input.reach === 'all_mail' && semantics.currentMail.allMailSummary !== undefined
+        ? { ...semantics.currentMail, summary: semantics.currentMail.allMailSummary }
+        : semantics.currentMail;
   const surviving = composedUnder === null ? null : secondaryFactsUnder(semantics, composedUnder);
   const futureMailSummary =
     unsubscribeChannel.kind === 'not-applicable'

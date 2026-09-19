@@ -149,3 +149,96 @@ secondary in one round trip, still hardcoded `inbox_only` in
 `actions.service.ts`) is untouched — no live caller sends a real
 value there (`showSecondaryRow` is Unsubscribe-only), so widening it
 would be speculative.
+
+## Amendment 2026-09-19 — widen reach to the multi-sender (bulk) Delete
+
+**Trigger.** Founder report: with several senders selected, the Delete
+modal (and the Unsubscribe modal's "Delete them") showed no "Where it
+applies" choice, while the same modal for one sender did. Founder
+decision the same day: allow it, same default (`Inbox only`), no cap.
+
+**Why this was safe to widen.** The bulk fan-out
+(`enqueueBulkComposite`) already writes ONE ordinary single-sender
+`action_jobs` row per sender. Everything item 3 and item 5 built is
+per-row — the worker resolves at `job.reach`, the undo partition
+(`inboxMessageIds`) is measured per job, and `enqueueCompositeRevert`
+copies each sibling's `reach` onto its reverse row — so a bulk row at
+`all_mail` is indistinguishable from the single-sender row this ADR
+already ships. No worker, journal, or schema change; the DB CHECK
+(`reach = 'inbox_only' OR verb = 'delete'`) never mentioned the
+selector.
+
+**Change.**
+
+- Zod: the `senders`-selector rejection is removed; `all_mail` is now
+  legal on any Delete primary. The Delete-only rule is unchanged at all
+  three layers, and `enqueueBulkComposite` gains the same
+  `INVALID_REACH` service assert `enqueueComposite` has.
+- `POST /api/actions/preview/bulk` returns `allMailTotals` plus a
+  per-sender `allMailCounts` beside the inbox block (additive wire, same
+  skew rule as item 4: absent ⇒ the chips do not appear). Protected
+  senders are excluded from `allMailTotals` exactly as from `totals`
+  (D245), so the chip equals what the enqueue will move.
+- The modal's `reachAvailable` no longer excludes bulk; at the widened
+  reach the per-sender lozenges show each sender's all-mail count.
+- Bulk Unsubscribe + "Delete them" dispatches its backlog as a separate
+  bulk Delete primary (D248), so the chosen reach rides that call.
+
+**Scope not touched.** The `secondary` sub-object of a bulk
+Archive/Later composite stays `inbox_only` (same reasoning as the
+2026-08-31 amendment — no live caller). Triage's batch sheet, the
+Brief noise-archive, Later and Autopilot stay inbox-scoped.
+
+**Blast radius.** One click can now move every selected sender's
+archived mail to Trash (up to `BULK_SENDERS_MAX` senders). Mitigations
+are the ones this ADR already relies on: the wider reach is never the
+default, the chip states the aggregate count before confirm, Protected
+senders are skipped, and undo restores each message to where it was.
+Quota is unchanged — one unit per actionable sender regardless of reach.
+
+**Reach is frozen by the Idempotency-Key**, like the time window: a
+retried POST with the same key but a different `reach` maps onto the
+stored rows (`insertJob` dedups per row) and the response's
+`requestedTotal` is summed from them, so nothing claims the wider scope.
+A real second click mints a new key.
+
+**Cost of the second preview query.** Measured 2026-09-19 on the local
+dev database (104k-message mailbox, the 1,000-sender maximum selection,
+five runs, host under load): the inbox grouped query ran ~8 ms warm and
+the all-mail one ~62 ms warm (527 ms on the first cold run). They run
+in parallel, so the preview pays roughly +55 ms at the worst-case
+selection. Not measured on the production database.
+
+## Amendment 2026-09-19 (b) — one rule for where the reach choice appears
+
+**Trigger.** Founder review the same day: "is Inbox + archived available
+everywhere it should be?" A survey of every surface that acts on a
+sender's mail found the choice on Senders (single + bulk), Sender
+Detail and the Screener, and missing from exactly one hand-driven
+Delete: Triage's.
+
+**The rule (founder-ratified).** Wherever a person Deletes a sender's
+mail by hand behind a preview, the same "Inbox only / Inbox +
+archived" choice appears, defaulting to Inbox only. Nowhere else.
+
+- **Triage Delete gains the choice.** Delete is never a
+  remember-preference verb in Triage (`RememberableVerb` excludes it),
+  so the sheet is its only preview and the only place the chips render.
+  The armed count, title, lead, caption, sample rows, the Gmail verify
+  link and the footer all follow the selected reach; the reach resets
+  to `inbox_only` whenever the pending action changes.
+- **Hidden in onboarding's first cleanup** (`journey = 'first_relief'`).
+  A first session stays about the inbox; the option is met later on
+  Senders / Triage.
+- **Empty inbox keeps `Inbox only` selected.** The wider delete is
+  always a deliberate click; the existing hint points at the chip.
+- **Archive and Later never reach archived mail.** Archive there is a
+  no-op; Later would file years of archived mail under the Later label
+  and then drop all of it into the inbox on the wake date.
+- **Autopilot never touches archived mail.** No per-run preview, and no
+  Delete preset exists. Triage's domain batch and the Brief's
+  noise-archive offer no Delete, so they have nothing to widen.
+
+No API, worker or schema change for this amendment — Triage's Delete
+already rides `enqueueComposite`, which has accepted `reach` since the
+original decision.
