@@ -535,7 +535,7 @@ coexist on one frame).
 | --- | ------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- |
 | 🟢  | QA-undo-20260828-01 | P1  | Activity's own verb-count tiles include actions the user already undid while a different tile row on the same page correctly excludes them — no label says which is which | Fixed 2026-09-01, **strongly reconfirmed 2026-09-03** with a fresh real mutation: archived `sshanavaz@newtglobal.com` (1 msg) then immediately Undo'd it. Queried `activity_log` for all `action='archive'` rows in the trailing 30 days (25 total, mailbox-wide) — exactly 1 has `reverted_at IS NULL`; the live `/activity` "This window (30 days)" ARCHIVED tile read **1**, an exact match, with my own fresh archive+undo cycle correctly excluded alongside 24 older reverted rows. Strongest evidence this row has had — a real number cross-checked against a real DB count, not just a code read. | #671 |
 | 🟢  | QA-undo-20260828-02 | P2  | `/activity`'s stat row ships the desktop 5-column grid before hydration at 375px, so "UNSUBSCRIBES" and "KEPT" briefly overprint each other                               | Fixed 2026-09-01 — static-verified this session: JS-gated `gridTemplateColumns` ternary replaced by CSS `<style>` media-query override (900px, matches `useIsAtMost('sm')`) at `activity-screen.tsx:688-698`, exactly the fix shape `LEARNINGS.md` already prescribed; test green (60/60); not independently re-flashed at 375px this session (would need a throttled/pre-hydration capture, not a plain page load) — static+mechanism-test confidence only                                                                                                                                                | #671 |
-| ⬜  | QA-undo-20260828-03 | P3  | The "Recovered" outcome tile can never register a user's own Undo (a different mechanism entirely — retried-after-failure jobs) and nothing in the product defines it     | Open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |      |
+| ⬜  | QA-undo-20260828-03 | P3  | The "Recovered" outcome tile can never register a user's own Undo (a different mechanism entirely — retried-after-failure jobs) and nothing in the product defines it     | Open · re-confirmed 2026-09-18 (`/ct-qa activity`: a fresh Undo left the tile at 0; label still undefined on screen)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |      |
 | 🟢  | QA-undo-20260828-04 | P2  | Delete's own verb name disappears across 6 result surfaces, and its undo deadline repeats the two-clock mechanism already filed on `triage`, now on a second surface      | Fixed 2026-09-01, **strongly reconfirmed 2026-09-03** with a fresh real mutation: Deleted `utdalert_go@utdalert.utdallas.edu` (1 msg, inbox+archived reach) then Undo'd it. Every surface read "Deleted to Gmail Trash" verbatim — receipt banner, toast, decision-record chip, undo-tray — all consistently in the reader's local zone ("3:04 PM PDT", matched across banner/decision-record/undo-tray). Verified via Gmail MCP (`search_threads`) the message is genuinely out of `in:trash` and back in its normal location after Undo — a real Gmail round-trip, not just a DB flag.                   | #671 |
 
 ### QA-undo-20260828-01 — inconsistent undo/reverted-action exclusion
@@ -3055,3 +3055,126 @@ not before): `-06` and `-08` share `activity-record-copy.ts` /
 `engine-read-age.ts` — one shared-copy-string fix each covers Sender Detail,
 Triage and Screener simultaneously, so scope those two as cross-surface
 changes, not sender-detail-only edits.
+
+---
+
+## activity
+
+First filed 2026-09-18 (`/ct-qa activity`). 10 new survivors, 1 inherited
+(QA-undo-20260828-03, re-confirmed on its own row). 6 candidates were refuted
+or downgraded before filing — see the ledger's Refuted table; the refuted
+"Recovered stays 0" candidate is what led the sweep to rows 02–04.
+
+Rows 02–04 are **siblings found by `defect-class-sweeper`**, not defects of the
+Activity screen. They are filed here because this run found them; the fix lives
+in the surface each row names.
+
+|     | id                      | sev | one line                                                                                                                                                                                               | status |
+| --- | ----------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ |
+| ⬜  | QA-activity-20260918-01 | P1  | **Tier 1 — privacy.** Sender domains are sent to Brandfetch in production, and no public page or the Gmail-data registry names it; ADR-0034 still says production must leave the key unbound           | Open   |
+| ⬜  | QA-activity-20260918-02 | P1  | Sender Detail's decision history shows an action the user already undid as still standing, while Activity marks the same record Undone                                                                 | Open   |
+| ⬜  | QA-activity-20260918-03 | P2  | Triage's Today strip keeps counting a decision after the user undoes it — the one `activity_log` reader that missed #671's `reverted_at IS NULL` filter                                                | Open   |
+| ⬜  | QA-activity-20260918-04 | P2  | **Needs a founder call.** The weekly value-receipt email counts "actions you undid" by when the original action happened, so a week spent undoing older actions reports zero and can suppress the send | Open   |
+| ⬜  | QA-activity-20260918-05 | P2  | The five stat tiles never say they count actions rather than emails, and they ignore the source and action chips directly beneath them                                                                 | Open   |
+| ⬜  | QA-activity-20260918-06 | P2  | "Protected" and "Skipped" each mean two different things in the same column (editor-filed)                                                                                                             | Open   |
+| ⬜  | QA-activity-20260918-07 | P2  | The recovery dialog's title is machine-assembled into broken English ("Review failed archived") and its result grid uses worker vocabulary ("reconciled", "verified set")                              | Open   |
+| ⬜  | QA-activity-20260918-08 | P3  | "6 need attention" is plain text, and no visible control reaches those rows outside the 7-day card; the failed-unsubscribe cause lives only in a hover tooltip                                         | Open   |
+| ⬜  | QA-activity-20260918-09 | P3  | Every row with no Undo renders an empty bordered pill segment beside the Gmail link                                                                                                                    | Open   |
+| ⬜  | QA-activity-20260918-10 | P3  | Copy bundle (editor-filed): "Followups" vs "Follow-ups" in three spellings, "UNSUBSC / RIBES" at ≤375px, an empty state that names an unlabelled control and ships no button, a verbose banner         | Open   |
+
+### QA-activity-20260918-01 — an undisclosed third party receives sender domains (Tier 1)
+
+**Steps.** Open `/activity`; sender logos load from `GET /api/icons/<sender-domain>`.
+**Expected.** Every third party that receives Gmail-derived data is named publicly.
+**Actual.** `finding-refuter` checked the live revision, not the workflow file:
+`declutrmail-worker-00054-v8g` mounts `BRANDFETCH_API_KEY` from an enabled secret —
+the exact condition [worker.ts:2560](apps/api/src/worker.ts:2560) gates the tier on — and
+[brandfetch-icon-resolver.ts:51](packages/workers/src/brandfetch-icon-resolver.ts:51) puts the
+sender domain in the request path. PR #562 (2026-08-19) bound it deliberately. Brandfetch appears
+nowhere on `/privacy` §8, `/security`, or in `gmail-data-inventory.ts`, whose processor type is the
+closed union `'DeclutrMail' | 'Anthropic'` (line 30). `/privacy` lines 166–167 say Gmail data is
+not transferred to third parties except the listed subprocessors.
+**Bounded harm.** The vendor receives a bare, globally cached domain with no user linkage
+(ADR-0034:413). This is a disclosure defect, not a content leak — hence P1, not P0.
+**Refuter's strongest surviving objection.** PR #562 notes the free-plan quota is exhausted, and
+Brandfetch is only the third tier. That reduces volume, not the claim: a 429 is a response to a
+request that carried the domain.
+**Dropped from the finding.** The `middleware.ts` "never sent to third-party logo services" comment
+is a CSP comment and stays true of the browser.
+**Separate and worse, same root.** [ADR-0034:293-297](docs/adr/0034-brand-icon-cache.md) reads
+"approved for local evaluation only … Production must leave the key unbound until that permission
+and an acceptable subscription plan are documented." It was bound in production the next day with
+no amendment, and the ADR asserts Brandfetch's terms need a written agreement the repo does not hold.
+**Founder options.** (a) disclose: add Brandfetch to `/privacy` §8, the registry, and amend
+ADR-0034; (b) unbind the key in production and fall back to BIMI + the sender's own site + monogram.
+**Regression test.** A truth-gate asserting every external origin a worker resolver calls appears in
+the registry's processor union — it must go RED today on `api.brandfetch.io`.
+
+### QA-activity-20260918-02 — Sender Detail says an undone action still stands
+
+**Cause.** [senders.read-service.ts:1894-1905](apps/api/src/senders/senders.read-service.ts:1894)
+never selects `reverted_at`, and `DecisionHistoryRow`
+([types.ts:71-83](apps/web/src/features/senders/detail/types.ts:71)) has no field to carry it.
+Activity renders `Undone` from the same row
+([activity-screen.tsx:3375](apps/web/src/features/activity/activity-screen.tsx:3375)).
+**Measured.** 24 senders in the dev DB currently have a reverted decision in history. Unwindowed, so
+it never self-heals. This is the shape CLAUDE.md §8 names: two surfaces, one fact, different reads.
+**Regression test.** API spec seeding one reverted and one standing row for the same sender and
+asserting the wire row carries the reversal; component test asserting the marker renders.
+
+### QA-activity-20260918-03 — Triage's Today strip credits decisions already taken back
+
+**Cause.** [triage.read-service.ts:1079-1088](apps/api/src/triage/triage.read-service.ts:1079)
+and `:1211-1222` group `activity_log` with no `reverted_at IS NULL`. Every sibling reader carries it
+(`activity.read-service.ts:1035`, `:1060`, `:1142`; `weekly-value-receipt.worker.ts:301,313`).
+**Measured.** 0 affected rows today; 37 actions undone on the day they were taken, ever — the most
+common undo there is. Trust 8/10: proven by an absent predicate, population measured.
+**Regression test.** Seed today's archive, revert it, assert the Today counts drop. Seed ≥2 rows so
+the filter cannot pass vacuously.
+
+### QA-activity-20260918-04 — the weekly email's "actions you undid" (founder call)
+
+[weekly-value-receipt.worker.ts:315](packages/workers/src/weekly-value-receipt.worker.ts:315) counts
+`reverted_at IS NOT NULL` under a `WHERE occurred_at >= windowStart` (line 319); the field's own doc
+comment (line 99) says "Actions the user reversed inside the window." It also gates `isEmptyWeek()`
+(line 370), which suppresses the send. **Two different sentences, pick one:** window on
+`reverted_at` ("what you took back this week") or keep `occurred_at` ("of this week's actions, how
+many stuck") and make the copy say that. Outbound mail to paying users — not fixed without a call.
+
+### QA-activity-20260918-05 — stat tiles: no unit, and deaf to two filter rows
+
+`aggregateStats` counts `activity_log` rows
+([activity.read-service.ts:1044](apps/api/src/activity/activity.read-service.ts:1044)), excludes
+reverted rows (`:1035`, the #671 fix), and applies no source or verb filter (`:1003-1006`). Clean
+evidence: 19 standing archive actions cover 1,335 emails, so "ARCHIVED 19" sits above rows reading
+"275 emails"; choosing the Autopilot chip narrows the list and leaves every tile unchanged.
+**Refuter's objection.** A row marked `Undone` has told the reader; the gap is a missing unit word,
+not a false count. **Editor's replacement:** header "LAST 30 DAYS · ALL SOURCES"; sub-line "Counts
+actions, not emails. Undone actions are not counted. Source and action filters do not change these."
+
+### QA-activity-20260918-06 through -10 — filed from `usability-editor`
+
+Not put through a dedicated `finding-refuter` (09's empty pill and 10's label wrap were, and
+survived). Exact replacement text for every string is in the editor's report, summarised:
+
+- **06** — [activity-screen.tsx:3585-3587](apps/web/src/features/activity/activity-screen.tsx:3585),
+  [activity-record-copy.ts:18-19](packages/shared/src/actions/activity-record-copy.ts:18),
+  [weekly-review-card.tsx:8-10](apps/web/src/features/activity/weekly-review-card.tsx:8): rows →
+  "Skipped — you dismissed it" / "Skipped — sender is Protected" / "Protection on" / "Protection off";
+  tiles → "Dismissed" / "Protected senders" / "Fixed on retry" (the last closes QA-undo-20260828-03).
+- **07** — `:2908` "Review this failed Archive"; grid `:3104-3107` "Still to do / Already done in
+  Gmail / Gone from Gmail / Checked"; note → "These 85 emails are still in your inbox."
+- **08** — `:675-679` make the count a link to `?outcome=failed` preserving the window, labelled
+  "6 failed · Review"; `:2756-2768` move the tooltip-only cause on screen.
+- **09** — `:3397-3408` return null for `undoState.kind === 'unavailable'` and render the pill
+  container only when it has a child. Class, not instance: `keep`, `marked_protected`,
+  `unmarked_protected` and the legacy `marked_vip` / `unmarked_vip` rows all hit it.
+- **10** — "Follow-ups" everywhere (`:805`, `activity-record-copy.ts:17`, `followups-screen.tsx:99`);
+  pin the tile label against `overflow-wrap: break-word` (tokens.css:243) — ~5px of headroom at 375px
+  and none at 360/320; empty state `:421-429` → "Nothing matches these filters." with a
+  "Show all activity" button; banner `:335` cut to its first sentence.
+
+**Found, not filed.** A sweep-protected sender the user unprotects shows "Unprotected" with no
+preceding "Protected", because `automatic-protection.ts:140-285` writes no `activity_log` row —
+belongs to the `protect` job. And `dev-up.sh` cannot start in a worktree without
+`COMPOSE_PROJECT_NAME=declutrmail`; its `--stop` leaves a stale worker holding :8080.

@@ -47,6 +47,36 @@ the point.
 
 ## Inbox (untriaged)
 
+**Found:** 2026-09-18 · `/ct-qa activity`, QA-activity-20260918-01, survived
+`finding-refuter`. **Tier 1 — privacy / public claim.**
+
+Sender domains (derived from the Gmail `From` header) are sent to Brandfetch, a
+third-party logo API, from the production worker — and Brandfetch is named on no
+public page and is absent from the Gmail-data registry. The refuter verified the
+live Cloud Run revision (`declutrmail-worker-00054-v8g`) mounts
+`BRANDFETCH_API_KEY` from an enabled secret, bound deliberately by PR #562
+(2026-08-19). `/privacy` says Gmail data is not transferred to third parties
+except the subprocessors it lists. The payload is a bare domain with no user
+linkage, so this is a disclosure gap, not a content leak. Separately,
+ADR-0034:293-297 still reads "approved for local evaluation only … Production
+must leave the key unbound", and was never amended. Founder options: disclose
+(policy §8 + registry + ADR amendment) or unbind the key in production.
+
+Full detail: `docs/qa/qa-worklist.md` `## activity`.
+
+**Found:** 2026-09-18 · `/ct-qa activity`, QA-activity-20260918-02, found by
+`defect-class-sweeper`, measured on the dev DB.
+
+Sender Detail's decision history shows an action the user already undid as
+still standing — "Archive · 47 emails" with no reversal marker — while Activity
+shows the same record as Undone. The history query never reads `reverted_at`
+and the wire type has no field for it. 24 senders in the dev DB are affected
+today; the view is unwindowed, so it never self-heals. Two live siblings of the
+same mechanism are filed beside it: Triage's Today strip (-03) and the weekly
+value-receipt email (-04, needs a founder call).
+
+Full detail: `docs/qa/qa-worklist.md` `## activity`.
+
 **Found:** 2026-09-02 · `/ct-qa sender-detail`, QA-sender-detail-20260902-01,
 survived `finding-refuter`.
 
