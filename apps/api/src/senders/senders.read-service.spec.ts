@@ -2403,6 +2403,48 @@ describe('SendersReadService', () => {
       expect(rows).toEqual([]);
     });
 
+    /**
+     * QA-activity-20260918-02: Activity rendered an undone Archive as
+     * "Undone" while this history served the same `activity_log` row
+     * with no reversal on the wire, so Sender Detail showed it standing.
+     * Two rows on purpose — a lone reverted row could not tell "carries
+     * the reversal" from "marks everything reverted".
+     */
+    it('carries the reversal for an undone action and null for one that stands', async () => {
+      const a = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'undone-history@x.com',
+        lastSeenAt: new Date('2026-05-01T00:00:00Z'),
+      });
+      const standingId = await seedActivity({
+        senderKey: a.senderKey,
+        action: 'archive',
+        occurredAt: new Date('2026-05-10T09:00:00Z'),
+        affectedCount: 12,
+      });
+      const undoneId = await seedActivity({
+        senderKey: a.senderKey,
+        action: 'archive',
+        occurredAt: new Date('2026-05-12T09:00:00Z'),
+        affectedCount: 47,
+      });
+      await db
+        .update(activityLog)
+        .set({ revertedAt: new Date('2026-05-13T10:00:00Z') })
+        .where(eq(activityLog.id, undoneId));
+
+      const rows = await svc.listDecisionHistory({
+        mailboxAccountId: mailboxId,
+        senderId: a.id,
+        cursor: null,
+        limit: 10,
+      });
+      expect(rows?.map((r) => [r.id, r.revertedAt])).toEqual([
+        [undoneId, '2026-05-13T10:00:00.000Z'],
+        [standingId, null],
+      ]);
+    });
+
     it('returns the actions the user took, newest first', async () => {
       const a = await seedSender(db, {
         mailboxAccountId: mailboxId,

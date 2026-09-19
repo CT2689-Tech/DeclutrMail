@@ -104,6 +104,15 @@ describe('adaptDecisionHistoryRow — actions that actually happened', () => {
     expect(adaptDecisionHistoryRow(historyRow({ action: 'keep' }))?.count).toBeUndefined();
   });
 
+  it('marks an undone action, and treats a missing or null reversal as standing', () => {
+    expect(
+      adaptDecisionHistoryRow(historyRow({ revertedAt: '2026-05-13T10:00:00.000Z' }))?.undoneAt,
+    ).toBe('2026-05-13T10:00:00.000Z');
+    expect(adaptDecisionHistoryRow(historyRow({ revertedAt: null }))?.undoneAt).toBeUndefined();
+    // A web deploy ahead of the API receives no key at all.
+    expect(adaptDecisionHistoryRow(historyRow())?.undoneAt).toBeUndefined();
+  });
+
   it('uses the occurrence time, not an engine compute time', () => {
     const row = adaptDecisionHistoryRow(historyRow({ occurredAt: '2026-08-18T09:30:00.000Z' }));
     expect(row?.at).toBe('2026-08-18T09:30:00.000Z');

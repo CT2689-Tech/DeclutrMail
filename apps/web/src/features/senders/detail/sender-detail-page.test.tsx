@@ -462,6 +462,69 @@ describe('SenderDetailRoute', () => {
    * showed nothing had happened. History now comes from `activity_log`,
    * so an untouched sender says exactly that.
    */
+  /**
+   * QA-activity-20260918-02: an Archive the user had undone rendered here
+   * as a live decision while Activity marked the same record Undone.
+   */
+  it('marks an undone action and never calls it the current decision', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => jsonOk({ data: DETAIL }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: TIMESERIES }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                id: 'op-undone',
+                action: 'archive',
+                source: 'manual',
+                occurredAt: '2026-05-12T09:00:00.000Z',
+                affectedCount: 47,
+                revertedAt: '2026-05-13T10:00:00.000Z',
+              },
+              {
+                id: 'op-standing',
+                action: 'keep',
+                source: 'manual',
+                occurredAt: '2026-05-10T09:00:00.000Z',
+                affectedCount: 0,
+                revertedAt: null,
+              },
+            ],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    const undoneRow = (await screen.findByTitle('op op-undone')).closest('li');
+    const standingRow = screen.getByTitle('op op-standing').closest('li');
+    expect(undoneRow).toHaveTextContent('Undone');
+    expect(standingRow).not.toHaveTextContent('Undone');
+    // The newest row is undone, so "current" belongs to the older one.
+    expect(undoneRow).not.toHaveAttribute('data-current');
+    expect(standingRow).toHaveAttribute('data-current', 'true');
+  });
+
   it('claims no decision for a sender nobody has acted on', async () => {
     installFetchStub([
       {

@@ -691,6 +691,13 @@ export interface DecisionHistoryRow {
   occurredAt: string;
   /** Messages moved. 0 for policy-only verbs (Keep, Protect toggles). */
   affectedCount: number;
+  /**
+   * ISO-8601 — when the user undid this action, or null while it stands.
+   * Activity renders the same `activity_log.reverted_at` as "Undone";
+   * without it this history showed an undone Archive as a live decision
+   * (QA-activity-20260918-02).
+   */
+  revertedAt: string | null;
 }
 
 /**

@@ -85,6 +85,7 @@ function makeHistoryRow(overrides: Partial<DecisionHistoryRow> = {}): DecisionHi
     source: 'manual',
     occurredAt: '2026-05-01T00:00:00.000Z',
     affectedCount: 47,
+    revertedAt: null,
     ...overrides,
   };
 }
