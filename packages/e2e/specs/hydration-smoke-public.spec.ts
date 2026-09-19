@@ -115,5 +115,65 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
 for (const route of PUBLIC_HYDRATED_ROUTES) {
   test(`public route mounts without hydration recovery: ${route}`, async ({ page }) => {
     await expectRouteHydrates(page, route);
+    // Positive control for the returning-visitor lane below: a first
+    // visit DOES get the consent ask on every one of these routes, so its
+    // absence there means the seeded choice was read, not that the banner
+    // never mounts.
+    await expect(page.getByTestId('cookie-consent-banner')).toHaveCount(1);
   });
+}
+
+/**
+ * RETURNING-visitor lane. Everything above runs with empty storage, which
+ * is the one state where a storage-dependent first render CANNOT mismatch:
+ * the server has no storage either, so both sides agree by accident. A
+ * component that seeds `useState` from `localStorage` or `document.cookie`
+ * passes every test above and breaks only for someone who has been here
+ * before — which is exactly the profile a 2026-09-19 production `#418`
+ * report came from (stored "Accept all"). That report did not reproduce
+ * (180 scripted loads, five storage states, the exact deployment), but it exposed
+ * that this gate could not have caught the defect it described.
+ *
+ * Keys mirror `apps/web/src/lib/cookie-consent.ts` and
+ * `apps/web/public/theme-init.js`, spelled out because e2e does not
+ * depend on the web package. Each lane asserts the state it seeded was
+ * actually applied (banner absent, `data-theme` set). Consent is stored
+ * twice by design and `readStoredConsent` falls back to the cookie, so
+ * the banner check goes red only if BOTH consent keys drift.
+ */
+const RETURNING_VISITORS = [
+  { label: 'accepted analytics, dark theme', consent: 'all', theme: 'dark' },
+  { label: 'essential only', consent: 'essential', theme: null },
+] as const;
+
+for (const visitor of RETURNING_VISITORS) {
+  for (const route of PUBLIC_HYDRATED_ROUTES) {
+    test(`returning visitor (${visitor.label}) mounts without hydration recovery: ${route}`, async ({
+      page,
+      context,
+      baseURL,
+    }) => {
+      if (!baseURL) throw new Error('baseURL is required to scope the consent cookie');
+      await context.addCookies([
+        { name: 'dm_cookie_consent', value: visitor.consent, url: baseURL },
+      ]);
+      await context.addInitScript(
+        ({ consent, theme }) => {
+          window.localStorage.setItem('dm-cookie-consent', consent);
+          if (theme) window.localStorage.setItem('dm-theme', theme);
+        },
+        { consent: visitor.consent, theme: visitor.theme },
+      );
+
+      await expectRouteHydrates(page, route);
+
+      // Proof the seeded state was actually SEEN — otherwise this lane
+      // silently degrades to a first visit and passes for the wrong
+      // reason. The first-visit lane asserts the banner IS present.
+      await expect(page.getByTestId('cookie-consent-banner')).toHaveCount(0);
+      if (visitor.theme) {
+        await expect(page.locator('html')).toHaveAttribute('data-theme', visitor.theme);
+      }
+    });
+  }
 }
