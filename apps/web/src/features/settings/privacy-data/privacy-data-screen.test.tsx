@@ -128,6 +128,18 @@ describe('PrivacyDataView', () => {
     expect(screen.getByText(/Gmail Trash recovery is separate/i)).toBeInTheDocument();
   });
 
+  // QA-activity-20260918-01: a processor in the registry with no sentence
+  // here is a third party the user is never told about.
+  it('names every external processor that receives a listed dataset', () => {
+    renderView();
+    expect(
+      screen.getByText(/The domain alone may be sent to Brandfetch to find a logo\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(/May be sent to Anthropic for generated text\./).length,
+    ).toBeGreaterThan(0);
+  });
+
   it('states that encrypted OAuth credentials are excluded from exports', () => {
     renderView();
     const credentialRow = screen.getByText('Encrypted Google OAuth credential').closest('li');
@@ -194,9 +206,14 @@ describe('PrivacyDataView', () => {
 
   it('links the live Privacy Policy and Terms pages (both are published)', () => {
     renderView();
-    expect(screen.getByRole('link', { name: /privacy policy/i })).toHaveAttribute(
+    // Anchored: the Brandfetch line also links "Brandfetch's privacy policy".
+    expect(screen.getByRole('link', { name: /^privacy policy$/i })).toHaveAttribute(
       'href',
       '/privacy',
+    );
+    expect(screen.getByRole('link', { name: /brandfetch.s privacy policy/i })).toHaveAttribute(
+      'href',
+      'https://brandfetch.com/privacy',
     );
     expect(screen.getByRole('link', { name: /^terms$/i })).toHaveAttribute('href', '/terms');
     // The stale placeholder must be gone.

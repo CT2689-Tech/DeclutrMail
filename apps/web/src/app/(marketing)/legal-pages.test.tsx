@@ -227,6 +227,7 @@ describe('/privacy content — D7 + D228 posture', () => {
       'Sentry',
       'PostHog',
       'Anthropic',
+      'Brandfetch',
       'Resend',
       'Paddle',
       'Razorpay',

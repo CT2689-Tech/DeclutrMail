@@ -79,8 +79,11 @@
 //     or connect-src grant, neither of which the blocked frame needs.
 //   Google avatars   — sender/account avatars come from
 //     `https://*.googleusercontent.com` (lh3…lh6) per D175 (img-src).
-//   Sender identity  — avatars are monogram-only per ADR-0024; sender
-//     domains are never sent to third-party logo services.
+//   Sender identity  — sender logos load from our own API
+//     (`/api/icons/<domain>`, ADR-0034), so the browser never contacts a
+//     third-party logo service and img-src needs no logo origin. Logo
+//     resolution happens server-side; `/privacy` Section 8 names the
+//     vendor involved.
 //   Fonts            — next/font self-hosts Geist / Geist Mono /
 //     Fraunces under `/_next/static/media` at build time, so font-src
 //     stays `'self'` with no external font origin (verified: no
