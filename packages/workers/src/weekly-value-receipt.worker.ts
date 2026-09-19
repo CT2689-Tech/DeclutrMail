@@ -312,11 +312,23 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
             AND activity_log.action IN (${sql.raw(sqlList(CANONICAL_DECISIONS))})
             AND activity_log.reverted_at IS NULL
         )::int`,
-        undone: sql<number>`COUNT(*) FILTER (WHERE activity_log.reverted_at IS NOT NULL)::int`,
       })
       .from(activityLog)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, activityLog.mailboxAccountId))
       .where(and(eq(mailboxAccounts.userId, userId), gte(activityLog.occurredAt, windowStart)));
+
+    // Windowed on WHEN THE USER UNDID IT, not on when the original action
+    // ran — that is what "reversed inside the window" means, and what the
+    // email's "this week" heading claims. Counting it inside the ledger
+    // pass above keyed it to `occurred_at`, so a week spent undoing older
+    // actions reported zero and could suppress the send through
+    // `isEmptyWeek` (QA-activity-20260918-04). Typed column comparison,
+    // so no JS Date reaches a raw `sql` template.
+    const [reversals] = await this.deps.db
+      .select({ undone: count() })
+      .from(activityLog)
+      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, activityLog.mailboxAccountId))
+      .where(and(eq(mailboxAccounts.userId, userId), gte(activityLog.revertedAt, windowStart)));
 
     // At most one Brief per mailbox per day, so this is a handful of
     // rows. Counting distinct senders in JS beats a jsonb LATERAL that
@@ -355,7 +367,7 @@ export class WeeklyValueReceiptWorker extends BaseDeclutrWorker<
       // No run means the number is unknown, not zero.
       briefSurfaced: runs.length === 0 ? null : surfaced.size,
       pendingScreener: Number(screener?.pending ?? 0),
-      undone: Number(ledger?.undone ?? 0),
+      undone: Number(reversals?.undone ?? 0),
     };
   }
 }

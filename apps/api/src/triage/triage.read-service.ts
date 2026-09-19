@@ -1075,7 +1075,10 @@ export class TriageReadService {
     const tier: TriageSessionStats['tier'] =
       tierEnum === 'plus' ? 'plus' : tierEnum === 'free' ? 'free' : 'pro';
 
-    // Today's decision counts by verb.
+    // Today's decision counts by verb. Net of reversals, like every
+    // other windowed `activity_log` count (QA-undo-20260828-01): an
+    // action the user undid is not a decision that stands, and the strip
+    // kept crediting it (QA-activity-20260918-03).
     const todayCounts = await this.db
       .select({ action: activityLog.action, n: count() })
       .from(activityLog)
@@ -1083,6 +1086,7 @@ export class TriageReadService {
         and(
           eq(activityLog.mailboxAccountId, input.mailboxAccountId),
           gte(activityLog.occurredAt, todayStartUtc),
+          isNull(activityLog.revertedAt),
         ),
       )
       .groupBy(activityLog.action);
@@ -1218,6 +1222,7 @@ export class TriageReadService {
           eq(activityLog.mailboxAccountId, input.mailboxAccountId),
           eq(activityLog.source, 'autopilot'),
           gte(activityLog.occurredAt, todayStartUtc),
+          isNull(activityLog.revertedAt),
         ),
       );
 

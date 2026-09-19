@@ -314,6 +314,46 @@ describe('WeeklyValueReceiptWorker facts', () => {
     });
   });
 
+  /**
+   * QA-activity-20260918-04: `undone` was counted inside the ledger pass,
+   * which windows on `occurred_at`. A user who spent the week undoing
+   * last month's archives got "0 actions you undid" — and, with nothing
+   * else that week, no receipt at all.
+   */
+  it('counts an undo by when the user undid it, not by when the action ran', async () => {
+    const db = await freshDb();
+    const facts = await factsFor(
+      db,
+      async (mailboxId) => {
+        await db.insert(activityLog).values([
+          // Old action, undone THIS week → counted.
+          {
+            mailboxAccountId: mailboxId,
+            senderKey: 'old-undone-now',
+            source: 'autopilot',
+            action: 'archive',
+            affectedCount: 47,
+            occurredAt: new Date(NOW.getTime() - 21 * DAY_MS),
+            revertedAt: new Date(NOW.getTime() - 1 * DAY_MS),
+          },
+          // Old action, undone BEFORE the window → not this week's news.
+          {
+            mailboxAccountId: mailboxId,
+            senderKey: 'old-undone-then',
+            source: 'autopilot',
+            action: 'archive',
+            affectedCount: 12,
+            occurredAt: new Date(NOW.getTime() - 25 * DAY_MS),
+            revertedAt: new Date(NOW.getTime() - 20 * DAY_MS),
+          },
+        ]);
+      },
+      1,
+    );
+
+    expect(facts).toMatchObject({ automatedMessages: 0, ownDecisions: 0, undone: 1 });
+  });
+
   it('counts DISTINCT senders, never rows, and ignores sender-less bulk actions', async () => {
     const db = await freshDb();
     const facts = await factsFor(

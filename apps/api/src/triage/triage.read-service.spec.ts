@@ -479,6 +479,65 @@ describe('TriageReadService.getTodaySummary — the D214 Today strip', () => {
     expect(summary.handledAutomatically).toBe(8);
   });
 
+  /**
+   * QA-activity-20260918-03: every other windowed `activity_log` reader
+   * went net-of-reversals in #671; these two were missed, so undoing an
+   * action on the day it was taken left Triage crediting it. Each case
+   * seeds a standing row beside the undone one — a lone reverted row
+   * could not tell "excludes reversals" from "counts nothing".
+   */
+  it('stops counting an Autopilot action as handled once the user undoes it', async () => {
+    await db.insert(activityLog).values([
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_A,
+        source: 'autopilot' as const,
+        action: 'archive' as const,
+        affectedCount: 5,
+      },
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_B,
+        source: 'autopilot' as const,
+        action: 'archive' as const,
+        affectedCount: 40,
+        revertedAt: new Date(),
+      },
+    ]);
+    const summary = await svc.getTodaySummary({ mailboxAccountId: mailboxId });
+    expect(summary.handledAutomatically).toBe(5);
+  });
+
+  it("drops an undone decision from today's session counts", async () => {
+    await db.insert(activityLog).values([
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_A,
+        source: 'triage' as const,
+        action: 'archive' as const,
+        affectedCount: 5,
+      },
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_B,
+        source: 'triage' as const,
+        action: 'archive' as const,
+        affectedCount: 9,
+        revertedAt: new Date(),
+      },
+      {
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_B,
+        source: 'triage' as const,
+        action: 'later' as const,
+        affectedCount: 2,
+        revertedAt: new Date(),
+      },
+    ]);
+    const stats = await svc.getSessionStats({ mailboxAccountId: mailboxId });
+    expect(stats).toMatchObject({ decidedToday: 1, archivedToday: 1, laterToday: 0 });
+  });
+
   it('queuedDecisions matches the D30-clamped queue and pct is the queued non-Keep share of 90d volume', async () => {
     // Two queued archive decisions (seedSenderWithDecision verdicts
     // are 'archive'), 6 of the mailbox's 8 inbound 90d messages come
