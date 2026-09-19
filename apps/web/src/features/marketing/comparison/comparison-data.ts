@@ -32,7 +32,8 @@ export type ComparisonSlug =
   | 'leave-me-alone'
   | 'unroll-me'
   | 'gmail-filters'
-  | 'gmail';
+  | 'gmail'
+  | 'meta-muse';
 
 export type EvidenceState = 'supported' | 'limited' | 'not-supported' | 'unknown' | 'native';
 
@@ -1135,6 +1136,155 @@ const gmailNative: ComparisonDefinition = {
 };
 
 /**
+ * A general-purpose agent, not a cleanup tool — so most cleanup rows are
+ * honestly `unknown`. The reviewed Meta pages describe email search and
+ * approval-gated sending; they do not describe bulk cleanup, and silence
+ * is not a "no". Meta's own statements that Muse data is kept out of its
+ * ad systems are carried as Meta states them: the difference this page
+ * draws is scope of mailbox access, never an advertising claim Meta
+ * explicitly denies.
+ */
+const metaMuse: ComparisonDefinition = {
+  slug: 'meta-muse',
+  name: 'Meta Muse',
+  category: 'General-purpose AI agent',
+  verifiedIso: '2026-09-18',
+  title: 'DeclutrMail vs Meta Muse',
+  description:
+    'A source-backed comparison of DeclutrMail and Meta Muse for Gmail: a narrow cleanup tool that never fetches full message contents versus a general AI agent that can read and send mail.',
+  verdict:
+    'Meta Muse is a general-purpose AI agent that can search your mail and, if you allow it, send on your behalf. DeclutrMail does one narrower job — sender-by-sender Gmail cleanup with a preview and an undo record — without fetching full message bodies or attachments.',
+  indexSummary:
+    'A general AI agent that reads mail to help with anything, versus a Gmail cleanup tool that works without full message contents.',
+  primaryUnit: 'Conversation with an agent',
+  providerScope: 'Gmail shown as a Connector; other providers not stated',
+  publicEntryPoint: 'Free for most uses; paid plan prices not stated in reviewed Meta pages',
+  chooseCompetitor: {
+    headline: 'Choose Meta Muse for an agent that works across your life',
+    points: [
+      'You want one assistant across email and other connected services, not a single-purpose tool.',
+      'You want help that depends on reading mail — finding a message, or drafting and sending replies with your approval.',
+      'You are comfortable with an agent that keeps a memory of what it learns about you, which Meta says you can inspect and reset.',
+    ],
+  },
+  chooseDeclutrMail: {
+    headline: 'Choose DeclutrMail when the job is cleaning up Gmail',
+    points: [
+      'You want to clear senders in bulk and see the exact count and sample before anything moves.',
+      'You want a cleanup tool that does not fetch full message bodies or attachments at all.',
+      'You want a per-sender record of what changed, with an undo window for Archive, Later, and Delete.',
+    ],
+  },
+  rows: [
+    {
+      label: 'Core approach',
+      declutrMail: DECLUTR.focus,
+      competitor: {
+        summary: 'General-purpose personal AI agent',
+        detail:
+          'Meta describes Muse as a personal AI agent that helps with your goals and suggests ideas; email is one of several services it can connect to.',
+        state: 'supported',
+      },
+    },
+    {
+      label: 'Mailbox support',
+      declutrMail: DECLUTR.providers,
+      competitor: {
+        summary: 'Gmail shown as a Connector',
+        detail:
+          'The reviewed help page uses Gmail as its example; a full list of supported mail providers is not stated there.',
+        state: 'unknown',
+      },
+    },
+    {
+      label: 'Existing-mail cleanup',
+      declutrMail: DECLUTR.existingMail,
+      competitor: {
+        summary: 'Bulk cleanup by sender not stated',
+        detail:
+          'The reviewed Meta pages describe searching email and approval-gated sending. Bulk archive or delete by sender is not stated.',
+        state: 'unknown',
+      },
+    },
+    {
+      label: 'Future-mail automation',
+      declutrMail: DECLUTR.futureMail,
+      competitor: {
+        summary: 'Mail rules not stated',
+        detail: 'Ongoing rules for incoming mail are not stated in the reviewed Meta pages.',
+        state: 'unknown',
+      },
+    },
+    {
+      label: 'Unsubscribe',
+      declutrMail: DECLUTR.unsubscribe,
+      competitor: {
+        summary: 'Not stated',
+        detail: 'An unsubscribe feature is not stated in the reviewed Meta pages.',
+        state: 'unknown',
+      },
+    },
+    {
+      label: 'Preview and recovery',
+      declutrMail: DECLUTR.recovery,
+      competitor: {
+        summary: 'Approval before important actions; undo window not stated',
+        detail:
+          'Meta says that by default Muse will not take many important actions, like sending an email, without your approval, and that many Connectors can be set to retrieve data only. An undo window for mailbox changes is not stated.',
+        state: 'limited',
+      },
+    },
+    {
+      label: 'Email-data posture',
+      declutrMail: DECLUTR.data,
+      competitor: {
+        summary: 'Can search and read your mail once connected',
+        detail:
+          'Meta says connecting email lets Muse search it, that you choose whether it reads your mail or can also send, and that it will not download your whole inbox unless you tell it to. Data for connected services is kept in a per-user cloud virtual machine, and Muse may still remember what it learned from items you later delete.',
+        state: 'supported',
+      },
+    },
+    {
+      label: 'How the product is funded',
+      declutrMail: DECLUTR.funding,
+      competitor: {
+        summary: 'Free tier plus subscriptions; Meta says no ad-system sharing',
+        detail:
+          'Meta states that Muse does not share your conversations or the data in your virtual machine with Meta ad systems, and that you decide whether your interactions are used to improve its AI models.',
+        state: 'supported',
+      },
+    },
+    {
+      label: 'Public starting point',
+      declutrMail: DECLUTR.price,
+      competitor: {
+        summary: 'Free for most uses, rolling out in the US',
+        detail:
+          'Meta says Muse is free for most of what people need, with subscription plans for more, on iOS, Android, and the web. Plan prices are not stated in the reviewed Meta pages.',
+        state: 'unknown',
+      },
+    },
+  ],
+  sources: [
+    {
+      label: 'Meta Newsroom — Introducing Muse',
+      url: 'https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/',
+      note: 'What Muse is, US rollout and platforms, free-plus-subscription model, read-or-send email choice, ad-system statement.',
+    },
+    {
+      label: 'Meta Help Center — How Muse works with Connectors',
+      url: 'https://www.meta.com/help/artificial-intelligence/1687253048996149/',
+      note: 'Connecting Gmail, email search, no whole-inbox download by default, approval before sending, retrieve-only Connectors.',
+    },
+    {
+      label: 'Meta Help Center — How Muse handles your privacy, safety and security',
+      url: 'https://www.meta.com/help/artificial-intelligence/1047255454427887/',
+      note: 'Per-user virtual machine, ad-system and model-improvement statements, deletion, reset, and what Muse may still remember.',
+    },
+  ],
+};
+
+/**
  * Typed non-empty so the verification floor below needs no assertion: an
  * empty list would otherwise type as `string` while holding `undefined`,
  * and the hub would render "Last verified Invalid Date" — the worst
@@ -1148,6 +1298,7 @@ export const COMPARISONS: readonly [ComparisonDefinition, ...ComparisonDefinitio
   unrollMe,
   gmailFilters,
   gmailNative,
+  metaMuse,
 ];
 
 /**
