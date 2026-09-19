@@ -18,7 +18,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Cookie Preferences — DeclutrMail',
   description:
-    'View or change your cookie preferences at any time. Essential cookies for sign-in and billing are always on; optional PostHog analytics runs only with your consent.',
+    'View or change your cookie preferences at any time. Essential cookies for sign-in and billing are always on; optional PostHog analytics runs only with your consent. Public pages also keep a cookieless page-view count.',
   path: '/cookies',
 });
 
@@ -50,9 +50,15 @@ export default function CookiePreferencesPage() {
         <p>
           <strong>Optional analytics</strong> (PostHog) runs only after you choose Accept all, and
           only to understand which features matter — it never sees your inbox content. Choosing
-          Essential only stops analytics immediately and clears its identifier. We never use
+          Essential only stops PostHog immediately and clears its identifier. We never use
           advertising cookies or cross-site trackers. Details are in the{' '}
           <a href="/privacy#cookies">privacy policy&rsquo;s cookies section</a>.
+        </p>
+        <p>
+          <strong>Cookieless page-view counts</strong> (Vercel Web Analytics) run on our public
+          website pages regardless of this choice, because they set no cookie and store nothing on
+          your device. They are aggregate counts, not tied to you, and they do not run inside the
+          signed-in app.
         </p>
       </LegalSection>
     </LegalPageLayout>

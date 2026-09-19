@@ -218,6 +218,14 @@ export default function PrivacyPolicyPage() {
           at any time on the <a href="/cookies">Cookie preferences</a> page (also in the app under
           Settings); withdrawal takes effect immediately.
         </p>
+        <p>
+          Separately, our public website pages — not the signed-in app — count page views with
+          Vercel Web Analytics. It sets no cookies and stores nothing on your device, so it does not
+          depend on the cookie banner. Vercel identifies a visit with a hash created from the
+          incoming request and discards it after 24 hours; the counts are aggregate (page, referrer,
+          country, device and browser type) and are not tied to you or to your DeclutrMail account.
+          Before a page view is sent we strip the address down to the page path and campaign tags.
+        </p>
       </LegalSection>
 
       <LegalSection id="retention-deletion" title="7. Data retention and deletion">
@@ -283,7 +291,7 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>Vercel</td>
-              <td>Web application hosting</td>
+              <td>Web application hosting; cookieless page-view counts on public website pages</td>
             </tr>
             <tr>
               <td>Upstash</td>
