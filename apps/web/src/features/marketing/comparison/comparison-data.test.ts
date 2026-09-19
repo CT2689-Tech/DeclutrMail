@@ -21,6 +21,7 @@ const EXPECTED_SLUGS = [
   'unroll-me',
   'gmail-filters',
   'gmail',
+  'meta-muse',
 ];
 
 describe('comparison data', () => {
@@ -52,6 +53,9 @@ describe('comparison data', () => {
       // about itself.
       'www.ftc.gov',
       'support.google.com',
+      // Meta publishes Muse's product facts across its newsroom and help center.
+      'about.fb.com',
+      'www.meta.com',
     ]);
 
     for (const comparison of COMPARISONS) {
