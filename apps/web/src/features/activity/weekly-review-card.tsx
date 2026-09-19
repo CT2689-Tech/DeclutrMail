@@ -4,10 +4,12 @@ import type { ActivityReviewOutcomeWire, ActivityWeeklyReviewWire } from '@/lib/
 const { color, font } = tokens;
 const OUTCOMES: Array<{ key: ActivityReviewOutcomeWire; label: string }> = [
   { key: 'completed', label: 'Completed' },
-  { key: 'skipped', label: 'Skipped' },
+  { key: 'skipped', label: 'Dismissed by you' },
   { key: 'failed', label: 'Failed' },
-  { key: 'recovered', label: 'Recovered' },
-  { key: 'protected', label: 'Protected' },
+  // A failed action that succeeded on retry — never a user's Undo, which
+  // lands in no bucket here (QA-undo-20260828-03).
+  { key: 'recovered', label: 'Fixed on retry' },
+  { key: 'protected', label: 'Skipped for Protected' },
 ];
 
 /**
@@ -63,20 +65,20 @@ export function WeeklyReviewCard({
             Your last 7 days
           </h2>
           <p style={{ margin: '4px 0 0', color: color.fgSoft, fontSize: 12.5 }}>
-            Exact outcomes from Activity{senderQuery ? ' for this sender' : ''}. Select a count to
-            see its records.
+            What happened to actions from the last 7 days{senderQuery ? ' for this sender' : ''},
+            whatever the filters below say. Select a number to see those records.
           </p>
         </div>
         {activeOutcome && (
           <a href="/activity?window=7d" style={{ color: color.fgSoft, fontSize: 12 }}>
-            Clear {activeOutcome} filter
+            Clear this filter
           </a>
         )}
       </div>
-      {loading && <p role="status">Loading weekly outcomes…</p>}
+      {loading && <p role="status">Loading…</p>}
       {error && (
         <div role="alert" style={{ marginTop: 12, color: color.danger }}>
-          Weekly outcomes could not load.{' '}
+          These numbers could not load.{' '}
           <button type="button" onClick={onRetry}>
             Try again
           </button>
@@ -114,7 +116,7 @@ export function WeeklyReviewCard({
           </div>
           {OUTCOMES.every(({ key }) => review[key] === 0) && (
             <p style={{ margin: '12px 0 0', color: color.fgSoft, fontSize: 12.5 }}>
-              No outcomes in the last 7 days. Nothing needs your attention.
+              None of these in the last 7 days.
             </p>
           )}
         </>

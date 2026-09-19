@@ -14,7 +14,7 @@ export const ACTIVITY_ACTION_LABELS = {
   unsubscribe_unavailable: 'No unsubscribe channel available',
   later: getActionSemantics('later').resultLabel,
   delete: getActionSemantics('delete').resultLabel,
-  'followup-dismiss': 'Followup resolved',
+  'followup-dismiss': 'Follow-up resolved',
   marked_protected: 'Protected',
   unmarked_protected: 'Unprotected',
 } as const;
