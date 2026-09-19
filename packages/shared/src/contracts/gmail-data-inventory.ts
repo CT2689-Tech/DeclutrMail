@@ -61,7 +61,7 @@ export const GMAIL_DATA_PROCESSORS = {
   },
   Brandfetch: {
     purpose:
-      "Find a logo for a sender's email domain when the sender publishes none of its own. Receives the domain only.",
+      "Find a logo for a sender's email domain when neither the sender's own published logo record (BIMI) nor its website gives us a usable one. Receives the domain only.",
     // Read 2026-09-19: Brandfetch's policy states a general retention
     // principle and no figure for API request logs. `unknown` stays
     // unknown — do not round it to a number.
@@ -451,14 +451,14 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['domain_icons.*'],
     derived: true,
     purpose:
-      "Show a logo beside a sender. The email domain of a sender shown in the app may be looked up, whether or not it is a brand — first against the sender's own published logo record and website, and only when those have nothing, the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.",
+      "Show a logo beside a sender. The email domain of a sender shown in the app may be looked up, whether or not it is a brand — first against the sender's own published logo record and website, and only when neither of those gives us a usable logo, the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.",
     // Every verb here names a mechanism that exists. There is no sweep and
     // no DELETE against `domain_icons`: a row is re-resolved in place the
     // next time someone views that domain after its cache window, and a
     // domain nobody views again simply stays. An earlier draft said rows
     // were "dropped on a rolling schedule" — no such schedule exists.
     retention:
-      'Cache rows are keyed by domain, shared across all users, and hold no link to you or your mailbox, so deleting your data has nothing of yours to remove from them. A row may be looked up again when that sender is shown after its cache period has passed; rows are not otherwise deleted.',
+      'Cache rows are keyed by domain, shared across all users, and hold no link to you or your mailbox, so deleting your data has nothing of yours to remove from them. A row may be looked up again when that sender is shown after its cache period has passed; rows are never deleted.',
     removalTrigger: 'retention-policy',
     exportedIn: [],
     transmittedTo: ['DeclutrMail', 'Brandfetch'],

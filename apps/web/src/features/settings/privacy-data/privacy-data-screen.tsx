@@ -158,8 +158,8 @@ export function PrivacyDataView({
             explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
           </p>
           <p style={{ ...mutedTextStyle, marginTop: 8 }}>
-            Brandfetch only ever receives a sender&rsquo;s email domain.{' '}
-            {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
+            Brandfetch receives a sender&rsquo;s email domain and nothing else about you — never
+            your address, your account, or any message. {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
             <a
               href={GMAIL_DATA_PROCESSORS.Brandfetch.privacyUrl}
               target="_blank"
@@ -167,6 +167,7 @@ export function PrivacyDataView({
             >
               Brandfetch&rsquo;s privacy policy
             </a>
+            .
           </p>
         </div>
       </Card>
