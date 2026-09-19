@@ -59,7 +59,20 @@ export const GMAIL_DATA_PROCESSORS = {
     privacyUrl:
       'https://privacy.anthropic.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data',
   },
-} as const;
+  Brandfetch: {
+    purpose:
+      "Find a logo for a sender's email domain when the sender publishes none of its own. Receives the domain only.",
+    // Read 2026-09-19: Brandfetch's policy states a general retention
+    // principle and no figure for API request logs. `unknown` stays
+    // unknown — do not round it to a number.
+    retention:
+      'Brandfetch does not publish how long it keeps API request logs. Each domain is looked up once for all DeclutrMail users, not once per user.',
+    privacyUrl: 'https://brandfetch.com/privacy',
+  },
+} as const satisfies Record<
+  GmailDataProcessor,
+  { purpose: string; retention: string; privacyUrl: string }
+>;
 
 export interface GmailDataInventoryItem {
   /** Stable identifier used by copy, tests, and deletion/export manifests. */
@@ -433,14 +446,19 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     // header, and a third party receives it (QA-activity-20260918-01).
     id: 'sender-logo-lookup',
     category: 'derived',
-    label: 'Sender logo lookups by email domain',
+    label: 'Sender logo cache, keyed by email domain and shared across all users',
     fetchedFrom: ['sender-identity'],
     storageRefs: ['domain_icons.*'],
     derived: true,
     purpose:
-      "Show a recognizable logo beside a sender. Only the sender's email domain is looked up — against the sender's own published logo record and website, then the Brandfetch logo service — never your address, your account, or any message.",
+      "Show a logo beside a sender. Every sender's email domain is looked up, whether or not it is a brand — against the sender's own published logo record and website, then the Brandfetch logo service. Only the domain is sent: never your address, your account, or any message.",
+    // Every verb here names a mechanism that exists. There is no sweep and
+    // no DELETE against `domain_icons`: a row is re-resolved in place the
+    // next time someone views that domain after its cache window, and a
+    // domain nobody views again simply stays. An earlier draft said rows
+    // were "dropped on a rolling schedule" — no such schedule exists.
     retention:
-      'Logo cache rows are keyed by domain, shared across all users, and hold no link to you or your mailbox; they are refreshed or dropped on a rolling cache schedule rather than deleted with your data.',
+      'Cache rows are keyed by domain, shared across all users, and hold no link to you or your mailbox, so deleting your data has nothing of yours to remove from them. A row is looked up again the next time that sender is shown after its cache period; rows are not otherwise deleted.',
     removalTrigger: 'retention-policy',
     exportedIn: [],
     transmittedTo: ['DeclutrMail', 'Brandfetch'],

@@ -156,6 +156,10 @@ export function PrivacyDataView({
             Anthropic only ever sees the items marked above for Brief summaries or optional sender
             explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
           </p>
+          <p style={{ ...mutedTextStyle, marginTop: 8 }}>
+            Brandfetch only ever receives a sender&rsquo;s email domain.{' '}
+            {GMAIL_DATA_PROCESSORS.Brandfetch.retention}
+          </p>
         </div>
       </Card>
 
@@ -392,14 +396,9 @@ function inventoryDisplayItem(item: {
     item.exportedIn.length > 0
       ? `Included in: ${item.exportedIn.join(', ')}.`
       : 'Not currently included in a data export.';
-  // One sentence per external processor, so a processor added to the
-  // registry cannot reach production without a line here saying so.
-  const processorDetail = [
-    item.transmittedTo.includes('Anthropic') ? ' May be sent to Anthropic for generated text.' : '',
-    item.transmittedTo.includes('Brandfetch')
-      ? ' The domain alone may be sent to Brandfetch to find a logo.'
-      : '',
-  ].join('');
+  const processorDetail = item.transmittedTo
+    .map((processor) => PROCESSOR_SENTENCE[processor as keyof typeof PROCESSOR_SENTENCE] ?? '')
+    .join('');
   const deletionDetail = deletionTriggerDetail(item.removalTrigger);
   return {
     id: item.id,
@@ -407,6 +406,17 @@ function inventoryDisplayItem(item: {
     detail: `${item.purpose} ${item.retention} ${deletionDetail} ${exportDetail}${processorDetail}`,
   };
 }
+
+/**
+ * One sentence per processor. Typed against the registry union, so adding
+ * a processor there is a compile error here until it has a sentence —
+ * the screen cannot silently omit a third party.
+ */
+const PROCESSOR_SENTENCE: Record<keyof typeof GMAIL_DATA_PROCESSORS, string> = {
+  DeclutrMail: '',
+  Anthropic: ' May be sent to Anthropic for generated text.',
+  Brandfetch: ' The domain alone may be sent to Brandfetch to find a logo.',
+};
 
 function deletionTriggerDetail(
   trigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy',
