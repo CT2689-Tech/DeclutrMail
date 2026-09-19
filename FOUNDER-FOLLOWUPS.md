@@ -23,6 +23,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-19 — Confirm Brandfetch's terms cover cached logo delivery, or pick a plan that does
+**Source:** QA-activity-20260918-01 · ADR-0034 tier 3
+**Why:** ADR-0034 records that Brandfetch's general terms make cached delivery subject to a specific written agreement, and that a developer key alone is not one. The tier has run in production since PR #562 (2026-08-19) and DeclutrMail caches what it fetches. Specifically: Brandfetch artwork stops being SERVED after the 30-day cache period (`icons.service.ts` skips stale provider bytes) but is never DELETED — there is no sweep against `domain_icons`, so bytes for a sender nobody views again stay in Postgres past that window. "We honour the 30-day cache term" is therefore not what the code guarantees. The disclosure gap is closed (`/privacy` §8, the data registry, a truth-gate); this licensing question is a separate one that only the founder can settle, and an agent cannot verify a vendor's current terms on the founder's behalf.
+**How:** Read Brandfetch's current Brand API terms for caching and redistribution; either get the written permission / move to a plan that includes it, or unbind `brandfetch-api-key-prod` from `declutrmail-worker` so the tier falls back to BIMI + the sender's own site + monogram. If unbound, removing the Brandfetch row from `/privacy` §8 also requires deleting the `api.brandfetch.io` origin literal (or its `DISCLOSED_AS` entry) in the same change — otherwise `external-origins.contract.spec.ts` fails with `api.brandfetch.io → expected a "Brandfetch" row`.
+**Verifies by:** ADR-0034 gains a line naming the agreement or plan, or the worker revision no longer mounts the secret.
+**Status:** Open
+
 ### 2026-09-18 — Enable Vercel Web Analytics in the dashboard
 **Source:** session 2026-09-18 (user-acquisition review); founder chose option (a) the same day
 **Why:** We could not tell a traffic problem from a conversion problem. Checked 2026-09-18: prod had 6 users since 2026-06-09; PostHog showed 4 persons on `declutrmail.com` in 90 days, but PostHog only initializes after "Accept all", so that is a floor, not a count. The code side shipped (cookieless `<Analytics />` on the two public production hosts, `/privacy` §6 + `/cookies` + the preferences card updated). The Vercel API exposes no field for this toggle, so until it is switched on the script path 404s and nothing is counted.

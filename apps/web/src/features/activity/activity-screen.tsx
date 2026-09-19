@@ -24,10 +24,11 @@ import {
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
+import Link from 'next/link';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
+  ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
   activityActionLabel as sharedActivityActionLabel,
-  getActionSemantics,
 } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
@@ -217,29 +218,6 @@ export function ActivityScreen() {
     },
     [writeUrl],
   );
-  // Every filter that can NARROW the list below the default view. A
-  // 90-day / all-time window only widens it, so on its own it offers
-  // nothing to reset. Group mode is a layout choice, not a filter.
-  const hasNarrowingFilters =
-    filters.window === '7d' ||
-    (filters.source ?? 'all') !== 'all' ||
-    (filters.verbs?.length ?? 0) > 0 ||
-    (filters.senderQuery ?? '') !== '' ||
-    Boolean(filters.dateFrom) ||
-    Boolean(filters.dateTo) ||
-    (filters.outcomes?.length ?? 0) > 0;
-  const resetFilters = useCallback(() => {
-    writeUrl({
-      window: null,
-      source: null,
-      verb: null,
-      sender_q: null,
-      date_from: null,
-      date_to: null,
-      outcome: null,
-    });
-  }, [writeUrl]);
-
   // ── Multi-select state (local, NOT URL-persisted) ──────────────────
   // Selection lives in component state because:
   //   - selections rarely outlive a tab (close = drop)
@@ -357,7 +335,7 @@ export function ActivityScreen() {
       <ScreenIntro
         id="activity"
         title="Activity"
-        body="Actions by you, Autopilot, and your rules. Use Undo here when it is available."
+        body="A record of actions by you, Autopilot, and your rules."
       />
 
       <ContextualHelp question="Which Undo or recovery option applies?">
@@ -370,6 +348,7 @@ export function ActivityScreen() {
         error={weeklyQuery.isError}
         onRetry={() => void weeklyQuery.refetch()}
         activeOutcome={filters.outcomes?.[0] ?? null}
+        clearHref={clearOutcomeHref(filters, weeklyQuery.data ?? null)}
         senderQuery={filters.senderQuery ?? ''}
       />
 
@@ -385,6 +364,7 @@ export function ActivityScreen() {
           isWindowAllTime={
             (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
           }
+          failedHref={failedOutcomeHref(filters)}
           isMobile={isMobile}
         />
       )}
@@ -443,29 +423,7 @@ export function ActivityScreen() {
             }}
           >
             {rows.length === 0 ? (
-              <EmptyState
-                // All time with no filters means there is no activity at
-                // all — "in this window" would contradict the window.
-                title={
-                  filters.window === 'all' && !hasNarrowingFilters
-                    ? 'No activity yet.'
-                    : 'No activity in this window.'
-                }
-                description={
-                  hasNarrowingFilters
-                    ? undefined
-                    : filters.window === 'all'
-                      ? 'Decisions you make in Triage or Senders show up here.'
-                      : 'Try a longer time range.'
-                }
-                action={
-                  hasNarrowingFilters ? (
-                    <Button tone="default" onClick={resetFilters}>
-                      Reset filters
-                    </Button>
-                  ) : undefined
-                }
-              />
+              <ActivityEmptyState scope={emptyScope(filters)} window={filters.window ?? '30d'} />
             ) : groupMode === 'sender' ? (
               <GroupedList
                 rows={rows}
@@ -581,7 +539,7 @@ function LoadMoreRegion({
         role="status"
         style={{ ...mono, textAlign: 'center', padding: '10px 0 2px', textTransform: 'uppercase' }}
       >
-        End of activity · {loadedCount} row{loadedCount === 1 ? '' : 's'} loaded
+        End of activity · {loadedCount} action{loadedCount === 1 ? '' : 's'} shown
       </div>
     );
   }
@@ -653,12 +611,15 @@ function MetricsHeader({
   stats,
   allTimeStats,
   isWindowAllTime,
+  failedHref,
   isMobile,
 }: {
   windowLabel: string;
   stats: ActivityStatsWire | null;
   allTimeStats: ActivityStatsWire | null;
   isWindowAllTime: boolean;
+  /** The same window, narrowed to the failed records this count names. */
+  failedHref: string;
   isMobile: boolean;
 }) {
   if (!stats) return null;
@@ -707,14 +668,15 @@ function MetricsHeader({
       >
         <span>
           <span style={{ color: color.fg, fontWeight: 600 }}>{windowLabel}</span>
-          {!isWindowAllTime && allTimeStats && (
-            <span style={{ marginLeft: 8, color: color.fgMuted }}>· vs. all-time below</span>
-          )}
+          <span style={{ marginLeft: 8, color: color.fgMuted }}>· all sources</span>
         </span>
+        {/* The one number naming a problem was the one number that could
+            not be clicked, and outside the 7-day card no visible control
+            reached those records (QA-activity-20260918-08). */}
         {stats.needsAttention > 0 && (
-          <span style={{ color: color.amber, fontWeight: 600 }}>
-            {stats.needsAttention} need attention
-          </span>
+          <Link href={failedHref} style={{ color: color.amber, fontWeight: 600 }}>
+            {stats.needsAttention} failed · Review
+          </Link>
         )}
       </header>
       {/* CSS-driven restack, not the `isMobile` JS flag below: this grid
@@ -730,6 +692,10 @@ function MetricsHeader({
         .dm-activity-metrics-grid {
           grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
           gap: 12px 8px !important;
+        }
+        .dm-activity-metric-label {
+          font-size: 9px !important;
+          letter-spacing: 0.04em !important;
         }
       }`}</style>
       <div
@@ -762,12 +728,21 @@ function MetricsHeader({
               }}
             >
               <span
+                className="dm-activity-metric-label"
                 style={{
                   fontFamily: font.mono,
+                  // `body { overflow-wrap: break-word }` split "UNSUBSCRIBES"
+                  // mid-word in the narrow 3-column grid. Forbidding the
+                  // break alone makes it spill into the next tile at 320px,
+                  // so the label is tightened below 900px until it fits —
+                  // in the CSS block above, with the grid restack, because
+                  // the `isMobile` JS flag is false until hydration.
                   fontSize: 10,
                   letterSpacing: '0.12em',
                   textTransform: 'uppercase',
                   color: color.fgMuted,
+                  overflowWrap: 'normal',
+                  wordBreak: 'keep-all',
                 }}
               >
                 {tile.label}
@@ -803,6 +778,14 @@ function MetricsHeader({
           );
         })}
       </div>
+      {/* `aggregateStats` counts activity_log ROWS, drops reverted ones,
+          and deliberately ignores the source and action chips — none of
+          which the numbers can say for themselves
+          (QA-activity-20260918-05). */}
+      <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
+        Counts actions, not emails. Undone actions are not counted. Sender and date filters apply;
+        source, action, and outcome filters do not.
+      </p>
     </section>
   );
 }
@@ -841,7 +824,7 @@ const VERB_CHIPS: ReadonlyArray<{
   { value: 'unsubscribe', label: 'Unsubscribes', dot: color.primary },
   { value: 'later', label: 'Later', dot: color.dashboard.accent },
   { value: 'keep', label: 'Kept', dot: color.emerald },
-  { value: 'followup-dismiss', label: 'Followups', dot: color.fgMuted },
+  { value: 'followup-dismiss', label: 'Follow-ups', dot: color.fgMuted },
 ];
 
 const WINDOWS: ReadonlyArray<{ value: ActivityWindowWire; label: string }> = [
@@ -2633,26 +2616,62 @@ function RowActions({
   mailboxId: string | null;
   includeFeedback?: boolean;
 }) {
+  // The pill is a frame around controls. A sender-less row with nothing to
+  // undo and no recovery state has none, and an empty bordered capsule is
+  // the same defect as the empty segment (QA-activity-20260918-09).
+  // Built once and handed to the link, so the frame and the link decide
+  // from the same value instead of two copies of the same condition.
+  const gmailHref =
+    row.sender && mailboxEmail
+      ? GmailOpenLinkService.buildFromSearchLink({ mailboxEmail, from: row.sender.email })
+      : null;
+  const hasControl =
+    row.executionState !== null || row.undoState.kind !== 'unavailable' || Boolean(gmailHref);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 0,
-          border: `1px solid ${color.lineSoft}`,
-          borderRadius: 999,
-          background: color.bg,
-          padding: '0 2px',
-          overflow: 'hidden',
-        }}
-      >
-        {row.executionState && (
-          <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
-        )}
-        <UndoCell row={row} bulkFailedTokens={failedTokens} />
-        <OpenInGmailLink row={row} mailboxEmail={mailboxEmail} />
-      </div>
+      {hasControl && (
+        <div
+          data-row-actions-frame
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 0,
+            border: `1px solid ${color.lineSoft}`,
+            borderRadius: 999,
+            background: color.bg,
+            padding: '0 2px',
+            overflow: 'hidden',
+          }}
+        >
+          {row.executionState && (
+            <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+          )}
+          <UndoCell row={row} bulkFailedTokens={failedTokens} />
+          <OpenInGmailLink
+            row={row}
+            href={gmailHref}
+            // The divider separates the link from a control before it. With
+            // no recovery cell and nothing to undo there is no such control.
+            showDivider={row.executionState !== null || row.undoState.kind !== 'unavailable'}
+          />
+        </div>
+      )}
+      {/* The reason a retry is unsafe used to live only in a `title`,
+          which does not exist on touch — on the one row a worried user is
+          reading (QA-activity-20260918-08). */}
+      {row.executionState?.kind === 'failed' && unsafeRetryReason(row) !== null && (
+        <span
+          style={{
+            maxWidth: 260,
+            textAlign: 'right',
+            fontSize: 11.5,
+            lineHeight: 1.4,
+            color: color.fgMuted,
+          }}
+        >
+          {unsafeRetryReason(row)}
+        </span>
+      )}
       {includeFeedback &&
         row.reviewOutcome !== null &&
         row.reviewOutcome !== 'skipped' &&
@@ -2796,16 +2815,12 @@ function RecoveryCell({
 
   if (execution.resolution === 'support' || isUnsubscribe) {
     return (
-      <span
-        title={
-          isUnsubscribe
-            ? "An unsubscribe request can't be safely repeated until its outcome is known."
-            : 'This action cannot be retried safely from Activity.'
-        }
-        style={{ ...baseStyle, color: color.amber, cursor: 'help' }}
-      >
-        Needs attention
-      </span>
+      // A link, not a hover-only reason: `title` does not exist on touch,
+      // and this is the row a worried user is reading
+      // (QA-activity-20260918-08).
+      <a href="/settings/help" style={{ ...baseStyle, color: color.amber, textDecoration: 'none' }}>
+        Contact support
+      </a>
     );
   }
 
@@ -2822,7 +2837,7 @@ function RecoveryCell({
           fontWeight: 600,
         }}
       >
-        {createPreview.isPending ? 'Checking…' : 'Review and try again'}
+        {createPreview.isPending ? 'Checking…' : 'Check and retry'}
       </button>
       {open && typeof document !== 'undefined'
         ? createPortal(
@@ -2946,10 +2961,10 @@ function ActionRecoveryDialog({
             id="action-recovery-title"
             style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}
           >
-            {recoveryDialogTitle(row.action)}
+            Review this failed {failedActionNoun(row.action)}
           </h2>
           <p style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}>
-            We check Gmail&apos;s current label state before offering another attempt.
+            We check Gmail first, so nothing changes until you confirm.
           </p>
         </div>
 
@@ -3048,8 +3063,8 @@ function ActionRecoveryDialog({
               {isConfirming
                 ? 'Starting…'
                 : preview.outcome === 'already_applied'
-                  ? 'Update Activity'
-                  : 'Try again'}
+                  ? 'Update this record'
+                  : 'Try this action again'}
             </Button>
           )}
         </div>
@@ -3100,8 +3115,8 @@ function RecoveryPreviewBody({
     if (preview.outcome === 'reconnect_required') {
       return (
         <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
-          We couldn&apos;t check Gmail — access needs attention. Reconnect, wait for the sync to
-          finish, then choose Review and try again in Activity.
+          DeclutrMail could not verify Gmail because access needs attention. Reconnect the account,
+          wait for its sync to finish, then return to Activity and choose Check and retry.
           <div style={{ marginTop: 10 }}>
             <Button tone="primary" onClick={onReconnect}>
               Reconnect Gmail
@@ -3141,10 +3156,10 @@ function RecoveryPreviewBody({
         gap: 10,
       }}
     >
-      <RecoveryCount label="Not yet applied" value={preview.remainingCount} />
-      <RecoveryCount label="Already applied" value={applied} />
-      <RecoveryCount label="No longer available" value={preview.unavailableCount} />
-      <RecoveryCount label="Found in Gmail" value={preview.targetCount} />
+      <RecoveryCount label="Still to do" value={preview.remainingCount} />
+      <RecoveryCount label="Already done in Gmail" value={applied} />
+      <RecoveryCount label="Gone from Gmail" value={preview.unavailableCount} />
+      <RecoveryCount label="Checked" value={preview.targetCount} />
     </div>
   );
 }
@@ -3269,28 +3284,28 @@ function recoveryConfirmNeedsRecheck(error: Error): boolean {
  */
 function OpenInGmailLink({
   row,
-  mailboxEmail,
+  href,
+  showDivider,
 }: {
   row: ActivityRowWire;
-  mailboxEmail: string | null;
+  /** Built by the caller; null when there is no sender or no mailbox to link into. */
+  href: string | null;
+  showDivider: boolean;
 }) {
-  if (!row.sender || !mailboxEmail) return <span aria-hidden="true" />;
-  const href = GmailOpenLinkService.buildFromSearchLink({
-    mailboxEmail,
-    from: row.sender.email,
-  });
-  if (!href) return <span aria-hidden="true" />;
+  if (!href || !row.sender) return null;
   return (
     <>
-      <span
-        aria-hidden="true"
-        style={{
-          display: 'inline-block',
-          width: 1,
-          alignSelf: 'stretch',
-          background: color.line,
-        }}
-      />
+      {showDivider && (
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-block',
+            width: 1,
+            alignSelf: 'stretch',
+            background: color.line,
+          }}
+        />
+      )}
       <a
         href={href}
         target="_blank"
@@ -3434,18 +3449,11 @@ function UndoCell({
       </span>
     );
   }
-  return (
-    <span
-      style={{
-        ...baseStyle,
-        color: 'transparent',
-        cursor: 'default',
-      }}
-      aria-hidden="true"
-    >
-      —
-    </span>
-  );
+  // Nothing to undo (Keep, protection toggles, legacy rows). This used to
+  // render a transparent "—" as an alignment spacer; inside the bordered
+  // pill it became an empty compartment that looks clickable
+  // (QA-activity-20260918-09).
+  return null;
 }
 
 /** Helper for the row-pending guard — extract the token from an undo state. */
@@ -3619,9 +3627,149 @@ function Chip({
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
+/**
+ * The verb as a noun for "Review this failed …". The result label is a
+ * past-tense phrase ("Deleted to Gmail Trash"); lowercasing it into a
+ * title produced "Review failed archived" and un-capitalised Gmail.
+ */
+function failedActionNoun(action: ActivityRowWire['action']): string {
+  switch (action) {
+    case 'archive':
+      return 'Archive';
+    case 'later':
+      return 'Later';
+    case 'delete':
+      return 'Delete';
+    case 'unsubscribe':
+      return 'Unsubscribe';
+    default:
+      return 'action';
+  }
+}
+
+/**
+ * What an empty list can honestly claim, decided by WHICH list came back
+ * empty — never by the stats. The stats cannot see protection toggles,
+ * undone actions, Observe dismissals or in-flight actions, all of which
+ * are rows, so "every stat is zero" does not mean "no activity"
+ * (QA-activity-20260918-10, gate round two).
+ *
+ *  - `none`   the wholly unfiltered all-time list is empty: that IS the proof.
+ *  - `window` only the time window narrows it: say so, and keep the way out.
+ *  - `filter` anything else narrows it.
+ */
+type EmptyScope = 'none' | 'window' | 'filter';
+
+function emptyScope(filters: {
+  window?: ActivityWindowWire;
+  source?: ActivitySourceFilterWire;
+  verbs?: readonly unknown[];
+  outcomes?: readonly unknown[];
+  senderQuery?: string;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+}): EmptyScope {
+  const narrowedBeyondWindow =
+    (filters.source ?? 'all') !== 'all' ||
+    (filters.verbs?.length ?? 0) > 0 ||
+    (filters.outcomes?.length ?? 0) > 0 ||
+    (filters.senderQuery ?? '').trim() !== '' ||
+    Boolean(filters.dateFrom) ||
+    Boolean(filters.dateTo);
+  if (narrowedBeyondWindow) return 'filter';
+  return (filters.window ?? '30d') === 'all' ? 'none' : 'window';
+}
+
+function ActivityEmptyState({ scope, window }: { scope: EmptyScope; window: ActivityWindowWire }) {
+  if (scope === 'none') {
+    return (
+      <EmptyState
+        title="No activity yet."
+        description="Actions you, Autopilot, or your rules take will be recorded here."
+      />
+    );
+  }
+  const showAll = (
+    <Link href="/activity?window=all" style={{ color: color.primary, fontWeight: 600 }}>
+      Show all activity
+    </Link>
+  );
+  if (scope === 'window') {
+    return (
+      <EmptyState
+        title={`No activity in the ${windowToLabel(window, null, null).toLowerCase()}.`}
+        description="Older activity, if there is any, is one step away."
+        action={showAll}
+      />
+    );
+  }
+  return (
+    <EmptyState
+      title="Nothing matches these filters."
+      description="Clear a filter, or show everything."
+      action={showAll}
+    />
+  );
+}
+
+/**
+ * Why this failed row offers support instead of a retry, or null when it
+ * can retry. Execution rows are only ever archive / later / delete, so
+ * there is no unsubscribe case to word here.
+ */
+function unsafeRetryReason(row: ActivityRowWire): string | null {
+  if (row.executionState?.kind !== 'failed') return null;
+  return row.executionState.resolution === 'support'
+    ? 'This action can’t be retried safely from Activity.'
+    : null;
+}
+
+function clearOutcomeHref(
+  filters: {
+    window?: ActivityWindowWire;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    senderQuery?: string;
+  },
+  cardRange: { from: string; to: string } | null,
+): string {
+  const params = new URLSearchParams({ window: filters.window ?? '30d' });
+  // The 7-day card stamps its own from/to onto its links. Dates that ARE
+  // the card's go with the outcome; a range the user picked stays. Checked,
+  // not inferred from the window — a custom range can sit under `7d` too.
+  const datesAreTheCards =
+    cardRange !== null && filters.dateFrom === cardRange.from && filters.dateTo === cardRange.to;
+  if (datesAreTheCards) {
+    if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
+    return `/activity?${params.toString()}`;
+  }
+  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+  if (filters.dateTo) params.set('date_to', filters.dateTo);
+  if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
+  return `/activity?${params.toString()}`;
+}
+
+function failedOutcomeHref(filters: {
+  window?: ActivityWindowWire;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  senderQuery?: string;
+}): string {
+  const params = new URLSearchParams({ window: filters.window ?? '30d', outcome: 'failed' });
+  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+  if (filters.dateTo) params.set('date_to', filters.dateTo);
+  if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
+  return `/activity?${params.toString()}`;
+}
+
 function activityRowActionLabel(row: ActivityRowWire): string {
-  if (row.reviewOutcome === 'skipped') return 'Skipped';
-  if (row.reviewOutcome === 'protected') return 'Protected';
+  // Two different facts that used to share one word each with something
+  // else in this column: "Skipped" also read as the app skipping it, and
+  // "Protected" is what a manual protection toggle is called
+  // (QA-activity-20260918-06).
+  if (row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected') {
+    return ACTIVITY_REVIEW_OUTCOME_ROW_LABELS[row.reviewOutcome];
+  }
   return sharedActivityActionLabel(row.action, row.executionState);
 }
 
@@ -3631,21 +3779,6 @@ const SOURCE_LABEL: Record<ActivityRowWire['source'], string> = {
   autopilot: 'Autopilot',
   screener: 'Screener',
 };
-
-/**
- * Title of the failed-action recovery dialog. It names the canonical
- * verb ("Review failed Archive"), not the lower-cased RESULT label —
- * that read "Review failed archived" / "Review failed moved to later".
- * Only the three label verbs can be retried from Activity; any other
- * action that reaches the dialog gets a verb-free title instead of a
- * result label bent into a noun. Exported for the per-action unit test.
- */
-export function recoveryDialogTitle(action: ActivityActionWire): string {
-  if (action === 'archive' || action === 'later' || action === 'delete') {
-    return `Review failed ${getActionSemantics(action).label}`;
-  }
-  return 'Review failed action';
-}
 
 function readGroupMode(raw: string | null): GroupMode {
   return raw === 'sender' ? 'sender' : 'none';
@@ -3676,12 +3809,14 @@ export function windowToLabel(
     return `${fromStr} – ${toStr}`;
   }
   switch (window) {
+    // Rolling windows (`now − N×24h`), so never "this week": that names
+    // a calendar week the query does not use. Same words as the chips.
     case '7d':
-      return 'This week';
+      return 'Last 7 days';
     case '30d':
-      return 'This window (30 days)';
+      return 'Last 30 days';
     case '90d':
-      return 'This window (90 days)';
+      return 'Last 90 days';
     case 'all':
       return 'All time';
   }

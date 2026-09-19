@@ -138,6 +138,83 @@ describe('heavy Sentry browser runtime', () => {
     expect(options?.beforeSendMetric?.({ name: leak } as never)).toBeNull();
   });
 
+  // The scrubber drops `exception.value` for D7, so an uncaught React
+  // invariant used to arrive as a bare, message-less `Error`: captured,
+  // transported, and impossible to find. A production #418 on the public
+  // site (2026-09-19) had `__sentry_captured__: true` and zero search hits.
+  it('labels React invariant errors with a closed-set reason that survives the scrub', () => {
+    initSentryBrowserRuntime('https://stub@sentry.io/123');
+    const options = sdk.init.mock.calls[0]?.[0];
+    const send = (value: string, tags?: Record<string, string>) =>
+      options?.beforeSend?.(
+        { exception: { values: [{ type: 'Error', value }] }, ...(tags ? { tags } : {}) },
+        {} as never,
+      );
+
+    // Exhaustive `toEqual`: the message and its `args[]` URL are gone.
+    expect(
+      send(
+        'Minified React error #418; visit https://react.dev/errors/418?args[]=text&args[]= for the full message',
+      ),
+    ).toEqual({
+      exception: { values: [{ type: 'Error' }] },
+      tags: { reason: 'react-error-418' },
+      fingerprint: ['react-error-418'],
+    });
+
+    // `next dev` words the same invariant differently.
+    expect(
+      send("Hydration failed because the server rendered text didn't match the client."),
+    ).toMatchObject({ tags: { reason: 'react-error-418' } });
+
+    // Any other minified invariant keeps its own number.
+    expect(send('Minified React error #425; visit https://react.dev/errors/425')).toMatchObject({
+      tags: { reason: 'react-error-425' },
+      fingerprint: ['react-error-425'],
+    });
+
+    // Anchored: prose that merely mentions the phrase is not classified.
+    expect(send('Saw "Minified React error #418; x" in a log')).toEqual({
+      exception: { values: [{ type: 'Error' }] },
+    });
+
+    // Runs outside the scrubber's try/catch: a malformed event must not
+    // throw, or Sentry drops it.
+    for (const malformed of [
+      { exception: { values: 'nope' } },
+      { exception: { values: [null] } },
+      { exception: null },
+      { exception: { values: [{ value: 'Minified React error #418; x' }] }, tags: 'nope' },
+    ]) {
+      expect(() => options?.beforeSend?.(malformed as never, {} as never)).not.toThrow();
+    }
+
+    // A wrapper must not hide the invariant: Sentry puts causes FIRST.
+    expect(
+      options?.beforeSend?.(
+        {
+          exception: {
+            values: [
+              { type: 'Error', value: 'Minified React error #418; visit' },
+              { type: 'Error', value: 'render failed' },
+            ],
+          },
+        } as never,
+        {} as never,
+      ),
+    ).toMatchObject({ tags: { reason: 'react-error-418' } });
+
+    // Sibling tags are kept when the reason is added.
+    expect(send('Minified React error #418; visit', { surface: 'senders' })).toMatchObject({
+      tags: { surface: 'senders', reason: 'react-error-418' },
+    });
+
+    // A capture site's own reason wins; this only fills the gap.
+    expect(
+      send('Minified React error #418; visit', { surface: 'senders', reason: 'manual' }),
+    ).toMatchObject({ tags: { surface: 'senders', reason: 'manual' } });
+  });
+
   it('sanitizes manual breadcrumbs and preserves exception and router forwarding', () => {
     sdk.addBreadcrumb.mockClear();
     sdk.captureException.mockClear();

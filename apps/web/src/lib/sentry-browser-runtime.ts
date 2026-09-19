@@ -47,6 +47,52 @@ function readSampleRate(raw: string | undefined, fallback: number): number {
   return parsed;
 }
 
+const REACT_INVARIANT = /^Minified React error #(\d{1,4});/u;
+const DEV_HYDRATION_FAILURE = /^Hydration failed because /u;
+
+/**
+ * Name an uncaught React invariant BEFORE the scrubber erases it.
+ *
+ * `scrubSentryEvent` drops `exception.value` (D7: `Error.message` can carry
+ * user text), and React throws every invariant as a plain `Error`. So a
+ * production hydration failure reached Sentry as a message-less `Error`
+ * with no tag and no URL — captured, transported, and unfindable: the
+ * 2026-09-19 #418 on the public site carried `__sentry_captured__: true`
+ * and a search for its message returned nothing.
+ *
+ * Only the invariant NUMBER is kept, as `react-error-<n>`, in the `reason`
+ * tag and the fingerprint the scrubber already allowlists. The rest of
+ * the message — including the `args[]` URL — is still dropped. A reason
+ * set by a capture site is never overwritten.
+ */
+function labelReactInvariant(event: Record<string, unknown>): Record<string, unknown> {
+  const values = (event.exception as { values?: unknown } | undefined)?.values;
+  if (!Array.isArray(values)) return event;
+
+  // Every link of a cause chain, not just the thrown error: a wrapper
+  // (`new Error(msg, { cause })`) would otherwise hide the invariant.
+  let code: string | undefined;
+  for (const entry of values) {
+    const value = (entry as { value?: unknown } | null | undefined)?.value;
+    if (typeof value !== 'string') continue;
+    code =
+      REACT_INVARIANT.exec(value)?.[1] ?? (DEV_HYDRATION_FAILURE.test(value) ? '418' : undefined);
+    if (code !== undefined) break;
+  }
+  if (code === undefined) return event;
+
+  const tags = (event.tags ?? {}) as Record<string, unknown>;
+  if (tags.reason !== undefined) return event;
+
+  const reason = `react-error-${code}`;
+  return {
+    ...event,
+    tags: { ...tags, reason },
+    // A capture site's own grouping wins, same as its reason.
+    fingerprint: event.fingerprint ?? [reason],
+  };
+}
+
 const browserRuntime: BrowserSentryRuntime = {
   addBreadcrumb(crumb): void {
     const breadcrumb = scrubSentryBreadcrumb({
@@ -138,7 +184,9 @@ export function initSentryBrowserRuntime(dsn: string): BrowserSentryRuntime {
           SAFE_BROWSER_INTEGRATIONS.has(integration.name),
         ),
       beforeSend: (event) =>
-        scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event,
+        scrubSentryEvent(
+          labelReactInvariant(event as unknown as Record<string, unknown>),
+        ) as unknown as typeof event,
       beforeSendTransaction: (event) =>
         scrubSentryTransaction(event as unknown as Record<string, unknown>) as unknown as
           typeof event | null,

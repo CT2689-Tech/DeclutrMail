@@ -2222,3 +2222,53 @@ can't accumulate stale state (a screenshot of current DOM content, or
 `get_page_text`).
 **Distillation trigger:** promote to CLAUDE.md §8's "known false-positive
 traps" list if either trap recurs on a future QA or fix-verification run.
+
+## 2026-09-19 — A production #418 report had two sightings; one was the console buffer replaying the other, and Sentry could not have shown either
+
+**Context:** A session verifying the new visitor counter saw `Minified React
+error #418` in the preview pane on `/vs/meta-muse` and again on
+`/how-it-works` (deployment `dpl_Hy67…`), with `__sentry_captured__: true`
+and zero Sentry search hits for the message. Filed as "the marketing shell
+mismatches for returning visitors (stored consent)".
+
+**Finding:** No mismatch reproduces. 180 scripted cold loads — five storage states
+(fresh / consent all / all + dark / essential / cookie-only), `de-DE` +
+`Asia/Kolkata`, 1× and 6× CPU throttle, against a local production build,
+live production, AND the reported deployment's immutable URL — produced
+zero hydration errors; every `(marketing)` client island reads storage in
+`useEffect`, never during render. Cause of the one real event (07:36:31Z,
+first production load in that pane) is **unverified**. Two things did turn
+out to be provably wrong:
+
+1. **The second sighting was the first one, replayed.** The pane's console
+   buffer survives navigations within a tab. Proven with a marker:
+   `console.error('MARKER')`, navigate, read — the marker is still there
+   and the hydration-error count does not grow. This is the second
+   occurrence of the stale-console trap logged 2026-08-31, in a new and
+   worse form: it does not just fake "fix didn't work", it manufactures a
+   *second page* for a bug report, which is what pointed the diagnosis at
+   the shared shell.
+2. **Searching Sentry by message is structurally blind.** `scrubSentryEvent`
+   drops `exception.value` for D7, and React throws every invariant as a
+   plain `Error` from the same internal frame. So a #418 was captured and
+   transported, and arrived as an untitled `Error` with no message, no URL
+   and no tag. "No issues found" for the message text was true of every
+   browser error ever sent. Fixed by stamping the closed-set token
+   `react-error-<n>` into the already-allowlisted `reason` tag +
+   fingerprint before the scrub; the message itself is still dropped.
+
+Also: `hydration-smoke-public.spec.ts` ran only with EMPTY storage — the
+one state where a storage-seeded first render cannot mismatch, because
+the server has no storage either. A returning-visitor lane now exists;
+negative control (seeding the banner's `useState` from `readStoredConsent()`)
+left the first-visit lane green and turned the new lane red.
+
+**Rule (provisional):** (a) two console sightings on one pane tab are ONE
+sighting until a marker or a fresh tab says otherwise. (b) Never search
+Sentry for a browser error by its message — search `reason:react-error-418`
+or by release + time. (c) A hydration gate needs a returning-visitor state;
+empty storage agrees with the server by accident.
+
+**Distillation trigger:** (a) is now the 2nd occurrence of the 2026-08-31
+stale-console trap — promote to CLAUDE.md §8 "known false-positive traps"
+on the next one, or now at the founder's discretion.

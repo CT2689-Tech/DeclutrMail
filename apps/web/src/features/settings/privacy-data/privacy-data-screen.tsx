@@ -18,6 +18,7 @@ import {
   PrivacyBadge,
   ScreenIntro,
   tokens,
+  type GmailDataProcessor,
 } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
@@ -156,6 +157,18 @@ export function PrivacyDataView({
           <p style={{ ...mutedTextStyle, marginTop: 12 }}>
             Anthropic only ever sees the items marked above for Brief summaries or optional sender
             explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
+          </p>
+          <p style={{ ...mutedTextStyle, marginTop: 8 }}>
+            Brandfetch receives a sender&rsquo;s email domain and nothing else about you — never
+            your address, your account, or any message. {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
+            <a
+              href={GMAIL_DATA_PROCESSORS.Brandfetch.privacyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Brandfetch&rsquo;s privacy policy
+            </a>
+            .
           </p>
         </div>
       </Card>
@@ -386,16 +399,16 @@ function inventoryDisplayItem(item: {
   purpose: string;
   retention: string;
   exportedIn: readonly string[];
-  transmittedTo: readonly string[];
+  transmittedTo: readonly GmailDataProcessor[];
   removalTrigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 }) {
   const exportDetail =
     item.exportedIn.length > 0
       ? `Included in: ${item.exportedIn.join(', ')}.`
       : 'Not currently included in a data export.';
-  const processorDetail = item.transmittedTo.includes('Anthropic')
-    ? ' May be sent to Anthropic for generated text.'
-    : '';
+  const processorDetail = item.transmittedTo
+    .map((processor) => PROCESSOR_SENTENCE[processor])
+    .join('');
   const deletionDetail = deletionTriggerDetail(item.removalTrigger);
   return {
     id: item.id,
@@ -403,6 +416,17 @@ function inventoryDisplayItem(item: {
     detail: `${item.purpose} ${item.retention} ${deletionDetail} ${exportDetail}${processorDetail}`,
   };
 }
+
+/**
+ * One sentence per processor. Typed against the registry union, so adding
+ * a processor there is a compile error here until it has a sentence —
+ * the screen cannot silently omit a third party.
+ */
+const PROCESSOR_SENTENCE: Record<GmailDataProcessor, string> = {
+  DeclutrMail: '',
+  Anthropic: ' May be sent to Anthropic for generated text.',
+  Brandfetch: ' The domain alone may be sent to Brandfetch to find a logo.',
+};
 
 function deletionTriggerDetail(
   trigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy',

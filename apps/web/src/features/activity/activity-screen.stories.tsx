@@ -300,8 +300,8 @@ export const Empty: Story<typeof ActivityScreen> = {
 };
 
 /**
- * Empty BECAUSE of filters — the route out is "Reset filters", which
- * clears every filter that can produce this state.
+ * Empty BECAUSE of filters — "Nothing matches these filters." with
+ * "Show all activity" as the route out.
  */
 export const EmptyFiltered: Story<typeof ActivityScreen> = {
   parameters: {

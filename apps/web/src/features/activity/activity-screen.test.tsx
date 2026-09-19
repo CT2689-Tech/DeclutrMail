@@ -23,7 +23,6 @@ import {
   resetFetchStub,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { ACTIVITY_ACTION_LABELS } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
@@ -31,7 +30,6 @@ import {
   activityUndoRecoveryHelp,
   ActivityScreen,
   formatExpiry,
-  recoveryDialogTitle,
   relativeTime,
   windowToLabel,
 } from './activity-screen';
@@ -206,7 +204,7 @@ describe('ActivityScreen — edge states', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: /no activity in this window/i }),
+        screen.getByRole('heading', { name: /no activity in the last 30 days/i }),
       ).toBeInTheDocument(),
     );
     expect(requests).toBe(2);
@@ -466,75 +464,146 @@ describe('ActivityScreen — edge states', () => {
     renderScreen();
     await waitFor(() =>
       expect(
-        screen.getByRole('heading', { name: /no activity in this window/i }),
+        screen.getByRole('heading', { name: /no activity in the last 30 days/i }),
       ).toBeInTheDocument(),
     );
   });
 });
 
-describe('ActivityScreen — empty state recovery', () => {
-  it('resets every narrowing filter from the empty state and brings the rows back', async () => {
-    // Five filters can each empty the list; the empty state used to name
-    // the fix in prose and offer no control. Group mode is layout, not a
-    // filter, and must survive the reset.
-    currentSearch =
-      'window=7d&source=manual&verb=archive&sender_q=nobody%40example.com' +
-      '&date_from=2026-05-01&date_to=2026-05-10&outcome=failed&group=sender';
+describe('ActivityScreen — what the numbers and rows admit to (QA-activity-20260918)', () => {
+  it('says what the stat tiles count, and links the failed count to those records', async () => {
+    currentSearch = 'window=90d';
     installFetchStub([
       {
         method: 'GET',
         path: '/api/activity',
-        respond: (_req, url) =>
-          url.searchParams.get('source') === 'manual' || url.searchParams.has('sender_q')
-            ? jsonOk({ data: [], meta: { ...META_BASE, source: 'manual', verbs: ['archive'] } })
-            : jsonOk({ data: [row({})], meta: META_BASE }),
-      },
-    ]);
-    const view = renderScreen();
-
-    await screen.findByRole('heading', { name: /no activity in this window/i });
-    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'true');
-    await userEvent.click(screen.getByRole('button', { name: 'Reset filters' }));
-    expect(replaceMock).toHaveBeenCalledWith('/activity?group=sender');
-
-    // next/navigation owns the real URL update — mirror it and rerender.
-    currentSearch = 'group=sender';
-    view.rerender(
-      <QueryWrapper client={view.client}>
-        <ActivityScreen />
-      </QueryWrapper>,
-    );
-
-    expect(await screen.findByText('Sender One')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reset filters' })).toBeNull();
-    expect(screen.getByRole('button', { name: '30 days' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: '7 days' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'Manual' })).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByRole('button', { name: 'Archived' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
-    expect(screen.getByRole('searchbox', { name: 'Search sender' })).toHaveValue('');
-    expect(screen.getByRole('button', { name: 'Grouped' })).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  it('offers no reset when nothing narrows the list', async () => {
-    // A button that cannot change the result is a dead control.
-    currentSearch = 'window=all&group=sender';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/activity',
-        respond: () => jsonOk({ data: [], meta: { ...META_BASE, window: 'all' } }),
+        respond: () =>
+          jsonOk({
+            data: [row({ id: 'a-1' })],
+            meta: { ...META_BASE, window: '90d', stats: { ...STATS_BASE, needsAttention: 6 } },
+          }),
       },
     ]);
     renderScreen();
 
-    // All time + no filters = no activity at all; the title must not say
-    // "in this window" about the widest window there is.
-    await screen.findByRole('heading', { name: /no activity yet/i });
-    expect(screen.queryByRole('heading', { name: /in this window/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Reset filters' })).toBeNull();
+    expect(
+      await screen.findByText(
+        /Counts actions, not emails\. Undone actions are not counted\. Sender and date filters apply; source, action, and outcome filters do not\./,
+      ),
+    ).toBeInTheDocument();
+    // Same window, narrowed to failures — not the 7-day card's window.
+    expect(screen.getByRole('link', { name: '6 failed · Review' })).toHaveAttribute(
+      'href',
+      '/activity?window=90d&outcome=failed',
+    );
+  });
+
+  /**
+   * "No activity yet." is a claim about the whole mailbox, so it may only
+   * be made when the wholly unfiltered all-time list is the one that came
+   * back empty. The stats cannot back it: they do not count protection
+   * toggles, undone actions, Observe dismissals or in-flight actions, all
+   * of which are rows. ZERO stats are seeded throughout, so a regression
+   * to a stats-based guess goes red here.
+   */
+  const ZERO = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+  const emptyPage = (meta: Record<string, unknown>) => [
+    {
+      method: 'GET' as const,
+      path: '/api/activity',
+      respond: () =>
+        jsonOk({ data: [], meta: { ...META_BASE, stats: ZERO, allTimeStats: ZERO, ...meta } }),
+    },
+  ];
+
+  it('says "no activity yet" only for the unfiltered all-time list', async () => {
+    currentSearch = 'window=all';
+    installFetchStub(emptyPage({ window: 'all' }));
+    renderScreen();
+    expect(await screen.findByRole('heading', { name: /no activity yet/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /show all activity/i })).not.toBeInTheDocument();
+  });
+
+  it('names the window, and keeps the way out, when only the window is narrow', async () => {
+    // Default 30-day window, all-zero stats: a mailbox whose whole history
+    // is older protection toggles looks exactly like this.
+    installFetchStub(emptyPage({}));
+    renderScreen();
+    expect(
+      await screen.findByRole('heading', { name: /no activity in the last 30 days/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /no activity yet/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /show all activity/i })).toHaveAttribute(
+      'href',
+      '/activity?window=all',
+    );
+  });
+
+  it.each([
+    ['a sender search', 'window=all&sender_q=nobody', { window: 'all', senderQuery: 'nobody' }],
+    ['an outcome filter', 'window=all&outcome=failed', { window: 'all', outcomes: ['failed'] }],
+    ['a source filter', 'window=all&source=autopilot', { window: 'all', source: 'autopilot' }],
+  ])('blames the filters, not the mailbox, under %s', async (_name, search, meta) => {
+    currentSearch = search;
+    installFetchStub(emptyPage(meta));
+    renderScreen();
+    expect(
+      await screen.findByRole('heading', { name: /nothing matches these filters/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /no activity yet/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /show all activity/i })).toBeInTheDocument();
+  });
+
+  it('renders no control frame at all for a sender-less row with nothing to undo', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                ...row({ id: 'a-account', action: 'keep', affectedCount: 0 }),
+                sender: null,
+              },
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await screen.findByText(/end of activity · 1 action shown/i);
+    // The frame itself, not just its contents: an empty bordered capsule
+    // had no link and no glyph either, and still rendered.
+    expect(container.querySelector('[data-row-actions-frame]')).toBeNull();
+  });
+
+  it('renders no empty control on a row that has nothing to undo', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'a-protect',
+                action: 'marked_protected',
+                affectedCount: 0,
+                undoState: { kind: 'unavailable' },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const gmail = await screen.findByTitle('Open Sender One in Gmail');
+    // The pill holds the Gmail link and nothing else: no spacer glyph, no
+    // divider standing in front of a control that is not there.
+    expect(gmail.parentElement?.children).toHaveLength(1);
+    expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 });
 
@@ -693,9 +762,7 @@ describe('ActivityScreen — weekly review (D246)', () => {
     ]);
     renderScreen();
     await waitFor(() => expect(requested).toContain('outcome=protected'));
-    expect(
-      await screen.findByRole('link', { name: /clear protected filter/i }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /clear this filter/i })).toBeInTheDocument();
   });
 
   it('tracks each mailbox review once when the active mailbox changes', async () => {
@@ -1059,7 +1126,9 @@ describe('ActivityScreen — D58 undo affordances', () => {
     await waitFor(() =>
       expect(screen.getByText(/^Unsubscribe request accepted$/)).toBeInTheDocument(),
     );
-    expect(screen.queryByText(/email/)).not.toBeInTheDocument();
+    // Anchored to the row's count. A bare /email/ also matched the stats
+    // footnote ("Counts actions, not emails.") and failed for the wrong reason.
+    expect(screen.queryByText(/^\d+ emails?$/)).not.toBeInTheDocument();
   });
 
   it('D9 — the intent row records the request, never success', async () => {
@@ -1145,22 +1214,6 @@ describe('ActivityScreen — pure helpers', () => {
     expect(absoluteTime('2026-08-12T10:34:56Z', 'UTC')).toBe('Aug 12, 2026, 10:34:56 AM');
   });
 
-  it('recoveryDialogTitle names a canonical verb, never a lower-cased result label', () => {
-    expect(recoveryDialogTitle('archive')).toBe('Review failed Archive');
-    expect(recoveryDialogTitle('later')).toBe('Review failed Later');
-    expect(recoveryDialogTitle('delete')).toBe('Review failed Delete');
-    // Every action the wire can carry, not just the three retryable ones:
-    // the old title lower-cased the RESULT label ("Review failed archived",
-    // "Review failed moved to later", "Review failed protected").
-    for (const action of Object.keys(ACTIVITY_ACTION_LABELS) as Array<
-      keyof typeof ACTIVITY_ACTION_LABELS
-    >) {
-      const title = recoveryDialogTitle(action);
-      expect(title).toMatch(/^Review failed (Archive|Later|Delete|action)$/);
-      expect(title).not.toContain(ACTIVITY_ACTION_LABELS[action].toLowerCase());
-    }
-  });
-
   it('absoluteTime returns empty for an unparseable stamp', () => {
     expect(absoluteTime('not-a-date')).toBe('');
   });
@@ -1174,7 +1227,7 @@ describe('ActivityScreen — pure helpers', () => {
       'Aug 1 – Aug 10',
     );
     expect(windowToLabel('30d', null, '2026-08-10T00:00:00.000Z')).toBe('… – Aug 10');
-    expect(windowToLabel('7d', null, null)).toBe('This week');
+    expect(windowToLabel('7d', null, null)).toBe('Last 7 days');
   });
 
   it('formatExpiry pins the undo-expiry day to the user zone', () => {
@@ -1301,13 +1354,13 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
-    const dialog = await screen.findByRole('dialog', { name: 'Review failed Archive' });
-    expect(within(dialog).getByText(/check Gmail's current label state/i)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review this failed archive/i });
+    expect(within(dialog).getByText(/nothing changes until you confirm/i)).toBeInTheDocument();
     await waitFor(() => expect(within(dialog).getByText('2')).toBeInTheDocument());
     expect(within(dialog).getByText('1')).toBeInTheDocument();
 
-    const confirm = within(dialog).getByRole('button', { name: 'Try again' });
+    const confirm = within(dialog).getByRole('button', { name: 'Try this action again' });
     await userEvent.dblClick(confirm);
     await waitFor(() => expect(recoveryPosts).toBe(1));
     expect(idempotencyKeys[0]!.length).toBeGreaterThanOrEqual(8);
@@ -1392,11 +1445,11 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
-    const dialog = await screen.findByRole('dialog', { name: 'Review failed Later' });
+    await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review this failed later/i });
     const wakeInput = within(dialog).getByLabelText(/new return time/i);
     expect((wakeInput as HTMLInputElement).value.length).toBeGreaterThan(0);
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Try this action again' }));
     await waitFor(() => expect(confirmedWakeAt).toBeDefined());
     expect(new Date(confirmedWakeAt!).getTime()).toBeGreaterThan(Date.now());
   });
@@ -1468,13 +1521,13 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
-    const dialog = await screen.findByRole('dialog', { name: 'Review failed Later' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
+    await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review this failed later/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       /saved return time has passed.*choose a new return time/i,
     );
-    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Try this action again' })).toBeDisabled();
 
     await userEvent.click(within(dialog).getByRole('button', { name: /check Gmail again/i }));
     await waitFor(() => expect(previewStarts).toBe(2));
@@ -1536,9 +1589,9 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
-    const dialog = await screen.findByRole('dialog', { name: 'Review failed Archive' });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Try again' }));
+    await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
+    const dialog = await screen.findByRole('dialog', { name: /review this failed archive/i });
+    await userEvent.click(within(dialog).getByRole('button', { name: /try this action again/i }));
 
     // The generic copy invites a retry that would 409 identically. An
     // expired review has to say so, close the retry, and offer the only
@@ -1546,7 +1599,7 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       /this review expired\. check gmail again/i,
     );
-    expect(within(dialog).getByRole('button', { name: 'Try again' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Try this action again' })).toBeDisabled();
     await userEvent.click(within(dialog).getByRole('button', { name: /check gmail again/i }));
     await waitFor(() => expect(previewStarts).toBe(2));
   });
@@ -1606,10 +1659,10 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/nothing is left to retry/i)).toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Try this action again' })).toBeNull();
   });
 
   it('never exposes generic recovery for an unsubscribe failure', async () => {
@@ -1638,8 +1691,11 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     ]);
     renderScreen();
 
-    expect(await screen.findByText('Needs attention')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /review and try again/i })).toBeNull();
+    expect(await screen.findByRole('link', { name: 'Contact support' })).toHaveAttribute(
+      'href',
+      '/settings/help',
+    );
+    expect(screen.queryByRole('button', { name: /check and retry/i })).toBeNull();
   });
 
   it('offers the real Gmail reconnect flow after fresh verification requires it', async () => {
@@ -1689,9 +1745,13 @@ describe('ActivityScreen — outcome-aware recovery', () => {
     ]);
     renderScreen();
 
-    await userEvent.click(await screen.findByRole('button', { name: /review and try again/i }));
+    await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/try again in Activity/i)).toBeInTheDocument();
+    // Anchored on the control it names: a bare /return to Activity/ stayed
+    // green while the sentence pointed at a button that had been renamed.
+    expect(
+      within(dialog).getByText(/return to Activity and choose Check and retry\./i),
+    ).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: /reconnect Gmail/i }));
     expect(assignSpy).toHaveBeenCalledWith(
       expect.stringContaining(
@@ -1981,8 +2041,8 @@ describe('ActivityScreen — D57 rule attribution', () => {
       'aria-pressed',
       'true',
     );
-    expect(screen.getAllByText('Skipped').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Protected').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Dismissed by you').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Skipped — sender is Protected').length).toBeGreaterThan(0);
   });
 
   it('renders "by Autopilot · <rule name>" for autopilot rows with a rule', async () => {
@@ -2096,7 +2156,7 @@ describe('ActivityScreen — U27 infinite scroll', () => {
     expect(screen.getByText('Sender One')).toBeInTheDocument();
     // Page 2's nextCursor=null → end-of-list marker with the loaded count.
     await waitFor(() =>
-      expect(screen.getByText(/end of activity · 2 rows loaded/i)).toBeInTheDocument(),
+      expect(screen.getByText(/end of activity · 2 actions shown/i)).toBeInTheDocument(),
     );
     expect(screen.queryByRole('button', { name: /^load more$/i })).not.toBeInTheDocument();
   });
@@ -2111,7 +2171,7 @@ describe('ActivityScreen — U27 infinite scroll', () => {
     ]);
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByText(/end of activity · 1 row loaded/i)).toBeInTheDocument(),
+      expect(screen.getByText(/end of activity · 1 action shown/i)).toBeInTheDocument(),
     );
     expect(screen.queryByRole('button', { name: /^load more$/i })).not.toBeInTheDocument();
   });

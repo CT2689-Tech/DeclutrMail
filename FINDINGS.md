@@ -47,6 +47,25 @@ the point.
 
 ## Inbox (untriaged)
 
+**Found:** 2026-09-19 · `/ct-qa protect`, QA-protect-20260919-04, filed from `usability-editor`.
+
+Acting on a Protected sender from Senders or Sender Detail shows a preview that
+says the action "applies to this sender only" and never says the sender stays
+Protected afterwards. A user who archives or unsubscribes a wrongly-protected
+sender leaves believing they are finished; every later bulk and automatic run
+keeps skipping it. Triage's notice already says so; the other two surfaces
+share `ConfirmActionModal` and do not.
+
+**Found:** 2026-09-19 · `/ct-qa protect`, QA-protect-20260919-05, filed from `usability-editor`.
+
+Two of the automatic-protection reasons do not state the rule that ran. "You
+starred a message" omits the one-year window, and "Gmail marks it important"
+hides that it takes three messages, in Primary, within a year. The nightly
+sweep retires a protection when its signal ages out, so the user cannot
+predict the shield expiring. CLAUDE.md §2.6 requires the exact reason.
+
+Full detail for both: `docs/qa/qa-worklist.md` `## protect`.
+
 **Found:** 2026-09-18 · `/ct-qa activity`, QA-activity-20260918-01, survived
 `finding-refuter`. **Tier 1 — privacy / public claim.**
 

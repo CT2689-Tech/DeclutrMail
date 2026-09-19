@@ -35,7 +35,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-09-18';
+const LAST_UPDATED = '2026-09-19';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -313,6 +313,17 @@ export default function PrivacyPolicyPage() {
               <td>
                 Suggestion explanations and Pro Brief summaries. A Pro Brief can include the subject
                 line and Gmail preview snippet, but never full email contents.
+              </td>
+            </tr>
+            <tr>
+              <td>Brandfetch</td>
+              <td>
+                Sender logos. We send only a sender&rsquo;s email domain (for example,{' '}
+                <code>example.com</code>) — never your address, your account, or any message. A
+                sender&rsquo;s domain reaches Brandfetch only when neither the sender&rsquo;s own
+                published logo record nor its website gives us a usable logo. Domains are looked up
+                whether or not the sender is a brand, for all DeclutrMail users at once rather than
+                once per user, and re-checked after a cache period.
               </td>
             </tr>
             <tr>
