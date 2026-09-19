@@ -13,9 +13,9 @@
 // page content.
 //
 // Server component on purpose: the shell itself cannot accidentally
-// reach for `useAuth()`. Three narrow client islands remain explicit:
-// route-family analytics, the layout-preserving mobile disclosure, and
-// cookie consent.
+// reach for `useAuth()`. Four narrow client islands remain explicit:
+// route-family analytics, cookieless page-view counts, the
+// layout-preserving mobile disclosure, and cookie consent.
 
 import type { ReactNode } from 'react';
 import { TIER_MANIFEST, tokens } from '@declutrmail/shared';
@@ -26,6 +26,7 @@ import { siteUrl } from '@/features/marketing/landing/urls';
 import { PublicRouteTracker } from '@/features/marketing/public-route-tracker';
 import { PublicFooter, PublicHeader } from '@/features/marketing/public-shell/public-shell';
 import { SignupRefCapture } from '@/features/marketing/signup-ref-capture';
+import { SiteAnalytics } from '@/features/marketing/site-analytics';
 import { ThemeScript } from '@/features/theme/theme-script';
 import { softwareApplicationDescription } from './site-json-ld-description';
 import '@/features/marketing/public-shell/public-shell.css';
@@ -163,6 +164,7 @@ function MarketingShell({ children }: { children: ReactNode }) {
       <JsonLd data={SITE_JSON_LD} />
       <SignupRefCapture />
       <PublicRouteTracker />
+      <SiteAnalytics />
       <PublicHeader />
       <main id="main-content">{children}</main>
       <PublicFooter />

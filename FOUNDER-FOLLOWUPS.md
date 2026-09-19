@@ -23,11 +23,11 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
-### 2026-09-18 — Decide how to count public-site visitors who decline analytics
-**Source:** session 2026-09-18 (user-acquisition review)
-**Why:** We cannot tell a traffic problem from a conversion problem. Checked 2026-09-18: prod has 6 users since 2026-06-09; PostHog shows 4 persons on `declutrmail.com` in 90 days, but PostHog only initializes after "Accept all" (D147), so that is a floor, not a count. Vercel Web Analytics returns "Web Analytics not found" and Vercel Observability returns "Observability Data not found", so no un-gated number exists anywhere. Any marketing push before this is fixed cannot be measured.
-**How:** Pick one. (a) Enable Vercel Web Analytics (Vercel dashboard → project `declutr-mail` → Analytics → Enable) and mount `<Analytics />` in the `(marketing)` layout only — cookieless, same-origin script, so the public CSP needs no change. This REQUIRES editing `/privacy` §6, the subprocessor row for Vercel, and `/cookies` §2, which today promise "Choosing Essential only stops analytics immediately" — that sentence becomes false otherwise. (b) Keep the promise as written and accept consent-gated numbers, reading them as a floor. Agent did not ship (a): it changes a published privacy promise on a privacy-wedge product (CLAUDE.md §9 stop condition).
-**Verifies by:** A 7-day visitor count for `declutrmail.com` that does not depend on the consent banner, or a recorded decision to stay with (b).
+### 2026-09-18 — Enable Vercel Web Analytics in the dashboard
+**Source:** session 2026-09-18 (user-acquisition review); founder chose option (a) the same day
+**Why:** We could not tell a traffic problem from a conversion problem. Checked 2026-09-18: prod had 6 users since 2026-06-09; PostHog showed 4 persons on `declutrmail.com` in 90 days, but PostHog only initializes after "Accept all", so that is a floor, not a count. The code side shipped (cookieless `<Analytics />` on the two public production hosts, `/privacy` §6 + `/cookies` + the preferences card updated). The Vercel API exposes no field for this toggle, so until it is switched on the script path 404s and nothing is counted.
+**How:** https://vercel.com/chintanathakkar-gmailcoms-projects/declutr-mail/analytics → Enable Web Analytics. No redeploy setting to change; the next production deploy serves `/_vercel/insights/script.js`.
+**Verifies by:** Load https://declutrmail.com in a private window → DevTools Network shows `/_vercel/insights/script.js` 200 and a `view` POST, with no CSP error in the console; the Vercel Analytics tab shows the visit within a few minutes. Only the apex `declutrmail.com` is counted in practice: `www.` 308-redirects to it before any script runs, and marketing pages served under `app.declutrmail.com` are deliberately not counted — expect this number to sit below Search Console's.
 **Status:** Open
 
 ### 2026-08-27 — Guard against bundler-only copy defects

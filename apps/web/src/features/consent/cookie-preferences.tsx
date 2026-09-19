@@ -91,11 +91,11 @@ export function CookiePreferences() {
           checked={selected === 'essential'}
           onSelect={select}
           title="Essential only"
-          detail="No analytics — only the cookies needed for sign-in and billing."
+          detail="No PostHog analytics — only the cookies needed for sign-in and billing."
         />
         <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
           Changes apply immediately and are saved on this device. Switching to Essential only stops
-          analytics and clears its ID.
+          PostHog and clears its ID.
         </p>
       </div>
     </Card>

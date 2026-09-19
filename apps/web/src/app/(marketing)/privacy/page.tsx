@@ -35,7 +35,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-08-07';
+const LAST_UPDATED = '2026-09-18';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -206,6 +206,9 @@ export default function PrivacyPolicyPage() {
             Monitor errors and service health, and — with your consent — understand which features
             matter.
           </li>
+          <li>
+            Count visits to our public website pages in aggregate, without cookies (Section 6).
+          </li>
         </ul>
       </LegalSection>
 
@@ -217,6 +220,14 @@ export default function PrivacyPolicyPage() {
           or cross-site trackers. {ANALYTICS_PRIVACY_CLAIM} You can change or withdraw your consent
           at any time on the <a href="/cookies">Cookie preferences</a> page (also in the app under
           Settings); withdrawal takes effect immediately.
+        </p>
+        <p>
+          Separately, our public website pages — not the signed-in app — count page views with
+          Vercel Web Analytics. It sets no cookies and stores nothing on your device, so it does not
+          depend on the cookie banner. Vercel identifies a visit with a hash created from the
+          incoming request and discards it after 24 hours; the counts are aggregate (page, referrer,
+          country, device and browser type) and are not tied to you or to your DeclutrMail account.
+          Before a page view is sent we strip the address down to the page path and campaign tags.
         </p>
       </LegalSection>
 
@@ -283,7 +294,7 @@ export default function PrivacyPolicyPage() {
             </tr>
             <tr>
               <td>Vercel</td>
-              <td>Web application hosting</td>
+              <td>Web application hosting; cookieless page-view counts on public website pages</td>
             </tr>
             <tr>
               <td>Upstash</td>
