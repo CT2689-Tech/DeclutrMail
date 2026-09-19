@@ -35,7 +35,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-09-18';
+const LAST_UPDATED = '2026-09-19';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -313,6 +313,13 @@ export default function PrivacyPolicyPage() {
               <td>
                 Suggestion explanations and Pro Brief summaries. A Pro Brief can include the subject
                 line and Gmail preview snippet, but never full email contents.
+              </td>
+            </tr>
+            <tr>
+              <td>Brandfetch</td>
+              <td>
+                Sender logos. We send only a sender&rsquo;s email domain (for example,{' '}
+                <code>example.com</code>) — never your address, your account, or any message.
               </td>
             </tr>
             <tr>

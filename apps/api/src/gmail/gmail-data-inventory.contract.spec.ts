@@ -47,6 +47,9 @@ describe('D245 Gmail data inventory contract', () => {
     expect(GMAIL_INDEXED_DATA_DELETION_INVENTORY).not.toHaveLength(0);
     expect(GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.map((item) => item.id)).toEqual([
       'gmail-account-identity',
+      // Domain-keyed logo cache: shared across users, no mailbox link,
+      // so a mailbox purge has nothing of the user's to remove from it.
+      'sender-logo-lookup',
       'mailbox-security-and-deletion-audit',
     ]);
 

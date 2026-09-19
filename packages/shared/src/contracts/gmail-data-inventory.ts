@@ -27,7 +27,7 @@ export const GMAIL_DATA_RETENTION = {
 export type GmailDataCategory = 'connection' | 'message' | 'derived';
 export type GmailDataExportFormat =
   'json' | 'csv' | 'senders-csv' | 'decisions-csv' | 'activity-support-bundle';
-export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic';
+export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic' | 'Brandfetch';
 export type GmailDataRemovalTrigger =
   'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 
@@ -421,6 +421,29 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     removalTrigger: 'delete-indexed-data',
     exportedIn: ['json'],
     transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+  {
+    // Sender logos (ADR-0034). The lookup key is the sender's email
+    // DOMAIN and nothing else: no user, mailbox, address or message
+    // accompanies it, and the cache row is shared by every user who
+    // receives mail from that domain — which is why it is not
+    // mailbox-scoped and survives a mailbox purge. It is in this
+    // registry because the domain is derived from the Gmail `From`
+    // header, and a third party receives it (QA-activity-20260918-01).
+    id: 'sender-logo-lookup',
+    category: 'derived',
+    label: 'Sender logo lookups by email domain',
+    fetchedFrom: ['sender-identity'],
+    storageRefs: ['domain_icons.*'],
+    derived: true,
+    purpose:
+      "Show a recognizable logo beside a sender. Only the sender's email domain is looked up — against the sender's own published logo record and website, then the Brandfetch logo service — never your address, your account, or any message.",
+    retention:
+      'Logo cache rows are keyed by domain, shared across all users, and hold no link to you or your mailbox; they are refreshed or dropped on a rolling cache schedule rather than deleted with your data.',
+    removalTrigger: 'retention-policy',
+    exportedIn: [],
+    transmittedTo: ['DeclutrMail', 'Brandfetch'],
     showInMessageStorageList: false,
   },
 ] as const satisfies readonly GmailDataInventoryItem[];

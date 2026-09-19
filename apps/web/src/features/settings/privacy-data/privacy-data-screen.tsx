@@ -392,9 +392,14 @@ function inventoryDisplayItem(item: {
     item.exportedIn.length > 0
       ? `Included in: ${item.exportedIn.join(', ')}.`
       : 'Not currently included in a data export.';
-  const processorDetail = item.transmittedTo.includes('Anthropic')
-    ? ' May be sent to Anthropic for generated text.'
-    : '';
+  // One sentence per external processor, so a processor added to the
+  // registry cannot reach production without a line here saying so.
+  const processorDetail = [
+    item.transmittedTo.includes('Anthropic') ? ' May be sent to Anthropic for generated text.' : '',
+    item.transmittedTo.includes('Brandfetch')
+      ? ' The domain alone may be sent to Brandfetch to find a logo.'
+      : '',
+  ].join('');
   const deletionDetail = deletionTriggerDetail(item.removalTrigger);
   return {
     id: item.id,
