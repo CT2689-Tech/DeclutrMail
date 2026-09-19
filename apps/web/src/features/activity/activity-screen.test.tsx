@@ -487,13 +487,78 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     renderScreen();
 
     expect(
-      await screen.findByText(/Counts actions, not emails\. Undone actions are not counted\./),
+      await screen.findByText(
+        /Counts actions, not emails\. Undone actions are not counted\. Sender and date filters apply; source and action filters do not\./,
+      ),
     ).toBeInTheDocument();
     // Same window, narrowed to failures — not the 7-day card's window.
     expect(screen.getByRole('link', { name: '6 failed · Review' })).toHaveAttribute(
       'href',
       '/activity?window=90d&outcome=failed',
     );
+  });
+
+  it('says "no activity yet" only when the mailbox has none, never for a narrow filter', async () => {
+    const NONE = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [], meta: { ...META_BASE, stats: NONE, allTimeStats: NONE } }),
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByRole('heading', { name: /no activity yet/i })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /show all activity/i })).not.toBeInTheDocument();
+  });
+
+  it('keeps the filter copy when a sender search makes the all-time stats zero', async () => {
+    const NONE = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+    currentSearch = 'sender_q=nobody';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { ...META_BASE, senderQuery: 'nobody', stats: NONE, allTimeStats: NONE },
+          }),
+      },
+    ]);
+    renderScreen();
+    expect(
+      await screen.findByRole('heading', { name: /nothing matches these filters/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /show all activity/i })).toHaveAttribute(
+      'href',
+      '/activity?window=all',
+    );
+  });
+
+  it('renders no control frame at all for a sender-less row with nothing to undo', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                ...row({ id: 'a-account', action: 'keep', affectedCount: 0 }),
+                sender: null,
+              },
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await screen.findByText(/end of activity · 1 action shown/i);
+    // The frame itself, not just its contents: an empty bordered capsule
+    // had no link and no glyph either, and still rendered.
+    expect(container.querySelector('[data-row-actions-frame]')).toBeNull();
   });
 
   it('renders no empty control on a row that has nothing to undo', async () => {
@@ -1664,7 +1729,11 @@ describe('ActivityScreen — outcome-aware recovery', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: /check and retry/i }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/return to Activity/i)).toBeInTheDocument();
+    // Anchored on the control it names: a bare /return to Activity/ stayed
+    // green while the sentence pointed at a button that had been renamed.
+    expect(
+      within(dialog).getByText(/return to Activity and choose Check and retry\./i),
+    ).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: /reconnect Gmail/i }));
     expect(assignSpy).toHaveBeenCalledWith(
       expect.stringContaining(

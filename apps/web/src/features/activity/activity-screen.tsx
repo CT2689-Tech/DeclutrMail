@@ -24,8 +24,12 @@ import {
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
+import Link from 'next/link';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
-import { activityActionLabel as sharedActivityActionLabel } from '@declutrmail/shared/actions';
+import {
+  ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
+  activityActionLabel as sharedActivityActionLabel,
+} from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { ContextualHelp } from '@/features/help/contextual-help';
@@ -345,6 +349,7 @@ export function ActivityScreen() {
         error={weeklyQuery.isError}
         onRetry={() => void weeklyQuery.refetch()}
         activeOutcome={filters.outcomes?.[0] ?? null}
+        clearHref={clearOutcomeHref(filters)}
         senderQuery={filters.senderQuery ?? ''}
       />
 
@@ -419,15 +424,28 @@ export function ActivityScreen() {
             }}
           >
             {rows.length === 0 ? (
-              <EmptyState
-                title="Nothing matches these filters."
-                description="Your Activity history is still here — the filters are just narrow."
-                action={
-                  <a href="/activity?window=all" style={{ color: color.primary, fontWeight: 600 }}>
-                    Show all activity
-                  </a>
-                }
-              />
+              hasNoActivityEver(allTimeStats ?? null, filters.senderQuery ?? '') ? (
+                // Nothing recorded for this mailbox at all. Blaming filters
+                // here would name a cause that is not there and offer a
+                // way out that lands on the same empty screen.
+                <EmptyState
+                  title="No activity yet."
+                  description="Actions you, Autopilot, or your rules take will be recorded here."
+                />
+              ) : (
+                <EmptyState
+                  title="Nothing matches these filters."
+                  description="Your Activity history is still here — the filters are just narrow."
+                  action={
+                    <Link
+                      href="/activity?window=all"
+                      style={{ color: color.primary, fontWeight: 600 }}
+                    >
+                      Show all activity
+                    </Link>
+                  }
+                />
+              )
             ) : groupMode === 'sender' ? (
               <GroupedList
                 rows={rows}
@@ -678,9 +696,9 @@ function MetricsHeader({
             not be clicked, and outside the 7-day card no visible control
             reached those records (QA-activity-20260918-08). */}
         {stats.needsAttention > 0 && (
-          <a href={failedHref} style={{ color: color.amber, fontWeight: 600 }}>
+          <Link href={failedHref} style={{ color: color.amber, fontWeight: 600 }}>
             {stats.needsAttention} failed · Review
-          </a>
+          </Link>
         )}
       </header>
       {/* CSS-driven restack, not the `isMobile` JS flag below: this grid
@@ -730,15 +748,16 @@ function MetricsHeader({
               <span
                 style={{
                   fontFamily: font.mono,
-                  fontSize: 10,
-                  letterSpacing: '0.12em',
+                  // `body { overflow-wrap: break-word }` split "UNSUBSCRIBES"
+                  // mid-word in the narrow 3-column grid. Forbidding the
+                  // break alone makes it spill into the next tile at 320px,
+                  // so the label is tightened until it fits instead.
+                  fontSize: isMobile ? 9 : 10,
+                  letterSpacing: isMobile ? '0.04em' : '0.12em',
                   textTransform: 'uppercase',
                   color: color.fgMuted,
-                  // `body { overflow-wrap: break-word }` split
-                  // "UNSUBSCRIBES" mid-word in the narrow 3-column grid.
                   overflowWrap: 'normal',
                   wordBreak: 'keep-all',
-                  whiteSpace: 'nowrap',
                 }}
               >
                 {tile.label}
@@ -779,8 +798,8 @@ function MetricsHeader({
           which the numbers can say for themselves
           (QA-activity-20260918-05). */}
       <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
-        Counts actions, not emails. Undone actions are not counted. Source and action filters do not
-        change these.
+        Counts actions, not emails. Undone actions are not counted. Sender and date filters apply;
+        source and action filters do not.
       </p>
     </section>
   );
@@ -2610,32 +2629,58 @@ function RowActions({
   mailboxId: string | null;
   includeFeedback?: boolean;
 }) {
+  // The pill is a frame around controls. A sender-less row with nothing to
+  // undo and no recovery state has none, and an empty bordered capsule is
+  // the same defect as the empty segment (QA-activity-20260918-09).
+  const hasControl =
+    row.executionState !== null ||
+    row.undoState.kind !== 'unavailable' ||
+    (row.sender !== null && mailboxEmail !== null);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 0,
-          border: `1px solid ${color.lineSoft}`,
-          borderRadius: 999,
-          background: color.bg,
-          padding: '0 2px',
-          overflow: 'hidden',
-        }}
-      >
-        {row.executionState && (
-          <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
-        )}
-        <UndoCell row={row} bulkFailedTokens={failedTokens} />
-        <OpenInGmailLink
-          row={row}
-          mailboxEmail={mailboxEmail}
-          // The divider separates the link from a control before it. With
-          // no recovery cell and nothing to undo there is no such control.
-          showDivider={row.executionState !== null || row.undoState.kind !== 'unavailable'}
-        />
-      </div>
+      {hasControl && (
+        <div
+          data-row-actions-frame
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 0,
+            border: `1px solid ${color.lineSoft}`,
+            borderRadius: 999,
+            background: color.bg,
+            padding: '0 2px',
+            overflow: 'hidden',
+          }}
+        >
+          {row.executionState && (
+            <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+          )}
+          <UndoCell row={row} bulkFailedTokens={failedTokens} />
+          <OpenInGmailLink
+            row={row}
+            mailboxEmail={mailboxEmail}
+            // The divider separates the link from a control before it. With
+            // no recovery cell and nothing to undo there is no such control.
+            showDivider={row.executionState !== null || row.undoState.kind !== 'unavailable'}
+          />
+        </div>
+      )}
+      {/* The reason a retry is unsafe used to live only in a `title`,
+          which does not exist on touch — on the one row a worried user is
+          reading (QA-activity-20260918-08). */}
+      {row.executionState?.kind === 'failed' && unsafeRetryReason(row) !== null && (
+        <span
+          style={{
+            maxWidth: 260,
+            textAlign: 'right',
+            fontSize: 11.5,
+            lineHeight: 1.4,
+            color: color.fgMuted,
+          }}
+        >
+          {unsafeRetryReason(row)}
+        </span>
+      )}
       {includeFeedback &&
         row.reviewOutcome !== null &&
         row.reviewOutcome !== 'skipped' &&
@@ -3088,7 +3133,7 @@ function RecoveryPreviewBody({
       return (
         <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
           DeclutrMail could not verify Gmail because access needs attention. Reconnect the account,
-          wait for its sync to finish, then return to Activity and choose Review and try again.
+          wait for its sync to finish, then return to Activity and choose Check and retry.
           <div style={{ marginTop: 10 }}>
             <Button tone="primary" onClick={onReconnect}>
               Reconnect Gmail
@@ -3625,6 +3670,56 @@ function failedActionNoun(action: ActivityRowWire['action']): string {
   }
 }
 
+/**
+ * True only when the all-time, UNFILTERED-by-sender stats are all zero.
+ * `allTimeStats` is sender-scoped whenever a sender search is active, so
+ * a zero there says nothing about the mailbox and must not read as
+ * "you have never done anything".
+ */
+function hasNoActivityEver(allTime: ActivityStatsWire | null, senderQuery: string): boolean {
+  if (!allTime || senderQuery.trim() !== '') return false;
+  return (
+    allTime.archived === 0 &&
+    allTime.deleted === 0 &&
+    allTime.unsubscribed === 0 &&
+    allTime.kept === 0 &&
+    allTime.later === 0 &&
+    allTime.followupsDismissed === 0 &&
+    allTime.needsAttention === 0
+  );
+}
+
+/** Why this failed row offers support instead of a retry, or null when it can retry. */
+function unsafeRetryReason(row: ActivityRowWire): string | null {
+  if (row.executionState?.kind !== 'failed') return null;
+  if (row.action.startsWith('unsubscribe')) {
+    return 'We can’t safely repeat an unsubscribe without knowing whether the first one arrived.';
+  }
+  if (row.executionState.resolution === 'support') {
+    return 'This action can’t be retried safely from Activity.';
+  }
+  return null;
+}
+
+function clearOutcomeHref(filters: {
+  window?: ActivityWindowWire;
+  dateFrom?: string | null;
+  dateTo?: string | null;
+  senderQuery?: string;
+}): string {
+  const params = new URLSearchParams({ window: filters.window ?? '30d' });
+  // The 7-day card stamps its own from/to onto its links. Those dates are
+  // the card's, not a range the user picked, so clearing drops them.
+  if (filters.window === '7d') {
+    if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
+    return `/activity?${params.toString()}`;
+  }
+  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+  if (filters.dateTo) params.set('date_to', filters.dateTo);
+  if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
+  return `/activity?${params.toString()}`;
+}
+
 function failedOutcomeHref(filters: {
   window?: ActivityWindowWire;
   dateFrom?: string | null;
@@ -3643,8 +3738,9 @@ function activityRowActionLabel(row: ActivityRowWire): string {
   // else in this column: "Skipped" also read as the app skipping it, and
   // "Protected" is what a manual protection toggle is called
   // (QA-activity-20260918-06).
-  if (row.reviewOutcome === 'skipped') return 'Dismissed by you';
-  if (row.reviewOutcome === 'protected') return 'Skipped — sender is Protected';
+  if (row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected') {
+    return ACTIVITY_REVIEW_OUTCOME_ROW_LABELS[row.reviewOutcome];
+  }
   return sharedActivityActionLabel(row.action, row.executionState);
 }
 

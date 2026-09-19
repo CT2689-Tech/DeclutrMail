@@ -7,6 +7,7 @@
 export { ACTION_REGISTRY, getActionDescriptor, listActionDescriptors } from './manifest-entries';
 export {
   ACTIVITY_ACTION_LABELS,
+  ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
   activityActionLabel,
   activityExecutionLabel,
   activitySourceLabel,

@@ -39,6 +39,7 @@ export function WeeklyReviewCard({
   error,
   onRetry,
   activeOutcome,
+  clearHref = '/activity?window=7d',
   senderQuery = '',
 }: {
   review: ActivityWeeklyReviewWire | null;
@@ -46,6 +47,12 @@ export function WeeklyReviewCard({
   error: boolean;
   onRetry: () => void;
   activeOutcome: ActivityReviewOutcomeWire | null;
+  /**
+   * Where "Clear this filter" goes. Defaults to the card's own 7-day
+   * view; the screen passes the CURRENT window so clearing an outcome
+   * reached from the 90-day failed link does not also reset the window.
+   */
+  clearHref?: string;
   /** The sender filter these counts were computed under. */
   senderQuery?: string;
 }) {
@@ -70,7 +77,7 @@ export function WeeklyReviewCard({
           </p>
         </div>
         {activeOutcome && (
-          <a href="/activity?window=7d" style={{ color: color.fgSoft, fontSize: 12 }}>
+          <a href={clearHref} style={{ color: color.fgSoft, fontSize: 12 }}>
             Clear this filter
           </a>
         )}

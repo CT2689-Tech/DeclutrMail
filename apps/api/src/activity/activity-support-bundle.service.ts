@@ -9,6 +9,7 @@ import {
   ACTIVITY_SUPPORT_CSV_COLUMNS,
 } from '@declutrmail/shared/contracts';
 import {
+  ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
   activityActionLabel,
   activityExecutionLabel,
   activitySourceLabel,
@@ -278,11 +279,9 @@ function activityCsvLine(row: ActivityRowFacts, includeFullSenderAddresses: bool
   // Skipped/protected Observe dismissals never executed anything — mirror
   // the Activity screen's wording instead of the execution 'Completed'.
   const reviewLabel =
-    row.reviewOutcome === 'skipped'
-      ? 'Skipped'
-      : row.reviewOutcome === 'protected'
-        ? 'Protected'
-        : null;
+    row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected'
+      ? ACTIVITY_REVIEW_OUTCOME_ROW_LABELS[row.reviewOutcome]
+      : null;
   return [
     row.occurredAt,
     reviewLabel ?? activityActionLabel(row.action, execution),
@@ -316,9 +315,9 @@ function resultLabel(
     case 'failed':
       return 'Failed';
     case 'skipped':
-      return 'Skipped';
+      return ACTIVITY_REVIEW_OUTCOME_ROW_LABELS.skipped;
     case 'protected':
-      return 'Protected';
+      return ACTIVITY_REVIEW_OUTCOME_ROW_LABELS.protected;
     case null:
       return 'Not yet resolved';
   }

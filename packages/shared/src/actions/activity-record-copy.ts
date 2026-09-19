@@ -19,6 +19,17 @@ export const ACTIVITY_ACTION_LABELS = {
   unmarked_protected: 'Unprotected',
 } as const;
 
+/**
+ * What an Observe suggestion became when it never executed. One source
+ * for the Activity screen AND the support-bundle CSV: the export is what
+ * a confused user sends to support about this exact column, so the two
+ * must use the same words (they drifted once — QA-activity-20260918-06).
+ */
+export const ACTIVITY_REVIEW_OUTCOME_ROW_LABELS = {
+  skipped: 'Dismissed by you',
+  protected: 'Skipped — sender is Protected',
+} as const;
+
 export type ActivityPresentationAction = keyof typeof ACTIVITY_ACTION_LABELS;
 export type ActivityPresentationSource = 'triage' | 'manual' | 'autopilot' | 'screener';
 export type ActivityPresentationUndoKind = 'available' | 'expired' | 'executed' | 'unavailable';
