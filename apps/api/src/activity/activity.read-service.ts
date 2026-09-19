@@ -1093,9 +1093,15 @@ export class ActivityReadService {
       kept: byVerb.get('keep') ?? 0,
       later: byVerb.get('later') ?? 0,
       followupsDismissed: byVerb.get('followup-dismiss') ?? 0,
+      // The same three actions `persistedReviewOutcomeExpression` maps to
+      // 'failed'. `unsubscribe_unavailable` was in that arm but not here,
+      // so the header count linked to a list larger than its own number
+      // once the count became a link to `outcome=failed`
+      // (QA-activity-20260918-08).
       needsAttention:
         (byVerb.get('unsubscribe_failed') ?? 0) +
         (byVerb.get('unsubscribe_unconfirmed') ?? 0) +
+        (byVerb.get('unsubscribe_unavailable') ?? 0) +
         countFailedExecutionLineages(
           args.executionLineages,
           args.lowerBound,

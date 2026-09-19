@@ -526,6 +526,47 @@ describe('ActivityReadService', () => {
       expect(result.allTimeStats.needsAttention).toBe(2);
     });
 
+    /**
+     * QA-activity-20260918-08: the header count became a link to
+     * `outcome=failed`. That filter's 'failed' arm has always included
+     * `unsubscribe_unavailable`; the count did not, so "N failed" opened
+     * a list longer than N. One definition of failed, asserted from both
+     * sides so they cannot drift apart again.
+     */
+    it('counts exactly the rows the outcome=failed filter returns', async () => {
+      for (const action of [
+        'unsubscribe_failed',
+        'unsubscribe_unconfirmed',
+        'unsubscribe_unavailable',
+      ] as const) {
+        await seedActivity(db, {
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+          source: 'manual',
+          action,
+        });
+      }
+      // A standing success beside them, so "everything is failed" cannot pass.
+      await seedActivity(db, {
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        occurredAt: new Date(NOW_MS - ONE_DAY_MS),
+        source: 'manual',
+        action: 'archive',
+      });
+
+      const failedOnly = await svc.listActivity({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        window: '30d',
+        source: null,
+        cursor: null,
+        limit: 25,
+        nowMs: NOW_MS,
+        outcomes: ['failed'],
+      });
+      expect(failedOnly.rows).toHaveLength(3);
+      expect(failedOnly.stats.needsAttention).toBe(failedOnly.rows.length);
+    });
+
     it('preserves tenant, source, verb, sender, window, and cursor semantics', async () => {
       const senderKey = 'execution-filtered';
       const senderId = await seedSender(
