@@ -514,6 +514,26 @@ describe('WeeklyValueReceiptWorker facts', () => {
     expect(facts).toBeNull();
   });
 
+  it('stays silent on a week whose only event was the user undoing things', async () => {
+    const db = await freshDb();
+    const facts = await factsFor(
+      db,
+      async (mailboxId) => {
+        await db.insert(activityLog).values({
+          mailboxAccountId: mailboxId,
+          senderKey: 'undo-only',
+          source: 'autopilot',
+          action: 'archive',
+          affectedCount: 47,
+          occurredAt: new Date(NOW.getTime() - 21 * DAY_MS),
+          revertedAt: new Date(NOW.getTime() - 1 * DAY_MS),
+        });
+      },
+      0,
+    );
+    expect(facts).toBeNull();
+  });
+
   /** D232 — the receipt is commercial too; never mail someone mid-erasure. */
   it('never mails a user with an in-flight deletion request', async () => {
     const db = await freshDb();

@@ -378,7 +378,12 @@ export function isEmptyWeek(facts: WeeklyValueReceiptFacts): boolean {
     facts.automatedMessages === 0 &&
     facts.ownDecisions === 0 &&
     (facts.briefSurfaced ?? 0) === 0 &&
-    facts.pendingScreener === 0 &&
-    facts.undone === 0
+    facts.pendingScreener === 0
+    // `undone` is deliberately not a reason to send. Once it was windowed
+    // on when the user undid something (QA-activity-20260918-04), a week
+    // whose only event was undos would have mailed a "value receipt"
+    // whose whole body was "3 actions you undid" — and D189's rule is
+    // that saying nothing beats saying that. It still prints on a week
+    // that has something else to report.
   );
 }

@@ -1188,7 +1188,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // filled + with a soft halo per ADR-0010.
   const timelineItems = useMemo<TimelineItem[]>(() => {
     // "Current" is the newest action that still stands. An undone row
-    // is history, never the sender's present state.
+    // is history, never the sender's present state. Only the first page
+    // (10 rows) is loaded here, so if every one of them was undone no
+    // row is marked: saying nothing beats promoting an undone row, and
+    // an older standing decision is not on screen to point at.
     const currentIndex = history.findIndex((row) => row.undoneAt == null);
     return history.map((row, i) => historyRowToTimelineItem(row, i === currentIndex, now));
   }, [history, now]);

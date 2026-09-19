@@ -118,6 +118,9 @@ const notDecidedRecently = (now: Date) => sql`NOT EXISTS (
     AND al.sender_key = triage_decisions.sender_key
     AND al.action IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')
     AND al.occurred_at >= ${now.toISOString()}::timestamptz - make_interval(days => ${TRIAGE_DECIDED_WINDOW_DAYS})
+    /* Same journal-based reversal read as triage.read-service.ts's decided
+       exclusion, safe for the same reason: 30-day undo windows outlast
+       this 7-day window, so the journal row cannot have been pruned yet. */
     AND (al.undo_token IS NULL OR uj.reverted_at IS NULL)
 )`;
 
