@@ -4658,7 +4658,7 @@ recommending merge even on a change that felt small and precedented.
 **Enforcement update:** `sentry-browser-runtime.test.ts` pins the label, the anchoring, the no-override rule, and that the react.dev URL never rides along. Verified red against the pre-fix runtime.
 
 ## 2026-09-19 — Bulk "nothing left to delete" claimed a scope the totals never covered
-**PR:** (uncommitted — branch `claude/inbox-archived-bulk-selection-1c2d4b`, ADR-0028 bulk-reach amendment)
+**PR:** #748 (https://github.com/CT2689-Tech/DeclutrMail/pull/748)
 **Caught by:** design-system-agent gate (pre-commit)
 **What happened:** Widening the ADR-0028 reach chips to bulk Delete, I re-pointed `nothingLeftToDelete` at the bulk preview's `totals` / `allMailTotals` and wrote "There is no email from these senders in Inbox or archived." Those totals exclude Protected senders, so a selection of one empty sender + one Protected sender holding mail printed that sentence directly above "1 protected sender won't be touched." The pre-existing "Nothing from these senders is in your inbox" notice had the same blind spot.
 **Correct approach:** When a single-sender sentence is generalised to an aggregate, check what the aggregate EXCLUDES before reusing a universal subject. Gate the claim on `protectedCount === 0`, and name only the counted subset otherwise.
