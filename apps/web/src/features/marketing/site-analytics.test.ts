@@ -24,6 +24,29 @@ describe('scrubAnalyticsUrl', () => {
       'https://declutrmail.com/',
     );
   });
+
+  it('keeps ref only when it is a known campaign value', () => {
+    expect(scrubAnalyticsUrl('https://declutrmail.com/?ref=a%40b.co')).toBe(
+      'https://declutrmail.com/',
+    );
+    expect(scrubAnalyticsUrl('https://declutrmail.com/?ref=reddit')).toBe(
+      'https://declutrmail.com/?ref=reddit',
+    );
+  });
+
+  it('drops every signed-in app path, because the app shares the counted host', () => {
+    for (const path of ['/senders', '/senders/abc123', '/settings', '/triage', '/activity']) {
+      expect(scrubAnalyticsUrl(`https://declutrmail.com${path}`), path).toBeNull();
+    }
+    // A public path that merely starts like an app path is still counted.
+    expect(scrubAnalyticsUrl('https://declutrmail.com/settings-guide')).toBe(
+      'https://declutrmail.com/settings-guide',
+    );
+  });
+
+  it('fails closed on a URL it cannot parse', () => {
+    expect(scrubAnalyticsUrl('not a url')).toBeNull();
+  });
 });
 
 describe('isCountedHost', () => {

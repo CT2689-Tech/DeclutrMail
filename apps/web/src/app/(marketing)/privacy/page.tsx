@@ -35,7 +35,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/privacy',
 });
 
-const LAST_UPDATED = '2026-08-07';
+const LAST_UPDATED = '2026-09-18';
 
 const TOC = [
   { id: 'who-we-are', label: 'Who we are' },
@@ -205,6 +205,9 @@ export default function PrivacyPolicyPage() {
           <li>
             Monitor errors and service health, and — with your consent — understand which features
             matter.
+          </li>
+          <li>
+            Count visits to our public website pages in aggregate, without cookies (Section 6).
           </li>
         </ul>
       </LegalSection>

@@ -22,7 +22,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/cookies',
 });
 
-const LAST_UPDATED = '2026-07-07';
+const LAST_UPDATED = '2026-09-18';
 
 const TOC = [
   { id: 'your-choice', label: 'Your preference' },
