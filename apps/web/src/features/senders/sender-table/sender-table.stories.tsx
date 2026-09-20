@@ -24,6 +24,7 @@ import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
 
 import type { SenderListRow, SenderListDirection, SenderListSort } from '@/lib/api/senders';
+import { RowActivityProvider } from '../row-activity';
 import { SenderTable } from './sender-table';
 
 const { color } = tokens;
@@ -201,6 +202,29 @@ export const SortByLastSeen: Story<typeof SenderTable> = {
 
 export const SortByName: Story<typeof SenderTable> = {
   render: () => <ControlledTable sort="name" direction="asc" />,
+};
+
+/**
+ * Rows reporting their own action (founder report 2026-09-20 — the table
+ * had no busy state at all): working (tinted, controls off), done with a
+ * count, done without one (bulk member), failed, not confirmed.
+ */
+export const ActionFeedback: Story<typeof SenderTable> = {
+  render: () => (
+    <RowActivityProvider
+      value={
+        new Map([
+          ['r-1', { phase: 'working', verb: 'delete' }],
+          ['r-2', { phase: 'done', verb: 'delete', affectedCount: 251 }],
+          ['r-3', { phase: 'done', verb: 'archive', affectedCount: null }],
+          ['r-4', { phase: 'failed', verb: 'later' }],
+          ['r-5', { phase: 'unconfirmed', verb: 'archive' }],
+        ])
+      }
+    >
+      <ControlledTable />
+    </RowActivityProvider>
+  ),
 };
 
 export const Compact: Story<typeof SenderTable> = {

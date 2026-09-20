@@ -12,6 +12,7 @@ import {
   type Sender,
 } from '../data';
 import { derivePrimaryVerbId } from '../action-row';
+import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
 import type { Verdict } from './types';
 
 /**
@@ -103,11 +104,15 @@ export function ActionToolbar({
   onAction: (req: ActionRequest) => void;
 }) {
   const highlight = derivePrimaryVerbId(sender);
+  // This sender's own in-flight / finished action (see `row-activity`).
+  const activity = useRowActivity(sender.id);
+  const busy = isRowBusy(activity);
 
   return (
     <div
       role="toolbar"
       aria-label="Sender actions"
+      aria-busy={busy || undefined}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -163,6 +168,8 @@ export function ActionToolbar({
             }
             size="md"
             disabled={disabled}
+            // Inert, not disabled: the verb just pressed may hold focus.
+            inert={busy && !disabled}
             {...(deleteAccentStyle ? { style: deleteAccentStyle } : {})}
             {...(buttonTitle ? { title: buttonTitle } : {})}
             onClick={() => onAction({ verb, senders: [sender] })}
@@ -187,6 +194,7 @@ export function ActionToolbar({
           </Button>
         );
       })}
+      {activity && <RowActivityPill activity={activity} />}
       <span style={{ flex: 1 }} />
       <span
         style={{

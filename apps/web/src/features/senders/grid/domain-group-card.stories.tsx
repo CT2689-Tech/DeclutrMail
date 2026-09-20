@@ -9,6 +9,7 @@
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
+import { RowActivityProvider } from '../row-activity';
 import { DomainGroupCard } from './domain-group-card';
 
 const { color } = tokens;
@@ -73,6 +74,7 @@ export const Collapsed: Story<typeof DomainGroupCard> = {
     totalReceived: 4820,
     expanded: false,
     onToggleExpand: noop,
+    memberIds: [],
   },
   render: frame,
 };
@@ -86,6 +88,7 @@ export const Expanded: Story<typeof DomainGroupCard> = {
     totalReceived: 1290,
     expanded: true,
     onToggleExpand: noop,
+    memberIds: [],
   },
   render: frame,
 };
@@ -99,6 +102,7 @@ export const LargeBrand: Story<typeof DomainGroupCard> = {
     totalReceived: 12480,
     expanded: false,
     onToggleExpand: noop,
+    memberIds: [],
   },
   render: frame,
 };
@@ -112,6 +116,47 @@ export const MinimumGroup: Story<typeof DomainGroupCard> = {
     totalReceived: 96,
     expanded: false,
     onToggleExpand: noop,
+    memberIds: [],
   },
   render: frame,
+};
+
+/**
+ * Collapsed while its members' actions run / after they finish — the
+ * member cards (and their pills) are off screen, so the group says it.
+ */
+export const MemberActivity: Story<typeof DomainGroupCard> = {
+  args: {
+    domain: 'yankeecandle.com',
+    senderCount: 3,
+    volume90d: 114,
+    totalReceived: 493,
+    expanded: false,
+    onToggleExpand: noop,
+    memberIds: ['a', 'b', 'c'],
+  },
+  render: (args) => (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 320px)', gap: 16 }}>
+      <RowActivityProvider
+        value={
+          new Map([
+            ['a', { phase: 'working', verb: 'archive' }],
+            ['b', { phase: 'working', verb: 'archive' }],
+          ])
+        }
+      >
+        <DomainGroupCard {...args} />
+      </RowActivityProvider>
+      <RowActivityProvider
+        value={
+          new Map([
+            ['a', { phase: 'done', verb: 'archive', affectedCount: null }],
+            ['b', { phase: 'failed', verb: 'archive' }],
+          ])
+        }
+      >
+        <DomainGroupCard {...args} />
+      </RowActivityProvider>
+    </div>
+  ),
 };

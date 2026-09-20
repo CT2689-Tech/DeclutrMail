@@ -7,6 +7,7 @@
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
 import { makeSender } from '../testing/make-sender';
+import { RowActivityProvider, type SenderRowActivity } from '../row-activity';
 import { SenderCard } from './sender-card';
 
 const { color } = tokens;
@@ -83,6 +84,43 @@ export const Default: Story<typeof SenderCard> = {
     globalMaxTotal: 1000,
   },
   render: frame,
+};
+
+/**
+ * The row's own action feedback (founder report 2026-09-20). One card per
+ * phase: working (dimmed, controls off), done with a count, done without
+ * one (a bulk member — batches report totals only), failed, and
+ * unconfirmed (past the overdue deadline, still running).
+ */
+export const ActionFeedback: Story<typeof SenderCard> = {
+  args: {
+    sender: sender(),
+    selected: false,
+    onToggleSelect: noop,
+    onAction: noop,
+    globalMaxTotal: 1000,
+  },
+  render: (args) => {
+    const phases: Array<[string, SenderRowActivity]> = [
+      ['Working', { phase: 'working', verb: 'delete' }],
+      ['Done · counted', { phase: 'done', verb: 'delete', affectedCount: 251 }],
+      ['Done · bulk member', { phase: 'done', verb: 'archive', affectedCount: null }],
+      ['Failed', { phase: 'failed', verb: 'later' }],
+      ['Still running', { phase: 'unconfirmed', verb: 'archive' }],
+    ];
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 320px)', gap: 16 }}>
+        {phases.map(([name, activity], i) => {
+          const s = sender({ id: `fb-${i}`, displayName: name });
+          return (
+            <RowActivityProvider key={name} value={new Map([[s.id, activity]])}>
+              <SenderCard {...args} sender={s} />
+            </RowActivityProvider>
+          );
+        })}
+      </div>
+    );
+  },
 };
 
 /** Selected — primary border highlights the row. */

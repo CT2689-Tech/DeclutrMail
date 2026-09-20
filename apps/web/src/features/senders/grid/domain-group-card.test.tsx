@@ -21,6 +21,7 @@ function renderCard() {
       totalReceived={12}
       expanded={false}
       onToggleExpand={vi.fn()}
+      memberIds={[]}
     />,
   );
 }

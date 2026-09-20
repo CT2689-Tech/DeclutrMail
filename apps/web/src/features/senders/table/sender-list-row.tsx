@@ -13,6 +13,7 @@ import { useLongPress } from '@declutrmail/shared/hooks/use-long-press';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from '../action-row';
 import { isStandingProtected, type ActionRequest, type Sender } from '../data';
 import { RowCheckbox } from './row-checkbox';
+import { isRowBusy, RowActivityPill, rowActivityLabel, useRowActivity } from '../row-activity';
 import { SenderRowDetailLive } from './sender-row-detail';
 
 const { color, font } = tokens;
@@ -275,6 +276,8 @@ export function SenderListRow({
   });
 
   const showCheckbox = !isPhone || selectMode;
+  const activity = useRowActivity(s.id);
+  const busy = isRowBusy(activity);
 
   return (
     <>
@@ -295,7 +298,12 @@ export function SenderListRow({
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
-        aria-label={`${s.name} — ${expanded ? 'collapse' : 'expand'} detail`}
+        // `aria-label` overrides the row's contents, so the activity has
+        // to be IN it or a screen reader never hears "Archiving…".
+        aria-label={`${s.name}${activity ? `, ${rowActivityLabel(activity)}` : ''} — ${
+          expanded ? 'collapse' : 'expand'
+        } detail`}
+        aria-busy={busy || undefined}
         onPointerDown={(e) => {
           longPress.onPointerDown(e);
           swipe.handlers.onPointerDown(e);
@@ -360,6 +368,7 @@ export function SenderListRow({
               checked={selected}
               onChange={(_, evt) => onToggleSelect(evt)}
               ariaLabel={`Select ${s.name}`}
+              disabled={busy}
             />
           </div>
         )}
@@ -382,6 +391,7 @@ export function SenderListRow({
             >
               {s.name}
             </span>
+            {activity && <RowActivityPill activity={activity} />}
             {isStandingProtected(s) && (
               <span
                 title="Protected — automatic and bulk actions stay off unless you choose otherwise"

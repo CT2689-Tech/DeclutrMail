@@ -61,6 +61,7 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
+import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
 import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected, senderAddressLine } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
@@ -392,6 +393,8 @@ function SenderRow({
   pad: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const activity = useRowActivity(sender.id);
+  const busy = isRowBusy(activity);
 
   // Fact-derived primary tone — drives the left-edge stripe and
   // magnitude-bar accent. The same derivation feeds SenderActionRow,
@@ -410,6 +413,7 @@ function SenderRow({
       <tr
         data-dm-sender-id={sender.id}
         data-dm-selected={selected || undefined}
+        aria-busy={busy || undefined}
         onClick={(e) => {
           // Pointer-only convenience — never steal clicks meant for the
           // checkbox / verbs / popover / chevron (or anything focusable
@@ -421,7 +425,9 @@ function SenderRow({
           }
           setExpanded((v) => !v);
         }}
-        style={{ cursor: 'pointer' }}
+        // Busy is a TINT, never a fade — opacity here would also fade
+        // the status pill below AA contrast.
+        style={{ cursor: 'pointer', ...(busy ? { background: color.paper } : {}) }}
       >
         <td
           style={{
@@ -454,6 +460,7 @@ function SenderRow({
             aria-label={`Select ${displayLabel(sender)}`}
             checked={selected}
             readOnly
+            disabled={busy}
             onClick={(e) => onSelectionChange(!selected, e.shiftKey)}
           />
         </td>
@@ -498,7 +505,8 @@ function SenderRow({
                   as the grid card so list ↔ grid never contradict:
                   shown while a standing unsubscribe policy exists,
                   copy keyed by the execution outcome. */}
-                {sender.policyType === 'unsubscribe' &&
+                {!activity &&
+                  sender.policyType === 'unsubscribe' &&
                   (() => {
                     const copy = unsubscribeStatusCopy(
                       sender.unsubStatus,
@@ -524,6 +532,7 @@ function SenderRow({
                       </span>
                     );
                   })()}
+                {activity && <RowActivityPill activity={activity} />}
               </span>
               <span
                 // Full address, not the domain — one brand can own

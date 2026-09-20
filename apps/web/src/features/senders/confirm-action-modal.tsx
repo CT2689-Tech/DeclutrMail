@@ -196,6 +196,7 @@ export function ConfirmActionModal({
   compositePreviewLoading,
   compositePreviewError,
   bulkPreview,
+  submitting = false,
   onRetryPreview,
   previewSenderGone = false,
   onRefreshSenders,
@@ -235,6 +236,14 @@ export function ConfirmActionModal({
    * headline figure, and the per-sender breakdown list.
    */
   bulkPreview?: BulkPreviewState | undefined;
+  /**
+   * The confirmed request is on its way to the server. The modal stays
+   * up, the button says so, and nothing can be confirmed twice. Cancel,
+   * Esc and the backdrop stay LIVE — they close the UI only, so a request
+   * that hangs can never seal the user inside the overlay; if it lands,
+   * the rows report it. It used to close BEFORE the request was sent.
+   */
+  submitting?: boolean;
   /** Re-run the live preview after a failed read. */
   onRetryPreview?: (() => void) | undefined;
   /**
@@ -670,7 +679,8 @@ export function ConfirmActionModal({
     wakeAtInvalid ||
     unsubNothingToSend ||
     nothingActionableBulk ||
-    (quotaShort && !quotaCappedFrom);
+    (quotaShort && !quotaCappedFrom) ||
+    submitting;
 
   // Swap confirm for a truthful upgrade action when the quota cannot
   // cover this click — routed through the same upgrade-gate store the
@@ -732,6 +742,7 @@ export function ConfirmActionModal({
     // explicit and the dep set accurate.
   }, [
     request,
+    submitting,
     secondaryVerb,
     olderThanDays,
     reach,
@@ -1939,7 +1950,7 @@ export function ConfirmActionModal({
                   )
                 }
               >
-                {confirmLabel}
+                {submitting ? 'Submitting…' : confirmLabel}
               </Button>
             )}
           </div>

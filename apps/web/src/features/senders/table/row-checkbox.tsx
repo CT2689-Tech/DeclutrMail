@@ -10,7 +10,10 @@ export function RowCheckbox({
   checked,
   onChange,
   ariaLabel,
+  disabled = false,
 }: {
+  /** The row's action is still running — it cannot join a selection. */
+  disabled?: boolean;
   checked: boolean;
   onChange: (next: boolean, evt: MouseEvent) => void;
   ariaLabel: string;
@@ -21,6 +24,7 @@ export function RowCheckbox({
       role="checkbox"
       aria-checked={checked}
       aria-label={ariaLabel}
+      disabled={disabled}
       onClick={(e) => onChange(!checked, e)}
       style={{
         width: 16,
@@ -33,7 +37,8 @@ export function RowCheckbox({
         border: `1.5px solid ${checked ? color.primary : 'rgba(14,20,19,0.28)'}`,
         background: checked ? color.primary : color.card,
         color: color.fgInverse,
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
       }}
     >
       {checked && (

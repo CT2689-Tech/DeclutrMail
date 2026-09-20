@@ -83,6 +83,13 @@ import { SenderListRow as SenderRowMobile } from './table/sender-list-row';
 import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
 import { restoreSendersLayout, useSendersStore } from './store';
+import { mergePinnedRows, type PinnedRow } from './pinned-rows';
+import {
+  isRowBusy,
+  RowActivityProvider,
+  type RowActivityVerb,
+  type SenderRowActivity,
+} from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
 import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
@@ -415,6 +422,9 @@ export function SendersScreen() {
     <SendersScreenContent
       senders={allSenders}
       wireRows={allWireRows}
+      // The QUESTION the list is answering. Rows held on screen after
+      // their action finished are released when it changes.
+      listKey={JSON.stringify([compose, sort, direction, debouncedQuery, showingWidened])}
       globalMaxTotal={globalMaxTotal}
       hasNextPage={showingWidened ? widenProbe.hasNextPage : sendersQuery.hasNextPage}
       isFetchingNextPage={
@@ -511,8 +521,9 @@ function describeNarrowedFilters(compose: ComposeState): string {
 
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
-  senders,
-  wireRows,
+  senders: serverSenders,
+  wireRows: serverWireRows,
+  listKey,
   globalMaxTotal,
   widenedFrom,
   widenedCount,
@@ -541,6 +552,7 @@ function SendersScreenContent({
   /** Raw wire rows (BE order) for the flat-table view (D49). Grid mode
    *  reads the adapted `senders`; Table mode consumes these directly. */
   wireRows: SenderListRow[];
+  listKey: string;
   globalMaxTotal: number;
   /**
    * F011 — set when the active filters starved a search and the results
@@ -619,6 +631,54 @@ function SendersScreenContent({
   const { me } = useAuth();
   const tier = me.tier ?? 'free';
   const actionMailboxId = me.activeMailboxId ?? undefined;
+
+  // Row feedback (founder report 2026-09-20). `settled` is what a row
+  // says once its job is terminal; `pinned*` keeps that row on screen in
+  // place even when the post-action refetch drops it (a sender with no
+  // mail left leaves the server's list) — founder decision: the list
+  // never jumps under the cursor. Both are released when the list is
+  // asked a different question, or the mailbox changes.
+  const [settled, setSettled] = useState<ReadonlyMap<string, SenderRowActivity>>(new Map());
+  // The confirmed request is on its way to the server. LOCAL to the open
+  // request — a flag derived from the mutation hooks would also be true
+  // for someone else's in-flight enqueue and open the next modal frozen.
+  const [submitting, setSubmitting] = useState(false);
+  /**
+   * The server answered: close the confirm. Called FIRST in every primary
+   * `onSuccess` / `onError`, never from `onSettled` — the bulk Unsubscribe
+   * chains a second `mutate` on the same hook inside `onSuccess`, which
+   * swaps the observer's options before `onSettled` is read, so it never
+   * ran and the modal stayed up with a live Confirm for a request already
+   * sent (flow-completeness gate, 2026-09-20).
+   */
+  const closeSubmitted = useCallback(() => {
+    setSubmitting(false);
+    setPendingAction(null);
+  }, []);
+  const [pinnedSenders, setPinnedSenders] = useState<ReadonlyMap<string, PinnedRow<Sender>>>(
+    new Map(),
+  );
+  const [pinnedWire, setPinnedWire] = useState<ReadonlyMap<string, PinnedRow<SenderListRow>>>(
+    new Map(),
+  );
+  const feedbackScope = `${listKey}\u0000${actionMailboxId ?? ''}`;
+  const [feedbackScopeSeen, setFeedbackScopeSeen] = useState(feedbackScope);
+  // Reset during render (not in an effect): an effect would paint one
+  // frame of the OLD question's pinned rows inside the new list.
+  if (feedbackScopeSeen !== feedbackScope) {
+    setFeedbackScopeSeen(feedbackScope);
+    setSettled(new Map());
+    setPinnedSenders(new Map());
+    setPinnedWire(new Map());
+  }
+  const senders = useMemo(
+    () => mergePinnedRows(serverSenders, pinnedSenders) as Sender[],
+    [serverSenders, pinnedSenders],
+  );
+  const wireRows = useMemo(
+    () => mergePinnedRows(serverWireRows, pinnedWire) as SenderListRow[],
+    [serverWireRows, pinnedWire],
+  );
   const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   // Codex round-1 review of QA-senders-filtering-20260901-01: the server
   // never sees a whitespace-only search box (the request debounces off
@@ -786,6 +846,10 @@ function SendersScreenContent({
     setMailtoFollowup(null);
     setBulkMailtoFollowups([]);
     setUnsubBatchReceipt(null);
+    setSubmitting(false);
+    setSettled(new Map());
+    setPinnedSenders(new Map());
+    setPinnedWire(new Map());
   }, []);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
@@ -799,11 +863,84 @@ function SendersScreenContent({
   const lockedSenderIds = useMemo(() => {
     const ids = new Set<string>();
     if (activeAction) ids.add(activeAction.senderId);
+    // An in-flight bulk's members too — they were only locked once the
+    // batch PARKED at 120s, leaving its first two minutes re-dispatchable.
+    for (const id of activeBatch?.senderIds ?? []) ids.add(id);
+    // …and an in-flight bulk UNSUBSCRIBE's: a second dispatch there sends
+    // a second real one-click request, which cannot be recalled (D58).
+    for (const id of activeUnsubBatch?.senderIds ?? []) ids.add(id);
     if (overdueAction) ids.add(overdueAction.senderId);
     for (const id of overdueBatch?.senderIds ?? []) ids.add(id);
     for (const id of overdueUnsubBatch?.senderIds ?? []) ids.add(id);
     return ids;
-  }, [activeAction, overdueAction, overdueBatch, overdueUnsubBatch]);
+  }, [activeAction, activeBatch, activeUnsubBatch, overdueAction, overdueBatch, overdueUnsubBatch]);
+
+  // What each row says about its own action — one map for the table, the
+  // grid and the phone list (`RowActivityProvider`). Live handles win over
+  // a settled result: acting again on a finished row reads as working.
+  const rowActivity = useMemo(() => {
+    const map = new Map<string, SenderRowActivity>(settled);
+    const verbOf = (v: 'Archive' | 'Delete' | 'Later') => v.toLowerCase() as RowActivityVerb;
+    for (const id of overdueBatch?.senderIds ?? [])
+      map.set(id, { phase: 'unconfirmed', verb: verbOf(overdueBatch!.verb) });
+    if (overdueAction)
+      map.set(overdueAction.senderId, { phase: 'unconfirmed', verb: verbOf(overdueAction.verb) });
+    for (const id of activeBatch?.senderIds ?? [])
+      map.set(id, { phase: 'working', verb: verbOf(activeBatch!.verb) });
+    if (activeAction)
+      map.set(activeAction.senderId, { phase: 'working', verb: verbOf(activeAction.verb) });
+    return map;
+  }, [settled, activeAction, activeBatch, overdueAction, overdueBatch]);
+
+  /**
+   * A job went terminal: say so on its rows, and hold those rows where
+   * they are. Snapshots come from the list AS RENDERED, so a row that was
+   * already pinned keeps its place.
+   */
+  const settleRows = useCallback(
+    (ids: readonly string[], activity: SenderRowActivity) => {
+      setSettled((prev) => {
+        const next = new Map(prev);
+        for (const id of ids) next.set(id, activity);
+        return next;
+      });
+      // While a NEW question is loading, the rows on screen still belong
+      // to the old one (`keepPreviousData`). Pinning them would carry the
+      // old question's rows into the new results. The mark is recorded
+      // either way; only the hold is skipped.
+      if (showingStaleRows) return;
+      const wanted = new Set(ids);
+      const pin = <T extends { id: string }>(
+        rows: readonly T[],
+        prev: ReadonlyMap<string, PinnedRow<T>>,
+      ) => {
+        const next = new Map(prev);
+        rows.forEach((row, index) => {
+          if (wanted.has(row.id)) next.set(row.id, { row, index });
+        });
+        return next;
+      };
+      setPinnedSenders((prev) => pin(senders, prev));
+      setPinnedWire((prev) => pin(wireRows, prev));
+    },
+    [senders, wireRows, showingStaleRows],
+  );
+  /**
+   * An undo was confirmed: nothing on a row may still say "Deleted". All
+   * of it goes, not just the undone senders — the receipt does not carry
+   * their ids, and the list refetch that follows every undo is the truth.
+   */
+  const releaseSettledRows = useCallback(() => {
+    setSettled(new Map());
+    setPinnedSenders(new Map());
+    setPinnedWire(new Map());
+  }, []);
+
+  // Read through a ref by the terminal effects below: `settleRows`
+  // changes identity on every list refetch, and those effects toast — a
+  // dependency on it would be a second chance to fire them.
+  const settleRowsRef = useRef(settleRows);
+  settleRowsRef.current = settleRows;
 
   /** Any parked handle at all — bulk entry points refuse while one exists. */
   const anythingParked = useMemo(
@@ -1051,6 +1188,12 @@ function SendersScreenContent({
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
+      // One enqueue at a time. The confirm stays cancellable while a
+      // request is out, so a second confirm must not start a second one
+      // (same guard the sender detail page has).
+      if (enqueueComposite.isPending || enqueueBulk.isPending || recordUnsubIntent.isPending) {
+        return;
+      }
 
       // 2026-08-12 incident amendment: an in-flight or parked handle
       // still owns its senders — the overdue release frees the SCREEN,
@@ -1140,7 +1283,7 @@ function SendersScreenContent({
             : primaryType === 'later'
               ? `Moving ${sender.name} to Later…`
               : `Archiving email from ${sender.name}…`;
-        setPendingAction(null);
+        setSubmitting(true);
         setSelected(new Set());
         toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
@@ -1171,7 +1314,8 @@ function SendersScreenContent({
             ...(opts?.override ? { override: true } : {}),
           },
           {
-            onSuccess: (res) =>
+            onSuccess: (res) => {
+              closeSubmitted();
               setActiveAction({
                 mailboxId: actionMailboxId,
                 actionId: res.actionId,
@@ -1183,8 +1327,10 @@ function SendersScreenContent({
                     : primaryType === 'later'
                       ? 'Later'
                       : 'Archive',
-              }),
+              });
+            },
             onError: (err) => {
+              closeSubmitted();
               // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
               // Read the CODE, not the status: CurrentMailboxGuard also
@@ -1228,9 +1374,9 @@ function SendersScreenContent({
       if (verb === 'Unsubscribe') {
         // Guard against rapid double-confirmation. While a previous
         // recordUnsubIntent.mutate is in-flight we drop the click (the
-        // modal has already closed; the button is no longer visible).
+        // modal is still up on "Submitting…", its confirm disabled).
         if (recordUnsubIntent.isPending) return;
-        setPendingAction(null);
+        setSubmitting(true);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
         const senderRefs = senders.map((s) => ({
@@ -1260,6 +1406,7 @@ function SendersScreenContent({
             },
             {
               onSuccess: (res) => {
+                closeSubmitted();
                 void qc.invalidateQueries({ queryKey: sendersKeys.all });
                 void qc.invalidateQueries({ queryKey: activityKeys.all });
                 if (res.method === 'one_click' && res.executionActionId) {
@@ -1342,6 +1489,7 @@ function SendersScreenContent({
                 }
               },
               onError: (err) => {
+                closeSubmitted();
                 // Sending is off in this environment. A DESIGNED state, not a
                 // failure: the API refused before writing anything, so there
                 // is no half-finished action behind it and nothing to retry —
@@ -1375,6 +1523,7 @@ function SendersScreenContent({
           },
           {
             onSuccess: (res) => {
+              closeSubmitted();
               const nameById = new Map(senderRefs.map((sref) => [sref.id, sref.name] as const));
               setBulkMailtoFollowups(
                 res.skipped.flatMap((skip) =>
@@ -1461,6 +1610,7 @@ function SendersScreenContent({
               );
             },
             onError: (err) => {
+              closeSubmitted();
               // 402 FREE_CAP_REACHED — the upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
               // 409 NO_ACTIONABLE_SENDERS is a designed state: the
@@ -1496,38 +1646,40 @@ function SendersScreenContent({
         setSelected(new Set());
         const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
         const isBulk = senderRefs.length > 1;
-        let succeeded = 0;
-        let failed = 0;
-        for (const sref of senderRefs) {
-          setPolicy.mutate(
-            { senderId: sref.id, patch: { policyType: 'keep' } },
-            {
-              onSuccess: () => {
-                succeeded++;
-                if (succeeded + failed === senderRefs.length) {
-                  toast(
-                    isBulk
-                      ? `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`
-                      : `Kept ${sref.name}`,
-                    failed > 0 ? 'warn' : 'success',
-                  );
-                }
-              },
-              onError: (err) => {
-                failed++;
-                captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
-                if (succeeded + failed === senderRefs.length) {
-                  toast(
-                    isBulk
-                      ? `${failed} of ${senderRefs.length} keeps failed — try again.`
-                      : `Couldn't keep ${sref.name}`,
-                    'warn',
-                  );
-                }
-              },
-            },
+        // `mutateAsync`, not N × `mutate(…, { onSuccess })`: per-call
+        // callbacks live on the hook's ONE observer, so each `mutate`
+        // replaced the previous call's and only the last sender's ever
+        // fired — the "all settled" count never reached N and a bulk Keep
+        // said nothing at all. Each `mutateAsync` promise is its own.
+        void Promise.allSettled(
+          senderRefs.map((sref) =>
+            setPolicy.mutateAsync({ senderId: sref.id, patch: { policyType: 'keep' } }),
+          ),
+        ).then((results) => {
+          const failures = results.filter(
+            (r): r is PromiseRejectedResult => r.status === 'rejected',
           );
-        }
+          for (const f of failures) {
+            captureFeatureException(f.reason, { surface: 'senders', reason: 'policy_keep' });
+          }
+          const failed = failures.length;
+          const succeeded = results.length - failed;
+          if (!isBulk) {
+            toast(
+              failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
+              failed ? 'warn' : 'success',
+            );
+            return;
+          }
+          toast(
+            succeeded === 0
+              ? `Couldn't keep ${failed} senders — try again`
+              : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
+                  failed ? ` · ${failed} failed, try again` : ''
+                }`,
+            failed > 0 ? 'warn' : 'success',
+          );
+        });
         return;
       }
 
@@ -1546,7 +1698,7 @@ function SendersScreenContent({
         const primaryType: 'archive' | 'later' | 'delete' =
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
         const n = senders.length;
-        setPendingAction(null);
+        setSubmitting(true);
         toast(
           primaryType === 'delete'
             ? `Moving email from ${n} senders to Trash…`
@@ -1579,6 +1731,7 @@ function SendersScreenContent({
           },
           {
             onSuccess: (res) => {
+              closeSubmitted();
               // The server accepted the batch — NOW the selection clears.
               setSelected(new Set());
               if (res.skipped.length > 0) {
@@ -1599,6 +1752,7 @@ function SendersScreenContent({
               });
             },
             onError: (err) => {
+              closeSubmitted();
               // 402 FREE_CAP_REACHED — a bulk of N needs N free units;
               // the upgrade prompt (hook-level handler) is the surface.
               // The selection is KEPT so the user can shrink it.
@@ -1661,11 +1815,27 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      // The job may well still be running: the row must not go back to
+      // looking untouched (and re-armed) on a lost poll.
+      settleRowsRef.current([activeAction.senderId], {
+        phase: 'unconfirmed',
+        verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+      });
       setActiveAction(null);
       return;
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    settleRowsRef.current(
+      [activeAction.senderId],
+      data.status === 'done'
+        ? {
+            phase: 'done',
+            verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+            affectedCount: data.affectedCount,
+          }
+        : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
+    );
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1691,7 +1861,10 @@ function SendersScreenContent({
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         toast(
-          `${activeAction.verb === 'Delete' ? 'Moved' : verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}${activeAction.verb === 'Delete' ? ' to Trash' : ''}${data.affectedCount < data.requestedCount ? ' · Some matching emails were not changed; see Activity' : ''}`,
+          // Same grammar as the row pill, the receipt and the undo panel
+          // (result · count · who). Delete used to read "Moved … to Trash"
+          // here while the row said "Deleted" — one fact, one wording.
+          `${verbPast} · ${data.affectedCount.toLocaleString('en-US')} email${data.affectedCount === 1 ? '' : 's'} · ${activeAction.senderName}${data.affectedCount < data.requestedCount ? ' · some not changed, see Activity' : ''}`,
           data.affectedCount < data.requestedCount ? 'warn' : 'success',
         );
         // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
@@ -1721,11 +1894,25 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
       toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
+      settleRowsRef.current([overdueAction.senderId], {
+        phase: 'unconfirmed',
+        verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+      });
       setOverdueAction(null);
       return;
     }
     const data = overdueActionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    settleRowsRef.current(
+      [overdueAction.senderId],
+      data.status === 'done'
+        ? {
+            phase: 'done',
+            verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+            affectedCount: data.affectedCount,
+          }
+        : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
+    );
     // D226 — the parked mutation just changed what any kept-open (or
     // next-opened) confirm surface describes: its preview must re-count.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
@@ -1900,11 +2087,32 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
       toast(`Couldn't confirm the bulk ${activeBatch.verb.toLowerCase()} — see Activity`, 'warn');
+      settleRowsRef.current(activeBatch.senderIds, {
+        phase: 'unconfirmed',
+        verb: activeBatch.verb.toLowerCase() as RowActivityVerb,
+      });
       setActiveBatch(null);
       return;
     }
     const data = batchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    // A batch reports totals only. All-failed and all-succeeded say the
+    // same thing about every member; a PARTIAL failure does not say which
+    // member failed — so those rows claim no outcome and point at Activity
+    // (unmarked, they just looked untouched, and some silently vanished).
+    settleRowsRef.current(
+      activeBatch.senderIds,
+      data.status === 'failed'
+        ? { phase: 'failed', verb: activeBatch.verb.toLowerCase() as RowActivityVerb }
+        : data.failed > 0
+          ? { phase: 'mixed', verb: activeBatch.verb.toLowerCase() as RowActivityVerb }
+          : {
+              phase: 'done',
+              verb: activeBatch.verb.toLowerCase() as RowActivityVerb,
+              // Only a zero total is also a per-sender fact.
+              affectedCount: data.affectedCount === 0 ? 0 : null,
+            },
+    );
     setReceipt({
       mailboxId: activeBatch.mailboxId,
       ...buildActionReceiptResult({
@@ -1947,7 +2155,7 @@ function SendersScreenContent({
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         toast(
-          `${activeBatch.verb === 'Delete' ? 'Moved' : verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeBatch.senderCount} senders${activeBatch.verb === 'Delete' ? ' to Trash' : ''}`,
+          `${verbPast} · ${data.affectedCount.toLocaleString('en-US')} email${data.affectedCount === 1 ? '' : 's'} · ${activeBatch.senderCount} senders`,
           data.failed > 0 || data.affectedCount < data.requestedCount ? 'warn' : 'success',
         );
         void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -1970,11 +2178,32 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
       toast(`Couldn't confirm the bulk ${overdueBatch.verb.toLowerCase()} — see Activity`, 'warn');
+      settleRowsRef.current(overdueBatch.senderIds, {
+        phase: 'unconfirmed',
+        verb: overdueBatch.verb.toLowerCase() as RowActivityVerb,
+      });
       setOverdueBatch(null);
       return;
     }
     const data = overdueBatchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    // A batch reports totals only. All-failed and all-succeeded say the
+    // same thing about every member; a PARTIAL failure does not say which
+    // member failed — so those rows claim no outcome and point at Activity
+    // (unmarked, they just looked untouched, and some silently vanished).
+    settleRowsRef.current(
+      overdueBatch.senderIds,
+      data.status === 'failed'
+        ? { phase: 'failed', verb: overdueBatch.verb.toLowerCase() as RowActivityVerb }
+        : data.failed > 0
+          ? { phase: 'mixed', verb: overdueBatch.verb.toLowerCase() as RowActivityVerb }
+          : {
+              phase: 'done',
+              verb: overdueBatch.verb.toLowerCase() as RowActivityVerb,
+              // Only a zero total is also a per-sender fact.
+              affectedCount: data.affectedCount === 0 ? 0 : null,
+            },
+    );
     // D226 — the parked mutation just changed what any kept-open confirm
     // surface describes: its preview must re-count.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
@@ -2051,6 +2280,7 @@ function SendersScreenContent({
     if (data.status === 'done') {
       toast(UNDO_DONE_TOAST, 'success');
       setReceipt(null);
+      releaseSettledRows();
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
       // Revert wrote a fresh activity_log row + flipped the original
       // row's undoState to `executed`. Surface both on /activity by
@@ -2060,7 +2290,14 @@ function SendersScreenContent({
       toast("Couldn't undo — see Activity", 'warn');
     }
     setRevertActionId(null);
-  }, [revertStatus.data, revertStatus.isError, revertStatus.error, revertActionId, qc]);
+  }, [
+    revertStatus.data,
+    revertStatus.isError,
+    revertStatus.error,
+    revertActionId,
+    qc,
+    releaseSettledRows,
+  ]);
 
   // Receipt Undo — reverse the real action by token (D226 undo loop). The
   // reverse is itself async: a fresh token enqueues a reverse job we poll;
@@ -2086,6 +2323,7 @@ function SendersScreenContent({
           if (res.reverted) {
             toast(UNDO_DONE_TOAST, 'success');
             setReceipt(null);
+            releaseSettledRows();
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
             void qc.invalidateQueries({ queryKey: activityKeys.all });
           } else if (res.actionId) {
@@ -2132,12 +2370,13 @@ function SendersScreenContent({
       if (variables?.token !== token) return;
       if (result?.reverted) {
         setReceipt(null);
+        releaseSettledRows();
       } else if (result?.actionId) {
         setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
         setExternalRevertActionId(result.actionId);
       }
     });
-  }, [receipt, qc]);
+  }, [receipt, qc, releaseSettledRows]);
 
   // Quiet poll-to-terminal for an EXTERNALLY-triggered revert (see above) —
   // no toast, no cache invalidation: the tray's own completion already
@@ -2152,9 +2391,15 @@ function SendersScreenContent({
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       setReceipt(null);
+      releaseSettledRows();
     }
     setExternalRevertActionId(null);
-  }, [externalRevertActionId, externalRevertStatus.data, externalRevertStatus.isError]);
+  }, [
+    externalRevertActionId,
+    externalRevertStatus.data,
+    externalRevertStatus.isError,
+    releaseSettledRows,
+  ]);
 
   // Archive / Unsubscribe / Later / Delete move mail, so they route
   // through the mandatory preview (D226 + spec v1.2 Decision 15). Keep /
@@ -2318,7 +2563,12 @@ function SendersScreenContent({
     [selectedSenders, requestAction, showingStaleRows, tier, me.cleanupRemaining],
   );
 
-  const closePending = useCallback(() => setPendingAction(null), []);
+  // Cancel stays live while submitting: it closes the UI only. If the
+  // request lands anyway, the rows say so.
+  const closePending = useCallback(() => {
+    setSubmitting(false);
+    setPendingAction(null);
+  }, []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
       if (pendingAction && !showingStaleRows) {
@@ -2428,167 +2678,176 @@ function SendersScreenContent({
   }, [selectedSenders, requestBulkAction, showingStaleRows]);
 
   return (
-    <div
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
-      }}
-    >
-      {/* Header */}
+    <RowActivityProvider value={rowActivity}>
       <div
         style={{
+          padding: '20px 24px 28px',
           display: 'flex',
-          alignItems: 'flex-end',
-          justifyContent: 'space-between',
+          flexDirection: 'column',
           gap: 16,
-          flexWrap: 'wrap',
+          maxWidth: 1180,
         }}
       >
-        <div style={{ minWidth: 0 }}>
-          <Eyebrow>Senders · {activeEmail}</Eyebrow>
-          <h1
-            style={{
-              fontFamily: font.display,
-              fontSize: 26,
-              fontWeight: 600,
-              letterSpacing: '-0.018em',
-              margin: '4px 0 0',
-            }}
-          >
-            Your senders
-          </h1>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <SenderSearch value={query} onChange={setQuery} senders={senders} onPick={onSearchPick} />
-          {/* Table-only: row density (the grid has one density). */}
-          {!isPhone && view === 'table' && <DensityToggle />}
-          {/* D49 — segmented [Grid | Table] switch at top right.
+        {/* Header */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'space-between',
+            gap: 16,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <Eyebrow>Senders · {activeEmail}</Eyebrow>
+            <h1
+              style={{
+                fontFamily: font.display,
+                fontSize: 26,
+                fontWeight: 600,
+                letterSpacing: '-0.018em',
+                margin: '4px 0 0',
+              }}
+            >
+              Your senders
+            </h1>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <SenderSearch
+              value={query}
+              onChange={setQuery}
+              senders={senders}
+              onPick={onSearchPick}
+            />
+            {/* Table-only: row density (the grid has one density). */}
+            {!isPhone && view === 'table' && <DensityToggle />}
+            {/* D49 — segmented [Grid | Table] switch at top right.
               Remembered per device (see `store.ts`); grid until chosen.
               D54 — the phone dialect replaces both outright, so the
               toggle would offer a choice the screen no longer honors. */}
-          {!isPhone && <ViewToggle />}
+            {!isPhone && <ViewToggle />}
+          </div>
         </div>
-      </div>
 
-      <ScreenIntro
-        id="senders"
-        title="How Senders works"
-        body="Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches."
-        learnMore={{
-          href: '/methodology#automation-method',
-          label: 'Manual decisions vs automatic rules',
-        }}
-      />
+        <ScreenIntro
+          id="senders"
+          title="How Senders works"
+          body="Archive, Later and Delete change only email you already have. Unsubscribe asks the sender to stop; Autopilot rules act on future matches."
+          learnMore={{
+            href: '/methodology#automation-method',
+            label: 'Manual decisions vs automatic rules',
+          }}
+        />
 
-      {receipt?.mailboxId === actionMailboxId && (
-        <div style={{ position: 'sticky', top: 12, zIndex: 30 }}>
-          <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
-        </div>
-      )}
+        {receipt?.mailboxId === actionMailboxId && (
+          <div style={{ position: 'sticky', top: 12, zIndex: 30 }}>
+            <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
+          </div>
+        )}
 
-      {/* D248 — multi-sender unsubscribe result. Its own surface: three
+        {/* D248 — multi-sender unsubscribe result. Its own surface: three
           terminal outcomes, no Undo (a delivered request is one-way). */}
-      <UnsubBatchReceipt receipt={unsubBatchReceipt} onDismiss={() => setUnsubBatchReceipt(null)} />
+        <UnsubBatchReceipt
+          receipt={unsubBatchReceipt}
+          onDismiss={() => setUnsubBatchReceipt(null)}
+        />
 
-      {/* D230 manual path — the post-confirm "finish in Gmail" step for
+        {/* D230 manual path — the post-confirm "finish in Gmail" step for
           a mailto sender. The user sends the opt-out; never auto-sent. */}
-      {mailtoFollowup && mailtoFollowup.mailboxId === actionMailboxId && (
-        <UnsubMailtoCallout
-          senderId={mailtoFollowup.senderId}
-          senderName={mailtoFollowup.senderName}
-          mailtoUrl={mailtoFollowup.mailtoUrl}
-          onDismiss={() => setMailtoFollowup(null)}
-        />
-      )}
-      {bulkMailtoFollowups.some((item) => item.mailboxId === actionMailboxId) && (
-        <UnsubMailtoChecklist
-          items={bulkMailtoFollowups}
-          onDismiss={() => setBulkMailtoFollowups([])}
-        />
-      )}
+        {mailtoFollowup && mailtoFollowup.mailboxId === actionMailboxId && (
+          <UnsubMailtoCallout
+            senderId={mailtoFollowup.senderId}
+            senderName={mailtoFollowup.senderName}
+            mailtoUrl={mailtoFollowup.mailtoUrl}
+            onDismiss={() => setMailtoFollowup(null)}
+          />
+        )}
+        {bulkMailtoFollowups.some((item) => item.mailboxId === actionMailboxId) && (
+          <UnsubMailtoChecklist
+            items={bulkMailtoFollowups}
+            onDismiss={() => setBulkMailtoFollowups([])}
+          />
+        )}
 
-      {/*
+        {/*
         Honest-failure banner — appears only when the mailbox-wide summary
         endpoint is failing AND the user is silently being shown
         loaded-page derivations (the bug #145 fixed). Tiny, non-blocking,
         warn-toned so the user can act if KPIs look off.
       */}
-      {summaryFailed && senders.length > 0 && (
-        // No `role="status"` here — that role is already taken by the
-        // receipt strip / toast and our tests resolve it by role. This
-        // banner is a non-interactive visual flag; `aria-label` + an
-        // explicit data-testid keeps it discoverable for tests + screen
-        // readers without colliding with the receipt's live-region role.
-        <div
-          aria-label="Live totals unavailable"
-          data-testid="senders-summary-fallback-banner"
-          style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: 11.5,
-            color: 'var(--color-amber)',
-            background: 'var(--color-amber-bg)',
-            border: '1px solid rgba(245,158,11,0.35)',
-            borderRadius: 8,
-            padding: '6px 10px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <span aria-hidden>⚠︎</span>
-          Live totals unavailable — showing approximation from loaded rows.
-        </div>
-      )}
+        {summaryFailed && senders.length > 0 && (
+          // No `role="status"` here — that role is already taken by the
+          // receipt strip / toast and our tests resolve it by role. This
+          // banner is a non-interactive visual flag; `aria-label` + an
+          // explicit data-testid keeps it discoverable for tests + screen
+          // readers without colliding with the receipt's live-region role.
+          <div
+            aria-label="Live totals unavailable"
+            data-testid="senders-summary-fallback-banner"
+            style={{
+              fontFamily: 'var(--font-sans)',
+              fontSize: 11.5,
+              color: 'var(--color-amber)',
+              background: 'var(--color-amber-bg)',
+              border: '1px solid rgba(245,158,11,0.35)',
+              borderRadius: 8,
+              padding: '6px 10px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+            }}
+          >
+            <span aria-hidden>⚠︎</span>
+            Live totals unavailable — showing approximation from loaded rows.
+          </div>
+        )}
 
-      {/* Hero — single editorial number replaces the 3-cell KPI strip.
+        {/* Hero — single editorial number replaces the 3-cell KPI strip.
           Counts the senders matching the active compose (mailbox-wide,
           BE-honest). Fraunces italic gives the page one anchor moment;
           everything below is the body of the article. */}
-      {senders.length > 0 && (
-        <div style={{ margin: '8px 0 4px' }}>
-          <span
-            style={{
-              fontFamily: 'var(--font-display, "Fraunces", serif)',
-              fontStyle: 'italic',
-              fontWeight: 400,
-              fontSize: 56,
-              lineHeight: 1,
-              letterSpacing: '-0.03em',
-              color: 'var(--color-fg)',
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {(totalMatching ?? senders.length).toLocaleString('en-US')}
-          </span>
-          <span
-            style={{
-              fontFamily: 'var(--font-display, "Fraunces", serif)',
-              fontSize: 22,
-              color: 'var(--color-fg-soft)',
-              marginLeft: 12,
-              letterSpacing: '-0.005em',
-            }}
-          >
-            senders
-          </span>
-        </div>
-      )}
+        {senders.length > 0 && (
+          <div style={{ margin: '8px 0 4px' }}>
+            <span
+              style={{
+                fontFamily: 'var(--font-display, "Fraunces", serif)',
+                fontStyle: 'italic',
+                fontWeight: 400,
+                fontSize: 56,
+                lineHeight: 1,
+                letterSpacing: '-0.03em',
+                color: 'var(--color-fg)',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {(totalMatching ?? senders.length).toLocaleString('en-US')}
+            </span>
+            <span
+              style={{
+                fontFamily: 'var(--font-display, "Fraunces", serif)',
+                fontSize: 22,
+                color: 'var(--color-fg-soft)',
+                marginLeft: 12,
+                letterSpacing: '-0.005em',
+              }}
+            >
+              senders
+            </span>
+          </div>
+        )}
 
-      {asOf && (
-        <SenderResultsFreshness
-          asOf={asOf}
-          totalSenders={filterCounts?.total ?? null}
-          updating={countsMayBeStale}
-          rowsReadOnly={showingStaleRows}
-          stillSyncing={mailboxStillSyncing}
-          syncFailed={mailboxSyncFailed}
-        />
-      )}
+        {asOf && (
+          <SenderResultsFreshness
+            asOf={asOf}
+            totalSenders={filterCounts?.total ?? null}
+            updating={countsMayBeStale}
+            rowsReadOnly={showingStaleRows}
+            stillSyncing={mailboxStillSyncing}
+            syncFailed={mailboxSyncFailed}
+          />
+        )}
 
-      {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
+        {/* D38 compose strip — 6 axes, AND across, multi-state per chip.
           Counts on chips are mailbox-wide absolutes (filterCounts),
           NOT loaded-page derivations. URL state via useComposeState
           makes the scope shareable + refresh-stable.
@@ -2610,99 +2869,121 @@ function SendersScreenContent({
           and showing the chips alongside it only adds a second way out
           (click "quiet"/"dormant" directly) — it does not, by itself,
           assert anything false. */}
-      {(senders.length > 0 ||
-        // Codex round-1 review: raw `query` truthiness treats a
-        // whitespace-only search box as a real search — the server
-        // never sees it (`debouncedQuery = query.trim()` above), so
-        // "search" here means the same thing it means to the request.
-        ((query.trim().length > 0 || hasAnyFilter(compose)) &&
-          !mailboxStillSyncing &&
-          !mailboxSyncFailed)) && (
-        <ComposeStrip
-          state={compose}
-          updating={countsMayBeStale}
-          counts={
-            filterCounts
-              ? {
-                  total: filterCounts.total,
-                  active: filterCounts.active,
-                  quiet: filterCounts.quiet,
-                  dormant: filterCounts.dormant,
-                  unsubReady: filterCounts.unsubReady,
-                  wroteTo: filterCounts.wroteTo,
-                  protected: filterCounts.protected,
-                  unsubIgnored: filterCounts.unsubIgnored,
-                }
-              : undefined
-          }
-          onChange={(next: ComposeState) => setCompose(next)}
-          onClear={clearCompose}
-          domainSuggestions={topDomains(senders)}
-          sort={sortCol}
-          direction={sortDirection}
-          onSortChange={setSort}
-          views={{
-            names: savedViews.map((v) => v.name),
-            onApply: applySavedView,
-            onSave: saveCurrentView,
-            onDelete: deleteSavedView,
-            canSaveCurrent: hasAnyFilter(compose),
-            capReached: savedViews.length >= SENDER_VIEWS_CAP,
-            // Codex round-2 review — see ViewsMenuProps.mutating's own
-            // comment for why this matters.
-            mutating: saveViews.isPending,
-          }}
-        />
-      )}
+        {(senders.length > 0 ||
+          // Codex round-1 review: raw `query` truthiness treats a
+          // whitespace-only search box as a real search — the server
+          // never sees it (`debouncedQuery = query.trim()` above), so
+          // "search" here means the same thing it means to the request.
+          ((query.trim().length > 0 || hasAnyFilter(compose)) &&
+            !mailboxStillSyncing &&
+            !mailboxSyncFailed)) && (
+          <ComposeStrip
+            state={compose}
+            updating={countsMayBeStale}
+            counts={
+              filterCounts
+                ? {
+                    total: filterCounts.total,
+                    active: filterCounts.active,
+                    quiet: filterCounts.quiet,
+                    dormant: filterCounts.dormant,
+                    unsubReady: filterCounts.unsubReady,
+                    wroteTo: filterCounts.wroteTo,
+                    protected: filterCounts.protected,
+                    unsubIgnored: filterCounts.unsubIgnored,
+                  }
+                : undefined
+            }
+            onChange={(next: ComposeState) => setCompose(next)}
+            onClear={clearCompose}
+            domainSuggestions={topDomains(senders)}
+            sort={sortCol}
+            direction={sortDirection}
+            onSortChange={setSort}
+            views={{
+              names: savedViews.map((v) => v.name),
+              onApply: applySavedView,
+              onSave: saveCurrentView,
+              onDelete: deleteSavedView,
+              canSaveCurrent: hasAnyFilter(compose),
+              capReached: savedViews.length >= SENDER_VIEWS_CAP,
+              // Codex round-2 review — see ViewsMenuProps.mutating's own
+              // comment for why this matters.
+              mutating: saveViews.isPending,
+            }}
+          />
+        )}
 
-      {/* Compose summary line — replaces the old result-count strip.
+        {/* Compose summary line — replaces the old result-count strip.
           Reads as a sentence: "47 senders match. sorted [biggest first ▾]."
           Sort menu inline. Bulk select + clear ride the same line. */}
-      {senders.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            justifyContent: 'space-between',
-            gap: 16,
-            margin: '12px 0 4px',
-            flexWrap: 'wrap',
-            fontFamily: 'var(--font-display, "Fraunces", serif)',
-            fontSize: 16,
-            color: 'var(--color-fg)',
-          }}
-        >
-          <span>
-            <strong
-              style={{
-                fontStyle: 'italic',
-                fontWeight: 600,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {(totalMatching ?? senders.length).toLocaleString('en-US')}
-            </strong>{' '}
-            senders match.
-          </span>
-          <span
+        {senders.length > 0 && (
+          <div
             style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: 11.5,
-              letterSpacing: '0.04em',
-              color: 'var(--color-fg-soft)',
-              display: 'inline-flex',
-              gap: 14,
+              display: 'flex',
               alignItems: 'baseline',
+              justifyContent: 'space-between',
+              gap: 16,
+              margin: '12px 0 4px',
+              flexWrap: 'wrap',
+              fontFamily: 'var(--font-display, "Fraunces", serif)',
+              fontSize: 16,
+              color: 'var(--color-fg)',
             }}
           >
-            {senders.length > 0 && !showingStaleRows && (
-              <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
-            )}
-          </span>
-        </div>
-      )}
+            <span>
+              <strong
+                style={{
+                  fontStyle: 'italic',
+                  fontWeight: 600,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
+              </strong>{' '}
+              senders match.
+              {/* The count is the server's; a held "done" row is not in it.
+                  Say so, or N sits above N+1 rows unexplained. */}
+              {senders.length > serverSenders.length && (
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11.5,
+                    color: 'var(--color-fg-soft)',
+                    marginLeft: 8,
+                  }}
+                >
+                  + {(senders.length - serverSenders.length).toLocaleString('en-US')} cleared, still
+                  shown
+                </span>
+              )}
+            </span>
+            <span
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 11.5,
+                letterSpacing: '0.04em',
+                color: 'var(--color-fg-soft)',
+                display: 'inline-flex',
+                gap: 14,
+                alignItems: 'baseline',
+              }}
+            >
+              {senders.length > 0 && !showingStaleRows && (
+                <BulkSelectButton
+                  // Busy rows cannot be individually deselected (their
+                  // checkbox is off) and any overlap refuses the WHOLE bulk
+                  // — so select-all must never put them in the selection.
+                  senders={senders.filter((row) => !isRowBusy(rowActivity.get(row.id)))}
+                  selected={selected}
+                  setSelected={setSelected}
+                />
+              )}
+            </span>
+          </div>
+        )}
 
-      {/* F011 — the widened-search notice.
+        {/* F011 — the widened-search notice.
           Announced, never silent: the rows below are NOT what the
           filters ask for, and a user who set those filters deliberately
           is owed both that fact and a way back. The "Show <filter> only" /
@@ -2713,26 +2994,26 @@ function SendersScreenContent({
           so the query survives either choice — the dead end the old
           "Clear search & filters" created was that it threw away the
           search along with the filter. */}
-      {widenedFrom !== null && (
-        <div
-          role="status"
-          data-testid="senders-widened-notice"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: 8,
-            margin: '0 0 12px',
-            padding: '8px 12px',
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 8,
-            background: color.paper,
-            fontSize: 13,
-            color: color.fgMuted,
-          }}
-        >
-          {/* QA-senders-filtering-20260901-03: three fixes.
+        {widenedFrom !== null && (
+          <div
+            role="status"
+            data-testid="senders-widened-notice"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+              margin: '0 0 12px',
+              padding: '8px 12px',
+              border: `1px solid ${color.lineSoft}`,
+              borderRadius: 8,
+              background: color.paper,
+              fontSize: 13,
+              color: color.fgMuted,
+            }}
+          >
+            {/* QA-senders-filtering-20260901-03: three fixes.
               1. "showing all N" claimed N rows were rendered; only a page
                  (`limit`) ever is. Codex round-1 review: "— showing
                  those" still made the same claim in different words
@@ -2748,253 +3029,253 @@ function SendersScreenContent({
                  cleared, so this branch's "match without that filter"
                  (singular) is only reached when activity really was the
                  only one. */}
-          <span>
-            {/* Codex round-2 review: "1 do without…" — subject/verb
+            <span>
+              {/* Codex round-2 review: "1 do without…" — subject/verb
                 agreement broke at exactly the count (1) this notice is
                 least likely to be skimmed past. */}
-            {widenedFrom === 'filtered' ? (
-              <>
-                No senders match &ldquo;{query}&rdquo; under your filters —{' '}
-                {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'} without
-                them.
-              </>
-            ) : (
-              <>
-                No {widenedFrom} senders match &ldquo;{query}&rdquo; —{' '}
-                {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'} without
-                that filter.
-              </>
-            )}
-          </span>
-          <Button tone="ghost" onClick={onKeepNarrow}>
-            {widenedFrom === 'filtered' ? 'Use my filters' : `Show ${widenedFrom} only`}
-          </Button>
-        </div>
-      )}
+              {widenedFrom === 'filtered' ? (
+                <>
+                  No senders match &ldquo;{query}&rdquo; under your filters —{' '}
+                  {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'}{' '}
+                  without them.
+                </>
+              ) : (
+                <>
+                  No {widenedFrom} senders match &ldquo;{query}&rdquo; —{' '}
+                  {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'does' : 'do'}{' '}
+                  without that filter.
+                </>
+              )}
+            </span>
+            <Button tone="ghost" onClick={onKeepNarrow}>
+              {widenedFrom === 'filtered' ? 'Use my filters' : `Show ${widenedFrom} only`}
+            </Button>
+          </div>
+        )}
 
-      {/* List body. Search + compose narrow SERVER-side, so an empty
+        {/* List body. Search + compose narrow SERVER-side, so an empty
           loaded set with an active query/filter means "no matches" —
           not "not synced yet". (The no-match branch was unreachable
           before this split: the not-synced branch keyed on the same
           `senders.length === 0` and always won.) */}
-      <fieldset
-        data-testid="sender-results-region"
-        disabled={showingStaleRows}
-        inert={showingStaleRows ? true : undefined}
-        aria-busy={showingStaleRows}
-        aria-disabled={showingStaleRows}
-        style={{
-          border: 0,
-          margin: 0,
-          minWidth: 0,
-          padding: 0,
-          opacity: showingStaleRows ? 0.55 : 1,
-          pointerEvents: showingStaleRows ? 'none' : undefined,
-          transition: 'opacity 120ms ease',
-        }}
-      >
-        {senders.length === 0 && mailboxStillSyncing ? (
-          // QA-onboarding-20260828-01, widened by QA-sync-20260831-02's
-          // adversarial review round: an empty result while the active
-          // mailbox is still `queued`/`syncing` is NOT "no active
-          // senders" or "no matches" — that asserts a completed
-          // conclusion (of the whole mailbox, or of a search over it)
-          // the app has not earned. Checked BEFORE the compose- and
-          // query-specific branches below, and unconditional on
-          // query/filters — a search over an unfinished scan is just as
-          // unanswerable as the unfiltered view.
-          <EmptyState
-            title="No senders yet"
-            // Codex adversarial review, round 2: "will appear here"
-            // promises a result this screen hasn't earned — a mailbox
-            // whose only mail is from dormant senders stays empty on
-            // this active-only default even after the scan finishes.
-            // Say what's true (the scan is still running), not what
-            // will happen.
-            body={
-              // `hasAnyFilter(compose)` is true even for the untouched
-              // DEFAULT compose (its active-only setting counts, on
-              // purpose, so "Clear filters" is offered on first visit —
-              // see the branch below). Checking it here would show the
-              // search-specific copy on every plain first-visit empty
-              // state. `!isDefaultCompose(compose)` is the actual "user
-              // narrowed something" signal.
-              //
-              // Codex round-2 review: was raw `query` — the same
-              // whitespace-only-search-box inconsistency the sibling
-              // filter-only branch further down was fixed for, one
-              // branch over.
-              hasQuery || !isDefaultCompose(compose)
-                ? "Your mailbox is still syncing, so this search can't be answered yet."
-                : 'Your mailbox is still syncing. This list will update as the scan finishes.'
-            }
-          />
-        ) : senders.length === 0 && mailboxSyncFailed ? (
-          // QA-sync-20260831-02: same shape as the `mailboxStillSyncing`
-          // branch above, for the one readiness value that guard didn't
-          // cover — widened the same way, on Codex adversarial review,
-          // to also cover a search/filtered view (which otherwise fell
-          // through to "no senders match", an even worse false claim
-          // about a search that never really ran to completion).
-          <EmptyState
-            title="Scan failed"
-            body={
-              // Same `!isDefaultCompose` reasoning as the `stillSyncing`
-              // branch above — `hasAnyFilter(compose)` alone would also
-              // match the plain default view.
-              hasQuery || !isDefaultCompose(compose)
-                ? "The last scan didn't finish, so this search can't be answered. Retry in Settings → Gmail accounts."
-                : "The last scan didn't finish, so this list may be incomplete. Retry in Settings → Gmail accounts."
-            }
-          />
-        ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
-          // First-visit default is active-only (launch-audit B2). A
-          // mailbox with nothing ACTIVE must not read as a filter
-          // mistake — name the default and offer the full list.
-          <EmptyState
-            title="No active senders"
-            body="No sender has mailed you recently."
-            action={
-              <Button
-                onClick={() => {
-                  clearSearchAndFilters();
-                }}
-              >
-                Show all senders
-              </Button>
-            }
-          />
-        ) : senders.length === 0 && (hasQuery || hasAnyFilter(compose)) ? (
-          <EmptyState
-            // F011 — say WHICH thing found nothing. `No senders match
-            // "X"` is a claim about the QUERY, and it was false: the
-            // sender existed and the app was listing it in the typeahead
-            // one row above. When filters are on and the search found
-            // nothing anywhere, the honest sentence names both.
-            title={
-              hasQuery && hasAnyFilter(compose)
-                ? `No senders match "${query}" under these filters`
-                : hasQuery
-                  ? `No senders match "${query}"`
-                  : 'No senders match these filters'
-            }
-            body={
-              // Three different facts, and only one of them was ever
-              // said. `matchesOutsideFilters` is `null` while the
-              // widening probe has not answered — unknown must not read
-              // as "we looked and found nothing", which is a claim about
-              // a search that did not happen. (The reversal path found
-              // this: after "Keep active only" the screen asserted
-              // nothing existed outside the filter while holding the one
-              // sender that did.)
-              hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0
-                ? `${matchesOutsideFilters.toLocaleString('en-US')} ${matchesOutsideFilters === 1 ? 'sender matches' : 'senders match'} outside these filters.`
-                : hasQuery && hasAnyFilter(compose) && matchesOutsideFilters === 0
-                  ? // QA-senders-filtering-20260901-09: narrated the search
-                    // procedure instead of stating the fact the user acts on.
-                    'Nothing matches outside your filters either.'
-                  : hasQuery
-                    ? 'Try a different search or clear the filters.'
-                    : // QA-senders-filtering-20260901-03: no search was made
-                      // here — the widening probe only runs off a query
-                      // (searchNarrowedToNothing), so this is a pure filter
-                      // combination excluding everything. Naming a search
-                      // the user never made made them doubt what they did.
-                      'Nothing matches this combination of filters.'
-            }
-            action={
-              hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
-                // Widening keeps the query; clearing throws it away. Lead
-                // with the one that answers what the user asked.
-                <Button onClick={onWiden}>Show all matches</Button>
-              ) : hasQuery ? (
+        <fieldset
+          data-testid="sender-results-region"
+          disabled={showingStaleRows}
+          inert={showingStaleRows ? true : undefined}
+          aria-busy={showingStaleRows}
+          aria-disabled={showingStaleRows}
+          style={{
+            border: 0,
+            margin: 0,
+            minWidth: 0,
+            padding: 0,
+            opacity: showingStaleRows ? 0.55 : 1,
+            pointerEvents: showingStaleRows ? 'none' : undefined,
+            transition: 'opacity 120ms ease',
+          }}
+        >
+          {senders.length === 0 && mailboxStillSyncing ? (
+            // QA-onboarding-20260828-01, widened by QA-sync-20260831-02's
+            // adversarial review round: an empty result while the active
+            // mailbox is still `queued`/`syncing` is NOT "no active
+            // senders" or "no matches" — that asserts a completed
+            // conclusion (of the whole mailbox, or of a search over it)
+            // the app has not earned. Checked BEFORE the compose- and
+            // query-specific branches below, and unconditional on
+            // query/filters — a search over an unfinished scan is just as
+            // unanswerable as the unfiltered view.
+            <EmptyState
+              title="No senders yet"
+              // Codex adversarial review, round 2: "will appear here"
+              // promises a result this screen hasn't earned — a mailbox
+              // whose only mail is from dormant senders stays empty on
+              // this active-only default even after the scan finishes.
+              // Say what's true (the scan is still running), not what
+              // will happen.
+              body={
+                // `hasAnyFilter(compose)` is true even for the untouched
+                // DEFAULT compose (its active-only setting counts, on
+                // purpose, so "Clear filters" is offered on first visit —
+                // see the branch below). Checking it here would show the
+                // search-specific copy on every plain first-visit empty
+                // state. `!isDefaultCompose(compose)` is the actual "user
+                // narrowed something" signal.
+                //
+                // Codex round-2 review: was raw `query` — the same
+                // whitespace-only-search-box inconsistency the sibling
+                // filter-only branch further down was fixed for, one
+                // branch over.
+                hasQuery || !isDefaultCompose(compose)
+                  ? "Your mailbox is still syncing, so this search can't be answered yet."
+                  : 'Your mailbox is still syncing. This list will update as the scan finishes.'
+              }
+            />
+          ) : senders.length === 0 && mailboxSyncFailed ? (
+            // QA-sync-20260831-02: same shape as the `mailboxStillSyncing`
+            // branch above, for the one readiness value that guard didn't
+            // cover — widened the same way, on Codex adversarial review,
+            // to also cover a search/filtered view (which otherwise fell
+            // through to "no senders match", an even worse false claim
+            // about a search that never really ran to completion).
+            <EmptyState
+              title="Scan failed"
+              body={
+                // Same `!isDefaultCompose` reasoning as the `stillSyncing`
+                // branch above — `hasAnyFilter(compose)` alone would also
+                // match the plain default view.
+                hasQuery || !isDefaultCompose(compose)
+                  ? "The last scan didn't finish, so this search can't be answered. Retry in Settings → Gmail accounts."
+                  : "The last scan didn't finish, so this list may be incomplete. Retry in Settings → Gmail accounts."
+              }
+            />
+          ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
+            // First-visit default is active-only (launch-audit B2). A
+            // mailbox with nothing ACTIVE must not read as a filter
+            // mistake — name the default and offer the full list.
+            <EmptyState
+              title="No active senders"
+              body="No sender has mailed you recently."
+              action={
                 <Button
                   onClick={() => {
                     clearSearchAndFilters();
                   }}
                 >
-                  Clear search &amp; filters
+                  Show all senders
                 </Button>
-              ) : (
-                <Button onClick={clearCompose}>Clear filters</Button>
-              )
-            }
-          />
-        ) : senders.length === 0 ? (
-          <EmptyState
-            title="No senders yet"
-            body="Once your mailbox finishes syncing, the senders who email you will appear here."
-          />
-        ) : isPhone ? (
-          // D54 (ADR-0018) — phone dialect: hairline-divided rows, no
-          // card chrome, no fixed-width table. Reuses the same
-          // `SenderListRow` the desktop Grid renders inside an expanded
-          // domain group, plus its own swipe/long-press gestures.
-          <div data-dm-component="sender-mobile-list">
-            {senders.map((s) => (
-              <SenderRowMobile
-                key={s.id}
-                s={s}
-                selected={selected.has(s.id)}
-                selectMode={mobileSelectMode}
-                onToggleSelect={(evt) => toggleWithRange(mobileOrderedIds, s.id, evt.shiftKey)}
-                onLongPress={() => {
-                  setMobileSelectMode(true);
-                  if (!selected.has(s.id)) toggleWithRange(mobileOrderedIds, s.id, false);
-                }}
-                expanded={mobileExpanded.has(s.id)}
-                onToggleExpand={() =>
-                  setMobileExpanded((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(s.id)) next.delete(s.id);
-                    else next.add(s.id);
-                    return next;
-                  })
-                }
-                onAction={requestAction}
-              />
-            ))}
-          </div>
-        ) : view === 'grid' ? (
-          // D49 default — grid of cards. `senders` arrives already
-          // BE-filtered for the active compose (D38); D51 brand rollup
-          // groups ≥3 senders sharing a registrable domain into one
-          // expandable group row.
-          <SenderGrid
-            entries={gridEntries}
-            selectedIds={selected}
-            onToggleSelect={(id, shiftKey) =>
-              toggleWithRange(gridOrderedIds, id, shiftKey ?? false)
-            }
-            onAction={requestAction}
-            globalMaxTotal={globalMaxTotal}
-          />
-        ) : (
-          // D49 Table — flat, sortable list over the wire rows (ADR-0014).
-          // BE sort order (sort + direction) is the canonical row order;
-          // the table does NOT intent-bucket. Row verbs bridge into the
-          // shared `requestAction` shape so ConfirmActionModal / receipt /
-          // undo stay identical to Grid mode (D226).
-          <SenderTable
-            rows={wireRows}
-            globalMaxTotal={globalMaxTotal}
-            density={density}
-            sort={sortCol}
-            direction={sortDirection}
-            onSortChange={setSort}
-            selectedIds={selected}
-            onSelectionChange={(next) => {
-              if (!showingStaleRows) setSelected(new Set(next));
-            }}
-            onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
-            onAction={({ verb, sender }) => {
-              const adapted = enrichSenderRow(sender);
-              requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
-            }}
-          />
-        )}
+              }
+            />
+          ) : senders.length === 0 && (hasQuery || hasAnyFilter(compose)) ? (
+            <EmptyState
+              // F011 — say WHICH thing found nothing. `No senders match
+              // "X"` is a claim about the QUERY, and it was false: the
+              // sender existed and the app was listing it in the typeahead
+              // one row above. When filters are on and the search found
+              // nothing anywhere, the honest sentence names both.
+              title={
+                hasQuery && hasAnyFilter(compose)
+                  ? `No senders match "${query}" under these filters`
+                  : hasQuery
+                    ? `No senders match "${query}"`
+                    : 'No senders match these filters'
+              }
+              body={
+                // Three different facts, and only one of them was ever
+                // said. `matchesOutsideFilters` is `null` while the
+                // widening probe has not answered — unknown must not read
+                // as "we looked and found nothing", which is a claim about
+                // a search that did not happen. (The reversal path found
+                // this: after "Keep active only" the screen asserted
+                // nothing existed outside the filter while holding the one
+                // sender that did.)
+                hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0
+                  ? `${matchesOutsideFilters.toLocaleString('en-US')} ${matchesOutsideFilters === 1 ? 'sender matches' : 'senders match'} outside these filters.`
+                  : hasQuery && hasAnyFilter(compose) && matchesOutsideFilters === 0
+                    ? // QA-senders-filtering-20260901-09: narrated the search
+                      // procedure instead of stating the fact the user acts on.
+                      'Nothing matches outside your filters either.'
+                    : hasQuery
+                      ? 'Try a different search or clear the filters.'
+                      : // QA-senders-filtering-20260901-03: no search was made
+                        // here — the widening probe only runs off a query
+                        // (searchNarrowedToNothing), so this is a pure filter
+                        // combination excluding everything. Naming a search
+                        // the user never made made them doubt what they did.
+                        'Nothing matches this combination of filters.'
+              }
+              action={
+                hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
+                  // Widening keeps the query; clearing throws it away. Lead
+                  // with the one that answers what the user asked.
+                  <Button onClick={onWiden}>Show all matches</Button>
+                ) : hasQuery ? (
+                  <Button
+                    onClick={() => {
+                      clearSearchAndFilters();
+                    }}
+                  >
+                    Clear search &amp; filters
+                  </Button>
+                ) : (
+                  <Button onClick={clearCompose}>Clear filters</Button>
+                )
+              }
+            />
+          ) : senders.length === 0 ? (
+            <EmptyState
+              title="No senders yet"
+              body="Once your mailbox finishes syncing, the senders who email you will appear here."
+            />
+          ) : isPhone ? (
+            // D54 (ADR-0018) — phone dialect: hairline-divided rows, no
+            // card chrome, no fixed-width table. Reuses the same
+            // `SenderListRow` the desktop Grid renders inside an expanded
+            // domain group, plus its own swipe/long-press gestures.
+            <div data-dm-component="sender-mobile-list">
+              {senders.map((s) => (
+                <SenderRowMobile
+                  key={s.id}
+                  s={s}
+                  selected={selected.has(s.id)}
+                  selectMode={mobileSelectMode}
+                  onToggleSelect={(evt) => toggleWithRange(mobileOrderedIds, s.id, evt.shiftKey)}
+                  onLongPress={() => {
+                    setMobileSelectMode(true);
+                    if (!selected.has(s.id)) toggleWithRange(mobileOrderedIds, s.id, false);
+                  }}
+                  expanded={mobileExpanded.has(s.id)}
+                  onToggleExpand={() =>
+                    setMobileExpanded((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(s.id)) next.delete(s.id);
+                      else next.add(s.id);
+                      return next;
+                    })
+                  }
+                  onAction={requestAction}
+                />
+              ))}
+            </div>
+          ) : view === 'grid' ? (
+            // D49 default — grid of cards. `senders` arrives already
+            // BE-filtered for the active compose (D38); D51 brand rollup
+            // groups ≥3 senders sharing a registrable domain into one
+            // expandable group row.
+            <SenderGrid
+              entries={gridEntries}
+              selectedIds={selected}
+              onToggleSelect={(id, shiftKey) =>
+                toggleWithRange(gridOrderedIds, id, shiftKey ?? false)
+              }
+              onAction={requestAction}
+              globalMaxTotal={globalMaxTotal}
+            />
+          ) : (
+            // D49 Table — flat, sortable list over the wire rows (ADR-0014).
+            // BE sort order (sort + direction) is the canonical row order;
+            // the table does NOT intent-bucket. Row verbs bridge into the
+            // shared `requestAction` shape so ConfirmActionModal / receipt /
+            // undo stay identical to Grid mode (D226).
+            <SenderTable
+              rows={wireRows}
+              globalMaxTotal={globalMaxTotal}
+              density={density}
+              sort={sortCol}
+              direction={sortDirection}
+              onSortChange={setSort}
+              selectedIds={selected}
+              onSelectionChange={(next) => {
+                if (!showingStaleRows) setSelected(new Set(next));
+              }}
+              onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
+              onAction={({ verb, sender }) => {
+                const adapted = enrichSenderRow(sender);
+                requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
+              }}
+            />
+          )}
 
-        {/*
+          {/*
         Load more (D202 cursor pagination). The list endpoint returns one
         page at a time; without this control a mailbox with more senders
         than a page silently truncated at the first page. Shown only when
@@ -3007,90 +3288,92 @@ function SendersScreenContent({
         the keyboard/AT affordance and the no-IntersectionObserver
         fallback.
       */}
-        {hasNextPage && senders.length > 0 && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 6,
-              padding: '8px 0 4px',
-            }}
-          >
-            {infiniteScrollEnabled && (
-              <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
-            )}
-            <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
-              {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
-            </Button>
-          </div>
-        )}
-      </fieldset>
+          {hasNextPage && senders.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 0 4px',
+              }}
+            >
+              {infiniteScrollEnabled && (
+                <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
+              )}
+              <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
+                {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
+              </Button>
+            </div>
+          )}
+        </fieldset>
 
-      {selectedSenders.length > 0 &&
-        !showingStaleRows &&
-        (isPhone ? (
-          <SelectionFab
-            senders={selectedSenders}
-            onClear={() => setSelected(new Set())}
-            onAct={requestBulkAction}
-            tier={tier}
-            busy={enqueueBulk.isPending}
-          />
-        ) : (
-          <SelectionBar
-            senders={selectedSenders}
-            onClear={() => setSelected(new Set())}
-            onAct={requestBulkAction}
-            tier={tier}
-            busy={enqueueBulk.isPending}
-          />
-        ))}
+        {selectedSenders.length > 0 &&
+          !showingStaleRows &&
+          (isPhone ? (
+            <SelectionFab
+              senders={selectedSenders}
+              onClear={() => setSelected(new Set())}
+              onAct={requestBulkAction}
+              tier={tier}
+              busy={enqueueBulk.isPending}
+            />
+          ) : (
+            <SelectionBar
+              senders={selectedSenders}
+              onClear={() => setSelected(new Set())}
+              onAct={requestBulkAction}
+              tier={tier}
+              busy={enqueueBulk.isPending}
+            />
+          ))}
 
-      <ConfirmActionModal
-        variant={isPhone ? 'sheet' : 'modal'}
-        request={showingStaleRows ? null : pendingAction}
-        onCancel={closePending}
-        onConfirm={confirmPending}
-        compositePreview={compositePreviewQuery.data}
-        // isFetching, not isLoading: a reopened modal serves CACHED data
-        // while the fresh preview is in flight, and that state must keep
-        // confirm locked (D226). These queries only fetch on mount/reopen/
-        // retry, so this never re-locks an idle modal.
-        compositePreviewLoading={compositePreviewQuery.isFetching}
-        compositePreviewError={compositePreviewQuery.isError}
-        mailboxEmail={activeEmail}
-        cleanupQuota={{
-          remaining: me.cleanupRemaining ?? null,
-          resetsAt: me.cleanupResetsAt ?? null,
-        }}
-        bulkPreview={
-          bulkPreviewSenderIds != null
-            ? {
-                data: bulkPreviewQuery.data,
-                loading: bulkPreviewQuery.isFetching,
-                error: bulkPreviewQuery.isError,
-              }
-            : undefined
-        }
-        onRetryPreview={() => {
-          void compositePreviewQuery.refetch();
-          if (bulkPreviewSenderIds != null) void bulkPreviewQuery.refetch();
-        }}
-        // A dead sender id cannot be retried into life — see the prop's
-        // doc on ConfirmActionModal. Branch on the CODE, not the 404:
-        // `CurrentMailboxGuard` sits in front of this read and answers
-        // 404 for causes that have nothing to do with the sender.
-        previewSenderGone={apiErrorCode(compositePreviewQuery.error) === 'SENDER_NOT_FOUND'}
-        onRefreshSenders={() => {
-          closePending();
-          void qc.invalidateQueries({ queryKey: ['senders'] });
-        }}
-      />
+        <ConfirmActionModal
+          variant={isPhone ? 'sheet' : 'modal'}
+          request={showingStaleRows ? null : pendingAction}
+          onCancel={closePending}
+          onConfirm={confirmPending}
+          submitting={submitting}
+          compositePreview={compositePreviewQuery.data}
+          // isFetching, not isLoading: a reopened modal serves CACHED data
+          // while the fresh preview is in flight, and that state must keep
+          // confirm locked (D226). These queries only fetch on mount/reopen/
+          // retry, so this never re-locks an idle modal.
+          compositePreviewLoading={compositePreviewQuery.isFetching}
+          compositePreviewError={compositePreviewQuery.isError}
+          mailboxEmail={activeEmail}
+          cleanupQuota={{
+            remaining: me.cleanupRemaining ?? null,
+            resetsAt: me.cleanupResetsAt ?? null,
+          }}
+          bulkPreview={
+            bulkPreviewSenderIds != null
+              ? {
+                  data: bulkPreviewQuery.data,
+                  loading: bulkPreviewQuery.isFetching,
+                  error: bulkPreviewQuery.isError,
+                }
+              : undefined
+          }
+          onRetryPreview={() => {
+            void compositePreviewQuery.refetch();
+            if (bulkPreviewSenderIds != null) void bulkPreviewQuery.refetch();
+          }}
+          // A dead sender id cannot be retried into life — see the prop's
+          // doc on ConfirmActionModal. Branch on the CODE, not the 404:
+          // `CurrentMailboxGuard` sits in front of this read and answers
+          // 404 for causes that have nothing to do with the sender.
+          previewSenderGone={apiErrorCode(compositePreviewQuery.error) === 'SENDER_NOT_FOUND'}
+          onRefreshSenders={() => {
+            closePending();
+            void qc.invalidateQueries({ queryKey: ['senders'] });
+          }}
+        />
 
-      {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
-      <KeyboardCheatsheet />
-    </div>
+        {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
+        <KeyboardCheatsheet />
+      </div>
+    </RowActivityProvider>
   );
 }
 
