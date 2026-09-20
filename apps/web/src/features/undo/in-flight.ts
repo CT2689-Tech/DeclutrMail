@@ -13,6 +13,11 @@ import { undoKeys } from './query-keys';
 
 /** Poll cadence while something is running; idle costs nothing. */
 export const IN_FLIGHT_POLL_MS = 2_000;
+/** Slower, but never stopped, while a read is failing with work still out. */
+export const IN_FLIGHT_RETRY_MS = 10_000;
+
+/** Older API builds predate `running`; there, listed means running. */
+export const isRunning = (group: InFlightActionGroup): boolean => group.running !== false;
 
 type Verb = InFlightActionGroup['verb'];
 
@@ -40,8 +45,20 @@ function who(group: Pick<InFlightActionGroup, 'leadSenderName' | 'senderCount'>)
     : group.leadSenderName;
 }
 
-/** The pill's line for a decision still running. */
-export function workingNotice(group: InFlightActionGroup): UndoTrayNotice {
+/**
+ * The pill's line for a decision still running. `confirmed: false` = the
+ * last read FAILED: what we show is the last thing we knew, so it says so
+ * instead of spinning as if it were live.
+ */
+export function workingNotice(group: InFlightActionGroup, confirmed = true): UndoTrayNotice {
+  if (!confirmed) {
+    return {
+      id: `run:${group.groupId}`,
+      tone: 'info',
+      label: `${VERB[group.verb]} not confirmed`,
+      who: who(group),
+    };
+  }
   return {
     id: `run:${group.groupId}`,
     tone: 'working',
@@ -116,10 +133,12 @@ export function useInFlightActions(mailboxId?: string) {
   return useQuery({
     queryKey: undoKeys.inFlight(mailboxId),
     queryFn: ({ signal }) => getInFlightActions({ signal, ...(mailboxId ? { mailboxId } : {}) }),
-    refetchInterval: (query) =>
-      query.state.status !== 'error' && (query.state.data?.length ?? 0) > 0
-        ? IN_FLIGHT_POLL_MS
-        : false,
+    refetchInterval: (query) => {
+      if (!(query.state.data ?? []).some(isRunning)) return false;
+      // Never stop on an error while work is out: one 5xx used to freeze
+      // "Archiving…" on screen until the next click (flow gate 2026-09-20).
+      return query.state.status === 'error' ? IN_FLIGHT_RETRY_MS : IN_FLIGHT_POLL_MS;
+    },
     // A job finishing in a background tab must not leave "Deleting…" up.
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,

@@ -42,7 +42,10 @@ function source(overrides: Partial<UndoTrayDataSource> = {}): UndoTrayDataSource
 describe('<UndoTray /> — D35 injected-dataSource contract', () => {
   it('renders nothing when there are no entries and no error (D35 invisible-when-empty)', () => {
     const html = renderToStaticMarkup(<UndoTray defaultOpen dataSource={source()} />);
-    expect(html).toBe('');
+    // Nothing VISIBLE — only the always-mounted, empty screen-reader region
+    // (it has to exist before the first message to be announced at all).
+    expect(html).not.toContain('<aside');
+    expect(html).toMatch(/^<div role="status" aria-live="polite"[^>]*><\/div>$/);
   });
 
   it('renders the error chip — not the empty state — when the fetch failed (D211)', () => {

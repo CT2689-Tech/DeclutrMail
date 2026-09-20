@@ -747,6 +747,8 @@ export interface InFlightActionGroup {
   groupId: string;
   verb: 'archive' | 'later' | 'delete' | 'unsubscribe';
   mixedVerbs: boolean;
+  /** False once every job has ended; listed ~60s more so the ending can be reported. */
+  running: boolean;
   total: number;
   done: number;
   failed: number;

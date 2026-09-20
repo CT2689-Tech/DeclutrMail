@@ -599,10 +599,15 @@ export interface BatchStatusResult {
  */
 export interface InFlightActionGroup {
   groupId: string;
-  /** The anchor job's verb (the one the user pressed). */
-  verb: ActionStatusSnapshot['verb'];
+  /**
+   * The anchor job's verb (the one the user pressed). The full
+   * `action_verb` enum: one-click and bulk unsubscribes are user jobs too.
+   */
+  verb: 'archive' | 'later' | 'delete' | 'unsubscribe';
   /** True when the group's jobs do not all share `verb` (a composite). */
   mixedVerbs: boolean;
+  /** False once every job is terminal (listed briefly so its ending can be reported). */
+  running: boolean;
   /** Forward jobs in the group, and how many of them are terminal. */
   total: number;
   done: number;

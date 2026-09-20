@@ -28,6 +28,7 @@ const GROUP: InFlightActionGroup = {
   groupId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   verb: 'delete',
   mixedVerbs: false,
+  running: true,
   total: 13,
   done: 3,
   failed: 1,
@@ -132,6 +133,9 @@ describe('ProductUndoTray — live line', () => {
   });
   afterEach(() => resetFetchStub());
 
+  /** The visible pill's words (the screen-reader region repeats them, by design). */
+  const pillText = () => document.querySelector('[data-dm-undo-tray]')?.textContent ?? '';
+
   function mount(mailboxId?: string) {
     const client = createTestQueryClient();
     const view = render(
@@ -146,6 +150,22 @@ describe('ProductUndoTray — live line', () => {
     return { ...view, client, reread };
   }
 
+  it('says it to a screen reader from a region that existed BEFORE the first message', async () => {
+    active = [];
+    const { reread, client } = mount();
+    await waitFor(() => expect(client.getQueryData(undoKeys.inFlight(undefined))).toEqual([]));
+    const speech = document.querySelector('[data-dm-undo-tray-speech]')!;
+    expect(speech).toHaveAttribute('role', 'status');
+    expect(speech).toBeEmptyDOMElement();
+    active = [GROUP];
+    await reread();
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
+    expect(document.querySelector('[data-dm-undo-tray-speech]')).toBe(speech);
+    expect(speech).toHaveTextContent('Deleting… Yankee Candle + 12 others');
+    // The ticking fraction is for eyes only.
+    expect(speech).not.toHaveTextContent('4 of 13');
+  });
+
   it('shows a decision already running when the page loads — nothing local knows about it', async () => {
     mount();
     const pill = await screen.findByRole('region', { name: 'Recent actions' });
@@ -154,11 +174,11 @@ describe('ProductUndoTray — live line', () => {
 
   it('drops the line when it worked, and re-reads what can be undone', async () => {
     const { reread } = mount();
-    await screen.findByText(/Deleting…/);
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
     const before = undoReads;
     active = [];
     await reread();
-    await waitFor(() => expect(screen.queryByText(/Deleting…/)).toBeNull());
+    await waitFor(() => expect(pillText()).not.toMatch(/Deleting…/));
     await waitFor(() => expect(undoReads).toBeGreaterThan(before));
     expect(screen.queryByRole('alert')).toBeNull();
   });
@@ -166,7 +186,7 @@ describe('ProductUndoTray — live line', () => {
   it('says so when part of it failed, until dismissed', async () => {
     batch = status({ done: 11, failed: 2 });
     const { reread } = mount();
-    await screen.findByText(/Deleting…/);
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
     active = [];
     await reread();
     const alert = await screen.findByRole('alert');
@@ -178,21 +198,72 @@ describe('ProductUndoTray — live line', () => {
   it('reports nothing as ended when the list itself could not be read', async () => {
     batch = status({ status: 'failed', done: 0, failed: 13 });
     const { reread, client } = mount();
-    await screen.findByText(/Deleting…/);
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
     active = 'error';
     await reread();
     await waitFor(() =>
       expect(client.getQueryState(undoKeys.inFlight(undefined))?.status).toBe('error'),
     );
-    // The line stays: an unreadable list is not a finished job.
-    expect(screen.getByText(/Deleting…/)).toBeInTheDocument();
+    // Not ended — and not spinning as if it were live either: the line says
+    // it is the last thing we knew. (It used to freeze on "Deleting…".)
+    await waitFor(() => expect(pillText()).toMatch(/Delete not confirmed/));
+    expect(pillText()).not.toMatch(/Deleting…/);
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('reports a job it never saw running — quicker than a poll, or ended while away', async () => {
+    batch = status({ done: 11, failed: 2 });
+    active = [{ ...GROUP, running: false, done: 11, failed: 2 }];
+    mount();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Delete: 2 of 13 failed');
+    expect(pillText()).not.toMatch(/Deleting…/);
+  });
+
+  it('keeps the Undo earned this session through the per-screen baseline', async () => {
+    // The decision is ALREADY in the undo list when this screen mounts
+    // (acted on /senders, then opened a sender) — history by the baseline's
+    // rule, except that this session just saw it in flight.
+    resetFetchStub();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () =>
+          jsonOk({
+            data: [
+              {
+                groupId: GROUP.groupId,
+                token: '11111111-1111-4111-8111-111111111111',
+                actionKind: 'delete',
+                createdAt: '2026-09-20T10:00:05.000Z',
+                expiresAt: '2026-09-25T10:00:05.000Z',
+                senderCount: 13,
+                affectedCount: 1489,
+              },
+            ],
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/actions/active',
+        respond: () => jsonOk({ data: [{ ...GROUP, running: false, done: 13, failed: 0 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/actions\/batch\/[^/]+$/,
+        respond: () => jsonOk({ data: status({}) }),
+      },
+    ]);
+    mount();
+    const pill = await screen.findByRole('region', { name: 'Recent actions' });
+    await waitFor(() => expect(pill).toHaveTextContent('Deleted 1,489 emails'));
+    expect(screen.getByRole('button', { name: /^Undo Delete/ })).toBeInTheDocument();
   });
 
   it('never reads another mailbox’s empty list as "everything stopped"', async () => {
     batch = status({ status: 'failed', done: 0, failed: 13 });
     const view = mount('mailbox-a');
-    await screen.findByText(/Deleting…/);
+    await waitFor(() => expect(pillText()).toMatch(/Deleting…/));
     active = [];
     view.rerender(
       <QueryWrapper client={view.client}>

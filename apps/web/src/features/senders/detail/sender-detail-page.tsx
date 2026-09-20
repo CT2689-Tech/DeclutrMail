@@ -1046,10 +1046,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     return qc.getMutationCache().subscribe((event) => {
       if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
       const variables = event.mutation.state.variables as
-        { token?: string; mailboxId?: string } | undefined;
+        { token?: string; memberToken?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
         { reverted?: boolean; actionId?: string | null } | undefined;
-      if (variables?.token !== token) return;
+      // The pill's per-sender Undo sends the same token as `memberToken`.
+      if ((variables?.token ?? variables?.memberToken) !== token) return;
       if (result?.reverted) {
         setReceipt(null);
         setSettled(null);

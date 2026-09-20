@@ -121,11 +121,66 @@ function useTrayInset(): (node: HTMLElement | null) => void {
  * `verbLabel()` function below is the single mapping point — adding
  * a new verb requires touching this AND the API action-kind enum.
  */
-export function UndoTray({
+/** Visually hidden, still read aloud. */
+const SR_ONLY: CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+
+/** What a screen reader hears — the headline, without the ticking fraction. */
+function headlineSpeech(headline: TrayHeadline | null): string {
+  if (headline === null) return '';
+  if (headline.kind === 'notice') {
+    const { label, who } = headline.notice;
+    return who ? `${label} ${who}` : label;
+  }
+  const { entry } = headline;
+  const total =
+    typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
+      ? ` ${emailCount(entry.affectedCount)}`
+      : '';
+  return `${doneLabel(entry.actionKind)}${total}. Undo available.`;
+}
+
+/**
+ * The tray plus its ALWAYS-mounted live region.
+ *
+ * The pill is the only voice for an action's outcome (no toasts, no
+ * strip), and it mounts together with its first message — a live region
+ * inserted along with its content is not reliably announced, so the first
+ * action after a page load was silent (design gate 2026-09-20). This
+ * region exists before anything happens and is only ever filled. Problems
+ * are `role="alert"` in the pill itself: alerts ARE announced on insertion.
+ */
+export function UndoTray(props: Parameters<typeof UndoTrayBody>[0]) {
+  const headline = pickHeadline(props.dataSource.notices ?? [], props.dataSource.entries);
+  const speech =
+    headline?.kind === 'notice' && headline.notice.tone === 'attention'
+      ? ''
+      : headlineSpeech(headline);
+  return (
+    <>
+      <div role="status" aria-live="polite" data-dm-undo-tray-speech style={SR_ONLY}>
+        {speech}
+      </div>
+      <UndoTrayBody {...props} />
+    </>
+  );
+}
+
+function UndoTrayBody({
   dataSource,
   onViewActivity,
   defaultOpenDecisions = false,
   defaultOpen = false,
+  defaultCompact = false,
   style,
 }: {
   /** Entries + revert callback, built on the host app's API client. */
@@ -136,6 +191,8 @@ export function UndoTray({
   defaultOpenDecisions?: boolean;
   /** Start as the full list rather than the pill — stories and list tests. */
   defaultOpen?: boolean;
+  /** Start as the shrunk chip — the state a timer otherwise gates. Stories. */
+  defaultCompact?: boolean;
   style?: CSSProperties;
 }) {
   const source = dataSource;
@@ -144,17 +201,20 @@ export function UndoTray({
   const [open, setOpen] = useState(defaultOpen);
   // Hover / focus holds the pill at full size.
   const [held, setHeld] = useState(false);
-  const [compact, setCompact] = useState(false);
+  const [compact, setCompact] = useState(defaultCompact);
   const key = headlineKey(pickHeadline(notices, source.entries));
   const settled = key.startsWith('d:');
   // A finished action says its piece, then gets out of the way. Anything
   // running or wrong stays put; so does a pill being read or reached for.
+  const firstRun = useRef(true);
   useEffect(() => {
-    setCompact(false);
+    // `defaultCompact` holds until something actually changes.
+    if (!(firstRun.current && defaultCompact)) setCompact(false);
+    firstRun.current = false;
     if (!settled || held || open) return;
     const timer = setTimeout(() => setCompact(true), TRAY_COMPACT_AFTER_MS);
     return () => clearTimeout(timer);
-  }, [key, settled, held, open]);
+  }, [key, settled, held, open, defaultCompact]);
 
   // Render-order guards — order matters to avoid flicker between
   // an in-progress refetch and a transient error.
@@ -450,7 +510,7 @@ function Headline({
       <>
         <span
           data-dm-tray-notice={notice.tone}
-          role={attention ? 'alert' : 'status'}
+          {...(attention ? { role: 'alert' as const } : {})}
           style={{ minWidth: 0, color: attention ? color.red : color.fg }}
         >
           <InlineProgress pending={working} mode="trailing" pendingLabel="Working">
@@ -494,7 +554,7 @@ function Headline({
   const whose = senderCount > 1 ? `${senderCount.toLocaleString('en-US')} senders` : who;
   return (
     <>
-      <span role="status" style={{ minWidth: 0 }}>
+      <span style={{ minWidth: 0 }}>
         {doneLabel(entry.actionKind)}
         {total !== null ? ` ${total}` : ''}
         {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}

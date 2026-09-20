@@ -149,8 +149,10 @@ export function SenderActionRow({
       {activity && !status && <RowActivityPill activity={activity} />}
       {/* ONE button element for both states: while an action's result is on
           the row, the verb the user reached for BECOMES that result. Kept
-          mounted (never swapped for a span) so focus stays put. The ⋯ menu
-          is the way to act again once the job has ended. */}
+          mounted (never swapped for a span) so focus stays put. Once the job
+          has ENDED the ⋯ menu is the way to act again; while it is running
+          or unconfirmed the whole row stays locked — a second job for the
+          same sender is the thing being prevented. */}
       <Button
         tone={status ? 'ghost' : leadButtonTone(primaryLegacy)}
         size="sm"

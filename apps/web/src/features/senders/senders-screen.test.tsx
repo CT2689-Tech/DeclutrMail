@@ -16,7 +16,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
-import { useRevertUndo } from '@/lib/api/use-action';
+import { useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 
 const mockAuth = vi.hoisted(() => ({
   tier: 'plus' as 'free' | 'plus' | 'pro' | 'team' | 'enterprise',
@@ -69,6 +69,7 @@ vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
 import { ToastHost } from '@declutrmail/shared';
 import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import {
+  addFetchHandlers,
   installFetchStub,
   jsonOk,
   jsonServerError,
@@ -2604,6 +2605,43 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       [...document.querySelectorAll('[data-dm-row-activity="done"]')].map((el) => el.textContent);
     const rowOf = (name: RegExp) =>
       screen.getByRole('checkbox', { name }).closest('tr, article') as HTMLElement;
+
+    it('un-marks the rows when ONE sender of the bulk is undone from the pill', async () => {
+      // The pill's per-sender Undo sends `memberToken`, not `token` — the
+      // row used to keep saying "Archived" for mail that was already back.
+      bulkStub(() => ({
+        status: 'done',
+        total: 2,
+        done: 2,
+        failed: 0,
+        requestedCount: 30,
+        affectedCount: 30,
+      }));
+      addFetchHandlers([
+        {
+          method: 'POST',
+          path: '/api/undo/tok-member/action',
+          respond: () =>
+            jsonOk({
+              data: { token: 'tok-member', reverted: true, expired: false, actionId: null },
+            }),
+        },
+      ]);
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(donePills()).toEqual(['Archived', 'Archived']), { timeout: 4000 });
+
+      const { result } = renderHook(() => useRevertUndoMember(), {
+        wrapper: ({ children }) => <QueryWrapper client={lastClient}>{children}</QueryWrapper>,
+      });
+      await act(async () => {
+        result.current.mutate({ memberToken: 'tok-member' });
+        await waitFor(() => expect(result.current.isSuccess).toBe(true));
+      });
+      await waitFor(() => expect(donePills()).toEqual([]));
+    });
 
     it('leaves busy rows out of a shift-range that spans them', async () => {
       useSendersStore.setState({ view: 'table' });

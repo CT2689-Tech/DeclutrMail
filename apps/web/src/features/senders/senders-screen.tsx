@@ -2175,16 +2175,20 @@ function SendersScreenContent({
   // (`actionId` returned) case routes through the QUIET
   // `externalRevertActionId` poll below, never the toasting `revertActionId`
   // one, so the tray's own completion toast is not said twice.
+  //
+  // ANY undo, not only one matching `receipt`'s token: `receipt` holds just
+  // the newest action, and the pill's per-sender Undo sends `memberToken` —
+  // either way a row kept reading "Archived" for mail that was back (flow
+  // gate 2026-09-20). Marks are this screen's own bookkeeping; dropping all
+  // of them on an undo costs nothing, since the list is refetched anyway.
   useEffect(() => {
-    const token = receipt?.activityUndo.token;
-    if (!token) return;
     return qc.getMutationCache().subscribe((event) => {
       if (event.type !== 'updated' || event.mutation.state.status !== 'success') return;
       const variables = event.mutation.state.variables as
-        { token?: string; mailboxId?: string } | undefined;
+        { token?: string; memberToken?: string; mailboxId?: string } | undefined;
       const result = event.mutation.state.data as
         { reverted?: boolean; actionId?: string | null } | undefined;
-      if (variables?.token !== token) return;
+      if (!variables?.token && !variables?.memberToken) return;
       if (result?.reverted) {
         setReceipt(null);
         releaseSettledRows();

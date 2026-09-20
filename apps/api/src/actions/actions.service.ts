@@ -77,6 +77,8 @@ import type {
 
 /** `listInFlight` bounds — see its doc. */
 export const IN_FLIGHT_MAX_AGE_HOURS = 24;
+/** How long a group that has just ended stays listed (as `running: false`). */
+export const IN_FLIGHT_SETTLED_GRACE_SECONDS = 60;
 export const IN_FLIGHT_GROUPS_MAX = 20;
 
 /** Raw row of the `listInFlight` statement (snake_case, driver-shaped). */
@@ -1307,16 +1309,20 @@ export class ActionsService {
    * The user's decisions still running in this mailbox — the live line in
    * the bottom panel, and what a reloaded page resumes from.
    *
-   * A group is in flight while ANY of its forward jobs is `queued` or
-   * `executing`; its counts cover every job of the group, so a bulk reads
+   * A group is `running` while ANY of its forward jobs is `queued` or
+   * `executing`, and stays listed — `running: false` — for
+   * {@link IN_FLIGHT_SETTLED_GRACE_SECONDS}s after its last job ends, so a
+   * client that never saw it run can still report how it ended; its counts cover every job of the group, so a bulk reads
    * "2 of 3" rather than shrinking as members finish.
    *
    *   - Autopilot runs are excluded by their claim-key prefix: they are not
    *     something the user just did, and each would be its own one-sender
    *     line. Autopilot reports on its own screen.
-   *   - Bounded to the last {@link IN_FLIGHT_MAX_AGE_HOURS}h and
-   *     {@link IN_FLIGHT_GROUPS_MAX} groups: a job wedged for a day belongs
-   *     to Activity and recovery, not a panel that says "Archiving…".
+   *   - Only groups with a job started in the last
+   *     {@link IN_FLIGHT_MAX_AGE_HOURS}h that is still running, newest
+   *     {@link IN_FLIGHT_GROUPS_MAX}: a job wedged for a day belongs to
+   *     Activity and recovery, not a panel that says "Archiving…". (A
+   *     listed group's `startedAt` is its OLDEST job, so it may be earlier.)
    *
    * ONE statement (one snapshot): counting in a second query let a job
    * finish between the two and print "3 of 2".
@@ -1325,16 +1331,26 @@ export class ActionsService {
    * `Date`/`BigInt` (CLAUDE.md §2.6).
    */
   async listInFlight(mailboxAccountId: string): Promise<InFlightActionGroup[]> {
-    const autopilotKeys = `${AUTOPILOT_CLAIM_KEY_PREFIXES[0]}%`;
+    // Every claim prefix, not just the first: a new one must not leak
+    // Autopilot runs into the panel (same map `autopilot.read-service` uses).
+    const notAutopilot = sql.join(
+      AUTOPILOT_CLAIM_KEY_PREFIXES.map((prefix) => sql`idempotency_key not like ${`${prefix}%`}`),
+      sql` and `,
+    );
     const result = await this.db.execute(sql`
       with live as (
         select coalesce(composite_id, id) as group_id
         from action_jobs
         where mailbox_account_id = ${mailboxAccountId}
           and direction = 'forward'
-          and status in ('queued', 'executing')
           and created_at > now() - make_interval(hours => ${IN_FLIGHT_MAX_AGE_HOURS}::int)
-          and idempotency_key not like ${autopilotKeys}
+          and (
+            status in ('queued', 'executing')
+            -- …or ended moments ago: a job quicker than one poll, or one whose
+            -- screen has gone, would otherwise end without anyone being told.
+            or updated_at > now() - make_interval(secs => ${IN_FLIGHT_SETTLED_GRACE_SECONDS}::int)
+          )
+          and ${notAutopilot}
         group by 1
       ),
       members as (
@@ -1347,11 +1363,15 @@ export class ActionsService {
           aj.created_at,
           aj.selector->>'senderId' as sender_id
         from live l
-        join action_jobs aj
-          -- Two indexed probes (pkey, composite_id idx), not a coalesce scan.
-          on (aj.id = l.group_id or aj.composite_id = l.group_id)
-         and aj.mailbox_account_id = ${mailboxAccountId}
-         and aj.direction = 'forward'
+        join lateral (
+          -- Two indexed probes (pkey; composite_id idx) — an OR across the
+          -- two columns tends to plan as a scan.
+          select * from action_jobs a where a.id = l.group_id
+          union all
+          select * from action_jobs c where c.composite_id = l.group_id
+        ) aj on true
+        where aj.mailbox_account_id = ${mailboxAccountId}
+          and aj.direction = 'forward'
       ),
       grouped as (
         select
@@ -1394,6 +1414,7 @@ export class ActionsService {
       groupId: row.group_id,
       verb: row.verb,
       mixedVerbs: row.verb_count > 1,
+      running: row.done + row.failed < row.total,
       total: row.total,
       done: row.done,
       failed: row.failed,

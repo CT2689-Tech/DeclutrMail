@@ -77,6 +77,7 @@ export const SingleAction: Story<typeof UndoTray> = {
     frame(
       <UndoTray
         {...args}
+        defaultOpen
         dataSource={staticSource([
           {
             token: '11111111-1111-1111-1111-111111111111',
@@ -95,6 +96,7 @@ export const ThreeDecisions: Story<typeof UndoTray> = {
     frame(
       <UndoTray
         {...args}
+        defaultOpen
         dataSource={staticSource([
           {
             token: '22222222-2222-2222-2222-222222222222',
@@ -132,6 +134,7 @@ export const BulkDecision: Story<typeof UndoTray> = {
     frame(
       <UndoTray
         {...args}
+        defaultOpen
         dataSource={{
           ...staticSource([
             {
@@ -243,6 +246,7 @@ export const MixedVerbsReadOnly: Story<typeof UndoTray> = {
     frame(
       <UndoTray
         {...args}
+        defaultOpen
         dataSource={staticSource([
           {
             token: '88888888-8888-4888-8888-888888888888',
@@ -287,6 +291,61 @@ export const MixedVerbsReadOnly: Story<typeof UndoTray> = {
 };
 
 /** Autopilot rule application — D99 / "Rule applied" label. */
+/** The pill for a finished action — one line and its Undo. */
+export const PillDone: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        dataSource={staticSource([
+          {
+            token: '99999999-9999-4999-8999-999999999991',
+            actionKind: 'delete',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 95,
+            senderCount: 1,
+            members: [
+              {
+                token: '99999999-9999-4999-8999-999999999991',
+                actionKind: 'delete',
+                senderName: 'Greenhouse',
+                affectedCount: 95,
+              },
+            ],
+          },
+        ])}
+      />,
+    ),
+};
+
+/** …and the chip it shrinks to a few seconds later (timer-gated in the app). */
+export const PillCompact: Story<typeof UndoTray> = {
+  render: () =>
+    frame(
+      <UndoTray
+        defaultCompact
+        dataSource={staticSource([
+          {
+            token: '99999999-9999-4999-8999-999999999991',
+            actionKind: 'delete',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            affectedCount: 95,
+            senderCount: 1,
+            members: [
+              {
+                token: '99999999-9999-4999-8999-999999999991',
+                actionKind: 'delete',
+                senderName: 'Greenhouse',
+                affectedCount: 95,
+              },
+            ],
+          },
+        ])}
+      />,
+    ),
+};
+
 /** The pill while a bulk runs — progress, no Undo yet. */
 export const PillRunning: Story<typeof UndoTray> = {
   render: () =>
@@ -359,6 +418,7 @@ export const RuleApplied: Story<typeof UndoTray> = {
     frame(
       <UndoTray
         {...args}
+        defaultOpen
         dataSource={staticSource([
           {
             token: '55555555-5555-5555-5555-555555555555',
@@ -377,6 +437,7 @@ export const Loading: Story<typeof UndoTray> = {
     frame(
       <UndoTray
         {...args}
+
         dataSource={{
           entries: [],
           isLoading: true,
@@ -404,7 +465,7 @@ export const Empty: Story<typeof UndoTray> = {
           When there are no active tokens, the tray renders nothing (D35 — collapses into the
           Activity link in the empty state).
         </p>
-        <UndoTray {...args} dataSource={staticSource([])} />
+        <UndoTray {...args} defaultOpen dataSource={staticSource([])} />
       </div>,
     ),
 };
@@ -419,6 +480,7 @@ export const ErrorState: Story<typeof UndoTray> = {
     frame(
       <UndoTray
         {...args}
+        defaultOpen
         dataSource={{
           entries: [],
           isLoading: false,

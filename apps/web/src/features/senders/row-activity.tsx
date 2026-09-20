@@ -178,6 +178,9 @@ export function RowActivityStatus({ activity }: { activity: SenderRowActivity })
         // Decorative, and NOT a live region: a 50-sender bulk is 50 of these.
         <span
           aria-hidden="true"
+          // The class, not an inline `animation`: tokens.css stops `.dm-spinner`
+          // under prefers-reduced-motion, and an inline style would outrank it.
+          className="dm-spinner"
           style={{
             width: 10,
             height: 10,
@@ -185,7 +188,6 @@ export function RowActivityStatus({ activity }: { activity: SenderRowActivity })
             borderRadius: 999,
             border: `1.5px solid ${color.line}`,
             borderTopColor: color.fg,
-            animation: 'dm-spin 0.8s linear infinite',
           }}
         />
       )}

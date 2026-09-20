@@ -22,7 +22,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { UndoController } from '../undo/undo.controller.js';
 import { UndoService } from '../undo/undo.service.js';
-import { ActionsService, reverseQueueJobId } from './actions.service.js';
+import { ActionsService, IN_FLIGHT_GROUPS_MAX, reverseQueueJobId } from './actions.service.js';
 import { compositeActionRequestSchema } from './actions.types.js';
 
 /** The Free monthly quota, from the pricing config (A3). */
@@ -1999,6 +1999,7 @@ describe('ActionsService', () => {
         groupId: batchId,
         verb: 'archive',
         mixedVerbs: false,
+        running: true,
         total: 2,
         done: 0,
         failed: 0,
@@ -2013,12 +2014,83 @@ describe('ActionsService', () => {
       live = await svc.listInFlight(mailboxId);
       expect(live[0]).toMatchObject({ total: 2, done: 1, senderCount: 2 });
 
-      // Every job terminal: the decision is no longer in flight.
+      // Every job terminal: still listed for a moment — NOT running — so a
+      // client that never saw it run can say how it ended…
       await db
         .update(actionJobs)
-        .set({ status: 'failed' })
+        .set({ status: 'failed', updatedAt: new Date() })
         .where(eq(actionJobs.compositeId, batchId));
+      await db.update(actionJobs).set({ updatedAt: new Date() }).where(eq(actionJobs.id, batchId));
+      live = await svc.listInFlight(mailboxId);
+      expect(live[0]).toMatchObject({ running: false, done: 1, failed: 1 });
+
+      // …and gone once that grace has passed.
+      await db
+        .update(actionJobs)
+        .set({ updatedAt: new Date(Date.now() - 5 * 60_000) })
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
       expect(await svc.listInFlight(mailboxId)).toEqual([]);
+    });
+
+    it('leads with the ANCHOR job — its verb and sender — and reports mixed verbs and failures', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      const [anchor] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'unsubscribe',
+          selector: { type: 'sender', senderId: sender2Id, senderKey: SENDER_KEY_2 },
+          status: 'queued',
+          idempotencyKey: 'lead-anchor',
+          requestedCount: 1,
+        })
+        .returning({ id: actionJobs.id });
+      // A bigger, FAILED secondary under it: size must not steal the lead.
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+        status: 'failed',
+        idempotencyKey: 'lead-secondary',
+        requestedCount: 500,
+        compositeId: anchor!.id,
+      });
+      const [second] = await db.select().from(senders).where(eq(senders.id, sender2Id));
+      const [group] = await svc.listInFlight(mailboxId);
+      expect(group).toMatchObject({
+        groupId: anchor!.id,
+        // `unsubscribe` is a user verb too (one-click + bulk unsubscribe).
+        verb: 'unsubscribe',
+        mixedVerbs: true,
+        total: 2,
+        done: 0,
+        failed: 1,
+        senderCount: 2,
+        leadSenderName: second!.displayName || second!.email,
+      });
+    });
+
+    it('counts no senders for a message-selector job, and caps the list at the newest groups', async () => {
+      await db.insert(actionJobs).values(
+        Array.from({ length: IN_FLIGHT_GROUPS_MAX + 2 }, (_, i) => ({
+          mailboxAccountId: mailboxId,
+          verb: 'archive' as const,
+          selector: { type: 'messages' as const },
+          status: 'queued' as const,
+          idempotencyKey: `cap-${i}`,
+          // Distinct, ordered start times (minutes ago).
+          createdAt: new Date(Date.now() - i * 60_000),
+        })),
+      );
+      const live = await svc.listInFlight(mailboxId);
+      expect(live).toHaveLength(IN_FLIGHT_GROUPS_MAX);
+      expect(live[0]).toMatchObject({ senderCount: 0, leadSenderName: null, total: 1 });
+      // Newest first: the two OLDEST are the ones dropped.
+      const started = live.map((g) => Date.parse(g.startedAt));
+      expect([...started].sort((a, b) => b - a)).toEqual(started);
+      expect(Math.min(...started)).toBeGreaterThan(
+        Date.now() - IN_FLIGHT_GROUPS_MAX * 60_000 - 5_000,
+      );
     });
 
     it('leaves out Autopilot runs, undo jobs, other mailboxes and day-old jobs', async () => {

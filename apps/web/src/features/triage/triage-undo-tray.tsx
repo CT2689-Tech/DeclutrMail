@@ -9,7 +9,12 @@ import type { UndoTrayDataSource, UndoTrayEntry, UndoTrayNotice } from '@declutr
 
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
-import { outcomeNotice, useInFlightActions, workingNotice } from '@/features/undo/in-flight';
+import {
+  isRunning,
+  outcomeNotice,
+  useInFlightActions,
+  workingNotice,
+} from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
 import { undoEntriesQueryOptions } from '@/features/undo/query-options';
 import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
@@ -39,6 +44,9 @@ export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
   return trayRefreshed;
 }
+
+/** How long a neutral "nothing to do" note stays on the pill. */
+const INFO_NOTICE_MS = 10_000;
 
 /**
  * A decision's stable identity. `token` is only "a member token that
@@ -147,17 +155,40 @@ export function ProductUndoTray({
     groups: new Map(),
   });
 
+  /** Endings already handled — a just-ended group stays listed for ~60s. */
+  const reported = useRef(new Set<string>());
+  /**
+   * Decisions this SESSION saw in flight. They are exempt from the
+   * per-screen baseline below: with Undo living only in the pill, opening
+   * a sender (or reloading) right after acting must not swallow the Undo
+   * that was just earned (flow gate 2026-09-20).
+   */
+  const [sessionGroups, setSessionGroups] = useState<ReadonlySet<string>>(new Set());
+
   useEffect(() => {
     const groups = inFlightQuery.data;
     // Only a SUCCESSFUL read can say a decision stopped: on an error the
     // list is merely unknown, and nothing may be reported as ended.
     if (!groups || inFlightQuery.isError) return;
     const generation = mailboxGeneration.current;
-    const current = new Map(groups.map((g) => [g.groupId, g]));
+    const running = new Map(groups.filter(isRunning).map((g) => [g.groupId, g]));
+    const listed = new Set(groups.map((g) => g.groupId));
     const before = seenRunning.current.mailboxId === mailboxId ? seenRunning.current.groups : null;
-    const stopped = [...(before?.values() ?? [])].filter((g) => !current.has(g.groupId));
-    seenRunning.current = { mailboxId, groups: current };
+    seenRunning.current = { mailboxId, groups: running };
+    setSessionGroups((prev) =>
+      groups.every((g) => prev.has(g.groupId))
+        ? prev
+        : new Set([...prev, ...groups.map((g) => g.groupId)]),
+    );
+    const stopped = [
+      // Was running, now gone from the list altogether…
+      ...[...(before?.values() ?? [])].filter((g) => !listed.has(g.groupId)),
+      // …or listed as just ended — including one never seen running (quicker
+      // than a poll, or finished while this tray was not mounted).
+      ...groups.filter((g) => !isRunning(g)),
+    ].filter((g) => !reported.current.has(g.groupId));
     if (stopped.length === 0) return;
+    for (const g of stopped) reported.current.add(g.groupId);
     // Whatever it changed, every list that shows mail or undo is stale now.
     void invalidateAfterUndo(qc);
     for (const group of stopped) {
@@ -168,6 +199,14 @@ export function ProductUndoTray({
           const notice = outcomeNotice(group, status);
           if (!notice) return;
           setOutcomes((prev) => [notice, ...prev.filter((n) => n.id !== notice.id)].slice(0, 3));
+          // "Nothing to archive" is a note, not a problem: it must not sit
+          // on the pill forever, ahead of the next action's Undo.
+          if (notice.tone === 'info') {
+            setTimeout(
+              () => setOutcomes((prev) => prev.filter((n) => n.id !== notice.id)),
+              INFO_NOTICE_MS,
+            );
+          }
         });
     }
   }, [inFlightQuery.data, inFlightQuery.isError, mailboxId, qc]);
@@ -333,7 +372,9 @@ export function ProductUndoTray({
   // the headline: a line still reading "440 emails · 2 senders" while one
   // of them is on its way back would be a count the row no longer holds.
   const entries = (entriesQuery.data ?? [])
-    .filter((entry) => !baseline?.tokens.has(decisionId(entry)))
+    .filter(
+      (entry) => !baseline?.tokens.has(decisionId(entry)) || sessionGroups.has(decisionId(entry)),
+    )
     .flatMap((entry): UndoTrayEntry[] => {
       if (inFlight == null || decisionId(entry) !== inFlight.id) return [entry];
       if (inFlight.memberToken === null) return [];
@@ -389,7 +430,10 @@ export function ProductUndoTray({
       ...notice,
       onDismiss: () => setOutcomes((prev) => prev.filter((n) => n.id !== notice.id)),
     })),
-    ...(inFlightQuery.data ?? []).map(workingNotice),
+    ...(inFlightQuery.data ?? [])
+      .filter(isRunning)
+      // A failed read: what we hold is the last thing we knew.
+      .map((group) => workingNotice(group, !inFlightQuery.isError)),
   ];
 
   const dataSource: UndoTrayDataSource = {

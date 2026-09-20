@@ -593,8 +593,10 @@ describe('TriageUndoTray — a bulk action is one decision', () => {
     // While it confirms: that sender is gone from the decision, and the
     // headline no longer counts mail that is on its way back.
     await waitFor(() => expect(screen.queryByText(/RetailMeNot/)).toBeNull());
-    expect(screen.getByText(/251 emails/)).toBeDefined();
-    expect(screen.queryByText(/440 emails/)).toBeNull();
+    // (Scoped to the visible tray: the screen-reader region repeats the headline.)
+    const tray = document.querySelector<HTMLElement>('[data-dm-undo-tray]')!;
+    expect(tray).toHaveTextContent(/251 emails/);
+    expect(tray).not.toHaveTextContent(/440 emails/);
     expect(screen.queryByText('Undo all')).toBeNull();
   });
 
