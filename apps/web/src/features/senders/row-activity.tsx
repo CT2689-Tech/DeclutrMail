@@ -129,7 +129,6 @@ export function useGroupActivitySummary(
  * Shorter than the pill: it has a button's width, not a name cell's.
  */
 export function rowStatusLabel(activity: SenderRowActivity): string {
-  if (activity.phase === 'mixed') return 'See Activity';
   if (activity.phase !== 'done') return rowActivityLabel(activity);
   if (activity.affectedCount === 0) return 'Nothing to change';
   const result = DONE[activity.verb];
@@ -193,6 +192,14 @@ export function RowActivityStatus({ activity }: { activity: SenderRowActivity })
     </span>
   );
 }
+
+/**
+ * Whether the pressed verb should BECOME the status. Not when it ended
+ * badly: the next step after "Delete failed" is to try again, so the verb
+ * stays a working button and the failure is stated beside it.
+ */
+export const takesButtonSlot = (activity: SenderRowActivity | undefined): boolean =>
+  activity != null && activity.phase !== 'failed' && activity.phase !== 'mixed';
 
 /** Button props that turn a pressed verb into its own status. */
 export const STATUS_BUTTON_STYLE = {

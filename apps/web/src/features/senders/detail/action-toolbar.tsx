@@ -14,10 +14,12 @@ import {
 import { derivePrimaryVerbId } from '../action-row';
 import {
   isRowBusy,
+  RowActivityPill,
   RowActivityStatus,
   rowStatusColor,
   rowStatusLabel,
   STATUS_BUTTON_STYLE,
+  takesButtonSlot,
   useRowActivity,
 } from '../row-activity';
 import type { Verdict } from './types';
@@ -163,7 +165,13 @@ export function ActionToolbar({
               : null;
         // The verb that was pressed BECOMES its own status — same grammar as
         // a Senders row. Same element, so focus stays on it.
-        const status = activity && activity.verb === verb.toLowerCase() ? activity : null;
+        // Not when it ended badly — then the verb stays live for a retry.
+        const status =
+          activity && takesButtonSlot(activity) && activity.verb === verb.toLowerCase()
+            ? activity
+            : null;
+        // This page has no ⋯ menu, so a verb that reads "done" must still work.
+        const again = status?.phase === 'done';
         return (
           <Button
             key={verb}
@@ -181,9 +189,15 @@ export function ActionToolbar({
             size="md"
             disabled={disabled}
             // Inert, not disabled: the verb just pressed may hold focus.
-            inert={(busy && !disabled) || status != null}
+            inert={busy && !disabled}
             {...(status
-              ? { style: { ...STATUS_BUTTON_STYLE, color: rowStatusColor(status) } }
+              ? {
+                  style: {
+                    ...STATUS_BUTTON_STYLE,
+                    color: rowStatusColor(status),
+                    ...(again ? { cursor: 'pointer' } : {}),
+                  },
+                }
               : deleteAccentStyle
                 ? { style: deleteAccentStyle }
                 : {})}
@@ -206,12 +220,19 @@ export function ActionToolbar({
                     <Kbd>{shortcut}</Kbd>
                   ),
                 })}
-            ariaLabel={status ? rowStatusLabel(status) : `${verb} (${shortcut})`}
+            ariaLabel={
+              status
+                ? again
+                  ? `${rowStatusLabel(status)} — ${verb} again (${shortcut})`
+                  : rowStatusLabel(status)
+                : `${verb} (${shortcut})`
+            }
           >
             {status ? <RowActivityStatus activity={status} /> : verb}
           </Button>
         );
       })}
+      {activity && !takesButtonSlot(activity) && <RowActivityPill activity={activity} />}
       <span style={{ flex: 1 }} />
       <span
         style={{

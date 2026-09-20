@@ -25,7 +25,6 @@ import {
   enrichSenderRow,
   isStandingProtected,
   multiSenderPlanName,
-  VERB_PAST,
   type ActionRequest,
   type ActionVerb,
   type Sender,
@@ -42,7 +41,7 @@ import {
 import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
 import { ConfirmActionModal, type ConfirmOptions } from './confirm-action-modal';
-import { ReceiptStrip, type ActionReceipt } from './receipt-strip';
+import type { ActionReceipt } from './action-receipt';
 import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
 import { sendersListQueryFromScreen } from './api/query-options';
@@ -53,7 +52,6 @@ import {
   useActionStatus,
   useBatchStatus,
   useBulkActionPreview,
-  useRevertUndo,
   useCompositePreview,
   useEnqueueBulkAction,
   useEnqueueComposite,
@@ -71,7 +69,6 @@ import {
   isUnsubSendDisabled,
   UNSUB_SEND_DISABLED_MESSAGE,
 } from '@/features/triage/unsub-send-disabled';
-import { UNDO_DONE_TOAST } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderGrid } from './grid/sender-grid';
@@ -711,8 +708,8 @@ function SendersScreenContent({
 
   // P6 — real single-sender actions (D226). `activeAction` holds the
   // in-flight handle that `actionStatus` polls to a terminal state;
-  // `revert` + `revertActionId` drive the undo loop. One in-flight action
-  // at a time is sufficient for the single-sender wire.
+  // One in-flight action at a time is sufficient for the single-sender
+  // wire. Undo is the bottom pill's job, not this screen's.
   const qc = useQueryClient();
   // ADR-0020 unified composite endpoint — the ONLY single-sender enqueue
   // wire. Covers Archive / Later / Delete primaries plus the composite
@@ -732,7 +729,6 @@ function SendersScreenContent({
   // (write the compose URL state + sort store).
   const savedViews = useSenderViews();
   const saveViews = useSaveSenderViews();
-  const revert = useRevertUndo();
   const [activeAction, setActiveAction] = useState<{
     mailboxId: string | undefined;
     actionId: string;
@@ -760,8 +756,6 @@ function SendersScreenContent({
     skippedCount: number;
     wakeAt: string | null;
   } | null>(null);
-  const [revertActionId, setRevertActionId] = useState<string | null>(null);
-  const [revertMailboxId, setRevertMailboxId] = useState<string | undefined>();
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution (single-
   // sender path). Polled to terminal so the toast states the REAL
   // outcome ("confirming…" → unsubscribed / refused / unconfirmed),
@@ -804,7 +798,6 @@ function SendersScreenContent({
     activeUnsubBatch?.batchId ?? null,
     activeUnsubBatch?.mailboxId,
   );
-  const revertStatus = useActionStatus(revertActionId, revertMailboxId);
   const unsubExecStatus = useActionStatus(activeUnsub?.actionId ?? null, activeUnsub?.mailboxId);
   // QA-delete-20260829-05, Codex round 2 — same dedup as sender-detail-page.tsx:
   // a revert this screen did NOT initiate polls through its OWN quiet handle
@@ -1828,7 +1821,6 @@ function SendersScreenContent({
         message: err instanceof Error ? err.message : String(err),
       });
       captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
-      toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
       // The job may well still be running: the row must not go back to
       // looking untouched (and re-armed) on a lost poll.
       settleRowsRef.current([activeAction.senderId], {
@@ -1857,39 +1849,11 @@ function SendersScreenContent({
       senderName: activeAction.senderName,
     });
     if (data.status === 'done') {
-      // Verb-correct copy — the composite path runs the SAME done-handler
-      // for Archive / Delete / Later, so the receipt + toast must read
-      // from the polled handle's recorded verb, not a hardcoded one.
-      const verbPast = VERB_PAST[activeAction.verb];
-      const verbLowercase = activeAction.verb.toLowerCase();
-      if (data.affectedCount === 0) {
-        // No-op: the sender is in the directory by LIFETIME volume but has
-        // no mail in the inbox right now, so the worker did nothing and
-        // issued no undo token. Never show a "reversible" receipt with a
-        // dead Undo — say plainly that there was nothing to do.
-        toast(`No matching email from ${activeAction.senderName} to ${verbLowercase}`, 'info');
-        // The worker still wrote a 0-affected `activity_log` row
-        // (label-action.worker.ts:248 — the audit-trail consistency
-        // fix 2026-06-05). Invalidate Activity so a user navigating
-        // to /activity sees the audit row instead of an empty feed.
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      } else {
-        toast(
-          // Same grammar as the row pill, the receipt and the undo panel
-          // (result · count · who). Delete used to read "Moved … to Trash"
-          // here while the row said "Deleted" — one fact, one wording.
-          `${verbPast} · ${data.affectedCount.toLocaleString('en-US')} email${data.affectedCount === 1 ? '' : 's'} · ${activeAction.senderName}${data.affectedCount < data.requestedCount ? ' · some not changed, see Activity' : ''}`,
-          data.affectedCount < data.requestedCount ? 'warn' : 'success',
-        );
-        // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
-        // Activity feed (new activity_log row from the worker). Missing
-        // the activity invalidation left /activity stale on Delete done
-        // 2026-06-05.
-        void qc.invalidateQueries({ queryKey: sendersKeys.all });
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      }
-    } else {
-      toast(`Couldn't ${activeAction.verb.toLowerCase()} ${activeAction.senderName}`, 'warn');
+      // No toast and no strip: the bottom pill is the one voice for an
+      // action's outcome (founder decision 2026-09-20). Senders rows moved
+      // AND the worker wrote an activity row (0-affected included).
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
@@ -1907,7 +1871,6 @@ function SendersScreenContent({
         message: err instanceof Error ? err.message : String(err),
       });
       captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
-      toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
       settleRowsRef.current([overdueAction.senderId], {
         phase: 'unconfirmed',
         verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
@@ -1938,19 +1901,8 @@ function SendersScreenContent({
       senderName: overdueAction.senderName,
     });
     if (data.status === 'done') {
-      if (data.affectedCount === 0) {
-        toast(
-          `No matching email from ${overdueAction.senderName} to ${overdueAction.verb.toLowerCase()}`,
-          'info',
-        );
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      } else {
-        // No success toast — the receipt below still carries the undo.
-        void qc.invalidateQueries({ queryKey: sendersKeys.all });
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      }
-    } else {
-      toast(`Couldn't ${overdueAction.verb.toLowerCase()} ${overdueAction.senderName}`, 'warn');
+      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      void qc.invalidateQueries({ queryKey: activityKeys.all });
     }
     setOverdueAction(null);
   }, [
@@ -2100,7 +2052,6 @@ function SendersScreenContent({
         message: err instanceof Error ? err.message : String(err),
       });
       captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
-      toast(`Couldn't confirm the bulk ${activeBatch.verb.toLowerCase()} — see Activity`, 'warn');
       settleRowsRef.current(activeBatch.senderIds, {
         phase: 'unconfirmed',
         verb: activeBatch.verb.toLowerCase() as RowActivityVerb,
@@ -2147,35 +2098,9 @@ function SendersScreenContent({
       selectedCount: activeBatch.selectedCount,
       skippedCount: activeBatch.skippedCount,
     });
-    const verbPast = VERB_PAST[activeBatch.verb];
-    const verbLowercase = activeBatch.verb.toLowerCase();
-    if (data.status === 'failed') {
-      // Every sibling failed — nothing moved, nothing to undo.
-      toast(
-        `Couldn't ${verbLowercase} email from ${activeBatch.senderCount} senders — see Activity`,
-        'warn',
-      );
-      void qc.invalidateQueries({ queryKey: activityKeys.all });
-    } else {
-      if (data.failed > 0) {
-        // Partial failure — name it; the receipt below still covers the
-        // senders that DID move (their undo tokens are in the cascade).
-        toast(`${data.failed} of ${data.total} actions failed — see Activity`, 'warn');
-      }
-      if (data.affectedCount === 0) {
-        // No-op batch: nothing was in the inbox for any selected sender,
-        // so no undo token exists. Never show a receipt with a dead Undo.
-        toast(`No matching email from these senders to ${verbLowercase}`, 'info');
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      } else {
-        toast(
-          `${verbPast} · ${data.affectedCount.toLocaleString('en-US')} email${data.affectedCount === 1 ? '' : 's'} · ${activeBatch.senderCount} senders`,
-          data.failed > 0 || data.affectedCount < data.requestedCount ? 'warn' : 'success',
-        );
-        void qc.invalidateQueries({ queryKey: sendersKeys.all });
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      }
-    }
+    // The bottom pill is the one voice for the outcome; this only refreshes.
+    if (data.status !== 'failed') void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    void qc.invalidateQueries({ queryKey: activityKeys.all });
     setActiveBatch(null);
   }, [batchStatus.data, batchStatus.isError, batchStatus.error, activeBatch, qc]);
 
@@ -2191,7 +2116,6 @@ function SendersScreenContent({
         message: err instanceof Error ? err.message : String(err),
       });
       captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
-      toast(`Couldn't confirm the bulk ${overdueBatch.verb.toLowerCase()} — see Activity`, 'warn');
       settleRowsRef.current(overdueBatch.senderIds, {
         phase: 'unconfirmed',
         verb: overdueBatch.verb.toLowerCase() as RowActivityVerb,
@@ -2242,26 +2166,9 @@ function SendersScreenContent({
       selectedCount: overdueBatch.selectedCount,
       skippedCount: overdueBatch.skippedCount,
     });
-    const verbLowercase = overdueBatch.verb.toLowerCase();
-    if (data.status === 'failed') {
-      toast(
-        `Couldn't ${verbLowercase} email from ${overdueBatch.senderCount} senders — see Activity`,
-        'warn',
-      );
-      void qc.invalidateQueries({ queryKey: activityKeys.all });
-    } else {
-      if (data.failed > 0) {
-        toast(`${data.failed} of ${data.total} actions failed — see Activity`, 'warn');
-      }
-      if (data.affectedCount === 0) {
-        toast(`No matching email from these senders to ${verbLowercase}`, 'info');
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      } else {
-        // No success toast — the receipt above still carries the undo.
-        void qc.invalidateQueries({ queryKey: sendersKeys.all });
-        void qc.invalidateQueries({ queryKey: activityKeys.all });
-      }
-    }
+    // The bottom pill is the one voice for the outcome; this only refreshes.
+    if (data.status !== 'failed') void qc.invalidateQueries({ queryKey: sendersKeys.all });
+    void qc.invalidateQueries({ queryKey: activityKeys.all });
     setOverdueBatch(null);
   }, [
     overdueBatchStatus.data,
@@ -2271,97 +2178,8 @@ function SendersScreenContent({
     qc,
   ]);
 
-  // P6 — drive the undo (reverse) lifecycle. On `done`, clear the receipt +
-  // refresh; on `failed`, a warn toast. Same retry-false / sustained-5xx
-  // hazard as the archive lifecycle above — surface the poll error
-  // explicitly so the receipt UI does not get stuck on the
-  // "Restoring…" toast forever.
-  useEffect(() => {
-    if (!revertActionId) return;
-    if (revertStatus.isError) {
-      const err = revertStatus.error;
-      console.warn('[senders] revertStatus poll failed', {
-        revertActionId,
-        message: err instanceof Error ? err.message : String(err),
-      });
-      captureFeatureException(err, { surface: 'senders', reason: 'revert_status_poll' });
-      toast("Couldn't confirm undo — see Activity", 'warn');
-      setRevertActionId(null);
-      return;
-    }
-    const data = revertStatus.data;
-    if (!data || !isTerminalStatus(data.status)) return;
-    if (data.status === 'done') {
-      toast(UNDO_DONE_TOAST, 'success');
-      setReceipt(null);
-      releaseSettledRows();
-      void qc.invalidateQueries({ queryKey: sendersKeys.all });
-      // Revert wrote a fresh activity_log row + flipped the original
-      // row's undoState to `executed`. Surface both on /activity by
-      // invalidating the feed alongside senders.
-      void qc.invalidateQueries({ queryKey: activityKeys.all });
-    } else {
-      toast("Couldn't undo — see Activity", 'warn');
-    }
-    setRevertActionId(null);
-  }, [
-    revertStatus.data,
-    revertStatus.isError,
-    revertStatus.error,
-    revertActionId,
-    qc,
-    releaseSettledRows,
-  ]);
-
-  // Receipt Undo — reverse the real action by token (D226 undo loop). The
-  // reverse is itself async: a fresh token enqueues a reverse job we poll;
-  // an already-reverted token resolves immediately. Tracer receipts (no
-  // token) keep the old log-only behavior.
-  const onUndo = useCallback(() => {
-    if (receipt?.mailboxId !== actionMailboxId) return;
-    const token = receipt?.activityUndo.token;
-    if (!token) {
-      // Tokenless receipts shouldn't surface a fake "Reverted" — the
-      // unsub-intent path makes a real BE call and supplies a token; the
-      // tokenless branch is now defensive. Clear the receipt silently
-      // (matches sister sender-detail-page.tsx). No fake completion per
-      // CLAUDE.md §10.
-      setReceipt(null);
-      return;
-    }
-    toast('Restoring…', 'info');
-    revert.mutate(
-      { token, mailboxId: receipt?.mailboxId },
-      {
-        onSuccess: (res) => {
-          if (res.reverted) {
-            toast(UNDO_DONE_TOAST, 'success');
-            setReceipt(null);
-            releaseSettledRows();
-            void qc.invalidateQueries({ queryKey: sendersKeys.all });
-            void qc.invalidateQueries({ queryKey: activityKeys.all });
-          } else if (res.actionId) {
-            setRevertMailboxId(receipt?.mailboxId);
-            setRevertActionId(res.actionId);
-          }
-        },
-        onError: (err) => {
-          // 410 is a designed state (undo window closed) — skip capture.
-          // Every other failure (5xx, transient network) is a real
-          // regression on the D226-mandatory undo surface.
-          if (!(err instanceof ApiError && err.status === 410)) {
-            captureFeatureException(err, { surface: 'senders', reason: 'revert_undo' });
-          }
-          toast(
-            err instanceof ApiError && err.status === 410
-              ? 'Undo window has expired'
-              : "Couldn't undo — see Activity",
-            'warn',
-          );
-        },
-      },
-    );
-  }, [receipt, revert, qc, actionMailboxId]);
+  // Undo lives in the bottom pill (one channel). What this screen still
+  // owes an undo is below: un-marking the rows it was holding as done.
 
   // QA-delete-20260829-05 — same staleness gap as `sender-detail-page.tsx`'s
   // sibling receipt: this screen's `receipt` is local state that only heard
@@ -2752,12 +2570,6 @@ function SendersScreenContent({
             label: 'Manual decisions vs automatic rules',
           }}
         />
-
-        {receipt?.mailboxId === actionMailboxId && (
-          <div style={{ position: 'sticky', top: 12, zIndex: 30 }}>
-            <ReceiptStrip receipt={receipt} onUndo={onUndo} onDismiss={() => setReceipt(null)} />
-          </div>
-        )}
 
         {/* D248 — multi-sender unsubscribe result. Its own surface: three
           terminal outcomes, no Undo (a delivered request is one-way). */}

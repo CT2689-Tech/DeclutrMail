@@ -88,6 +88,11 @@ export function outcomeNotice(
   if (status.affectedCount === 0) {
     return { id, tone: 'info', label: `Nothing to ${verb.toLowerCase()}`, who: who(group) };
   }
+  // Mail moved between the preview's count and the job: fewer changed than
+  // were counted. The decision's own line has the real number.
+  if (status.affectedCount < status.requestedCount) {
+    return { id, tone: 'info', label: `${verb}: some email not changed`, who: who(group) };
+  }
   return null;
 }
 

@@ -154,13 +154,43 @@ async function findReceipt(): Promise<HTMLElement> {
   return screen.findByRole('status');
 }
 
+/**
+ * The pressed verb's slot once its job has ended. The top strip is gone:
+ * the ROW says what happened, the bottom pill (mounted by the app chrome,
+ * not this screen) carries Undo.
+ */
+async function findRowStatus(): Promise<HTMLElement> {
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  return waitFor(() => {
+    const el = document.querySelector<HTMLElement>(
+      '[data-dm-row-activity]:not([data-dm-row-activity="working"])',
+    );
+    expect(el).not.toBeNull();
+    return el!;
+  });
+}
+
+let lastClient: ReturnType<typeof createTestQueryClient>;
+
 function renderScreen() {
   const client = createTestQueryClient();
+  lastClient = client;
   return render(
     <QueryWrapper client={client}>
       <SendersScreen />
     </QueryWrapper>,
   );
+}
+
+/** Undo the way the app does it: from the pill's OWN `useRevertUndo()`. */
+async function undoFromThePill(token: string) {
+  const { result } = renderHook(() => useRevertUndo(), {
+    wrapper: ({ children }) => <QueryWrapper client={lastClient}>{children}</QueryWrapper>,
+  });
+  await act(async () => {
+    result.current.mutate({ token });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
 }
 
 /** Like `renderScreen`, with the shared `ToastHost` mounted so tests can
@@ -1319,16 +1349,16 @@ describe('SendersScreen — edge states', () => {
 
     // The real endpoint was hit, and the REAL receipt appears only after the
     // worker reports `done` (never optimistically).
-    const receipt = await findReceipt();
+    const slot = await findRowStatus();
     expect(archivePosted).toBe(true);
-    expect(receipt).toHaveTextContent(/archived/i);
-    expect(receipt).toHaveTextContent(/Sender A/i);
-    const undoBtn = screen.getByRole('button', { name: /^undo$/i });
+    expect(slot).toHaveTextContent('Archived 12');
+    // One voice: no strip on this screen, and no toast repeating the pill.
+    expect(screen.queryByRole('status')).toBeNull();
 
-    // Undo reverses for real (token → reverse job → poll) and clears the receipt.
-    fireEvent.click(undoBtn);
-    await waitFor(() => expect(screen.queryByText(/archived 1 sender/i)).toBeNull());
+    // Undo (from the pill) reverses for real and takes the mark off the row.
+    await undoFromThePill('tok-1');
     expect(undoPosted).toBe(true);
+    await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
   });
 
   it('confirms Delete, keeps the cleared card marked done, then returns it to normal after Undo', async () => {
@@ -1402,23 +1432,17 @@ describe('SendersScreen — edge states', () => {
     await screen.findByText(/currently match.*Trash/i);
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('radio', { name: /All inbox/i }));
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    const receipt = await findReceipt();
-    expect(receipt).toHaveTextContent(/Deleted to Gmail Trash.*313 emails.*Sender A/i);
-    expect(within(receipt).getByRole('link', { name: 'View activity' })).toHaveAttribute(
-      'href',
-      '/activity',
-    );
+    await findRowStatus();
     // Founder decision 2026-09-20: the row STAYS where it is, marked done,
     // even though the refetch that follows dropped this sender (nothing
     // left to clean) — the list must not jump under the cursor.
-    await screen.findByText('Deleted · 313 emails');
+    await screen.findByText('Deleted 313');
     expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeEnabled();
     expect(currentMailOnly).toBe('true');
-    fireEvent.click(within(receipt).getByRole('button', { name: 'Undo' }));
+    await undoFromThePill('tok-1');
     // A confirmed Undo takes the "done" mark off; the row is the server's again.
-    await waitFor(() => expect(screen.queryByText(/^Deleted · /)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/^Deleted /)).toBeNull());
     await screen.findByRole('checkbox', { name: /select sender a/i });
-    await waitFor(() => expect(screen.queryByText('Deleted to Gmail Trash')).toBeNull());
   });
 
   // QA-delete-20260829-05 — the same staleness gap `sender-detail-page.tsx`
@@ -1496,9 +1520,8 @@ describe('SendersScreen — edge states', () => {
     await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
-    await findReceipt();
+    await findRowStatus();
     expect(archivePosted).toBe(true);
-    screen.getByRole('button', { name: /^undo$/i });
 
     // Simulate the tray: a SEPARATE `useRevertUndo()` instance.
     const { result } = renderHook(() => useRevertUndo(), {
@@ -1510,9 +1533,7 @@ describe('SendersScreen — edge states', () => {
     });
 
     expect(undoPosted).toBe(true);
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
   });
 
   it('carries the chosen time window into a SINGLE-sender archive enqueue (D226)', async () => {
@@ -1661,9 +1682,7 @@ describe('SendersScreen — edge states', () => {
 
     await waitFor(() => expect(statusPolled).toBe(true));
     // The canonical result preserves the no-op, but never offers a dead Undo.
-    const noOp = await findReceipt();
-    expect(noOp).toHaveTextContent(/no matching email moved/i);
-    expect(screen.queryByRole('button', { name: /^undo$/i })).toBeNull();
+    expect(await findRowStatus()).toHaveTextContent('Nothing to change');
   });
 
   it('disables Archive confirm when the sender has 0 mail in the inbox (D226)', async () => {
@@ -2262,8 +2281,10 @@ describe('SendersScreen — edge states', () => {
       firstActionDone = true;
       await tick(2_500);
       expect(listGets).toBeGreaterThan(listGetsBefore);
-      expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
-      expect(screen.queryByText(/Archived 12 emails from Overdue Alpha/i)).toBeNull();
+      // …and the row that was "not confirmed" now says what happened.
+      expect(document.querySelector('[data-dm-row-activity="done"]')).toHaveTextContent(
+        'Archived 12',
+      );
     } finally {
       vi.useRealTimers();
     }
@@ -2801,8 +2822,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         affectedCount: 30,
       };
       // The job's terminal poll (1s tick) must LAND while the search is
-      // still held — `findReceipt` alone matches any status line.
-      await screen.findByText(/2 selected · 2 accepted/, {}, { timeout: 4000 });
+      // still held: the working marks go (and nothing is pinned as done).
+      await waitFor(() => expect(screen.queryAllByText('Archiving…')).toHaveLength(0), {
+        timeout: 4000,
+      });
 
       releaseSearch();
       await screen.findByRole('checkbox', { name: /select sender c/i }, { timeout: 4000 });
@@ -2968,12 +2991,13 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await selectBothAndPress('a');
       await screen.findByText(/currently match.*Archive/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-      await screen.findByRole('alert');
       // No outcome claimed per row — but never left looking untouched.
-      await waitFor(() =>
-        expect(
-          [...document.querySelectorAll('[data-dm-row-activity]')].map((el) => el.textContent),
-        ).toEqual(['Archive: see Activity', 'Archive: see Activity']),
+      await waitFor(
+        () =>
+          expect(
+            [...document.querySelectorAll('[data-dm-row-activity]')].map((el) => el.textContent),
+          ).toEqual(['Archive: see Activity', 'Archive: see Activity']),
+        { timeout: 4000 },
       );
       expect(document.querySelector('[data-dm-row-activity="done"]')).toBeNull();
       expect(rowOf(/select sender a/i)).not.toHaveAttribute('aria-busy');
@@ -3123,11 +3147,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // Real receipt appears only after the batch poll reports done.
-    const receipt = await findReceipt();
-    expect(receipt).toHaveTextContent(/archived/i);
-    expect(receipt).toHaveTextContent(/30 emails/i);
-    expect(receipt).toHaveTextContent(/2 senders/i);
-    expect(receipt).toHaveTextContent(/2 selected · 2 accepted · 0 skipped/i);
+    // Each row says so only after the batch poll reports done.
+    await waitFor(() =>
+      expect(document.querySelectorAll('[data-dm-row-activity="done"]')).toHaveLength(2),
+    );
     // Wire shape — ONE bulk POST carrying the senders selector.
     expect(bulkBody).toMatchObject({
       selector: { type: 'senders', senderIds: ['a', 'b'] },
@@ -3137,9 +3160,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(screen.queryByText(/senders selected/i)).toBeNull();
 
     // Undo reverses the WHOLE batch via the cascade token.
-    fireEvent.click(screen.getByRole('button', { name: /^undo$/i }));
-    await waitFor(() => expect(screen.queryByText(/archived 2 senders/i)).toBeNull());
+    await undoFromThePill('tok-b');
     expect(undoPosted).toBe(true);
+    await waitFor(() => expect(document.querySelector('[data-dm-row-activity]')).toBeNull());
   });
 
   it.each([
@@ -3424,11 +3447,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
-    // One sender failing never hides the other's real result — the
-    // receipt reflects what DID move and stays undoable.
-    const receipt = await screen.findByRole('alert');
-    expect(receipt).toHaveTextContent(/12 of 30 emails changed/i);
-    expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+    // This screen claims no per-row outcome it cannot know (the batch
+    // does not say WHICH sender failed) and sends each row to Activity;
+    // the bottom pill states "N of M failed" (features/undo/in-flight).
+    await waitFor(
+      () => expect(document.querySelectorAll('[data-dm-row-activity="mixed"]')).toHaveLength(2),
+      { timeout: 4000 },
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('routes bulk Delete through the destructive preview and blocks confirm when the preview fails', async () => {

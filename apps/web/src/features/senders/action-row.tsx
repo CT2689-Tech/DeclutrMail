@@ -24,9 +24,11 @@ import { ActionPopover, ActionPopoverTrigger, Button } from '@declutrmail/shared
 import { deriveDefaultPrimary, type VerbId } from '@declutrmail/shared/actions';
 import {
   isRowBusy,
+  RowActivityPill,
   RowActivityStatus,
   rowStatusColor,
   STATUS_BUTTON_STYLE,
+  takesButtonSlot,
   useRowActivity,
 } from './row-activity';
 import {
@@ -107,6 +109,7 @@ export function SenderActionRow({
   // refuses it too; disabling here is what makes that refusal visible.
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
+  const status = takesButtonSlot(activity) ? activity : undefined;
 
   const primaryVerbId: VerbId = derivePrimaryVerbId(sender);
 
@@ -135,24 +138,26 @@ export function SenderActionRow({
         position: 'relative',
       }}
     >
+      {/* Ended badly: say so, and leave the verb live — retrying is the next step. */}
+      {activity && !status && <RowActivityPill activity={activity} />}
       {/* ONE button element for both states: while an action's result is on
           the row, the verb the user reached for BECOMES that result. Kept
           mounted (never swapped for a span) so focus stays put. The ⋯ menu
           is the way to act again once the job has ended. */}
       <Button
-        tone={activity ? 'ghost' : leadButtonTone(primaryLegacy)}
+        tone={status ? 'ghost' : leadButtonTone(primaryLegacy)}
         size="sm"
-        inert={activity != null}
+        inert={status != null}
         onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
-        {...(activity ? {} : { iconRight: ARROW })}
+        {...(status ? {} : { iconRight: ARROW })}
         style={{
           ...(stretch
-            ? { flex: 1, justifyContent: activity ? 'flex-start' : 'space-between', minWidth: 0 }
+            ? { flex: 1, justifyContent: status ? 'flex-start' : 'space-between', minWidth: 0 }
             : { whiteSpace: 'nowrap' }),
-          ...(activity ? { ...STATUS_BUTTON_STYLE, color: rowStatusColor(activity) } : {}),
+          ...(status ? { ...STATUS_BUTTON_STYLE, color: rowStatusColor(status) } : {}),
         }}
       >
-        {activity ? <RowActivityStatus activity={activity} /> : primaryLegacy}
+        {status ? <RowActivityStatus activity={status} /> : primaryLegacy}
       </Button>
       {/* Trigger opens the popover only — never toggles. Toggle pattern
           races against the popover's click-outside listener (which sees

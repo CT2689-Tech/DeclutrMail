@@ -191,8 +191,11 @@ function installHappyPath(message = MESSAGE) {
   ]);
 }
 
+let lastClient: ReturnType<typeof createTestQueryClient>;
+
 function renderDetail(id = 'linkedin') {
   const client = createTestQueryClient();
+  lastClient = client;
   return render(
     <QueryWrapper client={client}>
       <SenderDetailRoute id={id} />
@@ -1325,6 +1328,9 @@ describe('SenderDetailRoute', () => {
 
     beforeEach(() => h.toast.mockClear());
 
+    /** The pressed verb's slot, once it reads as done. */
+    const doneMark = () => document.querySelector('[data-dm-row-activity="done"]');
+
     it('parks a stuck action at ACTION_OVERDUE_MS, keeps THIS sender locked until it terminates, then frees the guard', async () => {
       vi.useFakeTimers();
       try {
@@ -1393,7 +1399,8 @@ describe('SenderDetailRoute', () => {
         // refused by a toast after a second confirm; now the toolbar says
         // why and its verbs are inert (founder report 2026-09-20 — nothing
         // on the page showed a job was still running).
-        const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
+        // The pressed verb has BECOME the status; it takes no second press.
+        const archiveAgain = screen.getByRole('button', { name: 'Archive not confirmed' });
         expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
         expect(screen.getByRole('toolbar', { name: 'Sender actions' })).toHaveAttribute(
           'aria-busy',
@@ -1417,15 +1424,18 @@ describe('SenderDetailRoute', () => {
         await tick(2_500);
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
-        expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+        // The verb that was "not confirmed" now says what happened.
+        expect(doneMark()).toHaveTextContent('Archived 12');
         const successToast = h.toast.mock.calls.find(([msg]) => /12 email/i.test(String(msg)));
         expect(successToast).toBeUndefined();
 
         // With the parked handle terminal the toolbar frees, and says how
         // it ended. A NEW action opens against a re-counted preview (D226
         // — the archive just moved mail) and dispatches.
-        expect(screen.getByText('Archived · 12 emails')).toBeInTheDocument();
-        const archiveFreed = screen.getByRole('button', { name: 'Archive (A)' });
+        expect(screen.getByText('Archived 12')).toBeInTheDocument();
+        const archiveFreed = screen.getByRole('button', {
+          name: 'Archived 12 — Archive again (A)',
+        });
         expect(archiveFreed).not.toHaveAttribute('aria-disabled');
         fireEvent.click(archiveFreed);
         await tick(500);
@@ -1514,7 +1524,8 @@ describe('SenderDetailRoute', () => {
       // While the first is still confirming, the page says so and a
       // second action cannot start — no modal, no second POST.
       await screen.findByText('Archiving…');
-      const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
+      // The pressed verb has BECOME the status; it takes no second press.
+      const archiveAgain = screen.getByRole('button', { name: 'Archiving…' });
       expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(archiveAgain);
       await new Promise((r) => setTimeout(r, 50));
@@ -1568,7 +1579,7 @@ describe('SenderDetailRoute', () => {
       it('marks a lost status poll as not confirmed, and keeps the verb locked', async () => {
         await archiveWith(() => jsonServerError());
         await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
-        expect(screen.getByRole('button', { name: 'Archive (A)' })).toHaveAttribute(
+        expect(screen.getByRole('button', { name: 'Archive not confirmed' })).toHaveAttribute(
           'aria-disabled',
           'true',
         );
@@ -1642,8 +1653,15 @@ describe('SenderDetailRoute', () => {
             respond: () => jsonOk({ data: { verb: 'archive', reverted: true, actionId: null } }),
           },
         ]);
-        await waitFor(() => expect(pill('done')).toHaveTextContent('12 emails'));
-        fireEvent.click(await screen.findByRole('button', { name: /^undo$/i }));
+        await waitFor(() => expect(pill('done')).toHaveTextContent('Archived 12'));
+        // Undo arrives from the bottom pill's own `useRevertUndo()`.
+        const { result } = renderHook(() => useRevertUndo(), {
+          wrapper: ({ children }) => <QueryWrapper client={lastClient}>{children}</QueryWrapper>,
+        });
+        await act(async () => {
+          result.current.mutate({ token: 'tok-1' });
+          await waitFor(() => expect(result.current.isSuccess).toBe(true));
+        });
         await waitFor(() => expect(pill('done')).toBeNull());
       });
     });
@@ -1690,8 +1708,8 @@ describe('SenderDetailRoute', () => {
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
 
-      // The receipt is up, carrying the fixture's `undoToken: 'tok-1'`.
-      await screen.findByRole('button', { name: /^undo$/i });
+      // The page is holding the result, carrying the fixture's `undoToken: 'tok-1'`.
+      await waitFor(() => expect(doneMark()).not.toBeNull());
 
       // Simulate the tray: a SEPARATE `useRevertUndo()` instance, sharing
       // only the QueryClient — never touching this page's React tree.
@@ -1704,9 +1722,7 @@ describe('SenderDetailRoute', () => {
       });
 
       expect(undoPosts).toBe(1);
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
-      );
+      await waitFor(() => expect(doneMark()).toBeNull());
       expect(actionPosts).toBe(1);
     });
 
@@ -1756,7 +1772,7 @@ describe('SenderDetailRoute', () => {
       await screen.findByText(/currently match.*Archive/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
-      await screen.findByRole('button', { name: /^undo$/i });
+      await waitFor(() => expect(doneMark()).not.toBeNull());
 
       const { result } = renderHook(() => useRevertUndo(), {
         wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
@@ -1768,7 +1784,7 @@ describe('SenderDetailRoute', () => {
 
       // Not cleared yet — the revert only enqueued a reverse job.
       expect(undoPosts).toBe(1);
-      expect(screen.getByRole('button', { name: /^undo$/i })).toBeInTheDocument();
+      expect(doneMark()).not.toBeNull();
 
       // The QUIET `externalRevertActionId` poll (fed `act-revert-1` by the
       // mutation-cache listener) resolves terminal and clears the receipt —
@@ -1776,10 +1792,7 @@ describe('SenderDetailRoute', () => {
       // performed this revert already told the user; this page repeating
       // the undo-completion toast would be a duplicate confirmation for
       // one action.
-      await waitFor(
-        () => expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
-        { timeout: 3000 },
-      );
+      await waitFor(() => expect(doneMark()).toBeNull(), { timeout: 3000 });
       expect(actionPosts).toBe(1);
       expect(h.toast).not.toHaveBeenCalledWith(UNDO_DONE_TOAST, 'success');
     });

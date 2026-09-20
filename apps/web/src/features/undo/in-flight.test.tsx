@@ -82,6 +82,7 @@ describe('what the pill says once a decision stops', () => {
     ],
     [status({ done: 11, failed: 2 }), 'attention', 'Delete: 2 of 13 failed'],
     [status({ affectedCount: 0 }), 'info', 'Nothing to delete'],
+    [status({ affectedCount: 1400 }), 'info', 'Delete: some email not changed'],
     [null, 'attention', 'Delete not confirmed'],
   ] as const)('%#: %s → %s', (result, tone, label) => {
     expect(outcomeNotice(GROUP, result)).toMatchObject({ tone, label });

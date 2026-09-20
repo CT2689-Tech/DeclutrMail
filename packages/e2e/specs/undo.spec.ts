@@ -156,20 +156,15 @@ test('Archive one sender via preview, then restore it through the undo tray', as
     )
     .toBe(1);
 
-  // ---- Receipt strip appears ONLY on worker confirmation (no
-  // optimistic receipt) and carries the real undo token.
-  // Filtered on the deadline copy, which ONLY the receipt renders. The
-  // old filter ({ hasText: 'Archived' }) also matched the 3.6s success
-  // TOAST ("Archived 2 emails from Jockey", also role=status) — and a
-  // strict-mode violation is TERMINAL, not retried, so every run died
-  // ~2s after confirm, at the exact moment the receipt appeared next to
-  // the still-alive toast. The 90s timeout in the error made it read as
-  // "the strip never appeared"; the trace shows it failing at +2s with
-  // the receipt PRESENT as element 1 of 2.
-  const receipt = page.getByRole('status').filter({ hasText: 'Activity Undo until' });
-  await expect(receipt).toBeVisible({ timeout: 90_000 });
-  await expect(receipt).toContainText('Archived');
-  await expect(receipt).toContainText('1 sender');
+  // ---- The row reads done ONLY on worker confirmation (nothing optimistic).
+  // There is no top strip any more (founder decision 2026-09-20): the
+  // ROW says it — the pressed verb becomes "Archived N" — and the bottom
+  // pill carries the Undo. `data-dm-row-activity` is the row's own marker,
+  // so the 3.6s-toast strict-mode collision this leg used to dodge is gone
+  // with the toast itself.
+  await expect(page.locator('[data-dm-row-activity="done"]').first()).toContainText('Archived', {
+    timeout: 90_000,
+  });
 
   // ---- Tray leg (D35): the app-shell tray on THIS screen lists the
   // token. The old leg navigated to /triage first — but the tray now
@@ -182,11 +177,15 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // exactly that. Z stays a Triage-only affordance
   // (`enableShortcut={active === 'triage'}`), so undo here rides the
   // row's real Undo button.
-  const tray = page.getByRole('region', { name: 'Recent actions — undo available' });
+  const tray = page.getByRole('region', { name: 'Recent actions' });
   await expect(tray).toBeVisible({ timeout: 30_000 });
   const entries = await api.get<{ token: string }[]>('/api/undo');
   expect(entries.some((e) => e.token === undoToken)).toBe(true);
-  await tray.getByRole('button', { name: 'Undo Archive' }).first().click();
+  // The pill names whose mail it is: "Undo Archive for <sender>".
+  await tray
+    .getByRole('button', { name: /^Undo Archive/ })
+    .first()
+    .click();
 
   // ---- Server-confirmed restore: completion toast, token consumed,
   // and the sender's live inbox count is back (the worker reversed
