@@ -1,4 +1,4 @@
-import { mailboxAccounts, schema, users, workspaces } from '@declutrmail/db';
+import { actionJobs, mailboxAccounts, schema, senders, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -197,42 +197,180 @@ describe('UndoService', () => {
     });
   });
 
-  describe('listActive', () => {
-    it('returns only not-reverted, not-expired tokens, newest first', async () => {
-      const active1 = await svc.issue({
-        mailboxAccountId: mailboxId,
-        actionKind: 'archive',
-        payload: archivePayload,
+  describe('listActiveDecisions — the tray speaks in decisions, not tokens', () => {
+    let seq = 0;
+    async function seedSender(name: string): Promise<{ id: string; senderKey: string }> {
+      seq += 1;
+      const senderKey = `key-${seq}`;
+      const [row] = await db
+        .insert(senders)
+        .values({
+          mailboxAccountId: mailboxId,
+          senderKey,
+          displayName: name,
+          email: `s${seq}@example.com`,
+          domain: 'example.com',
+          gmailCategory: 'promotions',
+          firstSeenAt: new Date('2026-01-01'),
+          lastSeenAt: new Date('2026-05-01'),
+        })
+        .returning({ id: senders.id });
+      return { id: row!.id, senderKey };
+    }
+    /** A finished forward job WITH its undo token, as the label worker leaves it. */
+    async function seedDoneJob(input: {
+      sender: { id: string; senderKey: string };
+      verb: 'archive' | 'delete' | 'later';
+      affected: number;
+      compositeId?: string | null;
+      mailbox?: string;
+    }): Promise<{ id: string; token: string }> {
+      seq += 1;
+      const entry = await svc.issue({
+        mailboxAccountId: input.mailbox ?? mailboxId,
+        actionKind: input.verb,
+        payload: { kind: input.verb, messageIds: ['m'], priorLabels: ['INBOX'] } as UndoPayload,
       });
-      // small delay so created_at differs
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: input.mailbox ?? mailboxId,
+          verb: input.verb,
+          direction: 'forward',
+          selector: {
+            type: 'sender',
+            senderId: input.sender.id,
+            senderKey: input.sender.senderKey,
+          },
+          resolvedMessageIds: [],
+          requestedCount: input.affected,
+          affectedCount: input.affected,
+          status: 'done',
+          idempotencyKey: `job-${seq}`,
+          undoToken: entry.token,
+          compositeId: input.compositeId ?? null,
+          ...(input.verb === 'later' ? { wakeAt: new Date('2099-01-01T09:00:00Z') } : {}),
+        })
+        .returning({ id: actionJobs.id });
+      return { id: job!.id, token: entry.token };
+    }
+
+    it('collapses one bulk action over two senders into ONE decision with names and counts', async () => {
+      const yankee = await seedSender('Yankee Candle');
+      const retail = await seedSender('RetailMeNot');
+      const anchor = await seedDoneJob({ sender: yankee, verb: 'delete', affected: 251 });
+      const child = await seedDoneJob({
+        sender: retail,
+        verb: 'delete',
+        affected: 189,
+        compositeId: anchor.id,
+      });
+
+      const decisions = await svc.listActiveDecisions(mailboxId);
+      expect(decisions).toHaveLength(1);
+      const [d] = decisions;
+      expect(d!.groupId).toBe(anchor.id);
+      expect(d!.actionKind).toBe('delete');
+      expect(d!.senderCount).toBe(2);
+      expect(d!.affectedCount).toBe(440);
+      // Any member token reverts the whole batch; it must BE a member's.
+      expect([anchor.token, child.token]).toContain(d!.token);
+      // Largest first — the name a reader recognises leads the line.
+      expect(d!.members.map((m) => [m.senderName, m.affectedCount, m.token])).toEqual([
+        ['Yankee Candle', 251, anchor.token],
+        ['RetailMeNot', 189, child.token],
+      ]);
+    });
+
+    it('keeps two separate single-sender actions as two decisions, newest first', async () => {
+      const a = await seedSender('Alpha');
+      const b = await seedSender('Beta');
+      const first = await seedDoneJob({ sender: a, verb: 'archive', affected: 3 });
       await new Promise((r) => setTimeout(r, 10));
-      const active2 = await svc.issue({
-        mailboxAccountId: mailboxId,
-        actionKind: 'later',
-        payload: { kind: 'later', messageIds: ['m1'], priorLabels: ['INBOX'] },
+      const second = await seedDoneJob({ sender: b, verb: 'delete', affected: 7 });
+
+      const decisions = await svc.listActiveDecisions(mailboxId);
+      expect(decisions.map((d) => d.groupId)).toEqual([second.id, first.id]);
+      expect(decisions.map((d) => d.senderCount)).toEqual([1, 1]);
+    });
+
+    it('drops a reverted member from the decision and from its totals', async () => {
+      const a = await seedSender('Alpha');
+      const b = await seedSender('Beta');
+      const anchor = await seedDoneJob({ sender: a, verb: 'delete', affected: 10 });
+      const child = await seedDoneJob({
+        sender: b,
+        verb: 'delete',
+        affected: 5,
+        compositeId: anchor.id,
       });
-      const expired = await svc.issue({
+      await svc.claimForRevert(anchor.token, mailboxId);
+      await svc.recordRevertSuccess(anchor.token);
+
+      const [d] = await svc.listActiveDecisions(mailboxId);
+      // Still the same decision — identity must not move when the anchor's
+      // own token is the one that was undone.
+      expect(d!.groupId).toBe(anchor.id);
+      expect(d!.token).toBe(child.token);
+      expect(d!.senderCount).toBe(1);
+      expect(d!.affectedCount).toBe(5);
+    });
+
+    it('flags a decision whose members carry different verbs (one total would mislabel them)', async () => {
+      const a = await seedSender('Acme');
+      const primary = await seedDoneJob({ sender: a, verb: 'later', affected: 3 });
+      await seedDoneJob({ sender: a, verb: 'delete', affected: 9, compositeId: primary.id });
+      const b = await seedSender('Beta');
+      await seedDoneJob({ sender: b, verb: 'archive', affected: 4 });
+
+      const decisions = await svc.listActiveDecisions(mailboxId);
+      const mixed = decisions.find((d) => d.groupId === primary.id)!;
+      expect(mixed.mixedKinds).toBe(true);
+      expect(mixed.actionKind).toBe('later'); // the anchor's verb leads
+      expect(mixed.senderCount).toBe(1);
+      expect(decisions.find((d) => d.groupId !== primary.id)!.mixedKinds).toBe(false);
+    });
+
+    it('never leaks another mailbox, and lists a token with no job as its own nameless decision', async () => {
+      const other = await addMailbox(db, workspaceId, userId, 'other@declutrmail.ai');
+      const foreign = await seedSender('Foreign');
+      await seedDoneJob({ sender: foreign, verb: 'delete', affected: 99, mailbox: other });
+      // An expired token is history — Activity's job, not the tray's.
+      await svc.issue({
         mailboxAccountId: mailboxId,
         actionKind: 'archive',
         payload: archivePayload,
         expiresAt: new Date(Date.now() - 60_000),
       });
-      const reverted = await svc.issue({
+      // Autopilot writes journal rows with no action_jobs row behind them.
+      const bare = await svc.issue({
         mailboxAccountId: mailboxId,
         actionKind: 'archive',
         payload: archivePayload,
       });
-      await svc.claimForRevert(reverted.token, mailboxId);
-      await svc.recordRevertSuccess(reverted.token);
 
-      const rows = await svc.listActive(mailboxId);
-      const tokens = rows.map((r) => r.token);
-      expect(tokens).toContain(active1.token);
-      expect(tokens).toContain(active2.token);
-      expect(tokens).not.toContain(expired.token);
-      expect(tokens).not.toContain(reverted.token);
-      // Newest first — active2 came after active1.
-      expect(tokens.indexOf(active2.token)).toBeLessThan(tokens.indexOf(active1.token));
+      const decisions = await svc.listActiveDecisions(mailboxId);
+      expect(decisions).toHaveLength(1);
+      expect(decisions[0]).toMatchObject({
+        groupId: bare.token,
+        token: bare.token,
+        senderCount: 0,
+        affectedCount: null,
+        members: [],
+      });
+    });
+
+    it('caps the member list but keeps exact totals for a very large bulk', async () => {
+      const first = await seedSender('Sender 0');
+      const anchor = await seedDoneJob({ sender: first, verb: 'archive', affected: 1 });
+      for (let i = 1; i < 30; i += 1) {
+        const s = await seedSender(`Sender ${i}`);
+        await seedDoneJob({ sender: s, verb: 'archive', affected: 1, compositeId: anchor.id });
+      }
+      const [d] = await svc.listActiveDecisions(mailboxId);
+      expect(d!.senderCount).toBe(30);
+      expect(d!.affectedCount).toBe(30);
+      expect(d!.members).toHaveLength(25);
     });
   });
 

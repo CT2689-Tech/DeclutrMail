@@ -122,6 +122,70 @@ export const ThreeDecisions: Story<typeof UndoTray> = {
     ),
 };
 
+/**
+ * One bulk Delete over two senders — ONE decision, named and counted,
+ * with "Undo all" and a disclosure down to a single sender's Undo
+ * (founder report 2026-09-20: this used to be two identical lines).
+ */
+export const BulkDecision: Story<typeof UndoTray> = {
+  render: (args: TrayArgs) =>
+    frame(
+      <UndoTray
+        {...args}
+        dataSource={{
+          ...staticSource([
+            {
+              token: '55555555-5555-5555-5555-555555555555',
+              actionKind: 'delete',
+              createdAt: ISO_NOW,
+              expiresAt: SEVEN_DAYS_OUT,
+              groupId: 'bulk-1',
+              senderCount: 2,
+              affectedCount: 440,
+              members: [
+                {
+                  token: '55555555-5555-5555-5555-555555555555',
+                  actionKind: 'delete',
+                  senderName: 'Yankee Candle',
+                  affectedCount: 251,
+                },
+                {
+                  token: '66666666-6666-6666-6666-666666666666',
+                  actionKind: 'delete',
+                  senderName: 'RetailMeNot',
+                  affectedCount: 189,
+                },
+              ],
+            },
+            {
+              token: '77777777-7777-7777-7777-777777777777',
+              actionKind: 'archive',
+              createdAt: ISO_NOW,
+              expiresAt: SEVEN_DAYS_OUT,
+              groupId: 'single-1',
+              senderCount: 1,
+              affectedCount: 12,
+              members: [
+                {
+                  token: '77777777-7777-7777-7777-777777777777',
+                  actionKind: 'archive',
+                  senderName: 'NerdWallet',
+                  affectedCount: 12,
+                },
+              ],
+            },
+          ]),
+          revertMember: async () => {
+            /* static story */
+          },
+        }}
+        onViewActivity={() => {
+          /* host-app route */
+        }}
+      />,
+    ),
+};
+
 /** Autopilot rule application — D99 / "Rule applied" label. */
 export const RuleApplied: Story<typeof UndoTray> = {
   render: (args: TrayArgs) =>

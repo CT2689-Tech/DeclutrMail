@@ -55,8 +55,19 @@ export class UndoController {
   ) {}
 
   /**
-   * GET /api/undo — list active undo tokens for the current mailbox
-   * (D35 persistent tray data source).
+   * GET /api/undo — the current mailbox's undoable DECISIONS, newest
+   * first (D35 persistent tray data source).
+   *
+   * One item per decision, not per token: a bulk action over N senders
+   * issues N tokens, and listing those printed N identical lines whose
+   * Undo each reversed the whole batch (founder report 2026-09-20). See
+   * `UndoService.listActiveDecisions`.
+   *
+   * Wire: ADDITIVE. `token` / `actionKind` / `createdAt` / `expiresAt`
+   * keep their meaning (`token` reverts the whole decision, exactly as
+   * every listed token already did), so a web bundle predating the new
+   * fields renders one generic line per decision. A newer bundle against
+   * an older API sees the fields absent and renders as it always did.
    *
    * Rate-limit (D156): `triage-load` bucket with a per-route override
    * of 300/min = 5/sec. The tray re-fetches after every undo POST + on
@@ -73,15 +84,30 @@ export class UndoController {
       actionKind: UndoActionKind;
       createdAt: string;
       expiresAt: string;
+      groupId: string;
+      senderCount: number;
+      affectedCount: number | null;
+      mixedKinds: boolean;
+      members: Array<{
+        token: string;
+        actionKind: UndoActionKind;
+        senderName: string | null;
+        affectedCount: number;
+      }>;
     }>
   > {
     const limit = clampLimit(rawLimit);
-    const rows = await this.undo.listActive(mailbox.id, limit);
-    const items = rows.map((row) => ({
-      token: row.token,
-      actionKind: row.actionKind,
-      createdAt: row.createdAt.toISOString(),
-      expiresAt: row.expiresAt.toISOString(),
+    const decisions = await this.undo.listActiveDecisions(mailbox.id, limit);
+    const items = decisions.map((d) => ({
+      token: d.token,
+      actionKind: d.actionKind,
+      createdAt: d.createdAt.toISOString(),
+      expiresAt: d.expiresAt.toISOString(),
+      groupId: d.groupId,
+      senderCount: d.senderCount,
+      affectedCount: d.affectedCount,
+      mixedKinds: d.mixedKinds,
+      members: d.members,
     }));
     // The tray is single-page by design (see controller header). We
     // still emit through `paginated()` with a `null` next-cursor so the

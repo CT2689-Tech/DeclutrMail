@@ -482,3 +482,142 @@ describe('TriageUndoTray (D35)', () => {
     await waitFor(() => expect(container.querySelector('[data-dm-undo-tray]')).toBeNull());
   });
 });
+
+// Founder report 2026-09-20 — the tray lists DECISIONS. One bulk action is
+// one line; "Undo all" reverses it; the disclosure reverses one sender.
+describe('TriageUndoTray — a bulk action is one decision', () => {
+  const T_YANKEE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  const T_RETAIL = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+  const BULK: UndoTrayEntry = {
+    token: T_YANKEE,
+    actionKind: 'delete',
+    createdAt: '2026-06-09T14:35:00Z',
+    expiresAt: '2026-06-16T14:35:00Z',
+    groupId: 'group-bulk',
+    senderCount: 2,
+    affectedCount: 440,
+    mixedKinds: false,
+    members: [
+      { token: T_YANKEE, actionKind: 'delete', senderName: 'Yankee Candle', affectedCount: 251 },
+      { token: T_RETAIL, actionKind: 'delete', senderName: 'RetailMeNot', affectedCount: 189 },
+    ],
+  };
+
+  beforeEach(() => {
+    mockPathname = '/senders';
+    resetTriageStore();
+  });
+  afterEach(() => resetFetchStub());
+
+  function stub(initial: UndoTrayEntry[] = []) {
+    const state = { live: initial, posts: [] as string[], jobStatus: 'done' };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: () => jsonOk({ data: state.live, meta: { nextCursor: null, limit: 50 } }),
+      },
+      {
+        method: 'POST',
+        path: /\/api\/undo\/.+/,
+        respond: (_req, url) => {
+          state.posts.push(url.pathname);
+          return jsonOk({
+            data: {
+              token: 'x',
+              actionKind: 'delete',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: '33333333-3333-4333-8333-333333333333',
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: /\/api\/actions\/.+/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: '33333333-3333-4333-8333-333333333333',
+              status: state.jobStatus,
+              requestedCount: 1,
+              affectedCount: 1,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+    return state;
+  }
+
+  async function landBulk(state: ReturnType<typeof stub>) {
+    const view = renderTray();
+    await waitFor(() => expect(view.client.getQueryData(undoKeys.tray(undefined))).toBeDefined());
+    state.live = [BULK];
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    await screen.findByText('1 decision applied');
+    return view;
+  }
+
+  it('"Undo all" reverses the whole decision through the batch route', async () => {
+    const state = stub();
+    await landBulk(state);
+    expect(screen.getByText(/Yankee Candle \+ 1 other/)).toBeDefined();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Undo Delete for Yankee Candle + 1 other' }),
+    );
+    await waitFor(() => expect(state.posts).toEqual([`/api/undo/${T_YANKEE}`]));
+  });
+
+  it('undoes ONE sender through the per-action route, and the line shrinks to what is left', async () => {
+    const state = stub();
+    state.jobStatus = 'executing';
+    await landBulk(state);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo Delete for RetailMeNot only' }));
+    await waitFor(() => expect(state.posts).toEqual([`/api/undo/${T_RETAIL}/action`]));
+    // While it confirms: that sender is gone from the decision, and the
+    // headline no longer counts mail that is on its way back.
+    await waitFor(() => expect(screen.queryByText(/RetailMeNot/)).toBeNull());
+    expect(screen.getByText(/251 emails/)).toBeDefined();
+    expect(screen.queryByText(/440 emails/)).toBeNull();
+    expect(screen.queryByText('Undo all')).toBeNull();
+  });
+
+  it('keeps a carried-in decision hidden even after its token moves to another member', async () => {
+    // Baseline identity is the DECISION. Undoing the member whose token
+    // the list was using makes the API hand out a sibling token — which
+    // must not resurface history as if it were new.
+    const state = stub([BULK]);
+    const view = renderTray();
+    await waitFor(() => expect(view.client.getQueryData(undoKeys.tray(undefined))).toBeDefined());
+    expect(document.querySelector('[data-dm-undo-tray]')).toBeNull();
+
+    state.live = [
+      {
+        ...BULK,
+        token: T_RETAIL,
+        senderCount: 1,
+        affectedCount: 189,
+        members: [BULK.members![1]!],
+      },
+    ];
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: undoKeys.all });
+    });
+    // Prove the moved token LANDED before asserting silence — otherwise
+    // this passes on the stale pre-refetch render.
+    await waitFor(() =>
+      expect(
+        (view.client.getQueryData(undoKeys.tray(undefined)) as UndoTrayEntry[])[0]?.token,
+      ).toBe(T_RETAIL),
+    );
+    expect(document.querySelector('[data-dm-undo-tray]')).toBeNull();
+  });
+});

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, type CSSProperties } from 'react';
 import { Button } from '../button';
 import { color, font, radius, shadow } from '../../tokens/tokens';
 import { getActionSemantics } from '../../actions/action-semantics';
-import type { UndoActionKind, UndoTrayDataSource } from './undo-tray.types';
+import type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './undo-tray.types';
 
 /**
  * Live height of the mounted tray, in px, published on the document
@@ -77,10 +77,11 @@ function useTrayInset(): (node: HTMLElement | null) => void {
  *
  * What it does:
  *
- *   - Lists the active undo entries supplied via `dataSource`,
- *     newest-first.
- *   - Per-row "Undo" affordance (D58) — delegates to
- *     `dataSource.revert(token)`. Server remains the source of truth
+ *   - Lists the DECISIONS supplied via `dataSource`, newest-first —
+ *     one row per thing the user did, named and counted; a bulk action
+ *     opens to its senders (D35's "expanded tray", see `DecisionRow`).
+ *   - Per-row "Undo" / "Undo all" (D58) — delegates to
+ *     `dataSource.revert(token)`; per-sender Undo to `revertMember`. Server remains the source of truth
  *     (D226 — no optimistic UI on destructive *mutations*; this is
  *     the REVERT path and the row simply disappears from the tray
  *     either way).
@@ -102,10 +103,6 @@ function useTrayInset(): (node: HTMLElement | null) => void {
  *
  *   - Toasts on individual decisions (Doc 05 §7 explicitly bans
  *     toasts for triage; tray IS the feedback channel).
- *   - The "expanded" tray drop-down per D35 (groups by sender) — the
- *     skeleton lists rows linearly; expansion lands when the Triage
- *     feature slice ships and supplies per-row sender labels via the
- *     API.
  *   - Action-preview UI (D226) — preview is OWNED by the destructive
  *     mutation flow; the tray displays after the mutation has
  *     committed.
@@ -240,15 +237,32 @@ export function UndoTray({
         fontFamily: font.sans,
         fontSize: 13,
         color: color.fg,
+        // A header row over a full-width list. The summary and the
+        // Activity link used to sit BESIDE the list, which was fine for
+        // one-line rows and squeezed named, countable decisions into a
+        // ~330px column that wrapped mid-sender-name.
         display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: 14,
+        flexDirection: 'column',
+        gap: 8,
         zIndex: 50,
+        // A long session (or an opened 25-sender decision) must never
+        // grow the tray past the viewport it floats over.
+        maxHeight: 'min(60vh, 420px)',
+        overflowY: 'auto',
         ...style,
       }}
     >
-      <Summary count={source.entries.length} isLoading={source.isLoading} />
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <Summary count={source.entries.length} isLoading={source.isLoading} />
+        {onViewActivity ? <ActivityLink onClick={onViewActivity} /> : null}
+      </div>
       <ul
         style={{
           listStyle: 'none',
@@ -256,68 +270,204 @@ export function UndoTray({
           margin: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: 6,
-          flex: 1,
-          minWidth: 'min(240px, 100%)',
+          gap: 8,
         }}
       >
         {source.entries.map((entry) => (
-          <li
-            key={entry.token}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 12,
+          <DecisionRow
+            key={entry.groupId ?? entry.token}
+            entry={entry}
+            onUndoAll={() => {
+              void source.revert(entry.token);
             }}
-          >
-            <span style={{ color: color.fgSoft }}>
-              {resultLabel(entry.actionKind)}
-              <span
-                style={{
-                  display: 'block',
-                  color: color.fgMuted,
-                  fontFamily: font.mono,
-                  fontSize: 10,
-                }}
-              >
-                Activity Undo until {formatExpiry(entry.expiresAt)}
-                {entry.actionKind === 'delete' ? ' · Gmail Trash recovery is separate' : ''}
-              </span>
-            </span>
-            <Button
-              size="sm"
-              tone="ghost"
-              onClick={() => {
-                void source.revert(entry.token);
-              }}
-              ariaLabel={`Undo ${verbLabel(entry.actionKind)}`}
-            >
-              Undo
-            </Button>
-          </li>
+            onUndoMember={source.revertMember}
+          />
         ))}
       </ul>
-      {onViewActivity ? (
-        <button
-          type="button"
-          onClick={onViewActivity}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            color: color.primary,
-            fontFamily: font.sans,
-            fontSize: 12,
-            cursor: 'pointer',
-            textDecoration: 'underline',
-            textUnderlineOffset: 2,
-          }}
-        >
-          View Activity
-        </button>
-      ) : null}
     </aside>
+  );
+}
+
+function ActivityLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        color: color.primary,
+        fontFamily: font.sans,
+        fontSize: 12,
+        cursor: 'pointer',
+        textDecoration: 'underline',
+        textUnderlineOffset: 2,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      View Activity
+    </button>
+  );
+}
+
+const emailCount = (n: number): string => `${n.toLocaleString('en-US')} email${n === 1 ? '' : 's'}`;
+
+/**
+ * "Yankee Candle", or "Yankee Candle + 1 other" — the largest sender
+ * leads because it is the name the reader is likeliest to recognise.
+ * Null when the API sent no names (older API, or a token with no job).
+ */
+function whoLabel(entry: UndoTrayEntry): string | null {
+  const first = entry.members?.[0]?.senderName ?? null;
+  if (first === null) return null;
+  const others = (entry.senderCount ?? 1) - 1;
+  return others > 0 ? `${first} + ${others} other${others === 1 ? '' : 's'}` : first;
+}
+
+/**
+ * One decision (founder report 2026-09-20).
+ *
+ * The line states what, how much, and whose — and its button says what
+ * it does: `token` has always reversed the WHOLE decision, which the old
+ * one-line-per-token list hid behind N identical "Undo" buttons.
+ *
+ * A native `<details>` holds the per-sender list: no state to own, and
+ * keyboard + screen-reader disclosure semantics for free.
+ */
+function DecisionRow({
+  entry,
+  onUndoAll,
+  onUndoMember,
+}: {
+  entry: UndoTrayEntry;
+  onUndoAll: () => void;
+  onUndoMember: ((token: string) => Promise<void>) | undefined;
+}) {
+  const members = entry.members ?? [];
+  const senderCount = entry.senderCount ?? 0;
+  const who = whoLabel(entry);
+  const isBulk = senderCount > 1;
+  // One total under one verb label is only true when every member shares
+  // that verb; otherwise each member states its own below.
+  const total =
+    typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
+      ? emailCount(entry.affectedCount)
+      : null;
+  const showMembers = isBulk || entry.mixedKinds === true;
+  // Members are one per sender unless verbs are mixed (then a sender can
+  // appear once per verb, and the gap is not computable from here).
+  const unlisted = entry.mixedKinds === true ? 0 : senderCount - members.length;
+
+  return (
+    <li style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <span style={{ color: color.fgSoft, minWidth: 0 }}>
+          {resultLabel(entry.actionKind)}
+          {total !== null || who !== null ? (
+            <span style={{ color: color.fg }}>
+              {total !== null ? ` · ${total}` : ''}
+              {who !== null ? ` · ${who}` : ''}
+            </span>
+          ) : null}
+          <span
+            style={{
+              display: 'block',
+              color: color.fgMuted,
+              fontFamily: font.mono,
+              fontSize: 10,
+            }}
+          >
+            Activity Undo until {formatExpiry(entry.expiresAt)}
+            {entry.actionKind === 'delete' ? ' · Gmail Trash recovery is separate' : ''}
+          </span>
+        </span>
+        <Button
+          size="sm"
+          tone="ghost"
+          onClick={onUndoAll}
+          ariaLabel={`Undo ${verbLabel(entry.actionKind)}${who !== null ? ` for ${who}` : ''}`}
+        >
+          {isBulk ? 'Undo all' : 'Undo'}
+        </Button>
+      </div>
+      {showMembers && members.length > 0 ? (
+        <details>
+          <summary
+            style={{
+              cursor: 'pointer',
+              color: color.fgMuted,
+              fontFamily: font.mono,
+              fontSize: 10.5,
+              letterSpacing: '0.04em',
+            }}
+          >
+            {isBulk ? `Show ${senderCount.toLocaleString('en-US')} senders` : 'Show what changed'}
+          </summary>
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: '6px 0 0',
+              // Indented under the decision it belongs to.
+              padding: '0 0 0 12px',
+              borderLeft: `1px solid ${color.line}`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              maxHeight: 180,
+              overflowY: 'auto',
+            }}
+          >
+            {members.map((member) => (
+              <li
+                key={member.token}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  fontSize: 12,
+                  color: color.fgSoft,
+                }}
+              >
+                <span style={{ minWidth: 0 }}>
+                  {member.senderName ?? 'Unknown sender'}
+                  <span style={{ color: color.fgMuted }}>
+                    {' · '}
+                    {entry.mixedKinds === true ? `${resultLabel(member.actionKind)} · ` : ''}
+                    {emailCount(member.affectedCount)}
+                  </span>
+                </span>
+                {onUndoMember ? (
+                  <Button
+                    size="sm"
+                    tone="ghost"
+                    onClick={() => {
+                      void onUndoMember(member.token);
+                    }}
+                    ariaLabel={`Undo ${verbLabel(member.actionKind)} for ${member.senderName ?? 'this sender'} only`}
+                  >
+                    Undo
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {unlisted > 0 ? (
+            <span style={{ fontSize: 11, color: color.fgMuted }}>
+              {unlisted.toLocaleString('en-US')} more in Activity — “Undo all” still covers them.
+            </span>
+          ) : null}
+        </details>
+      ) : null}
+    </li>
   );
 }
 

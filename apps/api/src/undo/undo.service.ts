@@ -1,11 +1,14 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
-import { mailboxAccounts, undoJournal } from '@declutrmail/db';
+import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { actionJobs, mailboxAccounts, senders, undoJournal } from '@declutrmail/db';
 import type { NewUndoJournalEntry, UndoJournalEntry } from '@declutrmail/db';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type { UndoActionKind, UndoPayload } from './undo.types.js';
+import type { UndoActionKind, UndoDecision, UndoPayload } from './undo.types.js';
+
+/** Members listed per decision; totals stay exact beyond it. */
+export const DECISION_MEMBERS_MAX = 25;
 
 /**
  * UndoService — owns `undo_journal` (D35, D58, D232).
@@ -226,27 +229,127 @@ export class UndoService {
   }
 
   /**
-   * List active (not-yet-reverted, not-yet-expired) tokens for one
-   * mailbox, newest first (D35 persistent tray).
+   * The tray's list, grouped into DECISIONS (D35's deferred "expanded
+   * tray"; founder report 2026-09-20).
    *
-   * The tray needs a small, fast list; cursor pagination is
-   * unnecessary at the tray's UX scale (a few dozen entries in flight
-   * at most). The `limit` cap protects the server from a misbehaving
-   * client and matches the simple-bounded pattern from activity-log.
+   * `listActive` returns one row per undo TOKEN, and a bulk action over N
+   * senders issues N tokens — so the tray printed N identical lines under
+   * "N decisions applied" for ONE decision, each with an Undo that
+   * (`POST /api/undo/:token`) silently reverses the whole batch. A
+   * decision is the unit the user made, so that is the unit listed:
+   * `coalesce(composite_id, id)` of the forward job, the same key
+   * `getBatchStatus` and `enqueueCompositeRevert` already group by.
+   *
+   *   - `token`   any one active member token — enough to revert the
+   *               whole decision. `groupId` is the STABLE identity: the
+   *               token moves when the member it came from is undone.
+   *   - totals    exact, from a grouped aggregate — never derived from
+   *               the capped member list.
+   *   - `members` largest first, capped at {@link DECISION_MEMBERS_MAX};
+   *               each carries its own token for a one-sender undo
+   *               (`POST /api/undo/:token/action`).
+   *
+   * A journal row with no forward job behind it (Autopilot writes those)
+   * is its own nameless decision: `senderCount: 0`, `affectedCount: null`
+   * — "unknown", never a fabricated 0 emails.
+   *
+   * Two queries, both keyed by the tray index. Column references that a
+   * join makes ambiguous are spelled with `sql.raw`: the `sql` template
+   * emits bare column names.
    */
-  async listActive(mailboxAccountId: string, limit = 50): Promise<UndoJournalEntry[]> {
-    return this.db
-      .select()
+  async listActiveDecisions(mailboxAccountId: string, limit = 50): Promise<UndoDecision[]> {
+    const groupId = sql<string>`coalesce(${sql.raw('action_jobs.composite_id')}, ${sql.raw('action_jobs.id')}, ${sql.raw('undo_journal.token')})`;
+    const jobJoin = and(
+      eq(actionJobs.undoToken, undoJournal.token),
+      eq(actionJobs.direction, 'forward'),
+    );
+    const active = and(
+      eq(undoJournal.mailboxAccountId, mailboxAccountId),
+      isNull(undoJournal.revertedAt),
+      gt(undoJournal.expiresAt, sql`now()`),
+    );
+
+    const groups = await this.db
+      .select({
+        groupId,
+        newestAt: sql<string>`max(${sql.raw('undo_journal.created_at')})`,
+        expiresAt: sql<string>`min(${sql.raw('undo_journal.expires_at')})`,
+        senderCount: sql<number>`count(distinct ${sql.raw("action_jobs.selector->>'senderId'")})::int`,
+        jobCount: sql<number>`count(${sql.raw('action_jobs.id')})::int`,
+        kindCount: sql<number>`count(distinct ${sql.raw('undo_journal.action_kind')})::int`,
+        affectedCount: sql<number>`coalesce(sum(${sql.raw('action_jobs.affected_count')}), 0)::int`,
+      })
       .from(undoJournal)
-      .where(
+      .leftJoin(actionJobs, jobJoin)
+      .where(active)
+      .groupBy(groupId)
+      .orderBy(desc(sql`max(${sql.raw('undo_journal.created_at')})`))
+      .limit(limit);
+    if (groups.length === 0) return [];
+
+    const rows = await this.db
+      .select({
+        groupId,
+        token: undoJournal.token,
+        actionKind: undoJournal.actionKind,
+        jobId: actionJobs.id,
+        affectedCount: actionJobs.affectedCount,
+        senderName: senders.displayName,
+        senderEmail: senders.email,
+      })
+      .from(undoJournal)
+      .leftJoin(actionJobs, jobJoin)
+      .leftJoin(
+        senders,
         and(
-          eq(undoJournal.mailboxAccountId, mailboxAccountId),
-          isNull(undoJournal.revertedAt),
-          gt(undoJournal.expiresAt, sql`now()`),
+          eq(senders.mailboxAccountId, mailboxAccountId),
+          sql`${sql.raw('senders.id')}::text = ${sql.raw("action_jobs.selector->>'senderId'")}`,
         ),
       )
-      .orderBy(desc(undoJournal.createdAt))
-      .limit(limit);
+      .where(
+        and(
+          active,
+          inArray(
+            groupId,
+            groups.map((g) => g.groupId),
+          ),
+        ),
+      );
+
+    const byGroup = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const list = byGroup.get(row.groupId);
+      if (list) list.push(row);
+      else byGroup.set(row.groupId, [row]);
+    }
+
+    return groups.map((g) => {
+      const all = (byGroup.get(g.groupId) ?? []).sort(
+        (a, b) => (b.affectedCount ?? 0) - (a.affectedCount ?? 0) || a.token.localeCompare(b.token),
+      );
+      // The decision's own verb: the anchor job when it is still active,
+      // else the largest remaining member.
+      const lead = all.find((r) => r.jobId === g.groupId) ?? all[0];
+      return {
+        groupId: g.groupId,
+        token: (all.find((r) => r.jobId === g.groupId) ?? all[0])!.token,
+        actionKind: lead!.actionKind,
+        createdAt: new Date(g.newestAt),
+        expiresAt: new Date(g.expiresAt),
+        senderCount: g.senderCount,
+        affectedCount: g.jobCount === 0 ? null : g.affectedCount,
+        mixedKinds: g.kindCount > 1,
+        members: all
+          .filter((r) => r.jobId !== null)
+          .slice(0, DECISION_MEMBERS_MAX)
+          .map((r) => ({
+            token: r.token,
+            actionKind: r.actionKind,
+            senderName: r.senderName || r.senderEmail || null,
+            affectedCount: r.affectedCount ?? 0,
+          })),
+      };
+    });
   }
 
   /**
