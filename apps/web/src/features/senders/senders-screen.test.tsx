@@ -2582,6 +2582,44 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const rowOf = (name: RegExp) =>
       screen.getByRole('checkbox', { name }).closest('tr, article') as HTMLElement;
 
+    it('leaves busy rows out of a shift-range that spans them', async () => {
+      useSendersStore.setState({ view: 'table' });
+      const idle = (id: string) => ({
+        ...ROW,
+        id,
+        displayName: `Sender ${id.toUpperCase()}`,
+        email: `${id}@${id}-other.com`,
+        domain: `${id}-other.com`,
+      });
+      bulkStub(() => running, {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            // Idle rows on BOTH sides of the two busy ones.
+            data: [idle('c'), ROW, ROW_B, idle('d')],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 4, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      });
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
+
+      const box = (id: string) =>
+        screen.getByRole('checkbox', { name: new RegExp(`select sender ${id}$`, 'i') });
+      fireEvent.click(box('c'));
+      fireEvent.click(box('d'), { shiftKey: true });
+      expect(box('c')).toBeChecked();
+      expect(box('d')).toBeChecked();
+      expect(box('a')).not.toBeChecked();
+      expect(box('b')).not.toBeChecked();
+    });
+
     it('marks every member of a bulk busy in the TABLE layout while the job runs, then done', async () => {
       useSendersStore.setState({ view: 'table' });
       let state: Record<string, unknown> = running;
@@ -2869,6 +2907,37 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       await selectBothAndPress('k');
       await screen.findByText('Kept 1 sender · 1 failed, try again');
+    });
+
+    it('says so when a second bulk Keep lands while the first is still going out', async () => {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let patches = 0;
+      installFetchStub([
+        TWO_SENDER_LIST,
+        {
+          method: 'PATCH',
+          path: /^\/api\/senders\/[^/]+\/policy$/,
+          respond: async (_req, url) => {
+            patches += 1;
+            await held;
+            return jsonOk({ data: { senderId: url.pathname.split('/')[3], policyType: 'keep' } });
+          },
+        },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('k');
+      await waitFor(() => expect(patches).toBe(2));
+      // The toast store outlives a test — count, don't just find.
+      const before = screen.queryAllByText(/Still confirming your last action/).length;
+      await selectBothAndPress('k');
+      await waitFor(() =>
+        expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(before + 1),
+      );
+      expect(patches).toBe(2);
+      release();
     });
 
     it('never says "Kept" when every keep failed', async () => {

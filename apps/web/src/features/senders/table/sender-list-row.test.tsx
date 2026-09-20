@@ -223,6 +223,29 @@ describe('<SenderListRow /> — D54 phone dialect', () => {
       expect(onAction).toHaveBeenCalledTimes(1);
     });
 
+    it('still expands on swipe-left while busy — only the verb is refused', () => {
+      setViewportWidth(375);
+      const onToggleExpand = vi.fn();
+      render(
+        <RowActivityProvider value={new Map([[sender.id, { phase: 'working', verb: 'archive' }]])}>
+          <SenderListRow
+            s={sender}
+            selected={false}
+            onToggleSelect={noop}
+            expanded={false}
+            onToggleExpand={onToggleExpand}
+            onAction={noop}
+          />
+        </RowActivityProvider>,
+      );
+      const row = screen.getByRole('button', { name: /expand detail/ });
+      const at = (clientX: number) => ({ pointerId: 1, pointerType: 'touch', clientX, clientY: 0 });
+      fireEvent.pointerDown(row, at(200));
+      fireEvent.pointerMove(row, at(200 - ROW_SWIPE_THRESHOLD_PX - 40));
+      fireEvent.pointerUp(row, at(200 - ROW_SWIPE_THRESHOLD_PX - 40));
+      expect(onToggleExpand).toHaveBeenCalledTimes(1);
+    });
+
     it('is refused while the row is busy — the same action its inert button refuses', () => {
       const onAction = vi.fn();
       swipeRight(phoneRow(new Map([[sender.id, { phase: 'working', verb: 'archive' }]]), onAction));

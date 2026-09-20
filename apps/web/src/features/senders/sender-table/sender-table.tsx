@@ -465,6 +465,7 @@ function SenderRow({
             onClick={(e) => {
               if (!busy) onSelectionChange(!selected, e.shiftKey);
             }}
+            style={{ cursor: busy ? 'not-allowed' : 'pointer' }}
           />
         </td>
 

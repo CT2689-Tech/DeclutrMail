@@ -263,9 +263,7 @@ export function SenderListRow({
 
   const activity = useRowActivity(s.id);
   const busy = isRowBusy(activity);
-  // A busy row takes no swipe either — the swipe is the same action its
-  // inert button refuses.
-  const gesturesEnabled = isPhone && !selectMode && !busy;
+  const gesturesEnabled = isPhone && !selectMode;
   const longPress = useLongPress({
     enabled: gesturesEnabled && onLongPress != null,
     onLongPress: () => onLongPress?.(),
@@ -273,6 +271,9 @@ export function SenderListRow({
   const swipe = useRowSwipe({
     enabled: gesturesEnabled,
     onSwipeRight: () => {
+      // The same action the busy row's inert button refuses. Swipe-left
+      // (expand) and long-press (select mode) stay live.
+      if (busy) return;
       const primaryVerbId = derivePrimaryVerbId(s);
       onAction({ verb: legacyVerbFromId(primaryVerbId), senders: [s] });
     },

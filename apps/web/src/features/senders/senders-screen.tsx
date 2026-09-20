@@ -1139,6 +1139,9 @@ function SendersScreenContent({
           const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
           for (let i = lo; i <= hi; i++) {
             const rid = orderedIds[i]!;
+            // A busy row cannot be selected by click or select-all — nor by
+            // a range that happens to span it.
+            if (checked && isRowBusy(rowActivity.get(rid))) continue;
             if (checked) next.add(rid);
             else next.delete(rid);
           }
@@ -1152,7 +1155,7 @@ function SendersScreenContent({
       selectionAnchorRef.current = id;
       setSelected(next);
     },
-    [selected, showingStaleRows],
+    [selected, showingStaleRows, rowActivity],
   );
 
   // D51 brand rollup — group loaded senders by registrable domain
@@ -1644,7 +1647,10 @@ function SendersScreenContent({
       // table row action fire Keep; the SelectionBar binds A/L/U/D only).
       if (verb === 'Keep') {
         // Same double-confirmation guard as the Unsub path.
-        if (setPolicy.isPending || keepInFlightRef.current) return;
+        if (setPolicy.isPending || keepInFlightRef.current) {
+          toast('Still confirming your last action — give it a moment.', 'info');
+          return;
+        }
         keepInFlightRef.current = true;
         setPendingAction(null);
         setSelected(new Set());
@@ -1659,32 +1665,35 @@ function SendersScreenContent({
           senderRefs.map((sref) =>
             setPolicy.mutateAsync({ senderId: sref.id, patch: { policyType: 'keep' } }),
           ),
-        ).then((results) => {
-          keepInFlightRef.current = false;
-          const failures = results.filter(
-            (r): r is PromiseRejectedResult => r.status === 'rejected',
-          );
-          for (const f of failures) {
-            captureFeatureException(f.reason, { surface: 'senders', reason: 'policy_keep' });
-          }
-          const failed = failures.length;
-          const succeeded = results.length - failed;
-          if (!isBulk) {
-            toast(
-              failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
-              failed ? 'warn' : 'success',
+        )
+          .then((results) => {
+            const failures = results.filter(
+              (r): r is PromiseRejectedResult => r.status === 'rejected',
             );
-            return;
-          }
-          toast(
-            succeeded === 0
-              ? `Couldn't keep ${failed} senders — try again`
-              : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
-                  failed ? ` · ${failed} failed, try again` : ''
-                }`,
-            failed > 0 ? 'warn' : 'success',
-          );
-        });
+            for (const f of failures) {
+              captureFeatureException(f.reason, { surface: 'senders', reason: 'policy_keep' });
+            }
+            const failed = failures.length;
+            const succeeded = results.length - failed;
+            if (!isBulk) {
+              toast(
+                failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
+                failed ? 'warn' : 'success',
+              );
+              return;
+            }
+            toast(
+              succeeded === 0
+                ? `Couldn't keep ${failed} senders — try again`
+                : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
+                    failed ? ` · ${failed} failed, try again` : ''
+                  }`,
+              failed > 0 ? 'warn' : 'success',
+            );
+          })
+          .finally(() => {
+            keepInFlightRef.current = false;
+          });
         return;
       }
 
