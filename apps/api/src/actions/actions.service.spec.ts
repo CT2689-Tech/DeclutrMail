@@ -1973,6 +1973,91 @@ describe('ActionsService', () => {
     );
   });
 
+  describe('listInFlight — the decisions still running', () => {
+    beforeEach(async () => {
+      await db.update(workspaces).set({ tier: 'plus' });
+    });
+
+    async function seedBulk(key = 'bulk-live-1') {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, `${key}-a`, ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, `${key}-b`, ['INBOX'], daysAgo(5), SENDER_KEY_2);
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'archive' },
+        idempotencyKey: key,
+      });
+      return res.batchId;
+    }
+
+    it('is one line per decision, counted across every job of it', async () => {
+      const batchId = await seedBulk();
+      let live = await svc.listInFlight(mailboxId);
+      expect(live).toHaveLength(1);
+      expect(live[0]).toMatchObject({
+        groupId: batchId,
+        verb: 'archive',
+        mixedVerbs: false,
+        total: 2,
+        done: 0,
+        failed: 0,
+        senderCount: 2,
+      });
+      expect(live[0]!.leadSenderName).toEqual(expect.any(String));
+      expect(new Date(live[0]!.startedAt).toISOString()).toBe(live[0]!.startedAt);
+
+      // One member finishes: the line stays, and says 1 of 2 — it does not
+      // shrink to the jobs still running.
+      await db.update(actionJobs).set({ status: 'done' }).where(eq(actionJobs.id, batchId));
+      live = await svc.listInFlight(mailboxId);
+      expect(live[0]).toMatchObject({ total: 2, done: 1, senderCount: 2 });
+
+      // Every job terminal: the decision is no longer in flight.
+      await db
+        .update(actionJobs)
+        .set({ status: 'failed' })
+        .where(eq(actionJobs.compositeId, batchId));
+      expect(await svc.listInFlight(mailboxId)).toEqual([]);
+    });
+
+    it('leaves out Autopilot runs, undo jobs, other mailboxes and day-old jobs', async () => {
+      const base = {
+        mailboxAccountId: mailboxId,
+        verb: 'archive' as const,
+        selector: { type: 'sender' as const, senderId, senderKey: SENDER_KEY },
+        status: 'queued' as const,
+      };
+      // A second mailbox in the same workspace (unique provider account id).
+      const [owner] = await db.select().from(mailboxAccounts).limit(1);
+      const [other] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: owner!.workspaceId,
+          userId: owner!.userId,
+          provider: 'gmail',
+          providerAccountId: 'other@x',
+        })
+        .returning({ id: mailboxAccounts.id });
+      const otherMailbox = other!.id;
+      await db.insert(actionJobs).values([
+        { ...base, idempotencyKey: 'autopilot-match-1' },
+        { ...base, idempotencyKey: 'autopilot-unsubexec-match-2', verb: 'unsubscribe' },
+        { ...base, idempotencyKey: 'undo-1', direction: 'reverse' },
+        { ...base, idempotencyKey: 'elsewhere-1', mailboxAccountId: otherMailbox },
+        { ...base, idempotencyKey: 'wedged-1', createdAt: daysAgo(2) },
+      ]);
+      expect(await svc.listInFlight(mailboxId)).toEqual([]);
+
+      // Positive control: the same row shape WITHOUT an exclusion is listed,
+      // so the empty result above is the filters' doing.
+      await db.insert(actionJobs).values({ ...base, idempotencyKey: 'archive-mine-1' });
+      const live = await svc.listInFlight(mailboxId);
+      expect(live.map((g) => g.verb)).toEqual(['archive']);
+      expect(live[0]).toMatchObject({ total: 1, senderCount: 1 });
+    });
+  });
+
   describe('recordUnsubscribeIntent (D38 + 2026-06-05 brainstorm)', () => {
     beforeEach(async () => {
       await db

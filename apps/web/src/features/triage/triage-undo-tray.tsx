@@ -5,15 +5,16 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import { toast, UndoTray } from '@declutrmail/shared';
-import type { UndoTrayDataSource, UndoTrayEntry } from '@declutrmail/shared';
+import type { UndoTrayDataSource, UndoTrayEntry, UndoTrayNotice } from '@declutrmail/shared';
 
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
+import { outcomeNotice, useInFlightActions, workingNotice } from '@/features/undo/in-flight';
 import { undoKeys } from '@/features/undo/query-keys';
 import { undoEntriesQueryOptions } from '@/features/undo/query-options';
 import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
-import { isTerminalStatus } from '@/lib/api/actions';
+import { getBatchStatus, isTerminalStatus, type InFlightActionGroup } from '@/lib/api/actions';
 import { getActionFailureCopy, UNDO_DONE_TOAST } from '@/lib/action-error-copy';
 import { track } from '@/lib/posthog';
 import { floatingSurfaceLayout } from '@/lib/ui/floating-surface-layout';
@@ -128,12 +129,56 @@ export function ProductUndoTray({
   const revertStatus = useActionStatus(inFlight?.actionId ?? null, mailboxId);
   const mailboxGeneration = useRef(0);
 
+  /**
+   * Decisions still running (server-read, so they survive navigation and
+   * reload), and what became of the ones that stopped WITHOUT leaving
+   * something to undo. A decision that worked needs no line of its own:
+   * it arrives in `entries` with its Undo.
+   */
+  const inFlightQuery = useInFlightActions(mailboxId);
+  const [outcomes, setOutcomes] = useState<Array<Omit<UndoTrayNotice, 'onDismiss'>>>([]);
+  // Tagged with its mailbox: the other mailbox's list must never read as
+  // "everything I was running has stopped".
+  const seenRunning = useRef<{
+    mailboxId: string | undefined;
+    groups: Map<string, InFlightActionGroup>;
+  }>({
+    mailboxId,
+    groups: new Map(),
+  });
+
+  useEffect(() => {
+    const groups = inFlightQuery.data;
+    // Only a SUCCESSFUL read can say a decision stopped: on an error the
+    // list is merely unknown, and nothing may be reported as ended.
+    if (!groups || inFlightQuery.isError) return;
+    const generation = mailboxGeneration.current;
+    const current = new Map(groups.map((g) => [g.groupId, g]));
+    const before = seenRunning.current.mailboxId === mailboxId ? seenRunning.current.groups : null;
+    const stopped = [...(before?.values() ?? [])].filter((g) => !current.has(g.groupId));
+    seenRunning.current = { mailboxId, groups: current };
+    if (stopped.length === 0) return;
+    // Whatever it changed, every list that shows mail or undo is stale now.
+    void invalidateAfterUndo(qc);
+    for (const group of stopped) {
+      void getBatchStatus(group.groupId, mailboxId ? { mailboxId } : undefined)
+        .catch(() => null)
+        .then((status) => {
+          if (mailboxGeneration.current !== generation) return;
+          const notice = outcomeNotice(group, status);
+          if (!notice) return;
+          setOutcomes((prev) => [notice, ...prev.filter((n) => n.id !== notice.id)].slice(0, 3));
+        });
+    }
+  }, [inFlightQuery.data, inFlightQuery.isError, mailboxId, qc]);
+
   // A capability from mailbox A must never stay hidden/polling after the
   // chrome switches to mailbox B. Onboarding intentionally omits the prop;
   // its single-mailbox mount therefore retains the original behavior.
   useEffect(() => {
     mailboxGeneration.current += 1;
     setInFlight(null);
+    setOutcomes([]);
     return () => {
       mailboxGeneration.current += 1;
     };
@@ -339,8 +384,17 @@ export function ProductUndoTray({
     return () => window.removeEventListener('keydown', onKey);
   }, [enableShortcut, entries, pendingAction, revertToken]);
 
+  const notices: UndoTrayNotice[] = [
+    ...outcomes.map((notice) => ({
+      ...notice,
+      onDismiss: () => setOutcomes((prev) => prev.filter((n) => n.id !== notice.id)),
+    })),
+    ...(inFlightQuery.data ?? []).map(workingNotice),
+  ];
+
   const dataSource: UndoTrayDataSource = {
     entries,
+    notices,
     // Never a loading state. `isLoading` is true only while the FIRST
     // fetch of a scope is in flight, and everything that fetch returns
     // is exactly what the baseline above swallows — so forwarding it

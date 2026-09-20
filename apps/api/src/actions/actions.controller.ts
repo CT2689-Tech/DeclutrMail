@@ -28,6 +28,7 @@ import {
   type ActionRecoveryPreviewResult,
   type ActionStatusResult,
   type BatchStatusResult,
+  type InFlightActionGroup,
   type BulkActionEnqueueResult,
   type BulkActionPreviewResult,
   type CompositeActionEnqueueResult,
@@ -417,6 +418,20 @@ export class ActionsController {
       senderIds: parsed.data.senderIds,
     });
     return ok(result);
+  }
+
+  /**
+   * GET /api/actions/active — the user's decisions still running in this
+   * mailbox (Autopilot runs excluded). Feeds the bottom panel's live line
+   * on every product screen, so it is polled (~2s) only while non-empty.
+   * Declared before `:id` so `active` is never read as an action id.
+   */
+  @RateLimit({ bucket: 'triage-load', limit: 120, windowSec: 60 })
+  @Get('active')
+  async active(
+    @CurrentMailbox() mailbox: { id: string },
+  ): Promise<Envelope<InFlightActionGroup[]>> {
+    return ok(await this.actions.listInFlight(mailbox.id));
   }
 
   /**

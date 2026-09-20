@@ -41,13 +41,14 @@ function source(overrides: Partial<UndoTrayDataSource> = {}): UndoTrayDataSource
 
 describe('<UndoTray /> — D35 injected-dataSource contract', () => {
   it('renders nothing when there are no entries and no error (D35 invisible-when-empty)', () => {
-    const html = renderToStaticMarkup(<UndoTray dataSource={source()} />);
+    const html = renderToStaticMarkup(<UndoTray defaultOpen dataSource={source()} />);
     expect(html).toBe('');
   });
 
   it('renders the error chip — not the empty state — when the fetch failed (D211)', () => {
     const html = renderToStaticMarkup(
       <UndoTray
+        defaultOpen
         dataSource={source({ isError: true, error: new Error('undo_fetch_failed:503') })}
         onViewActivity={() => {
           /* host-app route */
@@ -62,6 +63,7 @@ describe('<UndoTray /> — D35 injected-dataSource contract', () => {
   it('renders one row per entry with the D227 verb label and an Undo affordance', () => {
     const html = renderToStaticMarkup(
       <UndoTray
+        defaultOpen
         dataSource={source({
           entries: [
             entry(),
@@ -71,7 +73,7 @@ describe('<UndoTray /> — D35 injected-dataSource contract', () => {
         })}
       />,
     );
-    expect(html).toContain('3 decisions applied');
+    expect(html).toContain('Recent actions');
     expect(html).toContain('Archive');
     expect(html).toContain('Unsubscribe');
     expect(html).toContain('Later');
@@ -81,6 +83,7 @@ describe('<UndoTray /> — D35 injected-dataSource contract', () => {
   it('labels apply-rule entries "Rule applied" and delete entries "Delete"', () => {
     const html = renderToStaticMarkup(
       <UndoTray
+        defaultOpen
         dataSource={source({
           entries: [
             entry({ actionKind: 'apply-rule' }),
@@ -106,15 +109,17 @@ describe('<UndoTray /> — D35 injected-dataSource contract', () => {
     const originalTz = process.env.TZ;
     try {
       process.env.TZ = 'UTC';
-      const utc = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [entry()] })} />);
+      const utc = renderToStaticMarkup(
+        <UndoTray defaultOpen dataSource={source({ entries: [entry()] })} />,
+      );
 
       process.env.TZ = 'Pacific/Kiritimati'; // UTC+14 — always a different calendar day
       const kiritimati = renderToStaticMarkup(
-        <UndoTray dataSource={source({ entries: [entry()] })} />,
+        <UndoTray defaultOpen dataSource={source({ entries: [entry()] })} />,
       );
 
-      expect(utc).toContain('Activity Undo until Jun 16');
-      expect(kiritimati).toContain('Activity Undo until Jun 17');
+      expect(utc).toContain('Undo until Jun 16');
+      expect(kiritimati).toContain('Undo until Jun 17');
       expect(utc).not.toBe(kiritimati);
     } finally {
       process.env.TZ = originalTz;
@@ -141,8 +146,9 @@ describe('<UndoTray /> — a decision is one line, named and counted', () => {
     source({ entries, revertMember: async () => {} });
 
   it('states one bulk action as ONE decision with who and how much', () => {
-    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([bulk])} />);
-    expect(html).toContain('1 decision applied');
+    const html = renderToStaticMarkup(<UndoTray defaultOpen dataSource={withMemberUndo([bulk])} />);
+    // ONE row for the decision, not one per sender.
+    expect(html.match(/Undo all/g)).toHaveLength(1);
     expect(html).toContain('440 emails');
     expect(html).toContain('Yankee Candle + 1 other');
     // The button says what it does: it reverses every sender in the decision.
@@ -151,7 +157,7 @@ describe('<UndoTray /> — a decision is one line, named and counted', () => {
   });
 
   it('lets the reader open the decision and undo ONE sender', () => {
-    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([bulk])} />);
+    const html = renderToStaticMarkup(<UndoTray defaultOpen dataSource={withMemberUndo([bulk])} />);
     expect(html).toContain('<details');
     expect(html).toContain('Show 2 senders');
     expect(html).toContain('RetailMeNot');
@@ -160,7 +166,9 @@ describe('<UndoTray /> — a decision is one line, named and counted', () => {
   });
 
   it('offers no per-sender Undo when the host cannot revert one member', () => {
-    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [bulk] })} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [bulk] })} />,
+    );
     expect(html).toContain('Show 2 senders');
     expect(html).not.toContain('only"');
   });
@@ -175,7 +183,9 @@ describe('<UndoTray /> — a decision is one line, named and counted', () => {
         { token: 't-one', actionKind: 'delete', senderName: 'Yankee Candle', affectedCount: 1 },
       ],
     });
-    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([single])} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={withMemberUndo([single])} />,
+    );
     expect(html).toContain('1 email ·');
     expect(html).toContain('Yankee Candle');
     expect(html).not.toContain('<details');
@@ -184,7 +194,9 @@ describe('<UndoTray /> — a decision is one line, named and counted', () => {
 
   it('says how many senders are not listed when the member list was capped', () => {
     const capped = { ...bulk, senderCount: 30, affectedCount: 900 };
-    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([capped])} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={withMemberUndo([capped])} />,
+    );
     expect(html).toContain('Yankee Candle + 29 others');
     expect(html).toContain('28 more in Activity');
   });
@@ -201,7 +213,9 @@ describe('<UndoTray /> — a decision is one line, named and counted', () => {
         { token: 't-d', actionKind: 'delete', senderName: 'Acme', affectedCount: 9 },
       ],
     });
-    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([mixed])} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={withMemberUndo([mixed])} />,
+    );
     expect(html).not.toContain('12 emails');
     // Each half states its own verb and its own count instead.
     expect(html).toContain('3 emails');
@@ -210,7 +224,9 @@ describe('<UndoTray /> — a decision is one line, named and counted', () => {
 
   it('renders a token with no job behind it as before — no invented count or name', () => {
     const bare = entry({ groupId: 'tok', senderCount: 0, affectedCount: null, members: [] });
-    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [bare] })} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [bare] })} />,
+    );
     expect(html).not.toContain('email');
     expect(html).toContain('>Undo<');
   });
@@ -237,7 +253,9 @@ describe('<UndoTray /> — decision rows stay truthful at the edges', () => {
         { token: 'b', actionKind: 'delete', senderName: 'Acme', affectedCount: 9 },
       ],
     });
-    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [mixed] })} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [mixed] })} />,
+    );
     expect(html).toMatch(/<details[^>]* open/);
     expect(html).toContain('Show what changed');
     // Two changes behind one button — it must not read as a single Undo.
@@ -252,7 +270,9 @@ describe('<UndoTray /> — decision rows stay truthful at the edges', () => {
       affectedCount: 30,
       members: [member('a', null, 20), member('b', 'Beta Digest', 10)],
     });
-    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [e] })} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [e] })} />,
+    );
     expect(html).toContain('Beta Digest + 1 other');
   });
 
@@ -266,7 +286,9 @@ describe('<UndoTray /> — decision rows stay truthful at the edges', () => {
       affectedCount: 30,
       members: [member('a', 'Alpha', 20), member('b', 'Beta', 10)],
     });
-    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [e] })} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [e] })} />,
+    );
     expect(html).toContain('>Undo all<');
     expect(html).toContain('<details');
     expect(html).not.toContain('-1 other');
@@ -280,7 +302,40 @@ describe('<UndoTray /> — decision rows stay truthful at the edges', () => {
       affectedCount: 30,
       members: [member('a', 'Alpha', 20), member('b', 'Beta', 10)],
     });
-    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [e] })} />);
+    const html = renderToStaticMarkup(
+      <UndoTray defaultOpen dataSource={source({ entries: [e] })} />,
+    );
     expect(html).toMatch(/<ul[^>]*tabindex="0"[^>]*aria-label="Senders in this decision"/);
+  });
+});
+
+// The pill's interactions (expand, shrink, dismiss) need a DOM and are
+// covered in apps/web (`features/triage/undo-tray-pill.test.tsx`); a
+// static render proves what it SAYS.
+describe('<UndoTray /> — one pill (static)', () => {
+  it('says a finished action in one line — no header, no deadline', () => {
+    const html = renderToStaticMarkup(
+      <UndoTray
+        dataSource={source({
+          entries: [entry({ actionKind: 'delete', affectedCount: 95, senderCount: 1 })],
+        })}
+      />,
+    );
+    expect(html).toContain('data-dm-undo-tray="pill"');
+    expect(html).toContain('Deleted 95 emails');
+    expect(html).not.toMatch(/until|Trash|applied/);
+  });
+
+  it('renders for a running action alone, without an Undo', () => {
+    const html = renderToStaticMarkup(
+      <UndoTray
+        dataSource={source({
+          notices: [{ id: 'g1', tone: 'working', label: 'Deleting…', detail: '4 of 13' }],
+        })}
+      />,
+    );
+    expect(html).toContain('Deleting…');
+    expect(html).toContain('4 of 13');
+    expect(html).not.toContain('>Undo');
   });
 });

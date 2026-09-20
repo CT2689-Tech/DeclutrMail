@@ -146,6 +146,9 @@ async function renderTrayWithDecisions(
   await act(async () => {
     await view.client.invalidateQueries({ queryKey: undoKeys.all });
   });
+  // The tray is ONE pill (newest decision + its Undo); the list is a click away.
+  await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Show all recent actions' }));
   await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
   return { ...view, ...stub };
 }
@@ -162,7 +165,7 @@ describe('TriageUndoTray (D35)', () => {
 
   it('lists active undo entries with per-row Undo affordances', async () => {
     await renderTrayWithDecisions();
-    expect(screen.getByText('2 decisions applied')).toBeDefined();
+    expect(screen.getByText('Recent actions')).toBeDefined();
     expect(screen.getAllByText('Undo')).toHaveLength(2);
   });
 
@@ -191,7 +194,6 @@ describe('TriageUndoTray (D35)', () => {
       await view.client.invalidateQueries({ queryKey: undoKeys.all });
     });
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(1));
-    expect(screen.getByText('1 decision applied')).toBeDefined();
   });
 
   // `isLoading` is true only while a scope's FIRST fetch is in flight —
@@ -360,6 +362,7 @@ describe('TriageUndoTray (D35)', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: undoKeys.all });
     });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo Archive' }));
@@ -426,6 +429,7 @@ describe('TriageUndoTray (D35)', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: undoKeys.all });
     });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
 
     fireEvent.click(screen.getByRole('button', { name: 'Undo Archive' }));
@@ -561,7 +565,10 @@ describe('TriageUndoTray — a bulk action is one decision', () => {
     await act(async () => {
       await view.client.invalidateQueries({ queryKey: undoKeys.all });
     });
-    await screen.findByText('1 decision applied');
+    // One pill for the one decision; its senders are a click away.
+    await screen.findByText('Undo all');
+    fireEvent.click(screen.getByRole('button', { name: 'Show all recent actions' }));
+    await screen.findByText('Recent actions');
     return view;
   }
 

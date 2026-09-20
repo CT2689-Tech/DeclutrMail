@@ -40,7 +40,7 @@ export type RowActivityById = ReadonlyMap<string, SenderRowActivity>;
 const WORKING: Record<RowActivityVerb, string> = {
   archive: 'Archiving…',
   later: 'Moving to Later…',
-  delete: 'Moving to Trash…',
+  delete: 'Deleting…',
 };
 
 const DONE: Record<RowActivityVerb, string> = {
@@ -121,6 +121,87 @@ export function useGroupActivitySummary(
   ];
   return parts.length === 0 ? null : { busy: unconfirmed > 0, label: parts.join(' · ') };
 }
+
+/**
+ * The words for the BUTTON SLOT — the control the user pressed becomes
+ * the status, because that is where their eyes are (founder feedback
+ * 2026-09-20: the small mark beside the name was "not highlighted").
+ * Shorter than the pill: it has a button's width, not a name cell's.
+ */
+export function rowStatusLabel(activity: SenderRowActivity): string {
+  if (activity.phase === 'mixed') return 'See Activity';
+  if (activity.phase !== 'done') return rowActivityLabel(activity);
+  if (activity.affectedCount === 0) return 'Nothing to change';
+  const result = DONE[activity.verb];
+  return activity.affectedCount === null
+    ? result
+    : `${result} ${activity.affectedCount.toLocaleString('en-US')}`;
+}
+
+/** Text colour for the button-slot status. Body-strength, never faded. */
+export function rowStatusColor(activity: SenderRowActivity): string {
+  if (activity.phase === 'failed') return color.red;
+  if (activity.phase === 'done' && activity.affectedCount !== 0) return color.primary;
+  return color.fg;
+}
+
+/**
+ * Button-slot content: a spinner while it runs, a check once it worked.
+ * Rendered INSIDE the pressed button (kept mounted, made inert) so focus
+ * never falls to <body> when the verb turns into its own status.
+ */
+export function RowActivityStatus({ activity }: { activity: SenderRowActivity }) {
+  const worked = activity.phase === 'done' && activity.affectedCount !== 0;
+  return (
+    <span
+      data-dm-row-activity={activity.phase}
+      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0 }}
+    >
+      {worked && (
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="20 6 9 17 4 12" />
+        </svg>
+      )}
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {rowStatusLabel(activity)}
+      </span>
+      {activity.phase === 'working' && (
+        // Decorative, and NOT a live region: a 50-sender bulk is 50 of these.
+        <span
+          aria-hidden="true"
+          style={{
+            width: 10,
+            height: 10,
+            flex: '0 0 auto',
+            borderRadius: 999,
+            border: `1.5px solid ${color.line}`,
+            borderTopColor: color.fg,
+            animation: 'dm-spin 0.8s linear infinite',
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
+/** Button props that turn a pressed verb into its own status. */
+export const STATUS_BUTTON_STYLE = {
+  // `inert` dims to 0.5 — fine for "unavailable", wrong for the one thing
+  // on the row the user is reading.
+  opacity: 1,
+  cursor: 'default',
+  fontWeight: 500,
+} as const;
 
 /** True while the row must not take another action (and reads as busy). */
 export const isRowBusy = (activity: SenderRowActivity | undefined): boolean =>

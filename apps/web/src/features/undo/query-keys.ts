@@ -9,4 +9,7 @@
 export const undoKeys = {
   all: ['undo'] as const,
   tray: (mailboxId?: string) => ['undo', 'tray', { mailboxId: mailboxId ?? null }] as const,
+  /** Under `all` on purpose: every terminal-action invalidation re-reads it. */
+  inFlight: (mailboxId?: string) =>
+    ['undo', 'in-flight', { mailboxId: mailboxId ?? null }] as const,
 };

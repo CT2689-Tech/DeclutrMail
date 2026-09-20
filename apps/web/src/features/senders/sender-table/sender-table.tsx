@@ -61,7 +61,7 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
-import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
+import { isRowBusy, useRowActivity } from '../row-activity';
 import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected, senderAddressLine } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
@@ -536,7 +536,6 @@ function SenderRow({
                       </span>
                     );
                   })()}
-                {activity && <RowActivityPill activity={activity} />}
               </span>
               <span
                 // Full address, not the domain — one brand can own

@@ -589,6 +589,32 @@ export interface BatchStatusResult {
   unsubscribeOutcomes: UnsubscribeBatchOutcomes | null;
 }
 
+/**
+ * One user decision still running (`GET /api/actions/active`).
+ *
+ * Same partition as `BatchStatusResult` and the undo tray's decisions —
+ * `coalesce(composite_id, id)` — so the line a client shows while the job
+ * runs and the decision row that replaces it are the same thing, and
+ * `groupId` is pollable at `GET /api/actions/batch/:id` for the outcome.
+ */
+export interface InFlightActionGroup {
+  groupId: string;
+  /** The anchor job's verb (the one the user pressed). */
+  verb: ActionStatusSnapshot['verb'];
+  /** True when the group's jobs do not all share `verb` (a composite). */
+  mixedVerbs: boolean;
+  /** Forward jobs in the group, and how many of them are terminal. */
+  total: number;
+  done: number;
+  failed: number;
+  /** Distinct senders across the group; 0 for a message-selector job. */
+  senderCount: number;
+  /** The anchor's sender (else the largest member's); null when unresolvable. */
+  leadSenderName: string | null;
+  /** When the oldest job of the group was created (ISO 8601). */
+  startedAt: string;
+}
+
 /** Terminal one-click request outcomes, counted across a batch (D248). */
 export interface UnsubscribeBatchOutcomes {
   /** 2xx from the sender's endpoint — the request was accepted. */

@@ -19,7 +19,7 @@
  * content, attachments, or non-allowlisted headers.
  */
 
-import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
+import { isRowBusy, useRowActivity } from '../row-activity';
 import { useState } from 'react';
 import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 import {
@@ -309,7 +309,6 @@ export function SenderCard({
                   </span>
                 );
               })()}
-            {activity && <RowActivityPill activity={activity} />}
           </div>
           <div
             // The full address, not the domain — senders are keyed by
