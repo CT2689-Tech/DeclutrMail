@@ -70,7 +70,7 @@ import { ToastHost } from '@declutrmail/shared';
 import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { useSendersStore } from './store';
+import { SENDERS_LAYOUT_STORAGE_KEY, useSendersStore } from './store';
 import { sendersKeys } from './api/query-keys';
 import type { SenderListRow } from '@/lib/api/senders';
 
@@ -288,7 +288,7 @@ function compositePreviewHandler(all: number) {
 describe('SendersScreen — edge states', () => {
   beforeEach(() => {
     installFetchStub([]);
-    // Reset the per-session view to grid (D49 — default) so a prior
+    // Reset the view to grid (D49 — default) so a prior
     // test that flipped the toggle doesn't leak into the next.
     useSendersStore.setState({ view: 'grid' });
   });
@@ -3143,9 +3143,42 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
  */
 describe('SendersScreen — view toggle (D49) + pagination & load more (D202)', () => {
   beforeEach(() => {
+    localStorage.clear();
     useSendersStore.setState({ view: 'grid' });
   });
-  afterEach(() => resetFetchStub());
+  afterEach(() => {
+    resetFetchStub();
+    // The layout now persists per device — never leak it to a later suite.
+    localStorage.clear();
+  });
+
+  it('opens in the table layout after a page load when this device last chose it', async () => {
+    // Founder report 2026-09-20: a refresh / back-forward load fell back
+    // to grid. A fresh load = default store + whatever storage holds.
+    localStorage.setItem(
+      SENDERS_LAYOUT_STORAGE_KEY,
+      JSON.stringify({ view: 'table', density: 'comfortable' }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            data: [ROW],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      },
+    ]);
+
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Sender A')).toBeInTheDocument());
+    expect(screen.queryByTestId('sender-grid')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Table' })).toHaveAttribute('aria-pressed', 'true');
+  });
 
   it('loads the next page when "Load more" is clicked (D202 cursor pagination)', async () => {
     const ROW_B = {
