@@ -11,7 +11,7 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 import { undoKeys } from '@/features/undo/query-keys';
 import { undoEntriesQueryOptions } from '@/features/undo/query-options';
-import { useActionStatus, useRevertUndo } from '@/lib/api/use-action';
+import { useActionStatus, useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 import { ApiError, apiGet } from '@/lib/api/client';
 import { isTerminalStatus } from '@/lib/api/actions';
 import { getActionFailureCopy, UNDO_DONE_TOAST } from '@/lib/action-error-copy';
@@ -27,14 +27,25 @@ import { useTriageStore } from './store';
  * is no longer "decided", so it returns to the queue), stats, the
  * activity feed, and the senders list (inbox counts moved back).
  */
-export function invalidateAfterUndo(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: undoKeys.all });
+export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
+  // The tray list's refetch is RETURNED: the tray keeps its revert slot
+  // latched until the refreshed list lands (see `ProductUndoTray`).
+  const trayRefreshed = qc.invalidateQueries({ queryKey: undoKeys.all });
   // One key: the queue, the stats and the Today strip share a cache entry,
   // so a reverted undo restores all three from the same read.
   void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
+  return trayRefreshed;
 }
+
+/**
+ * A decision's stable identity. `token` is only "a member token that
+ * reverts the decision" and moves when that member is undone, so the
+ * baseline and the in-flight hide key on `groupId`. An API predating the
+ * decision-grouped list sends no `groupId`; there one token IS one row.
+ */
+const decisionId = (entry: UndoTrayEntry): string => entry.groupId ?? entry.token;
 
 /**
  * Active undo tokens for the current mailbox (D35 tray data source).
@@ -61,11 +72,14 @@ function useUndoEntries(mailboxId?: string) {
 /**
  * The persistent product-wide undo tray (D35, D245).
  *
- *   - Lists active undo tokens via `GET /api/undo`, newest first.
- *   - Per-row Undo reverses by token: `POST /api/undo/:token` enqueues
- *     a reverse job that is polled until terminal — the entry leaves
- *     the tray for good only on server confirmation, and the triage
- *     queue refetches so the reverted sender returns to it.
+ *   - Lists undoable DECISIONS via `GET /api/undo`, newest first — a
+ *     bulk action is one row, named and counted.
+ *   - Per-row Undo reverses the whole decision: `POST /api/undo/:token`
+ *     enqueues a reverse job that is polled until terminal — the entry
+ *     leaves the tray for good only on server confirmation, and the
+ *     triage queue refetches so the reverted sender returns to it.
+ *   - Inside a bulk decision, a sender's own Undo reverses just that
+ *     sender (`POST /api/undo/:token/action`), same poll, same slot.
  *   - `Z` undoes the newest entry (D35 power-user shortcut). Same
  *     input-field guards as the K/A/U/L shortcuts in
  *     `action-toolbar.tsx`; suppressed while an action sheet / inline
@@ -96,6 +110,7 @@ export function ProductUndoTray({
   const pathname = usePathname();
   const entriesQuery = useUndoEntries(mailboxId);
   const revert = useRevertUndo();
+  const revertMember = useRevertUndoMember();
   const pendingAction = useTriageStore((s) => s.pendingAction);
 
   /**
@@ -103,7 +118,13 @@ export function ProductUndoTray({
    * a second undo while one is confirming is dropped, mirroring the
    * single `activeAction` slot on the action side.
    */
-  const [inFlight, setInFlight] = useState<{ token: string; actionId: string | null } | null>(null);
+  const [inFlight, setInFlight] = useState<{
+    /** The decision being reverted — hidden whole unless `memberToken` is set. */
+    id: string;
+    /** Set when only ONE sender of the decision is being reverted. */
+    memberToken: string | null;
+    actionId: string | null;
+  } | null>(null);
   const revertStatus = useActionStatus(inFlight?.actionId ?? null, mailboxId);
   const mailboxGeneration = useRef(0);
 
@@ -118,25 +139,65 @@ export function ProductUndoTray({
     };
   }, [mailboxId]);
 
+  /**
+   * After a CONFIRMED undo, free the revert slot only once the refreshed
+   * list has landed. Until then the cached rows still carry the token
+   * that was just spent: "Undo all" (or Z) in that gap POSTs a reverted
+   * token, the API answers `reverted: true`, and the tray toasted
+   * success while the remaining senders were never touched. Reachable
+   * only since a one-sender undo leaves its decision's row on screen.
+   *
+   * `actionId: null` stops the status poll while the slot stays taken.
+   */
+  const releaseAfterRefresh = useCallback(
+    (generation: number) => {
+      setInFlight((current) => (current ? { ...current, actionId: null } : current));
+      void invalidateAfterUndo(qc).finally(() => {
+        if (mailboxGeneration.current === generation) setInFlight(null);
+      });
+    },
+    [qc],
+  );
+
   const revertToken = useCallback(
-    async (token: string): Promise<void> => {
-      if (inFlight != null || revert.isPending) return;
+    async (token: string, scope: 'decision' | 'member' = 'decision'): Promise<void> => {
+      if (inFlight != null || revert.isPending || revertMember.isPending) return;
       const generation = mailboxGeneration.current;
       // D159 — fires at CLICK time (row button or Z), once per attempt
       // (the single-slot guard above already dedupes re-clicks). Only
       // the entry's kind + age ship; the token itself is a live
       // capability and never reaches telemetry.
-      const entry = entriesQuery.data?.find((e) => e.token === token);
+      const entry = entriesQuery.data?.find((e) =>
+        scope === 'member' ? e.members?.some((m) => m.token === token) : e.token === token,
+      );
+      // A member click whose decision is gone from the cache (a refetch
+      // landed between render and click) has nothing to hide and nothing
+      // to show for itself — taking the slot would swallow every retry
+      // with no visible feedback. The refreshed list is the answer.
+      if (scope === 'member' && !entry) return;
       if (entry) {
+        const member =
+          scope === 'member' ? entry.members?.find((m) => m.token === token) : undefined;
         void track('undo_clicked', {
-          verb: entry.actionKind,
+          verb: member?.actionKind ?? entry.actionKind,
           age_ms: Date.now() - new Date(entry.createdAt).getTime(),
         });
       }
-      // Hide the entry while the revert confirms; a failure puts it back.
-      setInFlight({ token, actionId: null });
+      // Hide the entry (or the one sender) while the revert confirms; a
+      // failure puts it back.
+      const hidden = {
+        id: entry ? decisionId(entry) : token,
+        memberToken: scope === 'member' ? token : null,
+      };
+      setInFlight({ ...hidden, actionId: null });
       try {
-        const res = await revert.mutateAsync({ token, ...(mailboxId ? { mailboxId } : {}) });
+        const res =
+          scope === 'member'
+            ? await revertMember.mutateAsync({
+                memberToken: token,
+                ...(mailboxId ? { mailboxId } : {}),
+              })
+            : await revert.mutateAsync({ token, ...(mailboxId ? { mailboxId } : {}) });
         // A mailbox switch/unmount owns the next surface. The old request
         // may finish server-side, but it must not toast or seed a poller in
         // the newly active mailbox.
@@ -144,16 +205,14 @@ export function ProductUndoTray({
         if (res.reverted) {
           // Idempotent replay — already reverted server-side.
           toast(UNDO_DONE_TOAST, 'success');
-          setInFlight(null);
-          invalidateAfterUndo(qc);
+          releaseAfterRefresh(generation);
         } else if (res.actionId) {
           // Reverse job enqueued — poll it (effect below).
-          setInFlight({ token, actionId: res.actionId });
+          setInFlight({ ...hidden, actionId: res.actionId });
         } else {
           // BE-designed terminal: nothing to revert.
           toast('Nothing to undo — already restored.', 'info');
-          setInFlight(null);
-          invalidateAfterUndo(qc);
+          releaseAfterRefresh(generation);
         }
       } catch (err) {
         if (mailboxGeneration.current !== generation) return;
@@ -167,7 +226,7 @@ export function ProductUndoTray({
         void qc.invalidateQueries({ queryKey: undoKeys.all });
       }
     },
-    [inFlight, revert, mailboxId, qc, entriesQuery.data],
+    [inFlight, revert, revertMember, mailboxId, qc, entriesQuery.data, releaseAfterRefresh],
   );
 
   // Reverse-job lifecycle — terminal only on server confirmation.
@@ -186,13 +245,13 @@ export function ProductUndoTray({
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       toast(UNDO_DONE_TOAST, 'success');
-      invalidateAfterUndo(qc);
-    } else {
-      toast(getActionFailureCopy('revert-terminal'), 'warn');
-      void qc.invalidateQueries({ queryKey: undoKeys.all });
+      releaseAfterRefresh(mailboxGeneration.current);
+      return;
     }
+    toast(getActionFailureCopy('revert-terminal'), 'warn');
+    void qc.invalidateQueries({ queryKey: undoKeys.all });
     setInFlight(null);
-  }, [revertStatus.data, revertStatus.isError, inFlight, qc]);
+  }, [revertStatus.data, revertStatus.isError, inFlight, qc, releaseAfterRefresh]);
 
   /**
    * Tokens already live when this screen was entered — the tray's
@@ -220,14 +279,40 @@ export function ProductUndoTray({
     tokens: ReadonlySet<string>;
   } | null>(null);
   if (entriesQuery.data && baseline?.scope !== trayScope) {
-    setBaseline({ scope: trayScope, tokens: new Set(entriesQuery.data.map((e) => e.token)) });
+    setBaseline({ scope: trayScope, tokens: new Set(entriesQuery.data.map(decisionId)) });
   }
 
-  // Entries shown — the in-flight token is hidden until its revert
-  // settles (failure paths clear `inFlight`, so it reappears).
-  const entries = (entriesQuery.data ?? []).filter(
-    (entry) => entry.token !== inFlight?.token && !baseline?.tokens.has(entry.token),
-  );
+  // Entries shown — the in-flight decision is hidden until its revert
+  // settles (failure paths clear `inFlight`, so it reappears). A
+  // one-sender revert hides only that sender, and takes its mail out of
+  // the headline: a line still reading "440 emails · 2 senders" while one
+  // of them is on its way back would be a count the row no longer holds.
+  const entries = (entriesQuery.data ?? [])
+    .filter((entry) => !baseline?.tokens.has(decisionId(entry)))
+    .flatMap((entry): UndoTrayEntry[] => {
+      if (inFlight == null || decisionId(entry) !== inFlight.id) return [entry];
+      if (inFlight.memberToken === null) return [];
+      const leaving = entry.members?.find((m) => m.token === inFlight.memberToken);
+      if (!leaving || !entry.members) return [entry];
+      const members = entry.members.filter((m) => m !== leaving);
+      // Two unresolvable senders are two senders: null never matches null.
+      const senderStillListed =
+        leaving.senderName !== null && members.some((m) => m.senderName === leaving.senderName);
+      return [
+        {
+          ...entry,
+          members,
+          // The list's own token may be the one leaving; any other works.
+          token: entry.token === leaving.token ? (members[0]?.token ?? entry.token) : entry.token,
+          ...(typeof entry.senderCount === 'number'
+            ? { senderCount: entry.senderCount - (senderStillListed ? 0 : 1) }
+            : {}),
+          ...(typeof entry.affectedCount === 'number'
+            ? { affectedCount: entry.affectedCount - leaving.affectedCount }
+            : {}),
+        },
+      ];
+    });
 
   // Z — undo last (D35). Same typing guards as `resolveShortcut` in
   // action-toolbar.tsx; the pending-action surface owns the keyboard
@@ -264,7 +349,8 @@ export function ProductUndoTray({
     isLoading: false,
     isError: entriesQuery.isError,
     error: entriesQuery.error ?? null,
-    revert: revertToken,
+    revert: (token) => revertToken(token),
+    revertMember: (token) => revertToken(token, 'member'),
   };
 
   return (

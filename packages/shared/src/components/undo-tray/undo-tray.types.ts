@@ -10,13 +10,40 @@
 export type { UndoActionKind } from '../../contracts/undo-action-kind';
 import type { UndoActionKind } from '../../contracts/undo-action-kind';
 
-/** One row in the tray — what the API returns per active token. */
+/** One sender's share of a decision — undoable on its own. */
+export interface UndoTrayMember {
+  token: string;
+  actionKind: UndoActionKind;
+  senderName: string | null;
+  affectedCount: number;
+}
+
+/**
+ * One row in the tray — one DECISION the user made. A bulk action over N
+ * senders is one decision; `token` reverses all of it.
+ *
+ * Everything past `expiresAt` is optional on purpose: an API predating
+ * the decision-grouped list omits it, and the row then renders exactly
+ * as it always did (verb + deadline + Undo).
+ */
 export interface UndoTrayEntry {
   token: string;
   actionKind: UndoActionKind;
   /** ISO-8601 string from the API; rendered via `formatTimeLeft`. */
   createdAt: string;
   expiresAt: string;
+  /** Stable identity — `token` can move when one member is undone. */
+  groupId?: string;
+  /** Distinct senders still undoable in this decision. */
+  senderCount?: number;
+  /** Total active members — what `members` was capped against. */
+  memberCount?: number;
+  /** Emails changed; `null` = unknown, never rendered as a number. */
+  affectedCount?: number | null;
+  /** True when members carry different verbs — one total would mislabel them. */
+  mixedKinds?: boolean;
+  /** Largest first; may be shorter than `senderCount` (capped server-side). */
+  members?: UndoTrayMember[];
 }
 
 /**
@@ -34,8 +61,13 @@ export interface UndoTrayDataSource {
   entries: UndoTrayEntry[];
   /** True while the initial / refresh fetch is in flight. */
   isLoading: boolean;
-  /** Stable callback for one-row Undo (D58). */
+  /** Stable callback for one-row Undo (D58) — reverses the WHOLE decision. */
   revert: (token: string) => Promise<void>;
+  /**
+   * Reverse ONE member of a decision by its own token. Optional: without
+   * it the disclosure still lists the senders, with no per-sender Undo.
+   */
+  revertMember?: (token: string) => Promise<void>;
   /** True when the most recent fetch failed (network/5xx). */
   isError?: boolean;
   /** The error from the failed fetch, if any. */

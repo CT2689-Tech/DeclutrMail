@@ -39,6 +39,7 @@ import {
   recordUnsubscribeIntent,
   recordUnsubscribeManualStatus,
   revertUndo,
+  revertUndoMember,
   type ActionReach,
   type ActionStatusResult,
   type BatchStatusResult,
@@ -127,6 +128,25 @@ export function useActionStatus(actionId: string | null, mailboxId?: string) {
 export function useRevertUndo() {
   return useMutation<UndoRevertResult, Error, { token: string; mailboxId?: string | undefined }>({
     mutationFn: ({ token, mailboxId }) => revertUndo(token, mailboxId ? { mailboxId } : undefined),
+  });
+}
+
+/**
+ * Reverse ONE member of a decision (one sender out of a bulk action).
+ *
+ * Variables are `memberToken`, deliberately NOT `token`: Senders and
+ * Sender Detail watch the mutation cache for `variables.token` matching
+ * their receipt's whole-batch token and clear the receipt when it
+ * reverts. A one-sender undo must not read as the whole batch undone.
+ */
+export function useRevertUndoMember() {
+  return useMutation<
+    UndoRevertResult,
+    Error,
+    { memberToken: string; mailboxId?: string | undefined }
+  >({
+    mutationFn: ({ memberToken, mailboxId }) =>
+      revertUndoMember(memberToken, mailboxId ? { mailboxId } : undefined),
   });
 }
 

@@ -102,7 +102,12 @@ export type { ToastTone } from './components/toast';
 // Persistent undo tray (D35, D58). Data is injected via the
 // `dataSource` prop — the host app owns transport (CSRF, base URL).
 export { UndoTray } from './components/undo-tray';
-export type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './components/undo-tray';
+export type {
+  UndoActionKind,
+  UndoTrayDataSource,
+  UndoTrayEntry,
+  UndoTrayMember,
+} from './components/undo-tray';
 
 // D166 — skeleton-first loading primitives + composite skeletons
 // matching the launch screens (Triage queue, Senders list, Sender
