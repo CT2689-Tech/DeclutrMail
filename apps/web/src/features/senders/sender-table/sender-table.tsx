@@ -61,6 +61,7 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
+import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
 import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected, senderAddressLine } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
@@ -392,6 +393,8 @@ function SenderRow({
   pad: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const activity = useRowActivity(sender.id);
+  const busy = isRowBusy(activity);
 
   // Fact-derived primary tone — drives the left-edge stripe and
   // magnitude-bar accent. The same derivation feeds SenderActionRow,
@@ -410,6 +413,7 @@ function SenderRow({
       <tr
         data-dm-sender-id={sender.id}
         data-dm-selected={selected || undefined}
+        aria-busy={busy || undefined}
         onClick={(e) => {
           // Pointer-only convenience — never steal clicks meant for the
           // checkbox / verbs / popover / chevron (or anything focusable
@@ -421,7 +425,7 @@ function SenderRow({
           }
           setExpanded((v) => !v);
         }}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: 'pointer', opacity: busy ? 0.6 : 1, transition: 'opacity 120ms' }}
       >
         <td
           style={{
@@ -454,6 +458,7 @@ function SenderRow({
             aria-label={`Select ${displayLabel(sender)}`}
             checked={selected}
             readOnly
+            disabled={busy}
             onClick={(e) => onSelectionChange(!selected, e.shiftKey)}
           />
         </td>
@@ -524,6 +529,7 @@ function SenderRow({
                       </span>
                     );
                   })()}
+                {activity && <RowActivityPill activity={activity} />}
               </span>
               <span
                 // Full address, not the domain — one brand can own

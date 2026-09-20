@@ -19,6 +19,7 @@
  * content, attachments, or non-allowlisted headers.
  */
 
+import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
 import { useState } from 'react';
 import type { UnsubscribeLifecycleStatus } from '@declutrmail/shared/contracts';
 import {
@@ -127,6 +128,8 @@ export function SenderCard({
   const primaryVerb = derivePrimaryVerbId(sender);
   const protectedNow = isStandingProtected(sender);
   const addressLine = senderAddressLine(sender);
+  const activity = useRowActivity(sender.id);
+  const busy = isRowBusy(activity);
   // Quick-peek dialog (grid↔table parity) — renders the same
   // `SenderRowDetailLive` panel the table's expand-row shows. Opened
   // from the identity block below; closes on Escape / backdrop / a
@@ -138,6 +141,7 @@ export function SenderCard({
     <article
       data-testid={`sender-card-${sender.id}`}
       data-selected={selected || undefined}
+      aria-busy={busy || undefined}
       data-dm-lift=""
       onClick={
         peekEnabled
@@ -175,7 +179,8 @@ export function SenderCard({
         flexDirection: 'column',
         gap: 14,
         position: 'relative',
-        transition: 'border-color 120ms, box-shadow 120ms',
+        transition: 'border-color 120ms, box-shadow 120ms, opacity 120ms',
+        opacity: busy ? 0.6 : 1,
         minHeight: 240,
         cursor: peekEnabled ? 'pointer' : undefined,
       }}
@@ -300,6 +305,7 @@ export function SenderCard({
                   </span>
                 );
               })()}
+            {activity && <RowActivityPill activity={activity} />}
           </div>
           <div
             // The full address, not the domain — senders are keyed by
@@ -336,8 +342,9 @@ export function SenderCard({
           aria-label={`Select ${sender.name}`}
           checked={selected}
           readOnly
+          disabled={busy}
           onClick={(e) => onToggleSelect(sender.id, e.shiftKey)}
-          style={{ cursor: 'pointer', marginTop: 2 }}
+          style={{ cursor: busy ? 'not-allowed' : 'pointer', marginTop: 2 }}
         />
       </div>
 

@@ -2315,3 +2315,29 @@ describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-2026
     expect(screen.getByText(/Every selected sender is now Protected or gone/i)).toBeInTheDocument();
   });
 });
+
+// Founder report 2026-09-20 — "no clue if the request was submitted". The
+// modal used to vanish BEFORE the request was sent, so a slow enqueue and
+// an instant one looked identical.
+describe('ConfirmActionModal — submitting', () => {
+  it('holds the modal on "Submitting…" and refuses a second confirm or a cancel', () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Archive')}
+        onCancel={onCancel}
+        onConfirm={onConfirm}
+        compositePreview={livePreview}
+        submitting
+      />,
+    );
+    const confirm = screen.getByRole('button', { name: /Submitting…/ });
+    expect(confirm).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Cancel/ })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onConfirm).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+  });
+});

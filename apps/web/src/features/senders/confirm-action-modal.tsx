@@ -196,6 +196,7 @@ export function ConfirmActionModal({
   compositePreviewLoading,
   compositePreviewError,
   bulkPreview,
+  submitting = false,
   onRetryPreview,
   previewSenderGone = false,
   onRefreshSenders,
@@ -235,6 +236,13 @@ export function ConfirmActionModal({
    * headline figure, and the per-sender breakdown list.
    */
   bulkPreview?: BulkPreviewState | undefined;
+  /**
+   * The confirmed request is on its way to the server. The modal stays
+   * up, the button says so, and nothing can be confirmed twice or
+   * cancelled out from under it — closing is the caller's job once the
+   * request settles. It used to close BEFORE the request was sent.
+   */
+  submitting?: boolean;
   /** Re-run the live preview after a failed read. */
   onRetryPreview?: (() => void) | undefined;
   /**
@@ -670,7 +678,8 @@ export function ConfirmActionModal({
     wakeAtInvalid ||
     unsubNothingToSend ||
     nothingActionableBulk ||
-    (quotaShort && !quotaCappedFrom);
+    (quotaShort && !quotaCappedFrom) ||
+    submitting;
 
   // Swap confirm for a truthful upgrade action when the quota cannot
   // cover this click — routed through the same upgrade-gate store the
@@ -719,6 +728,7 @@ export function ConfirmActionModal({
   useEffect(() => {
     if (!request) return;
     const onKey = (e: KeyboardEvent) => {
+      if (submitting) return;
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         onConfirm(buildConfirmOpts());
@@ -732,6 +742,7 @@ export function ConfirmActionModal({
     // explicit and the dep set accurate.
   }, [
     request,
+    submitting,
     secondaryVerb,
     olderThanDays,
     reach,
@@ -929,7 +940,7 @@ export function ConfirmActionModal({
   return (
     <>
       <div
-        onClick={onCancel}
+        onClick={submitting ? undefined : onCancel}
         style={{
           position: 'fixed',
           inset: 0,
@@ -1902,6 +1913,7 @@ export function ConfirmActionModal({
             <Button
               tone="default"
               onClick={onCancel}
+              disabled={submitting}
               // QA-senders-20260901-10: the shortcut can't be pressed on a
               // touch sheet, so the hint only adds to what's between the
               // reader and the confirm button at 375px.
@@ -1939,7 +1951,7 @@ export function ConfirmActionModal({
                   )
                 }
               >
-                {confirmLabel}
+                {submitting ? 'Submitting…' : confirmLabel}
               </Button>
             )}
           </div>

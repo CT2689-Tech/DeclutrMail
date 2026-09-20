@@ -22,6 +22,7 @@
 import { useState } from 'react';
 import { ActionPopover, ActionPopoverTrigger, Button } from '@declutrmail/shared';
 import { deriveDefaultPrimary, type VerbId } from '@declutrmail/shared/actions';
+import { isRowBusy, useRowActivity } from './row-activity';
 import {
   canArchive,
   canDelete,
@@ -95,6 +96,10 @@ export function SenderActionRow({
   stretch?: boolean;
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
+  // One in-flight action per sender: a second would mint a fresh
+  // idempotency key (double cleanup unit, two undo tokens). The screen
+  // refuses it too; disabling here is what makes that refusal visible.
+  const busy = isRowBusy(useRowActivity(sender.id));
 
   const primaryVerbId: VerbId = derivePrimaryVerbId(sender);
 
@@ -126,6 +131,7 @@ export function SenderActionRow({
       <Button
         tone={leadButtonTone(primaryLegacy)}
         size="sm"
+        disabled={busy}
         onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
         iconRight={ARROW}
         style={
@@ -145,8 +151,9 @@ export function SenderActionRow({
       <ActionPopoverTrigger
         onClick={() => setPopoverOpen(true)}
         ariaLabel={`More actions for ${senderLabel}`}
+        disabled={busy}
       />
-      {popoverOpen && (
+      {popoverOpen && !busy && (
         <ActionPopover
           ariaLabel={`Actions for ${senderLabel}`}
           capabilities={capabilities}

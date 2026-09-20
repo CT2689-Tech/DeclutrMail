@@ -366,6 +366,8 @@ interface ActionPopoverTriggerProps {
   onClick: () => void;
   /** Contextual label/title, such as "More actions for Acme Deals". */
   ariaLabel: string;
+  /** The menu cannot be opened — e.g. the row's action is still running. */
+  disabled?: boolean;
   /** Optional style overrides for positioning. */
   style?: CSSProperties;
   /** Optional child content; defaults to the `⋯` glyph. */
@@ -380,6 +382,7 @@ interface ActionPopoverTriggerProps {
 export function ActionPopoverTrigger({
   onClick,
   ariaLabel,
+  disabled = false,
   style,
   children = '⋯',
 }: ActionPopoverTriggerProps) {
@@ -388,6 +391,7 @@ export function ActionPopoverTrigger({
       type="button"
       aria-label={ariaLabel}
       title={ariaLabel}
+      disabled={disabled}
       onClick={onClick}
       style={{
         background: 'transparent',
@@ -397,7 +401,8 @@ export function ActionPopoverTrigger({
         fontFamily: font.sans,
         fontSize: 14,
         color: color.fgMuted,
-        cursor: 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
         lineHeight: 1,
         transition: 'border-color 100ms, color 100ms',
         ...style,
