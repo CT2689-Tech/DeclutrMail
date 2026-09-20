@@ -22,6 +22,7 @@ import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
 import type { VolumeTrend, SenderLastReview } from '../data';
 import { makeSender } from '../testing/make-sender';
+import { RowActivityProvider } from '../row-activity';
 import { SenderListRow } from './sender-list-row';
 
 const { color } = tokens;
@@ -101,6 +102,23 @@ const baseArgs = {
 export const Default: Story<typeof SenderListRow> = {
   args: { ...baseArgs, s: sender() },
   render: (args: RowArgs) => frame(args),
+};
+
+/** The row reporting its own action — working, then done (phone list + expanded brand group). */
+export const ActionFeedback: Story<typeof SenderListRow> = {
+  args: { ...Default.args },
+  render: (args: RowArgs) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <RowActivityProvider value={new Map([[args.s.id, { phase: 'working', verb: 'archive' }]])}>
+        {frame(args)}
+      </RowActivityProvider>
+      <RowActivityProvider
+        value={new Map([[args.s.id, { phase: 'done', verb: 'archive', affectedCount: 12 }]])}
+      >
+        {frame(args)}
+      </RowActivityProvider>
+    </div>
+  ),
 };
 
 /** Trend: Up — current month ≥ 1.3× prior average. */

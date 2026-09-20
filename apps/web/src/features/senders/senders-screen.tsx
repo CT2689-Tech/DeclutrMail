@@ -1636,38 +1636,40 @@ function SendersScreenContent({
         setSelected(new Set());
         const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
         const isBulk = senderRefs.length > 1;
-        let succeeded = 0;
-        let failed = 0;
-        for (const sref of senderRefs) {
-          setPolicy.mutate(
-            { senderId: sref.id, patch: { policyType: 'keep' } },
-            {
-              onSuccess: () => {
-                succeeded++;
-                if (succeeded + failed === senderRefs.length) {
-                  toast(
-                    isBulk
-                      ? `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`
-                      : `Kept ${sref.name}`,
-                    failed > 0 ? 'warn' : 'success',
-                  );
-                }
-              },
-              onError: (err) => {
-                failed++;
-                captureFeatureException(err, { surface: 'senders', reason: 'policy_keep' });
-                if (succeeded + failed === senderRefs.length) {
-                  toast(
-                    isBulk
-                      ? `${failed} of ${senderRefs.length} keeps failed — try again.`
-                      : `Couldn't keep ${sref.name}`,
-                    'warn',
-                  );
-                }
-              },
-            },
+        // `mutateAsync`, not N × `mutate(…, { onSuccess })`: per-call
+        // callbacks live on the hook's ONE observer, so each `mutate`
+        // replaced the previous call's and only the last sender's ever
+        // fired — the "all settled" count never reached N and a bulk Keep
+        // said nothing at all. Each `mutateAsync` promise is its own.
+        void Promise.allSettled(
+          senderRefs.map((sref) =>
+            setPolicy.mutateAsync({ senderId: sref.id, patch: { policyType: 'keep' } }),
+          ),
+        ).then((results) => {
+          const failures = results.filter(
+            (r): r is PromiseRejectedResult => r.status === 'rejected',
           );
-        }
+          for (const f of failures) {
+            captureFeatureException(f.reason, { surface: 'senders', reason: 'policy_keep' });
+          }
+          const failed = failures.length;
+          const succeeded = results.length - failed;
+          if (!isBulk) {
+            toast(
+              failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
+              failed ? 'warn' : 'success',
+            );
+            return;
+          }
+          toast(
+            succeeded === 0
+              ? `Couldn't keep ${failed} senders — try again`
+              : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
+                  failed ? ` · ${failed} failed, try again` : ''
+                }`,
+            failed > 0 ? 'warn' : 'success',
+          );
+        });
         return;
       }
 
@@ -1849,7 +1851,10 @@ function SendersScreenContent({
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         toast(
-          `${activeAction.verb === 'Delete' ? 'Moved' : verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}${activeAction.verb === 'Delete' ? ' to Trash' : ''}${data.affectedCount < data.requestedCount ? ' · Some matching emails were not changed; see Activity' : ''}`,
+          // Same grammar as the row pill, the receipt and the undo panel
+          // (result · count · who). Delete used to read "Moved … to Trash"
+          // here while the row said "Deleted" — one fact, one wording.
+          `${verbPast} · ${data.affectedCount.toLocaleString('en-US')} email${data.affectedCount === 1 ? '' : 's'} · ${activeAction.senderName}${data.affectedCount < data.requestedCount ? ' · some not changed, see Activity' : ''}`,
           data.affectedCount < data.requestedCount ? 'warn' : 'success',
         );
         // Invalidate BOTH surfaces — Senders rows (counts moved) AND the
@@ -2083,20 +2088,21 @@ function SendersScreenContent({
     if (!data || !isTerminalStatus(data.status)) return;
     // A batch reports totals only. All-failed and all-succeeded say the
     // same thing about every member; a PARTIAL failure does not say which
-    // member failed, so no row claims an outcome it cannot back.
-    if (data.status === 'failed' || data.failed === 0) {
-      settleRowsRef.current(
-        activeBatch.senderIds,
-        data.status === 'failed'
-          ? { phase: 'failed', verb: activeBatch.verb.toLowerCase() as RowActivityVerb }
+    // member failed — so those rows claim no outcome and point at Activity
+    // (unmarked, they just looked untouched, and some silently vanished).
+    settleRowsRef.current(
+      activeBatch.senderIds,
+      data.status === 'failed'
+        ? { phase: 'failed', verb: activeBatch.verb.toLowerCase() as RowActivityVerb }
+        : data.failed > 0
+          ? { phase: 'mixed', verb: activeBatch.verb.toLowerCase() as RowActivityVerb }
           : {
               phase: 'done',
               verb: activeBatch.verb.toLowerCase() as RowActivityVerb,
               // Only a zero total is also a per-sender fact.
               affectedCount: data.affectedCount === 0 ? 0 : null,
             },
-      );
-    }
+    );
     setReceipt({
       mailboxId: activeBatch.mailboxId,
       ...buildActionReceiptResult({
@@ -2139,7 +2145,7 @@ function SendersScreenContent({
         void qc.invalidateQueries({ queryKey: activityKeys.all });
       } else {
         toast(
-          `${activeBatch.verb === 'Delete' ? 'Moved' : verbPast} ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeBatch.senderCount} senders${activeBatch.verb === 'Delete' ? ' to Trash' : ''}`,
+          `${verbPast} · ${data.affectedCount.toLocaleString('en-US')} email${data.affectedCount === 1 ? '' : 's'} · ${activeBatch.senderCount} senders`,
           data.failed > 0 || data.affectedCount < data.requestedCount ? 'warn' : 'success',
         );
         void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -2173,20 +2179,21 @@ function SendersScreenContent({
     if (!data || !isTerminalStatus(data.status)) return;
     // A batch reports totals only. All-failed and all-succeeded say the
     // same thing about every member; a PARTIAL failure does not say which
-    // member failed, so no row claims an outcome it cannot back.
-    if (data.status === 'failed' || data.failed === 0) {
-      settleRowsRef.current(
-        overdueBatch.senderIds,
-        data.status === 'failed'
-          ? { phase: 'failed', verb: overdueBatch.verb.toLowerCase() as RowActivityVerb }
+    // member failed — so those rows claim no outcome and point at Activity
+    // (unmarked, they just looked untouched, and some silently vanished).
+    settleRowsRef.current(
+      overdueBatch.senderIds,
+      data.status === 'failed'
+        ? { phase: 'failed', verb: overdueBatch.verb.toLowerCase() as RowActivityVerb }
+        : data.failed > 0
+          ? { phase: 'mixed', verb: overdueBatch.verb.toLowerCase() as RowActivityVerb }
           : {
               phase: 'done',
               verb: overdueBatch.verb.toLowerCase() as RowActivityVerb,
               // Only a zero total is also a per-sender fact.
               affectedCount: data.affectedCount === 0 ? 0 : null,
             },
-      );
-    }
+    );
     // D226 — the parked mutation just changed what any kept-open confirm
     // surface describes: its preview must re-count.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
@@ -2922,9 +2929,24 @@ function SendersScreenContent({
                   fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {(totalMatching ?? senders.length).toLocaleString('en-US')}
+                {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
               </strong>{' '}
               senders match.
+              {/* The count is the server's; a held "done" row is not in it.
+                  Say so, or N sits above N+1 rows unexplained. */}
+              {senders.length > serverSenders.length && (
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 11.5,
+                    color: 'var(--color-fg-soft)',
+                    marginLeft: 8,
+                  }}
+                >
+                  + {(senders.length - serverSenders.length).toLocaleString('en-US')} cleared, still
+                  shown
+                </span>
+              )}
             </span>
             <span
               style={{

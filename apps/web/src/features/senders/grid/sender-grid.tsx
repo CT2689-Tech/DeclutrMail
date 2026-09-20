@@ -89,6 +89,7 @@ export function SenderGrid({
             senderCount={entry.senderCount}
             volume90d={entry.volume90d}
             totalReceived={entry.totalReceived}
+            memberIds={entry.senders.map((m) => m.id)}
             expanded={expanded}
             onToggleExpand={() => toggleDomain(entry.domain)}
           />,

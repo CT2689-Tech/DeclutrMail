@@ -37,6 +37,7 @@ export function Button({
   iconLeft,
   iconRight,
   disabled = false,
+  inert = false,
   title,
   ariaLabel,
   ariaPressed,
@@ -52,6 +53,12 @@ export function Button({
   iconLeft?: ReactNode;
   iconRight?: ReactNode;
   disabled?: boolean;
+  /**
+   * Unavailable but still FOCUSABLE (`aria-disabled`, clicks ignored).
+   * For a control that goes unavailable while it may hold focus — native
+   * `disabled` drops it from the tab order and throws focus to <body>.
+   */
+  inert?: boolean;
   title?: string;
   ariaLabel?: string;
   /** Toggle state; forwarded as aria-pressed (AT + selector contract). */
@@ -68,17 +75,18 @@ export function Button({
     <button
       type={type}
       id={id}
-      onClick={onClick}
+      onClick={inert ? undefined : onClick}
       disabled={disabled}
+      aria-disabled={inert || undefined}
       title={title}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
       aria-describedby={ariaDescribedBy}
       onMouseEnter={(e) => {
-        if (!disabled) e.currentTarget.style.background = t.hover;
+        if (!disabled && !inert) e.currentTarget.style.background = t.hover;
       }}
       onMouseLeave={(e) => {
-        if (!disabled) e.currentTarget.style.background = t.bg;
+        if (!disabled && !inert) e.currentTarget.style.background = t.bg;
       }}
       style={{
         display: 'inline-flex',
@@ -94,8 +102,8 @@ export function Button({
         fontFamily: font.sans,
         fontSize: s.fs,
         fontWeight: 600,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
+        cursor: disabled || inert ? 'not-allowed' : 'pointer',
+        opacity: disabled || inert ? 0.5 : 1,
         whiteSpace: 'nowrap',
         transition: 'background 0.12s',
         ...style,

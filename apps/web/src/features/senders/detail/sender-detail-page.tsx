@@ -27,6 +27,7 @@ import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbo
 import { ReceiptStrip, type ActionReceipt } from '../receipt-strip';
 import { RecommendationBanner } from './recommendation-banner';
 import { ActionToolbar } from './action-toolbar';
+import { RowActivityProvider, type RowActivityVerb, type SenderRowActivity } from '../row-activity';
 import { RecentMessages } from './recent-messages';
 import type { DecisionHistoryRow, SenderDetail, SenderDetailState } from './types';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
@@ -365,6 +366,17 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     senderName: string;
     verb: 'Archive' | 'Delete' | 'Later';
   } | null>(null);
+  // Page-level action feedback — the same model the senders list rows use
+  // (`row-activity`). `settled` is what the toolbar says once the job is
+  // terminal, or "not confirmed" when its status poll was lost.
+  const [settled, setSettled] = useState<SenderRowActivity | null>(null);
+  // The confirmed request is on its way; the confirm holds on
+  // "Submitting…" until the server answers (it used to close first).
+  const [submitting, setSubmitting] = useState(false);
+  const closeSubmitted = useCallback(() => {
+    setSubmitting(false);
+    setPendingAction(null);
+  }, []);
   const [revertActionId, setRevertActionId] = useState<string | null>(null);
   const [revertMailboxId, setRevertMailboxId] = useState<string | undefined>();
   // D9 Wave 2 — the in-flight RFC 8058 unsubscribe execution. Polled to
@@ -413,6 +425,16 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   // a second Unsubscribe on this page (see the Unsubscribe branch), but
   // its stall risk sits in the intent mutation, not this poll.
   const [overdueAction, setOverdueAction] = useState<typeof activeAction>(null);
+  // What the toolbar says about this sender's own action. Live handles
+  // win over a settled result.
+  const pageActivity = useMemo(() => {
+    const current: SenderRowActivity | null = activeAction
+      ? { phase: 'working', verb: activeAction.verb.toLowerCase() as RowActivityVerb }
+      : overdueAction
+        ? { phase: 'unconfirmed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb }
+        : settled;
+    return new Map<string, SenderRowActivity>(current ? [[detail.sender.id, current]] : []);
+  }, [activeAction, overdueAction, settled, detail.sender.id]);
   const overdueActionStatus = useActionStatus(
     overdueAction?.actionId ?? null,
     overdueAction?.mailboxId,
@@ -421,6 +443,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   const resetPendingScope = useCallback(() => {
     setPendingAction(null);
     setReceipt(null);
+    setSettled(null);
+    setSubmitting(false);
     setMailtoFollowup(null);
   }, []);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
@@ -634,7 +658,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             : primaryType === 'later'
               ? `Moving ${sender.name} to Later…`
               : `Archiving email from ${sender.name}…`;
-        setPendingAction(null);
+        setSubmitting(true);
+        setSettled(null);
         toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
           {
@@ -663,7 +688,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             ...(opts?.override ? { override: true } : {}),
           },
           {
-            onSuccess: (res) =>
+            onSuccess: (res) => {
+              closeSubmitted();
               setActiveAction({
                 mailboxId: actionMailboxId,
                 actionId: res.actionId,
@@ -674,8 +700,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                     : primaryType === 'later'
                       ? 'Later'
                       : 'Archive',
-              }),
+              });
+            },
             onError: (err) => {
+              closeSubmitted();
               // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
               // Read the CODE, not the status: CurrentMailboxGuard also
@@ -724,7 +752,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           toast('Still confirming your last action — give it a moment.', 'info');
           return;
         }
-        setPendingAction(null);
+        setSubmitting(true);
         // The "Also act on past emails" chip from the D226 preview.
         // Captured before the async hop so the historic action fires
         // with exactly what the user confirmed.
@@ -737,6 +765,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           },
           {
             onSuccess: (res) => {
+              closeSubmitted();
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
               if (res.method === 'one_click' && res.executionActionId) {
@@ -815,6 +844,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               }
             },
             onError: (err) => {
+              closeSubmitted();
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
               toast(`Couldn't request the unsubscribe from ${sender.name}`, 'warn');
             },
@@ -855,7 +885,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     [performAction],
   );
 
-  const closePending = useCallback(() => setPendingAction(null), []);
+  // Cancel stays live while submitting — it closes the UI only.
+  const closePending = useCallback(() => {
+    setSubmitting(false);
+    setPendingAction(null);
+  }, []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
       if (pendingAction) performAction(pendingAction.verb, pendingAction.senders, opts);
@@ -879,11 +913,25 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         reason: 'action_status_poll',
       });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      // The job may still be running: never back to looking untouched.
+      setSettled({
+        phase: 'unconfirmed',
+        verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+      });
       setActiveAction(null);
       return;
     }
     const data = actionStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
+    setSettled(
+      data.status === 'done'
+        ? {
+            phase: 'done',
+            verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+            affectedCount: data.affectedCount,
+          }
+        : { phase: 'failed', verb: activeAction.verb.toLowerCase() as RowActivityVerb },
+    );
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -899,7 +947,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       } else {
         const resultLabel = getActionSemantics(data.verb).resultLabel;
         toast(
-          `${resultLabel}: ${data.affectedCount} email${data.affectedCount === 1 ? '' : 's'} from ${activeAction.senderName}`,
+          // Same grammar as the senders list, the receipt and the undo panel.
+          `${resultLabel} · ${data.affectedCount.toLocaleString('en-US')} email${data.affectedCount === 1 ? '' : 's'} · ${activeAction.senderName}`,
           'success',
         );
         void qc.invalidateQueries({ queryKey: sendersKeys.all });
@@ -923,6 +972,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         reason: 'action_status_poll',
       });
       toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
+      setSettled({
+        phase: 'unconfirmed',
+        verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+      });
       setOverdueAction(null);
       return;
     }
@@ -933,6 +986,15 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     // before the freed guard lets it dispatch.
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+    setSettled(
+      data.status === 'done'
+        ? {
+            phase: 'done',
+            verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+            affectedCount: data.affectedCount,
+          }
+        : { phase: 'failed', verb: overdueAction.verb.toLowerCase() as RowActivityVerb },
+    );
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1012,6 +1074,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     if (data.status === 'done') {
       toast(UNDO_DONE_TOAST, 'success');
       setReceipt(null);
+      setSettled(null);
       void qc.invalidateQueries({ queryKey: sendersKeys.all });
       void qc.invalidateQueries({ queryKey: activityKeys.all });
     } else {
@@ -1045,6 +1108,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           if (res.reverted) {
             toast(UNDO_DONE_TOAST, 'success');
             setReceipt(null);
+            setSettled(null);
             void qc.invalidateQueries({ queryKey: sendersKeys.all });
             void qc.invalidateQueries({ queryKey: activityKeys.all });
           } else if (res.actionId) {
@@ -1057,6 +1121,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
             // faded (flow-completeness-auditor 2026-06-06).
             toast('Nothing to undo — already restored.', 'info');
             setReceipt(null);
+            setSettled(null);
             void qc.invalidateQueries({ queryKey: activityKeys.all });
           }
         },
@@ -1103,6 +1168,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       if (variables?.token !== token) return;
       if (result?.reverted) {
         setReceipt(null);
+        setSettled(null);
       } else if (result?.actionId) {
         setExternalRevertMailboxId(variables?.mailboxId ?? receipt?.mailboxId);
         setExternalRevertActionId(result.actionId);
@@ -1125,6 +1191,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       setReceipt(null);
+      setSettled(null);
     }
     setExternalRevertActionId(null);
   }, [externalRevertActionId, externalRevertStatus.data, externalRevertStatus.isError]);
@@ -1581,7 +1648,11 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
 
         {/* Fact-derived K/A/U/L actions stay primary (D245). */}
         <div style={{ position: 'relative' }}>
-          <ActionToolbar sender={sender} onAction={requestAction} />
+          {/* The page's own action feedback — same model and wording as a
+              senders-list row: working (verbs inert), then how it ended. */}
+          <RowActivityProvider value={pageActivity}>
+            <ActionToolbar sender={sender} onAction={requestAction} />
+          </RowActivityProvider>
         </div>
 
         {/* Suggestions are optional secondary disclosure below actions.
@@ -1709,6 +1780,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         request={pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
+        submitting={submitting}
         compositePreview={compositePreviewQuery.data}
         // isFetching, not isLoading — cached data during a reopen's
         // refetch must keep confirm locked (D226); see senders-screen.

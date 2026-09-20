@@ -9,7 +9,9 @@ import type { SenderListRow } from '@/lib/api/senders';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { SenderActionRow } from './action-row';
+import { rollupByDomain } from './domain-rollup';
 import { SenderCard } from './grid/sender-card';
+import { SenderGrid } from './grid/sender-grid';
 import { RowActivityProvider, type RowActivityById } from './row-activity';
 import { SenderTable } from './sender-table';
 import { SenderListRow as SenderRowMobile } from './table/sender-list-row';
@@ -33,7 +35,7 @@ function Wrap({ activity, children }: { activity: RowActivityById; children: Rea
 }
 
 describe('SenderActionRow — a busy sender takes no second action', () => {
-  it('disables the primary verb and the ⋯ menu while its job runs', () => {
+  it('turns the primary verb and the ⋯ menu inert while its job runs — but keeps them focusable', () => {
     const onAction = vi.fn();
     render(
       <Wrap activity={working}>
@@ -42,9 +44,18 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
     );
     const buttons = screen.getAllByRole('button');
     expect(buttons.length).toBeGreaterThanOrEqual(2);
-    for (const b of buttons) expect(b).toBeDisabled();
-    fireEvent.click(buttons[0]!);
+    for (const b of buttons) {
+      // `aria-disabled`, not native `disabled`: a natively disabled
+      // control drops out of the tab order, and the one that just had
+      // focus (the verb the user pressed) would throw focus to <body>.
+      expect(b).toHaveAttribute('aria-disabled', 'true');
+      expect(b).not.toBeDisabled();
+      b.focus();
+      expect(b).toHaveFocus();
+      fireEvent.click(b);
+    }
     expect(onAction).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('re-enables once the job is done', () => {
@@ -53,7 +64,7 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
         <SenderActionRow sender={sender} onAction={() => {}} />
       </Wrap>,
     );
-    for (const b of screen.getAllByRole('button')) expect(b).toBeEnabled();
+    for (const b of screen.getAllByRole('button')) expect(b).not.toHaveAttribute('aria-disabled');
   });
 });
 
@@ -136,5 +147,55 @@ describe('phone row', () => {
     );
     expect(screen.getByText('Moving to Trash…')).toBeInTheDocument();
     expect(screen.getByRole('checkbox')).toBeDisabled();
+  });
+});
+
+describe('collapsed brand group (grid)', () => {
+  // A brand with ≥3 senders collapses into one card. Act on its members,
+  // collapse it, and the founder's original complaint was fully intact:
+  // nothing on screen said anything was happening.
+  const members = ['g1', 'g2', 'g3'].map((id, i) =>
+    makeSender({ id, displayName: `Brand ${i}`, email: `n${i}@brand.com`, domain: 'brand.com' }),
+  );
+  const group = (activity: RowActivityById) =>
+    render(
+      <Wrap activity={activity}>
+        <SenderGrid
+          entries={rollupByDomain(members)}
+          selectedIds={new Set()}
+          onToggleSelect={() => {}}
+          onAction={() => {}}
+          globalMaxTotal={500}
+        />
+      </Wrap>,
+    );
+
+  it('says how many members are working, and reads as busy', () => {
+    group(
+      new Map([
+        ['g1', { phase: 'working', verb: 'archive' }],
+        ['g2', { phase: 'working', verb: 'archive' }],
+      ]),
+    );
+    const card = screen.getByTestId('domain-group-brand.com');
+    expect(card).toHaveAttribute('aria-busy', 'true');
+    expect(within(card).getByText('2 working…')).toBeInTheDocument();
+  });
+
+  it('says how many are done once nothing is working', () => {
+    group(
+      new Map([
+        ['g1', { phase: 'done', verb: 'archive', affectedCount: null }],
+        ['g2', { phase: 'failed', verb: 'archive' }],
+      ]),
+    );
+    const card = screen.getByTestId('domain-group-brand.com');
+    expect(card).not.toHaveAttribute('aria-busy');
+    expect(within(card).getByText('1 done · 1 failed')).toBeInTheDocument();
+  });
+
+  it('says nothing when no member was acted on', () => {
+    group(new Map());
+    expect(document.querySelector('[data-dm-group-activity]')).toBeNull();
   });
 });

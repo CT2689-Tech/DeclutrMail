@@ -17,6 +17,7 @@ describe('row activity — what a sender row says about its own action', () => {
     [{ phase: 'done', verb: 'delete', affectedCount: 0 }, 'Nothing to change'],
     [{ phase: 'failed', verb: 'delete' }, 'Delete failed'],
     [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive not confirmed'],
+    [{ phase: 'mixed', verb: 'delete' }, 'Delete: see Activity'],
   ] as Array<[SenderRowActivity, string]>)('%o reads "%s"', (activity, label) => {
     expect(rowActivityLabel(activity)).toBe(label);
   });

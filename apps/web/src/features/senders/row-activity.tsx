@@ -21,6 +21,9 @@ export type RowActivityVerb = 'archive' | 'later' | 'delete';
  *                    only) — then the label carries no number at all.
  *   - `failed`       the job ended `failed`.
  *   - `unconfirmed`  past the overdue deadline, or its status poll was lost.
+ *   - `mixed`        its bulk ended with SOME failures. A batch does not say
+ *                    which sender failed, so the row claims no outcome —
+ *                    it points at the one place that knows.
  *
  * Unsubscribe is absent on purpose: it already owns a lifecycle pill
  * driven by server state (`UNSUB_PILL`).
@@ -29,7 +32,8 @@ export type SenderRowActivity =
   | { phase: 'working'; verb: RowActivityVerb }
   | { phase: 'done'; verb: RowActivityVerb; affectedCount: number | null }
   | { phase: 'failed'; verb: RowActivityVerb }
-  | { phase: 'unconfirmed'; verb: RowActivityVerb };
+  | { phase: 'unconfirmed'; verb: RowActivityVerb }
+  | { phase: 'mixed'; verb: RowActivityVerb };
 
 export type RowActivityById = ReadonlyMap<string, SenderRowActivity>;
 
@@ -52,6 +56,8 @@ export function rowActivityLabel(activity: SenderRowActivity): string {
       return WORKING[activity.verb];
     case 'failed':
       return `${verbLabel} failed`;
+    case 'mixed':
+      return `${verbLabel}: see Activity`;
     case 'unconfirmed':
       // True of BOTH ways a row gets here: the job ran past the overdue
       // deadline, or its status poll was lost. Neither knows it finished.
@@ -82,6 +88,38 @@ export const RowActivityProvider = RowActivityContext.Provider;
 
 export function useRowActivity(senderId: string): SenderRowActivity | undefined {
   return useContext(RowActivityContext).get(senderId);
+}
+
+/**
+ * One line for a COLLAPSED group of senders (the grid's brand card): how
+ * many members are working, else how their actions ended. `null` when no
+ * member was acted on. Counts only — a group card names no single verb.
+ */
+export function useGroupActivitySummary(
+  senderIds: readonly string[],
+): { busy: boolean; label: string } | null {
+  const map = useContext(RowActivityContext);
+  let working = 0;
+  let unconfirmed = 0;
+  let done = 0;
+  let failed = 0;
+  let mixed = 0;
+  for (const id of senderIds) {
+    const phase = map.get(id)?.phase;
+    if (phase === 'working') working += 1;
+    else if (phase === 'unconfirmed') unconfirmed += 1;
+    else if (phase === 'done') done += 1;
+    else if (phase === 'failed') failed += 1;
+    else if (phase === 'mixed') mixed += 1;
+  }
+  if (working > 0) return { busy: true, label: `${working} working…` };
+  const parts = [
+    ...(done > 0 ? [`${done} done`] : []),
+    ...(failed > 0 ? [`${failed} failed`] : []),
+    ...(unconfirmed > 0 ? [`${unconfirmed} not confirmed`] : []),
+    ...(mixed > 0 ? [`${mixed} in Activity`] : []),
+  ];
+  return parts.length === 0 ? null : { busy: unconfirmed > 0, label: parts.join(' · ') };
 }
 
 /** True while the row must not take another action (and reads as busy). */

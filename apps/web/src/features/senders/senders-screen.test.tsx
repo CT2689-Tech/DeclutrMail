@@ -1403,7 +1403,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('radio', { name: /All inbox/i }));
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     const receipt = await findReceipt();
-    expect(receipt).toHaveTextContent(/Moved to Gmail Trash.*313 emails.*Sender A/i);
+    expect(receipt).toHaveTextContent(/Deleted to Gmail Trash.*313 emails.*Sender A/i);
     expect(within(receipt).getByRole('link', { name: 'View activity' })).toHaveAttribute(
       'href',
       '/activity',
@@ -1418,7 +1418,7 @@ describe('SendersScreen — edge states', () => {
     // A confirmed Undo takes the "done" mark off; the row is the server's again.
     await waitFor(() => expect(screen.queryByText(/^Deleted · /)).toBeNull());
     await screen.findByRole('checkbox', { name: /select sender a/i });
-    await waitFor(() => expect(screen.queryByText('Moved to Gmail Trash')).toBeNull());
+    await waitFor(() => expect(screen.queryByText('Deleted to Gmail Trash')).toBeNull());
   });
 
   // QA-delete-20260829-05 — the same staleness gap `sender-detail-page.tsx`
@@ -2224,7 +2224,7 @@ describe('SendersScreen — edge states', () => {
       // The action controls are off; peeking at the sender still works.
       expect(
         within(alphaCard as HTMLElement).getByRole('button', { name: /^More actions for/ }),
-      ).toBeDisabled();
+      ).toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(alpha);
       fireEvent.keyDown(document.body, { key: 'a' });
       await tick(200);
@@ -2595,7 +2595,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       const a = rowOf(/select sender a/i);
       expect(a).toHaveAttribute('aria-busy', 'true');
       expect(within(a).getByRole('checkbox')).toBeDisabled();
-      expect(within(a).getByRole('button', { name: /^More actions for/ })).toBeDisabled();
+      expect(within(a).getByRole('button', { name: /^More actions for/ })).toHaveAttribute(
+        'aria-disabled',
+        'true',
+      );
 
       state = {
         status: 'done',
@@ -2825,7 +2828,46 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(unsubPosts).toHaveLength(1);
     });
 
-    it('claims no per-row outcome when a bulk PARTLY fails — it does not know which sender', async () => {
+    it('says so when SEVERAL senders are kept — it used to say nothing at all', async () => {
+      // N `mutate` calls on one hook: each call replaces the observer's
+      // callbacks, so only the LAST sender's ever fired and the
+      // "all settled" count never reached N. Bulk Keep was silent.
+      const patched: string[] = [];
+      installFetchStub([
+        TWO_SENDER_LIST,
+        {
+          method: 'PATCH',
+          path: /^\/api\/senders\/[^/]+\/policy$/,
+          respond: (_req, url) => {
+            patched.push(url.pathname.split('/')[3]!);
+            return jsonOk({ data: { senderId: url.pathname.split('/')[3], policyType: 'keep' } });
+          },
+        },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('k');
+      await waitFor(() => expect(patched.sort()).toEqual(['a', 'b']));
+      await screen.findByText('Kept 2 senders');
+    });
+
+    it('names how many keeps failed', async () => {
+      installFetchStub([
+        TWO_SENDER_LIST,
+        {
+          method: 'PATCH',
+          path: /^\/api\/senders\/[^/]+\/policy$/,
+          respond: (_req, url) =>
+            url.pathname.includes('/b/')
+              ? jsonServerError('policy_down')
+              : jsonOk({ data: { senderId: 'a', policyType: 'keep' } }),
+        },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('k');
+      await screen.findByText('Kept 1 sender · 1 failed, try again');
+    });
+
+    it('claims no per-row OUTCOME when a bulk partly fails — it points each row at Activity', async () => {
       bulkStub(() => ({
         status: 'done',
         total: 2,
@@ -2839,7 +2881,14 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByText(/currently match.*Archive/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await screen.findByRole('alert');
-      expect(document.querySelector('[data-dm-row-activity]')).toBeNull();
+      // No outcome claimed per row — but never left looking untouched.
+      await waitFor(() =>
+        expect(
+          [...document.querySelectorAll('[data-dm-row-activity]')].map((el) => el.textContent),
+        ).toEqual(['Archive: see Activity', 'Archive: see Activity']),
+      );
+      expect(document.querySelector('[data-dm-row-activity="done"]')).toBeNull();
+      expect(rowOf(/select sender a/i)).not.toHaveAttribute('aria-busy');
     });
 
     it('releases a held "done" row once the list is asked a different question', async () => {
@@ -2881,6 +2930,8 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       // Held in place although the refetch dropped it.
       expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeInTheDocument();
+      // …and the headline count, which is the server's (1), says why two rows show.
+      expect(screen.getByText(/\+ 1 cleared, still\s+shown/)).toBeInTheDocument();
 
       // A new search is a new question: the held row and its mark go.
       fireEvent.change(screen.getByPlaceholderText(/search senders/i), {

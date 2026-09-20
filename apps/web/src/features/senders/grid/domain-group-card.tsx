@@ -17,6 +17,7 @@
 
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { fmtCompact } from '../data';
+import { useGroupActivitySummary } from '../row-activity';
 
 const { color, font, radius } = tokens;
 
@@ -30,6 +31,8 @@ export interface DomainGroupCardProps {
   totalReceived: number;
   expanded: boolean;
   onToggleExpand: () => void;
+  /** Member ids — the card reports their in-flight / finished actions. */
+  memberIds: readonly string[];
 }
 
 export function DomainGroupCard({
@@ -39,10 +42,15 @@ export function DomainGroupCard({
   totalReceived,
   expanded,
   onToggleExpand,
+  memberIds,
 }: DomainGroupCardProps) {
+  // Collapsed, the member cards (and their pills) are not on screen — so
+  // the group has to say it, or acting inside a brand looks like nothing.
+  const activity = useGroupActivitySummary(memberIds);
   return (
     <article
       data-testid={`domain-group-${domain}`}
+      aria-busy={activity?.busy || undefined}
       style={{
         background: color.card,
         border: `1px solid ${expanded ? color.fgSoft : color.line}`,
@@ -81,6 +89,19 @@ export function DomainGroupCard({
           >
             domain group
           </div>
+          {activity && (
+            <div
+              data-dm-group-activity
+              style={{
+                fontFamily: font.mono,
+                fontSize: 10.5,
+                color: color.fg,
+                marginTop: 3,
+              }}
+            >
+              {activity.label}
+            </div>
+          )}
         </div>
         <span
           style={{

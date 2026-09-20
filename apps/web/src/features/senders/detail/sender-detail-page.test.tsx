@@ -1388,19 +1388,22 @@ describe('SenderDetailRoute', () => {
           'info',
         );
 
-        // A second confirm on the SAME sender is refused (a re-dispatch
-        // would mint a second real Gmail job) and the confirmed preview
-        // stays open — the intent is not dropped.
-        fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
-        await tick(200);
-        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-        await tick(200);
-        expect(actionPosts).toBe(1);
-        expect(h.toast).toHaveBeenCalledWith(
-          'Still confirming your last action — give it a moment.',
-          'info',
+        // A second action on the SAME sender cannot even start (a
+        // re-dispatch would mint a second real Gmail job). It used to be
+        // refused by a toast after a second confirm; now the toolbar says
+        // why and its verbs are inert (founder report 2026-09-20 — nothing
+        // on the page showed a job was still running).
+        const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
+        expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
+        expect(screen.getByRole('toolbar', { name: 'Sender actions' })).toHaveAttribute(
+          'aria-busy',
+          'true',
         );
-        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        expect(screen.getByText('Archive not confirmed')).toBeInTheDocument();
+        fireEvent.click(archiveAgain);
+        await tick(200);
+        expect(screen.queryByRole('dialog')).toBeNull();
+        expect(actionPosts).toBe(1);
 
         // The parked handle kept polling: done still invalidates both
         // surfaces and surfaces the receipt — with NO success toast.
@@ -1418,14 +1421,16 @@ describe('SenderDetailRoute', () => {
         const successToast = h.toast.mock.calls.find(([msg]) => /12 email/i.test(String(msg)));
         expect(successToast).toBeUndefined();
 
-        // The kept-open preview REFETCHED and now shows the fresh
-        // post-archive count…
+        // With the parked handle terminal the toolbar frees, and says how
+        // it ended. A NEW action opens against a re-counted preview (D226
+        // — the archive just moved mail) and dispatches.
+        expect(screen.getByText('Archived · 12 emails')).toBeInTheDocument();
+        const archiveFreed = screen.getByRole('button', { name: 'Archive (A)' });
+        expect(archiveFreed).not.toHaveAttribute('aria-disabled');
+        fireEvent.click(archiveFreed);
+        await tick(500);
         expect(previewGets).toBeGreaterThan(previewGetsBefore);
-        const rearmedDialog = screen.getByRole('dialog');
-        expect(within(rearmedDialog).getAllByText('5').length).toBeGreaterThan(0);
-
-        // …and with the parked handle terminal, the guard truly frees:
-        // the re-armed confirm dispatches against that fresh count.
+        expect(within(screen.getByRole('dialog')).getAllByText('5').length).toBeGreaterThan(0);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(2);
@@ -1434,7 +1439,44 @@ describe('SenderDetailRoute', () => {
       }
     });
 
-    it('keeps the confirmed preview open when the re-entry guard trips (intent is not dropped)', async () => {
+    it('holds the confirm on "Submitting…" until the server accepts, then shows the page working', async () => {
+      let accept!: () => void;
+      const accepted = new Promise<void>((resolve) => {
+        accept = resolve;
+      });
+      installHappyPath();
+      addFetchHandlers([
+        detailPreviewHandler(),
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async () => {
+            await accepted;
+            return jsonOk({ data: { actionId: 'act-slow', requestedCount: 12, status: 'queued' } });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/[^/]+$/,
+          respond: () => jsonOk({ data: actionStatusBody('act-slow', false) }),
+        },
+      ]);
+      renderDetail();
+      fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      // It used to close before the request was even sent.
+      const dialog = screen.getByRole('dialog');
+      await within(dialog).findByRole('button', { name: /Submitting…/ });
+      expect(screen.queryByText('Archiving…')).toBeNull();
+
+      accept();
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      await screen.findByText('Archiving…');
+    });
+
+    it('lets no second action start while the first is still confirming', async () => {
       let actionPosts = 0;
       let statusGets = 0;
       installHappyPath();
@@ -1469,20 +1511,14 @@ describe('SenderDetailRoute', () => {
       // The latch is armed once its status poll starts.
       await waitFor(() => expect(statusGets).toBeGreaterThan(0));
 
-      // Second confirmed action while the first is still confirming: the
-      // guard trips — but the pending confirm surface must stay open so
-      // the confirmed intent survives (pre-fix it was silently cleared).
-      fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
-      await screen.findByText(/currently match.*Archive/i);
-      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-
-      await waitFor(() =>
-        expect(h.toast).toHaveBeenCalledWith(
-          'Still confirming your last action — give it a moment.',
-          'info',
-        ),
-      );
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      // While the first is still confirming, the page says so and a
+      // second action cannot start — no modal, no second POST.
+      await screen.findByText('Archiving…');
+      const archiveAgain = screen.getByRole('button', { name: 'Archive (A)' });
+      expect(archiveAgain).toHaveAttribute('aria-disabled', 'true');
+      fireEvent.click(archiveAgain);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByRole('dialog')).toBeNull();
       expect(actionPosts).toBe(1);
     });
 

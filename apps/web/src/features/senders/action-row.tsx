@@ -131,7 +131,7 @@ export function SenderActionRow({
       <Button
         tone={leadButtonTone(primaryLegacy)}
         size="sm"
-        disabled={busy}
+        inert={busy}
         onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
         iconRight={ARROW}
         style={

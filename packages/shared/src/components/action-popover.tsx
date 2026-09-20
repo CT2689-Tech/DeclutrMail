@@ -366,7 +366,10 @@ interface ActionPopoverTriggerProps {
   onClick: () => void;
   /** Contextual label/title, such as "More actions for Acme Deals". */
   ariaLabel: string;
-  /** The menu cannot be opened — e.g. the row's action is still running. */
+  /**
+   * The menu cannot be opened — e.g. the row's action is still running.
+   * `aria-disabled`, so the trigger stays focusable (see `Button.inert`).
+   */
   disabled?: boolean;
   /** Optional style overrides for positioning. */
   style?: CSSProperties;
@@ -391,8 +394,8 @@ export function ActionPopoverTrigger({
       type="button"
       aria-label={ariaLabel}
       title={ariaLabel}
-      disabled={disabled}
-      onClick={onClick}
+      aria-disabled={disabled || undefined}
+      onClick={disabled ? undefined : onClick}
       style={{
         background: 'transparent',
         border: `1px solid ${color.line}`,

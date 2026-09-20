@@ -91,9 +91,7 @@ export function ReceiptStrip({
               ? 'Nothing to change'
               : receipt.outcome === 'partial'
                 ? `${semantics.label} partially completed`
-                : receipt.verb === 'delete'
-                  ? 'Moved to Gmail Trash'
-                  : semantics.resultLabel}
+                : semantics.resultLabel}
         </strong>{' '}
         <span style={{ color: color.fgSoft }}>{countCopy}</span>
         <span
