@@ -100,7 +100,7 @@ describe('inboxScopeNoticeCopy', () => {
   it('names the arrivals and the verb scope without claiming any history', () => {
     const copy = inboxScopeNoticeCopy({ kind: 'empty-inbox', recentArrivals: 71 }, 'Delete');
     expect(copy).toBe(
-      'Nothing from this sender is in your inbox right now — though 71 arrived in the last 90 days. Delete only acts on email still in the inbox.',
+      'Nothing from this sender in your inbox now \u00b7 71 arrived in the last 90 days. Delete only acts on email still in the inbox.',
     );
     expect(copy).not.toMatch(/moved out|archived|deleted|no longer|used to|were in/i);
   });
@@ -113,7 +113,7 @@ describe('inboxScopeNoticeCopy', () => {
         verbActsBeyondInbox: true,
       }),
     ).toBe(
-      'Nothing from this sender is in your inbox right now — though 8 arrived in the last 90 days. Delete acts on inbox email by default.',
+      'Nothing from this sender in your inbox now \u00b7 8 arrived in the last 90 days. Delete acts on inbox email by default.',
     );
     // Surfaces without a reach control (Screener) keep the absolute
     // wording, which is true there.
@@ -124,10 +124,10 @@ describe('inboxScopeNoticeCopy', () => {
 
   it('omits the arrivals clause when there are none to name', () => {
     expect(inboxScopeNoticeCopy({ kind: 'empty-inbox', recentArrivals: 0 }, 'Archive')).toBe(
-      'Nothing from this sender is in your inbox right now. Archive only acts on email still in the inbox.',
+      'Nothing from this sender in your inbox now. Archive only acts on email still in the inbox.',
     );
     expect(inboxScopeNoticeCopy({ kind: 'empty-inbox', recentArrivals: null }, 'Archive')).toBe(
-      'Nothing from this sender is in your inbox right now. Archive only acts on email still in the inbox.',
+      'Nothing from this sender in your inbox now. Archive only acts on email still in the inbox.',
     );
   });
 
@@ -135,7 +135,7 @@ describe('inboxScopeNoticeCopy', () => {
     expect(
       inboxScopeNoticeCopy({ kind: 'empty-window', inboxTotal: 30, olderThanDays: 180 }, 'Delete'),
     ).toBe(
-      '30 emails from this sender are in your inbox, but none are older than the 6 months+ window. Widen the window to include them.',
+      'None of the 30 inbox emails from this sender are older than the 6 months+ window. Widen the window to include them.',
     );
   });
 
@@ -165,7 +165,7 @@ describe('inboxScopeNoticeCopy', () => {
         'these senders',
       ),
     ).toBe(
-      'Nothing from these senders is in your inbox right now. Archive only acts on email still in the inbox.',
+      'Nothing from these senders in your inbox now. Archive only acts on email still in the inbox.',
     );
     expect(
       inboxScopeNoticeCopy(
@@ -174,7 +174,7 @@ describe('inboxScopeNoticeCopy', () => {
         'these senders',
       ),
     ).toBe(
-      '30 emails from these senders are in your inbox, but none are older than the 6 months+ window. Widen the window to include them.',
+      'None of the 30 inbox emails from these senders are older than the 6 months+ window. Widen the window to include them.',
     );
   });
 
@@ -186,12 +186,12 @@ describe('inboxScopeNoticeCopy', () => {
     expect(
       inboxScopeNoticeCopy({ kind: 'empty-window', inboxTotal: 1, olderThanDays: 1 }, 'Archive'),
     ).toBe(
-      '1 email from this sender is in your inbox, but it is not older than 1 day. Widen the window to include it.',
+      'The 1 inbox email from this sender is not older than 1 day. Widen the window to include it.',
     );
     // Singular needs no special casing now that the clause is a bare
     // statement of fact rather than a verb phrase about the mail's fate.
     expect(inboxScopeNoticeCopy({ kind: 'empty-inbox', recentArrivals: 1 }, 'Delete')).toBe(
-      'Nothing from this sender is in your inbox right now — though 1 arrived in the last 90 days. Delete only acts on email still in the inbox.',
+      'Nothing from this sender in your inbox now \u00b7 1 arrived in the last 90 days. Delete only acts on email still in the inbox.',
     );
   });
 });
@@ -326,17 +326,16 @@ describe('mailLocationCopy', () => {
     // The prod shape: header reads "6,668 received", inbox reads 0, and
     // the two never reconciled on screen.
     expect(mailLocationCopy({ inboxNow: 0, allMailNow: 6275, receivedTotal: 6668 })).toBe(
-      "Where this sender's mail is now: 0 emails in your inbox \u00b7 6,275 emails elsewhere in Gmail " +
-        '(archived or under a label) \u00b7 393 emails in Trash or Spam.',
+      'Where it is now: 0 emails in your inbox \u00b7 6,275 emails elsewhere in Gmail \u00b7 393 emails in Trash or Spam.',
     );
   });
 
   // QA-delete-20260829-09 \u2014 "this email" is false for a population, and
   // the inbox segment needs the same unit noun every other segment gets.
-  it('gives the inbox segment its own unit noun and a population-scoped opener', () => {
+  it('gives the inbox segment its own unit noun and never says "this email"', () => {
     const copy = mailLocationCopy({ inboxNow: 1718, allMailNow: 1874, receivedTotal: 1874 })!;
-    expect(copy.startsWith("Where this sender's mail is now:")).toBe(true);
-    expect(copy).toContain('1,718 emails in your inbox');
+    expect(copy).not.toMatch(/this email/i);
+    expect(copy.startsWith('Where it is now: 1,718 emails in your inbox')).toBe(true);
   });
 
   it('subtracts the inbox out of the all-mail superset rather than double-counting', () => {
@@ -374,7 +373,7 @@ describe('mailLocationCopy', () => {
     // "Skip the Inbox" produces this exact shape with no transition.
     const copy = mailLocationCopy({ inboxNow: 0, allMailNow: 71, receivedTotal: 71 })!;
     expect(copy).not.toMatch(/you (archived|deleted|moved)/i);
-    expect(copy).toContain('archived or under a label');
+    expect(copy).toContain('elsewhere in Gmail');
   });
 
   it('stays silent until BOTH reaches resolve, and against an API with no all-mail block', () => {

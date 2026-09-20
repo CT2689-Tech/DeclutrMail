@@ -37,9 +37,10 @@ const { color, font } = tokens;
  * Settings → Privacy & Data (D116 + D217 + D228) — the dedicated
  * trust sub-page.
  *
- *   1. <PrivacyBadge variant="card"> — the D228 locked copy ("Full
- *      bodies fetched: 0" + the explicit storage list). Copy literals
- *      live ONLY in packages/shared/src/copy/privacy.ts.
+ *   1. <PrivacyBadge variant="card"> — the D228 locked copy ("We never
+ *      fetch or store full email contents." + the explicit storage
+ *      list). Copy literals live ONLY in
+ *      packages/shared/src/copy/privacy.ts.
  *   2. Indexed mailboxes — which accounts the storage list applies to.
  *   3. Undo retention — how long reversible actions stay reversible.
  *   4. Data export — mailbox metadata grouped as JSON plus per-dataset
@@ -118,8 +119,8 @@ export function PrivacyDataView({
         <div style={{ padding: '18px 20px' }}>
           <h3 style={cardTitleStyle}>Complete Gmail data inventory</h3>
           <p style={mutedTextStyle}>
-            Google grants broader access than DeclutrMail uses. Expand each group to see what is
-            accessed, saved, created, shared, exported, and deleted.
+            Google grants broader access than DeclutrMail uses. Each group shows what is accessed,
+            saved, created, shared, exported, and deleted.
           </p>
           <div style={{ marginTop: 12 }}>
             <ContextualHelp question="How is Google access different from stored data?">
@@ -175,7 +176,7 @@ export function PrivacyDataView({
       {/* 2 — which mailboxes the storage list applies to. */}
       <Card padding={0}>
         <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>mailboxes in DeclutrMail</h3>
+          <h3 style={cardTitleStyle}>Connected mailboxes</h3>
           {mailboxes.length === 0 ? (
             <p style={mutedTextStyle}>
               No mailboxes connected — no Gmail data is being saved right now.
@@ -235,9 +236,9 @@ export function PrivacyDataView({
             {UNIFORM_UNDO_WINDOW_DAYS === null
               ? "Delete also uses your plan's Activity Undo window."
               : `Delete also uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`}{' '}
-            Gmail Trash recovery is separate and normally lasts up to 30 days; a delivered
-            unsubscribe request cannot be recalled. Account deletion waits for open Activity undo
-            windows unless you explicitly waive them.
+            Gmail Trash recovery is separate and lasts up to 30 days; a delivered unsubscribe
+            request cannot be recalled. Account deletion waits for open undo windows unless you
+            waive them.
           </p>
         </div>
       </Card>
@@ -297,8 +298,8 @@ export function PrivacyDataView({
           </div>
           {exportFailed && (
             <p role="alert" style={{ fontSize: 12, color: color.danger, margin: '10px 0 0' }}>
-              The export could not be prepared. Wait a moment and try again — large mailboxes are
-              rate-limited to a few exports per five minutes.
+              The export could not be prepared. Wait a moment and try again — exports are limited to
+              a few every five minutes.
             </p>
           )}
         </div>

@@ -333,7 +333,7 @@ describe('triage_action_taken (D159)', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `Couldn't start archive ${GROUPON.senderName}. Nothing changed. The request was not accepted, so Gmail was not changed. Try again.`,
+        expect.stringContaining(`Couldn't start Archive for ${GROUPON.senderName}`),
         'warn',
       ),
     );

@@ -29,6 +29,7 @@ import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
 import { ActivateRuleModal } from './activate-rule-modal';
+import { ApproveConfirmModal } from './approve-confirm-modal';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
   AUTO_ARCHIVE_LOW_ENGAGEMENT,
@@ -179,7 +180,7 @@ describe('AutopilotScreen — edge states', () => {
   it('groups pending suggestions under their rule (D104)', () => {
     renderScreen(ready());
     expect(screen.getByText('What does "Watch first" do?')).toBeInTheDocument();
-    expect(screen.getByText(/Watch first turns the rule on in Observe/i)).toBeInTheDocument();
+    expect(screen.getByText(/Watch first collects matches/i)).toBeInTheDocument();
     // Two groups — auto-archive (2 rows) + newsletter graveyard (1 row).
     const archiveGroup = screen.getByRole('list', {
       name: /pending suggestions from auto-archive low-engagement — rows/i,
@@ -200,8 +201,8 @@ describe('AutopilotScreen — edge states', () => {
     renderScreen({ kind: 'ready', rules: PRESET_RULES_OBSERVE, suggestions });
     // Section header says 50+ — a page count, not a total claim.
     expect(screen.getByText(/50\+ waiting/)).toBeInTheDocument();
-    // Rule-card meta switches to the "latest 50" phrasing.
-    expect(screen.getAllByText(/pending in the latest 50/i).length).toBeGreaterThan(0);
+    // Rule-card meta marks a capped per-rule count with "+".
+    expect(screen.getAllByText(/^\d+\+ pending$/).length).toBeGreaterThan(0);
   });
 
   it('names the active mailbox in the eyebrow, not a static "default mailbox"', () => {
@@ -240,8 +241,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
       patternSuggestion: PATTERN_SUGGESTION,
     });
     const card = screen.getByRole('region', { name: /you archived 4 matching senders/i });
-    expect(within(card).getByText(/starts in observe: gmail does not change/i)).toBeInTheDocument();
-    expect(within(card).getByText(/this gmail account only/i)).toBeInTheDocument();
+    expect(within(card).getByText(/starts in observe: you approve or skip/i)).toBeInTheDocument();
     expect(within(card).getByText(/protected senders are always skipped/i)).toBeInTheDocument();
     expect(within(card).getByText(/100 actions; extra matches wait/i)).toBeInTheDocument();
     expect(within(card).getByText(/can be undone from activity/i)).toBeInTheDocument();
@@ -475,7 +475,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(observed).toHaveLength(0);
   });
 
-  it('“Turn on and run it” patches enabled + mode=active in ONE request', async () => {
+  it('“Turn on and run” patches enabled + mode=active in ONE request', async () => {
     const observed: Array<{ path: string; body: unknown }> = [];
     installFetchStub([
       {
@@ -498,7 +498,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
-    const confirm = await screen.findByRole('button', { name: /turn on and run it/i });
+    const confirm = await screen.findByRole('button', { name: /turn on and run/i });
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
 
@@ -564,7 +564,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // "Watch first" moves no mail, but it still commits a mode, so it
     // waits for the same dry-run. A second button that skipped the gate
     // would be a hole straight through the mandatory preview.
-    const confirm = await screen.findByRole('button', { name: /turn on and run it/i });
+    const confirm = await screen.findByRole('button', { name: /turn on and run/i });
     const watch = screen.getByRole('button', { name: /watch first/i });
     expect(confirm).toBeDisabled();
     expect(watch).toBeDisabled();
@@ -605,7 +605,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).queryByRole('button', { name: /turn on and run it/i })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: /turn on and run/i })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: /watch first/i })).toBeNull();
 
     const confirm = within(dialog).getByRole('button', { name: /turn on and watch/i });
@@ -653,7 +653,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
       expect(screen.getByRole('button', { name: /starting to watch/i })).toBeInTheDocument(),
     );
     expect(screen.queryByRole('button', { name: /^turning on…$/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /turn on and run it/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /turn on and run/i })).toBeInTheDocument();
     releasePatch();
   });
 
@@ -694,7 +694,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
 
     // With focus on the primary the chord still works — the guard must
     // suppress the shortcut, not break it.
-    screen.getByRole('button', { name: /turn on and run it/i }).focus();
+    screen.getByRole('button', { name: /turn on and run/i }).focus();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toEqual({ enabled: true, mode: 'active' });
@@ -719,7 +719,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
-    const confirm = await screen.findByRole('button', { name: /turn on and run it/i });
+    const confirm = await screen.findByRole('button', { name: /turn on and run/i });
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
 
@@ -835,14 +835,9 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
   it('renders the banner only when a rule has an elapsed observe window', () => {
     renderScreen(ready());
     // Fixture rule #1 is elapsed → banner present + honest no-auto-promote copy.
-    expect(screen.getByText(/nothing switches on by itself/i)).toBeInTheDocument();
-    // Assert the SENTENCE BOUNDARY, not just the fragment. A fragment match
-    // silently accepted "your mail.Nothing switches on by itself" when a
-    // conditional expression was introduced on the next JSX line and the
-    // newline was stripped. Every assertion here matches a substring, so the
-    // join between the static text and the expression needs its own check.
+    expect(screen.getByText(/collected matches for a week/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/touching your email\. Nothing switches on by itself/i),
+      screen.getByText(/^Each rule keeps observing until you switch it to Active\.$/),
     ).toBeInTheDocument();
   });
 
@@ -881,9 +876,10 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     authState.tier = 'free';
     renderScreen(ready());
 
-    expect(screen.queryByText(/until you explicitly switch it to Active/i)).toBeNull();
-    // Banner AND intro both name the granting plan (B2 fix), so this is
-    // deliberately getAllByText — getByText would throw on the second match.
+    expect(screen.queryByText(/until you switch it to Active/i)).toBeNull();
+    // The banner names the granting plan on its per-rule upgrade link;
+    // the intro names it in prose (B2 fix).
+    expect(screen.getByRole('link', { name: /requires Plus/i })).toBeInTheDocument();
     expect(screen.getAllByText(/part of Plus/i).length).toBeGreaterThan(0);
   });
 
@@ -893,7 +889,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     // The entitled explainer must be absent for an under-tier reader:
     // it describes a rule acting on its own, which they cannot reach.
-    expect(screen.queryByText(/Watch first turns the rule on in Observe/i)).toBeNull();
+    expect(screen.queryByText(/Watch first collects matches/i)).toBeNull();
     expect(screen.getByText(/Rules collect matching email in Observe/i)).toBeInTheDocument();
     expect(screen.getByText('What does Observe do?')).toBeInTheDocument();
     expect(screen.queryByText('What does "Watch first" do?')).toBeNull();
@@ -931,12 +927,9 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // "cleared" (in-flight work is untouched); in-flight work neither
     // "completes" nor "finishes with undo" unconditionally (it can fail
     // at the boundary; undo exists only where mail actually moved).
-    const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
-    expect(explanation.textContent).toMatch(/is not interrupted/i);
-    expect(explanation.textContent).toMatch(
-      /mail it actually moves keeps its Activity record and undo/i,
-    );
-    expect(explanation.textContent).toMatch(/returns to Observe automatically/i);
+    const explanation = screen.getByText(/this rule starts no new work/i);
+    expect(explanation.textContent).toMatch(/part of Plus/i);
+    expect(explanation.textContent).toMatch(/returns to Observe/i);
     // The five failed absolutes, all rejected — incl. round 5's
     // "result lands in Activity" (unsubscribe is outside
     // EXECUTION_VERBS; no-op terminals write no Activity row).
@@ -956,8 +949,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     ];
     renderScreen({ kind: 'ready', rules: withActiveUnsub, suggestions: [] });
 
-    const explanation = screen.getByText(/on your current plan this rule starts no new work/i);
-    expect(explanation.textContent).toMatch(/a delivered request cannot be recalled/i);
+    const explanation = screen.getByText(/this rule starts no new work/i);
     // No undo promise, no success promise, no Activity promise — a
     // request can fail at the sender's endpoint, and failed/no-op
     // unsubscribe terminals surface nowhere (Codex rounds 4-5).
@@ -990,7 +982,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
       observeWindowElapsed: false,
     }));
     renderScreen({ kind: 'ready', rules: stillObserving, suggestions: [] });
-    expect(screen.queryByText(/nothing switches on by itself/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/collected matches for a week/i)).not.toBeInTheDocument();
   });
 
   it('hides the day-7 prompt for a dismissed rule (D10 — persisted dismissal)', () => {
@@ -1000,7 +992,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
         : r,
     );
     renderScreen({ kind: 'ready', rules: dismissed, suggestions: [] });
-    expect(screen.queryByText(/nothing switches on by itself/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/collected matches for a week/i)).not.toBeInTheDocument();
   });
 
   it('hides the day-7 prompt when the window elapsed with ZERO pending matches (D10)', () => {
@@ -1010,7 +1002,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
         : r,
     );
     renderScreen({ kind: 'ready', rules: quietWeek, suggestions: [] });
-    expect(screen.queryByText(/nothing switches on by itself/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/collected matches for a week/i)).not.toBeInTheDocument();
   });
 
   it('the prompt carries the verb-honest digest numbers (D10)', () => {
@@ -1185,6 +1177,10 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     ).toBeInTheDocument();
     expect(within(dialog).getByText(/unsubscribe requests cannot be undone/i)).toBeInTheDocument();
     expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
+    // The Recovery line owns the one-way fact; the "For each new match"
+    // line above it must not state it a second time.
+    const text = dialog.textContent ?? '';
+    expect(text.match(/cannot be (undone|recalled)/gi)).toHaveLength(1);
   });
 
   // The backlog clause had NO test until 2026-08-24, which is how it
@@ -1221,9 +1217,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     // choosing between them right here.
     expect(within(dialog).getByText(/stay pending for your approval/i)).toBeInTheDocument();
     // The old promise must be gone, not merely joined by the new one.
-    expect(
-      within(dialog).queryByText(/does not approve them\. Approve or skip them separately/i),
-    ).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/Approve or skip them separately/i)).not.toBeInTheDocument();
   });
 
   it('turning on into Observe, says the backlog stays pending', () => {
@@ -1284,6 +1278,47 @@ describe('ActivateRuleModal — action-specific recovery', () => {
 describe('AutopilotScreen — approve flow (D104 + D226)', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
+
+  it('never describes a many-sender Unsubscribe rule as one unchecked sender', () => {
+    render(
+      <ApproveConfirmModal
+        rule={AUTO_UNSUBSCRIBE_NOISY}
+        matches={[]}
+        kind="all"
+        pendingTotal={null}
+        pendingApproximate={false}
+        mailboxEmail="me@example.com"
+        isApproving={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    const text = screen.getByRole('dialog').textContent ?? '';
+    expect(text).not.toMatch(/this sender has not been checked/i);
+    expect(text).toMatch(/one-click request/i);
+  });
+
+  it('states the one-way unsubscribe fact once in the approve footnote', () => {
+    render(
+      <ApproveConfirmModal
+        rule={AUTO_UNSUBSCRIBE_NOISY}
+        matches={[]}
+        kind="all"
+        pendingTotal={null}
+        pendingApproximate={false}
+        mailboxEmail="me@example.com"
+        isApproving={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    // The registry's `finality` line restates `activityUndo`; appending it
+    // printed "cannot be undone … cannot be recalled" back to back.
+    const text = screen.getByRole('dialog').textContent ?? '';
+    expect(text.match(/cannot be (undone|recalled)/gi)).toHaveLength(1);
+  });
 
   it('Approve all opens the preview modal; POSTs approve-all only after confirm', async () => {
     const observed: string[] = [];

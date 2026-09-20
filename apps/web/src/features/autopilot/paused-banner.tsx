@@ -97,8 +97,7 @@ export function PausedBanner({ rules }: { rules: AutopilotRuleDto[] }) {
             lineHeight: 1.5,
           }}
         >
-          No new matches will land while every rule is paused. Re-enable a rule from the rules list
-          to start observing again.
+          No new matches while paused. Resume a rule from the rules list to start again.
         </div>
       </div>
     </div>

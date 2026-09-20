@@ -50,15 +50,12 @@ export function ScreenerUpsell({ onSeePricing }: { onSeePricing: () => void }) {
         A queue of new senders, ready when you are.
       </h2>
       <p style={{ fontSize: 13, color: color.fgSoft, lineHeight: 1.6, margin: 0 }}>
-        With {GRANTING_PLAN}, the Screener collects every first-time sender for your review — they
-        still arrive in your inbox until you decide, and nothing moves without your say-so. Decide
-        once with Keep, Archive, Unsubscribe, Later, or Delete, and the sidebar badge tells you when
-        someone new shows up.
+        The Screener queues every first-time sender for one decision: Keep, Archive, Unsubscribe,
+        Later or Delete. Their mail keeps arriving until you choose.
       </p>
       <p style={{ fontSize: 12.5, color: color.fgMuted, lineHeight: 1.6, margin: 0 }}>
-        On your current plan, you can still defer any sender from Triage with{' '}
-        <strong>Later (L)</strong> — it parks their email in the DeclutrMail/Later label until
-        you&apos;re ready.
+        On your current plan you can still defer any sender from Triage with{' '}
+        <strong>Later (L)</strong>.
       </p>
       <div>
         <Button tone="primary" onClick={onSeePricing}>

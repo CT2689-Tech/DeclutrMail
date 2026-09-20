@@ -82,7 +82,7 @@ export const activityUndoRecoveryHelp =
   (UNIFORM_UNDO_WINDOW_DAYS === null
     ? "Activity Undo uses your DeclutrMail plan's window for Archive, Later, and Delete."
     : `Activity Undo uses a ${UNIFORM_UNDO_WINDOW_DAYS}-day window for Archive, Later, and Delete.`) +
-  ' Gmail Trash recovery is a separate fallback for Delete and normally lasts up to 30 days. A delivered unsubscribe request cannot be recalled; only an associated archive may have Activity Undo.';
+  " Deleted mail also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
 
 /**
  * Activity screen (D55-D60 + B-track power-options).
@@ -218,7 +218,6 @@ export function ActivityScreen() {
     },
     [writeUrl],
   );
-
   // ── Multi-select state (local, NOT URL-persisted) ──────────────────
   // Selection lives in component state because:
   //   - selections rarely outlive a tab (close = drop)
@@ -1710,9 +1709,8 @@ function ActivitySupportBundleDialog({
             >
               The optional appendix contains the bundle version, internal mailbox and Activity
               identifiers, action-attempt identifiers, machine action/source values, execution
-              status, classified error codes, and filter dates. It never includes OAuth, session, or
-              Undo tokens; idempotency keys; raw provider responses; message bodies; or raw
-              exception text.
+              status, classified error codes, and filter dates. No tokens, idempotency keys, message
+              bodies, or raw provider responses.
             </TechnicalDetails>
           </section>
 
@@ -1852,10 +1850,13 @@ function BulkActionBar({
     if (failedTokenList.length > 0) {
       onSetBulkError(
         getActionFailureCopy('revert-terminal', {
-          whatChanged: `${targets.length - failedTokenList.length} of ${targets.length} undo${targets.length === 1 ? '' : 's'} completed.`,
-          whatDidNotChange: `Completion could not be confirmed for ${failedTokenList.length} action${failedTokenList.length === 1 ? '' : 's'}. Some emails may have been restored.`,
-          nextStep: 'Use Try again on each failed row.',
-        }).message,
+          partial: {
+            done: targets.length - failedTokenList.length,
+            total: targets.length,
+            unit: targets.length === 1 ? 'undo' : 'undos',
+          },
+          outcome: 'use Try again on each failed row',
+        }),
       );
       // Persist failed tokens to ActivityScreen state so per-row
       // UndoCell renders the "Try again" pill on each failed row
@@ -3104,8 +3105,8 @@ function RecoveryPreviewBody({
   if (preview.status === 'consumed' && preview.outcome === 'no_change_needed') {
     return (
       <div role="status" style={{ color: color.emerald, fontSize: 13, lineHeight: 1.5 }}>
-        <strong>Nothing is left to retry.</strong> Gmail no longer has an applicable message in this
-        action&apos;s verified set, so no new action was queued.
+        <strong>Nothing is left to retry.</strong> Gmail no longer has a message this action applies
+        to, so nothing new was started.
       </div>
     );
   }
@@ -3127,7 +3128,7 @@ function RecoveryPreviewBody({
     if (preview.outcome === 'blocked') {
       return (
         <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
-          This action cannot be recovered safely from Activity. No new action was queued.
+          This action cannot be safely retried from Activity. Nothing new was started.
         </div>
       );
     }
@@ -3137,7 +3138,7 @@ function RecoveryPreviewBody({
   if (preview.status === 'consumed') {
     return (
       <div role="status" style={{ color: color.emerald, fontSize: 13 }}>
-        This verified review has already been used.
+        This review has already been used.
       </div>
     );
   }
@@ -3172,7 +3173,7 @@ function RecoveryVerificationFailure({
 }) {
   return (
     <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
-      Gmail&apos;s current state could not be verified. Nothing changed.
+      We couldn&apos;t check Gmail&apos;s current state.
       <div style={{ marginTop: 10 }}>
         <Button tone="default" onClick={onRetry}>
           Check again
@@ -3199,16 +3200,16 @@ function RecoveryCount({ label, value }: { label: string; value: number }) {
 function RecoveryConsequence({ preview }: { preview: ActionRecoveryPreviewResult }) {
   const actionCopy =
     preview.verb === 'archive'
-      ? 'Archive removes Inbox from the verified messages. It does not delete them.'
+      ? 'Archive takes these emails out of the Inbox. It does not delete them.'
       : preview.verb === 'delete'
-        ? 'Delete moves the verified messages to Gmail Trash. Gmail Trash recovery remains separate.'
-        : 'Later removes Inbox now and returns the verified messages at the confirmed time.';
+        ? 'Delete moves these emails to Gmail Trash. Gmail Trash recovery remains separate.'
+        : 'Later takes these emails out of the Inbox now and returns them at the confirmed time.';
   const outcomeCopy =
     preview.outcome === 'already_applied'
-      ? 'Gmail already reflects this action. Confirming reconciles DeclutrMail’s Activity and Undo record without creating a duplicate provider effect.'
+      ? 'Gmail already reflects this action. Confirming updates your Activity and Undo record without a duplicate effect in Gmail.'
       : preview.outcome === 'partial'
-        ? 'Gmail reflects only part of the original action. Confirming safely reconciles the entire verified set.'
-        : 'Gmail does not yet reflect the failed action for this verified set.';
+        ? 'Gmail reflects only part of the original action. Confirming finishes it for the emails found in Gmail.'
+        : 'Gmail does not yet reflect the failed action.';
   return (
     <div
       style={{
@@ -3256,7 +3257,7 @@ function recoveryConfirmErrorMessage(error: Error): string {
     return 'This sender already has a newer Later schedule. The failed schedule was not replayed.';
   }
   if (code === 'LATER_WAKE_TIME_REQUIRED') {
-    return 'The saved return time has passed. Nothing was queued. Check Gmail again, then choose a new future return time.';
+    return 'The saved return time has passed. Check Gmail again, then choose a new return time.';
   }
   if (code === 'ACTION_NO_LONGER_FAILED') {
     return 'This action no longer needs recovery. Refresh Activity to see its current state.';
@@ -3264,7 +3265,7 @@ function recoveryConfirmErrorMessage(error: Error): string {
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
     return 'This recovery review was already used. Refresh Activity to see the current attempt.';
   }
-  return 'DeclutrMail could not confirm the retry went through. Gmail may not have changed yet. Trying the same confirmation again is safe — it will not create a duplicate.';
+  return "We couldn't confirm the retry. Try again — it won't create a duplicate.";
 }
 
 function recoveryConfirmNeedsRecheck(error: Error): boolean {
@@ -3512,10 +3513,8 @@ function ActivityErrorState({
   const isClientInput = isFilterError || isActivityFilterValidationError(error);
   const title = isClientInput ? 'Check your activity filters' : "We couldn't load your activity";
   const message = isClientInput
-    ? 'Nothing changed. Activity could not load this filter. Use a valid outcome and valid dates with From earlier than To, or reset the filters and try again.'
-    : error instanceof ApiError
-      ? 'Your mailbox and actions are unchanged. Activity could not load. Try again in a moment.'
-      : 'Your mailbox and actions are unchanged. Activity could not load right now. Try again in a moment.';
+    ? 'Activity could not load this filter. Use a valid outcome and a From date earlier than To, or reset the filters.'
+    : 'Try again in a moment.';
   return (
     <div
       style={{

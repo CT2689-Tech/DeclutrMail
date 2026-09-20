@@ -193,8 +193,10 @@ export interface SenderListRow {
   monthlyVolume: number | null;
   readRate: number | null;
   /**
-   * How many of this sender's last-30-day messages were marked read by a
-   * known third-party sweeper rather than by the user (mig 0064, F012).
+   * How many of this sender's messages in the engine window
+   * (`WINDOWS.ENGINE_WINDOW_DAYS`, 90 days — the same window as
+   * `readRate`) were marked read by a known third-party sweeper rather
+   * than by the user (mig 0064, F012).
    *
    * Already EXCLUDED from `readRate`'s numerator. Surfaced so the product
    * can explain an odd-looking number — "324 of 350 marked by Unroll.me"

@@ -182,6 +182,8 @@ export {
   DEFAULT_REASONING_RATE_PER_MIN,
   MAX_REASONING_CONCURRENCY,
   MAX_REASONING_RATE_PER_MIN,
+  MAX_REASONING_WORDS,
+  reasoningWordCount,
   renderTemplate,
   resolveExplainTimeoutMs,
   resolveReasoningConcurrency,

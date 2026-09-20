@@ -19,6 +19,7 @@ import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE, type ActionReach } from '@/lib/api/actions';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 
@@ -336,7 +337,7 @@ export function ScreenerScreen({
     const t = setTimeout(() => {
       void track('action_overdue', { kind: 'single', verb: activeAction.verb });
       toast(
-        `${VERB_LABEL[activeAction.verb]} for ${activeAction.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+        `${VERB_LABEL[activeAction.verb]} for ${activeAction.senderName} is still running — see Activity.`,
         'info',
       );
       setOverdueAction(activeAction);
@@ -396,20 +397,17 @@ export function ScreenerScreen({
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       toast(
-        `${unsubWatch.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+        `${unsubWatch.senderName} accepted the unsubscribe request — stopping is up to them.`,
         'success',
       );
       invalidateAfterDecision(qc);
     } else if (data.errorCode === UNSUB_AMBIGUOUS_ERROR_CODE) {
       toast(
-        `${unsubWatch.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
+        `Unsubscribe from ${unsubWatch.senderName} is unconfirmed — watch for new email.`,
         'warn',
       );
     } else {
-      toast(
-        `${unsubWatch.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
-        'warn',
-      );
+      toast(`Unsubscribe from ${unsubWatch.senderName} failed — Archive still works.`, 'warn');
     }
     setUnsubWatch(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, unsubWatch, qc]);
@@ -645,8 +643,8 @@ export function ScreenerScreen({
               // page size. Until the count resolves, claim no number
               // rather than presenting the page size as the total.
               totalPending !== null
-              ? `${totalPending} new sender${totalPending === 1 ? '' : 's'} waiting.`
-              : 'New senders waiting.'
+              ? `${totalPending} new sender${totalPending === 1 ? '' : 's'} to decide`
+              : 'New senders to decide'
             : state.kind === 'empty'
               ? screenerEmptyTitle(activeMailbox?.readiness)
               : state.kind === 'error'
@@ -658,7 +656,7 @@ export function ScreenerScreen({
       <ScreenIntro
         id="screener"
         title="How the Screener works"
-        body="Review first-time senders before deciding what should happen. Their email still arrives in Inbox until you decide, and every destructive action shows a preview first."
+        body="One decision per new sender. Their mail keeps arriving until you choose."
         learnMore={{
           href: '/methodology#action-method',
           label: 'How action previews protect you',
@@ -718,12 +716,12 @@ export function ScreenerScreen({
 
 /** Query-failure state (D211) — explicit retry only (reads never auto-retry 4xx). */
 function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? "We couldn't load the Screener. Try again in a moment."
-      : "We couldn't load the Screener queue right now. Try again in a moment.";
   return (
-    <ErrorState title="Your pending senders didn't load" description={message} onRetry={onRetry} />
+    <ErrorState
+      title="Your pending senders didn't load"
+      description={loadErrorDescription(error)}
+      onRetry={onRetry}
+    />
   );
 }
 

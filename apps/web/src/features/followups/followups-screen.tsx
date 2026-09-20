@@ -216,17 +216,14 @@ function FollowupsScopeDisclosure() {
       </summary>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 7, paddingTop: 8 }}>
         <p style={{ margin: 0 }}>
-          DeclutrMail uses saved sender, recipient, subject line, conversation, and date details —
-          not full email contents — to find conversations where your latest saved email is outgoing.
+          This is not live Gmail status. Checks read saved sender, recipient, subject and date
+          details for these conversations — never full email contents. They run about every six
+          hours over sent email from the last 60 days, so a recent reply can remain here until the
+          next check.
         </p>
         <p style={{ margin: 0 }}>
-          This is not live Gmail status. Checks run about every six hours and consider sent email
-          from the last 60 days, so a recent reply can remain here until the next check.
-        </p>
-        <p style={{ margin: 0 }}>
-          Already resolved elsewhere or not a useful follow-up? Use <strong>Mark resolved</strong>.
-          It hides the item in DeclutrMail and records the decision in Activity; it does not mark a
-          recipient reply or change Gmail.
+          <strong>Mark resolved</strong> hides a thread in DeclutrMail. It does not mark a recipient
+          reply or change Gmail.
         </p>
       </div>
     </details>
@@ -427,8 +424,8 @@ export function FollowupListItem({
         <button
           type="button"
           onClick={() => onDismiss(row)}
-          title="Mark resolved in DeclutrMail — this does not mark a recipient reply"
-          aria-label={`Mark resolved in DeclutrMail — ${recipient.name}; does not mark a recipient reply`}
+          title="Mark resolved in DeclutrMail"
+          aria-label={`Mark resolved in DeclutrMail — ${recipient.name}`}
           onMouseEnter={emphasizeDismiss}
           onMouseLeave={resetDismiss}
           onFocus={emphasizeDismiss}

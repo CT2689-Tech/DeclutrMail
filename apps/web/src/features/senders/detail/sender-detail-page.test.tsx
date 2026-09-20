@@ -21,6 +21,7 @@ import {
 import { ACTION_OVERDUE_MS, isCurrentYearMonth, SenderDetailRoute } from './sender-detail-page';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
+import { UNDO_DONE_TOAST } from '@/lib/action-error-copy';
 import { useRevertUndo } from '@/lib/api/use-action';
 import {
   addFetchHandlers,
@@ -333,6 +334,57 @@ describe('SenderDetailRoute', () => {
     expect(screen.queryByText(/^Sent \d/)).not.toBeInTheDocument();
   });
 
+  // F012 / ADR-0037 — the sweeper split must stay VISIBLE (a footnote
+  // line, not a tooltip), and the hero keeps its two truth-required
+  // window labels. Facts pinned, not the sentence.
+  it('keeps the read-rate window labels and shows the sweeper split as visible text', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+$/,
+        respond: () => jsonOk({ data: { ...DETAIL, readRateSweeperMarked: 20819 } }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/messages$/,
+        respond: () =>
+          jsonOk({
+            data: [MESSAGE],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/timeseries$/,
+        respond: () => jsonOk({ data: [{ yearMonth: '2020-01', volume: 5, readCount: 1 }] }),
+      },
+      {
+        method: 'GET',
+        path: /^\/api\/senders\/[^/]+\/history$/,
+        respond: () =>
+          jsonOk({
+            data: [],
+            meta: { pagination: { nextCursor: null, hasMore: false, limit: 10 } },
+          }),
+      },
+    ]);
+    renderDetail();
+
+    await waitFor(() =>
+      expect(screen.getByText(/marked read in the last 90 days/)).toBeInTheDocument(),
+    );
+    const note = screen.getByText(/marked read by another tool/);
+    expect(note).toHaveTextContent('20,819');
+    expect(note).toHaveTextContent(/not counted/);
+    // The rate is stated once — in the KPI cell, with both window labels —
+    // and the hero keeps only the population it is computed over.
+    const main = document.body.textContent ?? '';
+    expect(main.match(/marked read in the last 90 days/g)).toHaveLength(1);
+    const hero = screen.getByText(/so far in|Last mailed you in/).closest('p');
+    expect(hero).toHaveTextContent(/in the last 90 days/);
+    expect(hero).not.toHaveTextContent(/%/);
+  });
+
   it('shows "Last mailed you in" framing for a stale (non-current) latest month', async () => {
     installFetchStub([
       { method: 'GET', path: /^\/api\/senders\/[^/]+$/, respond: () => jsonOk({ data: DETAIL }) },
@@ -558,9 +610,7 @@ describe('SenderDetailRoute', () => {
     ]);
     renderDetail();
 
-    await waitFor(() =>
-      expect(screen.getByText(/No actions on this sender yet/i)).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/Nothing decided yet/i)).toBeInTheDocument());
     for (const claim of [
       'Keep decision saved',
       'Archived',
@@ -1108,12 +1158,13 @@ describe('SenderDetailRoute', () => {
       // owns this sender. The toggle said only "Protect", so a user
       // looking at an automatically-protected sender had no way to
       // learn why (three of the four reasons are automatic).
-      expect(screen.getByRole('button', { name: 'Protected' })).toHaveAttribute(
-        'title',
-        expect.stringMatching(
-          /^Protected — .+\. Select to remove protection\.$/,
-        ) as unknown as string,
-      );
+      // Rendered ONCE, as the visible line — not repeated as a tooltip.
+      expect(screen.getByText(/^Protected — .+\.$/)).toBeInTheDocument();
+      // The tooltip carries the one thing the label cannot: that a click
+      // unprotects. It does not repeat the reason.
+      const protectedToggle = screen.getByRole('button', { name: 'Protected' });
+      expect(protectedToggle).toHaveAttribute('title', expect.stringMatching(/unprotect/i));
+      expect(protectedToggle.getAttribute('title')).not.toMatch(/—/);
 
       // Second toggle (unprotect) fails → rollback to the set chip.
       fail = true;
@@ -1333,7 +1384,7 @@ describe('SenderDetailRoute', () => {
         // so the parked handle still owns the ONLY subject.
         await tick(ACTION_OVERDUE_MS);
         expect(h.toast).toHaveBeenCalledWith(
-          'Archive for LinkedIn is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+          expect.stringMatching(/^Archive for LinkedIn is still running/),
           'info',
         );
 
@@ -1573,15 +1624,15 @@ describe('SenderDetailRoute', () => {
       // The QUIET `externalRevertActionId` poll (fed `act-revert-1` by the
       // mutation-cache listener) resolves terminal and clears the receipt —
       // but Codex round 2: it must NOT toast. The tray that actually
-      // performed this revert already told the user; this page saying
-      // "Restored to your inbox" too would be a duplicate confirmation for
+      // performed this revert already told the user; this page repeating
+      // the undo-completion toast would be a duplicate confirmation for
       // one action.
       await waitFor(
         () => expect(screen.queryByRole('button', { name: /^undo$/i })).not.toBeInTheDocument(),
         { timeout: 3000 },
       );
       expect(actionPosts).toBe(1);
-      expect(h.toast).not.toHaveBeenCalledWith('Restored to your inbox', 'success');
+      expect(h.toast).not.toHaveBeenCalledWith(UNDO_DONE_TOAST, 'success');
     });
   });
 });

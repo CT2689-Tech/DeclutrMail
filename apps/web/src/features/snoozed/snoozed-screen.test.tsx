@@ -168,7 +168,7 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     ]);
     renderScreen();
     expect(await screen.findByText('Return retrying')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/could not confirm/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/could not be confirmed/i);
     expect(screen.getByText(/automatic retry remains active/i)).toBeInTheDocument();
     expect(screen.getByText(/Last tried/i)).toBeInTheDocument();
   });
@@ -200,9 +200,10 @@ describe('SnoozedScreen — wake now flow', () => {
     // Step 1 — the click opens a confirm; nothing has mutated yet.
     await user.click(screen.getByRole('button', { name: 'Bring back now' }));
     expect(wakePosted).toBe(0);
-    expect(
-      screen.getByText(/12 messages move from DeclutrMail\/Later back to your inbox/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/12 messages return to your inbox/i)).toBeInTheDocument();
+    // Wake-now has no Activity undo, so the confirm must say the scheduled
+    // return is discarded — on the populated branch, not only the empty one.
+    expect(screen.getByText(/return time clears/i)).toBeInTheDocument();
 
     // Step 2 — confirming fires the POST and flips the row to waking.
     const confirmButtons = screen.getAllByRole('button', { name: 'Bring back now' });

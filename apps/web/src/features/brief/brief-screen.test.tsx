@@ -179,6 +179,10 @@ describe('BriefScreen — edge states', () => {
       ).toBeInTheDocument(),
     );
     expect(screen.getByRole('alert')).toHaveTextContent(/needs attention/i);
+    // The server answered with a failure, so the line can say so — and
+    // never the raw "GET /api/… failed: 500" exception text.
+    expect(screen.getByRole('alert')).toHaveTextContent(/server returned an error/i);
+    expect(screen.getByRole('alert')).not.toHaveTextContent(/\/api\//);
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
   });
 

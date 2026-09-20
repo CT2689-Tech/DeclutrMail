@@ -165,9 +165,7 @@ describe('ActionToolbar — disabled verbs state their reason (W2, D209/D211)', 
     // this row is reachable and must not claim we looked.
     const notChecked: TriageDecisionRow = { ...oneClick, unsubscribeMethod: null };
     const reason = verbDisabledReason('Unsubscribe', notChecked);
-    expect(reason).toBe(
-      "We haven't checked this sender for an unsubscribe option yet — Archive works in the meantime.",
-    );
+    expect(reason).toContain('Not checked');
     expect(reason).not.toBe(NO_CHANNEL_COPY);
     expect(canUnsubscribe(notChecked)).toBe(false);
 

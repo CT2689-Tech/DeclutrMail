@@ -58,8 +58,7 @@ const RECONNECT_RESULT_COPY: Record<ReconnectResult, ReconnectResultCopy> = {
     liveRole: 'status',
   },
   account_mismatch: {
-    message:
-      'That was a different Google account. Retry Reconnect next to the Gmail address you intended to restore.',
+    message: 'That was a different Google account. Retry Reconnect next to the mailbox you meant.',
     tone: 'danger',
     liveRole: 'alert',
   },
@@ -88,13 +87,12 @@ const CONNECT_START_RESULT_COPY: Record<ConnectStartResult, ReconnectResultCopy>
   },
   inbox_limit: {
     message:
-      'Your current plan’s Gmail limit is already in use. Review your plan or disconnect a mailbox before trying again.',
+      'Your plan’s Gmail limit is in use. Review your plan or disconnect a mailbox, then try again.',
     tone: 'warn',
     liveRole: 'status',
   },
   session_retry: {
-    message:
-      'We couldn’t verify your session for that Gmail connection attempt. Your session is active now—try again.',
+    message: 'We couldn’t verify your session for that Gmail connection. Try again.',
     tone: 'warn',
     liveRole: 'status',
   },
@@ -164,7 +162,7 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
 
 /** Left-nav anchor targets — ids stamped on each SectionLabel. */
 const NAV_SECTIONS = [
-  { id: 'mailboxes', label: 'mailboxes' },
+  { id: 'mailboxes', label: 'Mailboxes' },
   { id: 'actions', label: 'Actions' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'autopilot', label: 'Autopilot' },

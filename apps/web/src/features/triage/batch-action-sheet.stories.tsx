@@ -201,7 +201,24 @@ export const Unavailable: Story<typeof BatchActionSheet> = {
   render: (args: Args) => frame(<BatchActionSheet {...args} />),
 };
 
-/** Nothing to move — a real zero count ("nothing to move."). */
+/**
+ * Nothing actionable — every queued sender went Protected since queuing.
+ * Confirm is disabled and Refresh triage is the route out.
+ */
+export const NothingActionable: Story<typeof BatchActionSheet> = {
+  args: {
+    open: true,
+    verb: 'Archive',
+    batch: AMAZON_BATCH,
+    preview: preview(AMAZON_BATCH, [4, 2, 1], [0, 1, 2]),
+    onCancel: () => {},
+    onConfirm: () => {},
+    onRefreshTriage: () => {},
+  },
+  render: (args: Args) => frame(<BatchActionSheet {...args} />),
+};
+
+/** Nothing to move — a real zero count: confirm is disabled and says why. */
 export const NothingToMove: Story<typeof BatchActionSheet> = {
   args: {
     open: true,

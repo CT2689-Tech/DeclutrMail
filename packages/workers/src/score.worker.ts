@@ -18,6 +18,8 @@ import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 import {
   createLimiter,
+  MAX_REASONING_WORDS,
+  reasoningWordCount,
   resolveExplainTimeoutMs,
   resolveReasoningConcurrency,
   resolveReasoningRatePerMin,
@@ -533,6 +535,9 @@ export class ScoreWorker extends BaseDeclutrWorker<ScoreJobData, ScoreJobResult>
         existing.generatedBy === 'llm_haiku' &&
         existing.verdict === result.verdict &&
         existing.reasoning &&
+        // A paragraph stored before the word ceiling existed is not worth
+        // keeping: fall through to a fresh (ceiling-checked) call.
+        reasoningWordCount(existing.reasoning) <= MAX_REASONING_WORDS &&
         existing.expiresAt > (this.deps.now ?? (() => new Date()))();
       if (reusable) {
         // Falls through to the monotonic upsert below so produced_at /

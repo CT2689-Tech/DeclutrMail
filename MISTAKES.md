@@ -21,6 +21,15 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-09-19 — A brevity sweep cut three disclosures narrower than the data, and left one duplicate behind
+
+**PR:** copy-brevity sweep (branch `claude/product-verbosity-audit-dde978`)
+**Caught by:** privacy-auditor (3 blocking) + design-system-agent (2 blocking), before commit
+**What happened:** Five parallel agents shortened ~220 in-app strings from an audit's Now/Use list. Three cuts passed every test and were wrong: the pre-consent storage step became "Everything we store is listed in Settings" (an absolute broader than that screen, and unreachable before consent); the all-mail reach note lost "Trash, Spam, Drafts and Chat are never touched", leaving a Delete scope that read as unbounded; the Followups disclosure lost the clause saying received replies' metadata is read. Separately the Later wake-now confirm lost "the return time clears" on one branch only, and the approve modal still printed the one-way unsubscribe fact twice because its lead used `previewCopy` beside a recovery footnote. My own briefing caused two of the five: I dictated the short reach note and the "Everything we store" line.
+**Correct approach:** A cut is safe when it removes repetition; it is not safe when it removes the only statement of a scope, an exclusion, or a consequence. Before shortening a disclosure, list what it bounds and check each bound survives somewhere on that screen. Run the privacy and design gates on a copy sweep even though "only words changed".
+**Rule:** Shorten by deleting duplicates first; never delete the last statement of a scope, exclusion or consequence. Ask the gate for accepted wording in round one.
+**Enforcement update:** CLAUDE.md §8 copy budgets name what may not be cut; usability-editor tie-break added. No hook — this needs a reading, not a match.
+
 ## 2026-08-29 — Asserted a Vercel console setting was off with no way to check it — it was on
 
 **PR:** #676 (docs-only, branch `claude/infra-cost-capture-gap-wsqdhz`)

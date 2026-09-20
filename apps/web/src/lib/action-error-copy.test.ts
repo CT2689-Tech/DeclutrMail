@@ -4,38 +4,64 @@ import { ApiError } from '@/lib/api/client';
 
 import { getActionFailureCopy, technicalErrorDetails } from './action-error-copy';
 
+const PHASES = [
+  'preview',
+  'enqueue',
+  'status',
+  'terminal',
+  'revert-enqueue',
+  'revert-status',
+  'revert-terminal',
+] as const;
+
 describe('getActionFailureCopy', () => {
-  it('makes a preview failure explicit and safe to retry', () => {
-    expect(getActionFailureCopy('preview')).toEqual({
-      title: 'Preview unavailable.',
-      whatChanged: 'Nothing changed.',
-      whatDidNotChange: 'No email was moved and no request was sent.',
-      nextStep: 'Retry the preview before confirming.',
-      message:
-        'Preview unavailable. Nothing changed. No email was moved and no request was sent. Retry the preview before confirming.',
-    });
+  it.each(PHASES)('keeps %s to the one-sentence toast budget', (phase) => {
+    const copy = getActionFailureCopy(phase, { action: 'Archive for Acme' });
+    // One sentence: a single terminal period, nothing after it.
+    expect(copy.match(/[.!?](\s|$)/g)).toHaveLength(1);
+    expect(copy.endsWith('.')).toBe(true);
   });
 
-  it('distinguishes an accepted request with an unknown outcome from an enqueue failure', () => {
-    expect(getActionFailureCopy('enqueue', { action: 'archive Acme' }).message).toContain(
-      'The request was not accepted',
+  it('says nothing changed only when the request was never accepted', () => {
+    expect(getActionFailureCopy('enqueue', { action: 'Archive for Acme' })).toMatch(
+      /start Archive for Acme.*nothing changed/,
     );
-    expect(getActionFailureCopy('status', { action: 'archive Acme' }).message).toContain(
-      'The request was accepted, but its outcome is not confirmed',
+    expect(getActionFailureCopy('revert-enqueue')).toMatch(/start undo.*nothing changed/);
+    for (const phase of ['status', 'terminal', 'revert-status', 'revert-terminal'] as const) {
+      expect(getActionFailureCopy(phase)).not.toMatch(/nothing changed/);
+    }
+  });
+
+  it('sends an unconfirmed outcome to Activity before a retry', () => {
+    for (const phase of ['status', 'terminal', 'revert-status', 'revert-terminal'] as const) {
+      expect(getActionFailureCopy(phase, { action: 'Archive for Acme' })).toMatch(
+        /check Activity before retrying/,
+      );
+    }
+    expect(getActionFailureCopy('status', { action: 'Archive for Acme' })).toMatch(
+      /confirm Archive for Acme/,
+    );
+    expect(getActionFailureCopy('terminal', { action: 'the Noise archive' })).toMatch(
+      /^The Noise archive failed/,
     );
   });
 
-  it('supports truthful partial-change overrides', () => {
-    const copy = getActionFailureCopy('enqueue', {
-      action: 'archive the backlog',
-      whatChanged: 'The unsubscribe request was queued.',
-      whatDidNotChange: 'The backlog was not archived.',
-      nextStep: 'Archive the backlog from Senders.',
+  it('leads a partial batch with the confirmed split', () => {
+    const copy = getActionFailureCopy('terminal', {
+      action: 'Archive',
+      partial: { done: 3, total: 5, unit: 'senders' },
     });
+    expect(copy).toMatch(/^Archive: 3 of 5 senders completed/);
+    expect(copy).toMatch(/Activity/);
+    expect(copy).not.toMatch(/failed/);
+  });
 
-    expect(copy.message).toBe(
-      "Couldn't start archive the backlog. The unsubscribe request was queued. The backlog was not archived. Archive the backlog from Senders.",
-    );
+  it('lets a surface replace the clause after the dash', () => {
+    const copy = getActionFailureCopy('revert-terminal', {
+      partial: { done: 2, total: 3, unit: 'undos' },
+      outcome: 'use Try again on each failed row',
+    });
+    expect(copy).toBe('2 of 3 undos completed — use Try again on each failed row.');
   });
 });
 

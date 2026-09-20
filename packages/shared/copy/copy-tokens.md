@@ -44,12 +44,12 @@ These are correct and must not be "fixed":
 
 An action surface has four slots. A fact belongs to exactly one:
 
-| Slot          | Owns                     | Example                                     |
-| ------------- | ------------------------ | ------------------------------------------- |
-| Title         | what happens             | "Move inbox email from Acme to Gmail Trash" |
-| Impact figure | how much                 | "12 · in Inbox now"                         |
-| Lead          | what does **not** happen | "Future email is unchanged."                |
-| Footer        | how to undo              | "Undo from Activity for 30 days."           |
+| Slot          | Owns                                                         | Example                                     |
+| ------------- | ------------------------------------------------------------ | ------------------------------------------- |
+| Title         | what happens                                                 | "Move inbox email from Acme to Gmail Trash" |
+| Impact figure | how much                                                     | "12 · in Inbox now"                         |
+| Lead          | what does **not** happen — only where the user would fear it | "Future email is unchanged." (Delete)       |
+| Footer        | how to undo                                                  | "Undo from Activity for 30 days."           |
 
 `senders/confirm-action-modal.tsx` is the reference implementation — it
 splits effect copy from recovery copy and never renders the whole fact
@@ -69,7 +69,26 @@ times.
   simulator) — on those, recovery copy stays in the lead.
 - The reason a disabled control is disabled, and the route out of that
   state.
-- A count's honesty clause ("rechecked when it runs").
+- A count's honesty clause ("rechecked when it runs") — once per flow, not
+  once per component.
+
+### Budgets (founder decision 2026-09-19; CLAUDE.md §8)
+
+| Surface            | Budget                                          |
+| ------------------ | ----------------------------------------------- |
+| Button / menu item | ≤ 3 words                                       |
+| Toast              | 1 sentence                                      |
+| Error              | cause + next action, ≤ 2 sentences              |
+| Empty state        | a title + at most 1 sentence or 1 action        |
+| Preview            | the count, where the email goes, how to undo it |
+
+- The lead's "what does not happen" slot is filled only where the user
+  would plausibly fear it. An Archive preview does not deny deleting.
+- Trust and privacy copy renders once per flow, at the decision point —
+  never on heroes, banners or empty states.
+- When truth and budget collide, **cut the claim; do not qualify it.**
+- Tests pin facts (digits, the verb, a short fragment), not whole
+  sentences.
 
 ---
 

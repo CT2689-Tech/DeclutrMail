@@ -10,16 +10,17 @@ import {
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
-import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import { ApiError } from '@/lib/api/client';
 import type { SnoozedSenderRow } from '@/lib/api/snoozed';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 
 import { useSetSnooze, useSnoozed, useWakeNow } from './api/use-snoozed';
+import { laterReturnIssueCopy } from './later-return-alert';
 import {
   formatWakeTime,
   groupByWakeTime,
@@ -123,8 +124,7 @@ export function SnoozedScreen() {
       <ScreenIntro
         id="snoozed"
         title="Later"
-        body="Senders you sent to Later. Their email sits in the DeclutrMail/Later label in Gmail — out of your inbox, one click away — and comes back at the return time you choose."
-        tip="Bring back now returns everything to your inbox immediately. Nothing is unsubscribed or deleted from here."
+        body="Email from these senders waits in Gmail's DeclutrMail/Later label until the return time you picked."
       />
 
       {returnIssues.length > 0 ? <LaterPageReturnAlert rows={returnIssues} /> : null}
@@ -134,8 +134,7 @@ export function SnoozedScreen() {
           title="Nothing in Later."
           description={
             <>
-              Send a sender to <strong>Later</strong> from Triage or Senders and it lands here, with
-              its email tucked into the DeclutrMail/Later label until you bring it back.
+              Send a sender to <strong>Later</strong> from Triage or Senders.
             </>
           }
         />
@@ -173,14 +172,13 @@ function LaterPageReturnAlert({ rows }: { rows: SnoozedSenderRow[] }) {
         fontWeight: 600,
       }}
     >
-      {rows.length} Later return{rows.length === 1 ? '' : 's'} need attention. DeclutrMail could not
-      confirm the return; nothing will be deleted. Check the inbox or Gmail&apos;s DeclutrMail/Later
-      label.{' '}
-      {supportRequired
-        ? 'Choose Bring back now once. If it still fails, use Help in Settings.'
-        : reconnectRequired
-          ? 'Reconnect Gmail from the account menu, then choose Bring back now.'
-          : 'DeclutrMail will keep retrying automatically, or choose Bring back now to retry immediately.'}
+      {laterReturnIssueCopy({
+        count: rows.length,
+        sender: null,
+        lastTried: null,
+        failureKind: supportRequired ? 'needs_attention' : reconnectRequired ? 'reauthorize' : null,
+        retryAction: 'Bring back now',
+      })}
     </div>
   );
 }
@@ -464,22 +462,12 @@ function WakeConfirm({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const presentation = buildActionPresentation({
-    verb: 'unarchive',
-    liveCount: row.laterCount,
-    planUndoDeadline: null,
-    wakeAt: null,
-    unsubscribeChannel: null,
-    // Absolute times render in the reader's own clock: every one of
-    // these surfaces is opened by a click, never server-rendered.
-    timeZone: 'viewer',
-  }).primary;
   const what =
     row.laterCount === null
-      ? 'Everything from this sender in the DeclutrMail/Later label moves back to your inbox'
+      ? 'Everything from this sender in DeclutrMail/Later returns to your inbox now, and the return time clears'
       : row.laterCount === 0
-        ? 'No email is currently in the Later label — this clears the return time'
-        : `${row.laterCount} message${row.laterCount === 1 ? '' : 's'} move${row.laterCount === 1 ? 's' : ''} from DeclutrMail/Later back to your inbox`;
+        ? 'No email is in the Later label — this clears the return time'
+        : `${row.laterCount} message${row.laterCount === 1 ? '' : 's'} return${row.laterCount === 1 ? 's' : ''} to your inbox now, and the return time clears`;
   return (
     <div
       style={{
@@ -494,23 +482,20 @@ function WakeConfirm({
       <div style={{ width: '100%' }}>
         <MailboxActionContext />
       </div>
-      <span style={{ fontSize: 12.5, color: color.fg }}>
-        {what}. {presentation.futureMail.summary} {presentation.unchanged.join(' ')} The return time
-        clears.
-      </span>
+      <span style={{ fontSize: 12.5, color: color.fg }}>{what}.</span>
       <span style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
         <Button tone="default" onClick={onCancel} disabled={pending}>
           Cancel
         </Button>
         <Button tone="primary" onClick={onConfirm} disabled={pending}>
-          {pending ? 'Queuing…' : 'Bring back now'}
+          {pending ? 'Starting…' : 'Bring back now'}
         </Button>
       </span>
       {error ? (
         <span role="alert" style={{ fontSize: 12, color: color.red, width: '100%' }}>
           {error instanceof ApiError && error.status === 503
             ? "The return schedule isn't available right now. Try again in a moment."
-            : "Couldn't queue the wake. Try again in a moment."}
+            : "Couldn't start the return. Try again in a moment."}
         </span>
       ) : null}
     </div>
@@ -675,13 +660,13 @@ function LoadingState() {
 }
 
 function SnoozedErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
-  const message =
-    error instanceof ApiError
-      ? "We couldn't load your Later senders. Try again in a moment."
-      : "We couldn't load your Later senders right now. Try again in a moment.";
   return (
     <div style={{ padding: '20px 24px 28px', maxWidth: 720, fontFamily: font.sans }}>
-      <ErrorState title="We couldn't load Later" description={message} onRetry={onRetry} />
+      <ErrorState
+        title="We couldn't load Later"
+        description={loadErrorDescription(error)}
+        onRetry={onRetry}
+      />
     </div>
   );
 }

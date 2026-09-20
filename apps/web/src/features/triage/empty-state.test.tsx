@@ -29,6 +29,11 @@ describe('TriageEmptyState', () => {
     );
     expect(screen.getByText("This mailbox's last scan didn't finish.")).toBeInTheDocument();
     expect(screen.queryByText('Nothing needs a decision right now.')).not.toBeInTheDocument();
+    // The copy points at Settings → Gmail accounts, so the button goes there.
+    expect(screen.getByRole('link', { name: 'Open Settings' })).toHaveAttribute(
+      'href',
+      '/settings#mailboxes',
+    );
   });
 
   it('does not render the sync-failed copy once the user has decided something today', () => {

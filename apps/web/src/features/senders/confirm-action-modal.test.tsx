@@ -127,7 +127,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       expect(onConfirm).not.toHaveBeenCalled();
-      expect(screen.getByText(/confirm stays locked/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Loading preview/i)).toHaveLength(1);
 
       rerender(
         <ConfirmActionModal
@@ -332,7 +332,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.getByText('Archive email from 1 sender')).toBeInTheDocument();
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
     expect(screen.getByText(/1 of 40 eligible senders/)).toBeInTheDocument();
-    expect(screen.getByText(/The rest stay untouched/)).toBeInTheDocument();
+    expect(screen.getByText(/all you have left this month/)).toBeInTheDocument();
     // The whole point: confirm is live, and firing it calls through.
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).toHaveBeenCalled();
@@ -420,7 +420,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(screen.getAllByText(/close and retry/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Couldn't load the preview/i)).toHaveLength(1);
   });
 
   it('fails closed with retry copy when the required preview is unavailable', () => {
@@ -435,7 +435,8 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     );
 
     expect(screen.getByRole('button', { name: /Archive/ })).toBeDisabled();
-    expect(screen.getAllByText(/close and retry/i)).toHaveLength(2);
+    // Said once, beside the Retry preview button — never body AND footer.
+    expect(screen.getAllByText(/Couldn't load the preview/i)).toHaveLength(1);
     expect(screen.queryByText(/archive whatever/i)).not.toBeInTheDocument();
   });
 
@@ -521,7 +522,10 @@ describe('ConfirmActionModal — Protected sender acknowledgement (D245/D42)', (
       />,
     );
 
-    expect(screen.getByText(/this sender is/i)).toHaveTextContent(/Protected/);
+    // D245: the exact reason, not just the state.
+    expect(screen.getByText(/This action applies anyway/)).toHaveTextContent(
+      /Protected — you marked it Protected/,
+    );
     const confirm = screen.getByRole('button', { name: /Delete anyway/i });
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ override: true }));
@@ -678,7 +682,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     renderDelete(emptyInbox, 71);
     expect(
       screen.getByText(
-        /Nothing from this sender is in your inbox right now — though 71 arrived in the last 90 days\. Delete only acts on email still in the inbox\./,
+        /Nothing from this sender in your inbox now · 71 arrived in the last 90 days\. Delete only acts on email still in the inbox\./,
       ),
     ).toBeTruthy();
     // No claim about the mail's history or fate — we store only current labels.
@@ -737,7 +741,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     expect(screen.getByRole('radiogroup', { name: /How far back/i })).toBeTruthy();
     expect(
       screen.getByText(
-        /30 emails from this sender are in your inbox, but none are older than the 6 months\+ window\. Widen the window to include them\./,
+        /None of the 30 inbox emails from this sender are older than the 6 months\+ window\. Widen the window to include them\./,
       ),
     ).toBeTruthy();
   });
@@ -797,6 +801,40 @@ describe('ConfirmActionModal — no-op confirm gate', () => {
       expect(screen.getByRole('button', { name: new RegExp(verb) })).toBeDisabled();
     },
   );
+
+  // The notice under the 0 is the disabled reason. A lead describing the
+  // move, and a footer charging a cleanup action, are both about an
+  // action that cannot run.
+  it.each(['Archive', 'Later'] as const)(
+    'says the dead-end zero once for %s: no lead, no cleanup-action charge',
+    (verb) => {
+      render(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          compositePreview={emptyPreview}
+          cleanupQuota={{ remaining: 12, resetsAt: null }}
+        />,
+      );
+      expect(document.getElementById('dm-confirm-lead')).toBeNull();
+      expect(screen.queryByText(/cleanup action/)).toBeNull();
+      expect(screen.getByText(/in your inbox now/)).toBeInTheDocument();
+    },
+  );
+
+  it('keeps the lead while a control on the sheet can still change the zero', () => {
+    // 9 in the inbox, none inside the default Delete window → widen it.
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{ ...livePreview, counts: { ...emptyInbox, all: 9 } }}
+      />,
+    );
+    expect(document.getElementById('dm-confirm-lead')).not.toBeNull();
+  });
 
   it('keeps Unsubscribe confirmable at a zero backlog — it cuts future mail', () => {
     render(
@@ -888,7 +926,7 @@ it('pluralizes the scope notice on a bulk sheet', () => {
       }}
     />,
   );
-  expect(screen.getByText(/Nothing from these senders is in your inbox right now\./)).toBeTruthy();
+  expect(screen.getByText(/Nothing from these senders in your inbox now\./)).toBeTruthy();
   // Bulk has no single arrival figure — it must not invent one.
   expect(screen.queryByText(/arrived in the last 90 days/)).toBeNull();
 });
@@ -1017,7 +1055,7 @@ describe('ConfirmActionModal — preview trust affordances', () => {
     // Delete defaults to the 6-month window — the link must carry it.
     expect(href).toContain('older_than:180d');
     // Never promises the counts match; Gmail is day-granular and live.
-    expect(link.getAttribute('title')).toMatch(/roughly|can differ/i);
+    expect(link.getAttribute('title')).toMatch(/Approximate/i);
   });
 
   it('drops the window term from the Gmail link when no window applies (D)', () => {
@@ -1131,14 +1169,11 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // The un-windowed chip stops claiming "inbox" once the reach is wider.
     expect(screen.getByRole('radio', { name: /All mail/ })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: /All inbox/ })).toBeNull();
-    // The exclusions + the per-placement undo promise are stated where
-    // the choice is made — and the promise is the CONDITIONAL one the
-    // system actually makes (inbox→inbox, archive→archive), never an
-    // absolute "back where it was".
-    expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/inbox email to the inbox, archived email to the archive/),
-    ).toBeInTheDocument();
+    // The widened scope + the per-message undo promise (ADR-0028 §5:
+    // "Undo restores each message to where it was") are stated where
+    // the choice is made.
+    expect(screen.getByText(/Includes archived mail/)).toBeInTheDocument();
+    expect(screen.getByText(/Undo puts each email back/)).toBeInTheDocument();
   });
 
   it('drops in:inbox from the Gmail verify link at all-mail reach', () => {
@@ -1194,7 +1229,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // exact figure the chip advertised: the hidden 180d default resets
     // to "All mail", so the user gets 977, not a silently-shaved 700.
     fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
-    expect(screen.queryByText(/is in your inbox right now/)).toBeNull();
+    expect(screen.queryByText(/in your inbox now/)).toBeNull();
     expect(screen.getByRole('radio', { name: /All mail/ })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
@@ -1401,11 +1436,11 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
 
-    expect(screen.getByText(/currently in Inbox moves to Gmail Trash/)).toBeInTheDocument();
+    expect(screen.getByText(/Email in Inbox moves to Gmail Trash/)).toBeInTheDocument();
     fireEvent.click(archived);
     expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
     // The lead follows the chip — it must not keep claiming "in Inbox".
-    expect(screen.queryByText(/currently in Inbox moves to Gmail Trash/)).toBeNull();
+    expect(screen.queryByText(/Email in Inbox moves to Gmail Trash/)).toBeNull();
     expect(screen.getByText(/in Inbox or archived moves to Gmail Trash/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ reach: 'all_mail' }));
@@ -1714,8 +1749,7 @@ describe('ConfirmActionModal — where the sender’s mail actually is', () => {
     );
     // 4 in inbox + 973 elsewhere + 23 binned = 1,000 received.
     expect(screen.getByTestId('mail-location-line')).toHaveTextContent(
-      "Where this sender's mail is now: 4 emails in your inbox · 973 emails elsewhere in Gmail " +
-        '(archived or under a label) · 23 emails in Trash or Spam.',
+      '4 emails in your inbox · 973 emails elsewhere in Gmail · 23 emails in Trash or Spam.',
     );
   });
 
@@ -1834,11 +1868,10 @@ describe('ConfirmActionModal — a preview failure that retrying cannot fix', ()
         onRefreshSenders={() => {}}
       />,
     );
-    // Both surfaces carry it: the inline panel explains the cause, the
-    // footer states the consequence beside the locked confirm.
-    expect(screen.getAllByText(/no longer in this mailbox/)).toHaveLength(2);
-    expect(screen.getByText(/the list you are looking at is out of date/)).toBeInTheDocument();
-    expect(screen.queryByText(/Couldn’t load a live preview/)).not.toBeInTheDocument();
+    // Said once — the inline panel carries it; the footer stays empty
+    // beside the Refresh senders button.
+    expect(screen.getAllByText(/no longer in this mailbox/)).toHaveLength(1);
+    expect(screen.queryByText(/Couldn't load the preview/)).not.toBeInTheDocument();
   });
 
   it('still offers Retry preview for a failure that MIGHT clear on its own', () => {
@@ -2231,7 +2264,8 @@ describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-2026
     );
     const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
     expect(confirm).toBeDisabled();
-    expect(screen.getByText(/Loading the live preview/i)).toBeInTheDocument();
+    // Bulk Unsubscribe hides the summary panel, so the footer carries it.
+    expect(screen.getAllByText(/Loading preview/i)).toHaveLength(1);
     fireEvent.click(confirm);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).not.toHaveBeenCalled();
@@ -2278,8 +2312,6 @@ describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-2026
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(/Every sender in this selection is now Protected or no longer/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Every selected sender is now Protected or gone/i)).toBeInTheDocument();
   });
 });

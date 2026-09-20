@@ -60,7 +60,11 @@ describe('D245 action semantics', () => {
     expect(staticActionPreviewCopy('delete')).toContain(
       `Undo from Activity for ${UNIFORM_UNDO_WINDOW_DAYS} days.`,
     );
-    expect(staticActionPreviewCopy('delete')).toContain('Gmail Trash recovery is separate');
+    // Gmail's side is ONE sentence carrying both facts: the retention
+    // and the permanent delete after it.
+    expect(staticActionPreviewCopy('delete')).toContain('Gmail Trash');
+    expect(staticActionPreviewCopy('delete')).toContain('30 days');
+    expect(staticActionPreviewCopy('delete')).toContain('permanently');
   });
 
   it('states current scope and future behavior for every canonical mutation', () => {
@@ -333,17 +337,69 @@ describe('D245 composite presentation states one coherent story', () => {
     expect(alone.primary.currentMail.summary).toContain('unless you choose a separate action');
   });
 
-  it('keeps a secondary claim the primary does not contradict', () => {
-    // Later does not unsubscribe, so Archive's other claim must survive.
-    const laterThenArchive = buildActionPresentation({
+  // Founder rule 2026-09-19: a preview owes the count, where the mail
+  // goes, and how to undo. "What does not change" is stated only where
+  // the reader would plausibly fear the opposite; the rest stays in the
+  // static copy help and marketing pages teach from.
+  it('keeps reassurance out of the Archive preview and in the static copy', () => {
+    const archive = buildActionPresentation({
       verb: 'archive',
       liveCount: 3,
       planUndoDeadline: null,
       wakeAt: null,
       unsubscribeChannel: null,
     });
-    expect(laterThenArchive.previewCopy).toContain('Nothing is deleted.');
-    expect(laterThenArchive.previewCopy).toContain('The sender is not unsubscribed.');
+    expect(archive.previewCopy).toContain('3 matching emails.');
+    expect(archive.previewCopy).toContain('stays in Gmail');
+    expect(archive.previewCopy).toContain('Undo from Activity');
+    expect(archive.previewCopy).not.toContain('Nothing is deleted');
+    expect(archive.previewCopy).not.toContain('not unsubscribed');
+    expect(archive.previewCopy).not.toContain('Future email');
+    expect(archive.primary.unchanged).toEqual([]);
+
+    const staticCopy = staticActionPreviewCopy('archive');
+    expect(staticCopy).toContain('Nothing is deleted.');
+    expect(staticCopy).toContain('The sender is not unsubscribed.');
+  });
+
+  it('tells a Delete preview that future email is unchanged', () => {
+    // Delete is the verb a reader most plausibly expects to stop the
+    // sender. It does not, so this one "unchanged" fact stays.
+    const deletion = buildActionPresentation({
+      verb: 'delete',
+      liveCount: 3,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: null,
+    });
+    expect(deletion.previewCopy).toContain('Gmail Trash');
+    expect(deletion.previewCopy).toContain('Future email is unchanged.');
+    expect(deletion.previewCopy).not.toContain('not unsubscribed');
+  });
+
+  it('states Gmail Trash retention exactly once in a Delete preview', () => {
+    const copy = buildActionPresentation({
+      verb: 'delete',
+      liveCount: 3,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: null,
+    }).previewCopy;
+    expect(copy.match(/up to 30 days/g)).toHaveLength(1);
+    expect(copy.match(/permanently/g)).toHaveLength(1);
+  });
+
+  it('keeps "Keep is not Protect" in the Keep preview (ADR-0041)', () => {
+    const keep = buildActionPresentation({
+      verb: 'keep',
+      liveCount: 0,
+      planUndoDeadline: null,
+      wakeAt: null,
+      unsubscribeChannel: null,
+    });
+    expect(keep.previewCopy).toContain('stops coming up in Triage');
+    expect(keep.previewCopy).toContain('Keep is not Protect');
+    expect(keep.previewCopy).toContain('Autopilot');
   });
 
   it('excludes the count from effectCopy and keeps it in previewCopy', () => {
@@ -379,10 +435,14 @@ describe('D245 recovery copy states each fact once and says whose it is', () => 
   });
 
   it('keeps every genuinely distinct Delete fact', () => {
+    // Two: DeclutrMail's Undo, and Gmail's Trash (retention + the
+    // permanent delete after it, in one sentence).
     const facts = composeRecoveryFacts(present('delete'), null);
-    expect(facts).toHaveLength(3);
-    expect(facts.join(' ')).toContain('Gmail Trash recovery is separate');
-    expect(facts.join(' ')).toContain('permanently deletes');
+    expect(facts).toHaveLength(2);
+    expect(facts[0]).toContain('Undo from Activity');
+    expect(facts[1]).toContain('Gmail Trash');
+    expect(facts[1]).toContain('30 days');
+    expect(facts[1]).toContain('permanently');
   });
 
   it('labels each half of a composite so neither sentence floats free', () => {
@@ -589,14 +649,14 @@ describe('ADR-0028 — Delete copy follows the chosen reach', () => {
 
   it('keeps the inbox sentence at the default reach', () => {
     const p = buildActionPresentation({ ...base, verb: 'delete' });
-    expect(p.primary.effectCopy).toContain('currently in Inbox moves to Gmail Trash');
+    expect(p.primary.effectCopy).toContain('Email in Inbox moves to Gmail Trash');
   });
 
-  it('never says "currently in Inbox" once the Delete reaches archived mail', () => {
+  it('never claims inbox-only once the Delete reaches archived mail', () => {
     const p = buildActionPresentation({ ...base, verb: 'delete', reach: 'all_mail' });
-    expect(p.primary.effectCopy).not.toContain('currently in Inbox');
+    expect(p.primary.effectCopy).not.toContain('Email in Inbox moves');
     expect(p.primary.effectCopy).toContain('Inbox or archived moves to Gmail Trash');
-    expect(p.previewCopy).not.toContain('currently in Inbox');
+    expect(p.previewCopy).not.toContain('Email in Inbox moves');
   });
 
   it('applies the reach to a Delete SECONDARY, never to the unsubscribe primary', () => {
@@ -614,6 +674,9 @@ describe('ADR-0028 — Delete copy follows the chosen reach', () => {
 
   it('ignores the reach on a verb that cannot act past the inbox', () => {
     const p = buildActionPresentation({ ...base, verb: 'archive', reach: 'all_mail' });
-    expect(p.primary.effectCopy).toContain('currently in Inbox');
+    // Archive has no all-mail sentence: it keeps its inbox wording and
+    // never picks up 'archived' from a reach it cannot honour.
+    expect(p.primary.effectCopy).toContain('Moves out of your inbox');
+    expect(p.primary.effectCopy).not.toMatch(/or archived/i);
   });
 });

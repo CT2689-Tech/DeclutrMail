@@ -96,8 +96,9 @@ export function ApproveConfirmModal({
     >
       {coversMoreThanShown && (
         <p style={{ margin: '0 0 8px', fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
-          Showing {shown} of {approxTotal != null ? `~${approxTotal}` : 'all'} — approving covers
-          all of them.
+          {approxTotal != null
+            ? `Showing ${shown} of ~${approxTotal}.`
+            : `Showing ${shown} — approving covers all pending.`}
         </p>
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -142,7 +143,15 @@ function approveLead(
       ? 'This suggestion'
       : `These ${shown} suggestions`;
   const presentation = autopilotPresentation(rule);
-  return `${scope}: ${presentation.previewCopy}`;
+  // The footnote owns the primary action's recovery facts, so the lead
+  // takes `effectCopy` — `previewCopy` carries those same sentences and
+  // printed "cannot be undone" twice. A secondary action has no footnote
+  // slot, so it keeps its full `previewCopy`.
+  const { primary, secondary } = presentation;
+  const effect = secondary
+    ? `${primary.effectCopy} Also: ${secondary.previewCopy}`
+    : primary.effectCopy;
+  return `${scope}: ${effect}`;
 }
 
 /** Undo posture, verb-honest (D58 — unsubscribe requests are one-way). */
@@ -151,7 +160,6 @@ function approveFootnote(rule: AutopilotRuleDto): string {
   return [
     action.activityUndo.summary,
     ...(action.providerRecovery.kind === 'none' ? [] : [action.providerRecovery.summary]),
-    ...(action.finality.kind === 'reversible-or-changeable' ? [] : [action.finality.summary]),
   ].join(' ');
 }
 
@@ -161,7 +169,7 @@ function autopilotPresentation(rule: AutopilotRuleDto) {
     liveCount: null,
     planUndoDeadline: null,
     wakeAt: rule.actionKind === 'later' ? defaultLaterWakeAtIso() : null,
-    unsubscribeChannel: rule.actionKind === 'unsubscribe' ? null : null,
+    unsubscribeChannel: 'varies',
     // Absolute times render in the reader's own clock: every one of
     // these surfaces is opened by a click, never server-rendered.
     timeZone: 'viewer',

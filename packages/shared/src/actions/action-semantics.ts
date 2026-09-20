@@ -56,15 +56,21 @@ export type ActionFinality =
  * fact in it was individually true).
  */
 export type UnchangedClaim =
-  | 'nothing-deleted'
-  | 'not-unsubscribed'
-  | 'not-subscribed-or-unsubscribed'
-  | 'labels-unchanged'
-  | 'not-protected';
+  'nothing-deleted' | 'not-unsubscribed' | 'not-subscribed-or-unsubscribed' | 'not-protected';
 
 export interface UnchangedFact {
   readonly claim: UnchangedClaim;
   readonly summary: string;
+  /**
+   * Whether an in-app confirm preview states this fact.
+   *
+   * Founder rule 2026-09-19: a preview owes the reader the count, where
+   * the mail goes, and how to undo. "What does not change" appears only
+   * where the reader would plausibly fear the opposite (Keep is not
+   * Protect). Every fact still renders in the static copy that help and
+   * marketing pages teach from (`staticActionPreviewCopy`).
+   */
+  readonly inPreview: boolean;
 }
 
 export interface ActionSemantics {
@@ -91,6 +97,8 @@ export interface ActionSemantics {
   readonly futureMail: {
     readonly effect: FutureMailEffect;
     readonly summary: string;
+    /** Same rule as {@link UnchangedFact.inPreview}. */
+    readonly inPreview: boolean;
   };
   readonly unchanged: readonly UnchangedFact[];
   readonly schedule: ActionScheduleRequirement;
@@ -118,7 +126,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     currentMail: {
       scope: 'none',
       destination: 'unchanged',
-      summary: 'No existing email moves.',
+      summary: 'Email is unchanged.',
     },
     futureMail: {
       effect: 'remember-keep',
@@ -134,11 +142,10 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       // filters on. It does NOT rewrite `triage_decisions.verdict` —
       // that row still read `verdict='unsubscribe'` immediately after a
       // Keep — so even the verdict-gated Autopilot presets keep matching.
-      summary:
-        'This sender stops coming up in Triage. Future email arrives exactly as it does now.',
+      summary: 'This sender stops coming up in Triage.',
+      inPreview: true,
     },
     unchanged: [
-      { claim: 'labels-unchanged', summary: 'Gmail labels and delivery settings are unchanged.' },
       {
         claim: 'not-protected',
         // Verified against the executors, not assumed:
@@ -150,13 +157,14 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
         // untouched, no preset is gated out either. Protect is the only
         // state that stops them — D245's "Protected is the sole visible
         // safety state".
-        summary: 'Keep is not Protect — Autopilot rules can still act on this sender.',
+        summary: 'Keep is not Protect — Autopilot can still act.',
+        inPreview: true,
       },
     ],
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'none',
-      summary: 'Change this sender decision at any time.',
+      summary: 'Change this decision any time.',
     },
     providerRecovery: { kind: 'none' },
     finality: {
@@ -171,12 +179,12 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     currentMail: {
       scope: 'matching-current-inbox',
       destination: 'gmail-all-mail',
-      summary: 'Matching email currently in Inbox moves out of Inbox and stays in Gmail.',
+      summary: 'Moves out of your inbox, stays in Gmail.',
     },
-    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
+    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.', inPreview: false },
     unchanged: [
-      { claim: 'nothing-deleted', summary: 'Nothing is deleted.' },
-      { claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.' },
+      { claim: 'nothing-deleted', summary: 'Nothing is deleted.', inPreview: false },
+      { claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.', inPreview: false },
     ],
     schedule: { kind: 'none' },
     activityUndo: {
@@ -196,12 +204,12 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     currentMail: {
       scope: 'matching-current-inbox',
       destination: 'declutrmail-later',
-      summary: 'Matching email currently in Inbox moves to the DeclutrMail/Later label.',
+      summary: "Moves to Gmail's DeclutrMail/Later label until the time you pick.",
     },
-    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
+    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.', inPreview: false },
     unchanged: [
-      { claim: 'nothing-deleted', summary: 'Nothing is deleted.' },
-      { claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.' },
+      { claim: 'nothing-deleted', summary: 'Nothing is deleted.', inPreview: false },
+      { claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.', inPreview: false },
     ],
     schedule: {
       kind: 'required',
@@ -233,6 +241,7 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       effect: 'unsubscribe-request',
       summary:
         'DeclutrMail sends a supported one-click request, or opens a prefilled Gmail draft for you to send.',
+      inPreview: true,
     },
     // Intentionally empty: the only fact here restated `currentMail` and
     // rendered immediately after it in every preview.
@@ -257,12 +266,13 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
       destination: 'gmail-inbox',
       summary: 'Matching archived email returns to Inbox.',
     },
-    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
+    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.', inPreview: false },
     unchanged: [
-      { claim: 'nothing-deleted', summary: 'Nothing is deleted.' },
+      { claim: 'nothing-deleted', summary: 'Nothing is deleted.', inPreview: false },
       {
         claim: 'not-subscribed-or-unsubscribed',
         summary: 'The sender is not subscribed or unsubscribed.',
+        inPreview: false,
       },
     ],
     schedule: { kind: 'none' },
@@ -283,11 +293,15 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     currentMail: {
       scope: 'matching-current-inbox',
       destination: 'gmail-trash',
-      summary: 'Matching email currently in Inbox moves to Gmail Trash.',
-      allMailSummary: 'Matching email in Inbox or archived moves to Gmail Trash.',
+      summary: 'Email in Inbox moves to Gmail Trash.',
+      allMailSummary: 'Email in Inbox or archived moves to Gmail Trash.',
     },
-    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.' },
-    unchanged: [{ claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.' }],
+    // Stated in the preview, unlike Archive and Later: Delete is the verb
+    // a reader most plausibly expects to stop the sender, and it does not.
+    futureMail: { effect: 'unchanged', summary: 'Future email is unchanged.', inPreview: true },
+    unchanged: [
+      { claim: 'not-unsubscribed', summary: 'The sender is not unsubscribed.', inPreview: false },
+    ],
     schedule: { kind: 'none' },
     activityUndo: {
       kind: 'plan-window',
@@ -296,7 +310,11 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     providerRecovery: {
       kind: 'gmail-trash',
       approximateDays: 30,
-      summary: 'Gmail Trash recovery is separate and is normally available for up to 30 days.',
+      // ONE sentence for Gmail's side of Delete. It used to be three on
+      // the same sheet — this line, `finality.summary`, and the action
+      // sheet's own footer. Self-contained on purpose: the receipt strip
+      // renders it with no Undo sentence before it.
+      summary: 'Gmail Trash keeps it for up to 30 days, then deletes it permanently.',
     },
     finality: {
       kind: 'provider-permanent-deletion',
@@ -333,12 +351,9 @@ export function staticActionPreviewCopy(verb: ActionVerb): string {
   if (semantics.providerRecovery.kind !== 'none') {
     recovery.push(semantics.providerRecovery.summary);
   }
-  // Only `provider-permanent-deletion` adds a fact beyond `activityUndo`.
-  // `delivered-request-cannot-be-recalled` restates it, and both rendered
-  // back-to-back in the same paragraph.
-  if (semantics.finality.kind === 'provider-permanent-deletion') {
-    recovery.push(semantics.finality.summary);
-  }
+  // `finality.summary` is never appended: `delivered-request-cannot-be-
+  // recalled` restates `activityUndo`, and `provider-permanent-deletion`
+  // restates `providerRecovery`, which already names the permanent delete.
   return [
     semantics.currentMail.summary,
     semantics.futureMail.summary,
@@ -352,9 +367,9 @@ export function staticActionPreviewCopy(verb: ActionVerb): string {
  *
  * Two rules the surfaces kept getting wrong independently:
  *
- *  1. **Say each fact once.** `finality` restates `activityUndo` for every
- *     kind except `provider-permanent-deletion`, where it adds Gmail's
- *     retention. The senders modal emitted both, so an Unsubscribe preview
+ *  1. **Say each fact once.** `finality` restates `activityUndo`, or for
+ *     `provider-permanent-deletion` restates `providerRecovery`, so it is
+ *     never emitted. The senders modal emitted both, so an Unsubscribe preview
  *     read "A delivered unsubscribe request cannot be undone. After
  *     delivery, the unsubscribe request cannot be recalled." — one fact,
  *     two spellings, and then the footer printed the pair again.
@@ -370,10 +385,9 @@ export function composeRecoveryFacts(
 ): readonly string[] {
   const factsFor = (action: PresentedAction): readonly string[] => [
     action.activityUndo.summary,
+    // No `finality.summary` — every kind restates a sentence already
+    // here. Mirrors `staticActionPreviewCopy`.
     ...(action.providerRecovery.kind === 'none' ? [] : [action.providerRecovery.summary]),
-    // Only `provider-permanent-deletion` carries a fact `activityUndo`
-    // does not already state. Mirrors `staticActionPreviewCopy`.
-    ...(action.finality.kind === 'provider-permanent-deletion' ? [action.finality.summary] : []),
   ];
 
   if (secondary === null) {
@@ -487,7 +501,7 @@ export interface ActionPresentationInput {
   readonly liveCount: number | null;
   readonly planUndoDeadline: string | null;
   readonly wakeAt: string | null;
-  readonly unsubscribeChannel: UnsubscribeChannel | null;
+  readonly unsubscribeChannel: UnsubscribeChannel | 'varies' | null;
   readonly secondaryAction?: SecondaryActionPresentationInput | null;
   /**
    * ADR-0028 — the reach the user picked. It belongs to whichever half
@@ -527,6 +541,8 @@ export type ActionPresentationActivityUndo =
 
 export type ActionPresentationUnsubscribeChannel =
   | { readonly kind: 'not-applicable' }
+  /** One presentation covering many senders (an Autopilot rule): no single channel. */
+  | { readonly kind: 'varies' }
   | {
       readonly kind: UnsubscribeChannel;
       readonly summary: string;
@@ -629,7 +645,7 @@ interface PresentActionInput {
   readonly liveCount: number | null;
   readonly planUndoDeadline: string | null;
   readonly wakeAt: string | null;
-  readonly unsubscribeChannel: UnsubscribeChannel | null;
+  readonly unsubscribeChannel: UnsubscribeChannel | 'varies' | null;
   /**
    * Set only when this action is the SECONDARY half of a composite. The
    * primary's semantics decide which of this action's standalone facts
@@ -692,11 +708,20 @@ function presentAction(input: PresentActionInput): PresentedAction {
         : semantics.currentMail;
   const surviving = composedUnder === null ? null : secondaryFactsUnder(semantics, composedUnder);
   const futureMailSummary =
-    unsubscribeChannel.kind === 'not-applicable'
+    unsubscribeChannel.kind === 'not-applicable' || unsubscribeChannel.kind === 'varies'
       ? semantics.futureMail.summary
       : unsubscribeChannel.summary;
-  const presentedFutureMail = surviving === null ? futureMailSummary : surviving.futureMail;
-  const presentedUnchanged = surviving === null ? semantics.unchanged : surviving.unchanged;
+  // `inPreview` — a preview states "what does not change" only where the
+  // reader would plausibly fear the opposite (see `UnchangedFact`).
+  const presentedFutureMail =
+    surviving === null
+      ? semantics.futureMail.inPreview
+        ? futureMailSummary
+        : null
+      : surviving.futureMail;
+  const presentedUnchanged = (
+    surviving === null ? semantics.unchanged : surviving.unchanged
+  ).filter((fact) => fact.inPreview);
   // No count: `liveCount` is a presented field in its own right and every
   // surface using `effectCopy` renders the figure itself, so including it
   // here would print the number twice.
@@ -724,9 +749,6 @@ function presentAction(input: PresentActionInput): PresentedAction {
     ...effectFacts,
     activityUndo.summary,
     ...(semantics.providerRecovery.kind === 'none' ? [] : [semantics.providerRecovery.summary]),
-    ...(semantics.finality.kind === 'provider-permanent-deletion'
-      ? [semantics.finality.summary]
-      : []),
   ];
 
   return {
@@ -895,10 +917,18 @@ function formatIsoUtc(value: string): string {
 
 function presentationUnsubscribeChannel(
   verb: ActionVerb,
-  channel: UnsubscribeChannel | null,
+  channel: UnsubscribeChannel | 'varies' | null,
 ): ActionPresentationUnsubscribeChannel {
   if (verb !== 'unsubscribe') {
     return { kind: 'not-applicable' };
+  }
+  // A rule-level caller describes MANY senders. `null` would read as
+  // "unknown" and print "This sender has not been checked for an
+  // unsubscribe option yet" — a claim about one sender that was never
+  // looked up, on a dialog about all of them. The verb's generic
+  // future-mail sentence (one-click, or a draft you send) is the true one.
+  if (channel === 'varies') {
+    return { kind: 'varies' };
   }
   // D248: a caller with no channel fact is in the SAME state as a sender
   // the index has not derived one for — unknown. It is never `none`.

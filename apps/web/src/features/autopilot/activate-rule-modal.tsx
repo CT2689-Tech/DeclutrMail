@@ -141,7 +141,7 @@ export function ActivateRuleModal({
       }
       footnote="Pause any time — the rule card's toggle or Pause all."
       confirmLabel={
-        enablingToAct ? 'Turn on and run it' : enabling ? 'Turn on and watch' : 'Switch to Active'
+        enablingToAct ? 'Turn on and run' : enabling ? 'Turn on and watch' : 'Switch to Active'
       }
       confirmBusyLabel={enabling ? 'Turning on…' : 'Switching…'}
       canConfirm={preview.status === 'ready'}
@@ -196,16 +196,14 @@ export function ActivateRuleModal({
                 ? 'Already-collected suggestions are covered and clear from the pending list.'
                 : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                     pendingCount === 1 ? 'is' : 'are'
-                  } covered by this — the rule acts on ${
-                    pendingCount === 1 ? 'it' : 'them'
-                  } itself and ${pendingCount === 1 ? 'it clears' : 'they clear'} from the pending list.`
+                  } covered by this and ${
+                    pendingCount === 1 ? 'clears' : 'clear'
+                  } from the pending list.`
               : pendingApproximate
                 ? 'Already-collected suggestions stay pending. Approve or skip them separately.'
                 : `The ${pendingCount} suggestion${pendingCount === 1 ? '' : 's'} already collected ${
                     pendingCount === 1 ? 'stays' : 'stay'
-                  } pending below — turning the rule on does not approve ${
-                    pendingCount === 1 ? 'it' : 'them'
-                  }. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
+                  } pending below. Approve or skip ${pendingCount === 1 ? 'it' : 'them'} separately.`}
           </li>
         ) : null}
         {/* The secondary button's different outcome, stated where the
@@ -224,8 +222,7 @@ export function ActivateRuleModal({
         ) : null}
         {!pendingApproximate && pendingCount === 0 && enablingToAct ? (
           <li>
-            Prefer to look before it acts? <strong>Watch first</strong> turns the rule on in
-            Observe: it collects matches for your approval and moves nothing until you say so.
+            <strong>Watch first</strong> collects matches for your approval instead of acting.
           </li>
         ) : null}
         <li>Senders you mark Protected are always skipped.</li>
@@ -339,7 +336,9 @@ function recoveryCopy(rule: AutopilotRuleDto, undoWindowDays: number): string {
   if (rule.actionKind === 'later') {
     return `Recovery: Later results return automatically at their scheduled time and can be undone from Activity for ${undoWindowDays} days.`;
   }
-  return 'Recovery: unsubscribe requests cannot be undone. Existing messages stay in your inbox unless a separate archive action applies.';
+  // Existing email staying put is already said twice above (the "For each
+  // new match" line and the activation report).
+  return 'Recovery: unsubscribe requests cannot be undone.';
 }
 
 /** Verb-honest description of Active mode (D227 canonical verbs; D230 mailto stays manual). */
@@ -349,10 +348,13 @@ function goingForwardCopy(rule: AutopilotRuleDto): string {
     liveCount: null,
     planUndoDeadline: null,
     wakeAt: rule.actionKind === 'later' ? defaultLaterWakeAtIso() : null,
-    unsubscribeChannel: null,
+    unsubscribeChannel: 'varies',
     // Absolute times render in the reader's own clock: every one of
     // these surfaces is opened by a click, never server-rendered.
     timeZone: 'viewer',
   });
-  return `For each new match: ${presentation.previewCopy}`;
+  // `effectCopy`, not `previewCopy`: the Recovery line below owns the undo
+  // facts, and `previewCopy` carries those same sentences — an Unsubscribe
+  // rule printed "cannot be undone" twice.
+  return `For each new match: ${presentation.primary.effectCopy}`;
 }

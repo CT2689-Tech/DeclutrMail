@@ -14,7 +14,6 @@ export function PatternSuggestionCard({
   onObserve: () => void;
   onDismiss: () => void;
 }) {
-  const action = suggestion.actionKind === 'archive' ? 'Archive' : 'Unsubscribe';
   const pastAction =
     suggestion.actionKind === 'archive' ? 'archived' : 'requested unsubscribe from';
   const isPhone = useIsAtMost('xs');
@@ -29,7 +28,7 @@ export function PatternSuggestionCard({
         fontFamily: font.sans,
       }}
     >
-      <Eyebrow>A pattern you may want</Eyebrow>
+      <Eyebrow>Suggested rule</Eyebrow>
       <h2
         id="pattern-suggestion-heading"
         style={{ fontSize: 16, fontWeight: 600, margin: '6px 0 4px' }}
@@ -38,8 +37,7 @@ export function PatternSuggestionCard({
         {suggestion.evidenceWindowDays} days.
       </h2>
       <p style={{ color: color.fgSoft, fontSize: 13, lineHeight: 1.55, margin: '0 0 14px' }}>
-        DeclutrMail can watch for the same pattern. It starts in Observe: Gmail does not change, and
-        you approve or skip each suggestion.
+        Watch for the same pattern? It starts in Observe: you approve or skip each suggestion.
       </p>
       <dl
         style={{
@@ -50,16 +48,13 @@ export function PatternSuggestionCard({
           fontSize: 12.5,
         }}
       >
-        <Fact label="Trigger">DeclutrMail recommends {action} above the rule threshold.</Fact>
-        <Fact label="Action">Suggest {action} in Observe mode.</Fact>
-        <Fact label="Applies to">This Gmail account only.</Fact>
         <Fact label="Based on">{suggestion.evidenceCount} distinct sender decisions.</Fact>
         <Fact label="Safety">Protected senders are always skipped.</Fact>
         <Fact label="Daily cap">{suggestion.dailyActionCap} actions; extra matches wait.</Fact>
         <Fact label="Recovery">
           {suggestion.actionKind === 'archive'
-            ? 'Approved Archive suggestions can be undone from Activity during the available undo window.'
-            : 'Unsubscribe requests cannot be undone; their outcomes remain visible in Activity.'}
+            ? 'Approved Archive suggestions can be undone from Activity within your undo window.'
+            : 'Unsubscribe requests cannot be undone.'}
         </Fact>
       </dl>
       <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>

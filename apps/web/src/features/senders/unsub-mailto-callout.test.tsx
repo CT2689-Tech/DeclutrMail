@@ -59,9 +59,10 @@ describe('UnsubMailtoCallout', () => {
       />,
     );
     const callout = screen.getByTestId('unsub-mailto-callout');
-    expect(callout.textContent).toContain('Open the prefilled Gmail draft');
+    expect(callout.textContent).toContain('by email');
     expect(callout.textContent).toContain('send it yourself');
-    expect(callout.textContent).toContain('mark it sent here');
+    // The two steps are the buttons, not a sentence narrating them.
+    expect(screen.getByRole('link', { name: /Open Gmail draft/ })).toBeInTheDocument();
   });
 
   it('dismisses via the close button when onDismiss is provided', () => {
@@ -109,7 +110,7 @@ describe('UnsubMailtoChecklist', () => {
 
     const region = screen.getByRole('region', { name: 'Email unsubscribe drafts' });
     expect(region).toHaveTextContent('2 email unsubscribe drafts still need you');
-    expect(region).toHaveTextContent('did not send the email requests');
+    expect(region).toHaveTextContent('DeclutrMail did not send these');
     expect(screen.getAllByRole('link', { name: 'Open draft' })).toHaveLength(2);
     for (const link of screen.getAllByRole('link', { name: 'Open draft' })) {
       expect(link.getAttribute('href')).toContain('authuser=newsletters%2Bdeclutr%40example.com');

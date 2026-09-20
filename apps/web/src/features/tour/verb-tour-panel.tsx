@@ -157,16 +157,16 @@ const TOUR_STEPS = [
   {
     kind: 'verbs',
     title: 'Five decisions, one sender at a time',
-    body: 'Each sender gets one of these. Press the letter, or use the buttons — they do the same thing.',
+    body: 'Each sender gets one of these. Press the letter or use the buttons.',
   },
   {
     kind: 'preview',
     title: 'You see what changes before it changes',
-    body: 'Every decision that moves email shows a preview first — how many messages match and what happens to them. Nothing moves until you confirm. Archive, Later, and Delete can be undone from Activity; a delivered unsubscribe request cannot be recalled.',
+    body: 'Nothing moves until you confirm. Archive, Later and Delete can be undone from Activity; a sent unsubscribe can’t be recalled.',
   },
   {
     kind: 'recommendation',
     title: 'A highlighted action is a suggestion',
-    body: 'When one decision stands out, that is what we would pick from this sender’s history. It is never applied for you — the decision stays yours.',
+    body: 'It is what we would pick from this sender’s history. It is never applied for you.',
   },
 ] as const;

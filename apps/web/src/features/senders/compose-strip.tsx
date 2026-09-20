@@ -187,7 +187,7 @@ export function ComposeStrip({
             marginRight: 2,
           }}
         >
-          (alt-click a chip to exclude it)
+          (alt-click to exclude)
         </span>
       )}
 

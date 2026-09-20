@@ -37,7 +37,6 @@ import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
 import { ACTION_POLL_MS } from '@/lib/api/use-action';
-import { getActionFailureCopy } from '@/lib/action-error-copy';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
 // decisions never success-toast), so failure tests must assert the
@@ -893,12 +892,12 @@ describe('TriageScreen — D226 mutation wiring', () => {
     // The failure is toasted (warn) — there is no other failure surface.
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        getActionFailureCopy('terminal', {
-          action: `archive ${GROUPON.senderName}`,
-        }).message,
+        expect.stringContaining(`Archive for ${GROUPON.senderName} failed`),
         'warn',
       ),
     );
+    // One sentence, and it still points at Activity before a retry.
+    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
     // The latch releases so the queue is usable again; the row STAYS
     // (no invalidation — nothing moved server-side).
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
@@ -944,12 +943,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        getActionFailureCopy('status', {
-          action: `archive ${GROUPON.senderName}`,
-        }).message,
+        expect.stringContaining(`Couldn't confirm Archive for ${GROUPON.senderName}`),
         'warn',
       ),
     );
+    // The outcome is unconfirmed, so the toast must send the user to
+    // Activity rather than invite a blind retry.
+    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining('Activity'), 'warn');
     await waitFor(() => expect(container.querySelector('[aria-busy="true"]')).toBeNull());
     expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
     expect(screen.getByText(GROUPON.senderName)).toBeDefined();
@@ -974,10 +974,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        getActionFailureCopy('enqueue', {
-          action: `keep ${GROUPON.senderName}`,
-          whatDidNotChange: 'The Keep policy was not saved.',
-        }).message,
+        expect.stringContaining(`Couldn't save Keep for ${GROUPON.senderName}`),
         'warn',
       ),
     );
@@ -1023,15 +1020,11 @@ describe('TriageScreen — D226 mutation wiring', () => {
     // only the backlog archive did not (recoverable from Senders).
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        getActionFailureCopy('enqueue', {
-          action: `archive the older email from ${LINKEDIN.senderName}`,
-          whatChanged: 'The unsubscribe request was queued.',
-          whatDidNotChange: 'The older email was not archived.',
-          nextStep: 'Archive it from Senders if you still want to move it.',
-        }).message,
+        expect.stringMatching(/Unsubscribe request recorded.*wasn't archived.*Senders/),
         'warn',
       ),
     );
+    expect(h.toast).toHaveBeenCalledWith(expect.stringContaining(LINKEDIN.senderName), 'warn');
     // The intent succeeded, so the queue WAS invalidated — the sender
     // leaves the queue via the refetch even though the archive failed.
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['triage', 'queue'] });
@@ -1186,9 +1179,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     expandRow(LINKEDIN.senderName);
     fireEvent.keyDown(window, { key: 'u' });
     await waitFor(() => expect(screen.getByRole('dialog')).toBeDefined());
-    expect(
-      screen.getByText("The unsubscribe request can't be undone. Existing inbox email stays put."),
-    ).toBeDefined();
+    expect(screen.getByText("The unsubscribe request can't be undone.")).toBeDefined();
   });
 
   it('one_click → done: execution polled and endpoint acceptance is stated precisely', async () => {
@@ -1210,9 +1201,11 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
     // done-handler re-invalidates so /activity picks up the outcome row.
     await waitFor(() => expect(invalidateSpy.mock.calls.length).toBeGreaterThanOrEqual(2));
     expect(h.toast).toHaveBeenCalledWith(
-      `${LINKEDIN.senderName}'s endpoint accepted the unsubscribe request. Future delivery still depends on the sender.`,
+      `${LINKEDIN.senderName} accepted the unsubscribe request — stopping is up to them.`,
       'success',
     );
+    // Accepted is not "Unsubscribed" — a logged production bug.
+    expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/\bUnsubscribed\b/), 'success');
   });
 
   it('one_click → target refused (4xx/5xx): honest warn toast suggesting Archive', async () => {
@@ -1227,7 +1220,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${LINKEDIN.senderName}'s unsubscribe request failed. Archive remains available for current email.`,
+        `Unsubscribe from ${LINKEDIN.senderName} failed — Archive still works.`,
         'warn',
       ),
     );
@@ -1245,7 +1238,7 @@ describe('TriageScreen — unsubscribe execution states (D9, D58, D230)', () => 
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        `${LINKEDIN.senderName}'s unsubscribe result is unconfirmed. Watch for future email.`,
+        `Unsubscribe from ${LINKEDIN.senderName} is unconfirmed — watch for new email.`,
         'warn',
       ),
     );
@@ -1394,7 +1387,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/Close and retry/i);
+    await screen.findByText(/Couldn't load the preview/i);
     const archive = screen.getByRole('button', { name: /Archive \(A\)/i });
     expect(archive).toBeDisabled();
     fireEvent.click(archive);
@@ -1780,7 +1773,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       });
       await waitFor(() =>
         expect(h.toast).toHaveBeenCalledWith(
-          `Archive for ${GROUPON.senderName} is taking longer than usual — it keeps running and will appear in Activity when it finishes.`,
+          `Archive for ${GROUPON.senderName} is still running — see Activity.`,
           'info',
         ),
       );
@@ -1939,7 +1932,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       });
       await waitFor(() =>
         expect(h.toast).toHaveBeenCalledWith(
-          'Archive for the Archive-recommended batch is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
+          'Archive for the Archive-recommended batch is still running — see Activity.',
           'info',
         ),
       );

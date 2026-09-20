@@ -238,6 +238,12 @@ describe('TriageUndoTray (D35)', () => {
     // Server-confirmed removal: after the reverse job reports done and
     // the tray refetches, only the older entry remains.
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(1));
+    // ADR-0028: an undone all-mail Delete puts archived email back in the
+    // archive, so the completion toast must not name the inbox.
+    const [message, tone] = h.toast.mock.calls.at(-1) as [string, string];
+    expect(tone).toBe('success');
+    expect(message).toMatch(/undone/i);
+    expect(message).not.toMatch(/inbox/i);
   });
 
   it('per-row Undo click reverts that token', async () => {

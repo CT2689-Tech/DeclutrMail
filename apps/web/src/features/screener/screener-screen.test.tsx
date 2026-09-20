@@ -18,6 +18,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactElement } from 'react';
+import { ApiError } from '@/lib/api/client';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { SCREENER_QUEUE, type ScreenerScreenState } from './data';
@@ -78,7 +79,7 @@ describe('ScreenerScreen — ready state', () => {
         totalPending={SCREENER_QUEUE.length}
       />,
     );
-    expect(html).toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
+    expect(html).toContain(`${SCREENER_QUEUE.length} new senders to decide`);
   });
 
   it('states the TRUE pending count in the heading, not the loaded page size', () => {
@@ -89,8 +90,8 @@ describe('ScreenerScreen — ready state', () => {
     const html = render(
       <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={3259} />,
     );
-    expect(html).toContain('3259 new senders waiting.');
-    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
+    expect(html).toContain('3259 new senders to decide');
+    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders to decide`);
   });
 
   it('claims NO number while the count has not resolved (finding 5.2)', () => {
@@ -101,13 +102,13 @@ describe('ScreenerScreen — ready state', () => {
     const html = render(
       <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={null} />,
     );
-    expect(html).toContain('New senders waiting.');
-    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders waiting.`);
+    expect(html).toContain('New senders to decide');
+    expect(html).not.toContain(`${SCREENER_QUEUE.length} new senders to decide`);
   });
 
   it('states the D72 soft-quarantine truth in the intro (mail still arrives)', () => {
     const html = renderState(state);
-    expect(html).toContain('Their email still arrives in Inbox until you decide');
+    expect(html).toContain('Their mail keeps arriving until you choose');
     expect(html).toContain('How action previews protect you →');
     expect(html).toContain('href="/methodology#action-method"');
   });
@@ -154,6 +155,19 @@ describe('ScreenerScreen — empty / loading / error states', () => {
     expect(html).toContain('Needs attention');
     expect(html).toContain('Try again');
     assertNoScreenVerb(html);
+  });
+
+  it('error state names the server only when the server answered', () => {
+    const served = renderState({
+      kind: 'error',
+      error: new ApiError(500, null, 'GET /api/screener failed: 500'),
+      retry: () => {},
+    });
+    expect(served).toContain('server returned an error');
+    expect(served).not.toContain('/api/');
+    const unknown = renderState({ kind: 'error', error: new Error('boom'), retry: () => {} });
+    expect(unknown).not.toContain('server returned an error');
+    expect(unknown).not.toContain('boom');
   });
 
   it('loading state renders the skeleton status', () => {
@@ -269,7 +283,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
         onCancel={noop}
       />,
     );
-    expect(html).toContain('Gmail labels and delivery settings are unchanged');
+    expect(html).toContain('Email is unchanged');
     expect(html).toContain('emails move — everything in the inbox stays where it is.');
     assertNoScreenVerb(html);
   });
@@ -298,12 +312,10 @@ describe('ScreenerUpsell — D77 (reversed by D251) + D194 marketing-copy rule',
   it('names the manifest granting plan (Plus), never a hand-rolled Pro', () => {
     const html = render(<ScreenerUpsell onSeePricing={() => {}} />);
     expect(html).toContain('A queue of new senders, ready when you are.');
-    expect(html).toContain('still');
-    expect(html).toContain('arrive in your inbox until you decide');
+    expect(html).toContain('Their mail keeps arriving until you choose');
     // D251 — the plan name derives from the manifest, so this pin moves
     // with the ladder. The pre-fix copy quoted Pro/$19 for a $9 capability.
     expect(html).toContain('Screener · Plus');
-    expect(html).toContain('With Plus, the Screener collects');
     expect(html).toContain('See Plus plans');
     expect(html).not.toContain('Pro plan');
     assertNoScreenVerb(html);

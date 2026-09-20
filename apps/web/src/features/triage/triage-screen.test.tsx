@@ -158,7 +158,7 @@ describe('TriageScreen — empty / loading branches', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     // Calm completion copy markers
     expect(html).toContain('You’re done for now.');
-    expect(html).toContain('New decisions appear as previously-scored senders resurface');
+    expect(html).toContain('New decisions appear');
     // Stats tile labels
     expect(html).toContain('Decided');
     expect(html).toContain('Archived');
@@ -170,7 +170,7 @@ describe('TriageScreen — empty / loading branches', () => {
 
   it('renders the empty state when state.kind=ready but rows is []', () => {
     const html = renderState({ kind: 'ready', rows: [], stats: TRIAGE_SESSION_STATS });
-    expect(html).toContain('New decisions appear as previously-scored senders resurface');
+    expect(html).toContain('New decisions appear');
   });
 
   it('does not contradict the sync-failed body with a "Nothing waiting." header (Codex adversarial review of QA-sync-20260831-01)', () => {
@@ -212,18 +212,18 @@ describe('TriageScreen — empty / loading branches', () => {
   });
 
   it('surfaces the Pro nudge for Plus users only — single soft link (D33)', () => {
-    // Plus user → soft "Pro could do this for you automatically" link.
+    // Plus user → soft "See Pro automation" link.
     const plus = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
-    expect(plus).toContain('Pro could do this for you automatically. See Pro automation');
+    expect(plus).toContain('See Pro automation');
 
     // Free user → Plus banner only; NO Pro link (the funnel is
     // Free → Plus → Pro, not Free → Pro).
     const free = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_FREE });
-    expect(free).not.toContain('Pro could do this for you automatically');
+    expect(free).not.toContain('See Pro automation');
 
     // Pro user → no nudge at all (D33 explicit: hidden for Pro).
     const pro = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_PRO });
-    expect(pro).not.toContain('Pro could do this for you automatically');
+    expect(pro).not.toContain('See Pro automation');
     expect(pro).not.toContain('See Plus');
   });
 
@@ -254,7 +254,7 @@ describe('TriageScreen — empty / loading branches', () => {
     // here, so the shared EmptyState renders instead.
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS_QUIET });
     expect(html).toContain('Nothing needs a decision right now.');
-    expect(html).toContain('Come back whenever it’s useful.');
+    expect(html).toContain('New decisions appear');
     // Next-step framing (D212): a real link to Senders.
     expect(html).toContain('href="/senders"');
     expect(html).toContain('Browse senders');
@@ -276,7 +276,7 @@ describe('TriageScreen — empty / loading branches', () => {
   it('keeps the D33 celebration when the user DID decide today', () => {
     const html = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(html).toContain('You’re done for now.');
-    expect(html).toContain('Come back whenever it’s useful.');
+    expect(html).toContain('New decisions appear');
     expect(html).not.toContain('consecutive');
   });
 

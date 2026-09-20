@@ -501,6 +501,19 @@ describe('SendersPoliciesScreen — the standing protection review (D245)', () =
     expect(screen.getByText(/Bulk and automatic actions skip these senders/)).toBeInTheDocument();
   });
 
+  it('states the skip guard once, with its single-sender exception beside it', async () => {
+    // The intro and the list header used to say the same sentence twice.
+    // The header owns it (it is a fact about the list); the intro keeps
+    // only what it alone adds.
+    stubProtectedPage([{ ...BASE_ROW, id: 'a', displayName: 'Alpha' }]);
+    renderScreen();
+
+    await screen.findByText('Alpha');
+    const guard = screen.getAllByText(/bulk and automatic actions skip/i);
+    expect(guard).toHaveLength(1);
+    expect(guard[0]).toHaveTextContent(/one sender yourself still applies/i);
+  });
+
   it('makes no ordering claim when every row shields zero', async () => {
     // Present-and-zero is not the same as ordered-by. If nothing is
     // shielded, the sort fell through to the tiebreakers and "most

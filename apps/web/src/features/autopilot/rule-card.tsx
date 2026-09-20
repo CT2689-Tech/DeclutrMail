@@ -136,7 +136,7 @@ export function RuleCard({
         <span aria-hidden="true">·</span>
         <span>
           {pendingApproximate
-            ? `${pendingCount} pending in the latest 50`
+            ? `${pendingCount}+ pending`
             : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
         </span>
         {observeSummary != null && (
@@ -247,15 +247,13 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
       // Claim ONLY the guarantees: in-flight work is not interrupted,
       // and mail that actually moves keeps its Activity record (and,
       // for label verbs, its undo).
-      const inFlightClause =
-        rule.actionKind === 'unsubscribe'
-          ? 'an unsubscribe already underway is not interrupted, and a delivered request cannot be recalled'
-          : 'an action already underway is not interrupted, and email it actually moves keeps its Activity record and undo';
-      return `Set to run on its own, which is part of ${ACT_PLAN_NAME} — on your current plan this rule starts no new work; ${inFlightClause}. The rule returns to Observe automatically and collects fresh matches for your approval.`;
+      // 2026-09-19 brevity sweep: the in-flight clause is gone rather
+      // than qualified — the line now says nothing about work underway.
+      return `Acting on its own is part of ${ACT_PLAN_NAME}, so this rule starts no new work. It returns to Observe and collects fresh matches for your approval.`;
     }
     return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
   }
-  return 'Observe — matches become suggestions. Nothing changes until you review a preview and approve the action.';
+  return 'Observe — matches become suggestions for your approval.';
 }
 
 /**

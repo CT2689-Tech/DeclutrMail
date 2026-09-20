@@ -20,6 +20,34 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-09-19 — Copy only ever grew, because every reviewer with teeth checks truth and none checks length
+
+**Context:** Founder asked whether the in-app product was too wordy. Six
+read-only audits (five surface clusters + one rules inventory) read every
+user-facing string in `apps/web/src/features/**` and the shared action
+wording.
+
+**Finding:** ~29% of ~830 strings were over budget; buttons and labels
+were clean, previews (~51%) and empty states (~47%) were not. No hook,
+test or gate forced length — and none capped it. Three preference rules
+set floors with no ceiling (D208/D209 "state everything", D212/D221
+"teach", ADR-0011's trust cue on every hero). The growth loop: an agent
+writes an explanatory sentence, review falsifies an absolute in it, the
+agent adds a qualifier, a test pins the longer sentence. Across the two
+logged loops (PR #465; PRs #657–#660) deleting the sentence was never
+recorded as an option. The dominant defect was not long sentences but the
+same fact stated 2–3 times on one screen (confirm-modal body AND footer;
+Trash retention 3x on one Delete sheet).
+
+**Rule (provisional):** A claim that cannot be proven has three exits, in
+order: delete it, prove it, mark it unverified. When truth and budget
+collide, cut the claim. Tests pin facts, not sentences. Now in CLAUDE.md
+§2.3 and §8 by founder decision — this entry is the evidence trail.
+
+**Distillation trigger:** already distilled (founder-approved in-session,
+2026-09-19). Re-open if a later audit finds the over-budget share has not
+fallen.
+
 ## 2026-08-31 — `useIsAtMost` after an early loading/error return breaks Rules of Hooks
 
 **Context:** Rolling the D54 mobile-dialect pattern (`useIsAtMost` + a

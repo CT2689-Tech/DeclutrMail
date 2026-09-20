@@ -34,7 +34,12 @@
 // adapter cannot smuggle anything in because it has nothing else to read.
 
 import Anthropic from '@anthropic-ai/sdk';
-import type { ReasoningInput, ReasoningLlmPort } from '@declutrmail/workers';
+import {
+  MAX_REASONING_WORDS,
+  reasoningWordCount,
+  type ReasoningInput,
+  type ReasoningLlmPort,
+} from '@declutrmail/workers';
 
 /**
  * D62 — Anthropic Haiku 4.5. The bare alias auto-resolves to the
@@ -55,7 +60,7 @@ import type { ReasoningInput, ReasoningLlmPort } from '@declutrmail/workers';
 const HAIKU_MODEL_ID = 'claude-haiku-4-5';
 
 /**
- * 1-2 sentence cap. Haiku 4.5 emits roughly 4 chars per token; 256
+ * One-sentence cap. Haiku 4.5 emits roughly 4 chars per token; 256
  * tokens leaves comfortable headroom for the audit copy without
  * letting the model wander into paragraphs. The worker's
  * `runWithTimeout` is the wall-clock guard; this cap is just the
@@ -76,8 +81,9 @@ const SYSTEM_PROMPT = [
   'You are a sharp executive assistant explaining why an email sender was sorted into a particular bucket.',
   '',
   'Rules:',
-  '- Write 1-2 sentences. Plain English. No lists, no headings, no markdown.',
-  '- Reference the numeric facts you are given (monthly volume, read rate, recommendation).',
+  '- Write ONE sentence of at most 25 words. Plain English. No lists, no headings, no markdown.',
+  '- The reader already sees the message count, the marked-read rate and the recommendation beside this sentence. Give the reason; cite at most one number.',
+  '- Gmail only reports whether a message is marked read. Say "marked read" — never "read", "opened" or "engaged with".',
   '- Match the recommendation: Keep / Archive / Unsubscribe / Later.',
   '- Never invent details not present in the input. No personalization beyond what is supplied.',
   '- Do not address the user. Write in the third person about the sender.',
@@ -153,8 +159,8 @@ export function renderUserPrompt(input: ReasoningInput): string {
     // read rate" — an unqualified lifetime-sounding claim generated from
     // a 90-day ratio, i.e. the F008 defect laundered through the LLM.
     input.facts.readRatePct === null
-      ? 'Read rate: not measurable (no mail in the last 90 days)'
-      : `Read rate over the last 90 days: ${input.facts.readRatePct}%`,
+      ? 'Marked-read rate: not measurable (no mail in the last 90 days)'
+      : `Marked read over the last 90 days: ${input.facts.readRatePct}%`,
     // Phrased as a fact about the sender, not as a named internal
     // artifact. "Engine rule: high_read_rate" produced "the
     // high_read_rate engine rule confirms…" in live copy; the label is
@@ -163,7 +169,7 @@ export function renderUserPrompt(input: ReasoningInput): string {
     `Why this fits: ${input.ruleLabel}`,
     `Recommendation: ${verdictLabel} (confidence ${confidencePct}%)`,
     '',
-    'Explain in 1-2 sentences why this recommendation fits.',
+    'Explain in one sentence of at most 25 words why this recommendation fits.',
   ].join('\n');
 }
 
@@ -175,6 +181,9 @@ export function renderUserPrompt(input: ReasoningInput): string {
  *     fall back to the template than store a half-sentence)
  *   - No text block in `content[]` (response shape changed or only
  *     thinking/tool-use blocks landed)
+ *   - The text runs past `MAX_REASONING_WORDS` (logged with the word
+ *     count only — never the text — so a model that drifts long shows up
+ *     as a rate, instead of every sender silently reading as template)
  */
 function extractText(response: Anthropic.Message): string | null {
   if (response.stop_reason === 'refusal') return null;
@@ -183,6 +192,20 @@ function extractText(response: Anthropic.Message): string | null {
     if (block.type === 'text') {
       const text = block.text.trim();
       if (text.length === 0) return null;
+      const words = reasoningWordCount(text);
+      if (words > MAX_REASONING_WORDS) {
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'reasoning.over_word_ceiling',
+            adapter: 'AnthropicHaikuAdapter',
+            model: HAIKU_MODEL_ID,
+            words,
+            ceiling: MAX_REASONING_WORDS,
+          }),
+        );
+        return null;
+      }
       return text;
     }
   }

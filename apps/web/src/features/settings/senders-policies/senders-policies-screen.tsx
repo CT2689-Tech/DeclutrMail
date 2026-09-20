@@ -143,12 +143,10 @@ export function SendersPoliciesScreen() {
               Gmail's own filters, spam and categories are outside our
               reach, and a single action the user takes still applies.
               Describe the guard, not an outcome we do not control. */}
-          DeclutrMail&apos;s bulk and automatic actions skip these senders — it won&apos;t archive,
-          delete, or unsubscribe them on its own. An action you take on one sender yourself still
-          applies. You can protect a sender, and DeclutrMail also protects one when you write to
-          them repeatedly and hear back, star their email, or Gmail keeps marking it important. Each
-          row shows which of those applies, and Unprotect removes it — automatic protection
-          won&apos;t re-apply afterwards.
+          DeclutrMail protects a sender when you write to them at least three times and hear back,
+          star their email, or Gmail keeps marking it important — or you can protect one yourself.
+          Each row shows its reason. Unprotect removes it, and automatic protection won&apos;t
+          re-apply.
         </p>
       </div>
 
@@ -198,7 +196,8 @@ export function SendersPoliciesScreen() {
                   field is optional on the wire — against an API that
                   does not send it the sort silently collapses to name
                   order while this line still claims otherwise. */}
-              Bulk and automatic actions skip these senders.{' '}
+              Bulk and automatic actions skip these senders; an action you take on one sender
+              yourself still applies.{' '}
               {!ordered
                 ? ''
                 : hasNextPage
@@ -234,7 +233,7 @@ export function SendersPoliciesScreen() {
                  same claim the page's intro paragraph was already fixed
                  for. Naming the automatic triggers also stops an empty
                  result reading as a broken scan. */
-              description="Nothing here is protected yet. DeclutrMail protects a sender on its own once you've written to them at least three times and heard back, starred one of their messages, or Gmail keeps marking them important — and you can protect one yourself from its detail page. Protected senders are skipped by bulk and automatic actions."
+              description="DeclutrMail protects a sender on its own once you've written to them at least three times and heard back, starred one of their messages, or Gmail keeps marking them important. You can also protect one from its detail page."
               action={
                 <Link href="/senders" style={{ textDecoration: 'none' }}>
                   <Button size="sm">Browse senders</Button>

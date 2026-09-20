@@ -332,7 +332,9 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   expect(entries.some((e) => e.token === undoToken)).toBe(true);
   await tray.getByRole('button', { name: 'Undo Archive' }).first().click();
 
-  await expect(page.getByText('Restored to your inbox')).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText('Undone — email is back where it was.')).toBeVisible({
+    timeout: 90_000,
+  });
   undone = true;
   await expect
     .poll(async () => (await api.get<{ token: string }[]>('/api/undo')).map((e) => e.token), {

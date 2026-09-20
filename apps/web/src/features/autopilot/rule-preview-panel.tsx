@@ -139,7 +139,7 @@ export function RulePreviewPanel({
           )}
 
           <span style={{ fontSize: 11, color: color.fgMuted }}>
-            Observe preview — this check is read-only. Nothing changed in your mailbox.
+            Observe preview — this check is read-only.
           </span>
         </>
       )}

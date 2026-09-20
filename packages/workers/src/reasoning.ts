@@ -37,12 +37,12 @@ export { renderTemplate, VERDICT_LABEL } from '@declutrmail/shared/triage-engine
  *   - Return `null` on any failure (timeout, rate limit, content filter,
  *     non-2xx). The worker falls back to the template on `null`. No
  *     throws — the LLM is a soft path.
- *   - Return the LLM's 1-2 sentence explanation as a UTF-8 string. The
+ *   - Return the LLM's one-sentence explanation as a UTF-8 string. The
  *     worker stores it verbatim into `triage_decisions.reasoning`.
  */
 export interface ReasoningLlmPort {
   /**
-   * Generate a 1-2 sentence explanation for one (sender, cascade result).
+   * Generate a one-sentence explanation for one (sender, cascade result).
    * Returns `null` if the LLM call fails for any reason — the worker
    * falls back to the template.
    */
@@ -78,6 +78,25 @@ export interface ReasoningInput {
  * to the deterministic template — preserving the port's "no throws"
  * contract from the consumer side. Override via `REASONING_TIMEOUT_MS`.
  */
+/**
+ * Hard ceiling on a stored LLM explanation (2026-09-19 copy budgets). The
+ * prompt ASKS for one sentence of ≤25 words; this is what makes the ask
+ * enforceable. A live row ran to 50 words across two sentences, restating
+ * the count, rate and verdict already printed beside it. 40, not 25: the
+ * model counts loosely, and a 28-word sentence still beats the template.
+ *
+ * Lives here, not in the adapter, because TWO sites must agree on it: the
+ * adapter rejects a fresh over-long answer, and the score worker refuses
+ * to REUSE a stored one — otherwise every paragraph written before the
+ * ceiling existed survives until its verdict changes or its TTL lapses.
+ */
+export const MAX_REASONING_WORDS = 40;
+
+export function reasoningWordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
+}
+
 export const DEFAULT_EXPLAIN_TIMEOUT_MS = 5_000;
 
 /**

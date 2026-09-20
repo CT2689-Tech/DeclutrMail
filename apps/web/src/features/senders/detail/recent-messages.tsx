@@ -1,7 +1,7 @@
 'use client';
 
 import { EmptyState, tokens } from '@declutrmail/shared';
-import { GMAIL_PREVIEW_FIELD_LABEL, PRIVACY_BADGE_HEADLINE } from '@declutrmail/shared/copy';
+import { GMAIL_PREVIEW_FIELD_LABEL } from '@declutrmail/shared/copy';
 import { absoluteFromIso, fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
 import { track } from '@/lib/posthog';
@@ -100,10 +100,7 @@ export function RecentMessages({
       </div>
 
       {messages.length === 0 ? (
-        <EmptyState
-          title="No recent messages"
-          body={`New email from this sender shows up here. ${PRIVACY_BADGE_HEADLINE}`}
-        />
+        <EmptyState title="No recent messages" body="New email from this sender shows up here." />
       ) : (
         <ol
           style={{

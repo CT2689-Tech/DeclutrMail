@@ -12,7 +12,6 @@ import {
   tokens,
 } from '@declutrmail/shared';
 import { AUTOPILOT_PENDING_PAGE_SIZE } from '@declutrmail/shared/contracts';
-import { ApiError } from '@/lib/api/client';
 
 import type {
   AutopilotMatchDto,
@@ -46,6 +45,7 @@ import { PausedBanner } from './paused-banner';
 import { PatternSuggestionCard } from './pattern-suggestion-card';
 import { RuleCard } from './rule-card';
 import { SuggestionGroup } from './suggestion-group';
+import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type {
@@ -115,11 +115,7 @@ export function AutopilotRoute() {
     }
     if (rulesQuery.isError || suggestionsQuery.isError || patternQuery.isError) {
       const err = rulesQuery.error ?? suggestionsQuery.error ?? patternQuery.error;
-      const message =
-        err instanceof ApiError
-          ? "We couldn't load Autopilot."
-          : "We couldn't load Autopilot right now.";
-      return { kind: 'error', message, retry };
+      return { kind: 'error', message: loadErrorDescription(err), retry };
     }
     const rules = rulesQuery.data ?? [];
     const matches = suggestionsQuery.data ?? [];
@@ -436,7 +432,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
               ? intent === 'enable'
                 ? 'Rule is on and running'
                 : 'Rule is now Active'
-              : 'Rule is on and watching — nothing moves until you approve',
+              : 'Rule is on and watching',
             'info',
           );
         },
@@ -466,7 +462,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     patchRule.mutate(
       { ruleId: rule.id, patch: { observePromptDismissed: true } },
       {
-        onSuccess: () => toast('Prompt dismissed — the rule keeps observing', 'info'),
+        onSuccess: () => toast('Dismissed — the rule keeps observing', 'info'),
         onError: (err) => {
           toast(patchFailureMessage(err), 'warn');
           captureFeatureException(err, { surface: 'autopilot', reason: 'prompt_dismiss_failed' });
@@ -581,7 +577,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           next.delete(matchId);
           return next;
         });
-        toast('Suggestion skipped — Gmail was not changed', 'info');
+        toast('Suggestion skipped', 'info');
       },
       onError: (err) => {
         toast("Couldn't skip the suggestion. Try again.", 'warn');
@@ -647,12 +643,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             decision: result.decision,
             evidence_count: result.evidenceCount,
           });
-          toast(
-            decision === 'observe'
-              ? 'Rule is observing — Gmail has not changed.'
-              : 'Suggestion dismissed — Gmail has not changed.',
-            'info',
-          );
+          toast(decision === 'observe' ? 'Rule is observing.' : 'Suggestion dismissed.', 'info');
         },
         onError: (err) => {
           toast('That suggestion was not changed. Please retry.', 'warn');
@@ -736,18 +727,13 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       >
         {canActivate ? (
           <>
-            Watch first turns the rule on in Observe: it records matches as suggestions and changes
-            no Gmail email until you approve them. Confirming instead lets the rule act on the first
-            sweep you just previewed, and on matching email that arrives after it. A watching rule
-            can be switched over later — turn it off and on again, or use the prompt that appears
-            once it has collected matches; the suggestions it collected stay pending for you to
-            approve or skip.
+            Watch first collects matches for your approval; no email changes until you approve.
+            Confirm lets the rule act. You can switch a watching rule over later.
           </>
         ) : (
           <>
-            Observe records matches as suggestions and changes no Gmail email until you approve
-            them. Suggestions stay pending until you approve or skip each batch. Rules that apply
-            future matches automatically — Active mode — are part of {ACT_PLAN_NAME}.
+            Observe collects matches as suggestions. No email changes until you approve a batch.
+            Rules that act on their own are part of {ACT_PLAN_NAME}.
           </>
         )}
       </ContextualHelp>
@@ -1039,7 +1025,7 @@ function SuggestionsEmptyState({ hasAnyRules }: { hasAnyRules: boolean }) {
     return (
       <EmptyState
         title="No pending suggestions"
-        description="Suggestions appear here after your preset rules are created and matching senders are found."
+        description="Suggestions appear here once a rule finds matching senders."
       />
     );
   }

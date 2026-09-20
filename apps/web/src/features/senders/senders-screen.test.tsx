@@ -1745,7 +1745,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByText(/archive email from 1 sender/i);
 
     // Count check failed → explicit no-change state and a blocked confirm.
-    await screen.findAllByText(/close and retry/i);
+    await screen.findByText(/couldn't load the preview/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
     fireEvent.click(within(dialog).getByRole('button', { name: /retry preview/i }));
@@ -2190,9 +2190,7 @@ describe('SendersScreen — edge states', () => {
       // The poll keeps answering `executing`. At the deadline the latch
       // parks: overdue toast, active slot freed.
       await tick(ACTION_OVERDUE_MS);
-      screen.getByText(
-        'Archive for Overdue Alpha is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
-      );
+      screen.getByText(/Archive for Overdue Alpha is still running/);
 
       // The parked handle still OWNS Overdue Alpha: re-dispatching it is
       // refused (no second Gmail job) and the confirmed preview stays
@@ -2925,7 +2923,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await screen.findByText(/move email from 2 senders to gmail trash/i);
     await screen.findByText(/moves to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
-    await screen.findByText(/couldn't load the live preview/i);
+    await screen.findByText(/couldn't load the preview/i);
     const dialog = screen.getByRole('dialog');
     const confirmBtn = within(dialog).getByRole('button', { name: /delete/i });
     expect(confirmBtn).toBeDisabled();

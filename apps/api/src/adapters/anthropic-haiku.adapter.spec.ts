@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { CASCADE_RULE_IDS, type ReasoningInput } from '@declutrmail/workers';
+import { CASCADE_RULE_IDS, MAX_REASONING_WORDS, type ReasoningInput } from '@declutrmail/workers';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -174,6 +174,42 @@ describe('AnthropicHaikuAdapter.explain', () => {
     const adapter = new AnthropicHaikuAdapter({ client: stubClient(create) });
     const result = await adapter.explain(SAMPLE_INPUT);
     expect(result).toBeNull();
+  });
+
+  it('returns null when the explanation runs past the word ceiling (falls back to the template)', async () => {
+    // The 50-word, two-sentence row seen live on 2026-09-19.
+    const paragraph =
+      "Bank of America's alerts are arriving at a high volume of roughly 66 messages per month but are being read only 1% of the time, indicating they're transactional noise rather than valuable information worth keeping in the inbox. Archiving these notifications preserves access to them if needed while clearing daily clutter.";
+    expect(paragraph.split(/\s+/).length).toBeGreaterThan(MAX_REASONING_WORDS);
+    const create = vi.fn().mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: paragraph }],
+    } satisfies MockMessage);
+    const adapter = new AnthropicHaikuAdapter({ client: stubClient(create) });
+    expect(await adapter.explain(SAMPLE_INPUT)).toBeNull();
+  });
+
+  it('keeps an explanation at exactly the word ceiling', async () => {
+    const atCeiling = Array.from({ length: MAX_REASONING_WORDS }, () => 'word').join(' ');
+    const create = vi.fn().mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: atCeiling }],
+    } satisfies MockMessage);
+    const adapter = new AnthropicHaikuAdapter({ client: stubClient(create) });
+    expect(await adapter.explain(SAMPLE_INPUT)).toBe(atCeiling);
+  });
+
+  it('asks for one sentence and the "marked read" wording', async () => {
+    const create = vi.fn().mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [{ type: 'text', text: 'ok' }],
+    } satisfies MockMessage);
+    const adapter = new AnthropicHaikuAdapter({ client: stubClient(create) });
+    await adapter.explain(SAMPLE_INPUT);
+    const callArg = create.mock.calls[0]![0];
+    expect(callArg.system).toContain('at most 25 words');
+    expect(callArg.system).toContain('marked read');
+    expect(callArg.messages[0].content).toContain('Marked read over the last 90 days: 3%');
   });
 
   it('returns null on a network / SDK error (never throws)', async () => {

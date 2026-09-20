@@ -341,10 +341,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     if (!inFlight) return;
     const t = setTimeout(() => {
       void track('action_overdue', { kind: inFlight.kind, verb: 'archive' });
-      toast(
-        'The Noise archive is taking longer than usual — it keeps running and will appear in Activity when it finishes.',
-        'info',
-      );
+      toast('The Noise archive is still running — see Activity.', 'info');
       setOverdueInFlight(inFlight);
       setInFlight(null);
     }, ACTION_OVERDUE_MS);
@@ -488,8 +485,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     captureFeatureException(err, { surface: 'brief', reason: 'noise_bulk_enqueue' });
     toast(
       getActionFailureCopy('enqueue', {
-        action: `archive ${senderCount === 1 ? 'that sender' : `those ${senderCount} senders`}`,
-      }).message,
+        action: `Archive for ${senderCount === 1 ? 'that sender' : `those ${senderCount} senders`}`,
+      }),
       'warn',
     );
   }, []);
@@ -663,7 +660,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }).message, 'warn');
+      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       clearSelection(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
@@ -679,7 +676,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       setInFlight(null);
       return;
     }
-    toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }).message, 'warn');
+    toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
     // Nothing moved, so the senders stay checked and a retry is safe.
     setFailureOutcome({ kind: 'failed' });
     setInFlight(null);
@@ -704,7 +701,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_batch_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }).message, 'warn');
+      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       clearSelection(inFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setInFlight(null);
@@ -713,7 +710,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     const data = batchStatus.data;
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'failed') {
-      toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }).message, 'warn');
+      toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
       setFailureOutcome({ kind: 'failed' });
       setInFlight(null);
       return;
@@ -727,10 +724,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       toast(
         getActionFailureCopy('terminal', {
           action: 'the Noise archive',
-          whatChanged: `${data.done} of ${data.total} senders were archived.`,
-          whatDidNotChange: `${data.failed} did not complete.`,
-          nextStep: 'Check Activity to see which senders moved, then retry the rest.',
-        }).message,
+          partial: { done: data.done, total: data.total, unit: 'senders' },
+        }),
         'warn',
       );
       clearSelection(inFlight.senderKeys);
@@ -780,7 +775,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }).message, 'warn');
+      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       clearSelection(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
@@ -800,7 +795,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       setOverdueInFlight(null);
       return;
     }
-    toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }).message, 'warn');
+    toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
     setFailureOutcome({ kind: 'failed' });
     setOverdueInFlight(null);
   }, [
@@ -825,7 +820,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         surface: 'brief',
         reason: 'noise_archive_batch_status',
       });
-      toast(getActionFailureCopy('status', { action: 'the Noise archive' }).message, 'warn');
+      toast(getActionFailureCopy('status', { action: 'the Noise archive' }), 'warn');
       clearSelection(overdueInFlight.senderKeys);
       setFailureOutcome({ kind: 'unconfirmed' });
       setOverdueInFlight(null);
@@ -838,7 +833,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     void qc.invalidateQueries({ queryKey: ['composite-preview'] });
     void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
     if (data.status === 'failed') {
-      toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }).message, 'warn');
+      toast(getActionFailureCopy('terminal', { action: 'the Noise archive' }), 'warn');
       setFailureOutcome({ kind: 'failed' });
       setOverdueInFlight(null);
       return;
@@ -847,10 +842,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       toast(
         getActionFailureCopy('terminal', {
           action: 'the Noise archive',
-          whatChanged: `${data.done} of ${data.total} senders were archived.`,
-          whatDidNotChange: `${data.failed} did not complete.`,
-          nextStep: 'Check Activity to see which senders moved, then retry the rest.',
-        }).message,
+          partial: { done: data.done, total: data.total, unit: 'senders' },
+        }),
         'warn',
       );
       clearSelection(overdueInFlight.senderKeys);

@@ -173,7 +173,14 @@ export function DecidePreview({
                 ? `Delete ${name}'s inbox + archived email`
                 : `Delete ${name}'s inbox email`;
 
-  const lead = presentation.previewCopy;
+  // Zero matches: nothing moves, but Confirm is still live — it resolves
+  // the quarantine row (`ScreenerService.decide` sets `decided_at` even on
+  // a 0-message enqueue), so the sender leaves this queue. Say that; a
+  // live button over "Nothing to move" otherwise reads as a no-op.
+  const lead =
+    moves && confidentZeroMatch
+      ? `Confirming records your decision and removes ${name} from the Screener.`
+      : presentation.previewCopy;
 
   const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
   const confirmDisabled = confirming || previewBlocked;
@@ -300,8 +307,8 @@ export function DecidePreview({
           </div>
           {activeReach === 'all_mail' && (
             <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
-              Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
-              every email — inbox email to the inbox, archived email to the archive.
+              Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo puts each
+              email back where it was.
             </span>
           )}
         </div>
@@ -456,7 +463,7 @@ function ImpactFigure({
   if (count === 'unavailable') {
     return (
       <span style={captionStyle}>
-        Couldn&apos;t load a live preview. Cancel and retry — no inbox email can move without one.
+        Couldn&apos;t load the preview. Nothing can move until it loads.
       </span>
     );
   }
@@ -502,7 +509,7 @@ function ImpactFigure({
       <strong style={strongStyle}>{count.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
         email{count === 1 ? '' : 's'} {allMailReach ? 'across inbox + archived' : 'in Inbox'} now
-        {windowQualifier}. Rechecked when it runs, so the final count can differ.
+        {windowQualifier}. Rechecked when it runs.
       </span>
       {scopeCopy && (
         <span role="status" style={{ ...captionStyle, flexBasis: '100%' }}>

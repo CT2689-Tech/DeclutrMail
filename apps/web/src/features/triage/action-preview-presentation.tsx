@@ -141,7 +141,10 @@ export function ActionPreviewPresentation({
               ? `Move ${allMail ? 'inbox + archived' : 'inbox'} email from ${subject} to Gmail Trash`
               : `Keep ${subject}`;
 
-  const lead = presentation.previewCopy;
+  // Zero matches: the title already says nothing moves, the figure below
+  // shows the 0, and the footer states why confirm is disabled. A lead
+  // describing a move and its undo is noise about an action that cannot run.
+  const lead = movesCurrentInbox && liveCount === 0 ? null : presentation.previewCopy;
 
   // The server charges a second unit for a backlog verb riding an
   // Unsubscribe (`recordUnsubIntent` preflights `includesBacklogAction
@@ -215,16 +218,18 @@ export function ActionPreviewPresentation({
         >
           {title}
         </h3>
-        <p
-          style={{
-            fontSize: 12.5,
-            color: color.fgSoft,
-            margin: '4px 0 0',
-            lineHeight: 1.5,
-          }}
-        >
-          {lead}
-        </p>
+        {lead !== null && (
+          <p
+            style={{
+              fontSize: 12.5,
+              color: color.fgSoft,
+              margin: '4px 0 0',
+              lineHeight: 1.5,
+            }}
+          >
+            {lead}
+          </p>
+        )}
       </div>
 
       {/* Current match count, fetched server-side. */}
@@ -333,7 +338,7 @@ function ImpactFigure({
     return (
       <>
         <strong style={strongStyle}>0</strong>
-        <span style={captionStyle}>emails move — everything in the inbox stays where it is.</span>
+        <span style={captionStyle}>emails move.</span>
       </>
     );
   }
@@ -342,9 +347,7 @@ function ImpactFigure({
   }
   if (inboxCount === 'unavailable') {
     return (
-      <span style={captionStyle}>
-        Couldn't load a live preview. Close and retry — no inbox email can move without one.
-      </span>
+      <span style={captionStyle}>Couldn't load the preview. Nothing can move until it loads.</span>
     );
   }
   return (
@@ -352,7 +355,7 @@ function ImpactFigure({
       <strong style={strongStyle}>{inboxCount.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
         email{inboxCount === 1 ? '' : 's'} {allMail ? 'across inbox + archived' : 'in Inbox'} now.
-        Rechecked when it runs, so the final count can differ.
+        Rechecked when it runs.
       </span>
     </>
   );
