@@ -1821,6 +1821,13 @@ visible). Table is a power-user analytical mode. Defaulting to table
 would feel like a spreadsheet; defaulting to grid feels like a curated
 review.
 
+**[REVERSAL 2026-09-20 on D49 — persistence only]** Founder report: the
+table layout fell back to grid on every refresh and back/forward load,
+mid-cleanup. The layout (view + table density) is now a per-device
+preference kept in `localStorage`; grid remains the default for a device
+that never chose, and mobile remains card-list only. The sort is not
+persisted. Everything else in D49 stands.
+
 ### D50 — Per-row interaction: **Collapse/expand pattern matching Triage D36**
 
 **[GRILL PATCH 2026-05-18 → D198]** Uses the shared `useExpandableRow`

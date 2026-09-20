@@ -1,7 +1,7 @@
 'use client';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   EmptyState,
@@ -82,7 +82,7 @@ import { SenderTable, type SenderTableVerb } from './sender-table';
 import { SenderListRow as SenderRowMobile } from './table/sender-list-row';
 import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
-import { useSendersStore } from './store';
+import { restoreSendersLayout, useSendersStore } from './store';
 import { SendersLoadingState } from './senders-loading-state';
 import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
@@ -923,7 +923,17 @@ function SendersScreenContent({
   // Per-session grid/table view (D49). Default is grid; the segmented
   // ViewToggle in the header flips it. Deliberately non-persistent.
   const view = useSendersStore((s) => s.view);
-  // Table row density — session-scoped beside `view`; the header's
+  // Restore this device's layout preference AFTER mount, so the server
+  // and first client render agree on the grid default.
+  // A LAYOUT effect: storage is synchronous, so the switch lands before
+  // the hydrated frame paints instead of one frame after it. The
+  // server-painted grid can still show briefly on a hard load — the
+  // server cannot see this device's storage (founder accepted 2026-09-20
+  // over adding a cookie).
+  useLayoutEffect(() => {
+    restoreSendersLayout();
+  }, []);
+  // Table row density — remembered beside `view`; the header's
   // DensityToggle writes it, only SenderTable reads it.
   const density = useSendersStore((s) => s.density);
   const selectedSenders = useMemo(
@@ -2456,7 +2466,7 @@ function SendersScreenContent({
           {/* Table-only: row density (the grid has one density). */}
           {!isPhone && view === 'table' && <DensityToggle />}
           {/* D49 — segmented [Grid | Table] switch at top right.
-              Per-session, non-persistent (each visit starts in grid).
+              Remembered per device (see `store.ts`); grid until chosen.
               D54 — the phone dialect replaces both outright, so the
               toggle would offer a choice the screen no longer honors. */}
           {!isPhone && <ViewToggle />}

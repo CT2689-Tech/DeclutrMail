@@ -3,14 +3,12 @@
 /**
  * `ViewToggle` — segmented `[Grid | Table]` control (D49).
  *
- * D49: "Every page visit starts in grid. Segmented control at top
- * right offers `[Grid | Table]` switch. Toggle does not persist
- * across sessions."
+ * D49: a segmented control at top right offers `[Grid | Table]`; grid
+ * is the default. The choice is remembered per device (founder decision
+ * 2026-09-20, reversing D49's "does not persist") — see the store.
  *
  * State lives in `useSendersStore` (D200) so the toggle can be
- * read/set from anywhere on the screen without prop drilling. Mount
- * always defaults to `grid` (the store's initial state) — see store
- * comment for why the toggle deliberately does not persist.
+ * read/set from anywhere on the screen without prop drilling.
  */
 
 import { tokens } from '@declutrmail/shared';

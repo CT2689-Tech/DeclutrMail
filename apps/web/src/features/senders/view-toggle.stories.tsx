@@ -1,7 +1,7 @@
 // Storybook CSF3 stories for the ViewToggle segmented control (D49, D210).
 //
-// D49: "Every page visit starts in grid. Segmented control at top right
-// offers [Grid | Table]. Toggle does not persist across sessions." State
+// D49: a segmented control at top right offers [Grid | Table]; grid is
+// the default and the choice is remembered per device (2026-09-20). State
 // lives in `useSendersStore` (D200), so these stories seed the store's
 // `view` before render to pin both active states for the design-system
 // gate (D210). The button is a pure store read/write — no network.
@@ -29,7 +29,7 @@ const meta: StoryMeta<typeof ViewToggle> = {
     docs: {
       description: {
         component:
-          'Segmented [Grid | Table] switch (D49). Grid is the default surface; Table is the per-session opt-in. The active state is deliberately non-persistent — each page visit starts in grid (see `store.ts`). Clicking a segment flips `useSendersStore.view`; the senders screen swaps its body between the card grid and the flat sortable table.',
+          'Segmented [Grid | Table] switch (D49). Grid is the default surface; Table is the opt-in, remembered per device (see `store.ts`). Clicking a segment flips `useSendersStore.view`; the senders screen swaps its body between the card grid and the flat sortable table.',
       },
     },
   },
