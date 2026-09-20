@@ -181,6 +181,9 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(screen.getAllByText('2')).toHaveLength(1);
     expect(screen.getByText(/across inbox \+ archived/i)).toBeInTheDocument();
     expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/i)).toBeInTheDocument();
+    // The lead follows the chip — it must not keep claiming "in Inbox".
+    expect(screen.queryByText(/currently in Inbox moves to Gmail Trash/)).toBeNull();
+    expect(screen.getByText(/in Inbox or archived moves to Gmail Trash/)).toBeInTheDocument();
   });
 
   it('softens the empty-inbox notice when the reach control is on screen (ADR-0028 wording)', () => {

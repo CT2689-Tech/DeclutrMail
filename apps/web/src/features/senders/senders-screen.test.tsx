@@ -2931,6 +2931,77 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(confirmBtn).toBeDisabled();
   });
 
+  it('carries the chosen "Inbox + archived" reach into a BULK Delete enqueue (ADR-0028)', async () => {
+    // The chip advertises the all-mail total, so confirming it promises
+    // archived mail moves too. The reach must reach the wire or the
+    // worker resolves inbox-only and the preview is a lie.
+    const b = (n: number) => ({
+      all: n,
+      olderThan30d: n,
+      olderThan90d: n,
+      olderThan180d: n,
+      olderThan365d: n,
+    });
+    const posted: Array<{ primary?: { type?: string; reach?: string } }> = [];
+    installFetchStub([
+      TWO_SENDER_LIST,
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: () =>
+          jsonOk({
+            data: {
+              senders: [
+                {
+                  senderId: 'a',
+                  name: 'Sender A',
+                  counts: b(2),
+                  allMailCounts: b(40),
+                  protected: false,
+                },
+                {
+                  senderId: 'b',
+                  name: 'Sender B',
+                  counts: b(3),
+                  allMailCounts: b(60),
+                  protected: false,
+                },
+              ],
+              totals: b(5),
+              allMailTotals: b(100),
+              protectedCount: 0,
+            },
+          }),
+      },
+      {
+        method: 'POST',
+        path: '/api/actions',
+        respond: async (req) => {
+          posted.push((await req.json()) as (typeof posted)[number]);
+          return jsonOk({
+            data: {
+              batchId: 'batch-r',
+              status: 'queued',
+              senderCount: 2,
+              requestedTotal: 100,
+              wakeAt: null,
+              skipped: [],
+            },
+          });
+        },
+      },
+    ]);
+
+    renderScreen();
+    await selectBothAndPress('d');
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(await within(dialog).findByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /delete/i }));
+
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]!.primary).toMatchObject({ type: 'delete', reach: 'all_mail' });
+  });
+
   it('offers Delete on the selection bar with the registry shortcut advertised', async () => {
     installFetchStub([TWO_SENDER_LIST, BULK_PREVIEW_OK]);
     renderScreen();

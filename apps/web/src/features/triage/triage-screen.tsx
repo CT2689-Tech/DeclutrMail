@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import type { ActionReach } from '@declutrmail/shared/contracts';
 
 import {
   useActionStatus,
@@ -199,6 +200,25 @@ export function TriageScreen({
   const mailboxSyncFailed =
     auth?.me.mailboxes.find((m) => m.id === auth.me.activeMailboxId)?.readiness === 'failed';
   const pendingAction = useTriageStore((s) => s.pendingAction);
+  // ADR-0028 — the Delete preview's reach. Form state, local on purpose.
+  // Stored WITH the pending action it was chosen for, so a wider
+  // destructive scope can never be read for a different sender or verb —
+  // not even for the one render an effect-based reset would leave open.
+  const [deleteReachChoice, setDeleteReachChoice] = useState<{
+    key: string;
+    reach: ActionReach;
+  } | null>(null);
+  const pendingReachKey = pendingAction ? `${pendingAction.rowId}:${pendingAction.verb}` : null;
+  const deleteReach: ActionReach =
+    deleteReachChoice !== null && deleteReachChoice.key === pendingReachKey
+      ? deleteReachChoice.reach
+      : 'inbox_only';
+  const setDeleteReach = useCallback(
+    (reach: ActionReach) => {
+      if (pendingReachKey !== null) setDeleteReachChoice({ key: pendingReachKey, reach });
+    },
+    [pendingReachKey],
+  );
   const rememberPreference = useTriageStore((s) => s.rememberPreference);
   const openPending = useTriageStore((s) => s.openPending);
   const clearPending = useTriageStore((s) => s.clearPending);
@@ -467,11 +487,24 @@ export function TriageScreen({
   }, [compositePreview.isError, compositePreview.error, previewSenderId]);
   // isFetching keeps a reopened sheet in 'loading' while the cached
   // preview refetches — a cached count must never arm confirm (D226).
+  // ADR-0028 — Delete may reach archived mail too, by explicit choice.
+  // Offered on the daily ritual only: onboarding's first cleanup stays
+  // about the inbox (founder decision 2026-09-19). And only when the
+  // preview carries the all-mail block — absent against an older API, so
+  // during a deploy skew the choice simply does not appear.
+  const reachOffered =
+    journey === 'daily' &&
+    pendingAction?.verb === 'Delete' &&
+    compositePreview.data?.allMail != null;
+  const activeReach: ActionReach = reachOffered ? deleteReach : 'inbox_only';
+  // The ONE count the preview arms — at the SELECTED reach.
   const previewInboxCount: PreviewCount = compositePreview.isError
     ? 'unavailable'
     : compositePreview.isFetching || compositePreview.data == null
       ? 'loading'
-      : compositePreview.data.counts.all;
+      : activeReach === 'all_mail'
+        ? (compositePreview.data.allMail?.counts.all ?? compositePreview.data.counts.all)
+        : compositePreview.data.counts.all;
   /**
    * Verification detail for the D226 preview — parity with the senders
    * confirm modal (founder review 2026-08-27).
@@ -491,22 +524,25 @@ export function TriageScreen({
   const previewDetail: ActionPreviewDetail | undefined = (() => {
     const data = compositePreview.data;
     if (data == null || pendingRow == null) return undefined;
-    // Triage acts on every inbox message from the sender, so the Gmail
-    // search mirrors that: no window, inbox only. Approximate by
-    // construction — see `buildActionScopeSearchLink`.
+    // Triage acts on every message from the sender at the selected
+    // reach, so the Gmail search mirrors that: no window, and `in:inbox`
+    // dropped at the widened reach. Approximate by construction — see
+    // `buildActionScopeSearchLink`.
+    const atAllMail = activeReach === 'all_mail' && data.allMail != null;
+    const armedTotal = atAllMail ? data.allMail!.counts.all : data.counts.all;
     const gmailScopeSearch = activeEmail
       ? GmailOpenLinkService.buildActionScopeSearchLink({
           mailboxEmail: activeEmail,
           from: pendingRow.senderEmail,
           olderThanDays: null,
-          inboxOnly: true,
+          inboxOnly: !atAllMail,
         })
       : null;
-    const sampleRows = (data.recentMessages?.all ?? [])
+    const sampleRows = ((atAllMail ? data.allMail!.recentMessages : data.recentMessages)?.all ?? [])
       .slice(0, 5)
       // Never advertise more rows than the count above it — the senders
       // panel once read "5 of 3" for exactly this reason.
-      .slice(0, Math.min(5, data.counts.all))
+      .slice(0, Math.min(5, armedTotal))
       .map((message) => ({
         subject: message.subject,
         // Formatted HERE: the presentation component stays free of date
@@ -527,10 +563,18 @@ export function TriageScreen({
     });
     return {
       ...(mailLocationLine === null ? {} : { mailLocationLine }),
-      ...(sampleRows.length > 0
-        ? { matchSample: { rows: sampleRows, total: data.counts.all } }
-        : {}),
+      ...(sampleRows.length > 0 ? { matchSample: { rows: sampleRows, total: armedTotal } } : {}),
       ...(gmailScopeSearch === null ? {} : { verifyInGmailUrl: gmailScopeSearch }),
+      ...(reachOffered && data.allMail != null
+        ? {
+            reachControl: {
+              reach: activeReach,
+              inboxCount: data.counts.all,
+              allMailCount: data.allMail.counts.all,
+              onChange: setDeleteReach,
+            },
+          }
+        : {}),
     };
   })();
 
@@ -1020,6 +1064,13 @@ export function TriageScreen({
             type: primaryType,
             olderThanDays: null,
             ...(primaryType === 'later' && details?.wakeAt ? { wakeAt: details.wakeAt } : {}),
+            // ADR-0028 — only a Delete whose preview OFFERED the choice
+            // may carry it, and only the non-default value travels.
+            ...(primaryType === 'delete' &&
+            activeReach === 'all_mail' &&
+            pendingAction?.rowId === row.id
+              ? { reach: activeReach }
+              : {}),
           },
           // See the note on the follow-on archive above: the shared
           // composite endpoint 409s on a protected sender without this.
@@ -1106,6 +1157,8 @@ export function TriageScreen({
       setExpandedRow,
       incrementSessionDecided,
       journey,
+      activeReach,
+      pendingAction,
     ],
   );
 
@@ -1527,6 +1580,7 @@ export function TriageScreen({
           void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
         }}
         detail={previewDetail}
+        reach={activeReach}
         // Unconditional: `previewDetail` is undefined until the composite
         // preview resolves, and Unsubscribe confirms without waiting for it.
         quotaRemaining={cleanupRemaining}

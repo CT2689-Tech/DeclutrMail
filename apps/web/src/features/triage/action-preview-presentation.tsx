@@ -1,5 +1,6 @@
 import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import type { ActionReach } from '@declutrmail/shared/contracts';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import type { CSSProperties, ReactNode } from 'react';
@@ -32,6 +33,11 @@ export interface ActionPreviewPresentationProps {
   inboxCount: PreviewCount;
   /** Exact Later return time carried by the pending action. */
   wakeAt?: string | null;
+  /**
+   * ADR-0028 — the reach a Delete preview is armed at; `inboxCount` is
+   * then the count AT that reach. Absent = `inbox_only`.
+   */
+  reach?: ActionReach | undefined;
   /** Chrome variant — modal (inside sheet) vs inline (no chrome). */
   mode: 'modal' | 'inline';
   /** Optional app-owned context shown before the action copy. */
@@ -75,6 +81,7 @@ export function ActionPreviewPresentation({
   archiveHistoric,
   inboxCount,
   wakeAt = null,
+  reach = 'inbox_only',
   mode,
   accountContext,
   detailSlot,
@@ -92,6 +99,8 @@ export function ActionPreviewPresentation({
   const subject = row.senderName;
   const actionVerb = verb.toLowerCase() as 'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete';
   const liveCount = typeof inboxCount === 'number' ? inboxCount : null;
+  // Only Delete may act past the inbox; any other verb ignores the prop.
+  const allMail = verb === 'Delete' && reach === 'all_mail';
   const presentation = buildActionPresentation({
     verb: actionVerb,
     liveCount: actionVerb === 'keep' || actionVerb === 'unsubscribe' ? 0 : liveCount,
@@ -103,6 +112,7 @@ export function ActionPreviewPresentation({
     timeZone: 'viewer',
     secondaryAction:
       actionVerb === 'unsubscribe' && archiveHistoric ? { verb: 'archive', liveCount } : null,
+    reach: allMail ? 'all_mail' : 'inbox_only',
   });
 
   // Copy per verb — literal, and TRUE to the pipeline each verb rides:
@@ -128,7 +138,7 @@ export function ActionPreviewPresentation({
           : verb === 'Unsubscribe'
             ? `Unsubscribe from ${subject}`
             : verb === 'Delete'
-              ? `Move inbox email from ${subject} to Gmail Trash`
+              ? `Move ${allMail ? 'inbox + archived' : 'inbox'} email from ${subject} to Gmail Trash`
               : `Keep ${subject}`;
 
   const lead = presentation.previewCopy;
@@ -229,7 +239,7 @@ export function ActionPreviewPresentation({
           borderRadius: 8,
         }}
       >
-        <ImpactFigure counts={counts} inboxCount={inboxCount} mode={mode} />
+        <ImpactFigure counts={counts} inboxCount={inboxCount} mode={mode} allMail={allMail} />
       </div>
 
       {/* Verification detail — the same three affordances the senders
@@ -302,10 +312,12 @@ function ImpactFigure({
   counts,
   inboxCount,
   mode,
+  allMail,
 }: {
   counts: boolean;
   inboxCount: PreviewCount;
   mode: 'modal' | 'inline';
+  allMail: boolean;
 }) {
   const strongStyle: CSSProperties = {
     fontFamily: font.display,
@@ -339,8 +351,8 @@ function ImpactFigure({
     <>
       <strong style={strongStyle}>{inboxCount.toLocaleString('en-US')}</strong>
       <span style={captionStyle}>
-        email{inboxCount === 1 ? '' : 's'} in Inbox now. Rechecked when it runs, so the final count
-        can differ.
+        email{inboxCount === 1 ? '' : 's'} {allMail ? 'across inbox + archived' : 'in Inbox'} now.
+        Rechecked when it runs, so the final count can differ.
       </span>
     </>
   );

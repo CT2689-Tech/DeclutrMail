@@ -360,9 +360,10 @@ export const compositeActionRequestSchema = z
         /**
          * ADR-0028 — how far the verb reaches. Optional (absent =
          * `inbox_only`, the pre-ADR wire) so every deployed client stays
-         * valid. `all_mail` is legal only on a single-sender Delete
-         * primary; the superRefine below rejects everything else with a
-         * 400 before the DB CHECK could.
+         * valid. `all_mail` is legal only on a Delete primary — one
+         * sender or the multi-sender `senders` fan-out (ADR-0028
+         * amendment 2026-09-19); the superRefine below rejects every
+         * other verb with a 400 before the DB CHECK could.
          */
         reach: z.enum(ACTION_REACHES).optional(),
       })
@@ -433,13 +434,6 @@ export const compositeActionRequestSchema = z
           code: z.ZodIssueCode.custom,
           path: ['primary', 'reach'],
           message: 'Only Delete may reach past the inbox.',
-        });
-      }
-      if (body.selector.type !== 'sender') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ['primary', 'reach'],
-          message: 'Inbox + archived reach is single-sender only.',
         });
       }
     }
@@ -544,9 +538,18 @@ export interface BulkActionPreviewResult {
     senderId: string;
     name: string;
     counts: BulkPreviewBuckets;
+    /** ADR-0028 — the same buckets at `all_mail` reach (inbox + archived). */
+    allMailCounts: BulkPreviewBuckets;
     protected: boolean;
   }>;
   totals: BulkPreviewBuckets;
+  /**
+   * ADR-0028 — `totals` resolved at `all_mail` reach, Protected senders
+   * excluded the same way. Additive: a web bundle predating the field
+   * ignores it; a newer bundle treats its absence as "reach selection
+   * unavailable" and hides the chips.
+   */
+  allMailTotals: BulkPreviewBuckets;
   protectedCount: number;
 }
 

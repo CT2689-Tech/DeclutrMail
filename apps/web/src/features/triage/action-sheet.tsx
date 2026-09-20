@@ -6,6 +6,7 @@ import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { ContextualHelp } from '@/features/help/contextual-help';
+import type { ActionReach } from '@declutrmail/shared/contracts';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import {
   ActionPreviewDetailBlock,
@@ -58,6 +59,7 @@ export function ActionSheet({
   previewSenderGone = false,
   onRefreshTriage,
   detail,
+  reach = 'inbox_only',
   quotaRemaining,
 }: {
   open: boolean;
@@ -85,6 +87,8 @@ export function ActionSheet({
   onRefreshTriage?: (() => void) | undefined;
   /** Verification detail for the D226 preview (parity with senders). */
   detail?: ActionPreviewDetail | undefined;
+  /** ADR-0028 — the reach a Delete is armed at; `inboxCount` is the count at it. */
+  reach?: ActionReach | undefined;
   /**
    * Cleanup actions left this month; `null` when the tier does not meter
    * them.
@@ -126,6 +130,7 @@ export function ActionSheet({
     verb === 'Delete' ||
     (verb === 'Unsubscribe' && effectiveArchiveHistoric);
   const previewUnavailable = inboxCount === 'unavailable';
+  const deleteAllMail = verb === 'Delete' && reach === 'all_mail';
   const previewPending = inboxCount === 'loading';
   const wakeAtInvalid =
     verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
@@ -262,6 +267,7 @@ export function ActionSheet({
             archiveHistoric={effectiveArchiveHistoric}
             inboxCount={inboxCount}
             wakeAt={selectedWakeAt}
+            reach={reach}
             mode="modal"
             mailboxEmail={mailboxEmail}
             quotaRemaining={quotaRemaining}
@@ -430,7 +436,9 @@ export function ActionSheet({
               ? previewSenderGone
                 ? 'This sender is no longer available. Refresh triage to continue.'
                 : nothingToActOn
-                  ? 'No matching email in Inbox right now — nothing to act on.'
+                  ? deleteAllMail
+                    ? 'No matching email in Inbox or archived right now — nothing to act on.'
+                    : 'No matching email in Inbox right now — nothing to act on.'
                   : wakeAtInvalid
                     ? 'Later needs a future return time before you can confirm.'
                     : inboxCount === 'unavailable'
@@ -444,8 +452,8 @@ export function ActionSheet({
                   : "The unsubscribe request can't be undone. Existing inbox email stays put."
                 : verb === 'Delete'
                   ? UNIFORM_UNDO_WINDOW_DAYS === null
-                    ? "Moves matching inbox email to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days."
-                    : `Moves matching inbox email to Gmail Trash. Activity Undo uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day window; Gmail normally keeps Trash for up to 30 days.`
+                    ? `Moves matching ${deleteAllMail ? 'inbox + archived' : 'inbox'} email to Gmail Trash. Activity Undo uses your plan's window; Gmail normally keeps Trash for up to 30 days.`
+                    : `Moves matching ${deleteAllMail ? 'inbox + archived' : 'inbox'} email to Gmail Trash. Activity Undo uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day window; Gmail normally keeps Trash for up to 30 days.`
                   : UNIFORM_UNDO_WINDOW_DAYS === null
                     ? "Reversible for your plan's undo window from Activity."
                     : `Reversible for the ${UNIFORM_UNDO_WINDOW_DAYS}-day undo window from Activity.`}

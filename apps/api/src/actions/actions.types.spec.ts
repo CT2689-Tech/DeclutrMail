@@ -75,7 +75,7 @@ describe('compositeActionRequestSchema — ADR-0028 reach', () => {
     expect(res.success ? '' : res.error.issues[0]?.message).toMatch(/Only Delete/);
   });
 
-  it('rejects all_mail on the bulk senders selector', () => {
+  it('accepts all_mail on a bulk senders Delete primary (ADR-0028 amendment 2026-09-19)', () => {
     const res = compositeActionRequestSchema.safeParse({
       selector: {
         type: 'senders',
@@ -83,8 +83,19 @@ describe('compositeActionRequestSchema — ADR-0028 reach', () => {
       },
       primary: { type: 'delete', reach: 'all_mail' },
     });
+    expect(res.success).toBe(true);
+  });
+
+  it('rejects all_mail on a bulk non-Delete primary', () => {
+    const res = compositeActionRequestSchema.safeParse({
+      selector: {
+        type: 'senders',
+        senderIds: ['00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002'],
+      },
+      primary: { type: 'archive', reach: 'all_mail' },
+    });
     expect(res.success).toBe(false);
-    expect(res.success ? '' : res.error.issues[0]?.message).toMatch(/single-sender/);
+    expect(res.success ? '' : res.error.issues[0]?.message).toMatch(/Only Delete/);
   });
 
   it('rejects a forged reach value', () => {

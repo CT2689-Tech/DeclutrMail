@@ -66,7 +66,7 @@ export interface SenderActionScope extends SenderInboxActionScope {
  * WHERE clause for the sender-action message set — see module doc.
  * Reach-explicit variant (ADR-0028); `senderInboxActionWhere` below
  * remains the inbox-only spelling for the callers whose reach is fixed
- * by design (previews' inbox buckets, Autopilot, bulk).
+ * by design (previews' inbox buckets, Autopilot, bulk secondaries).
  */
 export function senderActionWhere(scope: SenderActionScope): SQL {
   const { mailboxAccountId, senderKeys, olderThanDays, reach } = scope;
