@@ -19,6 +19,19 @@ import { makeSender } from './testing/make-sender';
 
 vi.mock('./grid/sender-peek', () => ({ SenderPeek: () => null }));
 
+const onSelect = vi.fn();
+
+/** Busy checkbox: refuses the click but keeps focus (never native `disabled`). */
+function expectInertCheckbox(box: HTMLElement) {
+  onSelect.mockClear();
+  expect(box).toHaveAttribute('aria-disabled', 'true');
+  expect(box).not.toBeDisabled();
+  box.focus();
+  expect(box).toHaveFocus();
+  fireEvent.click(box);
+  expect(onSelect).not.toHaveBeenCalled();
+}
+
 const sender = makeSender({ id: 'sender-1', displayName: 'Yankee Candle' });
 const working: RowActivityById = new Map([['sender-1', { phase: 'working', verb: 'delete' }]]);
 const done: RowActivityById = new Map([
@@ -75,7 +88,7 @@ describe('grid card', () => {
         <SenderCard
           sender={sender}
           selected={false}
-          onToggleSelect={() => {}}
+          onToggleSelect={onSelect}
           onAction={() => {}}
           globalMaxTotal={500}
         />
@@ -87,7 +100,7 @@ describe('grid card', () => {
     const root = screen.getByTestId('sender-card-sender-1');
     expect(root).toHaveAttribute('aria-busy', 'true');
     expect(within(root).getByText('Moving to Trash…')).toBeInTheDocument();
-    expect(within(root).getByRole('checkbox')).toBeDisabled();
+    expectInertCheckbox(within(root).getByRole('checkbox'));
   });
 
   it('stays, marked done with the real count', () => {
@@ -110,7 +123,7 @@ describe('table row', () => {
           direction="desc"
           onSortChange={() => {}}
           selectedIds={new Set()}
-          onSelectionChange={() => {}}
+          onSelectionChange={onSelect}
           onRowToggle={() => {}}
           onAction={() => {}}
         />
@@ -122,7 +135,7 @@ describe('table row', () => {
     const pill = screen.getByText('Moving to Trash…');
     const tr = pill.closest('tr')!;
     expect(tr).toHaveAttribute('aria-busy', 'true');
-    expect(within(tr).getByRole('checkbox')).toBeDisabled();
+    expectInertCheckbox(within(tr).getByRole('checkbox'));
   });
 
   it('stays, marked done', () => {
@@ -139,14 +152,14 @@ describe('phone row', () => {
           s={sender}
           selected={false}
           expanded={false}
-          onToggleSelect={() => {}}
+          onToggleSelect={onSelect}
           onToggleExpand={() => {}}
           onAction={() => {}}
         />
       </Wrap>,
     );
     expect(screen.getByText('Moving to Trash…')).toBeInTheDocument();
-    expect(screen.getByRole('checkbox')).toBeDisabled();
+    expectInertCheckbox(screen.getByRole('checkbox'));
   });
 });
 
@@ -192,6 +205,28 @@ describe('collapsed brand group (grid)', () => {
     const card = screen.getByTestId('domain-group-brand.com');
     expect(card).not.toHaveAttribute('aria-busy');
     expect(within(card).getByText('1 done · 1 failed')).toBeInTheDocument();
+  });
+
+  it('keeps a lost poll busy and sends a part-failed bulk to Activity', () => {
+    group(
+      new Map([
+        ['g1', { phase: 'unconfirmed', verb: 'delete' }],
+        ['g2', { phase: 'mixed', verb: 'delete' }],
+      ]),
+    );
+    const card = screen.getByTestId('domain-group-brand.com');
+    // Unconfirmed may still be running — the group stays busy.
+    expect(card).toHaveAttribute('aria-busy', 'true');
+    expect(within(card).getByText('1 not confirmed · 1 in Activity')).toBeInTheDocument();
+  });
+
+  it('drops its summary once expanded — the member pills say it', () => {
+    group(new Map([['g1', { phase: 'done', verb: 'archive', affectedCount: null }]]));
+    const card = screen.getByTestId('domain-group-brand.com');
+    expect(within(card).getByText('1 done')).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: /show 3 senders/i }));
+    expect(document.querySelector('[data-dm-group-activity]')).toBeNull();
+    expect(screen.getByText('Archived')).toBeInTheDocument();
   });
 
   it('says nothing when no member was acted on', () => {

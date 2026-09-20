@@ -939,6 +939,9 @@ function SendersScreenContent({
   // Read through a ref by the terminal effects below: `settleRows`
   // changes identity on every list refetch, and those effects toast — a
   // dependency on it would be a second chance to fire them.
+  // `setPolicy.isPending` tracks only the LAST of N concurrent
+  // `mutateAsync` calls; this covers the whole bulk Keep.
+  const keepInFlightRef = useRef(false);
   const settleRowsRef = useRef(settleRows);
   settleRowsRef.current = settleRows;
 
@@ -1136,6 +1139,9 @@ function SendersScreenContent({
           const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
           for (let i = lo; i <= hi; i++) {
             const rid = orderedIds[i]!;
+            // A busy row cannot be selected by click or select-all — nor by
+            // a range that happens to span it.
+            if (checked && isRowBusy(rowActivity.get(rid))) continue;
             if (checked) next.add(rid);
             else next.delete(rid);
           }
@@ -1149,7 +1155,7 @@ function SendersScreenContent({
       selectionAnchorRef.current = id;
       setSelected(next);
     },
-    [selected, showingStaleRows],
+    [selected, showingStaleRows, rowActivity],
   );
 
   // D51 brand rollup — group loaded senders by registrable domain
@@ -1641,7 +1647,11 @@ function SendersScreenContent({
       // table row action fire Keep; the SelectionBar binds A/L/U/D only).
       if (verb === 'Keep') {
         // Same double-confirmation guard as the Unsub path.
-        if (setPolicy.isPending) return;
+        if (setPolicy.isPending || keepInFlightRef.current) {
+          toast('Still confirming your last action — give it a moment.', 'info');
+          return;
+        }
+        keepInFlightRef.current = true;
         setPendingAction(null);
         setSelected(new Set());
         const senderRefs = senders.map((s) => ({ id: s.id, name: s.name }));
@@ -1655,31 +1665,35 @@ function SendersScreenContent({
           senderRefs.map((sref) =>
             setPolicy.mutateAsync({ senderId: sref.id, patch: { policyType: 'keep' } }),
           ),
-        ).then((results) => {
-          const failures = results.filter(
-            (r): r is PromiseRejectedResult => r.status === 'rejected',
-          );
-          for (const f of failures) {
-            captureFeatureException(f.reason, { surface: 'senders', reason: 'policy_keep' });
-          }
-          const failed = failures.length;
-          const succeeded = results.length - failed;
-          if (!isBulk) {
-            toast(
-              failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
-              failed ? 'warn' : 'success',
+        )
+          .then((results) => {
+            const failures = results.filter(
+              (r): r is PromiseRejectedResult => r.status === 'rejected',
             );
-            return;
-          }
-          toast(
-            succeeded === 0
-              ? `Couldn't keep ${failed} senders — try again`
-              : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
-                  failed ? ` · ${failed} failed, try again` : ''
-                }`,
-            failed > 0 ? 'warn' : 'success',
-          );
-        });
+            for (const f of failures) {
+              captureFeatureException(f.reason, { surface: 'senders', reason: 'policy_keep' });
+            }
+            const failed = failures.length;
+            const succeeded = results.length - failed;
+            if (!isBulk) {
+              toast(
+                failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
+                failed ? 'warn' : 'success',
+              );
+              return;
+            }
+            toast(
+              succeeded === 0
+                ? `Couldn't keep ${failed} senders — try again`
+                : `Kept ${succeeded} sender${succeeded === 1 ? '' : 's'}${
+                    failed ? ` · ${failed} failed, try again` : ''
+                  }`,
+              failed > 0 ? 'warn' : 'success',
+            );
+          })
+          .finally(() => {
+            keepInFlightRef.current = false;
+          });
         return;
       }
 
@@ -2820,7 +2834,7 @@ function SendersScreenContent({
                 fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {(totalMatching ?? senders.length).toLocaleString('en-US')}
+              {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
             </span>
             <span
               style={{
@@ -2942,21 +2956,6 @@ function SendersScreenContent({
                 {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
               </strong>{' '}
               senders match.
-              {/* The count is the server's; a held "done" row is not in it.
-                  Say so, or N sits above N+1 rows unexplained. */}
-              {senders.length > serverSenders.length && (
-                <span
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: 11.5,
-                    color: 'var(--color-fg-soft)',
-                    marginLeft: 8,
-                  }}
-                >
-                  + {(senders.length - serverSenders.length).toLocaleString('en-US')} cleared, still
-                  shown
-                </span>
-              )}
             </span>
             <span
               style={{

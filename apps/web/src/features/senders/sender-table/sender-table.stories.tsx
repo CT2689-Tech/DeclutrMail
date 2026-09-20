@@ -219,6 +219,7 @@ export const ActionFeedback: Story<typeof SenderTable> = {
           ['r-3', { phase: 'done', verb: 'archive', affectedCount: null }],
           ['r-4', { phase: 'failed', verb: 'later' }],
           ['r-5', { phase: 'unconfirmed', verb: 'archive' }],
+          ['r-6', { phase: 'mixed', verb: 'delete' }],
         ])
       }
     >

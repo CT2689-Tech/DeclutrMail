@@ -89,7 +89,7 @@ export function DomainGroupCard({
           >
             domain group
           </div>
-          {activity && (
+          {activity && !expanded && (
             <div
               data-dm-group-activity
               style={{

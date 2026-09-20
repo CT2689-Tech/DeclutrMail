@@ -4689,3 +4689,11 @@ recommending merge even on a change that felt small and precedented.
 **Correct approach:** Close from the FIRST line of every primary `onSuccess`/`onError` (explicit, order-independent), with `submitting` as local state of the open request rather than an OR over mutation hooks (which also froze any modal opened during an unrelated enqueue). When extending a guard to one handle, grep every sibling handle of the same shape before calling it done. Never snapshot rows for later display while `isPlaceholderData` is true.
 **Rule:** Per-call mutate callbacks are not safe across a re-entrant `mutate` on the same hook — never hang a must-run effect on `onSettled` there.
 **Enforcement update:** screen tests for all three, each negative-controlled; none to hooks.
+
+## 2026-09-20 — "+ 1 cleared, still shown": a caveat line that claimed an outcome it never checked
+**PR:** #751 (https://github.com/CT2689-Tech/DeclutrMail/pull/751)
+**Caught by:** flow-completeness-auditor gate (on the commit that added it)
+**What happened:** A held "done" row sits outside the server's count, so N printed above N+1 rows. I explained it with a line derived from `senders.length - serverSenders.length`. That difference is "rows held", not "rows cleared": it also counts held rows whose job FAILED, was never confirmed, or partly failed, and rows that merely sit on a page not loaded yet. The line said "cleared" for all of them. Same gate: the row checkbox stayed natively `disabled` after the buttons had moved to `aria-disabled` for the identical focus-loss reason (the sibling I did not grep for), and the phone swipe still fired the verb its inert button refused.
+**Correct approach:** Delete the line — the row pills already say why a row is still there, per row, from a field that knows. Delete came before "qualify it" and before "compute it properly". Moved every selection checkbox (table, grid, phone) to `aria-disabled` + a guarded click, and gated the swipe on the same `busy`.
+**Rule:** A count derived by subtracting two list lengths proves only the subtraction — never name an outcome from it.
+**Enforcement update:** tests for the checkbox (focus kept, click refused) on all three layouts, the swipe, and the Detail failed / not-confirmed / undo marks; each negative-controlled. None to hooks.

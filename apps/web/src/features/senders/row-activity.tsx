@@ -134,11 +134,14 @@ export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
   const tone =
     activity.phase === 'failed'
       ? { fg: color.red, bg: color.redBg, border: color.redBorder }
-      : activity.phase === 'done'
-        ? { fg: color.primary, bg: color.primarySoft, border: color.primaryBorder }
-        : // Full-strength text on the card surface: the busy row is tinted,
-          // never faded, so this stays at body-text contrast.
-          { fg: color.fg, bg: color.card, border: color.line };
+      : activity.phase === 'mixed'
+        ? // Part of the bulk failed — a caution. Body-colour text keeps contrast.
+          { fg: color.fg, bg: color.amberBg, border: color.amber }
+        : activity.phase === 'done'
+          ? { fg: color.primary, bg: color.primarySoft, border: color.primaryBorder }
+          : // Full-strength text on the card surface: the busy row is tinted,
+            // never faded, so this stays at body-text contrast.
+            { fg: color.fg, bg: color.card, border: color.line };
   return (
     // No live-region role: a 50-sender bulk would be 50 of them. The
     // screen's toast already announces the action once.

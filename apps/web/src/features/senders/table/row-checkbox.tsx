@@ -24,8 +24,12 @@ export function RowCheckbox({
       role="checkbox"
       aria-checked={checked}
       aria-label={ariaLabel}
-      disabled={disabled}
-      onClick={(e) => onChange(!checked, e)}
+      // aria-disabled, not `disabled`: a bulk confirm returns focus to the
+      // checkbox last clicked, and a natively disabled control drops it to <body>.
+      aria-disabled={disabled || undefined}
+      onClick={(e) => {
+        if (!disabled) onChange(!checked, e);
+      }}
       style={{
         width: 16,
         height: 16,
@@ -37,8 +41,9 @@ export function RowCheckbox({
         border: `1.5px solid ${checked ? color.primary : 'rgba(14,20,19,0.28)'}`,
         background: checked ? color.primary : color.card,
         color: color.fgInverse,
+        // Never dimmed: it stays focusable, so it must stay visible. The
+        // row's tint and pill say "busy"; the cursor says "not now".
         cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
       }}
     >
       {checked && (

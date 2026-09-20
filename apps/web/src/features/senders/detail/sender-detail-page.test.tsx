@@ -1535,6 +1535,119 @@ describe('SenderDetailRoute', () => {
     // The far more common shape — `reverted: false` plus an `actionId` to
     // poll — is covered separately below (Codex round 1 caught that the
     // first cut of this fix only handled this rarer, already-reverted case).
+    describe('the page says how its action ended', () => {
+      const pill = (phase: string) => document.querySelector(`[data-dm-row-activity="${phase}"]`);
+
+      async function archiveWith(status: () => Response) {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions',
+            respond: () =>
+              jsonOk({ data: { actionId: 'act-end', requestedCount: 12, status: 'queued' } }),
+          },
+          { method: 'GET', path: /^\/api\/actions\/[^/]+$/, respond: status },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
+        await screen.findByText(/currently match.*Archive/i);
+        fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      }
+
+      it('marks a failed job as failed — never back to looking untouched', async () => {
+        await archiveWith(() =>
+          jsonOk({
+            data: { ...actionStatusBody('act-end', false), status: 'failed', errorCode: 'GMAIL' },
+          }),
+        );
+        await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
+      });
+
+      it('marks a lost status poll as not confirmed, and keeps the verb locked', async () => {
+        await archiveWith(() => jsonServerError());
+        await waitFor(() => expect(pill('unconfirmed')).toHaveTextContent('Archive not confirmed'));
+        expect(screen.getByRole('button', { name: 'Archive (A)' })).toHaveAttribute(
+          'aria-disabled',
+          'true',
+        );
+      });
+
+      it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: () =>
+              jsonOk({
+                data: {
+                  senderId: 'linkedin',
+                  recordedAt: '2026-07-12T12:00:00.000Z',
+                  activityLogId: 'activity-a',
+                  method: 'none',
+                  executionActionId: null,
+                  mailtoUrl: null,
+                },
+              }),
+          },
+          { method: 'POST', path: '/api/actions', respond: () => jsonServerError() },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+        await screen.findByRole('radiogroup', { name: /also act on past emails/i });
+        fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+        const confirm = screen.getByRole('button', { name: /Unsubscribe.*Archive/i });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        await waitFor(() => expect(pill('failed')).toHaveTextContent('Archive failed'));
+      });
+
+      it('drops the last mark when a new Unsubscribe starts', async () => {
+        await archiveWith(() => jsonOk({ data: actionStatusBody('act-end', true) }));
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        addFetchHandlers([
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: async () => {
+              await held;
+              return jsonServerError();
+            },
+          },
+        ]);
+        await waitFor(() => expect(pill('done')).not.toBeNull());
+        fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe (U)' }));
+        const dialog = await screen.findByRole('dialog');
+        const confirm = await within(dialog).findByRole('button', { name: /Unsubscribe/ });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        // Mid-request: "Archived" no longer sits beside an unsubscribe in flight.
+        await within(dialog).findByRole('button', { name: /Submitting…/ });
+        expect(pill('done')).toBeNull();
+        release();
+      });
+
+      it('drops the done mark once the action is undone', async () => {
+        await archiveWith(() => jsonOk({ data: actionStatusBody('act-end', true) }));
+        addFetchHandlers([
+          {
+            method: 'POST',
+            path: '/api/undo/tok-1',
+            respond: () => jsonOk({ data: { verb: 'archive', reverted: true, actionId: null } }),
+          },
+        ]);
+        await waitFor(() => expect(pill('done')).toHaveTextContent('12 emails'));
+        fireEvent.click(await screen.findByRole('button', { name: /^undo$/i }));
+        await waitFor(() => expect(pill('done')).toBeNull());
+      });
+    });
+
     it("clears the receipt when a DIFFERENT component's useRevertUndo() reverts the same token (external undo, immediate)", async () => {
       let actionPosts = 0;
       let undoPosts = 0;

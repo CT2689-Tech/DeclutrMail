@@ -2218,7 +2218,7 @@ describe('SendersScreen — edge states', () => {
       // 2026-09-20 — rows gave no sign a job was still running). The
       // dispatch guard behind it stays as defence.
       const alpha = screen.getByRole('checkbox', { name: /select overdue alpha/i });
-      expect(alpha).toBeDisabled();
+      expect(alpha).toHaveAttribute('aria-disabled', 'true');
       const alphaCard = alpha.closest('[aria-busy="true"]')!;
       expect(within(alphaCard as HTMLElement).getByText('Archive not confirmed')).toBeDefined();
       // The action controls are off; peeking at the sender still works.
@@ -2582,6 +2582,44 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const rowOf = (name: RegExp) =>
       screen.getByRole('checkbox', { name }).closest('tr, article') as HTMLElement;
 
+    it('leaves busy rows out of a shift-range that spans them', async () => {
+      useSendersStore.setState({ view: 'table' });
+      const idle = (id: string) => ({
+        ...ROW,
+        id,
+        displayName: `Sender ${id.toUpperCase()}`,
+        email: `${id}@${id}-other.com`,
+        domain: `${id}-other.com`,
+      });
+      bulkStub(() => running, {
+        method: 'GET',
+        path: '/api/senders',
+        respond: () =>
+          jsonOk({
+            // Idle rows on BOTH sides of the two busy ones.
+            data: [idle('c'), ROW, ROW_B, idle('d')],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 4, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          }),
+      });
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
+
+      const box = (id: string) =>
+        screen.getByRole('checkbox', { name: new RegExp(`select sender ${id}$`, 'i') });
+      fireEvent.click(box('c'));
+      fireEvent.click(box('d'), { shiftKey: true });
+      expect(box('c')).toBeChecked();
+      expect(box('d')).toBeChecked();
+      expect(box('a')).not.toBeChecked();
+      expect(box('b')).not.toBeChecked();
+    });
+
     it('marks every member of a bulk busy in the TABLE layout while the job runs, then done', async () => {
       useSendersStore.setState({ view: 'table' });
       let state: Record<string, unknown> = running;
@@ -2594,7 +2632,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
       const a = rowOf(/select sender a/i);
       expect(a).toHaveAttribute('aria-busy', 'true');
-      expect(within(a).getByRole('checkbox')).toBeDisabled();
+      const busyBox = within(a).getByRole('checkbox');
+      expect(busyBox).toHaveAttribute('aria-disabled', 'true');
+      // Refuses the click — a busy row cannot join a new selection.
+      fireEvent.click(busyBox);
+      expect(busyBox).not.toBeChecked();
       expect(within(a).getByRole('button', { name: /^More actions for/ })).toHaveAttribute(
         'aria-disabled',
         'true',
@@ -2699,7 +2741,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       // The Gmail job may still be running: the row stays busy and off.
       const a = rowOf(/select sender a/i);
       expect(a).toHaveAttribute('aria-busy', 'true');
-      expect(within(a).getByRole('checkbox')).toBeDisabled();
+      expect(within(a).getByRole('checkbox')).toHaveAttribute('aria-disabled', 'true');
     });
 
     it('never carries a finished row into a NEW search that was loading when the job ended', async () => {
@@ -2867,6 +2909,52 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByText('Kept 1 sender · 1 failed, try again');
     });
 
+    it('says so when a second bulk Keep lands while the first is still going out', async () => {
+      let release!: () => void;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let patches = 0;
+      installFetchStub([
+        TWO_SENDER_LIST,
+        {
+          method: 'PATCH',
+          path: /^\/api\/senders\/[^/]+\/policy$/,
+          respond: async (_req, url) => {
+            patches += 1;
+            await held;
+            return jsonOk({ data: { senderId: url.pathname.split('/')[3], policyType: 'keep' } });
+          },
+        },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('k');
+      await waitFor(() => expect(patches).toBe(2));
+      // The toast store outlives a test — count, don't just find.
+      const before = screen.queryAllByText(/Still confirming your last action/).length;
+      await selectBothAndPress('k');
+      await waitFor(() =>
+        expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(before + 1),
+      );
+      expect(patches).toBe(2);
+      release();
+    });
+
+    it('never says "Kept" when every keep failed', async () => {
+      installFetchStub([
+        TWO_SENDER_LIST,
+        {
+          method: 'PATCH',
+          path: /^\/api\/senders\/[^/]+\/policy$/,
+          respond: () => jsonServerError('policy_down'),
+        },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('k');
+      // (The toast store outlives a test, so absence of an earlier "Kept…" is not assertable here.)
+      await screen.findByText(/Couldn't keep 2 senders/);
+    });
+
     it('claims no per-row OUTCOME when a bulk partly fails — it points each row at Activity', async () => {
       bulkStub(() => ({
         status: 'done',
@@ -2930,8 +3018,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       // Held in place although the refetch dropped it.
       expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeInTheDocument();
-      // …and the headline count, which is the server's (1), says why two rows show.
-      expect(screen.getByText(/\+ 1 cleared, still\s+shown/)).toBeInTheDocument();
 
       // A new search is a new question: the held row and its mark go.
       fireEvent.change(screen.getByPlaceholderText(/search senders/i), {

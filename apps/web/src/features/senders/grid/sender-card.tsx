@@ -346,8 +346,11 @@ export function SenderCard({
           aria-label={`Select ${sender.name}`}
           checked={selected}
           readOnly
-          disabled={busy}
-          onClick={(e) => onToggleSelect(sender.id, e.shiftKey)}
+          // aria-disabled, not `disabled` — keeps focus when the row goes busy.
+          aria-disabled={busy || undefined}
+          onClick={(e) => {
+            if (!busy) onToggleSelect(sender.id, e.shiftKey);
+          }}
           style={{ cursor: busy ? 'not-allowed' : 'pointer', marginTop: 2 }}
         />
       </div>

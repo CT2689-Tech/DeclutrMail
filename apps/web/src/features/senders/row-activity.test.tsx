@@ -34,4 +34,9 @@ describe('row activity — what a sender row says about its own action', () => {
     expect(pill).toHaveAttribute('data-dm-row-activity', 'working');
     expect(pill).not.toHaveAttribute('role');
   });
+
+  it('tints a part-failed bulk as a caution, not a neutral note', () => {
+    render(<RowActivityPill activity={{ phase: 'mixed', verb: 'delete' }} />);
+    expect(screen.getByText('Delete: see Activity').style.background).toBe('var(--dm-amber-bg)');
+  });
 });

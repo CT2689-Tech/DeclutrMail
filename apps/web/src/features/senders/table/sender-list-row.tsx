@@ -261,6 +261,8 @@ export function SenderListRow({
   const evidenceTokens = buildEvidenceTokens(s);
   const evidenceLine = evidenceTokens.join(' · ');
 
+  const activity = useRowActivity(s.id);
+  const busy = isRowBusy(activity);
   const gesturesEnabled = isPhone && !selectMode;
   const longPress = useLongPress({
     enabled: gesturesEnabled && onLongPress != null,
@@ -269,6 +271,9 @@ export function SenderListRow({
   const swipe = useRowSwipe({
     enabled: gesturesEnabled,
     onSwipeRight: () => {
+      // The same action the busy row's inert button refuses. Swipe-left
+      // (expand) and long-press (select mode) stay live.
+      if (busy) return;
       const primaryVerbId = derivePrimaryVerbId(s);
       onAction({ verb: legacyVerbFromId(primaryVerbId), senders: [s] });
     },
@@ -276,8 +281,6 @@ export function SenderListRow({
   });
 
   const showCheckbox = !isPhone || selectMode;
-  const activity = useRowActivity(s.id);
-  const busy = isRowBusy(activity);
 
   return (
     <>
