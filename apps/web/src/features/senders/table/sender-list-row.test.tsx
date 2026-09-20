@@ -10,8 +10,9 @@
 // `useIsAtMost` viewport tests.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { resolveRowSwipeDirection, ROW_SWIPE_THRESHOLD_PX, SenderListRow } from './sender-list-row';
+import { RowActivityProvider, type RowActivityById } from '../row-activity';
 import { makeSender } from '../testing/make-sender';
 
 const T = ROW_SWIPE_THRESHOLD_PX;
@@ -190,6 +191,43 @@ describe('<SenderListRow /> — D54 phone dialect', () => {
     );
     screen.getByRole('button', { name: `${sender.name} — expand detail` }).click();
     expect(onToggleExpand).toHaveBeenCalledTimes(1);
+  });
+
+  describe('swipe right = the primary verb', () => {
+    const swipeRight = (row: HTMLElement) => {
+      const at = (clientX: number) => ({ pointerId: 1, pointerType: 'touch', clientX, clientY: 0 });
+      fireEvent.pointerDown(row, at(0));
+      fireEvent.pointerMove(row, at(ROW_SWIPE_THRESHOLD_PX + 40));
+      fireEvent.pointerUp(row, at(ROW_SWIPE_THRESHOLD_PX + 40));
+    };
+    const phoneRow = (activity: RowActivityById, onAction: () => void) => {
+      setViewportWidth(375);
+      render(
+        <RowActivityProvider value={activity}>
+          <SenderListRow
+            s={sender}
+            selected={false}
+            onToggleSelect={noop}
+            expanded={false}
+            onToggleExpand={noop}
+            onAction={onAction}
+          />
+        </RowActivityProvider>,
+      );
+      return screen.getByRole('button', { name: /expand detail/ });
+    };
+
+    it('fires on an idle row', () => {
+      const onAction = vi.fn();
+      swipeRight(phoneRow(new Map(), onAction));
+      expect(onAction).toHaveBeenCalledTimes(1);
+    });
+
+    it('is refused while the row is busy — the same action its inert button refuses', () => {
+      const onAction = vi.fn();
+      swipeRight(phoneRow(new Map([[sender.id, { phase: 'working', verb: 'archive' }]]), onAction));
+      expect(onAction).not.toHaveBeenCalled();
+    });
   });
 
   it('names the 90d window on the cadence token and never renders a bare /mo', () => {

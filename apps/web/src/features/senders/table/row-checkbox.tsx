@@ -24,8 +24,12 @@ export function RowCheckbox({
       role="checkbox"
       aria-checked={checked}
       aria-label={ariaLabel}
-      disabled={disabled}
-      onClick={(e) => onChange(!checked, e)}
+      // aria-disabled, not `disabled`: a bulk confirm returns focus to the
+      // checkbox last clicked, and a natively disabled control drops it to <body>.
+      aria-disabled={disabled || undefined}
+      onClick={(e) => {
+        if (!disabled) onChange(!checked, e);
+      }}
       style={{
         width: 16,
         height: 16,

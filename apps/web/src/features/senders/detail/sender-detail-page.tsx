@@ -753,6 +753,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           return;
         }
         setSubmitting(true);
+        setSettled(null);
         // The "Also act on past emails" chip from the D226 preview.
         // Captured before the async hop so the historic action fires
         // with exactly what the user confirmed.
@@ -830,6 +831,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
                       // 402 FREE_CAP_REACHED — the upgrade prompt
                       // explains why the backlog didn't enqueue.
                       if (err instanceof ApiError && err.status === 402) return;
+                      setSettled({ phase: 'failed', verb: secondary.type });
                       captureFeatureException(err, {
                         surface: 'senders',
                         reason: `enqueue_${secondary.type}_after_unsub`,

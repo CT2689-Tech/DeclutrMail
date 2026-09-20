@@ -107,6 +107,7 @@ export const ActionFeedback: Story<typeof SenderCard> = {
       ['Done · bulk member', { phase: 'done', verb: 'archive', affectedCount: null }],
       ['Failed', { phase: 'failed', verb: 'later' }],
       ['Still running', { phase: 'unconfirmed', verb: 'archive' }],
+      ['Bulk partly failed', { phase: 'mixed', verb: 'delete' }],
     ];
     return (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 320px)', gap: 16 }}>

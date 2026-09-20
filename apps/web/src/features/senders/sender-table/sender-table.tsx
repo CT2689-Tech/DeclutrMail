@@ -460,8 +460,11 @@ function SenderRow({
             aria-label={`Select ${displayLabel(sender)}`}
             checked={selected}
             readOnly
-            disabled={busy}
-            onClick={(e) => onSelectionChange(!selected, e.shiftKey)}
+            // aria-disabled, not `disabled` — keeps focus when the row goes busy.
+            aria-disabled={busy || undefined}
+            onClick={(e) => {
+              if (!busy) onSelectionChange(!selected, e.shiftKey);
+            }}
           />
         </td>
 
