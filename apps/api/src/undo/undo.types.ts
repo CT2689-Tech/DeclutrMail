@@ -114,3 +114,33 @@ const _UNDO_KIND_API_EXTENDS_SHARED: UndoActionKind extends SharedUndoActionKind
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _UNDO_KIND_SHARED_EXTENDS_API: SharedUndoActionKind extends UndoActionKind ? true : false =
   true;
+
+/**
+ * One DECISION in the tray — every active undo token that one user
+ * action produced (a bulk action fans out to a token per sender).
+ * See `UndoService.listActiveDecisions`.
+ */
+export interface UndoDecision {
+  /** Stable identity: the anchor forward job id, or the token when no job exists. */
+  groupId: string;
+  /** Any one active member token — reverts the whole decision. */
+  token: string;
+  actionKind: UndoActionKind;
+  createdAt: Date;
+  /** Earliest member expiry — when "undo all" stops being fully possible. */
+  expiresAt: Date;
+  /** Distinct senders still undoable. 0 when no job backs the token. */
+  senderCount: number;
+  /** Active tokened members in total — what `members` was capped against. */
+  memberCount: number;
+  /** Emails changed across active members; null when unknown (no job). */
+  affectedCount: number | null;
+  /** Members carry different verbs — one total would mislabel them. */
+  mixedKinds: boolean;
+  members: Array<{
+    token: string;
+    actionKind: UndoActionKind;
+    senderName: string | null;
+    affectedCount: number;
+  }>;
+}

@@ -189,6 +189,23 @@ export async function revertUndo(
   return env.data;
 }
 
+/**
+ * Reverse ONE action by its own token (`POST /api/undo/:token/action`) —
+ * one sender out of a bulk decision. `revertUndo` above reverses the
+ * whole decision the token belongs to.
+ */
+export async function revertUndoMember(
+  token: string,
+  options: ActionRequestOptions = {},
+): Promise<UndoRevertResult> {
+  const env = await apiPost<UndoRevertResult>(
+    `/api/undo/${encodeURIComponent(token)}/action`,
+    undefined,
+    { ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}) },
+  );
+  return env.data;
+}
+
 /* ─────────────────────── ADR-0020 — unified composite client ─────────────────────── */
 
 /** Primary verb accepted by `POST /api/actions`. Spec v1.2 Decision 15. */

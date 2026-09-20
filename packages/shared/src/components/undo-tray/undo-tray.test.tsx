@@ -121,3 +121,166 @@ describe('<UndoTray /> — D35 injected-dataSource contract', () => {
     }
   });
 });
+
+// Founder report 2026-09-20: one bulk Delete over two senders rendered
+// "2 decisions applied" above two identical, nameless lines — and either
+// Undo silently reversed BOTH senders. The tray lists DECISIONS.
+describe('<UndoTray /> — a decision is one line, named and counted', () => {
+  const bulk = entry({
+    token: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    actionKind: 'delete',
+    groupId: 'group-1',
+    senderCount: 2,
+    affectedCount: 440,
+    members: [
+      { token: 't-yankee', actionKind: 'delete', senderName: 'Yankee Candle', affectedCount: 251 },
+      { token: 't-retail', actionKind: 'delete', senderName: 'RetailMeNot', affectedCount: 189 },
+    ],
+  });
+  const withMemberUndo = (entries: UndoTrayEntry[]) =>
+    source({ entries, revertMember: async () => {} });
+
+  it('states one bulk action as ONE decision with who and how much', () => {
+    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([bulk])} />);
+    expect(html).toContain('1 decision applied');
+    expect(html).toContain('440 emails');
+    expect(html).toContain('Yankee Candle + 1 other');
+    // The button says what it does: it reverses every sender in the decision.
+    expect(html).toContain('>Undo all<');
+    expect(html).toContain('aria-label="Undo Delete for Yankee Candle + 1 other"');
+  });
+
+  it('lets the reader open the decision and undo ONE sender', () => {
+    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([bulk])} />);
+    expect(html).toContain('<details');
+    expect(html).toContain('Show 2 senders');
+    expect(html).toContain('RetailMeNot');
+    expect(html).toContain('189 emails');
+    expect(html).toContain('aria-label="Undo Delete for RetailMeNot only"');
+  });
+
+  it('offers no per-sender Undo when the host cannot revert one member', () => {
+    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [bulk] })} />);
+    expect(html).toContain('Show 2 senders');
+    expect(html).not.toContain('only"');
+  });
+
+  it('names a single-sender decision without a disclosure or an "all"', () => {
+    const single = entry({
+      actionKind: 'delete',
+      groupId: 'group-2',
+      senderCount: 1,
+      affectedCount: 1,
+      members: [
+        { token: 't-one', actionKind: 'delete', senderName: 'Yankee Candle', affectedCount: 1 },
+      ],
+    });
+    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([single])} />);
+    expect(html).toContain('1 email ·');
+    expect(html).toContain('Yankee Candle');
+    expect(html).not.toContain('<details');
+    expect(html).not.toContain('Undo all');
+  });
+
+  it('says how many senders are not listed when the member list was capped', () => {
+    const capped = { ...bulk, senderCount: 30, affectedCount: 900 };
+    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([capped])} />);
+    expect(html).toContain('Yankee Candle + 29 others');
+    expect(html).toContain('28 more in Activity');
+  });
+
+  it('never sums emails across different verbs under one label', () => {
+    const mixed = entry({
+      actionKind: 'later',
+      groupId: 'group-3',
+      senderCount: 1,
+      affectedCount: 12,
+      mixedKinds: true,
+      members: [
+        { token: 't-l', actionKind: 'later', senderName: 'Acme', affectedCount: 3 },
+        { token: 't-d', actionKind: 'delete', senderName: 'Acme', affectedCount: 9 },
+      ],
+    });
+    const html = renderToStaticMarkup(<UndoTray dataSource={withMemberUndo([mixed])} />);
+    expect(html).not.toContain('12 emails');
+    // Each half states its own verb and its own count instead.
+    expect(html).toContain('3 emails');
+    expect(html).toContain('9 emails');
+  });
+
+  it('renders a token with no job behind it as before — no invented count or name', () => {
+    const bare = entry({ groupId: 'tok', senderCount: 0, affectedCount: null, members: [] });
+    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [bare] })} />);
+    expect(html).not.toContain('email');
+    expect(html).toContain('>Undo<');
+  });
+});
+
+// Design-gate findings on the decision rows (2026-09-20).
+describe('<UndoTray /> — decision rows stay truthful at the edges', () => {
+  const member = (token: string, senderName: string | null, affectedCount: number) => ({
+    token,
+    actionKind: 'delete' as const,
+    senderName,
+    affectedCount,
+  });
+
+  it('opens a mixed-verb decision by default — its headline names only one of the verbs', () => {
+    const mixed = entry({
+      actionKind: 'later',
+      groupId: 'g',
+      senderCount: 1,
+      affectedCount: 12,
+      mixedKinds: true,
+      members: [
+        { token: 'a', actionKind: 'later', senderName: 'Acme', affectedCount: 3 },
+        { token: 'b', actionKind: 'delete', senderName: 'Acme', affectedCount: 9 },
+      ],
+    });
+    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [mixed] })} />);
+    expect(html).toMatch(/<details[^>]* open/);
+    expect(html).toContain('Show what changed');
+    // Two changes behind one button — it must not read as a single Undo.
+    expect(html).toContain('>Undo all<');
+  });
+
+  it('leads with the first NAMED sender when the largest one has no name', () => {
+    const e = entry({
+      actionKind: 'delete',
+      groupId: 'g',
+      senderCount: 2,
+      affectedCount: 30,
+      members: [member('a', null, 20), member('b', 'Beta Digest', 10)],
+    });
+    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [e] })} />);
+    expect(html).toContain('Beta Digest + 1 other');
+  });
+
+  it('never offers a bare "Undo" for several members, even if the sender count is missing', () => {
+    // A whole-decision token behind a button reading "Undo" with one name
+    // beside it IS the defect this component was rebuilt to remove.
+    const e = entry({
+      actionKind: 'delete',
+      groupId: 'g',
+      senderCount: 0,
+      affectedCount: 30,
+      members: [member('a', 'Alpha', 20), member('b', 'Beta', 10)],
+    });
+    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [e] })} />);
+    expect(html).toContain('>Undo all<');
+    expect(html).toContain('<details');
+    expect(html).not.toContain('-1 other');
+  });
+
+  it('makes a button-less sender list keyboard reachable', () => {
+    const e = entry({
+      actionKind: 'delete',
+      groupId: 'g',
+      senderCount: 2,
+      affectedCount: 30,
+      members: [member('a', 'Alpha', 20), member('b', 'Beta', 10)],
+    });
+    const html = renderToStaticMarkup(<UndoTray dataSource={source({ entries: [e] })} />);
+    expect(html).toMatch(/<ul[^>]*tabindex="0"[^>]*aria-label="Senders in this decision"/);
+  });
+});
