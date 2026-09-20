@@ -2272,3 +2272,9 @@ empty storage agrees with the server by accident.
 **Distillation trigger:** (a) is now the 2nd occurrence of the 2026-08-31
 stale-console trap — promote to CLAUDE.md §8 "known false-positive traps"
 on the next one, or now at the founder's discretion.
+
+## 2026-09-20 — Two "absence" tests passed on the render BEFORE the event they were guarding
+**Context:** Writing regression tests for (a) a tray decision that must stay hidden after its token moves and (b) a finished row that must not be carried into a new search. Both assert that something is NOT on screen.
+**Finding:** Both went green immediately and stayed green under their negative controls — they asserted absence before the triggering event had landed. (a) ran `waitFor(absent)` before the refetch resolved; (b) flipped the job to `done` and released the search before the 1 s status poll had delivered it, so no settle ever ran; a first repair still passed because an EMPTY search result routes through the "no matches / widen" path, which renders no rows at all. Each was only caught because the control was run. `findByRole('status')` had the same looseness: once the modal stayed open it matched the modal's own status line.
+**Rule (provisional):** An absence assertion needs a positive anchor first — wait for proof the event landed (the query data changed, the terminal text rendered, the request flag flipped), THEN assert nothing appeared. And make the "after" state non-empty, or the code under test may never render the branch that could be wrong.
+**Distillation trigger:** promote to CLAUDE.md §8 "A green test is not evidence" if a third absence-test passes under its negative control.

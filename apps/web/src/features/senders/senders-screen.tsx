@@ -84,7 +84,12 @@ import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
 import { mergePinnedRows, type PinnedRow } from './pinned-rows';
-import { RowActivityProvider, type RowActivityVerb, type SenderRowActivity } from './row-activity';
+import {
+  isRowBusy,
+  RowActivityProvider,
+  type RowActivityVerb,
+  type SenderRowActivity,
+} from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
 import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
@@ -634,6 +639,22 @@ function SendersScreenContent({
   // never jumps under the cursor. Both are released when the list is
   // asked a different question, or the mailbox changes.
   const [settled, setSettled] = useState<ReadonlyMap<string, SenderRowActivity>>(new Map());
+  // The confirmed request is on its way to the server. LOCAL to the open
+  // request — a flag derived from the mutation hooks would also be true
+  // for someone else's in-flight enqueue and open the next modal frozen.
+  const [submitting, setSubmitting] = useState(false);
+  /**
+   * The server answered: close the confirm. Called FIRST in every primary
+   * `onSuccess` / `onError`, never from `onSettled` — the bulk Unsubscribe
+   * chains a second `mutate` on the same hook inside `onSuccess`, which
+   * swaps the observer's options before `onSettled` is read, so it never
+   * ran and the modal stayed up with a live Confirm for a request already
+   * sent (flow-completeness gate, 2026-09-20).
+   */
+  const closeSubmitted = useCallback(() => {
+    setSubmitting(false);
+    setPendingAction(null);
+  }, []);
   const [pinnedSenders, setPinnedSenders] = useState<ReadonlyMap<string, PinnedRow<Sender>>>(
     new Map(),
   );
@@ -825,6 +846,10 @@ function SendersScreenContent({
     setMailtoFollowup(null);
     setBulkMailtoFollowups([]);
     setUnsubBatchReceipt(null);
+    setSubmitting(false);
+    setSettled(new Map());
+    setPinnedSenders(new Map());
+    setPinnedWire(new Map());
   }, []);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
 
@@ -841,11 +866,14 @@ function SendersScreenContent({
     // An in-flight bulk's members too — they were only locked once the
     // batch PARKED at 120s, leaving its first two minutes re-dispatchable.
     for (const id of activeBatch?.senderIds ?? []) ids.add(id);
+    // …and an in-flight bulk UNSUBSCRIBE's: a second dispatch there sends
+    // a second real one-click request, which cannot be recalled (D58).
+    for (const id of activeUnsubBatch?.senderIds ?? []) ids.add(id);
     if (overdueAction) ids.add(overdueAction.senderId);
     for (const id of overdueBatch?.senderIds ?? []) ids.add(id);
     for (const id of overdueUnsubBatch?.senderIds ?? []) ids.add(id);
     return ids;
-  }, [activeAction, activeBatch, overdueAction, overdueBatch, overdueUnsubBatch]);
+  }, [activeAction, activeBatch, activeUnsubBatch, overdueAction, overdueBatch, overdueUnsubBatch]);
 
   // What each row says about its own action — one map for the table, the
   // grid and the phone list (`RowActivityProvider`). Live handles win over
@@ -876,20 +904,26 @@ function SendersScreenContent({
         for (const id of ids) next.set(id, activity);
         return next;
       });
+      // While a NEW question is loading, the rows on screen still belong
+      // to the old one (`keepPreviousData`). Pinning them would carry the
+      // old question's rows into the new results. The mark is recorded
+      // either way; only the hold is skipped.
+      if (showingStaleRows) return;
+      const wanted = new Set(ids);
       const pin = <T extends { id: string }>(
         rows: readonly T[],
         prev: ReadonlyMap<string, PinnedRow<T>>,
       ) => {
         const next = new Map(prev);
         rows.forEach((row, index) => {
-          if (ids.includes(row.id)) next.set(row.id, { row, index });
+          if (wanted.has(row.id)) next.set(row.id, { row, index });
         });
         return next;
       };
       setPinnedSenders((prev) => pin(senders, prev));
       setPinnedWire((prev) => pin(wireRows, prev));
     },
-    [senders, wireRows],
+    [senders, wireRows, showingStaleRows],
   );
   /**
    * An undo was confirmed: nothing on a row may still say "Deleted". All
@@ -1144,6 +1178,12 @@ function SendersScreenContent({
   const performAction = useCallback(
     (verb: ActionVerb, senders: Sender[], opts?: ConfirmOptions) => {
       if (senders.length === 0) return;
+      // One enqueue at a time. The confirm stays cancellable while a
+      // request is out, so a second confirm must not start a second one
+      // (same guard the sender detail page has).
+      if (enqueueComposite.isPending || enqueueBulk.isPending || recordUnsubIntent.isPending) {
+        return;
+      }
 
       // 2026-08-12 incident amendment: an in-flight or parked handle
       // still owns its senders — the overdue release frees the SCREEN,
@@ -1233,6 +1273,7 @@ function SendersScreenContent({
             : primaryType === 'later'
               ? `Moving ${sender.name} to Later…`
               : `Archiving email from ${sender.name}…`;
+        setSubmitting(true);
         setSelected(new Set());
         toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
@@ -1263,9 +1304,8 @@ function SendersScreenContent({
             ...(opts?.override ? { override: true } : {}),
           },
           {
-            // The modal stays up on "Submitting…" until the server answers.
-            onSettled: () => setPendingAction(null),
-            onSuccess: (res) =>
+            onSuccess: (res) => {
+              closeSubmitted();
               setActiveAction({
                 mailboxId: actionMailboxId,
                 actionId: res.actionId,
@@ -1277,8 +1317,10 @@ function SendersScreenContent({
                     : primaryType === 'later'
                       ? 'Later'
                       : 'Archive',
-              }),
+              });
+            },
             onError: (err) => {
+              closeSubmitted();
               // 402 FREE_CAP_REACHED — upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
               // Read the CODE, not the status: CurrentMailboxGuard also
@@ -1322,8 +1364,9 @@ function SendersScreenContent({
       if (verb === 'Unsubscribe') {
         // Guard against rapid double-confirmation. While a previous
         // recordUnsubIntent.mutate is in-flight we drop the click (the
-        // modal has already closed; the button is no longer visible).
+        // modal is still up on "Submitting…", its confirm disabled).
         if (recordUnsubIntent.isPending) return;
+        setSubmitting(true);
         setSelected(new Set());
         setBulkMailtoFollowups([]);
         const senderRefs = senders.map((s) => ({
@@ -1352,9 +1395,8 @@ function SendersScreenContent({
               includesBacklogAction: secondary != null,
             },
             {
-              // The modal stays up on "Submitting…" until the server answers.
-              onSettled: () => setPendingAction(null),
               onSuccess: (res) => {
+                closeSubmitted();
                 void qc.invalidateQueries({ queryKey: sendersKeys.all });
                 void qc.invalidateQueries({ queryKey: activityKeys.all });
                 if (res.method === 'one_click' && res.executionActionId) {
@@ -1437,6 +1479,7 @@ function SendersScreenContent({
                 }
               },
               onError: (err) => {
+                closeSubmitted();
                 // Sending is off in this environment. A DESIGNED state, not a
                 // failure: the API refused before writing anything, so there
                 // is no half-finished action behind it and nothing to retry —
@@ -1469,9 +1512,8 @@ function SendersScreenContent({
             primary: { type: 'unsubscribe' },
           },
           {
-            // The modal stays up on "Submitting…" until the server answers.
-            onSettled: () => setPendingAction(null),
             onSuccess: (res) => {
+              closeSubmitted();
               const nameById = new Map(senderRefs.map((sref) => [sref.id, sref.name] as const));
               setBulkMailtoFollowups(
                 res.skipped.flatMap((skip) =>
@@ -1558,6 +1600,7 @@ function SendersScreenContent({
               );
             },
             onError: (err) => {
+              closeSubmitted();
               // 402 FREE_CAP_REACHED — the upgrade prompt is the surface.
               if (err instanceof ApiError && err.status === 402) return;
               // 409 NO_ACTIONABLE_SENDERS is a designed state: the
@@ -1643,6 +1686,7 @@ function SendersScreenContent({
         const primaryType: 'archive' | 'later' | 'delete' =
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
         const n = senders.length;
+        setSubmitting(true);
         toast(
           primaryType === 'delete'
             ? `Moving email from ${n} senders to Trash…`
@@ -1674,9 +1718,8 @@ function SendersScreenContent({
               : {}),
           },
           {
-            // The modal stays up on "Submitting…" until the server answers.
-            onSettled: () => setPendingAction(null),
             onSuccess: (res) => {
+              closeSubmitted();
               // The server accepted the batch — NOW the selection clears.
               setSelected(new Set());
               if (res.skipped.length > 0) {
@@ -1697,6 +1740,7 @@ function SendersScreenContent({
               });
             },
             onError: (err) => {
+              closeSubmitted();
               // 402 FREE_CAP_REACHED — a bulk of N needs N free units;
               // the upgrade prompt (hook-level handler) is the surface.
               // The selection is KEPT so the user can shrink it.
@@ -1759,6 +1803,12 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
       toast(`Couldn't confirm ${activeAction.senderName} — see Activity`, 'warn');
+      // The job may well still be running: the row must not go back to
+      // looking untouched (and re-armed) on a lost poll.
+      settleRowsRef.current([activeAction.senderId], {
+        phase: 'unconfirmed',
+        verb: activeAction.verb.toLowerCase() as RowActivityVerb,
+      });
       setActiveAction(null);
       return;
     }
@@ -1829,6 +1879,10 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'action_status_poll' });
       toast(`Couldn't confirm ${overdueAction.senderName} — see Activity`, 'warn');
+      settleRowsRef.current([overdueAction.senderId], {
+        phase: 'unconfirmed',
+        verb: overdueAction.verb.toLowerCase() as RowActivityVerb,
+      });
       setOverdueAction(null);
       return;
     }
@@ -2018,6 +2072,10 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
       toast(`Couldn't confirm the bulk ${activeBatch.verb.toLowerCase()} — see Activity`, 'warn');
+      settleRowsRef.current(activeBatch.senderIds, {
+        phase: 'unconfirmed',
+        verb: activeBatch.verb.toLowerCase() as RowActivityVerb,
+      });
       setActiveBatch(null);
       return;
     }
@@ -2104,6 +2162,10 @@ function SendersScreenContent({
       });
       captureFeatureException(err, { surface: 'senders', reason: 'batch_status_poll' });
       toast(`Couldn't confirm the bulk ${overdueBatch.verb.toLowerCase()} — see Activity`, 'warn');
+      settleRowsRef.current(overdueBatch.senderIds, {
+        phase: 'unconfirmed',
+        verb: overdueBatch.verb.toLowerCase() as RowActivityVerb,
+      });
       setOverdueBatch(null);
       return;
     }
@@ -2484,7 +2546,12 @@ function SendersScreenContent({
     [selectedSenders, requestAction, showingStaleRows, tier, me.cleanupRemaining],
   );
 
-  const closePending = useCallback(() => setPendingAction(null), []);
+  // Cancel stays live while submitting: it closes the UI only. If the
+  // request lands anyway, the rows say so.
+  const closePending = useCallback(() => {
+    setSubmitting(false);
+    setPendingAction(null);
+  }, []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
       if (pendingAction && !showingStaleRows) {
@@ -2871,7 +2938,14 @@ function SendersScreenContent({
               }}
             >
               {senders.length > 0 && !showingStaleRows && (
-                <BulkSelectButton senders={senders} selected={selected} setSelected={setSelected} />
+                <BulkSelectButton
+                  // Busy rows cannot be individually deselected (their
+                  // checkbox is off) and any overlap refuses the WHOLE bulk
+                  // — so select-all must never put them in the selection.
+                  senders={senders.filter((row) => !isRowBusy(rowActivity.get(row.id)))}
+                  selected={selected}
+                  setSelected={setSelected}
+                />
               )}
             </span>
           </div>
@@ -3227,9 +3301,7 @@ function SendersScreenContent({
           request={showingStaleRows ? null : pendingAction}
           onCancel={closePending}
           onConfirm={confirmPending}
-          submitting={
-            enqueueComposite.isPending || enqueueBulk.isPending || recordUnsubIntent.isPending
-          }
+          submitting={submitting}
           compositePreview={compositePreviewQuery.data}
           // isFetching, not isLoading: a reopened modal serves CACHED data
           // while the fresh preview is in flight, and that state must keep

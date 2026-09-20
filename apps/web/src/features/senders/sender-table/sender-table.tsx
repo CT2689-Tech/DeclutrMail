@@ -425,7 +425,9 @@ function SenderRow({
           }
           setExpanded((v) => !v);
         }}
-        style={{ cursor: 'pointer', opacity: busy ? 0.6 : 1, transition: 'opacity 120ms' }}
+        // Busy is a TINT, never a fade — opacity here would also fade
+        // the status pill below AA contrast.
+        style={{ cursor: 'pointer', ...(busy ? { background: color.paper } : {}) }}
       >
         <td
           style={{
@@ -503,7 +505,8 @@ function SenderRow({
                   as the grid card so list ↔ grid never contradict:
                   shown while a standing unsubscribe policy exists,
                   copy keyed by the execution outcome. */}
-                {sender.policyType === 'unsubscribe' &&
+                {!activity &&
+                  sender.policyType === 'unsubscribe' &&
                   (() => {
                     const copy = unsubscribeStatusCopy(
                       sender.unsubStatus,

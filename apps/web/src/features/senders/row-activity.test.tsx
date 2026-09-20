@@ -12,11 +12,11 @@ describe('row activity — what a sender row says about its own action', () => {
     [{ phase: 'working', verb: 'later' }, 'Moving to Later…'],
     [{ phase: 'working', verb: 'delete' }, 'Moving to Trash…'],
     [{ phase: 'done', verb: 'archive', affectedCount: 12 }, 'Archived · 12 emails'],
-    [{ phase: 'done', verb: 'delete', affectedCount: 1 }, 'Deleted to Gmail Trash · 1 email'],
+    [{ phase: 'done', verb: 'delete', affectedCount: 1 }, 'Deleted · 1 email'],
     [{ phase: 'done', verb: 'later', affectedCount: null }, 'Moved to Later'],
     [{ phase: 'done', verb: 'delete', affectedCount: 0 }, 'Nothing to change'],
     [{ phase: 'failed', verb: 'delete' }, 'Delete failed'],
-    [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive still running'],
+    [{ phase: 'unconfirmed', verb: 'archive' }, 'Archive not confirmed'],
   ] as Array<[SenderRowActivity, string]>)('%o reads "%s"', (activity, label) => {
     expect(rowActivityLabel(activity)).toBe(label);
   });

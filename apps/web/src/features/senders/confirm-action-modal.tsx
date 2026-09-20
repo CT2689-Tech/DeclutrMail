@@ -238,9 +238,10 @@ export function ConfirmActionModal({
   bulkPreview?: BulkPreviewState | undefined;
   /**
    * The confirmed request is on its way to the server. The modal stays
-   * up, the button says so, and nothing can be confirmed twice or
-   * cancelled out from under it — closing is the caller's job once the
-   * request settles. It used to close BEFORE the request was sent.
+   * up, the button says so, and nothing can be confirmed twice. Cancel,
+   * Esc and the backdrop stay LIVE — they close the UI only, so a request
+   * that hangs can never seal the user inside the overlay; if it lands,
+   * the rows report it. It used to close BEFORE the request was sent.
    */
   submitting?: boolean;
   /** Re-run the live preview after a failed read. */
@@ -728,7 +729,6 @@ export function ConfirmActionModal({
   useEffect(() => {
     if (!request) return;
     const onKey = (e: KeyboardEvent) => {
-      if (submitting) return;
       if (e.key === 'Escape') onCancel();
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         onConfirm(buildConfirmOpts());
@@ -940,7 +940,7 @@ export function ConfirmActionModal({
   return (
     <>
       <div
-        onClick={submitting ? undefined : onCancel}
+        onClick={onCancel}
         style={{
           position: 'fixed',
           inset: 0,
@@ -1913,7 +1913,6 @@ export function ConfirmActionModal({
             <Button
               tone="default"
               onClick={onCancel}
-              disabled={submitting}
               // QA-senders-20260901-10: the shortcut can't be pressed on a
               // touch sheet, so the hint only adds to what's between the
               // reader and the confirm button at 375px.

@@ -2320,7 +2320,7 @@ describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-2026
 // modal used to vanish BEFORE the request was sent, so a slow enqueue and
 // an instant one looked identical.
 describe('ConfirmActionModal — submitting', () => {
-  it('holds the modal on "Submitting…" and refuses a second confirm or a cancel', () => {
+  it('holds the modal on "Submitting…", refuses a second confirm — and can still be left', () => {
     const onConfirm = vi.fn();
     const onCancel = vi.fn();
     render(
@@ -2332,12 +2332,13 @@ describe('ConfirmActionModal — submitting', () => {
         submitting
       />,
     );
-    const confirm = screen.getByRole('button', { name: /Submitting…/ });
-    expect(confirm).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Cancel/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Submitting…/ })).toBeDisabled();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    fireEvent.keyDown(window, { key: 'Escape' });
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(onCancel).not.toHaveBeenCalled();
+    // A request that hangs must never seal the user inside the overlay:
+    // Cancel and Esc close the UI only; if the request lands, the rows say so.
+    expect(screen.getByRole('button', { name: /Cancel/ })).toBeEnabled();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onCancel).toHaveBeenCalledTimes(1);
   });
 });

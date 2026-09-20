@@ -20,7 +20,7 @@ export type RowActivityVerb = 'archive' | 'later' | 'delete';
  *                    per-sender figure exists (a bulk reports totals
  *                    only) — then the label carries no number at all.
  *   - `failed`       the job ended `failed`.
- *   - `unconfirmed`  past the overdue deadline; still running server-side.
+ *   - `unconfirmed`  past the overdue deadline, or its status poll was lost.
  *
  * Unsubscribe is absent on purpose: it already owns a lifecycle pill
  * driven by server state (`UNSUB_PILL`).
@@ -39,6 +39,12 @@ const WORKING: Record<RowActivityVerb, string> = {
   delete: 'Moving to Trash…',
 };
 
+const DONE: Record<RowActivityVerb, string> = {
+  archive: 'Archived',
+  later: 'Moved to Later',
+  delete: 'Deleted',
+};
+
 export function rowActivityLabel(activity: SenderRowActivity): string {
   const verbLabel = getActionSemantics(activity.verb).label;
   switch (activity.phase) {
@@ -47,10 +53,14 @@ export function rowActivityLabel(activity: SenderRowActivity): string {
     case 'failed':
       return `${verbLabel} failed`;
     case 'unconfirmed':
-      return `${verbLabel} still running`;
+      // True of BOTH ways a row gets here: the job ran past the overdue
+      // deadline, or its status poll was lost. Neither knows it finished.
+      return `${verbLabel} not confirmed`;
     case 'done': {
       if (activity.affectedCount === 0) return 'Nothing to change';
-      const result = getActionSemantics(activity.verb).resultLabel;
+      // Short form: the pill shares a ≤320px name cell. The full result
+      // label ("Deleted to Gmail Trash") is the pill's tooltip.
+      const result = DONE[activity.verb];
       if (activity.affectedCount === null) return result;
       const n = activity.affectedCount;
       return `${result} · ${n.toLocaleString('en-US')} email${n === 1 ? '' : 's'}`;
@@ -88,12 +98,19 @@ export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
       ? { fg: color.red, bg: color.redBg, border: color.redBorder }
       : activity.phase === 'done'
         ? { fg: color.primary, bg: color.primarySoft, border: color.primaryBorder }
-        : { fg: color.fgSoft, bg: color.paper, border: color.line };
+        : // Full-strength text on the card surface: the busy row is tinted,
+          // never faded, so this stays at body-text contrast.
+          { fg: color.fg, bg: color.card, border: color.line };
   return (
     // No live-region role: a 50-sender bulk would be 50 of them. The
     // screen's toast already announces the action once.
     <span
       data-dm-row-activity={activity.phase}
+      title={
+        activity.phase === 'done' && activity.affectedCount !== 0
+          ? getActionSemantics(activity.verb).resultLabel
+          : undefined
+      }
       style={{
         fontFamily: font.mono,
         fontSize: 9.5,

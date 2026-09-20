@@ -68,7 +68,13 @@ vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
 
 import { ToastHost } from '@declutrmail/shared';
 import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
-import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
+import {
+  installFetchStub,
+  jsonOk,
+  jsonServerError,
+  resetFetchStub,
+  type FetchStubHandler,
+} from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useSendersStore } from './store';
 import { sendersKeys } from './api/query-keys';
@@ -1405,12 +1411,12 @@ describe('SendersScreen — edge states', () => {
     // Founder decision 2026-09-20: the row STAYS where it is, marked done,
     // even though the refetch that follows dropped this sender (nothing
     // left to clean) — the list must not jump under the cursor.
-    await screen.findByText('Deleted to Gmail Trash · 313 emails');
+    await screen.findByText('Deleted · 313 emails');
     expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeEnabled();
     expect(currentMailOnly).toBe('true');
     fireEvent.click(within(receipt).getByRole('button', { name: 'Undo' }));
     // A confirmed Undo takes the "done" mark off; the row is the server's again.
-    await waitFor(() => expect(screen.queryByText(/Deleted to Gmail Trash ·/)).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/^Deleted · /)).toBeNull());
     await screen.findByRole('checkbox', { name: /select sender a/i });
     await waitFor(() => expect(screen.queryByText('Moved to Gmail Trash')).toBeNull());
   });
@@ -2214,7 +2220,7 @@ describe('SendersScreen — edge states', () => {
       const alpha = screen.getByRole('checkbox', { name: /select overdue alpha/i });
       expect(alpha).toBeDisabled();
       const alphaCard = alpha.closest('[aria-busy="true"]')!;
-      expect(within(alphaCard as HTMLElement).getByText('Archive still running')).toBeDefined();
+      expect(within(alphaCard as HTMLElement).getByText('Archive not confirmed')).toBeDefined();
       // The action controls are off; peeking at the sender still works.
       expect(
         within(alphaCard as HTMLElement).getByRole('button', { name: /^More actions for/ }),
@@ -2534,7 +2540,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   // request went through. Rows stay as-is for a long time." — made in the
   // TABLE layout, which had no busy state at all.
   describe('rows say what is happening to them', () => {
-    function bulkStub(batch: () => Record<string, unknown>, list = TWO_SENDER_LIST) {
+    function bulkStub(
+      batch: () => Record<string, unknown>,
+      list: FetchStubHandler = TWO_SENDER_LIST,
+    ) {
       installFetchStub([
         list,
         BULK_PREVIEW_OK,
@@ -2650,6 +2659,170 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       accept();
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
+    });
+
+    it('says "not confirmed" and stays locked when the status poll is lost — never back to untouched', async () => {
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: 'batch-1',
+                status: 'queued',
+                senderCount: 2,
+                requestedTotal: 30,
+                skipped: [],
+              },
+            }),
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\/[^/]+$/,
+          respond: () => jsonServerError('status_down'),
+        },
+      ]);
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+
+      await waitFor(() => expect(screen.getAllByText('Archive not confirmed')).toHaveLength(2), {
+        timeout: 4000,
+      });
+      // The Gmail job may still be running: the row stays busy and off.
+      const a = rowOf(/select sender a/i);
+      expect(a).toHaveAttribute('aria-busy', 'true');
+      expect(within(a).getByRole('checkbox')).toBeDisabled();
+    });
+
+    it('never carries a finished row into a NEW search that was loading when the job ended', async () => {
+      let state: Record<string, unknown> = running;
+      let searchInFlight = false;
+      let releaseSearch!: () => void;
+      const searchGate = new Promise<void>((resolve) => {
+        releaseSearch = resolve;
+      });
+      bulkStub(() => state, {
+        ...TWO_SENDER_LIST,
+        respond: async (_req: Request, url: URL) => {
+          if (url.searchParams.get('q')) {
+            searchInFlight = true;
+            await searchGate;
+            // A NON-empty answer on purpose: an empty one routes through the
+            // "no matches / widen" path, which renders no rows at all and so
+            // could never show a wrongly-held one.
+            return jsonOk({
+              data: [{ ...ROW, id: 'c', displayName: 'Sender C', email: 'c@example.com' }],
+              meta: {
+                pagination: { nextCursor: null, hasMore: false, limit: 25 },
+                query: { totalMatching: 1, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+              },
+            });
+          }
+          return jsonOk({
+            data: [ROW, ROW_B],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 25 },
+              query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+            },
+          });
+        },
+      });
+      renderScreen();
+      await selectBothAndPress('a');
+      await screen.findByText(/currently match.*Archive/i);
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
+
+      // Ask a different question; its answer is still loading when the job ends.
+      fireEvent.change(screen.getByPlaceholderText(/search senders/i), {
+        target: { value: 'zzz' },
+      });
+      // The job must end WHILE the new question is loading — i.e. after its
+      // request has really gone out (the search box debounces) and while
+      // the old rows are still on screen. Ending earlier proves nothing.
+      await waitFor(() => expect(searchInFlight).toBe(true), { timeout: 4000 });
+      expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeInTheDocument();
+      state = {
+        status: 'done',
+        total: 2,
+        done: 2,
+        failed: 0,
+        requestedCount: 30,
+        affectedCount: 30,
+      };
+      // The job's terminal poll (1s tick) must LAND while the search is
+      // still held — `findReceipt` alone matches any status line.
+      await screen.findByText(/2 selected · 2 accepted/, {}, { timeout: 4000 });
+
+      releaseSearch();
+      await screen.findByRole('checkbox', { name: /select sender c/i }, { timeout: 4000 });
+      expect(screen.queryByRole('checkbox', { name: /select sender a/i })).toBeNull();
+      expect(donePills()).toEqual([]);
+    });
+
+    it('locks the members of an in-flight bulk UNSUBSCRIBE — a second one cannot be recalled (D58)', async () => {
+      const unsubPosts: unknown[] = [];
+      installFetchStub([
+        TWO_SENDER_LIST,
+        BULK_PREVIEW_OK,
+        {
+          method: 'POST',
+          path: '/api/actions',
+          respond: async (req) => {
+            unsubPosts.push(await req.json());
+            return jsonOk({
+              data: {
+                batchId: 'batch-u',
+                status: 'queued',
+                senderCount: 2,
+                requestedTotal: 0,
+                skipped: [],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: /^\/api\/actions\/batch\/[^/]+$/,
+          respond: () =>
+            jsonOk({
+              data: {
+                batchId: 'batch-u',
+                status: 'executing',
+                total: 2,
+                done: 0,
+                failed: 0,
+                requestedCount: 0,
+                affectedCount: 0,
+                undoToken: null,
+              },
+            }),
+        },
+      ]);
+      renderScreenWithToasts();
+      await selectBothAndPress('u');
+      await screen.findByText(/unsubscribe from 2 senders/i);
+      const confirm = within(screen.getByRole('dialog')).getByRole('button', {
+        name: /Unsubscribe/,
+      });
+      await waitFor(() => expect(confirm).toBeEnabled());
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await waitFor(() => expect(unsubPosts).toHaveLength(1));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+      // Same two senders, again, while the first batch is still going out.
+      await selectBothAndPress('u');
+      await screen.findByText(/unsubscribe from 2 senders/i);
+      const again = within(screen.getByRole('dialog')).getByRole('button', { name: /Unsubscribe/ });
+      await waitFor(() => expect(again).toBeEnabled());
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      await screen.findByText(/Still confirming your last action/);
+      expect(unsubPosts).toHaveLength(1);
     });
 
     it('claims no per-row outcome when a bulk PARTLY fails — it does not know which sender', async () => {
@@ -2967,6 +3140,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         selector: { type: 'senders', senderIds: ['a', 'b'] },
         primary: { type: primaryType, olderThanDays: null },
       });
+      // The confirm closes once the server has answered. It used to hang
+      // open here: the backlog's chained `mutate` on the same hook swapped
+      // the observer's options before `onSettled` ran, leaving a live
+      // Confirm over a one-way unsubscribe that had already been sent.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     },
   );
 

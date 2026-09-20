@@ -83,7 +83,7 @@ describe('grid card', () => {
     card(done);
     const root = screen.getByTestId('sender-card-sender-1');
     expect(root).not.toHaveAttribute('aria-busy', 'true');
-    expect(within(root).getByText('Deleted to Gmail Trash · 251 emails')).toBeInTheDocument();
+    expect(within(root).getByText('Deleted · 251 emails')).toBeInTheDocument();
   });
 });
 
@@ -116,7 +116,7 @@ describe('table row', () => {
 
   it('stays, marked done', () => {
     table(done);
-    expect(screen.getByText('Deleted to Gmail Trash · 251 emails')).toBeInTheDocument();
+    expect(screen.getByText('Deleted · 251 emails')).toBeInTheDocument();
   });
 });
 

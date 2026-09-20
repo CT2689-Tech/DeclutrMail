@@ -13,7 +13,7 @@ import { useLongPress } from '@declutrmail/shared/hooks/use-long-press';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from '../action-row';
 import { isStandingProtected, type ActionRequest, type Sender } from '../data';
 import { RowCheckbox } from './row-checkbox';
-import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
+import { isRowBusy, RowActivityPill, rowActivityLabel, useRowActivity } from '../row-activity';
 import { SenderRowDetailLive } from './sender-row-detail';
 
 const { color, font } = tokens;
@@ -298,7 +298,11 @@ export function SenderListRow({
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
-        aria-label={`${s.name} — ${expanded ? 'collapse' : 'expand'} detail`}
+        // `aria-label` overrides the row's contents, so the activity has
+        // to be IN it or a screen reader never hears "Archiving…".
+        aria-label={`${s.name}${activity ? `, ${rowActivityLabel(activity)}` : ''} — ${
+          expanded ? 'collapse' : 'expand'
+        } detail`}
         aria-busy={busy || undefined}
         onPointerDown={(e) => {
           longPress.onPointerDown(e);
@@ -317,7 +321,6 @@ export function SenderListRow({
           swipe.handlers.onPointerCancel(e);
         }}
         style={{
-          opacity: busy ? 0.6 : 1,
           position: 'relative',
           display: 'grid',
           // Tightening pass — dropped the 2-cell numeric stat block

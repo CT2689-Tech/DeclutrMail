@@ -4673,3 +4673,11 @@ recommending merge even on a change that felt small and precedented.
 **Correct approach:** When a single-sender sentence is generalised to an aggregate, check what the aggregate EXCLUDES before reusing a universal subject. Gate the claim on `protectedCount === 0`, and name only the counted subset otherwise.
 **Rule:** A sentence about "these senders" may only be backed by a figure that counted all of them.
 **Enforcement update:** modal test "never claims the whole selection is empty while a Protected sender went uncounted"; none to hooks.
+
+## 2026-09-20 — "Close the modal in onSettled" never ran: a chained mutate swapped the callbacks
+**PR:** (branch `claude/senders-row-feedback` — Senders row feedback, D226)
+**Caught by:** flow-completeness-auditor gate (pre-PR); confirmed against `@tanstack/query-core` source
+**What happened:** To hold the confirm modal on "Submitting…", I moved its close from dispatch time into `onSettled` on each primary `mutate`. The bulk Unsubscribe path calls `enqueueBulk.mutate(...)` AGAIN inside its own `onSuccess` (the backlog batch) on the same hook. `MutationObserver` reads the per-call options live, so the chained call replaced them between `onSuccess` and `onSettled` — `onSettled` never ran, the modal stayed up, and once the second request settled it re-armed a live Confirm over a one-way unsubscribe that had already been sent. Same commit, same gate: I widened the in-flight lock to `activeBatch` and left out its sibling `activeUnsubBatch` (the case where a repeat is un-recallable, D58); and a job ending while a new search was still loading pinned the OLD question's rows into the new results.
+**Correct approach:** Close from the FIRST line of every primary `onSuccess`/`onError` (explicit, order-independent), with `submitting` as local state of the open request rather than an OR over mutation hooks (which also froze any modal opened during an unrelated enqueue). When extending a guard to one handle, grep every sibling handle of the same shape before calling it done. Never snapshot rows for later display while `isPlaceholderData` is true.
+**Rule:** Per-call mutate callbacks are not safe across a re-entrant `mutate` on the same hook — never hang a must-run effect on `onSettled` there.
+**Enforcement update:** screen tests for all three, each negative-controlled; none to hooks.

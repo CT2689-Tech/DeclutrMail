@@ -171,7 +171,9 @@ export function SenderCard({
         // recommendation grouping, which created a trust hit on
         // financial-institution senders (BofA / Chase reading
         // "Cleanup"). Facts now drive both the lead verb and accent.
-        background: color.card,
+        // Busy is a TINT, never a fade: opacity on the container also
+        // fades the status pill, the one thing the user needs to read.
+        background: busy ? color.paper : color.card,
         border: `1px solid ${selected ? color.primary : color.line}`,
         borderRadius: radius.md,
         padding: '18px 18px 14px',
@@ -179,8 +181,7 @@ export function SenderCard({
         flexDirection: 'column',
         gap: 14,
         position: 'relative',
-        transition: 'border-color 120ms, box-shadow 120ms, opacity 120ms',
-        opacity: busy ? 0.6 : 1,
+        transition: 'border-color 120ms, box-shadow 120ms',
         minHeight: 240,
         cursor: peekEnabled ? 'pointer' : undefined,
       }}
@@ -282,7 +283,10 @@ export function SenderCard({
                 ⌕
               </span>
             )}
-            {sender.policyType === 'unsubscribe' &&
+            {/* One pill at a time: the row's own action wins while it has
+                something to say (both would overflow the header). */}
+            {!activity &&
+              sender.policyType === 'unsubscribe' &&
               (() => {
                 const copy = unsubscribeStatusCopy(sender.unsubStatus, sender.unsubscribeMethod);
                 return (
