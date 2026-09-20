@@ -1276,15 +1276,8 @@ function SendersScreenContent({
         const sender = senders[0]!;
         const primaryType: 'archive' | 'later' | 'delete' =
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
-        const inFlightCopy =
-          primaryType === 'delete'
-            ? `Moving email from ${sender.name} to Trash…`
-            : primaryType === 'later'
-              ? `Moving ${sender.name} to Later…`
-              : `Archiving email from ${sender.name}…`;
         setSubmitting(true);
         setSelected(new Set());
-        toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
           {
             mailboxId: actionMailboxId,
@@ -1706,14 +1699,6 @@ function SendersScreenContent({
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
         const n = senders.length;
         setSubmitting(true);
-        toast(
-          primaryType === 'delete'
-            ? `Moving email from ${n} senders to Trash…`
-            : primaryType === 'later'
-              ? `Moving ${n} senders to Later…`
-              : `Archiving email from ${n} senders…`,
-          'info',
-        );
         enqueueBulk.mutate(
           {
             mailboxId: actionMailboxId,

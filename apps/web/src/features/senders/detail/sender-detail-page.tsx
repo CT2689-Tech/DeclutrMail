@@ -646,15 +646,8 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       if (verb === 'Delete' || verb === 'Later' || verb === 'Archive') {
         const primaryType: 'archive' | 'later' | 'delete' =
           verb === 'Delete' ? 'delete' : verb === 'Later' ? 'later' : 'archive';
-        const inFlightCopy =
-          primaryType === 'delete'
-            ? `Moving email from ${sender.name} to Trash…`
-            : primaryType === 'later'
-              ? `Moving ${sender.name} to Later…`
-              : `Archiving email from ${sender.name}…`;
         setSubmitting(true);
         setSettled(null);
-        toast(inFlightCopy, 'info');
         enqueueComposite.mutate(
           {
             mailboxId: actionMailboxId,

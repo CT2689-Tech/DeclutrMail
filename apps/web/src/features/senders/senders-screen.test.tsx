@@ -197,6 +197,7 @@ async function undoFromThePill(token: string) {
  * assert toast copy (the app layout mounts it at the root). */
 function renderScreenWithToasts() {
   const client = createTestQueryClient();
+  lastClient = client;
   return render(
     <QueryWrapper client={client}>
       <SendersScreen />
@@ -1336,7 +1337,8 @@ describe('SendersScreen — edge states', () => {
       },
     ]);
 
-    renderScreen();
+    // Toast host mounted: "no toast for an action" must be able to fail.
+    renderScreenWithToasts();
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
 

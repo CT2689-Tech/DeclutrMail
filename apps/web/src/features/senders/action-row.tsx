@@ -97,13 +97,20 @@ export function SenderActionRow({
   sender,
   onAction,
   stretch = false,
+  onMenuOpenChange,
 }: {
   sender: Sender;
   onAction: (req: ActionRequest) => void;
+  /** Lets a host that pins this row (sticky table cell) lift it above its neighbours while the ⋯ menu is open. */
+  onMenuOpenChange?: (open: boolean) => void;
   /** `true` (card) stretches the primary button; `false` (table row) keeps it inline. */
   stretch?: boolean;
 }) {
-  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [popoverOpen, setPopoverOpenState] = useState(false);
+  const setPopoverOpen = (open: boolean) => {
+    setPopoverOpenState(open);
+    onMenuOpenChange?.(open);
+  };
   // One in-flight action per sender: a second would mint a fresh
   // idempotency key (double cleanup unit, two undo tokens). The screen
   // refuses it too; disabling here is what makes that refusal visible.
