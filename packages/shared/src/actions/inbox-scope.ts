@@ -152,7 +152,9 @@ export function tiedWindowNoticeCopy(
 export function inboxScopeNoticeCopy(
   notice: InboxScopeNotice,
   verbLabel: string,
-  subject: 'this sender' | 'these senders' = 'this sender',
+  // 'the unprotected senders': a bulk count that left Protected senders
+  // out cannot speak for the whole selection.
+  subject: 'this sender' | 'these senders' | 'the unprotected senders' = 'this sender',
   options: {
     /**
      * ADR-0028 — set when the surface offers a reach control that lets

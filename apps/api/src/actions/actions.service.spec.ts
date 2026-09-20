@@ -1363,6 +1363,63 @@ describe('ActionsService', () => {
       await db.update(workspaces).set({ tier: 'plus' });
     });
 
+    it('returns parallel all-mail counts that include archived mail but never Trash (ADR-0028)', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'p1-in', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'p1-arch-old', ['CATEGORY_PROMOTIONS'], daysAgo(100));
+      await seedMessage(db, mailboxId, 'p1-trash', ['TRASH'], daysAgo(100));
+      await seedMessage(
+        db,
+        mailboxId,
+        'p2-arch',
+        ['CATEGORY_PROMOTIONS'],
+        daysAgo(400),
+        SENDER_KEY_2,
+      );
+
+      const res = await svc.previewBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+      });
+
+      // The inbox block is unchanged by the widened sibling.
+      expect(res.totals.all).toBe(1);
+      expect(res.allMailTotals).toEqual({
+        all: 3,
+        olderThan30d: 2,
+        olderThan90d: 2,
+        olderThan180d: 1,
+        olderThan365d: 1,
+      });
+      expect(res.senders.map((s) => s.allMailCounts.all)).toEqual([2, 1]);
+      expect(res.senders.map((s) => s.counts.all)).toEqual([1, 0]);
+    });
+
+    it('excludes Protected senders from the all-mail totals too (ADR-0028 + D245)', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'pp1-arch', ['CATEGORY_PROMOTIONS'], daysAgo(5));
+      await seedMessage(
+        db,
+        mailboxId,
+        'pp2-arch',
+        ['CATEGORY_PROMOTIONS'],
+        daysAgo(5),
+        SENDER_KEY_2,
+      );
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxId,
+        senderKey: SENDER_KEY_2,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+
+      const res = await svc.previewBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+      });
+      expect(res.allMailTotals.all).toBe(1);
+    });
+
     it('serves the multi-sender preview on Free (A3 — bulk is Free, metered by quota)', async () => {
       await db.update(workspaces).set({ tier: 'free' });
       const sender2Id = await seedSecondSender(db, mailboxId);
@@ -1444,6 +1501,85 @@ describe('ActionsService', () => {
   describe('enqueueBulkComposite (D52 multi-sender fan-out)', () => {
     beforeEach(async () => {
       await db.update(workspaces).set({ tier: 'plus' });
+    });
+
+    it('bulk Delete at all_mail reach counts archived mail and persists the reach on every row (ADR-0028)', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'b1-in', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'b1-arch', ['CATEGORY_PROMOTIONS'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'b1-trash', ['TRASH'], daysAgo(5));
+      await seedMessage(
+        db,
+        mailboxId,
+        'b2-arch',
+        ['CATEGORY_PROMOTIONS'],
+        daysAgo(5),
+        SENDER_KEY_2,
+      );
+
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'delete', reach: 'all_mail' },
+        idempotencyKey: 'bulk-del-allmail',
+      });
+      // Inbox + archived across both senders; TRASH stays out.
+      expect(res.requestedTotal).toBe(3);
+      const rows = await db.select().from(actionJobs);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.reach)).toEqual(['all_mail', 'all_mail']);
+      expect(rows.map((r) => r.requestedCount).sort()).toEqual([1, 2]);
+    });
+
+    it('never threads the primary reach onto a bulk SECONDARY row (ADR-0028)', async () => {
+      // The DB CHECK keys on verb, not composite role, so a Delete
+      // secondary at all_mail would pass it — this spec is the only guard.
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'sec-in', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'sec-arch', ['CATEGORY_PROMOTIONS'], daysAgo(5));
+
+      await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'delete', reach: 'all_mail' },
+        secondary: { type: 'delete' },
+        idempotencyKey: 'bulk-del-allmail-sec',
+      });
+      const rows = await db.select().from(actionJobs);
+      const secondaries = rows.filter((r) => r.idempotencyKey.endsWith('-sec'));
+      expect(secondaries).toHaveLength(2);
+      expect(secondaries.map((r) => r.reach)).toEqual(['inbox_only', 'inbox_only']);
+      // Counted inbox-only too: sender 1 has one INBOX message, not two.
+      expect(secondaries.map((r) => r.requestedCount).sort()).toEqual([0, 1]);
+    });
+
+    it('bulk Delete without a reach stays inbox_only (ADR-0028)', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'b1-in', ['INBOX'], daysAgo(5));
+      await seedMessage(db, mailboxId, 'b1-arch', ['CATEGORY_PROMOTIONS'], daysAgo(5));
+
+      const res = await svc.enqueueBulkComposite({
+        mailboxAccountId: mailboxId,
+        senderIds: [senderId, sender2Id],
+        primary: { type: 'delete' },
+        idempotencyKey: 'bulk-del-default',
+      });
+      expect(res.requestedTotal).toBe(1);
+      const rows = await db.select().from(actionJobs);
+      expect(rows.map((r) => r.reach)).toEqual(['inbox_only', 'inbox_only']);
+    });
+
+    it('rejects bulk all_mail reach on a non-Delete primary before writing anything (ADR-0028)', async () => {
+      const sender2Id = await seedSecondSender(db, mailboxId);
+      await expect(
+        svc.enqueueBulkComposite({
+          mailboxAccountId: mailboxId,
+          senderIds: [senderId, sender2Id],
+          primary: { type: 'archive', reach: 'all_mail' },
+          idempotencyKey: 'bulk-arch-allmail',
+        }),
+      ).rejects.toMatchObject({ response: { code: 'INVALID_REACH' } });
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
     });
 
     it('a Free bulk enqueues (A3) and consumes one unit per actionable sender', async () => {

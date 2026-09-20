@@ -638,3 +638,45 @@ describe('D226 Later says when the whole pile comes back at once', () => {
     expect(p.bulkReturnNotice).toBeNull();
   });
 });
+
+describe('ADR-0028 — Delete copy follows the chosen reach', () => {
+  const base = {
+    liveCount: 440,
+    planUndoDeadline: null,
+    wakeAt: null,
+    unsubscribeChannel: null,
+  } as const;
+
+  it('keeps the inbox sentence at the default reach', () => {
+    const p = buildActionPresentation({ ...base, verb: 'delete' });
+    expect(p.primary.effectCopy).toContain('Email in Inbox moves to Gmail Trash');
+  });
+
+  it('never claims inbox-only once the Delete reaches archived mail', () => {
+    const p = buildActionPresentation({ ...base, verb: 'delete', reach: 'all_mail' });
+    expect(p.primary.effectCopy).not.toContain('Email in Inbox moves');
+    expect(p.primary.effectCopy).toContain('Inbox or archived moves to Gmail Trash');
+    expect(p.previewCopy).not.toContain('Email in Inbox moves');
+  });
+
+  it('applies the reach to a Delete SECONDARY, never to the unsubscribe primary', () => {
+    const p = buildActionPresentation({
+      ...base,
+      verb: 'unsubscribe',
+      liveCount: 0,
+      unsubscribeChannel: 'one_click',
+      reach: 'all_mail',
+      secondaryAction: { verb: 'delete', liveCount: 440 },
+    });
+    expect(p.secondary!.effectCopy).toContain('Inbox or archived moves to Gmail Trash');
+    expect(p.primary.effectCopy).not.toContain('archived');
+  });
+
+  it('ignores the reach on a verb that cannot act past the inbox', () => {
+    const p = buildActionPresentation({ ...base, verb: 'archive', reach: 'all_mail' });
+    // Archive has no all-mail sentence: it keeps its inbox wording and
+    // never picks up 'archived' from a reach it cannot honour.
+    expect(p.primary.effectCopy).toContain('Moves out of your inbox');
+    expect(p.primary.effectCopy).not.toMatch(/or archived/i);
+  });
+});

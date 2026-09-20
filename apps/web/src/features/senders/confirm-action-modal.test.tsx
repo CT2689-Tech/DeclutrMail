@@ -1388,6 +1388,193 @@ describe('ConfirmActionModal — ADR-0028 reach on the Unsubscribe+Delete second
   });
 });
 
+describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2026-09-19)', () => {
+  const second = makeSender({ id: 'sender-2', displayName: 'Beta Digest', email: 'b@beta.com' });
+  const secondOneClick = makeSender({
+    id: 'sender-2',
+    displayName: 'Beta Digest',
+    email: 'b@beta.com',
+    unsubscribeMethod: 'one_click',
+  });
+  const doubled = (b: typeof buckets) => ({
+    all: b.all * 2,
+    olderThan30d: b.olderThan30d * 2,
+    olderThan90d: b.olderThan90d * 2,
+    olderThan180d: b.olderThan180d * 2,
+    olderThan365d: b.olderThan365d * 2,
+  });
+  const bulkDataFor = (senders: ActionRequest['senders'], withAllMail: boolean) => ({
+    senders: senders.map((s) => ({
+      senderId: s.id,
+      name: s.name,
+      counts: buckets,
+      ...(withAllMail ? { allMailCounts: allMailBuckets } : {}),
+      protected: false,
+    })),
+    totals: doubled(buckets),
+    ...(withAllMail ? { allMailTotals: doubled(allMailBuckets) } : {}),
+    protectedCount: 0,
+  });
+  const reachRow = () => screen.queryByRole('radiogroup', { name: /Where it applies/i });
+
+  it('offers the reach choice on a bulk Delete and confirms all_mail only once chosen', () => {
+    const onConfirm = vi.fn();
+    const senders = [sender, second];
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders }}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: bulkDataFor(senders, true), loading: false, error: false }}
+      />,
+    );
+    expect(reachRow()).not.toBeNull();
+    // Each chip carries the AGGREGATE for its reach at the default window.
+    const archived = screen.getByRole('radio', { name: /Inbox \+ archived/ });
+    expect(archived).toHaveTextContent((allMailBuckets.olderThan180d * 2).toLocaleString('en-US'));
+
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
+
+    expect(screen.getByText(/Email in Inbox moves to Gmail Trash/)).toBeInTheDocument();
+    fireEvent.click(archived);
+    expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
+    // The lead follows the chip — it must not keep claiming "in Inbox".
+    expect(screen.queryByText(/Email in Inbox moves to Gmail Trash/)).toBeNull();
+    expect(screen.getByText(/in Inbox or archived moves to Gmail Trash/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ reach: 'all_mail' }));
+  });
+
+  it('never claims the whole selection is empty while a Protected sender went uncounted', () => {
+    // Bulk totals exclude Protected senders, so a zero there says nothing
+    // about THEIR mail — "no email from these senders" would be a claim
+    // the preview never measured.
+    const zero = { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+    const senders = [sender, second];
+    const data = (protectedCount: number) => ({
+      senders: [
+        {
+          senderId: sender.id,
+          name: sender.name,
+          counts: zero,
+          allMailCounts: zero,
+          protected: false,
+        },
+        {
+          senderId: second.id,
+          name: second.name,
+          counts: protectedCount ? buckets : zero,
+          allMailCounts: protectedCount ? allMailBuckets : zero,
+          protected: protectedCount > 0,
+        },
+      ],
+      totals: zero,
+      allMailTotals: zero,
+      protectedCount,
+    });
+    const { rerender } = render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: data(1), loading: false, error: false }}
+      />,
+    );
+    expect(screen.queryByText(/There is no email from these senders/)).toBeNull();
+    // The fallback notice names only the senders the zero covers.
+    expect(screen.queryByText(/Nothing from these senders/)).toBeNull();
+    expect(screen.getByText(/Nothing from the unprotected senders/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
+
+    // With nothing excluded, the zero DOES cover the whole selection.
+    rerender(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: data(0), loading: false, error: false }}
+      />,
+    );
+    expect(
+      screen.getByText(/There is no email from these senders in Inbox or archived/),
+    ).toBeInTheDocument();
+  });
+
+  it('re-arms Inbox only when "Delete them" is re-chosen after switching away', () => {
+    const senders = [oneClickSender, secondOneClick];
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Unsubscribe', senders }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: bulkDataFor(senders, true), loading: false, error: false }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'Delete them' }));
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Archive them' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Delete them' }));
+    // The wider destructive scope is never carried over silently.
+    expect(screen.getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+  });
+
+  it('offers no bulk reach choice against an API without the all-mail totals', () => {
+    const senders = [sender, second];
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Delete', senders }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: bulkDataFor(senders, false), loading: false, error: false }}
+      />,
+    );
+    expect(reachRow()).toBeNull();
+  });
+
+  it.each(['Archive', 'Later'] as const)('offers no bulk reach choice on %s', (verb) => {
+    const senders = [sender, second];
+    render(
+      <ConfirmActionModal
+        request={{ verb, senders }}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        bulkPreview={{ data: bulkDataFor(senders, true), loading: false, error: false }}
+      />,
+    );
+    expect(reachRow()).toBeNull();
+  });
+
+  it('offers the reach choice on a bulk Unsubscribe only once "Delete them" is chosen', () => {
+    const onConfirm = vi.fn();
+    const senders = [oneClickSender, secondOneClick];
+    render(
+      <ConfirmActionModal
+        request={{ verb: 'Unsubscribe', senders }}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        bulkPreview={{ data: bulkDataFor(senders, true), loading: false, error: false }}
+      />,
+    );
+    expect(reachRow()).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'Delete them' }));
+    expect(reachRow()).not.toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    // The headline names the widened scope on the secondary path too.
+    expect(screen.getByText(/across inbox \+ archived for Trash/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Unsubscribe/ }));
+    expect(onConfirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        reach: 'all_mail',
+        secondary: expect.objectContaining({ type: 'delete' }),
+      }),
+    );
+  });
+});
+
 // ─────────────── D248 — per-channel unsubscribe preview ────────────────
 describe('ConfirmActionModal — unsubscribe capability breakdown (D248)', () => {
   function unsubRequest(methods: Array<'one_click' | 'mailto' | 'none' | null>): ActionRequest {

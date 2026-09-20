@@ -143,6 +143,9 @@ export class ActionsController {
           type: req.primary.type,
           olderThanDays: req.primary.olderThanDays ?? null,
           wakeAt: req.primary.wakeAt ? new Date(req.primary.wakeAt) : null,
+          // ADR-0028 — schema already restricted `all_mail` to a Delete
+          // primary; absent = inbox_only.
+          reach: req.primary.reach,
         },
         secondary: req.secondary
           ? { type: req.secondary.type, olderThanDays: req.secondary.olderThanDays ?? null }
@@ -158,8 +161,8 @@ export class ActionsController {
         type: req.primary.type,
         olderThanDays: req.primary.olderThanDays ?? null,
         wakeAt: req.primary.wakeAt ? new Date(req.primary.wakeAt) : null,
-        // ADR-0028 — schema already restricted `all_mail` to a
-        // single-sender Delete primary; absent = inbox_only.
+        // ADR-0028 — schema already restricted `all_mail` to a Delete
+        // primary; absent = inbox_only.
         reach: req.primary.reach,
       },
       secondary: req.secondary

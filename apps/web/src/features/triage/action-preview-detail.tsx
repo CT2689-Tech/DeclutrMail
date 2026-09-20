@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import type { ActionReach } from '@declutrmail/shared/contracts';
 import { useState } from 'react';
 
 import type { ActionVerb } from './types';
@@ -46,6 +47,19 @@ export interface ActionPreviewDetail {
   };
   /** Gmail search mirroring this preview's scope; approximate by construction. */
   verifyInGmailUrl?: string;
+  /**
+   * ADR-0028 — the Delete-only "Where it applies" choice. Present only
+   * when the screen can honour it: a Delete preview whose wire response
+   * carried the all-mail block. Absent everywhere else (every other verb,
+   * onboarding's first cleanup, an API predating the field), so the pair
+   * simply does not render.
+   */
+  reachControl?: {
+    reach: ActionReach;
+    inboxCount: number;
+    allMailCount: number;
+    onChange: (reach: ActionReach) => void;
+  };
 }
 
 /**
@@ -75,11 +89,96 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
   if (detail === undefined) return null;
   const location = detail.mailLocationLine ?? null;
   const sample = detail.matchSample;
-  if (location === null && sample === undefined && detail.verifyInGmailUrl === undefined) {
+  const reachControl = detail.reachControl;
+  if (
+    location === null &&
+    sample === undefined &&
+    detail.verifyInGmailUrl === undefined &&
+    reachControl === undefined
+  ) {
     return null;
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {reachControl !== undefined && (
+        <div
+          role="radiogroup"
+          aria-label="Where it applies"
+          style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+        >
+          <div
+            style={{
+              fontFamily: font.mono,
+              fontSize: 10,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: color.fgMuted,
+            }}
+          >
+            Where it applies
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(
+              [
+                { value: 'inbox_only', label: 'Inbox only', count: reachControl.inboxCount },
+                { value: 'all_mail', label: 'Inbox + archived', count: reachControl.allMailCount },
+              ] as const
+            ).map((opt) => {
+              const active = reachControl.reach === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  onClick={() => reachControl.onChange(opt.value)}
+                  style={{
+                    fontFamily: font.sans,
+                    fontSize: 12.5,
+                    fontWeight: 500,
+                    padding: '6px 12px',
+                    borderRadius: 999,
+                    background: active ? color.fg : 'transparent',
+                    color: active ? color.fgInverse : color.fgSoft,
+                    border: `1px solid ${active ? color.fg : color.line}`,
+                    cursor: 'pointer',
+                    transition: 'background 120ms, color 120ms',
+                  }}
+                >
+                  {opt.label}
+                  <span
+                    style={{
+                      marginLeft: 6,
+                      fontVariantNumeric: 'tabular-nums',
+                      opacity: active ? 0.85 : 0.7,
+                    }}
+                  >
+                    {opt.count.toLocaleString('en-US')}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* Empty inbox, archived mail exists: the default stays the safe
+              one (founder decision 2026-09-19) and this names the way out. */}
+          {reachControl.reach === 'inbox_only' &&
+            reachControl.inboxCount === 0 &&
+            reachControl.allMailCount > 0 && (
+              <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+                Switch to &quot;Inbox + archived&quot; to reach{' '}
+                {reachControl.allMailCount.toLocaleString('en-US')} archived email
+                {reachControl.allMailCount === 1 ? '' : 's'}.
+              </span>
+            )}
+          {reachControl.reach === 'all_mail' && (
+            <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+              Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
+              every email — inbox email to the inbox, archived email to the archive.
+            </span>
+          )}
+        </div>
+      )}
+
       {location !== null && (
         <span
           role="status"

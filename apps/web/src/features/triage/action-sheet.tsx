@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
 import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
+import type { ActionReach } from '@declutrmail/shared/contracts';
 import { ActionPreview, type PreviewCount } from './action-preview';
 import {
   ActionPreviewDetailBlock,
@@ -56,6 +57,7 @@ export function ActionSheet({
   previewSenderGone = false,
   onRefreshTriage,
   detail,
+  reach = 'inbox_only',
   quotaRemaining,
 }: {
   open: boolean;
@@ -83,6 +85,8 @@ export function ActionSheet({
   onRefreshTriage?: (() => void) | undefined;
   /** Verification detail for the D226 preview (parity with senders). */
   detail?: ActionPreviewDetail | undefined;
+  /** ADR-0028 — the reach a Delete is armed at; `inboxCount` is the count at it. */
+  reach?: ActionReach | undefined;
   /**
    * Cleanup actions left this month; `null` when the tier does not meter
    * them.
@@ -124,6 +128,7 @@ export function ActionSheet({
     verb === 'Delete' ||
     (verb === 'Unsubscribe' && effectiveArchiveHistoric);
   const previewUnavailable = inboxCount === 'unavailable';
+  const deleteAllMail = verb === 'Delete' && reach === 'all_mail';
   const previewPending = inboxCount === 'loading';
   const wakeAtInvalid =
     verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
@@ -260,6 +265,7 @@ export function ActionSheet({
             archiveHistoric={effectiveArchiveHistoric}
             inboxCount={inboxCount}
             wakeAt={selectedWakeAt}
+            reach={reach}
             mode="modal"
             mailboxEmail={mailboxEmail}
             quotaRemaining={quotaRemaining}
@@ -422,7 +428,9 @@ export function ActionSheet({
               ? previewSenderGone
                 ? 'This sender is no longer in this mailbox. Close and refresh.'
                 : nothingToActOn
-                  ? 'Nothing in Inbox to act on.'
+                  ? deleteAllMail
+                    ? 'Nothing in Inbox or archived to act on.'
+                    : 'Nothing in Inbox to act on.'
                   : wakeAtInvalid
                     ? 'Later needs a future return time before you can confirm.'
                     : inboxCount === 'unavailable'

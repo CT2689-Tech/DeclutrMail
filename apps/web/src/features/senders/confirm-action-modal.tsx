@@ -316,28 +316,28 @@ export function ConfirmActionModal({
   // confirm-gating rules below are IDENTICAL across both shapes.
   const isBulk = (request?.senders.length ?? 0) > 1;
 
+  // The two reaches' bucket counts, from whichever preview this flow
+  // runs on — the single-sender composite or the bulk aggregate (whose
+  // totals already exclude Protected senders, like its enqueue).
+  const inboxCounts = isBulk ? bulkPreview?.data?.totals : compositePreview?.counts;
+  const allMailCounts = isBulk
+    ? bulkPreview?.data?.allMailTotals
+    : compositePreview?.allMail?.counts;
+
   // ADR-0028 reach. Offered only where the server accepts it — a
-  // single-sender Delete, whether it is the primary verb or the
-  // Unsubscribe composite's "Delete them" secondary (2026-08-31
-  // amendment: the secondary re-dispatches as its own single-sender
-  // Delete primary — `enqueueCompositeAction` already accepts `reach`
-  // on that call, so the only gap was this flag never offering the
-  // chip). Bulk stays inbox-only either way (the wire selector for a
-  // multi-sender secondary is `senders`, which the server 400s at
-  // `all_mail`) — and only when the preview actually carries the
-  // all-mail block (`allMail` is null against an API predating the
-  // field, so during a deploy skew the choice simply does not appear).
+  // Delete, whether it is the primary verb or the Unsubscribe
+  // composite's "Delete them" secondary (2026-08-31 amendment: the
+  // secondary re-dispatches as its own Delete primary, which already
+  // accepts `reach`), for one sender or a bulk selection (2026-09-19
+  // amendment: the `senders` fan-out persists the reach on every
+  // per-sender row). And only when the preview actually carries the
+  // all-mail block — it is absent against an API predating the field,
+  // so during a deploy skew the choice simply does not appear.
   const reachAvailable =
-    (isDeleteVerb || (hasSecondaryAction && secondaryVerb === 'delete')) &&
-    !isBulk &&
-    compositePreview?.allMail != null;
+    (isDeleteVerb || (hasSecondaryAction && secondaryVerb === 'delete')) && allMailCounts != null;
   const activeReach: ActionReach = reachAvailable ? reach : 'inbox_only';
 
-  const bucketCounts = isBulk
-    ? bulkPreview?.data?.totals
-    : activeReach === 'all_mail'
-      ? compositePreview?.allMail?.counts
-      : compositePreview?.counts;
+  const bucketCounts = activeReach === 'all_mail' ? allMailCounts : inboxCounts;
 
   // A protected sender acted on EXPLICITLY, one at a time. D245 excludes
   // Protected from bulk and automatic actions only, so this path stays
@@ -497,18 +497,31 @@ export function ConfirmActionModal({
     : verb
       ? verbDisplay(verb).label
       : null;
+  // Who the bulk counts actually cover. Protected senders are left out of
+  // the totals, so once any were excluded "these senders" overstates it.
+  const countedSubject = !isBulk
+    ? 'this sender'
+    : (bulkPreview?.data?.protectedCount ?? 0) > 0
+      ? 'the unprotected senders'
+      : 'these senders';
+  // Bulk totals EXCLUDE Protected senders, so a zero there only covers
+  // the whole selection when nothing was excluded — otherwise "no email
+  // from these senders" is a claim the preview never measured.
   const nothingLeftToDelete =
     isDeleteVerb &&
     livePreviewReady &&
-    compositePreview?.counts.all === 0 &&
-    compositePreview?.allMail?.counts.all === 0;
+    inboxCounts?.all === 0 &&
+    allMailCounts?.all === 0 &&
+    (!isBulk || bulkPreview?.data?.protectedCount === 0);
   const inboxScopeCopy = nothingLeftToDelete
-    ? 'No emails left to move to Trash. There is no email from this sender in Inbox or archived.'
+    ? `No emails left to move to Trash. There is no email from ${
+        countedSubject
+      } in Inbox or archived.`
     : inboxScopeVerbLabel
       ? inboxScopeNoticeCopy(
           inboxScopeNotice,
           inboxScopeVerbLabel,
-          isBulk ? 'these senders' : 'this sender',
+          countedSubject,
           // With the reach chips on screen, "only acts on mail still in
           // the inbox" would be false one sentence before the hint that
           // says how to reach past it (ADR-0028).
@@ -521,14 +534,10 @@ export function ConfirmActionModal({
   // that may have no reach control to point at (the Screener's chips
   // carry their own live counts instead of this hint).
   const archivedReachHint =
-    inboxScopeNotice.kind === 'empty-inbox' &&
-    reachAvailable &&
-    (compositePreview?.allMail?.counts.all ?? 0) > 0
-      ? `Switch to "Inbox + archived" to reach ${(
-          compositePreview?.allMail?.counts.all ?? 0
-        ).toLocaleString('en-US')} archived email${
-          (compositePreview?.allMail?.counts.all ?? 0) === 1 ? '' : 's'
-        }.`
+    inboxScopeNotice.kind === 'empty-inbox' && reachAvailable && (allMailCounts?.all ?? 0) > 0
+      ? `Switch to "Inbox + archived" to reach ${(allMailCounts?.all ?? 0).toLocaleString(
+          'en-US',
+        )} archived email${(allMailCounts?.all ?? 0) === 1 ? '' : 's'}.`
       : null;
   // Founder report 2026-08-25 — "how much is where", on every verb.
   //
@@ -542,9 +551,8 @@ export function ConfirmActionModal({
   //
   // Suppressed when `archivedReachHint` is up: that hint already names
   // the same figure and adds the control, so both would print 6,275 a
-  // line apart. Single-sender only — a bulk preview carries no
-  // `allMail` block to split, and inventing one is the failure mode
-  // this whole module exists to avoid.
+  // line apart. Single-sender only — a bulk selection has no one
+  // "N received" figure on screen for the split to close against.
   const mailLocationLine =
     !isBulk && livePreviewReady && archivedReachHint === null
       ? mailLocationCopy({
@@ -785,6 +793,8 @@ export function ConfirmActionModal({
     timeZone: 'viewer',
     secondaryAction:
       secondaryVerb === null ? null : { verb: secondaryVerb, liveCount: compositeCount ?? null },
+    // ADR-0028 — the lead must name the scope the chip just widened to.
+    reach: activeReach,
   });
 
   const title = isDeleteVerb
@@ -1244,7 +1254,11 @@ export function ConfirmActionModal({
                   >
                     {visible.map((s) => {
                       const row = breakdownById.get(s.id);
-                      const n = row ? pickBucketCount(row.counts, olderThanDays) : undefined;
+                      // At the widened reach each lozenge shows what THAT
+                      // sender contributes to the all-mail total.
+                      const rowCounts =
+                        activeReach === 'all_mail' ? row?.allMailCounts : row?.counts;
+                      const n = pickBucketCount(rowCounts, olderThanDays);
                       return (
                         <span
                           key={s.id}
@@ -1317,7 +1331,7 @@ export function ConfirmActionModal({
 
           {/* ADR-0028 reach chip pair — Delete only, primary or the
               Unsubscribe composite's "Delete them" secondary (both
-              resolve to a single-sender Delete on the wire). Rendered
+              resolve to a Delete primary on the wire). Rendered
               even when the window chips are suppressed for an empty
               inbox: it is exactly then that "Inbox + archived" is the
               escape hatch. */}
@@ -1346,10 +1360,7 @@ export function ConfirmActionModal({
                   ] as const satisfies ReadonlyArray<{ value: ActionReach; label: string }>
                 ).map((opt) => {
                   const active = activeReach === opt.value;
-                  const optCounts =
-                    opt.value === 'all_mail'
-                      ? compositePreview?.allMail?.counts
-                      : compositePreview?.counts;
+                  const optCounts = opt.value === 'all_mail' ? allMailCounts : inboxCounts;
                   // Window-scoped only while the window row is VISIBLE.
                   // With the chips suppressed (empty inbox) a hidden
                   // 180d default would put an unexplained smaller figure
@@ -1537,7 +1548,12 @@ export function ConfirmActionModal({
                       type="button"
                       role="radio"
                       aria-checked={active}
-                      onClick={() => setSecondaryVerb(opt.value)}
+                      onClick={() => {
+                        setSecondaryVerb(opt.value);
+                        // The wider destructive reach is never carried
+                        // across a secondary change — re-pick it.
+                        setReach('inbox_only');
+                      }}
                       style={{
                         fontFamily: font.sans,
                         fontSize: 12.5,
@@ -1640,7 +1656,8 @@ export function ConfirmActionModal({
                           </strong>
                           <span style={{ fontSize: 12.5, color: color.fgSoft }}>
                             email{compositeCount === 1 ? '' : 's'} currently{' '}
-                            {compositeCount === 1 ? 'matches' : 'match'} for{' '}
+                            {compositeCount === 1 ? 'matches' : 'match'}
+                            {activeReach === 'all_mail' ? ' across inbox + archived' : ''} for{' '}
                             {secondaryVerb === 'delete' ? 'Trash' : 'Archive'}
                             {showWindowQualifier
                               ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`

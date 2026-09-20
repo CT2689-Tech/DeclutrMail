@@ -565,9 +565,20 @@ export interface BulkActionPreviewResult {
     senderId: string;
     name: string;
     counts: BulkPreviewBuckets;
+    /**
+     * ADR-0028 — the same buckets at `all_mail` reach (inbox + archived).
+     * Optional: absent against an API predating the field.
+     */
+    allMailCounts?: BulkPreviewBuckets;
     protected: boolean;
   }>;
   totals: BulkPreviewBuckets;
+  /**
+   * ADR-0028 — `totals` at `all_mail` reach, Protected senders excluded
+   * the same way. Optional: absent against an older API, in which case
+   * the modal simply does not offer the reach choice.
+   */
+  allMailTotals?: BulkPreviewBuckets;
   protectedCount: number;
 }
 
@@ -672,7 +683,13 @@ export async function enqueueBulkAction(
     senderIds: string[];
     // Stays WIDE: the multi-sender selector is the one shape that
     // accepts the `unsubscribe` primary (D248).
-    primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
+    primary: {
+      type: CompositePrimaryVerb;
+      olderThanDays?: number | null;
+      wakeAt?: string;
+      /** ADR-0028 — Delete only; absent = `inbox_only`. */
+      reach?: ActionReach;
+    };
     secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     idempotencyKey: string;
   } & ActionRequestOptions,

@@ -207,7 +207,13 @@ export function useEnqueueBulkAction() {
     {
       mailboxId?: string | undefined;
       senderIds: string[];
-      primary: { type: CompositePrimaryVerb; olderThanDays?: number | null; wakeAt?: string };
+      primary: {
+        type: CompositePrimaryVerb;
+        olderThanDays?: number | null;
+        wakeAt?: string;
+        /** ADR-0028 — Delete only; absent = `inbox_only`. */
+        reach?: ActionReach;
+      };
       secondary?: { type: CompositeSecondaryVerb; olderThanDays?: number | null };
     }
   >({

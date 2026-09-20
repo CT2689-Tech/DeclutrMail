@@ -136,6 +136,8 @@ export function DecidePreview({
     // Absolute times render in the reader's own clock: every one of
     // these surfaces is opened by a click, never server-rendered.
     timeZone: 'viewer',
+    // ADR-0028 — the lead must name the scope the chip just widened to.
+    reach: activeReach,
   });
 
   // QA-delete-20260903-01: a zero-match Archive/Later/Delete otherwise
