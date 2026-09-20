@@ -1,2 +1,7 @@
 export { UndoTray } from './undo-tray';
-export type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './undo-tray.types';
+export type {
+  UndoActionKind,
+  UndoTrayDataSource,
+  UndoTrayEntry,
+  UndoTrayMember,
+} from './undo-tray.types';

@@ -36,6 +36,8 @@ export interface UndoTrayEntry {
   groupId?: string;
   /** Distinct senders still undoable in this decision. */
   senderCount?: number;
+  /** Total active members — what `members` was capped against. */
+  memberCount?: number;
   /** Emails changed; `null` = unknown, never rendered as a number. */
   affectedCount?: number | null;
   /** True when members carry different verbs — one total would mislabel them. */

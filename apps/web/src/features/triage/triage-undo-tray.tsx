@@ -27,13 +27,16 @@ import { useTriageStore } from './store';
  * is no longer "decided", so it returns to the queue), stats, the
  * activity feed, and the senders list (inbox counts moved back).
  */
-export function invalidateAfterUndo(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: undoKeys.all });
+export function invalidateAfterUndo(qc: QueryClient): Promise<void> {
+  // The tray list's refetch is RETURNED: the tray keeps its revert slot
+  // latched until the refreshed list lands (see `ProductUndoTray`).
+  const trayRefreshed = qc.invalidateQueries({ queryKey: undoKeys.all });
   // One key: the queue, the stats and the Today strip share a cache entry,
   // so a reverted undo restores all three from the same read.
   void qc.invalidateQueries({ queryKey: TRIAGE_BOOTSTRAP_KEY });
   void qc.invalidateQueries({ queryKey: activityKeys.all });
   void qc.invalidateQueries({ queryKey: sendersKeys.all });
+  return trayRefreshed;
 }
 
 /**
@@ -136,6 +139,26 @@ export function ProductUndoTray({
     };
   }, [mailboxId]);
 
+  /**
+   * After a CONFIRMED undo, free the revert slot only once the refreshed
+   * list has landed. Until then the cached rows still carry the token
+   * that was just spent: "Undo all" (or Z) in that gap POSTs a reverted
+   * token, the API answers `reverted: true`, and the tray toasted
+   * success while the remaining senders were never touched. Reachable
+   * only since a one-sender undo leaves its decision's row on screen.
+   *
+   * `actionId: null` stops the status poll while the slot stays taken.
+   */
+  const releaseAfterRefresh = useCallback(
+    (generation: number) => {
+      setInFlight((current) => (current ? { ...current, actionId: null } : current));
+      void invalidateAfterUndo(qc).finally(() => {
+        if (mailboxGeneration.current === generation) setInFlight(null);
+      });
+    },
+    [qc],
+  );
+
   const revertToken = useCallback(
     async (token: string, scope: 'decision' | 'member' = 'decision'): Promise<void> => {
       if (inFlight != null || revert.isPending || revertMember.isPending) return;
@@ -147,9 +170,16 @@ export function ProductUndoTray({
       const entry = entriesQuery.data?.find((e) =>
         scope === 'member' ? e.members?.some((m) => m.token === token) : e.token === token,
       );
+      // A member click whose decision is gone from the cache (a refetch
+      // landed between render and click) has nothing to hide and nothing
+      // to show for itself — taking the slot would swallow every retry
+      // with no visible feedback. The refreshed list is the answer.
+      if (scope === 'member' && !entry) return;
       if (entry) {
+        const member =
+          scope === 'member' ? entry.members?.find((m) => m.token === token) : undefined;
         void track('undo_clicked', {
-          verb: entry.actionKind,
+          verb: member?.actionKind ?? entry.actionKind,
           age_ms: Date.now() - new Date(entry.createdAt).getTime(),
         });
       }
@@ -175,16 +205,14 @@ export function ProductUndoTray({
         if (res.reverted) {
           // Idempotent replay — already reverted server-side.
           toast(UNDO_DONE_TOAST, 'success');
-          setInFlight(null);
-          invalidateAfterUndo(qc);
+          releaseAfterRefresh(generation);
         } else if (res.actionId) {
           // Reverse job enqueued — poll it (effect below).
           setInFlight({ ...hidden, actionId: res.actionId });
         } else {
           // BE-designed terminal: nothing to revert.
           toast('Nothing to undo — already restored.', 'info');
-          setInFlight(null);
-          invalidateAfterUndo(qc);
+          releaseAfterRefresh(generation);
         }
       } catch (err) {
         if (mailboxGeneration.current !== generation) return;
@@ -198,7 +226,7 @@ export function ProductUndoTray({
         void qc.invalidateQueries({ queryKey: undoKeys.all });
       }
     },
-    [inFlight, revert, revertMember, mailboxId, qc, entriesQuery.data],
+    [inFlight, revert, revertMember, mailboxId, qc, entriesQuery.data, releaseAfterRefresh],
   );
 
   // Reverse-job lifecycle — terminal only on server confirmation.
@@ -217,13 +245,13 @@ export function ProductUndoTray({
     if (!data || !isTerminalStatus(data.status)) return;
     if (data.status === 'done') {
       toast(UNDO_DONE_TOAST, 'success');
-      invalidateAfterUndo(qc);
-    } else {
-      toast(getActionFailureCopy('revert-terminal'), 'warn');
-      void qc.invalidateQueries({ queryKey: undoKeys.all });
+      releaseAfterRefresh(mailboxGeneration.current);
+      return;
     }
+    toast(getActionFailureCopy('revert-terminal'), 'warn');
+    void qc.invalidateQueries({ queryKey: undoKeys.all });
     setInFlight(null);
-  }, [revertStatus.data, revertStatus.isError, inFlight, qc]);
+  }, [revertStatus.data, revertStatus.isError, inFlight, qc, releaseAfterRefresh]);
 
   /**
    * Tokens already live when this screen was entered — the tray's
@@ -267,7 +295,9 @@ export function ProductUndoTray({
       const leaving = entry.members?.find((m) => m.token === inFlight.memberToken);
       if (!leaving || !entry.members) return [entry];
       const members = entry.members.filter((m) => m !== leaving);
-      const senderStillListed = members.some((m) => m.senderName === leaving.senderName);
+      // Two unresolvable senders are two senders: null never matches null.
+      const senderStillListed =
+        leaving.senderName !== null && members.some((m) => m.senderName === leaving.senderName);
       return [
         {
           ...entry,

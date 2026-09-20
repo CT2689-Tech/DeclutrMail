@@ -186,6 +186,105 @@ export const BulkDecision: Story<typeof UndoTray> = {
     ),
 };
 
+const storyMember = (n: number, senderName: string | null, affectedCount: number) => ({
+  token: `99999999-9999-4999-8999-${String(n).padStart(12, '0')}`,
+  actionKind: 'delete' as const,
+  senderName,
+  affectedCount,
+});
+
+/**
+ * The decision OPENED — the per-sender rows, their Undo, the indent rule,
+ * and the "N more" line for a bulk the server capped (30 senders, 25
+ * listed). `<details>` is closed by default, so without this story the
+ * snapshot never sees any of `DecisionRow`'s disclosure.
+ */
+export const BulkDecisionOpenCapped: Story<typeof UndoTray> = {
+  render: (args: TrayArgs) =>
+    frame(
+      <UndoTray
+        {...args}
+        defaultOpenDecisions
+        dataSource={{
+          ...staticSource([
+            {
+              token: '99999999-9999-4999-8999-000000000000',
+              actionKind: 'delete',
+              createdAt: ISO_NOW,
+              expiresAt: SEVEN_DAYS_OUT,
+              groupId: 'bulk-capped',
+              senderCount: 30,
+              memberCount: 30,
+              affectedCount: 2140,
+              members: Array.from({ length: 25 }, (_, i) =>
+                storyMember(i, i === 3 ? null : `Sender ${i + 1}`, 200 - i * 5),
+              ),
+            },
+          ]),
+          revertMember: async () => {
+            /* static story */
+          },
+        }}
+        onViewActivity={() => {
+          /* host-app route */
+        }}
+      />,
+    ),
+};
+
+/**
+ * Mixed verbs (Later + Delete-older for one sender): no summed total
+ * under one verb label, disclosure open by default, each change naming
+ * its own verb. Read-only host (no `revertMember`) — no per-row Undo.
+ */
+export const MixedVerbsReadOnly: Story<typeof UndoTray> = {
+  render: (args: TrayArgs) =>
+    frame(
+      <UndoTray
+        {...args}
+        dataSource={staticSource([
+          {
+            token: '88888888-8888-4888-8888-888888888888',
+            actionKind: 'later',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            groupId: 'mixed-1',
+            senderCount: 1,
+            memberCount: 2,
+            affectedCount: 12,
+            mixedKinds: true,
+            members: [
+              {
+                token: '88888888-8888-4888-8888-888888888888',
+                actionKind: 'later',
+                senderName: 'Acme Weekly',
+                affectedCount: 3,
+              },
+              {
+                token: '88888888-8888-4888-8888-888888888889',
+                actionKind: 'delete',
+                senderName: 'Acme Weekly',
+                affectedCount: 9,
+              },
+            ],
+          },
+          // A token with no job behind it — no invented name or count.
+          {
+            token: '77777777-7777-4777-8777-777777777770',
+            actionKind: 'archive',
+            createdAt: ISO_NOW,
+            expiresAt: SEVEN_DAYS_OUT,
+            groupId: '77777777-7777-4777-8777-777777777770',
+            senderCount: 0,
+            memberCount: 0,
+            affectedCount: null,
+            members: [],
+          },
+        ])}
+      />,
+    ),
+};
+
 /** Autopilot rule application — D99 / "Rule applied" label. */
 export const RuleApplied: Story<typeof UndoTray> = {
   render: (args: TrayArgs) =>

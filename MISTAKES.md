@@ -4673,3 +4673,11 @@ recommending merge even on a change that felt small and precedented.
 **Correct approach:** When a single-sender sentence is generalised to an aggregate, check what the aggregate EXCLUDES before reusing a universal subject. Gate the claim on `protectedCount === 0`, and name only the counted subset otherwise.
 **Rule:** A sentence about "these senders" may only be backed by a figure that counted all of them.
 **Enforcement update:** modal test "never claims the whole selection is empty while a Protected sender went uncounted"; none to hooks.
+
+## 2026-09-20 — A grouped list read in two statements: two snapshots, one crash
+**PR:** (branch `claude/undo-panel-decisions` — decision-grouped undo tray, D35)
+**Caught by:** architecture-guardian gate (pre-PR)
+**What happened:** `UndoService.listActiveDecisions` ran a grouped aggregate, then a second query for the groups' members. Each statement reads its own snapshot and its own `now()`. An undo confirming between them (the normal case — the tray refetches exactly when a revert lands) left a group with zero members, and `all[0]!.token` threw: a 500 for the WHOLE tray, hidden behind a `!` that `noUncheckedIndexedAccess` had correctly flagged. In the other direction, a token issued between the two printed "440 emails · 2 senders" above a list of three. PGlite specs and a real-driver run both passed — neither can interleave a commit.
+**Correct approach:** One statement (CTE + window functions), so every group has ≥1 member by construction and totals and list come from one snapshot. It also moved the 25-member cap into SQL: the two-query version fetched every member of up to 100 groups (100k rows at the bulk ceiling) to slice 25. Measured after, real postgres.js, 5,000 active tokens incl. a 1,000-sender bulk: median 11 ms, max 12.4 ms.
+**Rule:** A total and the list it summarises must come from ONE statement; a non-null assertion on an indexed read is a claim about a snapshot — prove it or branch on it.
+**Enforcement update:** spec "reads the list in ONE statement"; spec for the cross-mailbox join predicate added in the same fix (negative-controlled).

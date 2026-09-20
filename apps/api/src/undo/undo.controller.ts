@@ -86,6 +86,7 @@ export class UndoController {
       expiresAt: string;
       groupId: string;
       senderCount: number;
+      memberCount: number;
       affectedCount: number | null;
       mixedKinds: boolean;
       members: Array<{
@@ -105,6 +106,7 @@ export class UndoController {
       expiresAt: d.expiresAt.toISOString(),
       groupId: d.groupId,
       senderCount: d.senderCount,
+      memberCount: d.memberCount,
       affectedCount: d.affectedCount,
       mixedKinds: d.mixedKinds,
       members: d.members,

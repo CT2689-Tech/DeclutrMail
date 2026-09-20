@@ -1,7 +1,7 @@
 import { actionJobs, mailboxAccounts, schema, senders, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UndoService } from './undo.service.js';
 import type { UndoPayload } from './undo.types.js';
@@ -272,6 +272,7 @@ describe('UndoService', () => {
       expect(d!.groupId).toBe(anchor.id);
       expect(d!.actionKind).toBe('delete');
       expect(d!.senderCount).toBe(2);
+      expect(d!.memberCount).toBe(2);
       expect(d!.affectedCount).toBe(440);
       // Any member token reverts the whole batch; it must BE a member's.
       expect([anchor.token, child.token]).toContain(d!.token);
@@ -280,6 +281,44 @@ describe('UndoService', () => {
         ['Yankee Candle', 251, anchor.token],
         ['RetailMeNot', 189, child.token],
       ]);
+    });
+
+    it('reads the list in ONE statement — two would see two snapshots', async () => {
+      // An undo landing between two statements emptied a group (a crash
+      // that 500s the whole tray) and a token issued between them printed
+      // a total that contradicted its own list.
+      const a = await seedSender('Alpha');
+      await seedDoneJob({ sender: a, verb: 'delete', affected: 1 });
+      const execute = vi.spyOn(db, 'execute');
+      const select = vi.spyOn(db, 'select');
+      await svc.listActiveDecisions(mailboxId);
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(select).not.toHaveBeenCalled();
+    });
+
+    it('never joins a job from another mailbox, even one holding this token', async () => {
+      // The two mailbox columns are tied by convention, not a constraint.
+      const other = await addMailbox(db, workspaceId, userId, 'other2@declutrmail.ai');
+      const mine = await svc.issue({
+        mailboxAccountId: mailboxId,
+        actionKind: 'delete',
+        payload: { kind: 'delete', messageIds: ['m'], priorLabels: ['INBOX'] } as UndoPayload,
+      });
+      const foreign = await seedSender('Foreign Corp');
+      await db.insert(actionJobs).values({
+        mailboxAccountId: other,
+        verb: 'delete',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: foreign.id, senderKey: foreign.senderKey },
+        resolvedMessageIds: [],
+        requestedCount: 999,
+        affectedCount: 999,
+        status: 'done',
+        idempotencyKey: 'cross-mailbox-job',
+        undoToken: mine.token,
+      });
+      const [d] = await svc.listActiveDecisions(mailboxId);
+      expect(d).toMatchObject({ groupId: mine.token, affectedCount: null, members: [] });
     });
 
     it('keeps two separate single-sender actions as two decisions, newest first', async () => {
@@ -342,7 +381,7 @@ describe('UndoService', () => {
         payload: archivePayload,
         expiresAt: new Date(Date.now() - 60_000),
       });
-      // Autopilot writes journal rows with no action_jobs row behind them.
+      // Defensive shape: no producer emits a job-less token today.
       const bare = await svc.issue({
         mailboxAccountId: mailboxId,
         actionKind: 'archive',
@@ -371,6 +410,11 @@ describe('UndoService', () => {
       expect(d!.senderCount).toBe(30);
       expect(d!.affectedCount).toBe(30);
       expect(d!.members).toHaveLength(25);
+      // The total the cap was applied against — the client states the gap.
+      expect(d!.memberCount).toBe(30);
+      // The anchor's token still leads even though 29 equal-sized members
+      // could have out-sorted it past the cap.
+      expect(d!.token).toBe(anchor.token);
     });
   });
 

@@ -131,6 +131,8 @@ export interface UndoDecision {
   expiresAt: Date;
   /** Distinct senders still undoable. 0 when no job backs the token. */
   senderCount: number;
+  /** Active tokened members in total — what `members` was capped against. */
+  memberCount: number;
   /** Emails changed across active members; null when unknown (no job). */
   affectedCount: number | null;
   /** Members carry different verbs — one total would mislabel them. */

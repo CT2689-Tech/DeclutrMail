@@ -21,7 +21,7 @@ import type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './undo-t
  */
 export const UNDO_TRAY_INSET_VAR = '--dm-undo-tray-inset';
 
-/** Gap below the tray, matching its own `bottom: 16`. */
+/** Breathing room between the last scrolled content and the tray's top edge. */
 const TRAY_BOTTOM_GAP = 16;
 
 /**
@@ -57,7 +57,11 @@ function useTrayInset(): (node: HTMLElement | null) => void {
     const publish = () => {
       document.documentElement.style.setProperty(
         UNDO_TRAY_INSET_VAR,
-        `${Math.ceil(node.getBoundingClientRect().height) + TRAY_BOTTOM_GAP * 2}px`,
+        // From the tray's TOP edge to the viewport bottom — i.e. its
+        // height PLUS whatever `bottom` offset the host gave it (the app
+        // floats it 78px up to clear the Senders selection bar; assuming
+        // the default 16 left ~46px of content under the tray).
+        `${Math.ceil(window.innerHeight - node.getBoundingClientRect().top) + TRAY_BOTTOM_GAP}px`,
       );
     };
     publish();
@@ -114,12 +118,15 @@ function useTrayInset(): (node: HTMLElement | null) => void {
 export function UndoTray({
   dataSource,
   onViewActivity,
+  defaultOpenDecisions = false,
   style,
 }: {
   /** Entries + revert callback, built on the host app's API client. */
   dataSource: UndoTrayDataSource;
-  /** Click handler for the "View Activity" link in the tray footer. */
+  /** Click handler for the "View Activity" link in the tray header. */
   onViewActivity?: () => void;
+  /** Render bulk decisions expanded — for stories and visual snapshots. */
+  defaultOpenDecisions?: boolean;
   style?: CSSProperties;
 }) {
   const source = dataSource;
@@ -247,7 +254,7 @@ export function UndoTray({
         zIndex: 50,
         // A long session (or an opened 25-sender decision) must never
         // grow the tray past the viewport it floats over.
-        maxHeight: 'min(60vh, 420px)',
+        maxHeight: 'min(50vh, 420px)',
         overflowY: 'auto',
         ...style,
       }}
@@ -281,6 +288,7 @@ export function UndoTray({
               void source.revert(entry.token);
             }}
             onUndoMember={source.revertMember}
+            defaultOpen={defaultOpenDecisions}
           />
         ))}
       </ul>
@@ -318,10 +326,12 @@ const emailCount = (n: number): string => `${n.toLocaleString('en-US')} email${n
  * leads because it is the name the reader is likeliest to recognise.
  * Null when the API sent no names (older API, or a token with no job).
  */
-function whoLabel(entry: UndoTrayEntry): string | null {
-  const first = entry.members?.[0]?.senderName ?? null;
+function whoLabel(entry: UndoTrayEntry, senderCount: number): string | null {
+  // First NAMED member: members sort by size, and an unresolvable sender
+  // at the top must not cost the line every other name.
+  const first = entry.members?.find((m) => m.senderName !== null)?.senderName ?? null;
   if (first === null) return null;
-  const others = (entry.senderCount ?? 1) - 1;
+  const others = senderCount - 1;
   return others > 0 ? `${first} + ${others} other${others === 1 ? '' : 's'}` : first;
 }
 
@@ -339,28 +349,45 @@ function DecisionRow({
   entry,
   onUndoAll,
   onUndoMember,
+  defaultOpen,
 }: {
   entry: UndoTrayEntry;
   onUndoAll: () => void;
   onUndoMember: ((token: string) => Promise<void>) | undefined;
+  defaultOpen: boolean;
 }) {
+  const rowRef = useRef<HTMLLIElement | null>(null);
   const members = entry.members ?? [];
-  const senderCount = entry.senderCount ?? 0;
-  const who = whoLabel(entry);
-  const isBulk = senderCount > 1;
+  const mixed = entry.mixedKinds === true;
+  // Never below what the member list itself proves: a job whose selector
+  // is not sender-shaped counts 0 senders server-side, and "Undo" beside
+  // one name for a multi-member decision is the defect this row replaced.
+  const senderCount = Math.max(
+    entry.senderCount ?? 0,
+    mixed ? 0 : members.length,
+    members.length > 0 ? 1 : 0,
+  );
+  const who = whoLabel(entry, senderCount);
+  // "All" = every change behind this one token, senders OR verbs.
+  const isBulk = senderCount > 1 || members.length > 1;
   // One total under one verb label is only true when every member shares
   // that verb; otherwise each member states its own below.
   const total =
-    typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
-      ? emailCount(entry.affectedCount)
-      : null;
-  const showMembers = isBulk || entry.mixedKinds === true;
-  // Members are one per sender unless verbs are mixed (then a sender can
-  // appear once per verb, and the gap is not computable from here).
-  const unlisted = entry.mixedKinds === true ? 0 : senderCount - members.length;
+    typeof entry.affectedCount === 'number' && !mixed ? emailCount(entry.affectedCount) : null;
+  const showMembers = isBulk;
+  // `memberCount` is the total the server capped `members` against. An
+  // API predating it can only be compared sender-for-sender, which is
+  // wrong once verbs are mixed (one sender, one member PER verb) — so
+  // there the gap is left unstated rather than guessed.
+  const unlisted =
+    typeof entry.memberCount === 'number'
+      ? entry.memberCount - members.length
+      : mixed
+        ? 0
+        : senderCount - members.length;
 
   return (
-    <li style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+    <li ref={rowRef} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div
         style={{
           display: 'flex',
@@ -399,19 +426,25 @@ function DecisionRow({
         </Button>
       </div>
       {showMembers && members.length > 0 ? (
-        <details>
+        // Open by default when verbs are mixed: the headline can only name
+        // ONE of them, so the list is what makes the row true.
+        <details open={mixed || defaultOpen}>
           <summary
             style={{
               cursor: 'pointer',
-              color: color.fgMuted,
+              color: color.fgSoft,
               fontFamily: font.mono,
-              fontSize: 10.5,
+              fontSize: 11.5,
               letterSpacing: '0.04em',
             }}
           >
-            {isBulk ? `Show ${senderCount.toLocaleString('en-US')} senders` : 'Show what changed'}
+            {mixed ? 'Show what changed' : `Show ${senderCount.toLocaleString('en-US')} senders`}
           </summary>
           <ul
+            // A scroll region with no buttons in it is unreachable by
+            // keyboard unless it is itself focusable.
+            {...(onUndoMember ? {} : { tabIndex: 0 })}
+            aria-label="Senders in this decision"
             style={{
               listStyle: 'none',
               margin: '6px 0 0',
@@ -441,7 +474,7 @@ function DecisionRow({
                   {member.senderName ?? 'Unknown sender'}
                   <span style={{ color: color.fgMuted }}>
                     {' · '}
-                    {entry.mixedKinds === true ? `${resultLabel(member.actionKind)} · ` : ''}
+                    {mixed ? `${resultLabel(member.actionKind)} · ` : ''}
                     {emailCount(member.affectedCount)}
                   </span>
                 </span>
@@ -450,6 +483,9 @@ function DecisionRow({
                     size="sm"
                     tone="ghost"
                     onClick={() => {
+                      // This row unmounts as the undo starts; park focus
+                      // on the decision's own button instead of <body>.
+                      rowRef.current?.querySelector('button')?.focus();
                       void onUndoMember(member.token);
                     }}
                     ariaLabel={`Undo ${verbLabel(member.actionKind)} for ${member.senderName ?? 'this sender'} only`}

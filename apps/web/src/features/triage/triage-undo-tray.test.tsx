@@ -506,6 +506,7 @@ describe('TriageUndoTray — a bulk action is one decision', () => {
   beforeEach(() => {
     mockPathname = '/senders';
     resetTriageStore();
+    h.toast.mockClear();
   });
   afterEach(() => resetFetchStub());
 
@@ -588,6 +589,74 @@ describe('TriageUndoTray — a bulk action is one decision', () => {
     expect(screen.getByText(/251 emails/)).toBeDefined();
     expect(screen.queryByText(/440 emails/)).toBeNull();
     expect(screen.queryByText('Undo all')).toBeNull();
+  });
+
+  it('keeps the revert slot latched until the refreshed list lands — no Undo on a spent token', async () => {
+    // After a one-sender undo confirms, the cached line still carries the
+    // token that was just spent. "Undo all" in that gap POSTs a reverted
+    // token, the API answers `reverted: true`, and the tray would toast
+    // success while the remaining senders were never touched.
+    const state = stub();
+    const view = await landBulk(state);
+    let releaseRefetch!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseRefetch = resolve;
+    });
+    resetFetchStub();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/undo',
+        respond: async () => {
+          await gate;
+          return jsonOk({ data: [], meta: { nextCursor: null, limit: 50 } });
+        },
+      },
+      {
+        method: 'POST',
+        path: /\/api\/undo\/.+/,
+        respond: (_req, url) => {
+          state.posts.push(url.pathname);
+          return jsonOk({
+            data: {
+              token: 'x',
+              actionKind: 'delete',
+              reverted: false,
+              expired: false,
+              revertedAt: null,
+              actionId: '33333333-3333-4333-8333-333333333333',
+            },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: /\/api\/actions\/.+/,
+        respond: () =>
+          jsonOk({
+            data: {
+              actionId: '33333333-3333-4333-8333-333333333333',
+              status: 'done',
+              requestedCount: 1,
+              affectedCount: 1,
+              undoToken: null,
+              errorCode: null,
+            },
+          }),
+      },
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Undo Delete for RetailMeNot only' }));
+    await waitFor(() => expect(state.posts).toHaveLength(1));
+    // The reverse job is `done`, but the list refetch is still in flight.
+    await waitFor(() => expect(h.toast).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: /^Undo Delete for Yankee Candle/ }));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(state.posts).toHaveLength(1);
+
+    releaseRefetch();
+    await waitFor(() => expect(document.querySelector('[data-dm-undo-tray]')).toBeNull());
+    void view;
   });
 
   it('keeps a carried-in decision hidden even after its token moves to another member', async () => {
