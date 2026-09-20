@@ -1,6 +1,5 @@
-import { actionJobs, mailboxAccounts, schema, senders, users, workspaces } from '@declutrmail/db';
+import { actionJobs, mailboxAccounts, senders, users, workspaces } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UndoService } from './undo.service.js';
@@ -20,7 +19,7 @@ import { MIN_UNDO_WINDOW_DAYS, TIER_IDS, TIER_MANIFEST } from '@declutrmail/shar
  * expiry filter) — exactly what would land in a customer-impacting bug.
  */
 
-type Db = ReturnType<typeof drizzle<typeof schema>>;
+type Db = Awaited<ReturnType<typeof freshTestDb>>;
 
 async function freshDb(): Promise<Db> {
   return freshTestDb();
