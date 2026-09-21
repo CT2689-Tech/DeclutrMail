@@ -235,6 +235,7 @@ function sendersSummaryHandler(
       bulk: number;
       other: number;
     };
+    hasCompletedCleanup: boolean;
     qCapture: { value: string | null };
   }> = {},
 ) {
@@ -262,6 +263,9 @@ function sendersSummaryHandler(
             other: 1,
           },
           asOf: '2026-06-01T00:00:00.000Z',
+          ...(overrides.hasCompletedCleanup !== undefined
+            ? { hasCompletedCleanup: overrides.hasCompletedCleanup }
+            : {}),
         },
       });
     },
@@ -2296,6 +2300,49 @@ describe('SendersScreen — edge states', () => {
       vi.useRealTimers();
     }
   });
+});
+
+describe('SendersScreen — first-cleanup nudge', () => {
+  beforeEach(() => {
+    useSendersStore.setState({ view: 'grid' });
+  });
+
+  it('nudges a ready mailbox with senders and no completed action_jobs', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler({ hasCompletedCleanup: false })]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    const nudge = await screen.findByTestId('first-cleanup-nudge');
+    expect(nudge).toHaveTextContent('Pick one sender');
+    expect(screen.getByRole('link', { name: 'Open a sender' })).toHaveAttribute(
+      'href',
+      '/senders/a',
+    );
+  });
+
+  it('stays off when the mailbox has already completed a cleanup', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler({ hasCompletedCleanup: true })]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    expect(screen.queryByTestId('first-cleanup-nudge')).not.toBeInTheDocument();
+  });
+
+  it('stays off when the summary omits the field (rolling-deploy unknown)', async () => {
+    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+    renderScreen();
+    await screen.findAllByText(/Sender A/);
+    expect(screen.queryByTestId('first-cleanup-nudge')).not.toBeInTheDocument();
+  });
+
+  it.each(['queued', 'syncing', 'failed'] as const)(
+    'stays off while the mailbox is %s',
+    async (readiness) => {
+      mockAuth.readiness = readiness;
+      installFetchStub([oneSenderHandler(), sendersSummaryHandler({ hasCompletedCleanup: false })]);
+      renderScreen();
+      await screen.findAllByText(/Sender A/);
+      expect(screen.queryByTestId('first-cleanup-nudge')).not.toBeInTheDocument();
+    },
+  );
 });
 
 /**

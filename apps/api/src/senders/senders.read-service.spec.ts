@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
+  actionJobs,
   activityLog,
   mailMessages,
   mailboxAccounts,
@@ -3056,6 +3057,56 @@ describe('SendersReadService', () => {
         bulk: 0,
         other: 0,
       });
+      expect(summary.hasCompletedCleanup).toBe(false);
+    });
+
+    it('hasCompletedCleanup is true only for a done action_jobs row on THIS mailbox', async () => {
+      const sender = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'cleanup@example.com',
+        lastSeenAt: new Date(),
+      });
+      const otherMailbox = await seedMailbox(db, 'b-jobs');
+      await db.insert(actionJobs).values({
+        mailboxAccountId: otherMailbox,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+        requestedCount: 1,
+        affectedCount: 1,
+        status: 'done',
+        idempotencyKey: `done-other-${mailboxId}`,
+      });
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+        requestedCount: 1,
+        affectedCount: 0,
+        status: 'queued',
+        idempotencyKey: `queued-${mailboxId}`,
+      });
+      expect(
+        (await svc.getSenderSummary({ mailboxAccountId: mailboxId })).hasCompletedCleanup,
+      ).toBe(false);
+
+      await db.insert(actionJobs).values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: sender.id, senderKey: sender.senderKey },
+        requestedCount: 1,
+        affectedCount: 1,
+        status: 'done',
+        idempotencyKey: `done-${mailboxId}`,
+      });
+      expect(
+        (await svc.getSenderSummary({ mailboxAccountId: mailboxId })).hasCompletedCleanup,
+      ).toBe(true);
+      expect(
+        (await svc.getSenderSummary({ mailboxAccountId: otherMailbox })).hasCompletedCleanup,
+      ).toBe(true);
     });
 
     it('isolates summary by mailbox (tenant safety — overlapping sender_keys)', async () => {
