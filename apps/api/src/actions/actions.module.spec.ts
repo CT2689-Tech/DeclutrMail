@@ -19,24 +19,42 @@ import { ActionsService } from './actions.service.js';
  * either `@Inject(TOKEN)` or `@Optional()` will fail this assertion;
  * the test stays decoupled from the DbModule / AuthModule / Mailbox-
  * AccountsModule provider graph so it's stable across refactors.
+ *
+ * Nest's `@Optional()` stores ctor indices as numbers
+ * (`[...args, index]`). Vite 7/esbuild's decorator helper sometimes
+ * wrapped that third argument as `{ index }`; Vite 8/Oxc stores the
+ * number Nest actually reads via `optionalDependenciesIds.includes`.
  */
+function optionalCtorIndex(entry: unknown): number | undefined {
+  if (typeof entry === 'number' && Number.isInteger(entry)) return entry;
+  if (
+    typeof entry === 'object' &&
+    entry !== null &&
+    'index' in entry &&
+    typeof (entry as { index: unknown }).index === 'number'
+  ) {
+    return (entry as { index: number }).index;
+  }
+  return undefined;
+}
+
 describe('ActionsService DI shape', () => {
   it('every constructor param is either @Inject()-tagged OR @Optional()', () => {
-    // Nest stores per-param optional flags as `[{ index: <n> }, ...]`
-    // on the class itself. Combined with the `self:paramtypes`
-    // metadata (`@Inject(TOKEN)` overrides), every ctor index must
-    // appear in ONE of the two sets — else Nest tries to resolve by
-    // class identity and crashes at boot.
     const paramTypes: unknown[] =
       (Reflect.getMetadata('design:paramtypes', ActionsService) as unknown[]) ?? [];
-    const optionalDeps: Array<{ index: number }> =
-      (Reflect.getMetadata(OPTIONAL_DEPS_METADATA, ActionsService) as
-        Array<{ index: number }> | undefined) ?? [];
+    const optionalDeps: unknown[] =
+      (Reflect.getMetadata(OPTIONAL_DEPS_METADATA, ActionsService) as unknown[] | undefined) ?? [];
     const explicitInjects: Array<{ index: number }> =
       (Reflect.getMetadata('self:paramtypes', ActionsService) as
         Array<{ index: number }> | undefined) ?? [];
 
-    const optionalSet = new Set(optionalDeps.map((d) => d.index));
+    // Empty paramtypes would skip the loop and pass even if Oxc dropped
+    // `emitDecoratorMetadata` — starve that false green.
+    expect(paramTypes.length).toBeGreaterThan(0);
+
+    const optionalSet = new Set(
+      optionalDeps.map(optionalCtorIndex).filter((i): i is number => i !== undefined),
+    );
     const injectSet = new Set(explicitInjects.map((d) => d.index));
 
     for (let i = 0; i < paramTypes.length; i++) {
