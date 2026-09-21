@@ -16,6 +16,7 @@
 //   • Stuck    — stale heartbeat while still queued/syncing
 
 import type { ComponentProps } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import { STALE_INITIAL_SYNC_MS, type SyncStatus } from '@declutrmail/shared/contracts';
 import { SyncGate } from './sync-gate';
@@ -55,7 +56,17 @@ export default meta;
 type GateArgs = ComponentProps<typeof SyncGate>;
 
 function frame(children: React.ReactNode) {
-  return <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>;
+  // Failed / stuck variants mount TanStack hooks (retry, logout,
+  // disconnect). A fresh QueryClient per story keeps those mutations
+  // off the network; progress-only variants don't need it but sharing
+  // one wrapper is cheaper than a second frame helper.
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>
+    </QueryClientProvider>
+  );
 }
 
 const QUEUED: SyncStatus = {
