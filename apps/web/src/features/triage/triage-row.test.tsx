@@ -20,6 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
@@ -67,12 +68,17 @@ afterEach(() => {
 const NARROW_TEMPLATE = '32px minmax(0, 1fr) 18px';
 const WIDE_TEMPLATE = '32px minmax(0, 1fr) auto 18px';
 
+function withQuery(ui: ReactElement, client = createTestQueryClient()) {
+  return <QueryWrapper client={client}>{ui}</QueryWrapper>;
+}
+
 function renderRow(row: TriageDecisionRow, { expanded = false } = {}) {
   const client = createTestQueryClient();
   return render(
-    <QueryWrapper client={client}>
-      <TriageRow row={row} expanded={expanded} onToggleExpand={() => {}} onAction={() => {}} />
-    </QueryWrapper>,
+    withQuery(
+      <TriageRow row={row} expanded={expanded} onToggleExpand={() => {}} onAction={() => {}} />,
+      client,
+    ),
   );
 }
 
@@ -151,7 +157,11 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
   it('keeps the identity block when the row is EXPANDED at 375px (the audit repro)', () => {
     setViewportWidth(375);
     const row = rowById('t-shipping');
-    render(<TriageRow row={row} expanded={true} onToggleExpand={() => {}} onAction={() => {}} />);
+    render(
+      withQuery(
+        <TriageRow row={row} expanded={true} onToggleExpand={() => {}} onAction={() => {}} />,
+      ),
+    );
     // The audit's W1: expanded row at 375px rendered avatar + chip
     // only. Name + domain must be in the tree alongside the toolbar.
     expect(screen.getByText(row.senderName)).toBeInTheDocument();
@@ -490,18 +500,20 @@ describe('TriageRow — inline preview composition', () => {
     const row = rowById('t-groupon');
 
     render(
-      <TriageRow
-        row={row}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
-        inlinePreviewAccountContext={
-          <div role="note" aria-label="Gmail account: active@gmail.com">
-            active@gmail.com
-          </div>
-        }
-      />,
+      withQuery(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+          inlinePreviewAccountContext={
+            <div role="note" aria-label="Gmail account: active@gmail.com">
+              active@gmail.com
+            </div>
+          }
+        />,
+      ),
     );
 
     const preview = screen.getByRole('region', {
@@ -660,21 +672,25 @@ describe('TriageRow — the D226 inline preview survives collapse (mobile bypass
   it('renders no preview when no action is pending, collapsed or expanded', () => {
     // Two-sided: a surface only ever observed present is not verified.
     const { rerender } = render(
-      <TriageRow
-        row={rowById('t-sarah')}
-        expanded={false}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-sarah')}
+          expanded={false}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+        />,
+      ),
     );
     expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
     rerender(
-      <TriageRow
-        row={rowById('t-sarah')}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-sarah')}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+        />,
+      ),
     );
     expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
   });
@@ -685,13 +701,15 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
 
   function renderPreview(expanded: boolean) {
     return render(
-      <TriageRow
-        row={rowById('t-groupon')}
-        expanded={expanded}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={PENDING}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-groupon')}
+          expanded={expanded}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={PENDING}
+        />,
+      ),
     );
   }
 
@@ -709,13 +727,15 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
     // otherwise D226's mandatory preview can be confirmed before it has
     // produced a number.
     const { container } = render(
-      <TriageRow
-        row={rowById('t-groupon')}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-groupon')}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
+        />,
+      ),
     );
     expect(container.textContent).not.toMatch(/press A again/);
     expect(container.textContent).toMatch(/Esc cancels/);
@@ -755,14 +775,18 @@ describe('TriageRow — inline zero-count no-op gate', () => {
     'disables Confirm %s and says why at a resolved count of zero',
     (verb) => {
       const row = rowById('t-groupon');
+      const client = createTestQueryClient();
       const { rerender } = render(
-        <TriageRow
-          row={row}
-          expanded={true}
-          onToggleExpand={() => {}}
-          onAction={() => {}}
-          inlinePreview={inline(verb, 0)}
-        />,
+        withQuery(
+          <TriageRow
+            row={row}
+            expanded={true}
+            onToggleExpand={() => {}}
+            onAction={() => {}}
+            inlinePreview={inline(verb, 0)}
+          />,
+          client,
+        ),
       );
 
       expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeDisabled();
@@ -771,13 +795,16 @@ describe('TriageRow — inline zero-count no-op gate', () => {
       expect(screen.queryByText(/press .* again/i)).toBeNull();
 
       rerender(
-        <TriageRow
-          row={row}
-          expanded={true}
-          onToggleExpand={() => {}}
-          onAction={() => {}}
-          inlinePreview={inline(verb, 1)}
-        />,
+        withQuery(
+          <TriageRow
+            row={row}
+            expanded={true}
+            onToggleExpand={() => {}}
+            onAction={() => {}}
+            inlinePreview={inline(verb, 1)}
+          />,
+          client,
+        ),
       );
       expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeEnabled();
       expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
@@ -787,13 +814,15 @@ describe('TriageRow — inline zero-count no-op gate', () => {
   it('leaves Confirm Unsubscribe armed at zero — it cuts future mail', () => {
     const row = rowById('t-groupon');
     render(
-      <TriageRow
-        row={row}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={inline('Unsubscribe', 0)}
-      />,
+      withQuery(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={inline('Unsubscribe', 0)}
+        />,
+      ),
     );
 
     expect(screen.getByRole('button', { name: /^Confirm Unsubscribe$/ })).toBeEnabled();
@@ -807,13 +836,15 @@ describe('TriageRow — inline zero-count no-op gate', () => {
     const row = rowById('t-groupon');
     const clicked: string[] = [];
     render(
-      <TriageRow
-        row={row}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={(verb) => clicked.push(verb)}
-        inlinePreview={inline('Archive', 0)}
-      />,
+      withQuery(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={(verb) => clicked.push(verb)}
+          inlinePreview={inline('Archive', 0)}
+        />,
+      ),
     );
 
     const later = screen.getByRole('button', { name: /^Later \(L\)/ });

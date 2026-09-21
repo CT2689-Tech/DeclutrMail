@@ -58,7 +58,7 @@ export function SendersPoliciesScreen() {
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError, data } =
     sendersQuery;
   const timeZone = useUserTimeZone();
-  const snapshotNow = Date.parse(data?.pages[0]?.meta.query.asOf ?? '');
+  const snapshotNow = Date.parse(data?.pages[0]?.meta.query?.asOf ?? '');
 
   // Every row the server returns is already a Protected sender — we
   // just adapt + sort for display. No client-side filter (the previous

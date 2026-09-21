@@ -636,6 +636,10 @@ function SendersScreenContent({
   const { me } = useAuth();
   const tier = me.tier ?? 'free';
   const actionMailboxId = me.activeMailboxId ?? undefined;
+  // Same dehydrated clock + zone the parent used to enrich grid cards.
+  // Table last-seen labels must not re-read ambient Date on this render.
+  const timeZone = useUserTimeZone();
+  const snapshotNow = Date.parse(asOf ?? '');
 
   // Row feedback (founder report 2026-09-20). `settled` is what a row
   // says once its job is terminal; `pinned*` keeps that row on screen in
