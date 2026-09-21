@@ -20,6 +20,32 @@ architectural, or cross-cutting triggers promotion).
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-09-21 — checkout_started is intent; empty pending_checkouts is not a broken write
+
+**Context:** Acquisition funnel showed `upgrade_prompt_shown` 7 →
+`checkout_started` 2 and zero `pending_checkouts` / payments. Traced
+Paddle + Razorpay checkout → claim → webhook.
+
+**Finding:** `checkout_started` fires on Confirm, before
+`POST /api/billing/checkout`. The server writes `pending_checkouts`
+before the provider call; display TTL is 30 minutes and expired rows
+are deleted after 7 days. Last PostHog `checkout_started` was
+2026-08-15, so an empty table on 2026-09-21 does not prove the insert
+never ran. `billing_event` is a Cloud Run log line, not a PostHog
+capture (server-side PostHog is banned). The 71% prompt drop is
+abandonment of the prompt, not a dead checkout POST.
+
+**Rule (provisional):** Before treating a missing `pending_checkouts`
+row as a write bug, check the event's timestamp against the 7-day
+sweep and whether the analytics event fires before the POST. Do not
+join PostHog `checkout_started` to PostHog `billing_event` for paid
+conversion.
+
+**Distillation trigger:** promote to CLAUDE.md observability notes if
+a later session re-investigates the same empty-table shape.
+
+---
+
 ## 2026-09-19 — Copy only ever grew, because every reviewer with teeth checks truth and none checks length
 
 **Context:** Founder asked whether the in-app product was too wordy. Six

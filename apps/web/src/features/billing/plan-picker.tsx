@@ -381,12 +381,14 @@ export function PlanPicker({
       return;
     }
     setLaunchError(null);
-    void track('checkout_started', {
+    const funnel = {
       tier: target,
       cycle,
       provider: effectiveProvider,
       founding_pro: founding,
-    });
+    } as const;
+    // Intent only — the POST below is what writes `pending_checkouts`.
+    void track('checkout_started', funnel);
     checkout.mutate(
       {
         tierId: target,
@@ -396,11 +398,14 @@ export function PlanPicker({
       },
       {
         onSuccess: (session) => {
+          // Server claim exists from this response; overlay is next.
+          void track('checkout_session_created', funnel);
           void launchCheckout(session, {
             // Payment made in the overlay — collapse the confirm panel
             // and hand the screen the truthful pending state (own-id
             // transition over this checkout's reservation).
             onCompleted: () => {
+              void track('checkout_overlay_completed', funnel);
               closePanel();
               onPaymentCompleted(target, cycle, attemptId);
             },
@@ -410,6 +415,7 @@ export function PlanPicker({
             // explicit no-charge assertion. (Post-completion close is
             // inert: the id no longer matches the `checkout` lock.)
             onClosed: () => {
+              void track('checkout_overlay_closed', funnel);
               closePanel();
               onCheckoutClosed(attemptId);
             },
@@ -423,6 +429,7 @@ export function PlanPicker({
             // reservation — the banner explains the locked state and
             // owns the release path.
             () => {
+              void track('checkout_overlay_blocked', funnel);
               checkout.reset();
               setLaunchError(
                 'The secure checkout window could not be opened. Nothing was charged.',
@@ -447,6 +454,7 @@ export function PlanPicker({
         // reality and owns the release.
         onError: (err) => {
           const code = apiErrorCode(err);
+          void track('checkout_failed', { ...funnel, code: code ?? 'unknown' });
           reconcileIfStale(code);
           if (code !== null && PRE_CLAIM_REJECTIONS.has(code)) {
             onCheckoutAbandoned(attemptId);
