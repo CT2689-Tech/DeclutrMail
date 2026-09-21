@@ -8,7 +8,7 @@ import { presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * D226 mandatory preview for switching a rule Observe → Active — the
@@ -164,7 +164,7 @@ export function ActivateRuleModal({
           display: 'flex',
           flexDirection: 'column',
           gap: 6,
-          fontSize: 12.5,
+          fontSize: text.sm,
           color: color.fgSoft,
           lineHeight: 1.5,
         }}
@@ -234,7 +234,7 @@ export function ActivateRuleModal({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span
           style={{
-            fontSize: 11,
+            fontSize: text.xs,
             fontWeight: 600,
             letterSpacing: '0.02em',
             textTransform: 'uppercase',
@@ -291,23 +291,23 @@ function ActivationReport({
     >
       <h3
         id="dm-activation-report-title"
-        style={{ margin: 0, fontSize: 12.5, color: color.fg, fontFamily: font.sans }}
+        style={{ margin: 0, fontSize: text.sm, color: color.fg, fontFamily: font.sans }}
       >
         Activation report
       </h3>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+      <div style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
         {actionableNowCopy(rule, result.actionableSenderCount, result.actionableMessageCount)}
       </div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+      <div style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
         {result.protectedWouldMatchCount.toLocaleString('en-US')} additional matching sender
         {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} Protected and will be skipped.
       </div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>{weeklyCopy}</div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+      <div style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>{weeklyCopy}</div>
+      <div style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
         Daily safety cap: {result.dailyActionCap.toLocaleString('en-US')} action
         {result.dailyActionCap === 1 ? '' : 's'}. The rest wait for the next check.
       </div>
-      <div style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.5 }}>
+      <div style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
         {recoveryCopy(rule, undoWindowDays)}
       </div>
     </section>

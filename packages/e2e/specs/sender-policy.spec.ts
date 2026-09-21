@@ -11,7 +11,7 @@ import { dbConnect, getSenderPolicy, senderKeyById, type SenderPolicyRow } from 
  *
  *   1. /senders renders the live grid; the first card supplies the
  *      target sender id (list → detail walk).
- *   2. On /senders/:id the Protect chip flips ('Protect' ↔ '◆ Protect') and writes
+ *   2. On /senders/:id the Protected switch flips (`aria-checked`) and writes
  *      `sender_policies.is_protected` via `PATCH /api/senders/:id/policy`
  *      (SET-STATE — non-destructive, no D226 preview by design).
  *   3. Persistence is asserted by RELOADING the page between toggles —
@@ -73,31 +73,33 @@ test('Protect toggle persists across reload and restores on toggle-back', async 
 
   // ---- Senders list — the entry point of the walk.
   await page.goto('/senders');
-  const firstCard = page.locator('article[data-testid^="sender-card-"]').first();
-  await expect(firstCard).toBeVisible({ timeout: 30_000 });
-  const cardTestId = await firstCard.getAttribute('data-testid');
-  const senderId = cardTestId!.replace('sender-card-', '');
+  const firstRow = page.locator('[data-testid^="sender-row-"]').first();
+  await expect(firstRow).toBeVisible({ timeout: 30_000 });
+  const rowTestId = await firstRow.getAttribute('data-testid');
+  const senderId = rowTestId!.replace('sender-row-', '');
 
   // Snapshot the policy row for exact teardown restore.
   const senderKey = await senderKeyById(sql, mailboxId, senderId);
   const prePolicy = await getSenderPolicy(sql, mailboxId, senderKey);
   target = { senderKey, prePolicy };
 
-  // ---- Detail page — the Protect toggle. Button forwards
-  // `ariaPressed` to the DOM (D43 fix), so state reads from the
-  // toggle semantics; the visible label ('Protect' ↔ '◆ Protect') is kept as
-  // a secondary assertion.
+  // ---- Detail page — the Protected switch. State reads from the
+  // switch semantics (`aria-checked`); its accessible name is constant.
   await page.goto(`/senders/${senderId}`);
-  const protectChip = page.getByRole('button', { name: /^(◆ )?Protect$/ });
+  const protectChip = page.getByRole('switch', { name: 'Protected' });
   await expect(protectChip).toBeVisible({ timeout: 30_000 });
-  await expect(protectChip).toHaveAttribute('aria-pressed', /true|false/);
-  const initialPressed = (await protectChip.getAttribute('aria-pressed')) === 'true';
-  const labelFor = (pressed: boolean) => (pressed ? '◆ Protect' : 'Protect');
+  await expect(protectChip).toHaveAttribute('aria-checked', /true|false/);
+  const initialPressed = (await protectChip.getAttribute('aria-checked')) === 'true';
+  const checkedFor = (pressed: boolean) => (pressed ? 'true' : 'false');
 
   // ---- Toggle ON (or off, if the sender is already protected).
   await protectChip.click();
-  await expect(protectChip).toHaveText(labelFor(!initialPressed));
-  await expect(page.getByText(initialPressed ? 'Unprotected' : 'Protected')).toBeVisible();
+  await expect(protectChip).toHaveAttribute('aria-checked', checkedFor(!initialPressed));
+  // The confirmation toast — exact, so the reason line beside the switch
+  // ("Protected — …") is not a second match.
+  await expect(
+    page.getByText(initialPressed ? 'Unprotected' : 'Protected', { exact: true }),
+  ).toBeVisible();
 
   // Server durability — the SET-STATE patch landed in sender_policies.
   await expect
@@ -107,7 +109,7 @@ test('Protect toggle persists across reload and restores on toggle-back', async 
   // ---- Reload: the flipped state must come back from the server.
   await page.reload();
   await expect(protectChip).toBeVisible({ timeout: 30_000 });
-  await expect(protectChip).toHaveText(labelFor(!initialPressed));
+  await expect(protectChip).toHaveAttribute('aria-checked', checkedFor(!initialPressed));
 
   // ---- Toggle back (self-restoring). Server durability is asserted
   // via the DB poll below rather than a second reload — one reload
@@ -116,7 +118,7 @@ test('Protect toggle persists across reload and restores on toggle-back', async 
   // a stack runs with the limiter on (bucket tuning flagged
   // separately; the documented e2e stack disables the limiter).
   await protectChip.click();
-  await expect(protectChip).toHaveText(labelFor(initialPressed));
+  await expect(protectChip).toHaveAttribute('aria-checked', checkedFor(initialPressed));
 
   await expect
     .poll(async () => (await getSenderPolicy(sql, mailboxId, senderKey))?.is_protected ?? null)

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Eyebrow, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, tokens, useIsAtMost } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   DELETION_CONFIRM_PHRASE,
@@ -10,8 +10,9 @@ import {
 } from '@declutrmail/shared/contracts';
 
 import { useUserTimeZone } from '@/features/auth/api/use-me';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * D216 account-deletion modal — 2-step confirm:
@@ -140,10 +141,15 @@ export function DeleteAccountModal({
         }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow>Account · step {step} of 2</Eyebrow>
+          <GroupTitle as="div">Step {step} of 2</GroupTitle>
           <h2
             id="dm-delete-account-title"
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 600,
+              letterSpacing: '-0.014em',
+              margin: '6px 0 0',
+            }}
           >
             Delete account and data
           </h2>
@@ -181,7 +187,7 @@ export function DeleteAccountModal({
                 display: 'flex',
                 gap: 10,
                 alignItems: 'flex-start',
-                fontSize: 13,
+                fontSize: text.md,
                 color: color.fgSoft,
                 cursor: 'pointer',
                 lineHeight: 1.45,
@@ -200,7 +206,7 @@ export function DeleteAccountModal({
         ) : (
           <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {hasUndo && (
-              <p style={{ fontSize: 13, color: color.fgSoft, margin: 0, lineHeight: 1.5 }}>
+              <p style={{ fontSize: text.md, color: color.fgSoft, margin: 0, lineHeight: 1.5 }}>
                 Deleting your DeclutrMail account permanently removes the data required to undo
                 recent DeclutrMail actions. You have{' '}
                 <strong>
@@ -257,7 +263,12 @@ export function DeleteAccountModal({
             <div>
               <label
                 htmlFor="dm-delete-typed-confirm"
-                style={{ fontSize: 12, color: color.fgMuted, display: 'block', marginBottom: 6 }}
+                style={{
+                  fontSize: text.sm,
+                  color: color.fgMuted,
+                  display: 'block',
+                  marginBottom: 6,
+                }}
               >
                 Type <strong style={{ fontFamily: font.mono }}>{requiredPhrase}</strong> to confirm
               </label>
@@ -273,7 +284,7 @@ export function DeleteAccountModal({
                   width: '100%',
                   boxSizing: 'border-box',
                   fontFamily: font.mono,
-                  fontSize: 13,
+                  fontSize: text.md,
                   padding: '9px 12px',
                   borderRadius: 8,
                   border: `1px solid ${phraseMatches ? color.emerald : color.border}`,
@@ -288,7 +299,7 @@ export function DeleteAccountModal({
               <div
                 role="alert"
                 style={{
-                  fontSize: 12,
+                  fontSize: text.sm,
                   color: color.danger,
                   background: color.dangerBg,
                   border: `1px solid ${color.dangerBorder}`,
@@ -312,7 +323,7 @@ export function DeleteAccountModal({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          <span style={{ fontSize: text.sm, color: color.fgMuted }}>
             {step === 1
               ? 'Nothing is deleted yet.'
               : 'A confirmation email with a cancel link follows.'}
@@ -381,21 +392,21 @@ function ModeOption({
       <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         <span
           style={{
-            fontSize: 13.5,
+            fontSize: text.md,
             fontWeight: 600,
             color: danger ? color.danger : color.fg,
           }}
         >
           {title}
         </span>
-        <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>{detail}</span>
+        <span style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.45 }}>{detail}</span>
       </span>
     </label>
   );
 }
 
 const listHeadStyle = {
-  fontSize: 11.5,
+  fontSize: text.sm,
   fontWeight: 600,
   letterSpacing: '0.04em',
   textTransform: 'uppercase' as const,
@@ -406,7 +417,7 @@ const listHeadStyle = {
 const listStyle = {
   margin: 0,
   paddingLeft: 18,
-  fontSize: 13,
+  fontSize: text.md,
   color: color.fgSoft,
   lineHeight: 1.6,
 };

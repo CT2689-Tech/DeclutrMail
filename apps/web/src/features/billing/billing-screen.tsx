@@ -5,7 +5,6 @@ import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Button,
-  Eyebrow,
   ErrorState as RecoverableErrorState,
   ScreenIntro,
   tokens,
@@ -64,8 +63,9 @@ import {
   type PendingKind,
 } from './pending-checkout';
 import { PlanPicker } from './plan-picker';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font, radius, shadow } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
@@ -526,27 +526,13 @@ export function BillingScreen({
   // the derived view: a cancelled row still owes its owner receipts.
   const hasBillingHistory = plan.backing.state !== 'none' || plan.nonBacking !== null;
 
-  return (
-    <div
-      style={{
-        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 18,
-        maxWidth: 1180,
-        fontFamily: font.sans,
-      }}
-    >
-      <ScreenIntro
-        id="billing"
-        title="Plan & billing"
-        body="Your plan, what it includes, and how it renews. Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
-        tip="Every paid plan includes a 30-day money-back guarantee, subject to the published Refund Policy and fair-use terms."
-      />
-
-      {billingDark ? <BillingDisabledNotice /> : null}
-
-      {pending !== null ? (
+  // ONE notice slot. Highest priority first; the rest wait behind "+N".
+  // A pending money action always leads — it is never the collapsed one.
+  const notices: NoticeEntry[] = [];
+  if (pending !== null) {
+    notices.push({
+      key: 'payment-processing',
+      node: (
         <PaymentProcessingNotice
           phase={processingPhase}
           kind={pending.kind}
@@ -600,9 +586,74 @@ export function BillingScreen({
                 : undefined
           }
         />
-      ) : null}
+      ),
+    });
+  }
+  if (nonBacking) {
+    notices.push({
+      key: 'non-backing',
+      node: (
+        <NonBackingSubscriptionNotice
+          record={nonBacking}
+          entitlementTier={plan.entitlementTier}
+          onResumeStarted={() => startPending('resume', nonBacking.sub.tier, nonBacking.sub.cycle)}
+          onRequestCancel={() => setCancelOpen(true)}
+        />
+      ),
+    });
+  }
+  if (plan.scheduledChange && backingSub) {
+    notices.push({
+      key: 'scheduled-change',
+      node: (
+        <ScheduledPlanChangeNotice
+          currentTier={backingSub.tier}
+          currentCycle={backingSub.cycle}
+          scheduledChange={plan.scheduledChange}
+          backingIsActive={plan.backing.state === 'active'}
+          onCanceled={(next) => {
+            queryClient.setQueryData(billingKeys.subscription(), next);
+            toast('Keeping your current plan — confirming with Paddle.', 'success');
+          }}
+        />
+      ),
+    });
+  }
+  if (billingDark) notices.push({ key: 'billing-dark', node: <BillingDisabledNotice /> });
+  if (plan.foundingMember && backingSub) {
+    notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
+  }
 
-      {plan.foundingMember && backingSub ? <FoundingBanner provider={backingSub.provider} /> : null}
+  return (
+    <div
+      style={{
+        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 20,
+        maxWidth: 1080,
+        margin: '0 auto',
+        fontFamily: font.sans,
+      }}
+    >
+      <h1
+        style={{
+          margin: 0,
+          fontSize: text['2xl'],
+          fontWeight: 600,
+          letterSpacing: '-0.01em',
+          color: color.fg,
+        }}
+      >
+        Plan &amp; billing
+      </h1>
+      <ScreenIntro
+        id="billing"
+        title="Plan & billing"
+        body="Upgrades start today; downgrades and cancellations take effect after the period you've paid for."
+      />
+
+      <NoticeSlot notices={notices} />
 
       <CurrentPlanCard
         plan={plan}
@@ -644,28 +695,6 @@ export function BillingScreen({
           disabledReason={
             pending !== null ? 'Available once the payment above finishes confirming.' : null
           }
-        />
-      ) : null}
-
-      {plan.scheduledChange && backingSub ? (
-        <ScheduledPlanChangeNotice
-          currentTier={backingSub.tier}
-          currentCycle={backingSub.cycle}
-          scheduledChange={plan.scheduledChange}
-          backingIsActive={plan.backing.state === 'active'}
-          onCanceled={(next) => {
-            queryClient.setQueryData(billingKeys.subscription(), next);
-            toast('Keeping your current plan — confirming with Paddle.', 'success');
-          }}
-        />
-      ) : null}
-
-      {nonBacking ? (
-        <NonBackingSubscriptionNotice
-          record={nonBacking}
-          entitlementTier={plan.entitlementTier}
-          onResumeStarted={() => startPending('resume', nonBacking.sub.tier, nonBacking.sub.cycle)}
-          onRequestCancel={() => setCancelOpen(true)}
         />
       ) : null}
 
@@ -766,6 +795,46 @@ export function BillingScreen({
         isPausing={pause.isPending}
         pauseError={pause.error ? pauseErrorMessage(pause.error) : null}
       />
+    </div>
+  );
+}
+
+type NoticeEntry = { key: string; node: ReactNode };
+
+/**
+ * One slot for every standing notice. The first entry (the caller orders
+ * by priority) is always visible; the rest sit behind a "+N" toggle so a
+ * workspace with three true things to say does not open on three banners.
+ */
+function NoticeSlot({ notices }: { notices: readonly NoticeEntry[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [first, ...rest] = notices;
+  if (!first) return null;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div key={first.key}>{first.node}</div>
+      {expanded ? rest.map((n) => <div key={n.key}>{n.node}</div>) : null}
+      {rest.length > 0 ? (
+        <button
+          type="button"
+          data-testid="notice-slot-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          style={{
+            alignSelf: 'flex-start',
+            minHeight: 28,
+            padding: '0 4px',
+            background: 'transparent',
+            border: 'none',
+            color: color.fgMuted,
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            cursor: 'pointer',
+          }}
+        >
+          {expanded ? 'Show less' : `+${rest.length} more`}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -938,7 +1007,7 @@ export function PaymentProcessingNotice({
         background: color.primarySoft,
         border: `1px solid ${color.primaryBorder}`,
         borderRadius: radius.md,
-        fontSize: 13,
+        fontSize: text.md,
         lineHeight: 1.55,
         color: color.fg,
       }}
@@ -1000,7 +1069,7 @@ export function PaymentProcessingNotice({
         // question. Each line asserts only what the check verified.
         <p
           data-testid="provider-check"
-          style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}
+          style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
           {providerCheck === 'checking' ? (
@@ -1084,7 +1153,7 @@ export function PaymentProcessingNotice({
               data-testid="release-confirm"
               style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
             >
-              <p style={{ margin: 0, fontSize: 12.5, color: color.fg }}>
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fg }}>
                 {kind === 'checkout' || kind === 'checkout_intent' ? (
                   <>
                     <strong style={{ fontWeight: 600 }}>Before resuming, check for a charge</strong>{' '}
@@ -1218,19 +1287,18 @@ function CurrentPlanCard({
         background: color.card,
         border: `1px solid ${color.border}`,
         borderRadius: radius.lg,
-        boxShadow: shadow.card,
         padding: '20px 22px',
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
       }}
     >
-      <Eyebrow>Current plan</Eyebrow>
+      <GroupTitle as="div">Current plan</GroupTitle>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <span
           style={{
             fontFamily: font.display,
-            fontSize: 24,
+            fontSize: text['2xl'],
             fontWeight: 650,
             letterSpacing: '-0.015em',
             color: color.fg,
@@ -1238,11 +1306,13 @@ function CurrentPlanCard({
         >
           {manifest.name}
         </span>
-        <span style={{ fontSize: 14, color: color.fgSoft, fontVariantNumeric: 'tabular-nums' }}>
+        <span
+          style={{ fontSize: text.md, color: color.fgSoft, fontVariantNumeric: 'tabular-nums' }}
+        >
           {priceLabel}
         </span>
         {renewal ? (
-          <span style={{ fontSize: 13, color: color.fgMuted }}>· Next renewal {renewal}</span>
+          <span style={{ fontSize: text.md, color: color.fgMuted }}>· Next renewal {renewal}</span>
         ) : null}
       </div>
 
@@ -1250,7 +1320,7 @@ function CurrentPlanCard({
         <p
           role="status"
           data-testid="complimentary-note"
-          style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.fgMuted }}
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
         >
           {compNote}
         </p>
@@ -1258,7 +1328,7 @@ function CurrentPlanCard({
 
       {plan.entitlementTier === 'free' &&
       (plan.nonBacking === null || cleanupRemaining !== null) ? (
-        <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           {/* "No card on file" is a claim about the PROVIDER — with a
               paused or ended subscription record the provider may well
               hold one, so the line renders only when no record exists. */}
@@ -1288,7 +1358,7 @@ function CurrentPlanCard({
           role="status"
           style={{
             margin: 0,
-            fontSize: 12.5,
+            fontSize: text.sm,
             lineHeight: 1.5,
             color: note.tone === 'warn' ? color.amber : color.fgMuted,
           }}
@@ -1301,7 +1371,7 @@ function CurrentPlanCard({
         <p
           role="status"
           data-testid="pause-confirming-note"
-          style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.amber }}
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
         >
           Confirming your pause with the payment provider — this page updates automatically, usually
           within a minute.
@@ -1352,7 +1422,7 @@ function CurrentPlanCard({
                 borderRadius: radius.md,
               }}
             >
-              <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft, lineHeight: 1.5 }}>
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
                 <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your
                 cancellation is called off and {manifest.name} keeps renewing
                 {formatBillingDate(backing.sub.currentPeriodEnd)
@@ -1381,10 +1451,10 @@ function CurrentPlanCard({
                 <div
                   role="alert"
                   style={{
-                    fontSize: 12,
-                    color: color.red,
-                    background: 'rgba(239,68,68,0.08)',
-                    border: `1px solid ${color.red}`,
+                    fontSize: text.sm,
+                    color: color.danger,
+                    background: color.dangerBg,
+                    border: `1px solid ${color.danger}`,
                     borderRadius: 8,
                     padding: '8px 10px',
                   }}
@@ -1441,7 +1511,7 @@ function ScheduledPlanChangeNotice({
         background: color.primarySoft,
         border: `1px solid ${color.primaryBorder}`,
         borderRadius: radius.md,
-        fontSize: 13,
+        fontSize: text.md,
         lineHeight: 1.55,
         color: color.fg,
       }}
@@ -1475,7 +1545,7 @@ function ScheduledPlanChangeNotice({
         )}
       </span>
       {confirming ? (
-        <span style={{ color: color.fgMuted, fontSize: 12 }}>
+        <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           {restoring
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
             : 'The payment provider’s response was interrupted, so billing changes are paused until we confirm what happened.'}{' '}
@@ -1506,7 +1576,7 @@ function ScheduledPlanChangeNotice({
           </Button>
         </div>
       ) : (
-        <span style={{ color: color.fgMuted, fontSize: 12 }}>
+        <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           Plan changes aren&rsquo;t available on this subscription right now. Email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
@@ -1515,7 +1585,7 @@ function ScheduledPlanChangeNotice({
         </span>
       )}
       {changePlan.error ? (
-        <span role="alert" style={{ color: color.red, fontSize: 12 }}>
+        <span role="alert" style={{ color: color.danger, fontSize: text.sm }}>
           {scheduledChangeErrorMessage(changePlan.error)}
         </span>
       ) : null}
@@ -1581,7 +1651,7 @@ function NonBackingSubscriptionNotice({
     background: color.paper,
     border: `1px solid ${color.line}`,
     borderRadius: radius.md,
-    fontSize: 13,
+    fontSize: text.md,
     lineHeight: 1.55,
     color: color.fg,
   } as const;
@@ -1762,7 +1832,7 @@ function NonBackingSubscriptionNotice({
         // the one that is failing. The old copy ("update your payment
         // method with the provider") named no destination at all; this
         // names the only one that is certainly correct (ADR-0035).
-        <p style={{ margin: 0, fontSize: 12.5, color: color.amber }}>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           Payment past due on this subscription. It isn&rsquo;t the one granting your current plan,
           so email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
@@ -1772,7 +1842,7 @@ function NonBackingSubscriptionNotice({
         </p>
       ) : null}
       {isPaused && !canSelfServeResume ? (
-        <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
           {sub.provider === 'razorpay'
             ? 'Razorpay does not guarantee a no-charge resume on the existing billing period. To avoid an unexpected charge, email '
             : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
@@ -1786,10 +1856,10 @@ function NonBackingSubscriptionNotice({
         <div
           role="alert"
           style={{
-            fontSize: 12,
-            color: color.red,
-            background: 'rgba(239,68,68,0.08)',
-            border: `1px solid ${color.red}`,
+            fontSize: text.sm,
+            color: color.danger,
+            background: color.dangerBg,
+            border: `1px solid ${color.danger}`,
             borderRadius: 8,
             padding: '8px 10px',
           }}
@@ -1885,7 +1955,7 @@ function FoundingBanner({ provider }: { provider: BillingProviderId }) {
         background: color.primarySoft,
         border: `1px solid ${color.primaryBorder}`,
         borderRadius: radius.md,
-        fontSize: 13,
+        fontSize: text.md,
         color: color.fg,
       }}
     >
@@ -1910,7 +1980,7 @@ function BillingDisabledNotice() {
         background: color.paper,
         border: `1px solid ${color.line}`,
         borderRadius: radius.md,
-        fontSize: 13,
+        fontSize: text.md,
         lineHeight: 1.55,
         color: color.fgSoft,
       }}

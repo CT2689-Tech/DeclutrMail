@@ -11,7 +11,6 @@ const D246_EVENTS = [
   'autopilot_pattern_suggestion_shown',
   'autopilot_pattern_suggestion_decided',
   'product_feedback_submitted',
-  'weekly_review_viewed',
 ] as const satisfies readonly EventName[];
 
 const FEEDBACK_EXAMPLES = [
@@ -21,8 +20,8 @@ const FEEDBACK_EXAMPLES = [
 ] as const satisfies readonly EventPayloads['product_feedback_submitted'][];
 
 describe('D246 observability contract', () => {
-  it('keeps activation, trust, and review events in the closed union', () => {
-    expect(D246_EVENTS).toHaveLength(9);
+  it('keeps activation, trust, and feedback events in the closed union', () => {
+    expect(D246_EVENTS).toHaveLength(8);
   });
 
   it('keeps feedback ratings surface-specific', () => {

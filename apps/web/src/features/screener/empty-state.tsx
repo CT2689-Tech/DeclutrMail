@@ -3,13 +3,12 @@
 import { tokens } from '@declutrmail/shared';
 import Link from 'next/link';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
-export function screenerEmptyTitle(readiness?: string | null): string {
-  if (readiness === 'queued' || readiness === 'syncing')
-    return 'Your Gmail account is still syncing.';
-  if (readiness === 'failed') return 'Your Gmail scan needs attention.';
-  return 'No unknown senders.';
+function screenerEmptyTitle(readiness?: string | null): string {
+  if (readiness === 'queued' || readiness === 'syncing') return 'Still syncing your Gmail';
+  if (readiness === 'failed') return 'Your Gmail scan needs attention';
+  return 'No new senders';
 }
 
 /**
@@ -31,18 +30,18 @@ export function ScreenerEmptyState({ readiness }: { readiness?: string | null | 
         gap: 6,
       }}
     >
-      <span style={{ fontSize: 15, fontWeight: 600, color: color.fg }}>
+      <span style={{ fontSize: text.lg, fontWeight: 600, color: color.fg }}>
         {screenerEmptyTitle(readiness)}
       </span>
-      <span style={{ fontSize: 13, color: color.fgMuted }}>
+      <span style={{ fontSize: text.md, color: color.fgMuted }}>
         {syncing ? (
-          'Unknown senders will appear here as the scan progresses.'
+          'New senders appear here as the scan progresses.'
         ) : failed ? (
-          <Link href="/settings">
-            Open Settings to check your Gmail connection and retry the scan.
+          <Link href="/settings" style={{ color: color.primary }}>
+            Check your Gmail connection
           </Link>
         ) : (
-          <>We&apos;ll let you know when one shows up.</>
+          'New senders appear here for one decision each.'
         )}
       </span>
     </div>

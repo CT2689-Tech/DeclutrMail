@@ -42,7 +42,7 @@ export function ProductStoryShell({
                 cta="connect_gmail"
                 placement="hero"
               >
-                Connect your Gmail
+                Start free
               </TrackedCta>
             </div>
             <p className="dm-story-scope-note">{OAUTH_SCOPE_DISCLOSURE}</p>
@@ -100,7 +100,7 @@ export function FinalStoryCta({ title, body }: { title: string; body: string }) 
           cta="connect_gmail"
           placement="final"
         >
-          Connect your Gmail
+          Start free
         </TrackedCta>
         <TrackedCta className="dm-story-button" href="/pricing" cta="see_pricing" placement="final">
           Compare plans

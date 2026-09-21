@@ -421,7 +421,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(refreshSpy).toHaveBeenCalledOnce();
   });
 
-  it('renders children + the full nav (incl. Screener/Billing) on the happy path, with no banner', async () => {
+  it('renders children + the flat nav (Home first; Billing/Settings in the account menu) on the happy path, with no banner', async () => {
     installFetchStub([
       ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
       {
@@ -434,15 +434,19 @@ describe('(app) layout integration mounts — U-NAV', () => {
     renderLayout();
 
     expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    // Screener + Billing shipped — their entries are back in the nav
-    // (D207 honest nav; trimmed by fb75b05 while the routes were stubs).
-    // The nav renders twice below `sm` widths never reached here, but
-    // getAllBy* keeps this robust to the drawer variant.
-    expect(screen.getAllByText('Screener').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Billing').length).toBeGreaterThan(0);
-    // Kept surfaces are present (spot-check both nav groups).
-    expect(screen.getByText('Triage')).toBeInTheDocument();
-    expect(screen.getByText('Autopilot')).toBeInTheDocument();
+    // jsdom applies no CSS, so the mobile tab bar renders alongside the
+    // sidebar — scope to the sidebar's landmark.
+    const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
+    const rows = nav.getAllByRole('button').map((row) => row.textContent);
+    expect(rows[0]).toBe('Home');
+    expect(rows).toEqual(expect.arrayContaining(['Triage', 'Screener', 'Autopilot', 'Activity']));
+    // One flat list: no group headings, and the account chores moved to
+    // the account menu (asserted in account-menu.test.tsx).
+    expect(nav.queryByRole('heading')).not.toBeInTheDocument();
+    expect(nav.queryByText('Billing')).not.toBeInTheDocument();
+    expect(nav.queryByText('Settings')).not.toBeInTheDocument();
+    // The trust strip is gone from the top bar.
+    expect(screen.queryByRole('button', { name: 'Undo windows' })).not.toBeInTheDocument();
     // Recovery follows the active mailbox across the whole app shell,
     // not only the Triage route.
     expect(screen.getByTestId('triage-undo-tray')).toBeInTheDocument();
@@ -487,7 +491,8 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const user = userEvent.setup();
     renderLayout();
 
-    const triageNav = await screen.findByRole('button', { name: 'Triage' });
+    const nav = await screen.findByRole('navigation', { name: 'Product navigation' });
+    const triageNav = within(nav).getByRole('button', { name: 'Triage' });
     await user.hover(triageNav);
 
     expect(prefetchSpy).toHaveBeenCalledWith('/triage');
@@ -638,6 +643,151 @@ describe('(app) layout — passive sync-error banner (D224)', () => {
     ).not.toBeInTheDocument();
     // Banner + topbar consume the same mailbox-keyed React Query entry.
     expect(syncStatusSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('(app) layout — one banner slot', () => {
+  it('shows only the highest-priority banner; the rest wait behind "+N more"', async () => {
+    const user = userEvent.setup();
+    installFetchStub([
+      ...authedHandlers({
+        onboardedAt: '2026-01-02T00:00:00.000Z',
+        deletionRequest: { effectiveAt: '2026-06-19T00:00:00.000Z', status: 'pending' },
+      }),
+      {
+        method: 'GET',
+        path: '/api/screener/count',
+        respond: () => ok({ data: { pending: 0 } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () =>
+          ok({
+            data: {
+              readiness_status: 'ready',
+              current_stage: 'ready',
+              progress_pct: 100,
+              is_ready_for_triage: true,
+              last_synced_at: null,
+              last_sync_error_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+              last_sync_error_code: 'GMAIL_HISTORY_GONE',
+            },
+          }),
+      },
+    ]);
+
+    renderLayout();
+
+    // Deletion outranks a sync failure: it holds the slot.
+    const deletion = await screen.findByTestId('deletion-grace-banner');
+    const sync = await screen.findByTestId('sync-error-banner');
+    const more = await screen.findByRole('button', { name: '+1 more' });
+    expect(deletion.closest('.dm-banner-item')).not.toHaveAttribute('hidden');
+    expect(sync.closest('.dm-banner-item')).toHaveAttribute('hidden');
+
+    await user.click(more);
+    expect(sync.closest('.dm-banner-item')).not.toHaveAttribute('hidden');
+  });
+});
+
+describe('(app) layout — banner priority order', () => {
+  // The slot shows the FIRST banner that renders, so child order in
+  // `AppChromeLayout` IS the priority order. All five are made active at
+  // once and the order is read off the DOM: account deletion, sync error,
+  // mailbox reconnect, Later return, heard-from.
+  it('orders the five app banners: deletion, sync error, reconnect, later return, heard-from', async () => {
+    window.localStorage.setItem('dm-cookie-consent', 'essential');
+    const handlers = authedHandlers({
+      onboardedAt: '2026-01-02T00:00:00.000Z',
+      deletionRequest: { effectiveAt: '2026-06-19T00:00:00.000Z', status: 'pending' },
+      laterRecovery: {
+        affectedCount: 1,
+        firstIssue: {
+          senderId: 'sender-1',
+          displayName: 'Daily Digest',
+          email: 'digest@example.test',
+          snoozedUntil: '2026-07-14T10:00:00.000Z',
+          returnStatus: 'missed',
+          lastReturnAttemptAt: null,
+          returnFailureKind: null,
+        },
+      },
+    }).filter((handler) => handler.path !== '/api/auth/me');
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/auth/me',
+        respond: () =>
+          ok({
+            data: {
+              user: { id: 'u-1', email: 'founder@example.test', workspaceId: 'ws-1' },
+              mailboxes: [
+                {
+                  id: 'mb-1',
+                  email: 'founder@example.test',
+                  status: 'active',
+                  connectedAt: '2026-01-01T00:00:00.000Z',
+                  readiness: 'ready',
+                },
+                {
+                  id: 'mb-2',
+                  email: 'second@example.test',
+                  status: 'active',
+                  connectedAt: '2026-01-01T00:00:00.000Z',
+                  readiness: 'ready',
+                  needsReconnect: true,
+                },
+              ],
+              activeMailboxId: 'mb-1',
+              tier: 'pro',
+              cleanupRemaining: null,
+              signupAttribution: { promptNeeded: true },
+            },
+          }),
+      },
+      ...handlers,
+      { method: 'GET', path: '/api/screener/count', respond: () => ok({ data: { pending: 0 } }) },
+      {
+        method: 'GET',
+        path: '/api/v1/sync/status',
+        respond: () =>
+          ok({
+            data: {
+              readiness_status: 'ready',
+              current_stage: 'ready',
+              progress_pct: 100,
+              is_ready_for_triage: true,
+              last_synced_at: null,
+              last_sync_error_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+              last_sync_error_code: 'GMAIL_HISTORY_GONE',
+            },
+          }),
+      },
+    ]);
+
+    try {
+      renderLayout();
+
+      const ids = [
+        'deletion-grace-banner',
+        'sync-error-banner',
+        'mailbox-reconnect-banner',
+        'later-return-alert',
+        'heard-from-prompt',
+      ];
+      const banners = await Promise.all(ids.map((id) => screen.findByTestId(id)));
+      await screen.findByRole('button', { name: '+4 more' });
+
+      const items = Array.from(document.querySelectorAll('.dm-banner-item'));
+      expect(banners.map((el) => items.indexOf(el.closest('.dm-banner-item')!))).toEqual([
+        0, 1, 2, 3, 4,
+      ]);
+      // Only index 0 — the account-deletion banner — holds the slot.
+      expect(items.map((el) => el.hasAttribute('hidden'))).toEqual([false, true, true, true, true]);
+    } finally {
+      window.localStorage.removeItem('dm-cookie-consent');
+    }
   });
 });
 
@@ -958,7 +1108,7 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'plus' }));
     renderLayout();
 
-    const nav = await screen.findByRole('navigation');
+    const nav = await screen.findByRole('navigation', { name: 'Product navigation' });
     const chips = within(nav).queryAllByLabelText(/^(Plus|Pro) feature$/);
     // Sidebar nav items render as <button>, not links (sidebar.tsx) —
     // the chip sits inside the button next to the label span.
@@ -977,7 +1127,7 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'free' }));
     renderLayout();
 
-    const nav = await screen.findByRole('navigation');
+    const nav = await screen.findByRole('navigation', { name: 'Product navigation' });
     const autopilotItem = within(nav)
       .getAllByRole('button')
       .find((b) => b.textContent?.includes('Autopilot'));

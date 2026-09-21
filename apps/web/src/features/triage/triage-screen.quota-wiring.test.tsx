@@ -6,6 +6,7 @@ import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
+import { storeTriageMode } from './test-mode';
 
 vi.mock('@/lib/sentry', () => ({
   captureFeatureException: vi.fn(),
@@ -65,6 +66,10 @@ function renderScreen(client: QueryClient) {
  * were correctly wired were the two I had smoked by hand, and the one I
  * could not reach live is the one that shipped broken.
  */
+// These suites drive the list's expand → verb path; focus mode has its own
+// suite (`triage-focus.test.tsx`).
+beforeEach(() => storeTriageMode('list'));
+
 describe('TriageScreen — every confirm surface receives the cleanup allowance', () => {
   beforeEach(() => {
     resetTriageStore();

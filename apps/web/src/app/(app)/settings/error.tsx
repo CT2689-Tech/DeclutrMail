@@ -18,9 +18,8 @@ export default function SettingsError({
       error={error}
       reset={reset}
       boundary="settings"
-      eyebrow="Settings hit a snag"
       headline="We couldn't load your settings."
-      body="Nothing was changed. Try again — if you came from an email link (like canceling a deletion), reopening the link also works."
+      body="Try again. If you came from an email link, reopening it also works."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

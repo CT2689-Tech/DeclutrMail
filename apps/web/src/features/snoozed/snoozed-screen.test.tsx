@@ -127,7 +127,7 @@ describe('SnoozedScreen — edge states', () => {
   it('shows the empty state pointing at the Later verb', async () => {
     installFetchStub([listHandler([])]);
     renderScreen();
-    expect(await screen.findByText('Nothing in Later.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing in Later')).toBeInTheDocument();
     expect(screen.getAllByText('Later').length).toBeGreaterThan(0);
   });
 });
@@ -168,7 +168,9 @@ describe('SnoozedScreen — populated (D80 grouping)', () => {
     ]);
     renderScreen();
     expect(await screen.findByText('Return retrying')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/could not be confirmed/i);
+    // The app-wide LaterReturnAlert owns the banner; this page must not
+    // render a second copy of the same failure.
+    expect(screen.queryByText(/could not be confirmed/i)).not.toBeInTheDocument();
     expect(screen.getByText(/automatic retry remains active/i)).toBeInTheDocument();
     expect(screen.getByText(/Last tried/i)).toBeInTheDocument();
   });
@@ -268,7 +270,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Quarterly Newsletter');
 
-    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change return time' }));
     expect(
       screen.getByRole('button', {
         name: 'Cancel return-time changes for Quarterly Newsletter',
@@ -289,7 +291,7 @@ describe('SnoozedScreen — snooze menu (D82)', () => {
     renderScreen();
     await screen.findByText('Daily Digest');
 
-    await user.click(screen.getByRole('button', { name: 'Change return time ▾' }));
+    await user.click(screen.getByRole('button', { name: 'Change return time' }));
     expect(screen.queryByRole('button', { name: /clear return time/i })).not.toBeInTheDocument();
   });
 });

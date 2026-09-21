@@ -26,7 +26,6 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
-  Eyebrow,
   toast,
   tokens,
   useIsAtMost,
@@ -37,8 +36,9 @@ import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
 import { captureFeatureException } from '@/lib/sentry';
 
 import { enrichSenderRow, type Sender } from '@/features/senders/data';
+import { PageHeader } from '../settings-list';
 
-const { color, font, space, radius } = tokens;
+const { color, font, space, radius, text } = tokens;
 
 /**
  * Settings → Senders → standing policies view. Lists every sender with
@@ -74,21 +74,6 @@ export function SendersPoliciesScreen() {
     return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row))).sort(byShieldedMail);
   }, [data]);
 
-  // Whether the ordering claim below is actually TRUE of this list.
-  //
-  // Three ways it would not be, and `some(x != null)` caught none of
-  // them. The measure is optional on the wire, so a PARTIAL response
-  // cannot produce the claimed ranking at all — the unmeasured rows are
-  // not "shielding zero", they are unknown, and no arrangement of them
-  // is "most shielded first". And when every row is a known zero the
-  // sort fell through to its tiebreakers, so the sentence describes
-  // nothing that happened. Require: rows exist, every one carries the
-  // measure, and at least one is non-zero.
-  const ordered =
-    protectedSenders.length > 0 &&
-    protectedSenders.every((s) => s.unreadInboxCount != null) &&
-    protectedSenders.some((s) => (s.unreadInboxCount ?? 0) > 0);
-
   // The BE-honest count of protected senders, query-wide rather than
   // cursor-scoped (ADR-0014). `protectedSenders.length` is only what this
   // page happens to have loaded, so it would render the `limit=50` cap as
@@ -110,122 +95,46 @@ export function SendersPoliciesScreen() {
 
   return (
     <div
+      className="dm-settings-page"
       style={{
-        padding: '20px 24px 28px',
+        padding: '20px 24px 40px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 20,
-        maxWidth: 1024,
+        gap: 16,
+        maxWidth: 880,
         margin: '0 auto',
         fontFamily: font.sans,
       }}
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <Eyebrow>Settings · protected senders</Eyebrow>
-        <h1
-          style={{
-            fontFamily: font.display,
-            fontSize: 26,
-            fontWeight: 600,
-            letterSpacing: '-0.018em',
-            margin: '4px 0 0',
-          }}
+      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
+      <PageHeader title="Protected senders" backToSettings>
+        <span
+          style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
         >
-          Protected senders
-        </h1>
-        <p style={{ fontSize: 13.5, color: color.fgSoft, marginTop: 6, maxWidth: 640 }}>
-          {/* Two things this must NOT say. Not "senders you've told us to
-              leave alone" — three of the four protection_reason values are
-              automatic (replied, starred, gmail_important) and this list
-              shows those rows too. And not "their email always reaches your
-              inbox" — protection is a guard on OUR bulk and automatic
-              actions (actions.service.ts:748), not a delivery guarantee:
-              Gmail's own filters, spam and categories are outside our
-              reach, and a single action the user takes still applies.
-              Describe the guard, not an outcome we do not control. */}
-          DeclutrMail protects a sender when you write to them at least three times and hear back,
-          star their email, or Gmail keeps marking it important — or you can protect one yourself.
-          Each row shows its reason. Unprotect removes it, and automatic protection won&apos;t
-          re-apply.
-        </p>
-      </div>
+          {/* Without a server total, a capped page cannot claim one — say
+              what is on screen instead (the Autopilot "latest N" posture). */}
+          {totalMatching !== undefined
+            ? `${totalMatching.toLocaleString('en-US')} ${totalMatching === 1 ? 'sender' : 'senders'}`
+            : hasNextPage
+              ? `Showing ${protectedSenders.length.toLocaleString('en-US')}`
+              : `${protectedSenders.length.toLocaleString('en-US')} ${
+                  protectedSenders.length === 1 ? 'sender' : 'senders'
+                }`}
+        </span>
+      </PageHeader>
+      {/* Describe the GUARD, never an outcome we do not control:
+          protection stops OUR bulk and automatic actions
+          (actions.service.ts), it is not a delivery guarantee, and a
+          single action the user takes still applies. Each row carries
+          its own reason, so the page does not enumerate them. */}
+      <p style={{ fontSize: text.sm, color: color.fgMuted, margin: 0 }}>
+        Bulk and automatic actions skip these senders; an action you take on one sender yourself
+        still applies.
+      </p>
 
-      <section
-        style={{
-          background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: radius.lg,
-          padding: '0',
-          overflow: 'hidden',
-        }}
-      >
-        <header
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'baseline',
-            flexWrap: 'wrap',
-            gap: space[2],
-            padding: `${space[4]}px ${space[5]}px`,
-            borderBottom: `1px solid ${color.lineSoft}`,
-          }}
-        >
-          <div>
-            <h2
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                letterSpacing: '-0.012em',
-                margin: 0,
-              }}
-            >
-              Protected
-            </h2>
-            <p
-              style={{
-                fontSize: 12.5,
-                color: color.fgMuted,
-                margin: '4px 0 0',
-              }}
-            >
-              {/* Name the ordering only when it actually happened, and
-                  scope it honestly when it did. Two ways this sentence
-                  could lie: the sort key is computed per row so it can
-                  only order what has been LOADED (claiming a
-                  whole-mailbox ranking with page 2 unfetched), and the
-                  field is optional on the wire — against an API that
-                  does not send it the sort silently collapses to name
-                  order while this line still claims otherwise. */}
-              Bulk and automatic actions skip these senders; an action you take on one sender
-              yourself still applies.{' '}
-              {!ordered
-                ? ''
-                : hasNextPage
-                  ? `Most shielded unread email first, across the ${protectedSenders.length.toLocaleString('en-US')} loaded so far.`
-                  : 'Most shielded unread email first.'}
-            </p>
-          </div>
-          <span
-            style={{
-              fontFamily: font.mono,
-              fontSize: 11,
-              color: color.fgMuted,
-            }}
-          >
-            {/* Without a server total, a capped page cannot claim one — say
-                what is on screen instead (the Autopilot "latest N" posture). */}
-            {totalMatching !== undefined
-              ? `${totalMatching.toLocaleString('en-US')} ${totalMatching === 1 ? 'sender' : 'senders'}`
-              : hasNextPage
-                ? `Showing ${protectedSenders.length.toLocaleString('en-US')}`
-                : `${protectedSenders.length.toLocaleString('en-US')} ${
-                    protectedSenders.length === 1 ? 'sender' : 'senders'
-                  }`}
-          </span>
-        </header>
-
+      <section style={{ borderTop: `1px solid ${color.line}` }}>
         {protectedSenders.length === 0 ? (
-          <div style={{ padding: `${space[5]}px ${space[5]}px` }}>
+          <div style={{ padding: `${space[5]}px 0` }}>
             <EmptyState
               title="No protected senders yet"
               /* Must not say protection is something you set by hand:
@@ -233,7 +142,7 @@ export function SendersPoliciesScreen() {
                  same claim the page's intro paragraph was already fixed
                  for. Naming the automatic triggers also stops an empty
                  result reading as a broken scan. */
-              description="DeclutrMail protects a sender on its own once you've written to them at least three times and heard back, starred one of their messages, or Gmail keeps marking them important. You can also protect one from its detail page."
+              description="Senders you've written to at least three times, starred, or that Gmail keeps marking important are protected automatically."
               action={
                 <Link href="/senders" style={{ textDecoration: 'none' }}>
                   <Button size="sm">Browse senders</Button>
@@ -243,8 +152,8 @@ export function SendersPoliciesScreen() {
           </div>
         ) : (
           <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {protectedSenders.map((s, i) => (
-              <PolicyRow key={s.id} sender={s} isLast={i === protectedSenders.length - 1} />
+            {protectedSenders.map((s) => (
+              <PolicyRow key={s.id} sender={s} />
             ))}
           </ul>
         )}
@@ -255,8 +164,7 @@ export function SendersPoliciesScreen() {
               justifyContent: 'center',
               alignItems: 'center',
               gap: space[3],
-              padding: `${space[3]}px ${space[5]}px`,
-              borderTop: `1px solid ${color.lineSoft}`,
+              padding: `${space[3]}px 0`,
             }}
           >
             {/* Next-page-scoped failure signal (`isFetchNextPageError`),
@@ -265,7 +173,7 @@ export function SendersPoliciesScreen() {
                 retained, which is precisely why the whole-screen error
                 above no longer owns this case. */}
             {isFetchNextPageError && (
-              <span role="status" style={{ fontSize: 12.5, color: color.amber }}>
+              <span role="status" style={{ fontSize: text.sm, color: color.amber }}>
                 Couldn&rsquo;t load more.
               </span>
             )}
@@ -314,7 +222,7 @@ function compareKnownDesc(left: number | null | undefined, right: number | null 
   return right - left;
 }
 
-function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
+function PolicyRow({ sender }: { sender: Sender }) {
   const setPolicy = useSetSenderPolicy();
   const reason = normalizeProtectionReason(sender.protectionFlags.protectionReason);
   const evidenceStale = sender.protectionFlags.protectionEvidenceCurrent === false;
@@ -328,8 +236,8 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
         gridTemplateColumns: isPhone ? '40px minmax(0, 1fr)' : '40px minmax(0, 1fr) auto',
         gap: space[3],
         alignItems: 'center',
-        padding: `${space[3]}px ${space[5]}px`,
-        borderBottom: isLast ? 'none' : `1px solid ${color.lineSoft}`,
+        padding: `${space[3]}px 0`,
+        borderBottom: `1px solid ${color.line}`,
       }}
     >
       <Avatar name={sender.name} domain={sender.domain} size={32} />
@@ -337,8 +245,7 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
         <div
           style={{
             fontWeight: 500,
-            fontSize: 14,
-            letterSpacing: '-0.005em',
+            fontSize: text.md,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -353,7 +260,7 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
             data was on the wire the whole time; this was a display gap.
             Wording comes from the one shared source, so it reads the
             same here, in Triage, in the Screener and on Sender Detail. */}
-        <div style={{ fontSize: 12, color: color.fgSoft, marginTop: 2 }}>
+        <div style={{ fontSize: text.sm, color: color.fgSoft, marginTop: 2 }}>
           {/* A `replied` shield whose evidence no longer holds says so
               instead of repeating the old claim. ONLY an explicit
               `false` triggers this: `undefined` (older API) and `null`
@@ -375,8 +282,7 @@ function PolicyRow({ sender, isLast }: { sender: Sender; isLast: boolean }) {
         </div>
         <div
           style={{
-            fontFamily: font.mono,
-            fontSize: 11,
+            fontSize: text.sm,
             color: color.fgMuted,
             marginTop: 2,
           }}
@@ -456,7 +362,7 @@ function LoadingState() {
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
-        maxWidth: 1024,
+        maxWidth: 880,
         margin: '0 auto',
         fontFamily: font.sans,
       }}

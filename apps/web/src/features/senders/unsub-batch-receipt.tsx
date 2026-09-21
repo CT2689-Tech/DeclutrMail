@@ -9,7 +9,7 @@ import {
 } from '@declutrmail/shared/actions';
 import type { BulkSkipReason } from '@/lib/api/actions';
 
-const { color, font } = tokens;
+const { color, text } = tokens;
 
 export interface UnsubBatchReceiptData {
   /** Senders the batch actually sent a one-click request for. */
@@ -107,7 +107,7 @@ export function UnsubBatchReceipt({
       ? 'neutral'
       : 'positive';
   const frame = {
-    failed: { bg: color.redBg, border: color.redBorder, badge: color.red, glyph: '!' },
+    failed: { bg: color.dangerBg, border: color.dangerBorder, badge: color.danger, glyph: '!' },
     neutral: { bg: color.card, border: color.line, badge: color.fgMuted, glyph: '·' },
     positive: {
       bg: color.emeraldBg,
@@ -148,7 +148,7 @@ export function UnsubBatchReceipt({
         {frame.glyph}
       </span>
 
-      <span style={{ flex: 1, fontSize: 13, color: color.fg, lineHeight: 1.45 }}>
+      <span style={{ flex: 1, fontSize: text.base, color: color.fg, lineHeight: 1.45 }}>
         <strong style={{ fontWeight: 600 }}>
           {inFlight ? 'Sending unsubscribe requests' : 'Unsubscribe requests sent'}
         </strong>{' '}
@@ -162,10 +162,8 @@ export function UnsubBatchReceipt({
           style={{
             display: 'block',
             marginTop: 3,
-            fontFamily: font.mono,
-            fontSize: 11,
+            fontSize: text.xs,
             color: color.fgMuted,
-            letterSpacing: '0.02em',
           }}
         >
           {inFlight
@@ -182,17 +180,15 @@ export function UnsubBatchReceipt({
             style={{
               display: 'block',
               marginTop: 2,
-              fontFamily: font.mono,
-              fontSize: 11,
+              fontSize: text.xs,
               color: color.fgMuted,
-              letterSpacing: '0.02em',
             }}
           >
             Not sent: {excluded.join(' · ')}
           </span>
         )}
         {!inFlight && !unreported && (
-          <span style={{ display: 'block', color: color.fgMuted, fontSize: 11.5, marginTop: 3 }}>
+          <span style={{ display: 'block', color: color.fgMuted, fontSize: text.xs, marginTop: 3 }}>
             {UNSUBSCRIBE_ACCEPTED_CAVEAT}
           </span>
         )}
@@ -206,7 +202,7 @@ export function UnsubBatchReceipt({
           border: 'none',
           color: color.fgMuted,
           cursor: 'pointer',
-          fontSize: 16,
+          fontSize: text.lg,
           lineHeight: 1,
           padding: '0 4px',
         }}

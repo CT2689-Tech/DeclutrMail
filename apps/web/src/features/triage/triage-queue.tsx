@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import type { ReactNode } from 'react';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { PreviewCount } from './action-preview';
 import {
@@ -13,10 +14,46 @@ import { planQueueItems, type DomainBatch } from './domain-batch';
 import { DomainBatchCard, type BatchVerb } from './domain-batch-card';
 import { TriageRow } from './triage-row';
 import { UnprotectButton } from './unprotect-button';
-import { useTriageStore } from './store';
+import type { InlinePreview } from './inline-preview';
+import { useTriageStore, type PendingAction } from './store';
 import type { ActionVerb } from './types';
 
-const { color, font } = tokens;
+const { color } = tokens;
+
+/**
+ * The D34 inline preview for `rowId`, or null. Only the row whose
+ * pending action is mounted inline gets one. Shared by the list and the
+ * focus card so both state the same preview.
+ *
+ * Built here rather than inside `TriageRow`: the public inbox simulator
+ * imports that module, so an import of the detail block there lands in
+ * its route chunk.
+ */
+export function inlinePreviewFor(
+  rowId: string,
+  pendingAction: PendingAction | null,
+  preview: {
+    inboxCount: PreviewCount;
+    detail: ActionPreviewDetail | undefined;
+    quotaRemaining: number | null | undefined;
+  },
+): InlinePreview | null {
+  if (pendingAction == null || pendingAction.rowId !== rowId || pendingAction.surface !== 'inline')
+    return null;
+  return {
+    verb: pendingAction.verb,
+    // The remembered-inline path has no backlog toggle, so it must
+    // retain the safe no-secondary default.
+    archiveHistoric: false,
+    inboxCount: preview.inboxCount,
+    wakeAt: pendingAction.wakeAt,
+    quotaRemaining: preview.quotaRemaining,
+    detailSlot:
+      preview.detail !== undefined && actionMovesMail(pendingAction.verb, false) ? (
+        <ActionPreviewDetailBlock detail={preview.detail} />
+      ) : undefined,
+  };
+}
 
 /** Stable empty default for `busyRowIds` — a fresh `new Set()` per render would defeat memoized rows. */
 const NO_BUSY_ROWS: ReadonlySet<string> = new Set();
@@ -33,7 +70,7 @@ const NO_BUSY_ROWS: ReadonlySet<string> = new Set();
  * by one" dismisses it back to normal rows. No multi-select, no
  * checkboxes.
  *
- * The queue itself is just a vertical list with the collapse/expand
+ * The queue itself is just a hairline-separated list with the collapse/expand
  * accordion behaviour from the shared `useExpandableRow` semantics
  * (D198 — pure reducer tested in `packages/shared`) hoisted into the
  * feature store so the action sheet can read which row is focused.
@@ -53,6 +90,7 @@ export function TriageQueue({
   offerUnprotect = false,
   onBatchVerb,
   batchBusyDomain = null,
+  leading,
 }: {
   rows: readonly TriageDecisionRow[];
   /** Dispatched when a row's toolbar fires K/A/U/L/D. */
@@ -79,11 +117,10 @@ export function TriageQueue({
   onBatchVerb?: (verb: BatchVerb, batch: DomainBatch) => void;
   /** Domain whose batch decision is confirming server-side. */
   batchBusyDomain?: string | null;
+  /** Rendered as the list's first item — the same-verdict batch offer. */
+  leading?: ReactNode;
 }) {
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
-  // The verb keys are bound by the expanded row's action toolbar, so they do
-  // nothing until a row is open. The legend has to know that.
-  const hasOpenRow = expandedRowId !== null;
   const toggleExpandedRow = useTriageStore((s) => s.toggleExpandedRow);
   const pendingAction = useTriageStore((s) => s.pendingAction);
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
@@ -92,133 +129,69 @@ export function TriageQueue({
   const items = allowBatching
     ? planQueueItems(rows, dismissedBatchDomains)
     : rows.map((row) => ({ kind: 'row' as const, row }));
-  // D26 — the first SINGLE row is the hero card (inline reasoning).
-  // When a batch card leads the queue, there is no hero: the batch is
-  // a different decision shape and carries its own framing.
-  const heroRowId = items[0]?.kind === 'row' ? items[0].row.id : null;
-
   return (
-    <div>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          marginBottom: 10,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            fontWeight: 600,
-            color: color.fgMuted,
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {rows.length} decisions waiting
-        </span>
-        {/* The shortcut legend. It is only TRUE once a row is open: the
-            bindings live in the expanded row's action toolbar, so from first
-            paint this advertised five keys that did nothing. It now says
-            which state it belongs to instead of implying the keys are live. */}
-        <span
-          title={
-            hasOpenRow
-              ? 'Keep · Archive · Unsubscribe · Later · Delete — acts on the open row'
-              : 'Open a row to use these keys'
-          }
-          style={{
-            fontSize: 11.5,
-            color: color.fgMuted,
-            fontFamily: font.mono,
-          }}
-        >
-          {hasOpenRow ? 'K · A · U · L · D' : 'Open a row for K · A · U · L · D'}
-        </span>
-      </div>
-      <div
-        role="list"
-        aria-label="Triage queue"
-        style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-      >
-        {items.map((item) => {
-          if (item.kind === 'batch') {
-            const batch = item.batch;
-            return (
-              <div key={`batch-${batch.domain}`} role="listitem">
-                <DomainBatchCard
-                  batch={batch}
-                  busy={batchBusyDomain === batch.domain}
-                  disabled={
-                    busyRowIds.size > 0 ||
-                    (batchBusyDomain != null && batchBusyDomain !== batch.domain)
-                  }
-                  onVerb={(verb) => onBatchVerb?.(verb, batch)}
-                  onDismiss={() => dismissBatchDomain(batch.domain)}
-                />
-              </div>
-            );
-          }
-          const row = item.row;
-          const expanded = expandedRowId === row.id;
-          // Inline preview only renders for the row whose pending
-          // action is mounted inline (D34 remember-preference path).
-          const inlinePreview =
-            pendingAction != null &&
-            pendingAction.rowId === row.id &&
-            pendingAction.surface === 'inline'
-              ? {
-                  verb: pendingAction.verb,
-                  // The remembered-inline path has no backlog toggle, so
-                  // it must retain the safe no-secondary default.
-                  archiveHistoric: false,
-                  inboxCount: previewInboxCount,
-                  wakeAt: pendingAction.wakeAt,
-                  quotaRemaining: previewQuotaRemaining,
-                  // Built here rather than inside `TriageRow`: the public
-                  // inbox simulator imports that module, so an import of
-                  // the detail block there lands in its route chunk.
-                  detailSlot:
-                    previewDetail !== undefined && actionMovesMail(pendingAction.verb, false) ? (
-                      <ActionPreviewDetailBlock detail={previewDetail} />
-                    ) : undefined,
-                }
-              : null;
+    <div
+      role="list"
+      aria-label="Triage queue"
+      style={{ display: 'flex', flexDirection: 'column', borderTop: `1px solid ${color.line}` }}
+    >
+      {leading != null && <div role="listitem">{leading}</div>}
+      {items.map((item) => {
+        if (item.kind === 'batch') {
+          const batch = item.batch;
           return (
-            <div key={row.id} role="listitem">
-              <TriageRow
-                row={row}
-                expanded={expanded}
-                busy={busyRowIds.has(row.id)}
-                hero={heroRowId === row.id}
-                offerUnprotect={offerUnprotect}
-                // Constructed here (not inside TriageRow) so the row
-                // component never imports UnprotectButton — and with it
-                // the sender-policy mutation and the API client it calls
-                // — directly. `surface` names which control this ends up
-                // rendering as: the D245 review's row strip when
-                // `offerUnprotect`, else the inline preview's notice.
-                unprotectSlot={
-                  row.protectionReason == null ? undefined : (
-                    <UnprotectButton
-                      row={row}
-                      surface={offerUnprotect ? 'onboarding-review' : 'triage-preview'}
-                    />
-                  )
+            <div key={`batch-${batch.domain}`} role="listitem">
+              <DomainBatchCard
+                batch={batch}
+                busy={batchBusyDomain === batch.domain}
+                disabled={
+                  busyRowIds.size > 0 ||
+                  (batchBusyDomain != null && batchBusyDomain !== batch.domain)
                 }
-                onToggleExpand={() => toggleExpandedRow(row.id)}
-                onAction={(verb) => onAction(verb, row)}
-                inlinePreview={inlinePreview}
-                inlinePreviewAccountContext={
-                  inlinePreview == null ? undefined : <MailboxActionContext />
-                }
+                onVerb={(verb) => onBatchVerb?.(verb, batch)}
+                onDismiss={() => dismissBatchDomain(batch.domain)}
               />
             </div>
           );
-        })}
-      </div>
+        }
+        const row = item.row;
+        const expanded = expandedRowId === row.id;
+        const inlinePreview = inlinePreviewFor(row.id, pendingAction, {
+          inboxCount: previewInboxCount,
+          detail: previewDetail,
+          quotaRemaining: previewQuotaRemaining,
+        });
+        return (
+          <div key={row.id} role="listitem">
+            <TriageRow
+              row={row}
+              expanded={expanded}
+              busy={busyRowIds.has(row.id)}
+              offerUnprotect={offerUnprotect}
+              // Constructed here (not inside TriageRow) so the row
+              // component never imports UnprotectButton — and with it
+              // the sender-policy mutation and the API client it calls
+              // — directly. `surface` names which control this ends up
+              // rendering as: the D245 review's row strip when
+              // `offerUnprotect`, else the inline preview's notice.
+              unprotectSlot={
+                row.protectionReason == null ? undefined : (
+                  <UnprotectButton
+                    row={row}
+                    surface={offerUnprotect ? 'onboarding-review' : 'triage-preview'}
+                  />
+                )
+              }
+              onToggleExpand={() => toggleExpandedRow(row.id)}
+              onAction={(verb) => onAction(verb, row)}
+              inlinePreview={inlinePreview}
+              inlinePreviewAccountContext={
+                inlinePreview == null ? undefined : <MailboxActionContext />
+              }
+            />
+          </div>
+        );
+      })}
     </div>
   );
 }

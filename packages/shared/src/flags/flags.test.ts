@@ -16,7 +16,7 @@ describe('flags manifest', () => {
 describe('flagEnvKey', () => {
   it('maps camelCase to DM_FLAG_SNAKE', () => {
     expect(flagEnvKey('darkMode')).toBe('DM_FLAG_DARK_MODE');
-    expect(flagEnvKey('senderPeek')).toBe('DM_FLAG_SENDER_PEEK');
+    expect(flagEnvKey('infiniteScroll')).toBe('DM_FLAG_INFINITE_SCROLL');
     expect(flagEnvKey('gmailDeeplinkSearchFallback')).toBe(
       'DM_FLAG_GMAIL_DEEPLINK_SEARCH_FALLBACK',
     );
@@ -47,7 +47,7 @@ describe('resolveAllFlags', () => {
   it('resolves the whole manifest with env overrides applied', () => {
     const flags = resolveAllFlags({ DM_FLAG_DARK_MODE: 'off' });
     expect(flags.darkMode).toBe(false);
-    expect(flags.senderPeek).toBe(FLAG_MANIFEST.senderPeek.default);
+    expect(flags.infiniteScroll).toBe(FLAG_MANIFEST.infiniteScroll.default);
     expect(Object.keys(flags).sort()).toEqual([...FEATURE_FLAGS].sort());
   });
 });

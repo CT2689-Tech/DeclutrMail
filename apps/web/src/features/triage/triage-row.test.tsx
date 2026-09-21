@@ -149,7 +149,7 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
     expect(screen.getByRole('toolbar')).toBeInTheDocument();
   });
 
-  it('shows the same badge at 375px as on desktop — the narrow layout reflows, it does not drop information', () => {
+  it('shows the same verdict at 375px as on desktop, and keeps the band for the expanded body', () => {
     setViewportWidth(375);
     // LinkedIn, not Shipping (D133): Shipping's real cascade signals now
     // land on Later, which `confidenceBand` always maps to `null` (an
@@ -159,10 +159,17 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
     // exercises the same "verdict pill carries a band at every width"
     // invariant this test is actually about.
     const row = rowById('t-linkedin'); // confidence 0.89 → recommended
-    renderRow(row);
-    // The verdict pill carries the recommendation at every width:
-    // "Unsubscribe · strong".
-    expect(header(row).textContent).toContain('strong');
+    const { unmount } = renderRow(row);
+    // At rest the pill names the verdict at every width; the band is
+    // detail, so it is NOT on the row…
+    expect(header(row).textContent).toContain('Unsubscribe');
+    expect(header(row).textContent).not.toContain('strong');
+    unmount();
+    // …and lives in the expanded body: "Suggested: Unsubscribe · strong".
+    renderRow(row, { expanded: true });
+    expect(document.querySelector('[data-dm-verdict-band]')?.textContent).toBe(
+      'Suggested: Unsubscribe · strong',
+    );
   });
 
   // The pill used to print `Math.round(confidence * 100)`. The cascade
@@ -177,13 +184,15 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
     expect(header(row).textContent).not.toMatch(/\d+%/);
   });
 
-  // `strong` is DEFINED as "recommended", so the one badge the row
-  // renders always agrees with the engine's own gate.
+  // `strong` is DEFINED as "recommended", so the one band the expanded
+  // body renders always agrees with the engine's own gate.
   it('shows the band `strong` exactly when the engine recommends the verdict', () => {
     setViewportWidth(1280);
     for (const row of TRIAGE_QUEUE.filter((r) => r.protectionReason === null)) {
-      const { unmount } = renderRow(row);
-      const isStrong = header(row).textContent?.includes('· strong') ?? false;
+      const { unmount } = renderRow(row, { expanded: true });
+      const isStrong =
+        document.querySelector('[data-dm-verdict-band]')?.textContent?.includes('· strong') ??
+        false;
       const isRecommended = recommendedVerb(row.verdict, row.confidence) !== null;
       expect(isStrong).toBe(isRecommended);
       unmount();
@@ -353,7 +362,7 @@ describe('TriageRow — the volume tile discloses its 90-day derivation (QA-arch
     const row = rowById('t-oldnavy'); // monthlyVolume: 48
     renderRow(row, { expanded: true });
 
-    expect(screen.getByText('per month 90d avg')).toBeInTheDocument();
+    expect(screen.getByText('Per month, 90d avg')).toBeInTheDocument();
     expect(screen.getByText('48')).toBeInTheDocument();
   });
 });
@@ -363,7 +372,7 @@ describe('TriageRow — the stat grid reflows instead of orphaning a window word
     const row = rowById('t-oldnavy');
     renderRow(row, { expanded: true });
 
-    const grid = screen.getByText('marked read 90d').parentElement!.parentElement!;
+    const grid = screen.getByText('Marked read, 90d').parentElement!.parentElement!;
     expect(grid.style.gridTemplateColumns).toContain('auto-fit');
   });
 
@@ -371,7 +380,7 @@ describe('TriageRow — the stat grid reflows instead of orphaning a window word
     const row = rowById('t-oldnavy');
     renderRow(row, { expanded: true });
 
-    expect(screen.getByText('received all time')).toBeInTheDocument();
+    expect(screen.getByText('Received all time')).toBeInTheDocument();
   });
 });
 
@@ -386,7 +395,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBeNull();
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('marked read 90d').parentElement!;
+    const stats = screen.getByText('Marked read, 90d').parentElement!;
     expect(stats.textContent).toContain('—');
     expect(stats.textContent).not.toContain('0%');
   });
@@ -400,7 +409,7 @@ describe('TriageRow — an unknown read rate is never rendered as 0%', () => {
     expect(row.readRate).toBe(0);
     renderRow(row, { expanded: true });
 
-    const stats = screen.getByText('marked read 90d').parentElement!;
+    const stats = screen.getByText('Marked read, 90d').parentElement!;
     expect(stats.textContent).toContain('0%');
   });
 

@@ -9,7 +9,7 @@ import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 
 import type { NoiseArchivePreview, NoiseTarget } from './api/use-noise-archive';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * The D226-mandatory preview for the Brief's Noise bulk archive (D65).
@@ -115,14 +115,21 @@ export function NoiseArchiveSheet({
           <Eyebrow tone="primary">Preview · before anything changes</Eyebrow>
           <h2
             id="dm-brief-noise-sheet-title"
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 600,
+              letterSpacing: '-0.014em',
+              margin: '6px 0 0',
+            }}
           >
             Archive email from {n} sender{n === 1 ? '' : 's'}
           </h2>
           {/* Zero matches: the footer states why confirm is disabled; a lead
               describing the move is noise about an action that cannot run. */}
           {!nothingToActOn && (
-            <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}>
+            <p
+              style={{ fontSize: text.md, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.5 }}
+            >
               This archives everything from these senders that is in your inbox now — not only
               yesterday&rsquo;s mail. Nothing is deleted.
             </p>
@@ -147,20 +154,20 @@ export function NoiseArchiveSheet({
             }}
           >
             {preview === 'loading' ? (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>Counting the inbox…</span>
+              <span style={{ fontSize: text.sm, color: color.fgSoft }}>Counting the inbox…</span>
             ) : scopeConflict ? (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+              <span style={{ fontSize: text.sm, color: color.fgSoft }}>
                 Your active mailbox changed while this was open, so these counts no longer apply.
                 Close this and pick a mailbox to start again. Nothing was archived.
               </span>
             ) : preview === 'unavailable' ? (
-              <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+              <span style={{ fontSize: text.sm, color: color.fgSoft }}>
                 Couldn&rsquo;t load the preview. Nothing can move until it loads.
               </span>
             ) : (
               <>
                 <NumericDisplay variant="stat" value={total!.toLocaleString('en-US')} />
-                <span style={{ fontSize: 12.5, color: color.fgSoft }}>
+                <span style={{ fontSize: text.sm, color: color.fgSoft }}>
                   email{total === 1 ? '' : 's'} in Inbox now.
                   {nothingToActOn ? '' : ' Rechecked when it runs.'}
                 </span>
@@ -193,7 +200,7 @@ export function NoiseArchiveSheet({
                     alignItems: 'baseline',
                     justifyContent: 'space-between',
                     gap: 12,
-                    fontSize: 12,
+                    fontSize: text.sm,
                     color: color.fgSoft,
                     padding: '4px 2px',
                     borderBottom: `1px solid ${color.lineSoft}`,
@@ -210,9 +217,7 @@ export function NoiseArchiveSheet({
                     {target.senderName}
                   </span>
                   {skipped ? (
-                    <span style={{ fontFamily: font.mono, flexShrink: 0 }}>
-                      protected — skipped
-                    </span>
+                    <span style={{ flexShrink: 0 }}>protected — skipped</span>
                   ) : (
                     // `NumericDisplay` already renders an em-dash for an
                     // absent value and carries the tabular figures.
@@ -227,7 +232,7 @@ export function NoiseArchiveSheet({
               );
             })}
             {ready && preview.protectedSenderIds.size > 0 && (
-              <span style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 2 }}>
+              <span style={{ fontSize: text.xs, color: color.fgMuted, marginTop: 2 }}>
                 {preview.protectedSenderIds.size} sender
                 {preview.protectedSenderIds.size === 1 ? '' : 's'} became Protected since this Brief
                 was written and {preview.protectedSenderIds.size === 1 ? 'is' : 'are'} excluded from
@@ -247,7 +252,7 @@ export function NoiseArchiveSheet({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
             {confirmDisabled
               ? scopeConflict
                 ? 'mailbox changed — close this and start again.'

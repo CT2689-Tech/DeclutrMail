@@ -18,9 +18,8 @@ export default function QuietError({
       error={error}
       reset={reset}
       boundary="quiet"
-      eyebrow="Quiet hit a snag"
-      headline="We couldn't load your quiet senders."
-      body="Quiet-mode settings are unchanged. Try again, or head back to Senders."
+      headline="We couldn't load quiet hours."
+      body="Your quiet hours are unchanged. Try again, or head back to Senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

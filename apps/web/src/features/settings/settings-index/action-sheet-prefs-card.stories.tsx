@@ -35,7 +35,7 @@ const meta: StoryMeta<typeof ActionSheetPrefsCard> = {
     docs: {
       description: {
         component:
-          'Settings → Action preferences (D34). Per-verb "skip the action sheet" toggles for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the card copy states this explicitly. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.',
+          "Settings → Actions (D34). Per-verb preview placement for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the switch's state word (Row / Window) says where it lands, never whether. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.",
       },
     },
   },

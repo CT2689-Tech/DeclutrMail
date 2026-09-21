@@ -204,7 +204,7 @@ describe('QuietRoute', () => {
     renderRoute();
 
     expect(await screen.findByRole('status')).toHaveTextContent(
-      'Quiet is off. 2 Autopilot actions are waiting to run; quiet is not delaying them.',
+      '2 Autopilot actions waiting to run — not held by quiet hours',
     );
   });
 });

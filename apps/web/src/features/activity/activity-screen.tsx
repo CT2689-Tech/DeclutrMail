@@ -32,12 +32,10 @@ import {
 } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
-import { ContextualHelp } from '@/features/help/contextual-help';
 import { InlineFeedback } from '@/features/feedback/inline-feedback';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { getActionFailureCopy, technicalErrorDetails } from '@/lib/action-error-copy';
 import type {
-  ActivityActionWire,
   ActivityExecutionStateWire,
   ActivityFilters,
   ActivityRowWire,
@@ -56,7 +54,6 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import {
   useActionRecoveryPreview,
   useActivity,
-  useActivityWeeklyReview,
   useConfirmActionRecovery,
   useCreateActionRecoveryPreview,
   useRevertActivity,
@@ -64,38 +61,39 @@ import {
 import { useActivitySupportBundle } from './api/use-activity-support-bundle';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
-import { WeeklyReviewCard } from './weekly-review-card';
 import {
   readActivityDateFilters,
   readActivityFilters,
   readActivityOutcomeFilters,
 } from './activity-route-filters';
 
-const { color, font, shadow } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
 
 /**
  * D245: same derive-or-hedge shape as every other undo-window site.
- * Pulled out of the JSX below so it is a plain importable string the
- * regression guard can read without rendering this screen.
+ * A disclosure, not help text — what Undo cannot take back. Pulled out of
+ * the JSX below so it is a plain importable string the regression guard
+ * can read without rendering this screen.
  */
 export const activityUndoRecoveryHelp =
   (UNIFORM_UNDO_WINDOW_DAYS === null
-    ? "Activity Undo uses your DeclutrMail plan's window for Archive, Later, and Delete."
-    : `Activity Undo uses a ${UNIFORM_UNDO_WINDOW_DAYS}-day window for Archive, Later, and Delete.`) +
-  " Deleted mail also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
+    ? "Archive, Later, and Delete can be undone within your plan's Undo window"
+    : `Archive, Later, and Delete have a ${UNIFORM_UNDO_WINDOW_DAYS}-day Undo window`) +
+  "; deleted email also sits in Gmail Trash for up to 30 days. A sent unsubscribe can't be recalled.";
 
 /**
  * Activity screen (D55-D60 + B-track power-options).
  *
  * Layout (top → bottom):
- *   1. ScreenIntro
- *   2. Stats — D59 window stats + B16 all-time totals (separate line)
- *   3. Source chips (D56)
- *   4. Verb chips (B8 — Archived / Deleted / Unsub / Later / Kept)
- *   5. Window picker (D55) + Custom date range (B10)
- *   6. Sender search (B9) + Group-by-sender toggle (B11) + support bundle export
- *   7. Bulk action bar (B7 — only visible when ≥1 row selected)
- *   8. Row list — flat (D57) OR sender-grouped (B11)
+ *   1. Header — h1 + sender search (B9) + Filter + support bundle export
+ *   2. Active filters — removable chips + Clear (only when any is set)
+ *   3. Summary — D59 window counts on one line + the failed-actions link
+ *   4. Bulk action bar (B7 — only visible when ≥1 row selected)
+ *   5. Timeline — rows under sticky day headers (D57) OR sender-grouped (B11)
+ *
+ * The Filter popover (bottom sheet below `sm`, D60) holds source (D56),
+ * action (B8), outcome (D246), window (D55), date range (B10) and
+ * group-by-sender (B11).
  *
  * D58 undo affordance is fully wired (B7 + B13):
  *   - per-row Undo button POSTs `/api/undo/:token` and the row's
@@ -141,24 +139,6 @@ export function ActivityScreen() {
     hasInFlightAction: inFlightActionPolls > 0,
     enabled: !dateFilters.isInvalid && !outcomeFilters.isInvalid,
   });
-  const weeklyQuery = useActivityWeeklyReview(filters.senderQuery ?? '');
-  const weeklyTrackedKey = useRef<string | null>(null);
-
-  useEffect(() => {
-    const review = weeklyQuery.data;
-    if (!review) return;
-    const trackingKey = `${activeMailboxId ?? 'unknown'}:${review.from}:${review.to}`;
-    if (weeklyTrackedKey.current === trackingKey) return;
-    weeklyTrackedKey.current = trackingKey;
-    void track('weekly_review_viewed', {
-      completed: review.completed,
-      skipped: review.skipped,
-      failed: review.failed,
-      recovered: review.recovered,
-      protected: review.protected,
-    });
-  }, [activeMailboxId, weeklyQuery.data]);
-
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
   // `identify` ties the event to the user regardless.
@@ -218,6 +198,24 @@ export function ActivityScreen() {
     },
     [writeUrl],
   );
+  const setOutcomes = useCallback(
+    (next: readonly ActivityReviewOutcomeWire[]) => {
+      writeUrl({ outcome: next.length === 0 ? null : next.join(',') });
+    },
+    [writeUrl],
+  );
+  // Sender search and grouping stay: the search box shows its own state,
+  // and grouping is a view, not a filter.
+  const clearFilters = useCallback(() => {
+    writeUrl({
+      source: null,
+      verb: null,
+      outcome: null,
+      window: null,
+      date_from: null,
+      date_to: null,
+    });
+  }, [writeUrl]);
   // ── Multi-select state (local, NOT URL-persisted) ──────────────────
   // Selection lives in component state because:
   //   - selections rarely outlive a tab (close = drop)
@@ -311,7 +309,6 @@ export function ActivityScreen() {
   const rows = pages.flatMap((page) => page.data);
   const meta = pages[0]?.meta;
   const stats = meta?.stats;
-  const allTimeStats = meta?.allTimeStats;
 
   // `keepPreviousData` keeps the PRIOR filter's rows on screen while the
   // next filter loads. Those rows don't match the active URL filter, so
@@ -321,74 +318,57 @@ export function ActivityScreen() {
   // interaction guard the full-screen <LoadingState/> used to provide.
   const showingStaleRows = query.isPlaceholderData;
 
+  const filterProps: FilterFieldsProps = {
+    source: filters.source ?? 'all',
+    onSource: setSource,
+    verbs: filters.verbs ?? [],
+    onVerbs: setVerbs,
+    outcomes: filters.outcomes ?? [],
+    onOutcomes: setOutcomes,
+    window: filters.window ?? '30d',
+    dateFrom: filters.dateFrom ?? null,
+    dateTo: filters.dateTo ?? null,
+    onWindow: setWindow,
+    onRange: setDateRange,
+    groupMode,
+    onGroupMode: setGroupMode,
+  };
+
   return (
-    <div
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-        maxWidth: 1180,
-        fontFamily: font.sans,
-      }}
-    >
-      <ScreenIntro
-        id="activity"
-        title="Activity"
-        body="A record of actions by you, Autopilot, and your rules."
-      />
+    <div style={screenColumnStyle}>
+      <ScreenIntro id="activity" title="Activity" body={activityUndoRecoveryHelp} />
 
-      <ContextualHelp question="Which Undo or recovery option applies?">
-        {activityUndoRecoveryHelp}
-      </ContextualHelp>
-
-      <WeeklyReviewCard
-        review={weeklyQuery.data ?? null}
-        loading={weeklyQuery.isLoading}
-        error={weeklyQuery.isError}
-        onRetry={() => void weeklyQuery.refetch()}
-        activeOutcome={filters.outcomes?.[0] ?? null}
-        clearHref={clearOutcomeHref(filters, weeklyQuery.data ?? null)}
-        senderQuery={filters.senderQuery ?? ''}
-      />
-
-      {!invalidActiveFilters && (
-        <MetricsHeader
-          windowLabel={windowToLabel(
-            filters.window ?? '30d',
-            filters.dateFrom ?? null,
-            filters.dateTo ?? null,
-          )}
-          stats={stats ?? null}
-          allTimeStats={allTimeStats ?? null}
-          isWindowAllTime={
-            (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
-          }
-          failedHref={failedOutcomeHref(filters)}
-          isMobile={isMobile}
+      <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+        <h1
+          style={{
+            margin: 0,
+            marginRight: 'auto',
+            fontSize: text['2xl'],
+            fontWeight: 600,
+            letterSpacing: '-0.01em',
+            color: color.fg,
+          }}
+        >
+          Activity
+        </h1>
+        <div style={isMobile ? { order: 3, flexBasis: '100%' } : undefined}>
+          <SenderSearchInput
+            value={filters.senderQuery ?? ''}
+            onChange={setSenderQuery}
+            fullWidth={isMobile}
+          />
+        </div>
+        <FilterButton {...filterProps} isMobile={isMobile} />
+        <ExportSupportBundleButton
+          filters={filters}
+          mailboxEmail={activeMailboxEmail}
+          mailboxId={activeMailboxId}
+          disabled={invalidActiveFilters}
+          touch={isMobile}
         />
-      )}
+      </header>
 
-      <FilterToolbar
-        source={filters.source ?? 'all'}
-        onSource={setSource}
-        verbs={filters.verbs ?? []}
-        onVerbs={setVerbs}
-        window={filters.window ?? '30d'}
-        dateFrom={filters.dateFrom ?? null}
-        dateTo={filters.dateTo ?? null}
-        onWindow={setWindow}
-        onRange={setDateRange}
-        senderQuery={filters.senderQuery ?? ''}
-        onSenderQuery={setSenderQuery}
-        groupMode={groupMode}
-        onGroupMode={setGroupMode}
-        filters={filters}
-        activeMailboxEmail={activeMailboxEmail}
-        activeMailboxId={activeMailboxId}
-        exportDisabled={invalidActiveFilters}
-        isMobile={isMobile}
-      />
+      <ActiveFilterChips {...filterProps} onClear={clearFilters} />
 
       {invalidActiveFilters ? (
         <ActivityErrorState
@@ -400,6 +380,18 @@ export function ActivityScreen() {
         />
       ) : (
         <>
+          <SummaryRow
+            windowLabel={windowToLabel(
+              filters.window ?? '30d',
+              filters.dateFrom ?? null,
+              filters.dateTo ?? null,
+            )}
+            stats={stats ?? null}
+            verbs={filters.verbs ?? []}
+            onVerbs={setVerbs}
+            failedHref={failedOutcomeHref(filters)}
+          />
+
           <BulkActionBar
             rows={rows}
             selectedIds={selectedIds}
@@ -419,7 +411,7 @@ export function ActivityScreen() {
             style={{
               opacity: showingStaleRows ? 0.55 : 1,
               pointerEvents: showingStaleRows ? 'none' : undefined,
-              transition: 'opacity 120ms ease',
+              transition: `opacity ${motion.fast} ${motion.ease}`,
             }}
           >
             {rows.length === 0 ? (
@@ -435,29 +427,15 @@ export function ActivityScreen() {
                 mailboxId={activeMailboxId}
               />
             ) : (
-              <ul
-                style={{
-                  listStyle: 'none',
-                  margin: 0,
-                  padding: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                }}
-              >
-                {rows.map((row) => (
-                  <ActivityRow
-                    key={row.id}
-                    row={row}
-                    isSelected={selectedIds.has(row.id)}
-                    onToggleSelect={() => toggleRow(row.id)}
-                    failedTokens={failedTokens}
-                    isMobile={isMobile}
-                    mailboxEmail={activeMailboxEmail}
-                    mailboxId={activeMailboxId}
-                  />
-                ))}
-              </ul>
+              <Timeline
+                rows={rows}
+                selectedIds={selectedIds}
+                onToggle={toggleRow}
+                failedTokens={failedTokens}
+                isMobile={isMobile}
+                mailboxEmail={activeMailboxEmail}
+                mailboxId={activeMailboxId}
+              />
             )}
           </div>
 
@@ -485,6 +463,146 @@ export function ActivityScreen() {
   );
 }
 
+/**
+ * The content column. Horizontal padding is a CSS clamp, not the
+ * `isMobile` flag: that flag is false until hydration, and the column is
+ * server-rendered.
+ */
+const screenColumnStyle: CSSProperties = {
+  boxSizing: 'border-box',
+  width: '100%',
+  maxWidth: 880,
+  margin: '0 auto',
+  padding: '20px clamp(16px, 4vw, 24px) 28px',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 16,
+  fontFamily: font.sans,
+};
+
+// ── Timeline (D57) ────────────────────────────────────────────────────
+
+interface RowListProps {
+  rows: readonly ActivityRowWire[];
+  selectedIds: Set<string>;
+  onToggle: (id: string) => void;
+  failedTokens?: Set<string> | undefined;
+  isMobile: boolean;
+  mailboxEmail: string | null;
+  mailboxId: string | null;
+}
+
+/**
+ * `YYYY-MM-DD` of an instant in the user's zone — the key rows share a day
+ * header under. The user zone, never the machine's: the timeline is
+ * server-rendered, and the two would disagree about where midnight falls.
+ */
+function dayKey(ms: number, timeZone: string): string {
+  if (!Number.isFinite(ms)) return '';
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(ms);
+}
+
+/**
+ * "Today" / "Yesterday" / "Mon, Sep 15". `nowMs` is null on the server and
+ * the first client render (`useNow`), where the absolute form is the only
+ * one both can agree on; the relative words arrive after mount. Exported
+ * for the exact-string unit test.
+ */
+export function activityDayLabel(iso: string, nowMs: number | null, timeZone: string): string {
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return 'Unknown date';
+  const key = dayKey(then, timeZone);
+  if (nowMs !== null) {
+    if (key === dayKey(nowMs, timeZone)) return 'Today';
+    if (key === dayKey(nowMs - 24 * 60 * 60 * 1000, timeZone)) return 'Yesterday';
+  }
+  const sameYear = nowMs === null || key.slice(0, 4) === dayKey(nowMs, timeZone).slice(0, 4);
+  return new Date(then).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone,
+  });
+}
+
+/** Consecutive rows that share a calendar day, in the order they arrived. */
+function groupByDay(
+  rows: readonly ActivityRowWire[],
+  timeZone: string,
+): Array<{ key: string; rows: ActivityRowWire[] }> {
+  const days: Array<{ key: string; rows: ActivityRowWire[] }> = [];
+  for (const row of rows) {
+    const key = dayKey(new Date(row.occurredAt).getTime(), timeZone);
+    const last = days[days.length - 1];
+    if (last && last.key === key) last.rows.push(row);
+    else days.push({ key, rows: [row] });
+  }
+  return days;
+}
+
+function Timeline({
+  rows,
+  selectedIds,
+  onToggle,
+  failedTokens,
+  isMobile,
+  mailboxEmail,
+  mailboxId,
+}: RowListProps) {
+  const timeZone = useUserTimeZone();
+  const now = useNow();
+  const days = useMemo(() => groupByDay(rows, timeZone), [rows, timeZone]);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {days.map((day, index) => {
+        const label = activityDayLabel(day.rows[0]!.occurredAt, now, timeZone);
+        return (
+          // A day can repeat across a page seam only if the server order
+          // breaks; the index keeps keys unique even then.
+          <section key={`${day.key}:${index}`} aria-label={label}>
+            <h2
+              style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 1,
+                margin: 0,
+                padding: '8px 0',
+                background: color.bg,
+                borderBottom: `1px solid ${color.line}`,
+                fontSize: text.sm,
+                fontWeight: 600,
+                color: color.fgMuted,
+              }}
+            >
+              {label}
+            </h2>
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {day.rows.map((row) => (
+                <ActivityRow
+                  key={row.id}
+                  row={row}
+                  isSelected={selectedIds.has(row.id)}
+                  onToggleSelect={() => onToggle(row.id)}
+                  failedTokens={failedTokens}
+                  isMobile={isMobile}
+                  mailboxEmail={mailboxEmail}
+                  mailboxId={mailboxId}
+                />
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Load more / end of list (U27 — D57 infinite scroll) ───────────────
 
 /**
@@ -494,7 +612,7 @@ export function ActivityScreen() {
  *                        fallback; "Loading more…" while in flight.
  *   - next-page failed → amber inline retry (partial-error — the
  *                        loaded rows stay on screen).
- *   - end of list      → quiet mono end-marker with the loaded count.
+ *   - end of list      → quiet end-marker with the loaded count.
  */
 function LoadMoreRegion({
   hasNextPage,
@@ -526,23 +644,29 @@ function LoadMoreRegion({
     return () => observer.disconnect();
   }, [hasNextPage, nextPageFailed, onLoadMore]);
 
-  const mono: CSSProperties = {
-    fontFamily: font.mono,
-    fontSize: 11,
-    letterSpacing: '0.08em',
-    color: color.fgMuted,
-  };
-
   if (!hasNextPage) {
     return (
       <div
         role="status"
-        style={{ ...mono, textAlign: 'center', padding: '10px 0 2px', textTransform: 'uppercase' }}
+        style={{
+          textAlign: 'center',
+          padding: '10px 0 2px',
+          fontSize: text.sm,
+          color: color.fgMuted,
+        }}
       >
         End of activity · {loadedCount} action{loadedCount === 1 ? '' : 's'} shown
       </div>
     );
   }
+
+  const pill: CSSProperties = {
+    fontFamily: font.sans,
+    fontSize: text.sm,
+    background: 'transparent',
+    borderRadius: radius.pill,
+    padding: '8px 16px',
+  };
 
   return (
     <div
@@ -554,14 +678,10 @@ function LoadMoreRegion({
           type="button"
           onClick={onLoadMore}
           style={{
-            fontFamily: font.sans,
-            fontSize: 12.5,
+            ...pill,
             fontWeight: 600,
             color: color.amber,
-            background: 'transparent',
             border: `1px solid ${color.amber}`,
-            borderRadius: 999,
-            padding: '6px 16px',
             cursor: 'pointer',
           }}
         >
@@ -573,14 +693,10 @@ function LoadMoreRegion({
           onClick={onLoadMore}
           disabled={isFetchingNextPage}
           style={{
-            fontFamily: font.sans,
-            fontSize: 12.5,
+            ...pill,
             fontWeight: 500,
             color: isFetchingNextPage ? color.fgMuted : color.fg,
-            background: 'transparent',
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 999,
-            padding: '6px 16px',
+            border: `1px solid ${color.line}`,
             cursor: isFetchingNextPage ? 'wait' : 'pointer',
           }}
         >
@@ -591,206 +707,130 @@ function LoadMoreRegion({
   );
 }
 
-// ── Metrics header (D59 + B16) ────────────────────────────────────────
+/** Standalone numerals — the one place the mono face is used on this
+ *  screen. A count inside a sentence stays in the sentence's face. */
+const numeralStyle: CSSProperties = {
+  fontFamily: font.mono,
+  fontVariantNumeric: 'tabular-nums',
+};
+
+// ── Summary (D59) ─────────────────────────────────────────────────────
+
+const SUMMARY_VERBS: ReadonlyArray<{
+  key: 'archived' | 'deleted' | 'unsubscribed' | 'later' | 'kept';
+  verb: ActivityVerbFilterWire;
+  label: string;
+}> = [
+  { key: 'archived', verb: 'archive', label: 'Archived' },
+  { key: 'deleted', verb: 'delete', label: 'Deleted' },
+  // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
+  // intent rows), which for one-click include attempts that may fail
+  // and mailto that we never confirm. "Unsubscribes" (a count of the
+  // actions taken) makes no completion claim; "Unsubscribed" would
+  // overclaim success. Confirmed outcomes render per-row as
+  // "Request accepted" (never aggregated as verified compliance —
+  // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
+  // metric-definition options if an exact confirmed count is wanted.
+  { key: 'unsubscribed', verb: 'unsubscribe', label: 'Unsubscribes' },
+  { key: 'later', verb: 'later', label: 'Later' },
+  { key: 'kept', verb: 'keep', label: 'Kept' },
+];
 
 /**
- * Editorial metrics block — replaces the two stacked mono lines.
- *
- * Five tiles in a horizontal strip: ARCHIVED · DELETED · UNSUB · KEPT ·
- * LATER. Each tile shows the window count as a display-font numeral and
- * the all-time count as a small mono footnote below — so the user gets
- * BOTH numbers per verb at a glance, without two competing rows.
- *
- * When the window equals "all time" (no upper bound + no custom range),
- * the window stat IS the all-time stat — we suppress the footnote to
- * avoid the duplicate-stats bug the original two-line layout shipped
- * with.
+ * The window's counts, once, on one line. Each count toggles its verb
+ * filter — the same URL state the Filter popover writes.
  */
-function MetricsHeader({
+function SummaryRow({
   windowLabel,
   stats,
-  allTimeStats,
-  isWindowAllTime,
+  verbs,
+  onVerbs,
   failedHref,
-  isMobile,
 }: {
   windowLabel: string;
   stats: ActivityStatsWire | null;
-  allTimeStats: ActivityStatsWire | null;
-  isWindowAllTime: boolean;
+  verbs: readonly ActivityVerbFilterWire[];
+  onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
   /** The same window, narrowed to the failed records this count names. */
   failedHref: string;
-  isMobile: boolean;
 }) {
   if (!stats) return null;
-  const tiles: Array<{ key: keyof ActivityStatsWire; label: string; accent: string }> = [
-    { key: 'archived', label: 'Archived', accent: color.fg },
-    { key: 'deleted', label: 'Deleted', accent: color.amber },
-    // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
-    // intent rows), which for one-click include attempts that may fail
-    // and mailto that we never confirm. "Unsubscribes" (a count of the
-    // actions taken) makes no completion claim; "Unsubscribed" would
-    // overclaim success. Confirmed outcomes render per-row as
-    // "Request accepted" (never aggregated as verified compliance —
-    // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
-    // metric-definition options if an exact confirmed count is wanted.
-    { key: 'unsubscribed', label: 'Unsubscribes', accent: color.primary },
-    { key: 'kept', label: 'Kept', accent: color.emerald },
-    { key: 'later', label: 'Later', accent: color.fgSoft },
-  ];
   return (
     <section
-      role="status"
       aria-live="polite"
-      aria-label="Activity metrics"
-      style={{
-        border: `1px solid ${color.line}`,
-        borderRadius: 14,
-        background: color.card,
-        padding: '14px 18px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
+      aria-label="Activity summary"
+      style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
     >
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 12,
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          color: color.fgMuted,
-        }}
-      >
-        <span>
-          <span style={{ color: color.fg, fontWeight: 600 }}>{windowLabel}</span>
-          <span style={{ marginLeft: 8, color: color.fgMuted }}>· all sources</span>
-        </span>
-        {/* The one number naming a problem was the one number that could
-            not be clicked, and outside the 7-day card no visible control
-            reached those records (QA-activity-20260918-08). */}
-        {stats.needsAttention > 0 && (
-          <Link href={failedHref} style={{ color: color.amber, fontWeight: 600 }}>
-            {stats.needsAttention} failed · Review
-          </Link>
-        )}
-      </header>
-      {/* CSS-driven restack, not the `isMobile` JS flag below: this grid
-          is server-rendered, and `useIsAtMost`'s `useState(false)` default
-          shipped the desktop 5-column track at every width until the
-          client effect fired — a ~390ms window where UNSUBSCRIBES and
-          KEPT collided (QA-undo-20260828-02). `!important` is required —
-          without it the media query loses to this element's own inline
-          `style`. Breakpoint matches `useIsAtMost('sm')` (900px, tokens.ts)
-          so this and the `isMobile`-driven per-tile dividers below agree
-          post-hydration. */}
-      <style>{`@media (max-width: 900px) {
-        .dm-activity-metrics-grid {
-          grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-          gap: 12px 8px !important;
-        }
-        .dm-activity-metric-label {
-          font-size: 9px !important;
-          letter-spacing: 0.04em !important;
-        }
-      }`}</style>
-      <div
-        className="dm-activity-metrics-grid"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-          gap: 0,
-          borderTop: `1px solid ${color.lineSoft}`,
-          paddingTop: 12,
-        }}
-      >
-        {tiles.map((tile, idx) => {
-          const windowValue = (stats[tile.key] as number | undefined) ?? 0;
-          const allTimeValue = allTimeStats
-            ? ((allTimeStats[tile.key] as number | undefined) ?? 0)
-            : null;
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 18px' }}>
+        <span style={{ fontSize: text.sm, color: color.fgMuted }}>{windowLabel}</span>
+        {SUMMARY_VERBS.map(({ key, verb, label }) => {
+          const isActive = verbs.includes(verb);
           return (
-            <div
-              key={tile.key}
+            <button
+              key={key}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => onVerbs(toggled(verbs, verb))}
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 2,
-                paddingLeft: isMobile || idx === 0 ? 0 : 16,
-                paddingRight: isMobile || idx === tiles.length - 1 ? 0 : 16,
-                borderRight:
-                  isMobile || idx === tiles.length - 1 ? 'none' : `1px solid ${color.lineSoft}`,
-                minWidth: 0,
+                display: 'inline-flex',
+                alignItems: 'baseline',
+                gap: 5,
+                padding: '4px 0',
+                background: 'transparent',
+                border: 'none',
+                borderBottom: `1px solid ${isActive ? color.primary : 'transparent'}`,
+                fontFamily: font.sans,
+                fontSize: text.sm,
+                color: isActive ? color.primary : color.fgMuted,
+                cursor: 'pointer',
               }}
             >
               <span
-                className="dm-activity-metric-label"
                 style={{
-                  fontFamily: font.mono,
-                  // `body { overflow-wrap: break-word }` split "UNSUBSCRIBES"
-                  // mid-word in the narrow 3-column grid. Forbidding the
-                  // break alone makes it spill into the next tile at 320px,
-                  // so the label is tightened below 900px until it fits —
-                  // in the CSS block above, with the grid restack, because
-                  // the `isMobile` JS flag is false until hydration.
-                  fontSize: 10,
-                  letterSpacing: '0.12em',
-                  textTransform: 'uppercase',
-                  color: color.fgMuted,
-                  overflowWrap: 'normal',
-                  wordBreak: 'keep-all',
-                }}
-              >
-                {tile.label}
-              </span>
-              <span
-                style={{
-                  fontFamily: font.display,
-                  fontSize: isMobile ? 24 : 30,
-                  lineHeight: 1.05,
+                  ...numeralStyle,
+                  fontSize: text.md,
                   fontWeight: 600,
-                  letterSpacing: '-0.02em',
-                  fontVariantNumeric: 'tabular-nums',
-                  color: tile.accent,
+                  color: isActive ? color.primary : color.fg,
                 }}
               >
-                {windowValue}
+                {stats[key]}
               </span>
-              {!isWindowAllTime && allTimeValue !== null && (
-                <span
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 11,
-                    color: color.fgMuted,
-                    fontVariantNumeric: 'tabular-nums',
-                    marginTop: 2,
-                  }}
-                  title={`${allTimeValue} ${tile.label.toLowerCase()} all time`}
-                >
-                  / {allTimeValue} all time
-                </span>
-              )}
-            </div>
+              {label}
+            </button>
           );
         })}
+        {/* The one number naming a problem has to reach those records
+            (QA-activity-20260918-08). */}
+        {stats.needsAttention > 0 && (
+          <Link
+            href={failedHref}
+            style={{
+              marginLeft: 'auto',
+              fontSize: text.sm,
+              fontWeight: 600,
+              color: color.amber,
+              textDecoration: 'none',
+            }}
+          >
+            {stats.needsAttention} failed · Review
+          </Link>
+        )}
       </div>
-      {/* `aggregateStats` counts activity_log ROWS, drops reverted ones,
-          and deliberately ignores the source and action chips — none of
-          which the numbers can say for themselves
+      {/* `aggregateStats` counts activity_log ROWS and ignores the source
+          chips — neither of which the numbers can say for themselves
           (QA-activity-20260918-05). */}
-      <p style={{ margin: '12px 0 0', fontSize: 12, lineHeight: 1.5, color: color.fgMuted }}>
-        Counts actions, not emails. Undone actions are not counted. Sender and date filters apply;
-        source, action, and outcome filters do not.
+      <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>
+        Actions, not emails, from every source.
       </p>
     </section>
   );
 }
 
-// ── Filter toolbar (D56 + B8 + B9 + B10 + B11) ───────────────────────
+function toggled<T>(list: readonly T[], value: T): T[] {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
+// ── Filters (D55 + D56 + B8 + B9 + B10 + B11 + D246) ─────────────────
 
 type GroupMode = 'none' | 'sender';
 
@@ -802,29 +842,25 @@ const SOURCE_CHIPS: ReadonlyArray<{ value: ActivitySourceFilterWire; label: stri
   { value: 'manual', label: 'Manual' },
 ];
 
-/**
- * Semantic verb palette — each verb carries its own accent so the row
- * left-edge dot + the matching filter chip read at a glance:
- *   archive  → neutral fgSoft (no signal, baseline housekeeping)
- *   delete   → amber          (destructive)
- *   unsub    → primary green  (brand + emancipation)
- *   later    → violet         (parking)
- *   keep     → emerald        (affirmative)
- *   followup → fgMuted        (administrative)
- */
-const VERB_CHIPS: ReadonlyArray<{
-  value: ActivityVerbFilterWire;
-  label: string;
-  dot: string;
-}> = [
-  { value: 'archive', label: 'Archived', dot: color.fgSoft },
-  { value: 'delete', label: 'Deleted', dot: color.amber },
-  // D9 — filters the `unsubscribe` intent rows; label matches the tile
+const VERB_CHIPS: ReadonlyArray<{ value: ActivityVerbFilterWire; label: string }> = [
+  { value: 'archive', label: 'Archived' },
+  { value: 'delete', label: 'Deleted' },
+  // D9 — filters the `unsubscribe` intent rows; label matches the summary
   // ("Unsubscribes", not the success-claiming "Unsubscribed").
-  { value: 'unsubscribe', label: 'Unsubscribes', dot: color.primary },
-  { value: 'later', label: 'Later', dot: color.dashboard.accent },
-  { value: 'keep', label: 'Kept', dot: color.emerald },
-  { value: 'followup-dismiss', label: 'Follow-ups', dot: color.fgMuted },
+  { value: 'unsubscribe', label: 'Unsubscribes' },
+  { value: 'later', label: 'Later' },
+  { value: 'keep', label: 'Kept' },
+  { value: 'followup-dismiss', label: 'Follow-ups' },
+];
+
+const OUTCOME_CHIPS: ReadonlyArray<{ value: ActivityReviewOutcomeWire; label: string }> = [
+  { value: 'completed', label: 'Completed' },
+  { value: 'skipped', label: 'Dismissed by you' },
+  { value: 'failed', label: 'Failed' },
+  // A failed action that succeeded on retry — never a user's Undo, which
+  // lands in no bucket here (QA-undo-20260828-03).
+  { value: 'recovered', label: 'Fixed on retry' },
+  { value: 'protected', label: 'Skipped for Protected' },
 ];
 
 const WINDOWS: ReadonlyArray<{ value: ActivityWindowWire; label: string }> = [
@@ -834,294 +870,109 @@ const WINDOWS: ReadonlyArray<{ value: ActivityWindowWire; label: string }> = [
   { value: 'all', label: 'All' },
 ];
 
-interface FilterToolbarProps {
+/**
+ * The filter controls, shared verbatim between the desktop popover, the
+ * mobile bottom sheet and the support-bundle dialog. Outcome, grouping and
+ * sender search are optional: each host passes only what it owns.
+ */
+interface FilterFieldsProps {
   source: ActivitySourceFilterWire;
   onSource: (next: ActivitySourceFilterWire) => void;
   verbs: readonly ActivityVerbFilterWire[];
   onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
+  outcomes?: readonly ActivityReviewOutcomeWire[];
+  onOutcomes?: (next: readonly ActivityReviewOutcomeWire[]) => void;
   window: ActivityWindowWire;
   dateFrom: string | null;
   dateTo: string | null;
   onWindow: (next: ActivityWindowWire) => void;
   onRange: (from: string | null, to: string | null) => void;
-  senderQuery: string;
-  onSenderQuery: (next: string) => void;
-  groupMode: GroupMode;
-  onGroupMode: (next: GroupMode) => void;
-  filters: ActivityFilters;
-  activeMailboxEmail: string | null;
-  activeMailboxId: string | null;
-  exportDisabled: boolean;
-  isMobile: boolean;
+  groupMode?: GroupMode;
+  onGroupMode?: (next: GroupMode) => void;
+  senderQuery?: string;
+  onSenderQuery?: (next: string) => void;
+  senderSearchDebounceMs?: number;
+  /** 44px targets for the bottom sheet. */
+  touch?: boolean;
 }
 
-/** Count of filters set away from their defaults — surfaced on the
- *  mobile "Filters" trigger so a collapsed drawer still signals that a
- *  slice is active (source + each verb + non-default window + custom
- *  range + sender search). */
-function activeFilterCount(p: FilterToolbarProps): number {
-  let n = 0;
-  if (p.source !== 'all') n += 1;
-  n += p.verbs.length;
+/** Filters set away from their defaults — the count on the Filter button
+ *  and the chips in the active row name the same set. */
+function activeFilterCount(p: FilterFieldsProps): number {
   const isCustomRange = p.dateFrom !== null || p.dateTo !== null;
-  if (isCustomRange) n += 1;
-  else if (p.window !== '30d') n += 1;
-  if (p.senderQuery.trim().length > 0) n += 1;
-  return n;
-}
-
-/**
- * Filter surface — composes SOURCE·VERB and RANGE·SEARCH bands.
- *
- * Desktop (≥ sm): the two bands render inline inside a bordered card
- * (D56 + B8-B13), Group + support export in the band-2 right cluster.
- *
- * Mobile (< sm, D60): the bands can't fit the inline layout, so the card
- * collapses to a compact trigger row — a "Filters (n)" button that opens
- * a bottom-sheet drawer holding the same bands, plus Group + Export kept
- * on the bar for one-tap access.
- */
-function FilterToolbar(props: FilterToolbarProps) {
-  const {
-    groupMode,
-    onGroupMode,
-    filters,
-    activeMailboxEmail,
-    activeMailboxId,
-    exportDisabled,
-    isMobile,
-  } = props;
-  const [drawerOpen, setDrawerOpen] = useState(false);
-
-  // Close the drawer whenever we cross back to the desktop breakpoint so
-  // it can't linger as an orphaned modal after a rotate / resize.
-  useEffect(() => {
-    if (!isMobile) setDrawerOpen(false);
-  }, [isMobile]);
-
-  const groupChip = (
-    <Chip
-      label={groupMode === 'sender' ? 'Grouped' : 'Group'}
-      isActive={groupMode === 'sender'}
-      onClick={() => onGroupMode(groupMode === 'sender' ? 'none' : 'sender')}
-      tone="muted"
-      compact
-    />
-  );
-
-  if (isMobile) {
-    const count = activeFilterCount(props);
-    return (
-      <>
-        <div
-          role="region"
-          aria-label="Filters"
-          style={{
-            border: `1px solid ${color.line}`,
-            borderRadius: 12,
-            background: color.card,
-            padding: '8px 10px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}
-        >
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            aria-haspopup="dialog"
-            aria-expanded={drawerOpen}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '6px 14px',
-              fontSize: 12.5,
-              fontFamily: font.sans,
-              fontWeight: 600,
-              border: `1px solid ${count > 0 ? color.primary : color.lineSoft}`,
-              background: count > 0 ? color.primarySoft : 'transparent',
-              color: count > 0 ? color.primary : color.fg,
-              borderRadius: 999,
-              cursor: 'pointer',
-            }}
-          >
-            Filters
-            {count > 0 && (
-              <span
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 11,
-                  fontWeight: 600,
-                  minWidth: 18,
-                  textAlign: 'center',
-                  padding: '0 5px',
-                  borderRadius: 999,
-                  background: color.primary,
-                  color: color.fgInverse,
-                }}
-              >
-                {count}
-              </span>
-            )}
-          </button>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-            {groupChip}
-            <ExportSupportBundleButton
-              filters={filters}
-              mailboxEmail={activeMailboxEmail}
-              mailboxId={activeMailboxId}
-              disabled={exportDisabled}
-            />
-          </div>
-        </div>
-        <FilterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} {...props} />
-      </>
-    );
-  }
-
   return (
-    <div
-      role="region"
-      aria-label="Filters"
-      style={{
-        border: `1px solid ${color.line}`,
-        borderRadius: 12,
-        background: color.card,
-        padding: '10px 12px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-      }}
-    >
-      <FilterBands
-        {...props}
-        trailing={
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-            {groupChip}
-            <ExportSupportBundleButton
-              filters={filters}
-              mailboxEmail={activeMailboxEmail}
-              mailboxId={activeMailboxId}
-              disabled={exportDisabled}
-            />
-          </div>
-        }
-      />
-    </div>
+    (p.source !== 'all' ? 1 : 0) +
+    p.verbs.length +
+    (p.outcomes?.length ?? 0) +
+    (isCustomRange || p.window !== '30d' ? 1 : 0)
   );
 }
 
-/**
- * The two filter bands (SOURCE·VERB, then RANGE·SEARCH), shared verbatim
- * between the desktop inline card and the mobile drawer. `trailing`
- * injects the Group + Export cluster into band 2 on desktop; the mobile
- * drawer omits it (those live on the trigger bar).
- */
-type FilterBandsProps = Pick<
-  FilterToolbarProps,
-  | 'source'
-  | 'onSource'
-  | 'verbs'
-  | 'onVerbs'
-  | 'window'
-  | 'dateFrom'
-  | 'dateTo'
-  | 'onWindow'
-  | 'onRange'
-  | 'senderQuery'
-  | 'onSenderQuery'
-> & { senderSearchDebounceMs?: number };
-
-function FilterBands({
+function FilterFields({
   source,
   onSource,
   verbs,
   onVerbs,
+  outcomes,
+  onOutcomes,
   window,
   dateFrom,
   dateTo,
   onWindow,
   onRange,
+  groupMode,
+  onGroupMode,
   senderQuery,
   onSenderQuery,
   senderSearchDebounceMs,
-  trailing,
-}: FilterBandsProps & { trailing?: ReactNode }) {
-  const verbSet = useMemo(() => new Set(verbs), [verbs]);
-  const toggleVerb = (verb: ActivityVerbFilterWire) => {
-    const next = new Set(verbSet);
-    if (next.has(verb)) next.delete(verb);
-    else next.add(verb);
-    onVerbs([...next]);
-  };
+  touch = false,
+}: FilterFieldsProps) {
   const isCustomRange = dateFrom !== null || dateTo !== null;
   return (
-    <>
-      {/* Band 1 — SOURCE │ VERB */}
-      <div
-        role="group"
-        aria-label="Filter by what happened"
-        style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
-      >
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <FilterGroup label="Source">
         {SOURCE_CHIPS.map((chip) => (
           <Chip
             key={chip.value}
             label={chip.label}
             isActive={source === chip.value}
             onClick={() => onSource(chip.value)}
+            touch={touch}
           />
         ))}
-        <Divider />
+      </FilterGroup>
+      <FilterGroup label="Action">
         {VERB_CHIPS.map((chip) => (
           <Chip
             key={chip.value}
             label={chip.label}
-            isActive={verbSet.has(chip.value)}
-            onClick={() => toggleVerb(chip.value)}
-            tone="muted"
-            dot={chip.dot}
+            isActive={verbs.includes(chip.value)}
+            onClick={() => onVerbs(toggled(verbs, chip.value))}
+            touch={touch}
           />
         ))}
-        {verbs.length > 0 && (
-          <button
-            type="button"
-            onClick={() => onVerbs([])}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 11,
-              letterSpacing: '0.04em',
-              cursor: 'pointer',
-              padding: '4px 4px',
-            }}
-          >
-            clear
-          </button>
-        )}
-      </div>
-
-      {/* Band 2 — RANGE │ SEARCH                       GROUP   EXPORT */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: 8,
-          paddingTop: 8,
-          borderTop: `1px solid ${color.lineSoft}`,
-        }}
-      >
+      </FilterGroup>
+      {outcomes && onOutcomes && (
+        <FilterGroup label="Outcome">
+          {OUTCOME_CHIPS.map((chip) => (
+            <Chip
+              key={chip.value}
+              label={chip.label}
+              isActive={outcomes.includes(chip.value)}
+              onClick={() => onOutcomes(toggled(outcomes, chip.value))}
+              touch={touch}
+            />
+          ))}
+        </FilterGroup>
+      )}
+      <FilterGroup label="Time">
         {WINDOWS.map((opt) => (
           <Chip
             key={opt.value}
             label={opt.label}
             isActive={!isCustomRange && window === opt.value}
             onClick={() => onWindow(opt.value)}
-            tone="muted"
-            compact
+            touch={touch}
           />
         ))}
         <DateInput
@@ -1135,61 +986,159 @@ function FilterBands({
           onChange={(v) => onRange(dateFrom, safeIsoFromDateInput(v))}
         />
         {isCustomRange && (
-          <button
-            type="button"
-            onClick={() => onRange(null, null)}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 11,
-              cursor: 'pointer',
-              padding: '4px 4px',
-            }}
-          >
-            clear range
+          <button type="button" onClick={() => onRange(null, null)} style={textButtonStyle}>
+            Clear range
           </button>
         )}
-        <Divider />
-        <SenderSearchInput
-          value={senderQuery}
-          onChange={onSenderQuery}
-          debounceMs={senderSearchDebounceMs}
-        />
-        {trailing}
+      </FilterGroup>
+      {groupMode !== undefined && onGroupMode && (
+        <FilterGroup label="View">
+          <Chip
+            label="Group by sender"
+            isActive={groupMode === 'sender'}
+            onClick={() => onGroupMode(groupMode === 'sender' ? 'none' : 'sender')}
+            touch={touch}
+          />
+        </FilterGroup>
+      )}
+      {senderQuery !== undefined && onSenderQuery && (
+        <FilterGroup label="Sender">
+          <SenderSearchInput
+            value={senderQuery}
+            onChange={onSenderQuery}
+            debounceMs={senderSearchDebounceMs}
+          />
+        </FilterGroup>
+      )}
+    </div>
+  );
+}
+
+function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div
+      role="group"
+      aria-label={label}
+      style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+    >
+      <span style={{ fontSize: text.xs, color: color.fgMuted }}>{label}</span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+        {children}
       </div>
-    </>
+    </div>
+  );
+}
+
+const textButtonStyle: CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: 4,
+  fontFamily: font.sans,
+  fontSize: text.sm,
+  color: color.fgMuted,
+  cursor: 'pointer',
+};
+
+const headerButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  minHeight: 36,
+  padding: '0 14px',
+  fontFamily: font.sans,
+  fontSize: text.base,
+  fontWeight: 500,
+  border: `1px solid ${color.line}`,
+  borderRadius: radius.pill,
+  background: 'transparent',
+  color: color.fg,
+  cursor: 'pointer',
+};
+
+/**
+ * The one entry to every filter. Desktop opens an anchored popover; below
+ * `sm` (D60) the same fields open as a bottom sheet.
+ */
+function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: boolean }) {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const count = activeFilterCount(fields);
+
+  const close = useCallback(() => {
+    setOpen(false);
+    buttonRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        close();
+      }
+    };
+    // The sheet has its own backdrop; only the popover needs this.
+    const onPointer = (event: MouseEvent) => {
+      if (isMobile) return;
+      if (anchorRef.current && !anchorRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onPointer);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onPointer);
+    };
+  }, [open, isMobile, close]);
+
+  return (
+    <div ref={anchorRef} style={{ position: 'relative' }}>
+      <button
+        ref={buttonRef}
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        style={{
+          ...headerButtonStyle,
+          ...(isMobile ? { minHeight: 44 } : {}),
+          ...(count > 0 ? { borderColor: color.primary, color: color.primary } : {}),
+        }}
+      >
+        Filter
+        {count > 0 && <span style={numeralStyle}>{count}</span>}
+      </button>
+      {open && !isMobile && (
+        <div
+          role="dialog"
+          aria-label="Activity filters"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            right: 0,
+            zIndex: 20,
+            width: 380,
+            padding: 16,
+            background: color.card,
+            borderRadius: radius.lg,
+            boxShadow: shadow.pop,
+          }}
+        >
+          <FilterFields {...fields} />
+        </div>
+      )}
+      {open && isMobile && <FilterSheet onClose={close} {...fields} />}
+    </div>
   );
 }
 
 /**
- * D60 bottom-sheet filter drawer (mobile only). Slides up from the
- * bottom edge, holds the full FilterBands, and dismisses on backdrop
- * tap, Escape, or the Done button. Focus is trapped while open —
- * mirrors the triage action-sheet modal contract.
+ * D60 bottom-sheet filters (mobile only). Slides up from the bottom edge
+ * and dismisses on backdrop tap, Escape, or the button. Focus is trapped
+ * while open — mirrors the triage action-sheet modal contract.
  */
-function FilterDrawer({
-  open,
-  onClose,
-  ...bands
-}: FilterToolbarProps & { open: boolean; onClose: () => void }) {
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
+function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () => void }) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
   return (
     <>
       <div
@@ -1215,10 +1164,9 @@ function FilterDrawer({
           maxHeight: '82vh',
           overflow: 'auto',
           background: color.card,
-          borderTopLeftRadius: 18,
-          borderTopRightRadius: 18,
-          borderTop: `1px solid ${color.border}`,
-          boxShadow: '0 -18px 50px rgba(14,20,19,0.30)',
+          borderTopLeftRadius: radius.xl,
+          borderTopRightRadius: radius.xl,
+          boxShadow: shadow.lift,
           zIndex: 151,
           fontFamily: font.sans,
           padding: '10px 16px 20px',
@@ -1233,7 +1181,7 @@ function FilterDrawer({
           style={{
             width: 36,
             height: 4,
-            borderRadius: 999,
+            borderRadius: radius.pill,
             background: color.line,
             margin: '2px auto 4px',
           }}
@@ -1246,35 +1194,17 @@ function FilterDrawer({
             gap: 12,
           }}
         >
-          <span
-            style={{
-              fontFamily: font.mono,
-              fontSize: 10.5,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: color.fgMuted,
-            }}
-          >
-            Filters
-          </span>
+          <span style={{ fontSize: text.lg, fontWeight: 600, color: color.fg }}>Filter</span>
           <button
             type="button"
             onClick={onClose}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              fontSize: 12,
-              cursor: 'pointer',
-              padding: 4,
-            }}
             aria-label="Close filters"
+            style={{ ...textButtonStyle, minWidth: 44, minHeight: 44, fontSize: text.md }}
           >
             ✕
           </button>
         </div>
-        <FilterBands {...bands} />
+        <FilterFields {...fields} touch />
         <Button tone="primary" onClick={onClose}>
           View results
         </Button>
@@ -1283,18 +1213,96 @@ function FilterDrawer({
   );
 }
 
-function Divider() {
+/**
+ * What is narrowing the list right now, one removable chip each. Renders
+ * nothing at the defaults, so an unfiltered screen carries no filter UI
+ * beyond the button.
+ */
+function ActiveFilterChips({
+  source,
+  onSource,
+  verbs,
+  onVerbs,
+  outcomes = [],
+  onOutcomes,
+  window,
+  dateFrom,
+  dateTo,
+  onWindow,
+  onRange,
+  onClear,
+}: FilterFieldsProps & { onClear: () => void }) {
+  const chips: Array<{ key: string; label: string; onRemove: () => void }> = [];
+  if (source !== 'all') {
+    chips.push({
+      key: `source:${source}`,
+      label: SOURCE_CHIPS.find((chip) => chip.value === source)?.label ?? source,
+      onRemove: () => onSource('all'),
+    });
+  }
+  for (const verb of verbs) {
+    chips.push({
+      key: `verb:${verb}`,
+      label: VERB_CHIPS.find((chip) => chip.value === verb)?.label ?? verb,
+      onRemove: () => onVerbs(verbs.filter((item) => item !== verb)),
+    });
+  }
+  for (const outcome of outcomes) {
+    chips.push({
+      key: `outcome:${outcome}`,
+      label: OUTCOME_CHIPS.find((chip) => chip.value === outcome)?.label ?? outcome,
+      onRemove: () => onOutcomes?.(outcomes.filter((item) => item !== outcome)),
+    });
+  }
+  if (dateFrom !== null || dateTo !== null) {
+    chips.push({
+      key: 'range',
+      label: windowToLabel(window, dateFrom, dateTo),
+      onRemove: () => onRange(null, null),
+    });
+  } else if (window !== '30d') {
+    chips.push({
+      key: 'window',
+      label: windowToLabel(window, null, null),
+      onRemove: () => onWindow('30d'),
+    });
+  }
+  if (chips.length === 0) return null;
   return (
-    <span
-      aria-hidden="true"
-      style={{
-        display: 'inline-block',
-        width: 1,
-        height: 16,
-        background: color.line,
-        margin: '0 4px',
-      }}
-    />
+    <div
+      role="group"
+      aria-label="Active filters"
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
+    >
+      {chips.map((chip) => (
+        <button
+          key={chip.key}
+          type="button"
+          onClick={chip.onRemove}
+          aria-label={`Remove filter: ${chip.label}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            minHeight: 28,
+            padding: '0 10px',
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            color: color.primary,
+            background: color.primarySoft,
+            border: 'none',
+            borderRadius: radius.pill,
+            cursor: 'pointer',
+          }}
+        >
+          {chip.label}
+          <span aria-hidden="true">✕</span>
+        </button>
+      ))}
+      <button type="button" onClick={onClear} style={textButtonStyle}>
+        Clear
+      </button>
+    </div>
   );
 }
 
@@ -1313,30 +1321,19 @@ function DateInput({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '2px 10px 2px 10px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 999,
-        background: color.bg,
+        padding: '2px 10px',
+        border: `1px solid ${color.line}`,
+        borderRadius: radius.pill,
       }}
     >
-      <span
-        style={{
-          fontSize: 10,
-          fontFamily: font.mono,
-          textTransform: 'uppercase',
-          letterSpacing: '0.12em',
-          color: color.fgMuted,
-        }}
-      >
-        {label}
-      </span>
+      <span style={{ fontSize: text.xs, color: color.fgMuted }}>{label}</span>
       <input
         type="date"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         style={{
-          fontSize: 12,
-          fontFamily: font.mono,
+          ...numeralStyle,
+          fontSize: text.sm,
           padding: '2px 0',
           border: 'none',
           background: 'transparent',
@@ -1352,10 +1349,13 @@ function SenderSearchInput({
   value,
   onChange,
   debounceMs = 250,
+  fullWidth = false,
 }: {
   value: string;
   onChange: (next: string) => void;
   debounceMs?: number | undefined;
+  /** Mobile header: the search takes its own line. */
+  fullWidth?: boolean;
 }) {
   // Debounced local state — onChange fires 250ms after the user
   // stops typing so we don't push a URL update + re-fetch per keystroke.
@@ -1382,20 +1382,18 @@ function SenderSearchInput({
   return (
     <label
       style={{
-        display: 'inline-flex',
+        boxSizing: 'border-box',
+        display: fullWidth ? 'flex' : 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '4px 10px 4px 10px',
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 999,
-        background: color.bg,
+        minHeight: fullWidth ? 44 : 36,
+        padding: '0 12px',
+        border: `1px solid ${color.line}`,
+        borderRadius: radius.pill,
         minWidth: 220,
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}
-      >
+      <span aria-hidden="true" style={{ color: color.fgMuted, fontSize: text.md }}>
         ⌕
       </span>
       <input
@@ -1412,7 +1410,7 @@ function SenderSearchInput({
         }}
         aria-label="Search sender"
         style={{
-          fontSize: 12.5,
+          fontSize: text.base,
           fontFamily: font.sans,
           padding: '2px 0',
           border: 'none',
@@ -1420,6 +1418,7 @@ function SenderSearchInput({
           color: color.fg,
           outline: 'none',
           flex: 1,
+          minWidth: 0,
         }}
       />
     </label>
@@ -1443,11 +1442,14 @@ function ExportSupportBundleButton({
   mailboxEmail,
   mailboxId,
   disabled,
+  touch,
 }: {
   filters: ActivityFilters;
   mailboxEmail: string | null;
   mailboxId: string | null;
   disabled: boolean;
+  /** 44px target in the mobile header. */
+  touch: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1464,12 +1466,8 @@ function ExportSupportBundleButton({
             : 'Review filters and create a support bundle.'
         }
         style={{
-          fontSize: 12.5,
-          fontFamily: font.sans,
-          padding: '6px 12px',
-          border: `1px solid ${color.lineSoft}`,
-          borderRadius: 999,
-          background: 'transparent',
+          ...headerButtonStyle,
+          ...(touch ? { minHeight: 44 } : {}),
           color: disabled ? color.fgMuted : color.fg,
           cursor: disabled ? 'not-allowed' : 'pointer',
         }}
@@ -1568,9 +1566,8 @@ function ActivitySupportBundleDialog({
           maxHeight: '88vh',
           overflow: 'auto',
           background: color.card,
-          border: `1px solid ${color.border}`,
-          borderRadius: 14,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.32)',
+          borderRadius: radius.lg,
+          boxShadow: shadow.lift,
           zIndex: 181,
           fontFamily: font.sans,
         }}
@@ -1578,18 +1575,18 @@ function ActivitySupportBundleDialog({
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
           <h2
             id="activity-support-bundle-title"
-            style={{ margin: 0, color: color.fg, fontSize: 19, fontWeight: 600 }}
+            style={{ margin: 0, color: color.fg, fontSize: text.xl, fontWeight: 600 }}
           >
             Export Activity support bundle
           </h2>
           <p
             id="activity-support-bundle-lead"
-            style={{ margin: '7px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}
+            style={{ margin: '7px 0 0', color: color.fgSoft, fontSize: text.base, lineHeight: 1.5 }}
           >
             Review which Activity records to include. The ZIP contains a readable summary and CSV
             for all matching records, not only rows currently loaded on screen.
           </p>
-          <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: 12 }}>
+          <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: text.sm }}>
             mailbox: <strong style={{ color: color.fg }}>{mailboxEmail ?? 'Active mailbox'}</strong>
           </p>
         </div>
@@ -1598,19 +1595,12 @@ function ActivitySupportBundleDialog({
           <section aria-labelledby="activity-support-bundle-filters">
             <h3
               id="activity-support-bundle-filters"
-              style={{ margin: '0 0 9px', color: color.fg, fontSize: 14, fontWeight: 600 }}
+              style={{ margin: '0 0 9px', color: color.fg, fontSize: text.md, fontWeight: 600 }}
             >
               Records to include
             </h3>
-            <div
-              style={{
-                padding: 12,
-                border: `1px solid ${color.lineSoft}`,
-                borderRadius: 10,
-                background: color.paper,
-              }}
-            >
-              <FilterBands
+            <div>
+              <FilterFields
                 source={draft.source}
                 onSource={(source) => setDraft((current) => ({ ...current, source }))}
                 verbs={draft.verbs}
@@ -1644,7 +1634,7 @@ function ActivitySupportBundleDialog({
                     gap: 8,
                     marginTop: 10,
                     color: color.fgSoft,
-                    fontSize: 12,
+                    fontSize: text.sm,
                   }}
                 >
                   <span>Review outcome: {draft.outcomes.join(', ')}</span>
@@ -1664,7 +1654,7 @@ function ActivitySupportBundleDialog({
               )}
             </div>
             {invalidRange && (
-              <div role="alert" style={{ marginTop: 8, color: color.danger, fontSize: 12 }}>
+              <div role="alert" style={{ marginTop: 8, color: color.danger, fontSize: text.sm }}>
                 The From date must be earlier than the To date.
               </div>
             )}
@@ -1673,7 +1663,7 @@ function ActivitySupportBundleDialog({
           <section aria-labelledby="activity-support-bundle-privacy">
             <h3
               id="activity-support-bundle-privacy"
-              style={{ margin: '0 0 9px', color: color.fg, fontSize: 14, fontWeight: 600 }}
+              style={{ margin: '0 0 9px', color: color.fg, fontSize: text.md, fontWeight: 600 }}
             >
               Privacy options
             </h3>
@@ -1719,11 +1709,11 @@ function ActivitySupportBundleDialog({
               role="alert"
               style={{
                 padding: '10px 11px',
-                borderRadius: 8,
+                borderRadius: radius.md,
                 color: color.danger,
                 background: color.dangerBg,
                 border: `1px solid ${color.dangerBorder}`,
-                fontSize: 12.5,
+                fontSize: text.base,
               }}
             >
               We couldn&apos;t create the support bundle. Your Activity is unchanged. Review the
@@ -1764,12 +1754,9 @@ const supportBundleOptionStyle: CSSProperties = {
   display: 'flex',
   alignItems: 'flex-start',
   gap: 9,
-  padding: '10px 11px',
-  border: `1px solid ${color.lineSoft}`,
-  borderRadius: 9,
-  background: color.paper,
+  padding: '6px 0',
   color: color.fgSoft,
-  fontSize: 12.5,
+  fontSize: text.base,
   lineHeight: 1.45,
 };
 
@@ -1777,7 +1764,7 @@ const supportBundleOptionHelpStyle: CSSProperties = {
   display: 'block',
   marginTop: 2,
   color: color.fgMuted,
-  fontSize: 12,
+  fontSize: text.sm,
 };
 
 // ── Bulk action bar (B7) ──────────────────────────────────────────────
@@ -1885,35 +1872,15 @@ function BulkActionBar({
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 14,
-        padding: '12px 16px',
+        gap: 12,
+        padding: '10px 16px',
         background: color.fg,
         color: color.fgInverse,
-        border: `1px solid ${color.fg}`,
-        borderRadius: 12,
+        borderRadius: radius.lg,
         boxShadow: shadow.lift,
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10,
-          letterSpacing: '0.14em',
-          textTransform: 'uppercase',
-          color: color.fgInverseMuted,
-        }}
-      >
-        Selection
-      </span>
-      <span
-        style={{
-          fontSize: 13.5,
-          fontWeight: 600,
-          color: color.fgInverse,
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
+      <span style={{ fontSize: text.md, fontWeight: 600, color: color.fgInverse }}>
         {selectedIds.size} row{selectedIds.size === 1 ? '' : 's'}
         {revertableCount < selectedIds.size && (
           <span style={{ fontWeight: 400, color: color.fgInverseSoft, marginLeft: 8 }}>
@@ -1928,13 +1895,13 @@ function BulkActionBar({
         disabled={revertableCount === 0 || bulkBusy}
         style={{
           fontFamily: font.sans,
-          fontSize: 13,
+          fontSize: text.base,
           fontWeight: 600,
           color: color.fg,
           background: color.card,
           border: 'none',
           padding: '8px 16px',
-          borderRadius: 999,
+          borderRadius: radius.pill,
           cursor: revertableCount === 0 || bulkBusy ? 'not-allowed' : 'pointer',
           opacity: revertableCount === 0 || bulkBusy ? 0.55 : 1,
         }}
@@ -1944,27 +1911,14 @@ function BulkActionBar({
       <button
         type="button"
         onClick={onClear}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: color.fgInverseSoft,
-          fontFamily: font.mono,
-          fontSize: 11,
-          letterSpacing: '0.04em',
-          cursor: 'pointer',
-        }}
+        style={{ ...textButtonStyle, color: color.fgInverseSoft }}
       >
-        clear
+        Clear
       </button>
       {bulkError && (
         <span
-          style={{
-            flexBasis: '100%',
-            fontSize: 12,
-            color: '#F4B860',
-            fontFamily: font.mono,
-            marginTop: 2,
-          }}
+          role="alert"
+          style={{ flexBasis: '100%', fontSize: text.sm, color: color.fgInverse, marginTop: 2 }}
         >
           {bulkError}
         </span>
@@ -2022,15 +1976,7 @@ function GroupedList({
   isMobile,
   mailboxEmail,
   mailboxId,
-}: {
-  rows: readonly ActivityRowWire[];
-  selectedIds: Set<string>;
-  onToggle: (id: string) => void;
-  failedTokens?: Set<string> | undefined;
-  isMobile: boolean;
-  mailboxEmail: string | null;
-  mailboxId: string | null;
-}) {
+}: RowListProps) {
   const groups = useMemo(() => groupBySender(rows), [rows]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const toggleGroup = (key: string) => {
@@ -2042,44 +1988,22 @@ function GroupedList({
     });
   };
   return (
-    <ul
-      style={{
-        listStyle: 'none',
-        margin: 0,
-        padding: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-      }}
-    >
+    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
       {groups.map((group) => {
         const isOpen = expanded.has(group.key);
         const totalAffected = group.rows.reduce((sum, r) => sum + r.affectedCount, 0);
         return (
-          <li
-            key={group.key}
-            style={{
-              background: color.card,
-              border: `1px solid ${color.lineSoft}`,
-              borderRadius: 10,
-              overflow: 'hidden',
-            }}
-          >
+          <li key={group.key} style={{ borderBottom: `1px solid ${color.line}` }}>
             <button
               type="button"
               onClick={() => toggleGroup(group.key)}
               aria-expanded={isOpen}
               style={{
-                display: 'grid',
-                // Mobile drops the dedicated count column (it overflowed
-                // 375px against the 180px name min); the count moves under
-                // the name instead. Desktop keeps the 4-column layout.
-                gridTemplateColumns: isMobile
-                  ? 'auto minmax(0, 1fr) auto'
-                  : 'auto minmax(180px, 1.2fr) auto auto',
+                display: 'flex',
                 alignItems: 'center',
-                gap: isMobile ? 10 : 14,
-                padding: '12px 14px',
+                gap: 12,
+                minHeight: 44,
+                padding: '12px 4px',
                 width: '100%',
                 background: 'transparent',
                 border: 'none',
@@ -2094,11 +2018,11 @@ function GroupedList({
                 domain={group.email}
                 hasMark={group.brandMark}
               />
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <div
                   style={{
-                    fontSize: 13.5,
-                    fontWeight: 600,
+                    fontSize: text.md,
+                    fontWeight: 500,
                     color: color.fg,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -2107,63 +2031,27 @@ function GroupedList({
                 >
                   {group.displayName}
                 </div>
-                {group.domain && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: color.fgMuted,
-                      fontFamily: font.mono,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {group.domain}
-                  </div>
-                )}
-                {isMobile && (
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: color.fgMuted,
-                      fontFamily: font.mono,
-                      marginTop: 2,
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
-                    email{totalAffected === 1 ? '' : 's'}
-                  </div>
-                )}
-              </div>
-              {!isMobile && (
-                <span
+                <div
                   style={{
-                    fontSize: 12,
+                    fontSize: text.sm,
                     color: color.fgMuted,
-                    fontFamily: font.mono,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                   }}
                 >
+                  {group.domain && `${group.domain} · `}
                   {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
                   email{totalAffected === 1 ? '' : 's'}
-                </span>
-              )}
+                </div>
+              </div>
               <span aria-hidden="true" style={{ color: color.fgMuted }}>
                 {isOpen ? '▾' : '▸'}
               </span>
             </button>
             {isOpen && (
-              <ul
-                style={{
-                  listStyle: 'none',
-                  margin: 0,
-                  padding: '0 12px 12px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 4,
-                }}
-              >
+              // The last row's hairline would double the group's own.
+              <ul style={{ listStyle: 'none', margin: '0 0 -1px', padding: '0 0 0 44px' }}>
                 {group.rows.map((row) => (
                   <ActivityRow
                     key={row.id}
@@ -2188,31 +2076,37 @@ function GroupedList({
 
 // ── Row ───────────────────────────────────────────────────────────────
 
-/** Semantic verb → accent colour. Mirrors the FilterToolbar palette so the
- *  left-edge dot reads the same in chip and row. */
-const VERB_DOT: Record<ActivityActionWire, string> = {
-  archive: color.fgSoft,
-  delete: color.amber,
-  unsubscribe: color.primary,
-  // D56 — the confirmed outcome reads as a completion; emerald (the
-  // "done/kept" accent) sets it apart from the primary-accent intent row.
-  unsubscribe_confirmed: color.emerald,
-  unsubscribe_endpoint_accepted: color.emerald,
-  unsubscribe_failed: color.red,
-  unsubscribe_unconfirmed: color.amber,
-  unsubscribe_action_required: color.amber,
-  unsubscribe_draft_opened: color.primary,
-  unsubscribe_user_marked_sent: color.emerald,
-  unsubscribe_unavailable: color.fgMuted,
-  later: color.dashboard.accent,
-  keep: color.emerald,
-  'followup-dismiss': color.fgMuted,
-  // Protect toggle audit rows — quiet (muted) accents: these
-  // are standing-policy flips, not mail-moving verbs, so they read as
-  // secondary entries alongside the K/A/U/L/D rows.
-  marked_protected: color.fgMuted,
-  unmarked_protected: color.fgMuted,
-};
+/**
+ * Colour is reserved for rows that need a second look: a failure reads as
+ * an error, an unsettled unsubscribe as a warning. A completed action is
+ * the record's normal state and stays neutral.
+ */
+function rowLabelColor(row: ActivityRowWire): string {
+  if (row.executionState?.kind === 'failed' || row.action === 'unsubscribe_failed') {
+    return color.danger;
+  }
+  if (row.action === 'unsubscribe_unconfirmed' || row.action === 'unsubscribe_action_required') {
+    return color.amber;
+  }
+  return color.fg;
+}
+
+/**
+ * Clock time for a row under a day header; date + time inside a sender
+ * group, where rows from many days share one list. Locale + user zone
+ * pinned — this is server-rendered (React #418). Exported for the
+ * exact-string unit test.
+ */
+export function activityRowTime(iso: string, timeZone: string, withDate: boolean): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '';
+  return d.toLocaleString('en-US', {
+    ...(withDate ? { month: 'short', day: 'numeric' } : {}),
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone,
+  });
+}
 
 function ActivityRow({
   row,
@@ -2232,8 +2126,8 @@ function ActivityRow({
    *  matching row renders the per-row "Try again" pill in amber so
    *  the bar's instruction ("act on the row") has a visible affordance. */
   failedTokens?: Set<string> | undefined;
-  /** Below `sm` the row restacks into a card so its 7 grid columns stop
-   *  clipping under ~375px. Resolved once at the screen root. */
+  /** Below `sm` the action cluster drops to its own line so the text
+   *  stops clipping under ~375px. Resolved once at the screen root. */
   isMobile?: boolean;
   /** Active Gmail account. Null in isolated stories, where links fail closed. */
   mailboxEmail: string | null;
@@ -2242,429 +2136,208 @@ function ActivityRow({
 }) {
   const senderName = row.sender?.displayName ?? 'Your whole account';
   const senderEmail = row.sender?.email ?? '';
-  const senderDomain = row.sender?.domain ?? '';
   const verbLabel = activityRowActionLabel(row);
-  const sourceLabel = SOURCE_LABEL[row.source];
   const now = useNow();
-  const relative = now === null ? '' : relativeTime(row.occurredAt, now);
+  const timeZone = useUserTimeZone();
   const absolute = now === null ? '' : absoluteTime(row.occurredAt);
   const isSyntheticReviewEvidence =
     row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
-  const dotColor =
-    row.reviewOutcome === 'protected'
-      ? color.emerald
-      : row.reviewOutcome === 'skipped'
-        ? color.fgMuted
-        : VERB_DOT[row.action];
   const [hovered, setHovered] = useState(false);
 
+  // D57 rule attribution — Autopilot rows name the rule that fired
+  // ("by Autopilot · Newsletter graveyard"); a deleted rule degrades to
+  // plain "by Autopilot". Triage/Screener keep the "via <source>" form;
+  // Manual reads as "by you" instead of the raw enum voice "via Manual"
+  // (QA-archive-20260828-06).
   const sourceAttribution =
     row.source === 'autopilot'
       ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
       : row.source === 'manual'
         ? 'by you'
-        : `via ${sourceLabel}`;
+        : `via ${SOURCE_LABEL[row.source]}`;
 
-  // ── Mobile card (< sm) ──────────────────────────────────────────────
-  // The desktop 7-column grid clips hard on a phone. Below `sm` the same
-  // data restacks: a top line (select · sender · time), a verb/meta line,
-  // and the action cluster — with the verb-accent rail as an absolute
-  // left strip. Grouped rows drop the sender identity (it lives in the
-  // group header) exactly as the desktop grouped variant does.
-  if (isMobile) {
-    return (
-      <li
-        style={{
-          position: 'relative',
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 8,
-          padding: '12px 14px 12px 18px',
-          background: variant === 'grouped' ? 'transparent' : color.card,
-          // Flat rows are standalone cards (full border + radius); grouped
-          // rows sit inside a group card, so only a bottom hairline divides
-          // them. Longhands only — mixing the `border` shorthand with
-          // `borderBottom` fires React's conflicting-style dev warning.
-          borderTop: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderRight: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderLeft: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-          borderBottom: `1px solid ${color.lineSoft}`,
-          borderRadius: variant === 'grouped' ? 0 : 10,
-          fontFamily: font.sans,
-        }}
-      >
-        <span
-          aria-hidden="true"
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: 4,
-            background: dotColor,
-          }}
-        />
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-          <input
-            type="checkbox"
-            checked={isSelected}
-            onChange={onToggleSelect}
-            aria-label={`Select activity row from ${senderName}`}
-            style={{ cursor: 'pointer', accentColor: color.fg, flexShrink: 0 }}
-          />
-          {variant === 'flat' && (
-            <Avatar
-              size={30}
-              name={senderName}
-              domain={senderEmail}
-              hasMark={row.sender?.brandMark ?? false}
-            />
-          )}
-          <div style={{ minWidth: 0, flex: 1 }}>
-            {variant === 'flat' && (
-              <div
-                style={{
-                  fontSize: 13.5,
-                  fontWeight: 600,
-                  color: color.fg,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {senderName}
-              </div>
-            )}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                gap: 8,
-                flexWrap: 'wrap',
-              }}
-            >
-              <span style={{ fontSize: 13, fontWeight: 600, color: dotColor }}>{verbLabel}</span>
-              {row.affectedCount > 0 && (
-                <span
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: 12,
-                    color: color.fgMuted,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
-                </span>
-              )}
-            </div>
-          </div>
-          <time
-            dateTime={row.occurredAt}
-            title={absolute}
-            style={{
-              fontSize: 11.5,
-              color: color.fgMuted,
-              fontFamily: font.mono,
-              whiteSpace: 'nowrap',
-              fontVariantNumeric: 'tabular-nums',
-              flexShrink: 0,
-              alignSelf: 'flex-start',
-            }}
-          >
-            {relative}
-          </time>
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-          }}
-        >
-          <span
-            title={
-              row.source === 'autopilot' && row.rule
-                ? `By Autopilot rule “${row.rule.name}”`
-                : undefined
-            }
-            style={{
-              fontSize: 10,
-              fontFamily: font.mono,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: color.fgMuted,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              minWidth: 0,
-            }}
-          >
-            {sourceAttribution}
-          </span>
-          <RowActions
-            row={row}
-            failedTokens={failedTokens}
-            mailboxEmail={mailboxEmail}
-            mailboxId={mailboxId}
-          />
-        </div>
-        {!isSyntheticReviewEvidence &&
-          row.reviewOutcome !== null &&
-          row.source === 'autopilot' &&
-          row.executionState === null && (
-            <InlineFeedback
-              surface="activity"
-              referenceId={row.id}
-              initialRating={row.feedbackRating}
-            />
-          )}
-      </li>
-    );
-  }
+  const showFeedback =
+    !isSyntheticReviewEvidence &&
+    row.reviewOutcome !== null &&
+    row.source === 'autopilot' &&
+    row.executionState === null;
+
+  const actions = (
+    <RowActions
+      row={row}
+      failedTokens={failedTokens}
+      mailboxEmail={mailboxEmail}
+      mailboxId={mailboxId}
+      touch={isMobile}
+    />
+  );
 
   return (
     <li
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        display: 'grid',
-        // dot · checkbox · avatar · sender · verb+meta · actions · time
-        gridTemplateColumns:
-          variant === 'grouped'
-            ? '4px auto auto minmax(140px, 1fr) auto auto auto'
-            : '4px auto auto minmax(200px, 1.4fr) minmax(160px, 1fr) auto auto',
-        alignItems: 'center',
-        columnGap: 14,
-        padding: '12px 16px 12px 0',
-        background:
-          variant === 'grouped'
-            ? hovered
-              ? color.mutedBg
-              : 'transparent'
-            : hovered
-              ? color.bg
-              : color.card,
-        border: variant === 'grouped' ? 'none' : `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: '12px 4px',
+        borderBottom: `1px solid ${color.line}`,
+        background: hovered && !isMobile ? color.mutedBg : 'transparent',
+        transition: `background ${motion.fast} ${motion.ease}`,
         fontFamily: font.sans,
-        transition: 'background 120ms ease',
-        position: 'relative',
-        overflow: 'hidden',
       }}
     >
-      {/* Verb-accent left rail */}
-      <span
-        aria-hidden="true"
-        style={{
-          alignSelf: 'stretch',
-          background: dotColor,
-          width: 4,
-        }}
-      />
-      <input
-        type="checkbox"
-        checked={isSelected}
-        onChange={onToggleSelect}
-        aria-label={`Select activity row from ${senderName}`}
-        style={{ cursor: 'pointer', marginLeft: 4, accentColor: color.fg }}
-      />
-      <Avatar
-        size={32}
-        name={senderName}
-        domain={senderEmail}
-        hasMark={row.sender?.brandMark ?? false}
-      />
-      {variant === 'flat' ? (
-        <div style={{ minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelect}
+          aria-label={`Select activity row from ${senderName}`}
+          style={{ cursor: 'pointer', accentColor: color.primary, flexShrink: 0 }}
+        />
+        {/* Inside a sender group the header already carries the identity. */}
+        {variant === 'flat' && (
+          <Avatar
+            size={32}
+            name={senderName}
+            domain={senderEmail}
+            hasMark={row.sender?.brandMark ?? false}
+          />
+        )}
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
-              fontSize: 13.5,
-              fontWeight: 600,
-              color: color.fg,
+              fontSize: text.md,
+              fontWeight: 500,
+              color: rowLabelColor(row),
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              letterSpacing: '-0.005em',
             }}
           >
-            {senderName}
+            <span>{verbLabel}</span>
+            {row.affectedCount > 0 && (
+              <>
+                {' · '}
+                <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
+                </span>
+              </>
+            )}
           </div>
-          {senderDomain && (
-            <div
-              style={{
-                fontSize: 11.5,
-                color: color.fgMuted,
-                fontFamily: font.mono,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {senderDomain}
-            </div>
-          )}
-        </div>
-      ) : null}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 2,
-          minWidth: 0,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 8,
-          }}
-        >
-          <span
+          <div
+            title={
+              row.source === 'autopilot' && row.rule
+                ? `By Autopilot rule “${row.rule.name}”`
+                : undefined
+            }
             style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: dotColor,
-              letterSpacing: '-0.005em',
+              fontSize: text.sm,
+              color: color.fgMuted,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
             }}
           >
-            {verbLabel}
-          </span>
-          {row.affectedCount > 0 && (
-            <span
-              style={{
-                fontFamily: font.mono,
-                fontSize: 12,
-                color: color.fgMuted,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
-            </span>
-          )}
+            {variant === 'flat' && (
+              <>
+                <span title={senderEmail || undefined}>{senderName}</span>
+                {' · '}
+              </>
+            )}
+            <span>{sourceAttribution}</span>
+          </div>
         </div>
-        <span
+        {!isMobile && actions}
+        <time
+          dateTime={row.occurredAt}
+          title={absolute}
           style={{
-            fontSize: 10,
-            fontFamily: font.mono,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
+            ...numeralStyle,
+            fontSize: text.sm,
             color: color.fgMuted,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            flexShrink: 0,
+            minWidth: variant === 'flat' ? 64 : undefined,
+            textAlign: 'right',
           }}
-          // D57 rule attribution — Autopilot rows name the rule that
-          // fired ("by Autopilot · Newsletter graveyard"); a deleted
-          // rule degrades to plain "by Autopilot". Triage/Screener keep
-          // the "via <source>" form; Manual reads as "by you" instead of
-          // the raw enum voice "via Manual" (QA-archive-20260828-06).
-          title={
-            row.source === 'autopilot' && row.rule
-              ? `By Autopilot rule “${row.rule.name}”`
-              : undefined
-          }
         >
-          {row.source === 'autopilot'
-            ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
-            : row.source === 'manual'
-              ? 'by you'
-              : `via ${sourceLabel}`}
-        </span>
+          {activityRowTime(row.occurredAt, timeZone, variant === 'grouped')}
+        </time>
       </div>
-      <RowActions
-        row={row}
-        failedTokens={failedTokens}
-        mailboxEmail={mailboxEmail}
-        mailboxId={mailboxId}
-        includeFeedback
-      />
-      <time
-        dateTime={row.occurredAt}
-        title={absolute}
-        style={{
-          fontSize: 11.5,
-          color: color.fgMuted,
-          fontFamily: font.mono,
-          whiteSpace: 'nowrap',
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {relative}
-      </time>
+      {isMobile && <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{actions}</div>}
+      {showFeedback && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <InlineFeedback
+            surface="activity"
+            referenceId={row.id}
+            initialRating={row.feedbackRating}
+          />
+        </div>
+      )}
     </li>
   );
 }
 
 /**
- * Right-aligned action cluster — Undo + Open-in-Gmail rendered as a
- * single horizontal group with a 1px hairline between them. Replaces
- * the three separate floating pills the tracer shipped with.
+ * Right-aligned controls for one row — recovery, Undo, then the quiet
+ * Open-in-Gmail link.
  */
 function RowActions({
   row,
   failedTokens,
   mailboxEmail,
   mailboxId,
-  includeFeedback = false,
+  touch,
 }: {
   row: ActivityRowWire;
   failedTokens?: Set<string> | undefined;
   mailboxEmail: string | null;
   mailboxId: string | null;
-  includeFeedback?: boolean;
+  /** 44px targets on the mobile row. */
+  touch: boolean;
 }) {
-  // The pill is a frame around controls. A sender-less row with nothing to
-  // undo and no recovery state has none, and an empty bordered capsule is
-  // the same defect as the empty segment (QA-activity-20260918-09).
-  // Built once and handed to the link, so the frame and the link decide
-  // from the same value instead of two copies of the same condition.
+  // A sender-less row with nothing to undo and no recovery state has no
+  // control, and an empty frame is the same defect as an empty segment
+  // (QA-activity-20260918-09). Built once and handed to the link, so the
+  // frame and the link decide from the same value instead of two copies
+  // of the same condition.
   const gmailHref =
     row.sender && mailboxEmail
       ? GmailOpenLinkService.buildFromSearchLink({ mailboxEmail, from: row.sender.email })
       : null;
   const hasControl =
     row.executionState !== null || row.undoState.kind !== 'unavailable' || Boolean(gmailHref);
+  if (!hasControl) return null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
-      {hasControl && (
-        <div
-          data-row-actions-frame
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 0,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 999,
-            background: color.bg,
-            padding: '0 2px',
-            overflow: 'hidden',
-          }}
-        >
-          {row.executionState && (
-            <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
-          )}
-          <UndoCell row={row} bulkFailedTokens={failedTokens} />
-          <OpenInGmailLink
-            row={row}
-            href={gmailHref}
-            // The divider separates the link from a control before it. With
-            // no recovery cell and nothing to undo there is no such control.
-            showDivider={row.executionState !== null || row.undoState.kind !== 'unavailable'}
-          />
-        </div>
-      )}
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        gap: 4,
+        flexShrink: 0,
+      }}
+    >
+      <div
+        data-row-actions-frame
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: touch ? 44 : 0 }}
+      >
+        {row.executionState && (
+          <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
+        )}
+        <UndoCell row={row} bulkFailedTokens={failedTokens} />
+        <OpenInGmailLink row={row} href={gmailHref} />
+      </div>
       {/* The reason a retry is unsafe used to live only in a `title`,
           which does not exist on touch — on the one row a worried user is
           reading (QA-activity-20260918-08). */}
-      {row.executionState?.kind === 'failed' && unsafeRetryReason(row) !== null && (
+      {unsafeRetryReason(row) !== null && (
         <span
           style={{
             maxWidth: 260,
             textAlign: 'right',
-            fontSize: 11.5,
+            fontSize: text.xs,
             lineHeight: 1.4,
             color: color.fgMuted,
           }}
@@ -2672,21 +2345,24 @@ function RowActions({
           {unsafeRetryReason(row)}
         </span>
       )}
-      {includeFeedback &&
-        row.reviewOutcome !== null &&
-        row.reviewOutcome !== 'skipped' &&
-        row.reviewOutcome !== 'protected' &&
-        row.source === 'autopilot' &&
-        row.executionState === null && (
-          <InlineFeedback
-            surface="activity"
-            referenceId={row.id}
-            initialRating={row.feedbackRating}
-          />
-        )}
     </div>
   );
 }
+
+/** One shape for every control and status in a row's action cluster. */
+const rowControlStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: '6px 12px',
+  fontFamily: font.sans,
+  fontSize: text.sm,
+  fontWeight: 500,
+  background: 'transparent',
+  border: 'none',
+  borderRadius: radius.pill,
+  whiteSpace: 'nowrap',
+};
 
 /**
  * Outcome-aware recovery entry point for failed label actions. A click starts
@@ -2789,25 +2465,9 @@ function RecoveryCell({
     }
   };
 
-  const baseStyle: CSSProperties = {
-    fontSize: 12,
-    fontFamily: font.sans,
-    fontWeight: 500,
-    padding: '6px 12px',
-    background: 'transparent',
-    border: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    whiteSpace: 'nowrap',
-  };
-
   if (execution.kind === 'in_progress') {
     return (
-      <span
-        role="status"
-        style={{ ...baseStyle, color: color.fgMuted, fontFamily: font.mono, fontSize: 10.5 }}
-      >
+      <span role="status" style={{ ...rowControlStyle, color: color.fgMuted }}>
         {execution.isRecovery ? 'Retrying…' : 'Running…'}
       </span>
     );
@@ -2818,7 +2478,10 @@ function RecoveryCell({
       // A link, not a hover-only reason: `title` does not exist on touch,
       // and this is the row a worried user is reading
       // (QA-activity-20260918-08).
-      <a href="/settings/help" style={{ ...baseStyle, color: color.amber, textDecoration: 'none' }}>
+      <a
+        href="/settings/help"
+        style={{ ...rowControlStyle, color: color.amber, textDecoration: 'none' }}
+      >
         Contact support
       </a>
     );
@@ -2831,7 +2494,7 @@ function RecoveryCell({
         onClick={() => void startReview()}
         disabled={createPreview.isPending}
         style={{
-          ...baseStyle,
+          ...rowControlStyle,
           color: color.amber,
           cursor: createPreview.isPending ? 'wait' : 'pointer',
           fontWeight: 600,
@@ -2938,32 +2601,22 @@ function ActionRecoveryDialog({
           maxHeight: '78vh',
           overflow: 'auto',
           background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+          borderRadius: radius.lg,
+          boxShadow: shadow.lift,
           zIndex: 171,
           fontFamily: font.sans,
         }}
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <div
-            style={{
-              fontFamily: font.mono,
-              fontSize: 10.5,
-              letterSpacing: '0.14em',
-              textTransform: 'uppercase',
-              color: color.fgMuted,
-            }}
-          >
-            Verify first · nothing changes yet
-          </div>
           <h2
             id="action-recovery-title"
-            style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}
+            style={{ fontSize: text.xl, fontWeight: 600, margin: 0, color: color.fg }}
           >
             Review this failed {failedActionNoun(row.action)}
           </h2>
-          <p style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: 13, lineHeight: 1.5 }}>
+          <p
+            style={{ margin: '8px 0 0', color: color.fgSoft, fontSize: text.base, lineHeight: 1.5 }}
+          >
             We check Gmail first, so nothing changes until you confirm.
           </p>
         </div>
@@ -2981,7 +2634,9 @@ function ActionRecoveryDialog({
             <>
               <RecoveryConsequence preview={preview} />
               {preview.requiresNewWakeAt ? (
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
+                <label
+                  style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.base }}
+                >
                   <span style={{ color: color.fgMuted }}>New return time</span>
                   <input
                     type="datetime-local"
@@ -2990,22 +2645,22 @@ function ActionRecoveryDialog({
                     onChange={(event) => setWakeAtLocal(event.target.value)}
                     style={{
                       border: `1px solid ${color.border}`,
-                      borderRadius: 8,
+                      borderRadius: radius.md,
                       background: color.bg,
                       color: color.fg,
                       fontFamily: font.sans,
-                      fontSize: 13,
+                      fontSize: text.base,
                       padding: '8px 10px',
                     }}
                   />
                   {!wakeAtValid && (
-                    <span role="alert" style={{ color: color.red, fontSize: 12 }}>
+                    <span role="alert" style={{ color: color.danger, fontSize: text.sm }}>
                       Choose a future return time.
                     </span>
                   )}
                 </label>
               ) : preview.verb === 'later' && preview.wakeAt ? (
-                <p style={{ margin: 0, color: color.fgMuted, fontSize: 12.5 }}>
+                <p style={{ margin: 0, color: color.fgMuted, fontSize: text.base }}>
                   Return time: {formatRecoveryDate(preview.wakeAt)}
                 </p>
               ) : null}
@@ -3016,11 +2671,11 @@ function ActionRecoveryDialog({
             <div
               role="alert"
               style={{
-                border: `1px solid ${color.red}`,
-                borderRadius: 8,
-                background: 'rgba(239,68,68,0.07)',
-                color: color.red,
-                fontSize: 12.5,
+                border: `1px solid ${color.dangerBorder}`,
+                borderRadius: radius.md,
+                background: color.dangerBg,
+                color: color.danger,
+                fontSize: text.base,
                 lineHeight: 1.45,
                 padding: '9px 11px',
               }}
@@ -3092,7 +2747,7 @@ function RecoveryPreviewBody({
 
   if (isStarting || preview?.status === 'verifying') {
     return (
-      <div role="status" aria-live="polite" style={{ color: color.fgSoft, fontSize: 13 }}>
+      <div role="status" aria-live="polite" style={{ color: color.fgSoft, fontSize: text.base }}>
         Checking Gmail&apos;s current state…
       </div>
     );
@@ -3104,7 +2759,7 @@ function RecoveryPreviewBody({
 
   if (preview.status === 'consumed' && preview.outcome === 'no_change_needed') {
     return (
-      <div role="status" style={{ color: color.emerald, fontSize: 13, lineHeight: 1.5 }}>
+      <div role="status" style={{ color: color.fg, fontSize: text.base, lineHeight: 1.5 }}>
         <strong>Nothing is left to retry.</strong> Gmail no longer has a message this action applies
         to, so nothing new was started.
       </div>
@@ -3114,7 +2769,7 @@ function RecoveryPreviewBody({
   if (preview.status === 'failed') {
     if (preview.outcome === 'reconnect_required') {
       return (
-        <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
+        <div role="alert" style={{ color: color.amber, fontSize: text.base, lineHeight: 1.5 }}>
           DeclutrMail could not verify Gmail because access needs attention. Reconnect the account,
           wait for its sync to finish, then return to Activity and choose Check and retry.
           <div style={{ marginTop: 10 }}>
@@ -3127,7 +2782,7 @@ function RecoveryPreviewBody({
     }
     if (preview.outcome === 'blocked') {
       return (
-        <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
+        <div role="alert" style={{ color: color.amber, fontSize: text.base, lineHeight: 1.5 }}>
           This action cannot be safely retried from Activity. Nothing new was started.
         </div>
       );
@@ -3137,7 +2792,7 @@ function RecoveryPreviewBody({
 
   if (preview.status === 'consumed') {
     return (
-      <div role="status" style={{ color: color.emerald, fontSize: 13 }}>
+      <div role="status" style={{ color: color.fg, fontSize: text.base }}>
         This review has already been used.
       </div>
     );
@@ -3147,10 +2802,6 @@ function RecoveryPreviewBody({
   return (
     <div
       style={{
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
-        background: color.bg,
-        padding: '12px 14px',
         display: 'grid',
         gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
         gap: 10,
@@ -3172,7 +2823,7 @@ function RecoveryVerificationFailure({
   onRetry: () => void;
 }) {
   return (
-    <div role="alert" style={{ color: color.amber, fontSize: 13, lineHeight: 1.5 }}>
+    <div role="alert" style={{ color: color.amber, fontSize: text.base, lineHeight: 1.5 }}>
       We couldn&apos;t check Gmail&apos;s current state.
       <div style={{ marginTop: 10 }}>
         <Button tone="default" onClick={onRetry}>
@@ -3191,8 +2842,8 @@ function RecoveryVerificationFailure({
 function RecoveryCount({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div style={{ fontFamily: font.mono, fontSize: 18, color: color.fg }}>{value}</div>
-      <div style={{ color: color.fgMuted, fontSize: 11.5 }}>{label}</div>
+      <div style={{ ...numeralStyle, fontSize: text.xl, color: color.fg }}>{value}</div>
+      <div style={{ color: color.fgMuted, fontSize: text.xs }}>{label}</div>
     </div>
   );
 }
@@ -3214,10 +2865,9 @@ function RecoveryConsequence({ preview }: { preview: ActionRecoveryPreviewResult
     <div
       style={{
         borderLeft: `3px solid ${color.amber}`,
-        background: color.paper,
-        padding: '10px 12px',
+        padding: '2px 12px',
         color: color.fgSoft,
-        fontSize: 12.5,
+        fontSize: text.base,
         lineHeight: 1.5,
       }}
     >
@@ -3285,48 +2935,27 @@ function recoveryConfirmNeedsRecheck(error: Error): boolean {
 function OpenInGmailLink({
   row,
   href,
-  showDivider,
 }: {
   row: ActivityRowWire;
   /** Built by the caller; null when there is no sender or no mailbox to link into. */
   href: string | null;
-  showDivider: boolean;
 }) {
   if (!href || !row.sender) return null;
   return (
-    <>
-      {showDivider && (
-        <span
-          aria-hidden="true"
-          style={{
-            display: 'inline-block',
-            width: 1,
-            alignSelf: 'stretch',
-            background: color.line,
-          }}
-        />
-      )}
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`Open ${row.sender.displayName} in Gmail`}
-        style={{
-          fontSize: 11,
-          fontFamily: font.mono,
-          textTransform: 'uppercase',
-          letterSpacing: '0.10em',
-          color: color.fgMuted,
-          textDecoration: 'none',
-          padding: '6px 10px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 4,
-        }}
-      >
-        Gmail <span aria-hidden="true">↗</span>
-      </a>
-    </>
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Open ${row.sender.displayName} in Gmail`}
+      style={{
+        ...rowControlStyle,
+        padding: '6px 8px',
+        color: color.fgMuted,
+        textDecoration: 'none',
+      }}
+    >
+      Gmail <span aria-hidden="true">↗</span>
+    </a>
   );
 }
 
@@ -3365,19 +2994,6 @@ function UndoCell({
   const tokenIsBulkFailed =
     undo.kind === 'available' && (bulkFailedTokens?.has(undo.token) ?? false);
 
-  const baseStyle: CSSProperties = {
-    fontSize: 12,
-    fontFamily: font.sans,
-    fontWeight: 500,
-    padding: '6px 12px',
-    background: 'transparent',
-    border: 'none',
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 4,
-    cursor: 'pointer',
-  };
-
   if (undo.kind === 'available') {
     const failed = (revert.isError && revert.variables === undo.token) || tokenIsBulkFailed;
     return (
@@ -3396,7 +3012,8 @@ function UndoCell({
               : 'Revert this action.'
           }
           style={{
-            ...baseStyle,
+            ...rowControlStyle,
+            border: `1px solid ${failed ? color.amber : color.line}`,
             color: failed ? color.amber : color.primary,
             cursor: isPendingHere ? 'wait' : 'pointer',
             fontWeight: failed ? 600 : 500,
@@ -3406,7 +3023,7 @@ function UndoCell({
           <span aria-hidden="true">↺</span>
         </button>
         {failed && (
-          <span role="status" style={{ color: color.amber, fontSize: 12, maxWidth: 260 }}>
+          <span role="status" style={{ color: color.amber, fontSize: text.xs, maxWidth: 260 }}>
             {revert.error?.message ?? 'Could not confirm Undo. Try again.'}
           </span>
         )}
@@ -3415,18 +3032,7 @@ function UndoCell({
   }
   if (undo.kind === 'executed') {
     return (
-      <span
-        role="status"
-        style={{
-          ...baseStyle,
-          color: color.fgMuted,
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          cursor: 'default',
-        }}
-      >
+      <span role="status" style={{ ...rowControlStyle, color: color.fgMuted }}>
         Undone
       </span>
     );
@@ -3435,15 +3041,7 @@ function UndoCell({
     return (
       <span
         title={`Undo window closed on ${formatExpiry(undo.expiredAt, timeZone)}.`}
-        style={{
-          ...baseStyle,
-          color: color.fgMuted,
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          cursor: 'help',
-        }}
+        style={{ ...rowControlStyle, color: color.fgMuted, cursor: 'help' }}
       >
         Expired
       </span>
@@ -3465,27 +3063,12 @@ function lastToken(undo: ActivityRowWire['undoState']): string | null {
 
 function LoadingState() {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        maxWidth: 1180,
-      }}
-    >
-      {[48, 56, 56, 56, 56, 56].map((h, i) => (
+    <div role="status" aria-live="polite" style={screenColumnStyle}>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
         <div
           key={i}
           aria-hidden="true"
-          style={{
-            height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
-          }}
+          style={{ height: 40, borderBottom: `1px solid ${color.line}` }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading activity</span>
@@ -3516,14 +3099,7 @@ function ActivityErrorState({
     ? 'Activity could not load this filter. Use a valid outcome and a From date earlier than To, or reset the filters.'
     : 'Try again in a moment.';
   return (
-    <div
-      style={{
-        ...(embedded ? {} : { padding: '20px 24px 28px' }),
-        width: '100%',
-        maxWidth: 720,
-        fontFamily: font.sans,
-      }}
-    >
+    <div style={embedded ? { width: '100%', fontFamily: font.sans } : screenColumnStyle}>
       <RecoverableErrorState
         title={title}
         description={message}
@@ -3571,55 +3147,32 @@ function Chip({
   label,
   isActive,
   onClick,
-  tone = 'accent',
-  dot,
-  compact = false,
+  touch = false,
 }: {
   label: string;
   isActive: boolean;
   onClick: () => void;
-  tone?: 'accent' | 'muted';
-  /** Optional leading colour-dot — used by the verb chips to surface the
-   *  semantic per-verb palette in both the chip and the matching row. */
-  dot?: string;
-  /** Tighter padding + size for dense toolbar bands. */
-  compact?: boolean;
+  /** 44px target inside the mobile bottom sheet. */
+  touch?: boolean;
 }) {
-  const activeBg = tone === 'accent' ? color.primary : color.fg;
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={isActive}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: dot ? 6 : 0,
-        padding: compact ? '3px 10px' : '4px 12px',
-        fontSize: compact ? 11.5 : 12,
+        minHeight: touch ? 44 : 28,
+        padding: touch ? '0 16px' : '0 12px',
+        fontSize: text.sm,
         fontFamily: font.sans,
-        border: `1px solid ${isActive ? activeBg : color.lineSoft}`,
-        background: isActive ? activeBg : 'transparent',
-        color: isActive ? color.fgInverse : color.fg,
-        borderRadius: 999,
+        border: `1px solid ${isActive ? color.primary : color.line}`,
+        background: isActive ? color.primarySoft : 'transparent',
+        color: isActive ? color.primary : color.fg,
+        borderRadius: radius.pill,
         cursor: 'pointer',
-        transition: 'background 120ms ease, border-color 120ms ease',
+        transition: `background ${motion.fast} ${motion.ease}, border-color ${motion.fast} ${motion.ease}`,
       }}
     >
-      {dot && (
-        <span
-          aria-hidden="true"
-          style={{
-            display: 'inline-block',
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            background: isActive ? color.fgInverse : dot,
-            // Faint ring so the dot reads on hover even when fill matches bg
-            boxShadow: isActive ? 'none' : `0 0 0 1px ${dot}33`,
-          }}
-        />
-      )}
       {label}
     </button>
   );
@@ -3724,31 +3277,6 @@ function unsafeRetryReason(row: ActivityRowWire): string | null {
     : null;
 }
 
-function clearOutcomeHref(
-  filters: {
-    window?: ActivityWindowWire;
-    dateFrom?: string | null;
-    dateTo?: string | null;
-    senderQuery?: string;
-  },
-  cardRange: { from: string; to: string } | null,
-): string {
-  const params = new URLSearchParams({ window: filters.window ?? '30d' });
-  // The 7-day card stamps its own from/to onto its links. Dates that ARE
-  // the card's go with the outcome; a range the user picked stays. Checked,
-  // not inferred from the window — a custom range can sit under `7d` too.
-  const datesAreTheCards =
-    cardRange !== null && filters.dateFrom === cardRange.from && filters.dateTo === cardRange.to;
-  if (datesAreTheCards) {
-    if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
-    return `/activity?${params.toString()}`;
-  }
-  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
-  if (filters.dateTo) params.set('date_to', filters.dateTo);
-  if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
-  return `/activity?${params.toString()}`;
-}
-
 function failedOutcomeHref(filters: {
   window?: ActivityWindowWire;
   dateFrom?: string | null;
@@ -3823,16 +3351,11 @@ export function windowToLabel(
 }
 
 /**
- * Coarse "N days/hours/min ago" formatter for the row meta. Bounded to
- * the buckets the screen displays — proper l10n is a follow-up.
- */
-/**
- * The exact local timestamp behind a relative label, for the row's
- * `title` tooltip. The coarse `Nh ago` bucket is right for scanning but
- * useless the moment you are triaging a failure or lining a row up
- * against Gmail — and three rows of one composite all read `1h ago`,
- * which hides that they were one action. Seconds are included for
- * exactly that case.
+ * The exact local timestamp behind a row's clock time, for its `title`
+ * tooltip. The minute is right for scanning but useless the moment you
+ * are triaging a failure or lining a row up against Gmail — and three
+ * rows of one composite all read the same minute, which hides that they
+ * were one action. Seconds are included for exactly that case.
  */
 export function absoluteTime(iso: string, timeZone?: string): string {
   const d = new Date(iso);
@@ -3846,19 +3369,6 @@ export function absoluteTime(iso: string, timeZone?: string): string {
     timeStyle: 'medium',
     timeZone,
   });
-}
-
-export function relativeTime(iso: string, nowMs: number = Date.now()): string {
-  const then = new Date(iso).getTime();
-  if (!Number.isFinite(then)) return '';
-  const diffMs = Math.max(0, nowMs - then);
-  const minutes = Math.floor(diffMs / 60_000);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  if (days >= 1) return `${days}d ago`;
-  if (hours >= 1) return `${hours}h ago`;
-  if (minutes >= 1) return `${minutes}m ago`;
-  return 'just now';
 }
 
 /**

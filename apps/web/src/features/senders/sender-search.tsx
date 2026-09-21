@@ -5,7 +5,7 @@ import { Avatar, tokens } from '@declutrmail/shared';
 import { useSenderSuggestions } from './api/use-sender-suggestions';
 import type { Sender } from './data';
 
-const { color, font } = tokens;
+const { color, font, text: typeScale } = tokens;
 
 /**
  * How long after the last keystroke the BE typeahead is asked.
@@ -254,7 +254,7 @@ export function SenderSearch({
           border: `1px solid ${color.border}`,
           borderRadius: 7,
           fontFamily: font.sans,
-          fontSize: 12.5,
+          fontSize: typeScale.sm,
           outline: 'none',
         }}
       />
@@ -282,13 +282,11 @@ export function SenderSearch({
             <div
               style={{
                 padding: '10px 12px',
-                fontFamily: font.mono,
-                fontSize: 11,
+                fontSize: typeScale.sm,
                 color: color.fgMuted,
-                letterSpacing: '0.04em',
               }}
             >
-              searching mailbox…
+              Searching mailbox…
             </div>
           )}
           {matches.map((s, i) => (
@@ -318,7 +316,7 @@ export function SenderSearch({
                 <span
                   style={{
                     display: 'block',
-                    fontSize: 12.5,
+                    fontSize: typeScale.sm,
                     fontWeight: 600,
                     color: color.fg,
                     overflow: 'hidden',
@@ -332,7 +330,7 @@ export function SenderSearch({
                   style={{
                     display: 'block',
                     fontFamily: font.mono,
-                    fontSize: 10,
+                    fontSize: typeScale.xs,
                     color: color.fgMuted,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
@@ -345,7 +343,7 @@ export function SenderSearch({
               <span
                 style={{
                   fontFamily: font.mono,
-                  fontSize: 10,
+                  fontSize: typeScale.xs,
                   color: color.fgMuted,
                   whiteSpace: 'nowrap',
                 }}

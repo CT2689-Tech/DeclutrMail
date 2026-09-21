@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
-import { color, font, radius } from '../tokens/tokens';
+import { color, font, radius, text } from '../tokens/tokens';
 
 /**
  * Accessible description tooltip (D38 — "tooltips on hover").
@@ -80,7 +80,7 @@ export function Tooltip({
                 border: `1px solid ${color.fg}`,
                 borderRadius: radius.sm,
                 fontFamily: font.sans,
-                fontSize: 12,
+                fontSize: text.sm,
                 fontWeight: 400,
                 lineHeight: 1.45,
                 whiteSpace: 'normal',

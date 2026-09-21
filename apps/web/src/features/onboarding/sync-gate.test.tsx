@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { SyncStatus } from '@declutrmail/shared/contracts';
 
-import { SyncGate, activeStageIndex, UI_STAGES } from './sync-gate';
+import { SyncGate, stageSentence } from './sync-gate';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 
@@ -48,82 +48,85 @@ const FAILED: SyncStatus = {
   error_code: 'RateLimitError',
 };
 
-describe('activeStageIndex (D109 stage mapping)', () => {
-  it('maps progress_pct into one of six buckets while syncing', () => {
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 0 })).toBe(0);
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 45 })).toBe(2);
-    // 99% lands on "Preparing recommendations", not "Done".
-    expect(activeStageIndex({ ...SYNCING, progress_pct: 99 })).toBe(4);
+describe('stageSentence (D224 — the REAL current_stage, one sentence)', () => {
+  it('names the stage the worker reports, not a bucket of the percentage', () => {
+    expect(stageSentence(SYNCING)).toBe('Grouping email by sender.');
+    // Same percentage, different real stage ⇒ different sentence.
+    expect(stageSentence({ ...SYNCING, current_stage: 'fetching_metadata' })).toBe(
+      'Reading sender info.',
+    );
+    expect(stageSentence({ ...SYNCING, current_stage: 'queued', progress_pct: 0 })).toBe(
+      'Waiting to start.',
+    );
   });
 
-  // This assertion used to be `toBeLessThan(UI_STAGES.length)` — i.e.
-  // `< 6`. Index 5 IS "Done — your inbox is ready", and 5 < 6, so the
-  // test passed for the entire time the bug was live: the worker writes
-  // 90 then 97 while still `syncing`, and the gate showed "Done" under a
-  // heading still reading "Reading your inbox…". A guard has to assert
-  // the thing its NAME claims, so this now names the label.
-  it('never highlights "Done" while still syncing', () => {
-    for (const pct of [90, 97, 99, 100]) {
-      const index = activeStageIndex({ ...SYNCING, progress_pct: pct });
-      expect(UI_STAGES[index]).not.toBe('Done — your inbox is ready');
-      expect(index).toBeLessThan(UI_STAGES.length - 1);
+  // The worker writes `computing_recommendations, 90` then `finalizing, 97`
+  // while still `syncing` — minutes on a large mailbox — and the old
+  // six-row list lit "Done" for that whole span (audit 2026-08-21).
+  it('never says the inbox is ready while still syncing', () => {
+    for (const stage of [
+      'queued',
+      'fetching_metadata',
+      'building_sender_index',
+      'computing_recommendations',
+      'finalizing',
+      // A stage/readiness disagreement must not read as done either.
+      'ready',
+    ] as const) {
+      expect(stageSentence({ ...SYNCING, current_stage: stage, progress_pct: 99 })).not.toMatch(
+        /ready/i,
+      );
     }
   });
 
-  // Every clamp comparison against NaN is false, so a non-finite
-  // percentage would propagate through `Math.min`/`Math.max` unchanged
-  // and light up no row at all — a gate that looks frozen.
-  it('falls back to the first stage on a non-finite percentage', () => {
-    expect(activeStageIndex({ ...SYNCING, progress_pct: Number.NaN })).toBe(0);
-  });
-
-  it('marks every stage complete when readiness is ready', () => {
-    expect(activeStageIndex(READY)).toBe(UI_STAGES.length);
+  it('says ready only from readiness_status', () => {
+    expect(stageSentence(READY)).toBe('Your inbox is ready.');
   });
 });
 
 describe('SyncGate render', () => {
-  it('syncing: shows the title, a progressbar with the real percent, and the trust badge', () => {
+  it('syncing: the title, ONE progressbar at the real percent, ONE stage sentence', () => {
     const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
     expect(html).toContain('Reading your inbox');
     expect(html).toContain('aria-valuenow="45"');
-    // D228 trust artifact — locked headline + storage list (shared PrivacyBadge).
-    expect(html).toContain('We never fetch or store full email contents.');
-    expect(html).toContain('Sender name and email address');
-    // Pre-D228 wording is BANNED in product UI (CLAUDE.md §2.1).
+    expect(html.match(/role="progressbar"/g)).toHaveLength(1);
+    expect(html).toContain('Grouping email by sender.');
+    // No aspirational stage list — only the stage the worker reported.
+    expect(html).not.toContain('<ol');
+    expect(html).not.toContain('Preparing recommendations');
+    // A waiting screen is not a decision point: the trust badge lives on
+    // the promise step. Banned counter copy stays absent (CLAUDE.md §2.1).
+    expect(html).not.toContain('data-dm-privacy-badge');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
     // No time promise (D109 hard rule).
     expect(html).not.toMatch(/\d+\s*(min|minute|hour|sec)/i);
   });
 
-  it('does not prompt for browser notifications while preserving email-ready copy', () => {
+  it('a non-finite percentage renders an empty bar, never NaN', () => {
+    const html = renderToStaticMarkup(
+      <SyncGate status={{ ...SYNCING, progress_pct: Number.NaN }} />,
+    );
+    expect(html).toContain('aria-valuenow="0"');
+    expect(html).not.toContain('NaN');
+  });
+
+  it('does not prompt for browser notifications and promises no email it cannot prove', () => {
     const requestPermission = vi.fn().mockResolvedValue('granted');
     vi.stubGlobal('Notification', { permission: 'default', requestPermission });
 
     render(<SyncGate status={SYNCING} />);
 
-    expect(screen.getByText(/we’ll email you when your inbox is ready/i)).toBeInTheDocument();
+    expect(screen.queryByText(/email you/i)).toBeNull();
     expect(screen.queryByRole('button', { name: /get notified when ready/i })).toBeNull();
     expect(requestPermission).not.toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
 
-  it('syncing: renders all six stage labels', () => {
-    const html = renderToStaticMarkup(<SyncGate status={SYNCING} />);
-    for (const label of UI_STAGES) {
-      // React escapes `&` to `&amp;` in the served markup.
-      expect(html).toContain(label.replace(/&/g, '&amp;'));
-    }
-  });
-
-  it('failed: shows the error copy + retry, still shows the trust badge', () => {
+  it('failed: cause + next action, with a real retry', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
-    expect(html).toContain('snag');
+    expect(html).toContain('scan stopped');
     expect(html).toContain('Try again');
-    // D228 trust artifact present on the failed state too — banned copy absent.
-    expect(html).toContain('We never fetch or store full email contents.');
-    expect(html).toContain('Sender name and email address');
     expect(html).not.toContain('Bodies read: 0');
     expect(html).not.toContain('Full bodies fetched: 0');
   });
@@ -242,16 +245,15 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
 });
 
 describe('SyncGate escape hatch (D116 — secondary connect)', () => {
-  it('renders "Stay here" + "Go back to <primary>" when an escape is passed', () => {
+  it('renders ONE quiet "Go back to <primary>" when an escape is passed', () => {
     const html = renderToStaticMarkup(
       <SyncGate
         status={SYNCING}
         escape={{ returnToEmail: 'primary@example.com', onReturn() {} }}
       />,
     );
-    expect(html).toContain('Stay here');
     expect(html).toContain('Go back to primary@example.com');
-    expect(html).toContain('keep syncing this inbox in the background');
+    expect(html).not.toContain('Stay here');
   });
 
   it('first-run (no escape): renders no escape hatch — strict gate preserved (D6)', () => {
@@ -297,16 +299,5 @@ describe('SyncGate escape hatch (D116 — secondary connect)', () => {
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Go back to primary@example\.com/ }));
     expect(onReturn).toHaveBeenCalledOnce();
-  });
-
-  it('"Stay here" dismisses the hatch (keeps waiting on the gate)', () => {
-    render(
-      <SyncGate
-        status={SYNCING}
-        escape={{ returnToEmail: 'primary@example.com', onReturn: vi.fn() }}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Stay here' }));
-    expect(screen.queryByText(/Go back to/)).toBeNull();
   });
 });

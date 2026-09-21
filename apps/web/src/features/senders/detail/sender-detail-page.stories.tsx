@@ -15,6 +15,7 @@
 //   • Protected   — Protect-marked, recommendation suppressed
 //   • HighConfidence — verdict ≥0.85 — highlighted in the toolbar
 //   • MobileNarrow — phone-width reflow regression guard
+//   • Pane         — the same content at side-pane width
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
@@ -46,7 +47,7 @@ const meta: StoryMeta<typeof SenderDetailPage> = {
     docs: {
       description: {
         component:
-          'Sender Detail page (D39-D46). Strict layout order: Header → Recommendation → Action toolbar (K/A/U/L per D227) → Recent messages (Gmail deep-link per D41) → Stats strip → Charts → Decision history. Mandatory action preview per D226. Never renders message bodies per D7.',
+          'Sender Detail (D39-D46). Order: identity + Protected switch → one 90-day count → the five verbs (K/A/U/L/D, fact-derived primary filled) + optional suggestion → quiet stats row → Recent messages (Gmail deep-link per D41) → Decision timeline. Mandatory action preview per D226. Never renders message bodies per D7. `layout="pane"` is the same content inside the Senders list side pane.',
       },
     },
   },
@@ -133,44 +134,6 @@ export const HighConfidenceVerdict: Story<typeof SenderDetailPage> = {
 };
 
 /**
- * Trend bucket coverage — kpi-strip "Trend" cell renders each
- * bucket with its glyph + tone. Founder-eyeball aid for the
- * vocabulary review before stories migrate to real Storybook.
- */
-export const TrendBucketUp: Story<typeof SenderDetailPage> = {
-  args: {
-    state: {
-      kind: 'ready',
-      detail: {
-        ...buildSenderDetail(linkedin),
-        stats: {
-          ...buildSenderDetail(linkedin).stats,
-          volumeTrend: 'up',
-        },
-      },
-    },
-  },
-  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
-};
-
-export const TrendBucketDormant: Story<typeof SenderDetailPage> = {
-  args: {
-    state: {
-      kind: 'ready',
-      detail: {
-        ...buildSenderDetail(groupon),
-        stats: {
-          ...buildSenderDetail(groupon).stats,
-          volumeTrend: 'dormant',
-          monthlyVolume: 0,
-        },
-      },
-    },
-  },
-  render: (args: PageArgs) => frame(<SenderDetailPage {...args} />),
-};
-
-/**
  * Last-reviewed eyebrow — verdict + recency on the header. Surfaces
  * "Last reviewed Archive · 3d ago" for the recently-reviewed case,
  * and "Never reviewed" for the unreviewed case.
@@ -207,9 +170,9 @@ export const NeverReviewed: Story<typeof SenderDetailPage> = {
 };
 
 /**
- * Mobile-narrow — phone viewport. Verifies the stats strip reflows
- * to a single column, the charts stack vertically, and no fixed-width
- * column overflows the viewport (LEARNINGS 2026-05-19 regression guard).
+ * Mobile-narrow — phone viewport. Verifies the stats row and the verbs
+ * wrap, and no fixed-width column overflows the viewport (LEARNINGS
+ * 2026-05-19 regression guard).
  */
 export const MobileNarrow: Story<typeof SenderDetailPage> = {
   args: {
@@ -219,6 +182,20 @@ export const MobileNarrow: Story<typeof SenderDetailPage> = {
   render: (args: PageArgs) =>
     frame(
       <div style={{ maxWidth: 380, margin: '0 auto' }}>
+        <SenderDetailPage {...args} />
+      </div>,
+    ),
+};
+
+/** Pane — the content as the Senders list's side pane renders it. */
+export const Pane: Story<typeof SenderDetailPage> = {
+  args: {
+    state: { kind: 'ready', detail: buildSenderDetail(linkedin) },
+    layout: 'pane',
+  },
+  render: (args: PageArgs) =>
+    frame(
+      <div style={{ width: 440, borderLeft: `1px solid ${color.line}` }}>
         <SenderDetailPage {...args} />
       </div>,
     ),

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Button, EmptyState, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import type { OnboardingCleanupGoal } from '@declutrmail/shared/contracts';
 
 import { useTriageStats } from '@/features/triage/api/use-triage-queue';
@@ -14,7 +14,7 @@ import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Step 5 — First Triage (D112).
@@ -103,7 +103,7 @@ export function StepFirstTriage({
   if (firstTriage.isLoading || !firstTriage.data) {
     return (
       <PanelShell corner={corner}>
-        <p role="status" style={{ color: color.fgMuted, fontSize: 14 }}>
+        <p role="status" style={{ color: color.fgMuted, fontSize: text.md }}>
           Finding senders worth reviewing…
         </p>
       </PanelShell>
@@ -116,22 +116,28 @@ export function StepFirstTriage({
   if (done) {
     return (
       <PanelShell corner={corner}>
-        <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
+        {/* Title + one sentence, no moved-email number: the confirmed
+            per-action counts land on TriageScreen's status poll, which
+            unmounts with this panel, and an Undo from the tray below
+            would not take them back out — so no total here is provable. */}
         <h1
           style={{
             fontFamily: font.display,
-            fontSize: 30,
+            fontSize: text['3xl'],
             fontWeight: 600,
             letterSpacing: '-0.02em',
-            margin: '6px 0 4px',
+            lineHeight: 1.15,
+            margin: '0 0 8px',
           }}
         >
           {meta.pinned === 0 ? 'No decisions waiting.' : 'You’re done for today.'}
         </h1>
-        <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
+        <p
+          style={{ color: color.fgMuted, fontSize: text.md, margin: '0 auto 24px', maxWidth: 460 }}
+        >
           {meta.pinned === 0
             ? "We didn't find enough repeated email to review here."
-            : `You reviewed ${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'}. Archive, Later and Delete can be undone from Activity.`}
+            : `${meta.decided} ${meta.decided === 1 ? 'sender' : 'senders'} reviewed — Archive, Later and Delete can be undone from Activity.`}
         </p>
         <Button
           tone="primary"
@@ -139,7 +145,7 @@ export function StepFirstTriage({
           disabled={completing}
           style={{ minWidth: 220 }}
         >
-          {completing ? 'Finishing…' : 'Continue to Senders →'}
+          {completing ? 'Finishing…' : 'Continue to Senders'}
         </Button>
         {/* The undo tray stays reachable on the completion panel — the
             decisions just made must remain reversible (D35/D58). */}
@@ -171,10 +177,22 @@ export function StepFirstTriage({
         }}
       >
         <div>
-          <Eyebrow>Step 5 of 5 · Review senders</Eyebrow>
-          <p style={{ margin: '4px 0 0', fontSize: 13, color: color.fgMuted, maxWidth: 560 }}>
-            {GOAL_FRAMING[goal]} Review {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}.
-            Each one shows what changes before you confirm.
+          <h1
+            style={{
+              margin: 0,
+              fontSize: text['2xl'],
+              fontWeight: 600,
+              letterSpacing: '-0.01em',
+              color: color.fg,
+            }}
+          >
+            Review senders{' '}
+            <span style={{ fontFamily: font.mono, fontSize: text.md, color: color.fgMuted }}>
+              {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}
+            </span>
+          </h1>
+          <p style={{ margin: '4px 0 0', fontSize: text.md, color: color.fgMuted, maxWidth: 560 }}>
+            {GOAL_FRAMING[goal]}
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

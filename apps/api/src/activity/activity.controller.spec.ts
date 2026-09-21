@@ -10,7 +10,6 @@ import type { ActivitySupportBundleService } from './activity-support-bundle.ser
 function makeController() {
   const reads = {
     listActivity: vi.fn(),
-    getWeeklyReview: vi.fn(),
   } as unknown as ActivityReadService;
   const bundles = {
     createBundle: vi.fn(() => {
@@ -19,7 +18,7 @@ function makeController() {
       return Promise.resolve(stream);
     }),
   } as unknown as ActivitySupportBundleService;
-  // These specs cover the weekly-review + export paths, which never touch
+  // These specs cover the outcome-filter + export paths, which never touch
   // the icon cache. A stub that returns no marks keeps the avatar
   // decoration out of their way while still satisfying the constructor.
   const icons = {
@@ -28,7 +27,7 @@ function makeController() {
   return { controller: new ActivityController(reads, bundles, icons), bundles, reads };
 }
 
-describe('ActivityController weekly review', () => {
+describe('ActivityController outcome filter', () => {
   it.each(['unknown', '', 'completed,unknown'])(
     'rejects invalid outcome %j instead of silently broadening',
     async (outcome) => {
@@ -50,32 +49,6 @@ describe('ActivityController weekly review', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     },
   );
-
-  it('forwards only the current mailbox to the weekly aggregate', async () => {
-    const { controller, reads } = makeController();
-    vi.mocked(reads.getWeeklyReview).mockResolvedValue({
-      window: '7d',
-      from: '2026-05-18T08:00:00.000Z',
-      to: '2026-05-25T08:00:00.000Z',
-      completed: 1,
-      skipped: 2,
-      failed: 3,
-      recovered: 4,
-      protected: 5,
-    });
-    await expect(controller.weeklyReview({ id: 'mailbox-1' }, undefined)).resolves.toMatchObject({
-      data: { completed: 1, protected: 5 },
-    });
-    expect(reads.getWeeklyReview).toHaveBeenCalledWith('mailbox-1', expect.any(Number), '');
-
-    // The card narrows with the rest of the screen.
-    await controller.weeklyReview({ id: 'mailbox-1' }, '  news@brand.com  ');
-    expect(reads.getWeeklyReview).toHaveBeenLastCalledWith(
-      'mailbox-1',
-      expect.any(Number),
-      'news@brand.com',
-    );
-  });
 });
 
 describe('ActivityController support bundle', () => {

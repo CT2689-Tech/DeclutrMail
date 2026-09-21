@@ -32,7 +32,7 @@ describe('DomainBatchCard — count reads the eligible set (D245)', () => {
     const [batch] = findDomainBatches([row('a'), row('b', 'replied'), row('c'), row('d')]);
     expect(batch).toBeDefined();
     render(<DomainBatchCard batch={batch!} onVerb={() => {}} onDismiss={() => {}} />);
-    expect(screen.getByText(/3 senders from amazon\.com — decide together\?/)).toBeInTheDocument();
+    expect(screen.getByText('3 senders from amazon.com')).toBeInTheDocument();
     expect(screen.getByText(/1 protected sender stays untouched/)).toBeInTheDocument();
   });
 

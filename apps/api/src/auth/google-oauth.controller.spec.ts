@@ -221,7 +221,7 @@ describe('GoogleOAuthController.start — an existing session is not replaced', 
 
     await controllerWith(sessions, jwt).start(req, res as unknown as Response);
 
-    expect(res.redirect).toHaveBeenCalledWith(302, 'https://app.declutrmail.test/senders');
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://app.declutrmail.test/home');
     expect(res.cookie).not.toHaveBeenCalled();
   });
 
@@ -279,7 +279,7 @@ describe('GoogleOAuthController.start — an existing session is not replaced', 
       res as unknown as Response,
     );
 
-    expect(res.redirect).toHaveBeenCalledWith(302, 'https://app.declutrmail.test/senders');
+    expect(res.redirect).toHaveBeenCalledWith(302, 'https://app.declutrmail.test/home');
     expect(res.cookie).not.toHaveBeenCalled();
   });
 
@@ -1882,7 +1882,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     );
 
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/senders`);
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/home`);
   });
 
   it('turns a BetaGateDeniedError into a /beta redirect — signup.denied audit, no session, no throw', async () => {
@@ -1936,6 +1936,6 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
       ),
     ).resolves.toBeUndefined();
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/senders`);
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/home`);
   });
 });

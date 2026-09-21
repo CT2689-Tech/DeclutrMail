@@ -1,10 +1,12 @@
 /* ─────────────────────────────────────────────────────────────
    DeclutrMail marketing landing (D134, D223).
 
-   Editorial-broadsheet treatment of the existing warm-newsprint
-   token palette: hairline rules, mono microcaps eyebrows, Fraunces
-   display headlines, deep-teal accent. Scoped to `.dm-mkt` so none
-   of this leaks into the app shell.
+   One idea per viewport: Fraunces display headlines, big type, few
+   words, lots of air, deep-teal accent. Nothing under 13px; mono only
+   for numerals and keys. Scoped to `.dm-mkt` so none of this leaks
+   into the app shell. The comparison pages share the primitives
+   (shell, eyebrow, h1/h2, lede, CTA); the landing-only scale lives
+   under `.dm-mkt-landing`.
 
    The `--mkt-*` aliases keep this feature-local treatment readable
    while the public layout deliberately stays in one consistent light
@@ -90,28 +92,16 @@
 
 @media (max-width: 480px) {
   .dm-mkt-shell {
-    padding: 0 18px;
+    padding: 0 16px;
   }
 }
 
-/* Mono microcaps eyebrow — the "№ 01 — Section" device. */
+/* A small sans label above a heading (comparison pages). */
 .dm-mkt-eyebrow {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--mkt-accent);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.dm-mkt-eyebrow::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--mkt-line);
+  margin: 0;
 }
 
 .dm-mkt-h2 {
@@ -125,15 +115,32 @@
 }
 
 .dm-mkt-lede {
-  font-size: clamp(15px, 1.6vw, 17px);
-  line-height: 1.65;
+  font-size: clamp(17px, 1.7vw, 19px);
+  line-height: 1.6;
   color: var(--mkt-ink-soft);
   max-width: 60ch;
-  margin: 16px 0 0;
+  margin: 20px 0 0;
 }
 
+/* Longhand on purpose: sections also carry `.dm-mkt-shell`, and a padding
+   shorthand here would zero the shell's side gutter. */
 .dm-mkt-section {
-  padding: clamp(64px, 9vw, 112px) 0 0;
+  padding-top: clamp(96px, 13vw, 160px);
+}
+
+.dm-mkt-center {
+  text-align: center;
+}
+
+.dm-mkt-center .dm-mkt-lede {
+  margin-inline: auto;
+}
+
+.dm-mkt-landing .dm-mkt-h2 {
+  font-size: clamp(32px, 5vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  margin-top: 0;
 }
 
 /* CTA buttons. */
@@ -141,16 +148,14 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding: 13px 22px;
+  padding: 15px 28px;
   border-radius: 9999px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: 0.01em;
   text-decoration: none;
   border: 1px solid transparent;
   transition:
     transform 0.15s cubic-bezier(0.2, 0.7, 0.3, 1),
-    box-shadow 0.15s cubic-bezier(0.2, 0.7, 0.3, 1),
     background 0.15s ease;
 }
 
@@ -161,15 +166,6 @@
 
 .dm-mkt-cta-primary:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 24px -8px rgba(14, 20, 19, 0.35);
-}
-
-.dm-mkt-cta-primary .dm-mkt-cta-arrow {
-  transition: transform 0.15s ease;
-}
-
-.dm-mkt-cta-primary:hover .dm-mkt-cta-arrow {
-  transform: translateX(3px);
 }
 
 .dm-mkt-cta-ghost {
@@ -182,114 +178,45 @@
   border-color: var(--mkt-ink);
 }
 
-/* ── Masthead ───────────────────────────────────────────────── */
-
-.dm-mkt-masthead {
-  border-bottom: 1px solid var(--mkt-line);
-  position: relative;
-}
-
-/* Double-rule, newspaper style: thick + thin. */
-.dm-mkt-masthead::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: var(--mkt-ink);
-}
-
-.dm-mkt-masthead-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 18px 0;
-}
-
-.dm-mkt-wordmark {
-  font-family: var(--dm-font-display);
-  font-size: 21px;
-  font-weight: 620;
-  letter-spacing: -0.01em;
-  color: var(--mkt-ink);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.dm-mkt-wordmark b {
-  color: var(--mkt-accent);
-  font-weight: inherit;
-}
-
-.dm-mkt-nav-links {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  font-family: var(--dm-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-}
-
-.dm-mkt-nav-links a {
-  color: var(--mkt-ink-soft);
-  text-decoration: none;
-}
-
-.dm-mkt-nav-links a:hover {
-  color: var(--mkt-ink);
-}
-
-.dm-mkt-nav-cta {
+/* The quiet second action: a text link, never a second button. */
+.dm-mkt-cta-link {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
-  border-radius: 9999px;
-  background: var(--mkt-cta-bg);
-  color: var(--mkt-cta-fg);
-  font-family: var(--dm-font-sans);
-  font-size: 12.5px;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--mkt-accent);
+  font-size: 16px;
   font-weight: 600;
   text-decoration: none;
-  white-space: nowrap;
 }
 
-@media (max-width: 720px) {
-  .dm-mkt-nav-links .dm-mkt-nav-link {
-    display: none;
-  }
+.dm-mkt-cta-link:hover,
+.dm-mkt-cta-link:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 /* ── Hero ───────────────────────────────────────────────────── */
 
 .dm-mkt-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
-  gap: clamp(32px, 5vw, 72px);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: clamp(48px, 7vw, 96px) 0 clamp(40px, 5vw, 64px);
+  text-align: center;
+  padding-top: clamp(72px, 10vw, 136px);
 }
 
-@media (max-width: 980px) {
-  .dm-mkt-hero {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
+/* A small sans label above the h1 (comparison pages). */
 .dm-mkt-hero-kicker {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--mkt-ink-muted);
   margin: 0 0 20px;
 }
 
 .dm-mkt-hero-kicker b {
   color: var(--mkt-accent);
-  font-weight: 500;
+  font-weight: inherit;
 }
 
 .dm-mkt-h1 {
@@ -302,33 +229,53 @@
   text-wrap: balance;
 }
 
+.dm-mkt-landing .dm-mkt-h1 {
+  font-size: clamp(44px, 7vw, 84px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+/* Two sentences, two lines. */
+.dm-mkt-landing .dm-mkt-h1 em {
+  display: block;
+}
+
 .dm-mkt-h1 em {
   font-style: italic;
   color: var(--mkt-accent);
 }
 
 .dm-mkt-hero-sub {
-  font-size: clamp(15px, 1.8vw, 18px);
-  line-height: 1.6;
+  font-size: clamp(17px, 1.8vw, 19px);
+  line-height: 1.55;
   color: var(--mkt-ink-soft);
   max-width: 54ch;
   margin: 22px 0 0;
+}
+
+.dm-mkt-hero .dm-mkt-hero-sub {
+  max-width: 44ch;
+  margin-top: 28px;
 }
 
 .dm-mkt-hero-ctas {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
-  margin-top: 32px;
+  gap: 14px 28px;
+  margin-top: 36px;
+}
+
+.dm-mkt-hero .dm-mkt-hero-ctas,
+.dm-mkt-final .dm-mkt-hero-ctas {
+  justify-content: center;
 }
 
 .dm-mkt-hero-note {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--mkt-ink-muted);
-  margin: 14px 0 0;
+  margin: 18px 0 0;
 }
 
 .dm-mkt-hero-note a {
@@ -340,6 +287,11 @@
 .dm-mkt-hero-note a:hover,
 .dm-mkt-hero-note a:focus-visible {
   color: var(--mkt-ink);
+}
+
+.dm-mkt-hero-demo {
+  width: min(560px, 100%);
+  margin-top: clamp(56px, 7vw, 96px);
 }
 
 /* Staggered load reveal — opacity/transform only (zero layout shift). */
@@ -368,552 +320,272 @@
   }
 }
 
-/* ── Hero ledger card (D135 adaptation) ─────────────────────────
-   8s one-shot timeline with explicit pause/replay controls. The global
-   reduced-motion override advances it immediately to its final state. */
+/* ── Hero demo ──────────────────────────────────────────────────
+   One sender, one slot, three frames: the five decisions → the preview
+   → the result. Plays ONCE and settles on the result.
+
+   The whole timeline (delay + duration) stays at or under 5s. That
+   ceiling is what lets the demo ship without Pause/Replay controls —
+   WCAG 2.2.2 requires a pause mechanism only for motion that auto-plays
+   longer than five seconds. `landing-motion.test.ts` pins it; raise it
+   and the pause control has to come back. The global reduced-motion
+   override collapses it straight to the result frame. */
+
+.dm-mkt-ledger-demo {
+  margin: 0;
+}
 
 .dm-mkt-ledger {
   background: var(--mkt-card);
   border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  box-shadow:
-    0 1px 2px rgba(14, 20, 19, 0.05),
-    0 24px 48px -24px rgba(14, 20, 19, 0.18);
-  overflow: hidden;
-  position: relative;
-  min-height: 332px;
-  display: flex;
-  flex-direction: column;
-}
-
-.dm-mkt-ledger-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  /* At 375px the two labels measure exactly the content width, so
-     space-between has nothing left to distribute: they abut, each wraps
-     mid-phrase, and the row reads "DECISION 1 OFTHIS / 14 WEEK". The gap
-     guarantees separation and the wrap lets "this week" drop to its own
-     line instead of interleaving. */
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--mkt-line-soft);
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mkt-ink-muted);
-}
-
-.dm-mkt-ledger-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 9999px;
-  background: var(--mkt-accent);
-  display: inline-block;
-  margin-right: 8px;
-}
-
-.dm-mkt-ledger-body {
-  padding: 18px 16px 16px;
-  flex: 1;
-  position: relative;
-}
-
-.dm-mkt-ledger-row {
-  border: 1px solid var(--mkt-line);
-  border-radius: 12px;
-  padding: 14px;
-  animation: dm-mkt-row 8s 1 forwards;
+  border-radius: 20px;
+  padding: clamp(20px, 4vw, 32px);
+  text-align: left;
 }
 
 .dm-mkt-ledger-sender {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
 .dm-mkt-ledger-avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
   background: var(--mkt-accent-soft);
-  border: 1px solid var(--mkt-accent-border);
   color: var(--mkt-accent);
   display: grid;
   place-items: center;
   font-family: var(--dm-font-display);
   font-weight: 620;
-  font-size: 16px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
 .dm-mkt-ledger-name {
+  display: block;
   font-weight: 600;
-  font-size: 14.5px;
-  animation: dm-mkt-strike 8s 1 forwards;
+  font-size: 17px;
 }
 
 .dm-mkt-ledger-meta {
   display: block;
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
+  font-size: 14px;
   color: var(--mkt-ink-muted);
-  margin-top: 3px;
+  margin-top: 2px;
+}
+
+/* The three frames stack in one grid cell, so the card never resizes. */
+.dm-mkt-ledger-stage {
+  display: grid;
+  align-items: center;
+  margin-top: 24px;
+}
+
+.dm-mkt-ledger-stage > * {
+  grid-area: 1 / 1;
 }
 
 .dm-mkt-ledger-verbs {
   display: flex;
-  gap: 6px;
-  margin-top: 14px;
+  gap: 8px;
   flex-wrap: wrap;
-}
-
-.dm-mkt-ledger-preview {
-  margin-top: 12px;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3px 10px;
-  padding: 10px 11px;
-  border: 1px solid var(--mkt-accent-border);
-  border-radius: 8px;
-  background: var(--mkt-accent-soft);
-  color: var(--mkt-ink-soft);
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-}
-
-.dm-mkt-ledger-preview b {
-  grid-row: 1 / span 2;
-  color: var(--mkt-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  animation: dm-mkt-verbs 4.6s 0.4s 1 both;
 }
 
 .dm-mkt-ledger-verb {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 7px;
+  padding: 8px 12px;
   border: 1px solid var(--mkt-line);
-  border-radius: 8px;
-  font-size: 12px;
+  border-radius: 10px;
+  font-size: 14px;
   font-weight: 550;
   color: var(--mkt-ink-soft);
-  background: transparent;
 }
 
 .dm-mkt-ledger-verb kbd {
   font-family: var(--dm-font-mono);
-  font-size: 10px;
-  border: 1px solid var(--mkt-line);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  padding: 1px 4px;
+  font-size: 13px;
   color: var(--mkt-ink-muted);
 }
 
-/* The Archive chip is "pressed" mid-loop. */
 .dm-mkt-ledger-verb-archive {
-  animation: dm-mkt-press 8s 1 forwards;
+  animation: dm-mkt-press 4.6s 0.4s 1 both;
 }
 
-/* The completed state replaces the departing sender row, keeping the
-   demo informative after its one-shot motion has finished. */
-.dm-mkt-ledger-receipt {
-  position: absolute;
-  inset: 18px 16px 68px;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 7px;
-  padding: 18px;
-  text-align: center;
+.dm-mkt-ledger-verb-archive kbd {
+  color: inherit;
+}
+
+.dm-mkt-ledger-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--mkt-ink-soft);
   opacity: 0;
-  transform: scale(0.97);
-  pointer-events: none;
-  animation: dm-mkt-receipt 8s 1 forwards;
+  animation: dm-mkt-preview 4.6s 0.4s 1 both;
 }
 
-.dm-mkt-ledger-receipt-mark {
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 9999px;
-  background: var(--mkt-accent-soft);
-  border: 1px solid var(--mkt-accent-border);
+.dm-mkt-ledger-preview b {
   color: var(--mkt-accent);
-  font-size: 17px;
-  font-weight: 700;
-}
-
-.dm-mkt-ledger-receipt b {
-  font-family: var(--dm-font-display);
-  font-size: 18px;
   font-weight: 600;
 }
 
-.dm-mkt-ledger-receipt > span:last-child {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  color: var(--mkt-ink-muted);
-}
-
-/* Undo toast — hidden at frame 0, slides up mid-loop. */
-.dm-mkt-ledger-toast {
-  position: absolute;
-  left: 16px;
-  right: 16px;
-  bottom: 14px;
+/* Same shape as the product's one bottom pill: what happened · Undo. */
+.dm-mkt-ledger-result {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
+  padding: 13px 18px;
+  border-radius: 9999px;
   background: var(--mkt-desk);
   color: var(--mkt-desk-ink);
-  border-radius: 10px;
-  padding: 11px 14px;
-  font-size: 12.5px;
+  font-size: 15px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
   opacity: 0;
-  transform: translateY(10px);
-  animation: dm-mkt-toast 8s 1 forwards;
+  animation: dm-mkt-result 4.6s 0.4s 1 both;
 }
 
-.dm-mkt-ledger-toast b {
+.dm-mkt-ledger-result .dm-mkt-undo {
+  color: var(--mkt-mint);
   font-weight: 600;
 }
 
-.dm-mkt-ledger-toast .dm-mkt-undo {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--mkt-mint);
-  white-space: nowrap;
-}
-
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-row,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-name,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-verb-archive,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-receipt,
-.dm-mkt-ledger[data-paused='true'] .dm-mkt-ledger-toast {
-  animation-play-state: paused;
-}
-
-.dm-mkt-ledger-controls {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 8px 14px;
-  margin-top: 11px;
-  font-size: 11px;
-}
-
-.dm-mkt-ledger-controls button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--mkt-ink-muted);
-  font: 600 11px/1.4 var(--dm-font-sans);
-  cursor: pointer;
-}
-
-.dm-mkt-ledger-controls a {
-  color: var(--mkt-accent);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.dm-mkt-ledger-controls button:hover,
-.dm-mkt-ledger-controls button:focus-visible,
-.dm-mkt-ledger-controls a:hover,
-.dm-mkt-ledger-controls a:focus-visible {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* Caption under the card. */
 .dm-mkt-ledger-caption {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.05em;
+  font-size: 13px;
   color: var(--mkt-ink-muted);
   text-align: center;
-  margin-top: 8px;
+  margin-top: 14px;
 }
 
-/* One-shot timeline (8s, then settles on the confirmed receipt):
-   0.0–1.0s  row settles (frame 0 base)
-   1.5–3.0s  Archive chip highlights
-   3.0–4.0s  press → strikethrough + row slides out
-   4.0–8.0s  toast visible */
+/* 4.6s timeline:
+   0–40%    the five decisions; Archive presses at 22–38%
+   44–68%   the preview
+   74–100%  the result (final frame) */
 
-@keyframes dm-mkt-row {
+@keyframes dm-mkt-verbs {
   0%,
-  37.5% {
+  38% {
     opacity: 1;
-    transform: translateX(0);
   }
-  47%,
+  42%,
   100% {
     opacity: 0;
-    transform: translateX(28px);
   }
 }
 
 @keyframes dm-mkt-press {
   0%,
-  16% {
+  18% {
     background: transparent;
     color: var(--mkt-ink-soft);
     border-color: var(--mkt-line);
     transform: scale(1);
   }
-  22%,
-  36% {
+  24%,
+  32% {
     background: var(--mkt-cta-bg);
     color: var(--mkt-cta-fg);
     border-color: var(--mkt-cta-bg);
     transform: scale(1);
   }
-  39% {
-    transform: scale(0.94);
+  35% {
+    transform: scale(0.95);
   }
-  42%,
+  38%,
   100% {
-    background: transparent;
-    color: var(--mkt-ink-soft);
-    border-color: var(--mkt-line);
+    background: var(--mkt-cta-bg);
+    color: var(--mkt-cta-fg);
+    border-color: var(--mkt-cta-bg);
     transform: scale(1);
   }
 }
 
-@keyframes dm-mkt-strike {
+@keyframes dm-mkt-preview {
   0%,
-  36% {
-    text-decoration-color: transparent;
+  42% {
+    opacity: 0;
+    transform: translateY(6px);
   }
-  40%,
+  47%,
+  66% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  70%,
   100% {
-    text-decoration: line-through;
-    text-decoration-color: var(--mkt-ink-muted);
+    opacity: 0;
+    transform: translateY(0);
   }
 }
 
-@keyframes dm-mkt-toast {
+@keyframes dm-mkt-result {
   0%,
-  47% {
+  72% {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
-  53%,
+  78%,
   100% {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-@keyframes dm-mkt-receipt {
-  0%,
-  45% {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-  52%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* ── Trust strip ────────────────────────────────────────────── */
-
-.dm-mkt-trust {
-  border-top: 1px solid var(--mkt-line);
-  border-bottom: 1px solid var(--mkt-line);
-  padding: 16px 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 28px;
-}
-
-/* ── Gmail companion ───────────────────────────────────────── */
-
-.dm-mkt-companion-grid > div > p {
-  color: var(--mkt-accent);
-  font-family: var(--dm-font-mono);
-  font-size: 10px;
-  font-weight: 650;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.dm-mkt-section-link-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px 28px;
-  margin-top: 22px;
-}
-
-.dm-mkt-section-link-row a {
-  color: var(--mkt-accent);
-  font-size: 12.5px;
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.dm-mkt-companion-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  overflow: hidden;
-  margin-top: 30px;
-  border: 1px solid var(--mkt-line);
-  border-radius: 12px;
-  background: var(--mkt-card);
-}
-
-.dm-mkt-companion-grid > div {
-  padding: 24px;
-}
-
-.dm-mkt-companion-grid > div + div {
-  border-left: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-companion-grid ul {
-  display: grid;
-  gap: 9px;
-  margin: 15px 0 0;
-  padding-left: 20px;
-  color: var(--mkt-ink-soft);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-@media (max-width: 620px) {
-  .dm-mkt-companion-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .dm-mkt-companion-grid > div + div {
-    border-top: 1px solid var(--mkt-line);
-    border-left: 0;
-  }
-}
-
-.dm-mkt-trust-item {
-  min-width: 0;
-  max-width: 100%;
-  flex: 0 1 auto;
-  font-family: var(--dm-font-mono);
-  font-size: 11.5px;
-  line-height: 1.55;
-  letter-spacing: 0.04em;
-  color: var(--mkt-ink-soft);
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  white-space: normal;
-}
-
-.dm-mkt-trust-item::before {
-  content: '·';
-  color: var(--mkt-accent);
-  font-weight: 700;
-}
-
-/* A trust item the visitor can go and check for themselves. */
-a.dm-mkt-trust-item {
-  color: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--mkt-line);
-  text-underline-offset: 3px;
-}
-
-a.dm-mkt-trust-item:hover,
-a.dm-mkt-trust-item:focus-visible {
-  text-decoration-color: var(--mkt-accent);
-}
-
-/* ── Problem: the arithmetic ────────────────────────────────── */
-
-.dm-mkt-arith {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  overflow: hidden;
-  margin-top: 40px;
-  background: var(--mkt-card);
-}
-
-.dm-mkt-arith-cell {
-  padding: clamp(20px, 3vw, 34px);
-  border-left: 1px solid var(--mkt-line-soft);
-}
-
-.dm-mkt-arith-cell:first-child {
-  border-left: 0;
-}
-
-.dm-mkt-arith-label {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mkt-ink-muted);
-}
-
-.dm-mkt-arith-value {
-  font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: clamp(26px, 4vw, 44px);
-  letter-spacing: -0.02em;
-  margin-top: 10px;
-  font-variant-numeric: tabular-nums;
-}
-
-.dm-mkt-arith-value s {
-  color: var(--mkt-ink-muted);
-  text-decoration-thickness: 2px;
-}
-
-.dm-mkt-arith-value em {
-  font-style: normal;
-  color: var(--mkt-accent);
-}
-
-.dm-mkt-arith-note {
-  font-size: 12.5px;
-  color: var(--mkt-ink-muted);
-  margin-top: 8px;
-  line-height: 1.5;
-}
-
-@media (max-width: 720px) {
-  .dm-mkt-arith {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .dm-mkt-arith-cell {
-    border-left: 0;
-    border-top: 1px solid var(--mkt-line-soft);
-  }
-  .dm-mkt-arith-cell:first-child {
-    border-top: 0;
-  }
-}
-
 /* ── How it works ───────────────────────────────────────────── */
 
+.dm-mkt-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px clamp(16px, 3vw, 32px);
+  margin: clamp(40px, 6vw, 64px) 0 0;
+  font-size: clamp(17px, 1.8vw, 19px);
+  color: var(--mkt-ink-soft);
+}
+
+.dm-mkt-sum b {
+  font-family: var(--dm-font-display);
+  font-weight: 600;
+  font-size: clamp(40px, 6vw, 72px);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  color: var(--mkt-ink);
+}
+
+.dm-mkt-sum b.dm-mkt-sum-accent {
+  color: var(--mkt-accent);
+}
+
+.dm-mkt-sum-arrow {
+  color: var(--mkt-ink-muted);
+  font-size: clamp(24px, 3vw, 36px);
+}
+
+.dm-mkt-sum-note {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--mkt-ink-muted);
+}
+
 .dm-mkt-steps {
+  list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(20px, 3vw, 36px);
-  margin-top: 44px;
+  gap: clamp(32px, 5vw, 64px);
+  margin: clamp(56px, 8vw, 96px) 0 40px;
+  padding: 0;
+  text-align: left;
+  counter-reset: dm-mkt-step;
 }
 
 @media (max-width: 720px) {
@@ -923,105 +595,30 @@ a.dm-mkt-trust-item:focus-visible {
 }
 
 .dm-mkt-step {
-  border-top: 2px solid var(--mkt-ink);
-  padding-top: 18px;
-}
-
-.dm-mkt-step-no {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  color: var(--mkt-accent);
+  border-top: 1px solid var(--mkt-line);
+  padding-top: 24px;
+  counter-increment: dm-mkt-step;
 }
 
 .dm-mkt-step-title {
   font-family: var(--dm-font-display);
   font-weight: 600;
-  font-size: 21px;
-  margin: 10px 0 0;
+  font-size: 24px;
+  margin: 0;
+}
+
+.dm-mkt-step-title::before {
+  content: counter(dm-mkt-step);
+  margin-right: 12px;
+  color: var(--mkt-accent);
+  font-variant-numeric: tabular-nums;
 }
 
 .dm-mkt-step-body {
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--mkt-ink-soft);
-  margin: 10px 0 0;
-}
-
-/* ── The ritual (K/A/U/L/D) ─────────────────────────────────── */
-
-.dm-mkt-ritual-title {
-  margin: 44px 0 0;
-  font-family: var(--dm-font-display);
-  font-size: clamp(23px, 3vw, 30px);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-}
-
-.dm-mkt-ritual {
-  margin-top: 16px;
-  border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  background: var(--mkt-card);
-  overflow: hidden;
-}
-
-.dm-mkt-ritual-row {
-  display: grid;
-  grid-template-columns: 64px 150px minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--mkt-line-soft);
-}
-
-.dm-mkt-ritual-row:first-child {
-  border-top: 0;
-}
-
-.dm-mkt-ritual-row-delete {
-  border-top: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-ritual-key {
-  font-family: var(--dm-font-mono);
-  font-size: 15px;
-  font-weight: 600;
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--mkt-line);
-  border-bottom-width: 3px;
-  border-radius: 9px;
-  color: var(--mkt-ink);
-  background: var(--mkt-paper);
-}
-
-.dm-mkt-ritual-row-delete .dm-mkt-ritual-key {
-  color: var(--mkt-danger);
-}
-
-.dm-mkt-ritual-verb {
-  font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: 19px;
-}
-
-.dm-mkt-ritual-desc {
-  font-size: 13px;
+  font-size: 17px;
   line-height: 1.6;
   color: var(--mkt-ink-soft);
-}
-
-@media (max-width: 640px) {
-  .dm-mkt-ritual-row {
-    grid-template-columns: 52px minmax(0, 1fr);
-  }
-  .dm-mkt-ritual-desc {
-    grid-column: 1 / -1;
-    margin-top: -4px;
-  }
+  margin: 12px 0 0;
 }
 
 /* ── Privacy desk (full-bleed ink) ──────────────────────────── */
@@ -1029,14 +626,14 @@ a.dm-mkt-trust-item:focus-visible {
 .dm-mkt-desk-section {
   background: var(--mkt-desk);
   color: var(--mkt-desk-ink);
-  margin-top: clamp(64px, 9vw, 112px);
-  padding: clamp(56px, 8vw, 96px) 0;
+  margin-top: clamp(96px, 13vw, 160px);
+  padding: clamp(80px, 11vw, 144px) 0;
 }
 
 .dm-mkt-desk-grid {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: clamp(32px, 5vw, 64px);
+  gap: clamp(40px, 6vw, 88px);
   align-items: center;
 }
 
@@ -1046,64 +643,33 @@ a.dm-mkt-trust-item:focus-visible {
   }
 }
 
-.dm-mkt-desk-section .dm-mkt-eyebrow {
-  color: var(--mkt-mint);
-}
-
-.dm-mkt-desk-section .dm-mkt-eyebrow::after {
-  background: var(--mkt-desk-line);
-}
-
 .dm-mkt-desk-section .dm-mkt-h2 {
   color: var(--mkt-desk-ink);
+  font-size: clamp(30px, 4vw, 48px);
 }
 
 .dm-mkt-desk-section .dm-mkt-lede {
   color: var(--mkt-desk-ink-soft);
 }
 
-.dm-mkt-desk-points {
-  list-style: none;
-  margin: 26px 0 0;
-  padding: 0;
+.dm-mkt-desk-links {
   display: grid;
-  gap: 14px;
-}
-
-.dm-mkt-desk-points li {
-  display: flex;
+  justify-items: start;
   gap: 12px;
-  font-size: 13.5px;
-  line-height: 1.6;
-  color: var(--mkt-desk-ink-soft);
+  margin-top: 32px;
+  font-size: 15px;
 }
 
-.dm-mkt-desk-points li::before {
-  content: '—';
+.dm-mkt-desk-links a {
   color: var(--mkt-mint);
-  flex-shrink: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--mkt-desk-line);
+  text-underline-offset: 4px;
 }
 
-.dm-mkt-desk-link {
-  display: inline-block;
-  margin-top: 26px;
-  font-family: var(--dm-font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  color: var(--mkt-mint);
-  text-decoration: none;
-  border-bottom: 1px solid var(--mkt-desk-line);
-  padding-bottom: 3px;
-}
-
-.dm-mkt-desk-link:hover {
-  border-bottom-color: var(--mkt-mint);
-}
-
-/* The PrivacyBadge card stays its designed light-paper self in both
-   schemes — a document lying on the dark desk. */
-.dm-mkt-desk-paper {
-  filter: drop-shadow(0 24px 48px rgba(0, 0, 0, 0.4));
+.dm-mkt-desk-links a:hover,
+.dm-mkt-desk-links a:focus-visible {
+  text-decoration-color: var(--mkt-mint);
 }
 
 /* ── Pricing teaser ─────────────────────────────────────────── */
@@ -1111,200 +677,85 @@ a.dm-mkt-trust-item:focus-visible {
 .dm-mkt-tiers {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  margin-top: 44px;
-}
-
-@media (max-width: 860px) {
-  .dm-mkt-tiers {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  margin-top: clamp(48px, 7vw, 80px);
 }
 
 .dm-mkt-tier {
-  border: 1px solid var(--mkt-line);
-  border-radius: 14px;
-  background: var(--mkt-card);
-  padding: 26px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  padding: 8px clamp(16px, 3vw, 40px);
+  border-left: 1px solid var(--mkt-line);
 }
 
-.dm-mkt-tier-flag {
-  border-color: var(--mkt-accent-border);
-  box-shadow: 0 0 0 1px var(--mkt-accent-border) inset;
+.dm-mkt-tier:first-child {
+  border-left: 0;
+}
+
+@media (max-width: 720px) {
+  .dm-mkt-tiers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dm-mkt-tier {
+    padding: 28px 0;
+    border-left: 0;
+    border-top: 1px solid var(--mkt-line);
+  }
+
+  .dm-mkt-tier:first-child {
+    border-top: 0;
+    padding-top: 0;
+  }
 }
 
 .dm-mkt-tier-name {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--mkt-ink-muted);
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.dm-mkt-tier-star {
-  color: var(--mkt-accent);
-  letter-spacing: 0.04em;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--mkt-ink-soft);
 }
 
 .dm-mkt-tier-price {
   font-family: var(--dm-font-display);
   font-weight: 600;
-  font-size: 40px;
+  font-size: clamp(40px, 5vw, 56px);
   letter-spacing: -0.02em;
-  margin-top: 14px;
+  margin-top: 8px;
   font-variant-numeric: tabular-nums;
 }
 
 .dm-mkt-tier-price small {
   font-family: var(--dm-font-sans);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 400;
   color: var(--mkt-ink-muted);
   letter-spacing: 0;
 }
 
-.dm-mkt-tier-alt {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  color: var(--mkt-ink-muted);
-  margin-top: 4px;
-  min-height: 14px;
-}
-
-.dm-mkt-tier-feats {
-  list-style: none;
-  margin: 18px 0 0;
-  padding: 18px 0 0;
-  border-top: 1px solid var(--mkt-line-soft);
-  display: grid;
-  gap: 9px;
-  font-size: 13px;
-  color: var(--mkt-ink-soft);
-}
-
-.dm-mkt-tier-feats li {
-  display: flex;
-  gap: 9px;
+.dm-mkt-tier-line {
+  margin: 12px auto 0;
+  max-width: 28ch;
+  font-size: 16px;
   line-height: 1.5;
-}
-
-.dm-mkt-tier-feats li::before {
-  content: '✓';
-  color: var(--mkt-accent);
-  font-size: 11px;
-  margin-top: 1px;
-  flex-shrink: 0;
-}
-
-.dm-mkt-founding {
-  margin-top: 16px;
-  border: 1px dashed var(--mkt-accent-border);
-  background: var(--mkt-accent-soft);
-  border-radius: 12px;
-  padding: 14px 18px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 14px;
-  font-size: 13px;
-}
-
-.dm-mkt-founding b {
-  font-family: var(--dm-font-mono);
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--mkt-accent);
+  color: var(--mkt-ink-soft);
 }
 
 .dm-mkt-pricing-foot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 22px;
-  font-family: var(--dm-font-mono);
-  font-size: 11.5px;
+  margin: clamp(40px, 6vw, 64px) auto 12px;
+  max-width: 64ch;
+  font-size: 14px;
+  line-height: 1.6;
   color: var(--mkt-ink-muted);
-}
-
-.dm-mkt-pricing-foot a {
-  color: var(--mkt-accent);
-  text-decoration: none;
-  border-bottom: 1px solid var(--mkt-accent-border);
-  padding-bottom: 2px;
-}
-
-/* ── FAQ ────────────────────────────────────────────────────── */
-
-.dm-mkt-faq {
-  margin-top: 36px;
-  border-top: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-faq details {
-  border-bottom: 1px solid var(--mkt-line);
-}
-
-.dm-mkt-faq summary {
-  cursor: pointer;
-  list-style: none;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 20px 4px;
-  font-family: var(--dm-font-display);
-  font-weight: 560;
-  font-size: clamp(16px, 2vw, 19px);
-}
-
-.dm-mkt-faq summary::-webkit-details-marker {
-  display: none;
-}
-
-.dm-mkt-faq summary::after {
-  content: '+';
-  font-family: var(--dm-font-mono);
-  font-size: 18px;
-  color: var(--mkt-accent);
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-}
-
-.dm-mkt-faq details[open] summary::after {
-  transform: rotate(45deg);
-}
-
-.dm-mkt-faq-a {
-  padding: 0 4px 22px;
-  font-size: 13.5px;
-  line-height: 1.7;
-  color: var(--mkt-ink-soft);
-  max-width: 68ch;
-}
-
-.dm-mkt-faq-a a {
-  color: var(--mkt-accent);
 }
 
 /* ── Pre-consent scope disclosure ───────────────────────────── */
 
-/* Inherits the mono/muted note treatment from .dm-mkt-hero-note; only
-   the summary affordance and the expanded body need styling. */
+/* Inherits the muted note treatment from .dm-mkt-hero-note; only the
+   summary affordance and the expanded body need styling. */
 .dm-mkt-scope summary {
   cursor: pointer;
   list-style: none;
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  min-height: 44px;
   color: inherit;
   text-decoration: underline;
   text-decoration-color: var(--mkt-line);
@@ -1331,89 +782,20 @@ a.dm-mkt-trust-item:focus-visible {
 }
 
 .dm-mkt-scope p {
-  margin: 10px 0 0;
+  margin: 6px auto 0;
   max-width: 62ch;
-  line-height: 1.6;
 }
 
-/* The final CTA column is centred, so the disclosure centres with it. */
-.dm-mkt-scope-center .dm-mkt-scope p {
-  margin-inline: auto;
-}
-
-/* ── Final CTA + footer ─────────────────────────────────────── */
+/* ── Final CTA ──────────────────────────────────────────────── */
 
 .dm-mkt-final {
   text-align: center;
-  padding: clamp(72px, 10vw, 128px) 0;
+  padding-top: clamp(112px, 15vw, 192px);
+  padding-bottom: clamp(96px, 13vw, 160px);
 }
 
-.dm-mkt-final .dm-mkt-h2 {
-  font-size: clamp(32px, 5.5vw, 56px);
-}
-
-.dm-mkt-footer {
-  border-top: 1px solid var(--mkt-line);
-  padding: 32px 0 44px;
-}
-
-.dm-mkt-footer-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px 28px;
-}
-
-.dm-mkt-footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 22px;
-  font-family: var(--dm-font-mono);
-  font-size: 11.5px;
-  letter-spacing: 0.05em;
-}
-
-.dm-mkt-footer-links a {
-  color: var(--mkt-ink-soft);
-  text-decoration: none;
-}
-
-.dm-mkt-footer-links a:hover {
-  color: var(--mkt-ink);
-}
-
-.dm-mkt-footer-fine {
-  font-family: var(--dm-font-mono);
-  font-size: 10.5px;
-  color: var(--mkt-ink-muted);
-  margin-top: 20px;
-  line-height: 1.8;
-}
-
-/* Keep the next step and recovery promise readable beside the product demo. */
-.dm-mkt-hero-reassurance {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--mkt-ink-soft);
-  margin: 20px 0 0;
-  max-width: 44ch;
-}
-
-.dm-mkt-hero-reassurance > span {
-  color: var(--mkt-accent);
-  font-size: 20px;
-}
-
-.dm-mkt-final-sub {
-  max-width: 48ch;
-  margin: 20px auto 0;
-  font-size: 18px;
-  line-height: 1.6;
-  color: var(--mkt-ink-soft);
+.dm-mkt-landing .dm-mkt-final .dm-mkt-h2 {
+  font-size: clamp(40px, 6.5vw, 72px);
 }
 
 @media (max-width: 560px) {
@@ -1423,7 +805,8 @@ a.dm-mkt-trust-item:focus-visible {
     gap: 10px;
   }
 
-  .dm-mkt-hero-ctas .dm-mkt-cta {
+  .dm-mkt-hero-ctas .dm-mkt-cta,
+  .dm-mkt-hero-ctas .dm-mkt-cta-link {
     justify-content: center;
     text-align: center;
   }

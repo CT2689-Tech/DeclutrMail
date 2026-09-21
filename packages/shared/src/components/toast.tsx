@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { color, font, radius, shadow } from '../tokens/tokens';
+import { color, font, radius, shadow, text } from '../tokens/tokens';
 
 export type ToastTone = 'info' | 'success' | 'warn' | 'danger';
 
@@ -107,7 +107,7 @@ export function ToastAnnouncement({ msg, tone }: { msg: string; tone: ToastTone 
         color: color.fgInverse,
         borderRadius: radius.pill,
         fontFamily: font.sans,
-        fontSize: 13,
+        fontSize: text.base,
         fontWeight: 500,
         boxShadow: shadow.pop,
         pointerEvents: 'auto',

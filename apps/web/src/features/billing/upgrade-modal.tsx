@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 
-import { Button, Eyebrow, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, tokens, useIsAtMost } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
@@ -20,7 +20,7 @@ import { billingIntentPath } from './billing-intent';
 import { MONEY_BACK_NOTE, quotedPlanPrice } from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * UpgradeModal (D19/D77/D81 — the U13 modal-grade upgrade flow).
@@ -35,11 +35,10 @@ const { color, font, radius } = tokens;
  *   - `ACTION_TIER_REQUIRED` — an Action Registry selector requires a
  *     higher plan (A3: only all-matching cleanup sits above Free).
  *
- * Copy is tier-appropriate per D123's nudge ladder: Free hears what
- * Plus removes, Plus hears the Pro automation set, Pro gets the
- * honest limit statement with NO upgrade nudge (nothing to sell).
- * The nudged plan's price line carries the D121 30-day money-back note
- * (it applies to every paid plan — see `MONEY_BACK_NOTE`).
+ * Shape: the limit as the title, ONE sentence, ONE button carrying the
+ * nudged plan's price, and a quiet line with the D121 money-back note
+ * + Compare plans. D123's ladder still holds: Pro gets the honest
+ * limit statement with NO upgrade nudge (nothing to sell).
  *
  * Mounted once in the authed app chrome — never per feature screen.
  */
@@ -74,12 +73,8 @@ export function UpgradeModal() {
   // Pro+ tiers have no upgrade path to offer (Team isn't purchasable)
   // — the honest limit statement with no nudge (D123's Pro rung).
   const nudge = tier === 'free' || tier === 'plus';
-  const proMonthly = quotedPlanPrice('pro', 'monthly', regionProvider);
   const actionTier = hit.reason === 'action_tier' ? hit.details.requiredTier : null;
   const actionTierName = actionTier ? TIER_MANIFEST[actionTier].name : null;
-  const actionTierMonthly = actionTier
-    ? quotedPlanPrice(actionTier, 'monthly', regionProvider)
-    : null;
 
   // ONE checkout path (D117): the CTA deep-links the nudged plan into
   // /billing's confirm step via the same validated intent the pricing
@@ -88,6 +83,7 @@ export function UpgradeModal() {
   const targetPlan: 'plus' | 'pro' = hit.reason === 'free_cap' ? 'plus' : (actionTier ?? 'pro');
   const upgradeHref = billingIntentPath({ plan: targetPlan, cycle: 'monthly' });
   const upgradeLabel = `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
+  const targetMonthly = quotedPlanPrice(targetPlan, 'monthly', regionProvider);
 
   return (
     <>
@@ -135,7 +131,7 @@ export function UpgradeModal() {
                 maxHeight: '70vh',
                 overflow: 'auto',
                 background: color.card,
-                borderRadius: 14,
+                borderRadius: radius.xl,
                 border: `1px solid ${color.border}`,
                 boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
                 zIndex: 151,
@@ -143,17 +139,16 @@ export function UpgradeModal() {
               }
         }
       >
-        <div style={{ padding: '20px 24px 16px' }}>
-          <Eyebrow>
-            {hit.reason === 'free_cap'
-              ? 'Free plan limit'
-              : hit.reason === 'action_tier'
-                ? `${actionTierName} workflow`
-                : 'Inbox limit'}
-          </Eyebrow>
+        <div style={{ padding: '24px 24px 16px' }}>
           <h2
             id="dm-upgrade-title"
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 600,
+              letterSpacing: '-0.01em',
+              margin: 0,
+              color: color.fg,
+            }}
           >
             {hit.reason === 'free_cap'
               ? freeCapTitle(hit.details)
@@ -161,65 +156,56 @@ export function UpgradeModal() {
                 ? actionTierTitle(hit.details)
                 : inboxLimitTitle(hit.details, tierName(tier))}
           </h2>
-          <p style={{ fontSize: 13, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}>
+          <p
+            style={{ fontSize: text.md, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}
+          >
             {hit.reason === 'free_cap' ? (
               <>
-                Completed email actions stay in place
+                {TIER_MANIFEST.plus.name} removes the monthly cap
                 {hit.details.resetsAt
-                  ? ` — your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
+                  ? `; otherwise your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
                   : ''}
-                . {TIER_MANIFEST.plus.name} removes the monthly cap for{' '}
-                {quotedPlanPrice('plus', 'monthly', regionProvider)}.
-                {/* The one-line Plus pitch no longer names Pro; this keeps the
-                    other plans one click away (same link as <TierGate>). */}{' '}
-                <Link
-                  href="/pricing"
-                  onClick={dismiss}
-                  style={{ color: color.primary, textDecoration: 'none' }}
-                >
-                  Compare plans →
-                </Link>
+                .
               </>
             ) : hit.reason === 'action_tier' ? (
               <>
-                Your plan covers every selection this size and smaller. {actionTierName} unlocks{' '}
+                {actionTierName} unlocks{' '}
                 {hit.details.selector === 'sender-filter'
                   ? 'all-matching cleanup'
                   : 'this workflow'}
-                {actionTierMonthly ? ` for ${actionTierMonthly}` : ''}.
+                .
               </>
             ) : nudge ? (
               <>
-                Your existing connection{hit.details.connected === 1 ? ' keeps' : 's keep'} working
-                &mdash; only adding is blocked. {TIER_MANIFEST.pro.name} raises the limit to{' '}
-                {TIER_MANIFEST.pro.inboxLimit} connected Gmail accounts for {proMonthly}.
+                {TIER_MANIFEST.pro.name} raises the limit to {TIER_MANIFEST.pro.inboxLimit}{' '}
+                connected Gmail accounts.
               </>
             ) : (
-              <>
-                All {hit.details.connected} in use. Disconnect an account from the account menu to
-                connect a different one.
-              </>
+              <>Disconnect an account from the account menu to connect a different one.</>
             )}
           </p>
-          {nudge ? (
-            <p style={{ fontSize: 12, color: color.fgMuted, margin: '10px 0 0' }}>
-              {quotedPlanPrice(targetPlan, 'monthly', regionProvider)} &mdash; {MONEY_BACK_NOTE}
-            </p>
-          ) : null}
         </div>
 
         <div
           style={{
             display: 'flex',
+            alignItems: 'center',
             justifyContent: 'flex-end',
+            flexWrap: 'wrap',
             gap: 8,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
+            padding: '8px 24px 20px',
           }}
         >
           {nudge ? (
             <>
-              <Button tone="default" onClick={dismiss}>
+              {/* The money-back note and the plan comparison — once, quiet. */}
+              <span style={{ marginRight: 'auto', fontSize: text.sm, color: color.fgMuted }}>
+                {MONEY_BACK_NOTE} ·{' '}
+                <Link href="/pricing" onClick={dismiss} style={{ color: color.fgMuted }}>
+                  Compare plans
+                </Link>
+              </span>
+              <Button tone="ghost" onClick={dismiss}>
                 Not now
               </Button>
               <Link
@@ -228,17 +214,21 @@ export function UpgradeModal() {
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  height: 32,
+                  height: 36,
                   padding: '0 14px',
                   background: color.primary,
-                  color: '#FFFFFF',
+                  color: color.fgInverse,
                   borderRadius: radius.md,
-                  fontSize: 13,
+                  fontSize: text.md,
                   fontWeight: 600,
                   textDecoration: 'none',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {upgradeLabel}
+                {targetMonthly ? (
+                  <span style={{ fontFamily: font.mono, marginLeft: 8 }}>{targetMonthly}</span>
+                ) : null}
               </Link>
             </>
           ) : (

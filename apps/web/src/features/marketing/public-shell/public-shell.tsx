@@ -1,18 +1,17 @@
 import Link from 'next/link';
 
-import { Logo, PrivacyBadge } from '@declutrmail/shared';
+import { Logo } from '@declutrmail/shared';
 
 import { oauthStartUrl } from '../landing/urls';
 import { TrackedCta } from '../landing/tracked-cta';
 import { PublicMobileMenu } from './public-mobile-menu';
 import { PublicNavLinks } from './public-nav-links';
 
+// Three links. Compare and Privacy & control stay reachable from the footer.
 const PRODUCT_LINKS = [
   { href: '/how-it-works', label: 'How it works' },
-  { href: '/inbox-simulator', label: 'Demo' },
-  { href: '/methodology', label: 'Privacy & control' },
-  { href: '/compare', label: 'Compare' },
   { href: '/pricing', label: 'Pricing' },
+  { href: '/inbox-simulator', label: 'Demo' },
 ] as const;
 
 const FOOTER_GROUPS = [
@@ -87,7 +86,7 @@ export function PublicHeader() {
               cta="connect_gmail"
               placement="nav"
             >
-              Get started <span aria-hidden="true">→</span>
+              Start free
             </TrackedCta>
           </div>
 
@@ -107,7 +106,6 @@ export function PublicFooter() {
             <Logo size={27} />
           </Link>
           <p>Gmail stays your inbox. DeclutrMail helps you control it one sender at a time.</p>
-          <PrivacyBadge variant="inline" />
         </div>
 
         <div className="dm-public-footer-groups">

@@ -11,14 +11,14 @@ describe('useUiStore — D200 cross-feature UI flags', () => {
   beforeEach(() => {
     useUiStore.setState({
       commandPaletteOpen: false,
-      sidebarCollapsed: false,
+      screenHelp: null,
     });
   });
 
-  it('defaults to closed palette and expanded sidebar', () => {
+  it('defaults to a closed palette and no screen help', () => {
     const state = useUiStore.getState();
     expect(state.commandPaletteOpen).toBe(false);
-    expect(state.sidebarCollapsed).toBe(false);
+    expect(state.screenHelp).toBeNull();
   });
 
   it('opens, closes, and toggles the command palette', () => {
@@ -34,14 +34,17 @@ describe('useUiStore — D200 cross-feature UI flags', () => {
     expect(useUiStore.getState().commandPaletteOpen).toBe(false);
   });
 
-  it('toggles and sets the sidebar collapse', () => {
-    useUiStore.getState().toggleSidebar();
-    expect(useUiStore.getState().sidebarCollapsed).toBe(true);
+  it('registers screen help and clears it only for the owning screen', () => {
+    const { setScreenHelp, clearScreenHelp } = useUiStore.getState();
+    expect(useUiStore.getState().screenHelp).toBeNull();
 
-    useUiStore.getState().setSidebarCollapsed(false);
-    expect(useUiStore.getState().sidebarCollapsed).toBe(false);
+    setScreenHelp({ id: 'senders', title: 'Senders', body: 'Review senders.' });
+    // The next route registers before the previous one's cleanup runs.
+    setScreenHelp({ id: 'triage', title: 'Triage', body: 'Make a decision.' });
+    clearScreenHelp('senders');
+    expect(useUiStore.getState().screenHelp?.id).toBe('triage');
 
-    useUiStore.getState().setSidebarCollapsed(true);
-    expect(useUiStore.getState().sidebarCollapsed).toBe(true);
+    clearScreenHelp('triage');
+    expect(useUiStore.getState().screenHelp).toBeNull();
   });
 });

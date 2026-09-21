@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNow } from '@/lib/use-now';
-import { Button, Pill, tokens } from '@declutrmail/shared';
+import { Button, tokens, useIsAtMost } from '@declutrmail/shared';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 import type { AutopilotActionKind, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { observeDigestSummary } from './observe-digest';
@@ -10,20 +10,19 @@ import { presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
-const { color, font } = tokens;
+const { color, font, motion, text } = tokens;
 
 /** The plan granting unattended action — derived, never hardcoded. */
 const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
 /**
- * One preset rule in the D101 rules-management list.
- *
- * Surfaces per D101: enabled toggle, threshold slider (confidence-
- * gated presets only), last-run summary, pending-match count, mode
- * pill with the D10 observe-window countdown, dry-run "Preview
- * matches" (D103 scoped to presets per D192), and a Resume affordance
- * for paused rules (the PausedBanner's "re-enable from the rules
- * list").
+ * One preset rule in the D101 rules-management list — a quiet row:
+ * name + status word + enabled switch, a one-line description, then
+ * "Preview matches" (D103 dry-run, scoped to presets per D192) and a
+ * Resume affordance for paused rules. The rest of D101's surface —
+ * last-run summary, pending-match count, the D10 observe-window
+ * countdown, the Observe digest and the confidence-threshold slider —
+ * sits behind the row's Details disclosure.
  *
  * Mode changes that START automation (observe/paused → active) do NOT
  * live here — activation is the day-7 banner's explicit, previewed
@@ -79,11 +78,14 @@ export function RuleCard({
   onRetryPreview: () => void;
 }) {
   const now = useNow();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const name = presetDisplayName(rule.presetKey, rule.name);
   // D10/D101 — Observe-mode digest, only meaningful while the rule is
   // actually watching (enabled + Observe). Disabled rules stay quiet.
   const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
   const observeSummary = observeWindowSummary(rule, now);
+  const explanation = ruleModeExplanation(rule, canActivate);
+  const detailsId = `rule-details-${rule.id}`;
 
   return (
     <li
@@ -91,11 +93,9 @@ export function RuleCard({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
-        padding: '14px 16px',
-        background: color.card,
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: 10,
+        gap: 6,
+        padding: '14px 0',
+        borderTop: `1px solid ${color.line}`,
         fontFamily: font.sans,
       }}
     >
@@ -105,14 +105,13 @@ export function RuleCard({
             flex: 1,
             minWidth: 0,
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'baseline',
             gap: 8,
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: 13.5, fontWeight: 600, color: color.fg }}>{name}</span>
-          <Pill tone="default">{describeRuleAction(rule.actionKind)}</Pill>
-          <ModePill rule={rule} canActivate={canActivate} />
+          <span style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>{name}</span>
+          <ModeStatus rule={rule} canActivate={canActivate} />
         </div>
         <EnabledSwitch
           ruleName={name}
@@ -122,76 +121,127 @@ export function RuleCard({
         />
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          flexWrap: 'wrap',
-          fontSize: 11.5,
-          color: color.fgMuted,
-        }}
-      >
-        <span>{lastRunSummary(rule, now !== null)}</span>
-        <span aria-hidden="true">·</span>
-        <span>
-          {pendingApproximate
-            ? `${pendingCount}+ pending`
-            : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
-        </span>
-        {observeSummary != null && (
-          <>
-            <span aria-hidden="true">·</span>
-            <span>{observeSummary}</span>
-          </>
-        )}
-      </div>
-
-      {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
-      {digestSummary != null && (
-        <div style={{ fontSize: 11.5, color: color.fgSoft }}>{digestSummary}</div>
-      )}
-
-      <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
-        {ruleModeExplanation(rule, canActivate)}
+      {/* The one-line description: what it does, and how it is running.
+          This is where Watching vs Active is explained — at the rule,
+          not in a page preamble. */}
+      <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
+        {describeRuleAction(rule.actionKind)}
+        {explanation === null ? '' : ` · ${explanation}`}
       </p>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        {rule.confidenceThreshold != null && (
-          <ThresholdSlider
-            ruleName={name}
-            committed={rule.confidenceThreshold}
-            disabled={isSaving}
-            onCommit={onCommitThreshold}
-          />
-        )}
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {rule.mode === 'paused' && (
-            <Button
-              tone="default"
-              size="sm"
-              onClick={onResume}
-              disabled={isSaving}
-              ariaLabel={`Resume rule ${name}`}
-            >
-              {isSaving ? 'Resuming…' : 'Resume'}
-            </Button>
-          )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+        {rule.mode === 'paused' && (
           <Button
             tone="default"
             size="sm"
-            onClick={onTogglePreview}
-            ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
+            onClick={onResume}
+            disabled={isSaving}
+            ariaLabel={`Resume rule ${name}`}
           >
-            {previewOpen ? 'Hide preview' : 'Preview matches'}
+            {isSaving ? 'Resuming…' : 'Resume'}
           </Button>
-        </div>
+        )}
+        <QuietButton
+          onClick={onTogglePreview}
+          ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
+        >
+          {previewOpen ? 'Hide preview' : 'Preview matches'}
+        </QuietButton>
+        <QuietButton
+          onClick={() => setDetailsOpen((open) => !open)}
+          ariaLabel={`${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`}
+          ariaExpanded={detailsOpen}
+          ariaControls={detailsId}
+        >
+          {detailsOpen ? 'Hide details' : 'Details'}
+        </QuietButton>
       </div>
+
+      {detailsOpen && (
+        <div
+          id={detailsId}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 8,
+            fontSize: text.sm,
+            color: color.fgMuted,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span>{lastRunSummary(rule, now !== null)}</span>
+            <span aria-hidden="true">·</span>
+            <span>
+              {pendingApproximate
+                ? `${pendingCount}+ pending`
+                : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
+            </span>
+            {observeSummary != null && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>{observeSummary}</span>
+              </>
+            )}
+          </div>
+
+          {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
+          {digestSummary != null && <div style={{ color: color.fgSoft }}>{digestSummary}</div>}
+
+          {rule.confidenceThreshold != null && (
+            <ThresholdSlider
+              ruleName={name}
+              committed={rule.confidenceThreshold}
+              disabled={isSaving}
+              onCommit={onCommitThreshold}
+            />
+          )}
+        </div>
+      )}
 
       {previewOpen && preview != null && (
         <RulePreviewPanel ruleName={name} state={preview} onRetry={onRetryPreview} />
       )}
     </li>
+  );
+}
+
+/** Text-weight row action — quieter than a bordered button in a list. */
+function QuietButton({
+  onClick,
+  ariaLabel,
+  ariaExpanded,
+  ariaControls,
+  children,
+}: {
+  onClick: () => void;
+  ariaLabel: string;
+  ariaExpanded?: boolean;
+  ariaControls?: string;
+  children: ReactNode;
+}) {
+  const isMobile = useIsAtMost('sm');
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      aria-expanded={ariaExpanded}
+      aria-controls={ariaControls}
+      style={{
+        // Quiet on desktop; a full 44px touch target on phones.
+        minHeight: isMobile ? 44 : 28,
+        padding: 0,
+        background: 'transparent',
+        border: 'none',
+        color: color.primary,
+        fontFamily: font.sans,
+        fontSize: text.sm,
+        fontWeight: 500,
+        cursor: 'pointer',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -207,34 +257,36 @@ function describeRuleAction(kind: AutopilotActionKind): string {
   }
 }
 
-/** Rule lifecycle pill — Observing / Active / Not running / Paused (D10, D251). */
-function ModePill({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate: boolean }) {
+/** Rule lifecycle status — Observing / Active / Not running / Paused (D10, D251). */
+function ModeStatus({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate: boolean }) {
   // A disabled rule keeps whatever mode it had — `{enabled:false}` does
-  // not reset it — so an off rule could render a green "Active" pill
-  // directly above "Off — this rule records no new matches and takes no
-  // actions". That was rare while `mode='active'` needed the day-7
-  // banner; since turning a rule on defaults to acting, off-but-active
-  // is now the ordinary end state of enable-then-disable.
-  if (!rule.enabled) return <Pill tone="default">Off</Pill>;
-  if (rule.mode === 'paused') return <Pill tone="amber">Paused</Pill>;
-  if (rule.mode === 'active') {
+  // not reset it — so an off rule could read "Active" while taking no
+  // actions. Since turning a rule on defaults to acting, off-but-active
+  // is the ordinary end state of enable-then-disable.
+  // The switch beside it already reads "Off"; a second "Off" is noise.
+  if (!rule.enabled) return null;
+  let label = 'Observing';
+  let tone: string = color.fgMuted;
+  if (rule.mode === 'paused') {
+    label = 'Paused';
+    tone = color.amberDeep;
+  } else if (rule.mode === 'active') {
     // D251 — the apply worker skips `active` rules on a tier without
-    // `autopilot-active` (the Pro→Plus downgrade path). A green "Active" pill
-    // here would assert automation that is not happening.
-    if (!canActivate) return <Pill tone="amber">Not running</Pill>;
-    return <Pill tone="emerald">Active</Pill>;
+    // `autopilot-active` (the Pro→Plus downgrade path). "Active" here
+    // would assert automation that is not happening.
+    label = canActivate ? 'Active' : 'Not running';
+    tone = canActivate ? color.primary : color.amberDeep;
   }
-  return <Pill tone="default">Observing</Pill>;
+  return <span style={{ fontSize: text.sm, fontWeight: 500, color: tone }}>{label}</span>;
 }
 
-/** Rule-local mode explanation — users should not have to remember the page intro. */
-function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): string {
-  if (!rule.enabled) {
-    return 'Off — this rule records no new matches and takes no actions.';
-  }
-  if (rule.mode === 'paused') {
-    return 'Paused — this rule records no new matches and takes no actions until you resume it.';
-  }
+/**
+ * Rule-local mode explanation — users should not have to remember a
+ * page intro. Null for a rule that is off — the switch already says so.
+ */
+function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): string | null {
+  if (!rule.enabled) return null;
+  if (rule.mode === 'paused') return 'Does nothing until you resume it.';
   if (rule.mode === 'active') {
     if (!canActivate) {
       // Copy contract (Codex stop-review ×5): no absolute claims. "Keep
@@ -244,16 +296,13 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
       // "Still completes" — false, work can fail at the boundary.
       // "Result lands in Activity" — false too: EXECUTION_VERBS
       // excludes unsubscribe and no-op terminals write no Activity row.
-      // Claim ONLY the guarantees: in-flight work is not interrupted,
-      // and mail that actually moves keeps its Activity record (and,
-      // for label verbs, its undo).
       // 2026-09-19 brevity sweep: the in-flight clause is gone rather
       // than qualified — the line now says nothing about work underway.
       return `Acting on its own is part of ${ACT_PLAN_NAME}, so this rule starts no new work. It returns to Observe and collects fresh matches for your approval.`;
     }
-    return 'Active — future matches run automatically. Results and available recovery appear in Activity.';
+    return 'Future matches run automatically; results appear in Activity.';
   }
-  return 'Observe — matches become suggestions for your approval.';
+  return 'Matches become suggestions for your approval.';
 }
 
 /**
@@ -317,7 +366,8 @@ function EnabledSwitch({
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 7,
+        gap: 8,
+        minHeight: 44,
         background: 'transparent',
         border: 'none',
         padding: 0,
@@ -326,33 +376,33 @@ function EnabledSwitch({
         fontFamily: font.sans,
       }}
     >
-      <span style={{ fontSize: 11, color: color.fgMuted, minWidth: 20, textAlign: 'right' }}>
+      <span style={{ fontSize: text.sm, color: color.fgMuted, minWidth: 20, textAlign: 'right' }}>
         {enabled ? 'On' : 'Off'}
       </span>
       <span
         aria-hidden="true"
         style={{
-          width: 32,
-          height: 18,
+          width: 36,
+          height: 22,
           borderRadius: 999,
           background: enabled ? color.primary : color.mutedBg,
           border: `1px solid ${enabled ? color.primary : color.border}`,
           position: 'relative',
-          transition: 'background 120ms',
+          transition: `background ${motion.fast} ${motion.ease}`,
           flexShrink: 0,
+          boxSizing: 'border-box',
         }}
       >
         <span
           style={{
             position: 'absolute',
-            top: 1,
-            left: enabled ? 15 : 1,
-            width: 14,
-            height: 14,
+            top: 2,
+            left: enabled ? 16 : 2,
+            width: 16,
+            height: 16,
             borderRadius: 999,
-            background: '#FFFFFF',
-            boxShadow: '0 1px 2px rgba(14,20,19,0.25)',
-            transition: 'left 120ms',
+            background: enabled ? color.fgInverse : color.fgMuted,
+            transition: `left ${motion.fast} ${motion.ease}`,
           }}
         />
       </span>
@@ -413,7 +463,7 @@ function ThresholdSlider({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 8,
-        fontSize: 11.5,
+        fontSize: text.sm,
         color: color.fgMuted,
       }}
     >
@@ -435,7 +485,7 @@ function ThresholdSlider({
       <span
         style={{
           fontFamily: font.mono,
-          fontSize: 11.5,
+          fontSize: text.sm,
           color: color.fgSoft,
           minWidth: 32,
           fontVariantNumeric: 'tabular-nums',

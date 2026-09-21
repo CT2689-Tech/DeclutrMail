@@ -23,7 +23,6 @@
 import {
   Button,
   EmptyState,
-  Eyebrow,
   ErrorState as RecoverableErrorState,
   tokens,
   useIsAtMost,
@@ -32,14 +31,14 @@ import type { BillingInvoice } from '@declutrmail/shared/contracts';
 
 import { formatProviderAmount, formatBillingDate } from './billing-model';
 import { useInvoiceDocument, useInvoices } from './api/use-invoices';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, shadow } = tokens;
+const { color, radius, text } = tokens;
 
 const SECTION_STYLE = {
   background: color.card,
   border: `1px solid ${color.border}`,
   borderRadius: radius.lg,
-  boxShadow: shadow.card,
   padding: '20px 22px',
   display: 'flex',
   flexDirection: 'column',
@@ -70,7 +69,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   if (invoices.isLoading) {
     return (
       <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <Eyebrow>Invoices</Eyebrow>
+        <GroupTitle as="div">Invoices</GroupTitle>
         <div
           aria-hidden="true"
           style={{ height: 72, background: color.paper, borderRadius: radius.md }}
@@ -83,7 +82,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   if (invoices.isError) {
     return (
       <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <Eyebrow>Invoices</Eyebrow>
+        <GroupTitle as="div">Invoices</GroupTitle>
         <RecoverableErrorState
           title="We couldn't load your invoices"
           description="Your payment provider didn't answer. Your plan and your billing are unaffected — this page only reads them."
@@ -99,7 +98,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-      <Eyebrow>Invoices</Eyebrow>
+      <GroupTitle as="div">Invoices</GroupTitle>
 
       {data.invoices.length === 0 ? (
         // THREE distinct empty answers, never collapsed: a rail we could
@@ -109,12 +108,12 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         // gate network 2026-08-16 CONFIRMED), and the genuine
         // never-billed state (D212 EmptyState primitive).
         partial ? (
-          <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
             We couldn&rsquo;t reach your payment provider, so we can&rsquo;t show your invoices
             right now.
           </p>
         ) : data.omittedRows > 0 ? (
-          <p role="status" style={{ margin: 0, fontSize: 13, color: color.amber }}>
+          <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
             Your invoices exist, but we couldn&rsquo;t display them. Email{' '}
             <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
               support@declutrmail.com
@@ -141,7 +140,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                 display: 'flex',
                 gap: 12,
                 padding: '0 0 4px',
-                fontSize: 10.5,
+                fontSize: text.xs,
                 fontWeight: 600,
                 textTransform: 'uppercase',
                 letterSpacing: '0.06em',
@@ -185,7 +184,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     flexWrap: 'wrap',
                     padding: '10px 0',
                     borderBottom: `1px solid ${color.lineSoft}`,
-                    fontSize: 13,
+                    fontSize: text.md,
                   }}
                 >
                   <span aria-hidden="true" style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>
@@ -235,7 +234,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                       // Neither a hosted page nor a mintable document —
                       // say nothing is available rather than render a
                       // control that cannot work.
-                      <span style={{ color: color.fgMuted, fontSize: 12 }}>No document</span>
+                      <span style={{ color: color.fgMuted, fontSize: text.sm }}>No document</span>
                     )}
                   </span>
                 </li>
@@ -246,14 +245,14 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       )}
 
       {partial && data.invoices.length > 0 ? (
-        <p role="status" style={{ margin: 0, fontSize: 12, color: color.amber }}>
+        <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           One of your payment providers didn&rsquo;t answer, so this list may be missing invoices.
           Reload to try again.
         </p>
       ) : null}
 
       {data.omittedRows > 0 && data.invoices.length > 0 ? (
-        <p role="status" style={{ margin: 0, fontSize: 12, color: color.amber }}>
+        <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           {data.omittedRows === 1 ? 'One invoice' : `${data.omittedRows} invoices`} couldn&rsquo;t
           be displayed. Email support@declutrmail.com if you need{' '}
           {data.omittedRows === 1 ? 'it' : 'them'}.
@@ -261,7 +260,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       ) : null}
 
       {data.truncated ? (
-        <p style={{ margin: 0, fontSize: 12, color: color.fgMuted }}>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
           Showing your most recent invoices. Email support@declutrmail.com if you need older ones.
         </p>
       ) : null}
@@ -270,10 +269,10 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         <div
           role="alert"
           style={{
-            fontSize: 12,
-            color: color.red,
-            background: color.redBg,
-            border: `1px solid ${color.red}`,
+            fontSize: text.sm,
+            color: color.danger,
+            background: color.dangerBg,
+            border: `1px solid ${color.danger}`,
             borderRadius: 8,
             padding: '8px 10px',
           }}

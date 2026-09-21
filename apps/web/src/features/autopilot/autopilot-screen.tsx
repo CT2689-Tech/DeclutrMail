@@ -5,7 +5,6 @@ import {
   Button,
   EmptyState,
   ErrorState,
-  Eyebrow,
   ScreenIntro,
   Skeleton,
   toast,
@@ -18,7 +17,6 @@ import type {
   AutopilotRuleDto,
   AutopilotRulePreviewResultDto,
 } from '@/lib/api/autopilot';
-import { ContextualHelp } from '@/features/help/contextual-help';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import {
   TIER_MANIFEST,
@@ -39,6 +37,7 @@ import { usePendingSuggestions } from './api/use-pending-suggestions';
 import { useRulePreview } from './api/use-rule-preview';
 import { ActivateRuleModal } from './activate-rule-modal';
 import { ApproveConfirmModal } from './approve-confirm-modal';
+import { AutopilotBannerStack } from './autopilot-banner-stack';
 import { ObserveWindowBanner } from './observe-window-banner';
 import { PauseConfirmModal } from './pause-confirm-modal';
 import { PausedBanner } from './paused-banner';
@@ -62,7 +61,7 @@ import type {
  */
 const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * BE page cap on GET /api/autopilot/pending-suggestions (D104) —
@@ -158,9 +157,8 @@ interface ApproveTarget {
 export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
-  // Which mailbox these rules run on — makes a multi-mailbox switch
-  // visible in the header instead of a static "default mailbox" that
-  // was wrong for every account after the first.
+  // Which mailbox these rules run on — named in the confirm modals,
+  // where the action is committed (the account menu names it elsewhere).
   const activeEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const dismissMatch = useDismissMatch();
   const pauseAll = usePauseAll();
@@ -656,42 +654,78 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
     );
   };
 
+  // One banner slot, highest priority first. "Everything is paused"
+  // outranks a prompt to act, which outranks a suggestion to start
+  // something new; the slot's "+N" steps to the rest.
+  const banners = [
+    ...(allPaused ? [{ key: 'paused', node: <PausedBanner rules={rules} /> }] : []),
+    ...(state.kind === 'ready' && elapsedObserveRules.length > 0
+      ? [
+          {
+            key: 'observe-window',
+            node: (
+              <ObserveWindowBanner
+                rules={elapsedObserveRules}
+                onActivate={openActivate}
+                onDismiss={onDismissPrompt}
+                dismissingRuleId={dismissingPromptRuleId}
+                canActivate={canActivate}
+              />
+            ),
+          },
+        ]
+      : []),
+    ...(patternSuggestion
+      ? [
+          {
+            key: 'pattern',
+            node: (
+              <PatternSuggestionCard
+                suggestion={patternSuggestion}
+                pendingDecision={decidePattern.isPending ? decidePattern.variables.decision : null}
+                onObserve={() => onPatternDecision('observe')}
+                onDismiss={() => onPatternDecision('dismissed')}
+              />
+            ),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div
       style={{
-        padding: '20px 24px 28px',
+        padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
+        gap: 20,
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 880,
+        margin: '0 auto',
         fontFamily: font.sans,
       }}
     >
-      {/* Header */}
+      {/* Header — one line: title + the master pause (D105). */}
       <div
         style={{
           display: 'flex',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           justifyContent: 'space-between',
           gap: 16,
         }}
       >
-        <div>
-          <Eyebrow>{activeEmail ? `Autopilot · ${activeEmail}` : 'Autopilot'}</Eyebrow>
-          <h1
-            style={{
-              fontFamily: font.display,
-              fontSize: 26,
-              fontWeight: 600,
-              letterSpacing: '-0.018em',
-              margin: '4px 0 0',
-            }}
-          >
-            {canActivate
-              ? 'Preview it. Then let it run.'
-              : 'Rules find it. You approve each batch.'}
-          </h1>
-        </div>
+        <h1
+          style={{
+            fontSize: text['2xl'],
+            fontWeight: 600,
+            letterSpacing: '-0.015em',
+            margin: 0,
+            color: color.fg,
+          }}
+        >
+          Autopilot
+        </h1>
         <Button
           tone="default"
           onClick={() => setPauseConfirmOpen(true)}
@@ -702,62 +736,23 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         </Button>
       </div>
 
-      {/* Both explainers are tier-conditional: the under-tier wording must
+      {/* The explainer is tier-conditional: the under-tier wording must
           never promise unattended action, which is a per-rule setting that
           tier cannot reach — a promise that always fails, the same defect
-          class as offering the Activate button.
-
-          2026-08-23: the entitled copy no longer teaches "starts in
-          Observe, switch to Active later". Turning a rule on now shows the
-          first-sweep preview and asks which way it should run, so telling
-          a user their rule begins by doing nothing would describe a flow
-          the screen does not have. */}
+          class as offering the Activate button. The Watch-first vs act
+          choice itself is explained where it is made: the rule row's
+          description and the turn-on preview. */}
       <ScreenIntro
         id="autopilot"
         title="How Autopilot works"
         body={
           canActivate
-            ? 'Turning a rule on shows exactly what it would do to email already in your inbox. Confirm and it acts, then keeps acting on matching email that arrives — or choose Watch first and it collects matches for your approval instead.'
-            : `Rules collect matching email in Observe for you to approve. Rules that act on future matches on their own are part of ${ACT_PLAN_NAME}.`
+            ? 'Turning a rule on previews what it would do to email already in your inbox. Then let it act, or watch first and approve each batch.'
+            : `Rules collect matching email for you to approve. Rules that act on their own are part of ${ACT_PLAN_NAME}.`
         }
       />
 
-      <ContextualHelp
-        question={canActivate ? 'What does "Watch first" do?' : 'What does Observe do?'}
-      >
-        {canActivate ? (
-          <>
-            Watch first collects matches for your approval; no email changes until you approve.
-            Confirm lets the rule act. You can switch a watching rule over later.
-          </>
-        ) : (
-          <>
-            Observe collects matches as suggestions. No email changes until you approve a batch.
-            Rules that act on their own are part of {ACT_PLAN_NAME}.
-          </>
-        )}
-      </ContextualHelp>
-
-      {patternSuggestion && (
-        <PatternSuggestionCard
-          suggestion={patternSuggestion}
-          pendingDecision={decidePattern.isPending ? decidePattern.variables.decision : null}
-          onObserve={() => onPatternDecision('observe')}
-          onDismiss={() => onPatternDecision('dismissed')}
-        />
-      )}
-
-      {allPaused && <PausedBanner rules={rules} />}
-
-      {state.kind === 'ready' && (
-        <ObserveWindowBanner
-          rules={elapsedObserveRules}
-          onActivate={openActivate}
-          onDismiss={onDismissPrompt}
-          dismissingRuleId={dismissingPromptRuleId}
-          canActivate={canActivate}
-        />
-      )}
+      <AutopilotBannerStack banners={banners} />
 
       {/* Whole-surface failure — one designed error block, not one per
           section. The two reads share a fate and retry explicitly. */}
@@ -774,11 +769,11 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           {/* Rules management (D101) */}
           <section
             aria-labelledby="rules-heading"
-            style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
           >
             <h2
               id="rules-heading"
-              style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.01em', margin: 0 }}
+              style={{ fontSize: text.sm, fontWeight: 600, margin: 0, color: color.fgSoft }}
             >
               Rules
             </h2>
@@ -786,7 +781,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             {state.kind === 'empty' && (
               <EmptyState
                 title="No Autopilot rules yet"
-                description="The five preset rules appear after your mailbox finishes its first sync. Matching senders then appear here as suggestions."
+                description="Rules appear after your mailbox finishes its first sync."
               />
             )}
             {state.kind === 'ready' && rules.length > 0 && (
@@ -798,7 +793,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                   margin: 0,
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 8,
+                  borderBottom: `1px solid ${color.line}`,
                 }}
               >
                 {rules.map((rule) => (
@@ -822,71 +817,68 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
             )}
           </section>
 
-          {/* Pending suggestions (D104) */}
-          <section
-            aria-labelledby="pending-heading"
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 10,
-            }}
-          >
-            <div
+          {/* Pending suggestions (D104). With no rules yet there is nothing
+              that could be pending — one empty state, not two. */}
+          {!(state.kind === 'empty' && state.rules.length === 0) && (
+            <section
+              aria-labelledby="pending-heading"
               style={{
                 display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                gap: 8,
+                flexDirection: 'column',
+                gap: 10,
               }}
             >
-              <h2
-                id="pending-heading"
+              <div
                 style={{
-                  fontSize: 14,
-                  fontWeight: 600,
-                  letterSpacing: '-0.01em',
-                  margin: 0,
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: 8,
                 }}
               >
-                Pending suggestions
-              </h2>
-              {state.kind === 'ready' && suggestions.length > 0 && (
-                <span style={{ fontSize: 11.5, color: color.fgMuted, fontFamily: font.mono }}>
-                  {suggestions.length}
-                  {pendingBufferTruncated ? '+' : ''} waiting
-                </span>
-              )}
-            </div>
-
-            {state.kind === 'loading' && <SuggestionsSkeleton />}
-            {state.kind === 'empty' && (
-              <SuggestionsEmptyState hasAnyRules={state.rules.length > 0} />
-            )}
-            {state.kind === 'ready' && suggestions.length === 0 && (
-              <SuggestionsEmptyState hasAnyRules={rules.length > 0} />
-            )}
-            {state.kind === 'ready' && groups.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                {groups.map((group) => (
-                  <SuggestionGroup
-                    key={group.rule?.id ?? `orphan-${group.matches[0]?.ruleId ?? 'none'}`}
-                    rule={group.rule}
-                    matches={group.matches}
-                    selectedIds={selectedIds}
-                    onToggleSelect={onToggleSelect}
-                    onDismiss={onDismiss}
-                    dismissingMatchId={
-                      dismissMatch.isPending ? (dismissMatch.variables ?? null) : null
-                    }
-                    onApproveAll={(rule, matches) => openApprove({ rule, matches, kind: 'all' })}
-                    onApproveSelected={(rule, matches) =>
-                      openApprove({ rule, matches, kind: 'selected' })
-                    }
-                  />
-                ))}
+                <h2
+                  id="pending-heading"
+                  style={{ fontSize: text.sm, fontWeight: 600, margin: 0, color: color.fgSoft }}
+                >
+                  Pending suggestions
+                </h2>
+                {state.kind === 'ready' && suggestions.length > 0 && (
+                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                    <span style={{ fontFamily: font.mono, fontVariantNumeric: 'tabular-nums' }}>
+                      {suggestions.length}
+                      {pendingBufferTruncated ? '+' : ''}
+                    </span>{' '}
+                    waiting
+                  </span>
+                )}
               </div>
-            )}
-          </section>
+
+              {state.kind === 'loading' && <SuggestionsSkeleton />}
+              {state.kind === 'empty' && <SuggestionsEmptyState />}
+              {state.kind === 'ready' && suggestions.length === 0 && <SuggestionsEmptyState />}
+              {state.kind === 'ready' && groups.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  {groups.map((group) => (
+                    <SuggestionGroup
+                      key={group.rule?.id ?? `orphan-${group.matches[0]?.ruleId ?? 'none'}`}
+                      rule={group.rule}
+                      matches={group.matches}
+                      selectedIds={selectedIds}
+                      onToggleSelect={onToggleSelect}
+                      onDismiss={onDismiss}
+                      dismissingMatchId={
+                        dismissMatch.isPending ? (dismissMatch.variables ?? null) : null
+                      }
+                      onApproveAll={(rule, matches) => openApprove({ rule, matches, kind: 'all' })}
+                      onApproveSelected={(rule, matches) =>
+                        openApprove({ rule, matches, kind: 'selected' })
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
         </>
       )}
 
@@ -996,7 +988,7 @@ function RulesSkeleton() {
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       {[0, 1, 2].map((i) => (
-        <Skeleton key={i} variant="rect" height={92} borderRadius={10} />
+        <Skeleton key={i} variant="rect" height={64} borderRadius={8} />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading Autopilot rules</span>
     </div>
@@ -1019,20 +1011,12 @@ function SuggestionsSkeleton() {
   );
 }
 
-/** Empty branch — distinguish "no rules yet" from "no pending matches". */
-function SuggestionsEmptyState({ hasAnyRules }: { hasAnyRules: boolean }) {
-  if (!hasAnyRules) {
-    return (
-      <EmptyState
-        title="No pending suggestions"
-        description="Suggestions appear here once a rule finds matching senders."
-      />
-    );
-  }
+/** Empty branch — rules exist, nothing is waiting. */
+function SuggestionsEmptyState() {
   return (
     <EmptyState
       title="No pending suggestions"
-      description="No sender currently matches an enabled rule. New matches will appear here."
+      description="New matches from your rules appear here."
     />
   );
 }

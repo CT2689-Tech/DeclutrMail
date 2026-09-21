@@ -30,11 +30,6 @@ export default function TriagePage() {
       capability="triage"
       title="Triage"
       pitch="Review a short queue of sender decisions with an exact action preview before Gmail changes."
-      bullets={[
-        'A focused daily sender queue',
-        'Keep, Archive, Unsubscribe, Later, and Delete previews',
-        'Activity records and eligible Undo controls',
-      ]}
     >
       <TriageExperience />
     </TierGate>

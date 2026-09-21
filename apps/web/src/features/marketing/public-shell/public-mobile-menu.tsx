@@ -47,7 +47,7 @@ export function PublicMobileMenu({
           placement="nav"
           onClick={close}
         >
-          Get started →
+          Start free
         </TrackedCta>
       </nav>
     </details>

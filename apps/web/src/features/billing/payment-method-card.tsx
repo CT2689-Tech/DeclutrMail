@@ -21,12 +21,13 @@
 
 import { useState } from 'react';
 
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { usePaymentMethodSession } from './api/use-payment-method';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, shadow } = tokens;
+const { color, radius, text } = tokens;
 
 export function PaymentMethodCard({
   provider,
@@ -66,16 +67,15 @@ export function PaymentMethodCard({
         background: color.card,
         border: `1px solid ${isPastDue ? color.amber : color.border}`,
         borderRadius: radius.lg,
-        boxShadow: shadow.card,
         padding: '20px 22px',
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
       }}
     >
-      <Eyebrow>Payment method</Eyebrow>
+      <GroupTitle as="div">Payment method</GroupTitle>
 
-      <p style={{ margin: 0, fontSize: 13, lineHeight: 1.55, color: color.fgSoft }}>
+      <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55, color: color.fgSoft }}>
         {showSupportPath ? (
           mandateExplains ? (
             <>
@@ -107,7 +107,10 @@ export function PaymentMethodCard({
       </p>
 
       {isPastDue ? (
-        <p role="status" style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: color.amber }}>
+        <p
+          role="status"
+          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
+        >
           <strong style={{ fontWeight: 600 }}>Your last payment didn&rsquo;t go through.</strong>{' '}
           {showSupportPath
             ? 'Your plan stays active while we sort this out with you.'
@@ -137,16 +140,16 @@ export function PaymentMethodCard({
             </Button>
           </div>
           {disabled && disabledReason ? (
-            <p style={{ margin: 0, fontSize: 12, color: color.fgMuted }}>{disabledReason}</p>
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{disabledReason}</p>
           ) : null}
           {session.error ? (
             <div
               role="alert"
               style={{
-                fontSize: 12,
-                color: color.red,
-                background: color.redBg,
-                border: `1px solid ${color.red}`,
+                fontSize: text.sm,
+                color: color.danger,
+                background: color.dangerBg,
+                border: `1px solid ${color.danger}`,
                 borderRadius: 8,
                 padding: '8px 10px',
               }}

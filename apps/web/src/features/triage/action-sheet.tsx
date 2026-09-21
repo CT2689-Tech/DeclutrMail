@@ -15,7 +15,7 @@ import type { TriageDecisionRow } from './data';
 import { ProtectedActionNotice } from './protected-notice';
 import type { SheetableVerb } from './store';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 export interface ConfirmDetails {
   archiveHistoric: boolean;
@@ -246,7 +246,7 @@ export function ActionSheet({
           <h2
             id="dm-triage-sheet-title"
             style={{
-              fontSize: 19,
+              fontSize: text.xl,
               fontWeight: 600,
               letterSpacing: '-0.014em',
               margin: '6px 0 12px',
@@ -277,7 +277,7 @@ export function ActionSheet({
           />
 
           {verb === 'Later' && (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.sm }}>
               <span style={{ color: color.fg, fontWeight: 600 }}>Return to Inbox</span>
               <input
                 type="datetime-local"
@@ -295,7 +295,7 @@ export function ActionSheet({
                   background: color.card,
                   color: color.fg,
                   fontFamily: font.sans,
-                  fontSize: 13,
+                  fontSize: text.base,
                 }}
               />
             </label>
@@ -326,7 +326,7 @@ export function ActionSheet({
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
-                  fontSize: 12.5,
+                  fontSize: text.sm,
                   color: color.fg,
                 }}
               >
@@ -338,7 +338,7 @@ export function ActionSheet({
                     : ' emails'}{' '}
                   already in the inbox
                 </span>
-                <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+                <span style={{ fontSize: text.xs, color: color.fgMuted }}>
                   Uses a second cleanup action on Free.
                 </span>
               </span>
@@ -377,7 +377,7 @@ export function ActionSheet({
               }}
             >
               <CheckSquare on={rememberPreference} muted={!rememberPreference} />
-              <span style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}>
+              <span style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.45 }}>
                 <strong style={{ color: color.fg, fontWeight: 600 }}>
                   {`Skip this dialog for ${verb}`}
                 </strong>{' '}
@@ -419,7 +419,7 @@ export function ActionSheet({
             background: color.card,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
             {/* Honest reversibility (D58): a delivered network
                 unsubscribe can't be recalled — no undo token exists for
                 it by design. Only the archived backlog is undoable.

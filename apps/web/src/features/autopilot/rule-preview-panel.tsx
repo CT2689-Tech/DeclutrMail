@@ -4,7 +4,7 @@ import { Button, tokens } from '@declutrmail/shared';
 import type { RulePreviewState } from './types';
 import { resolveSenderIdentity } from './sender-label';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Dry-run preview results for one rule (D103's "If active now, this
@@ -43,14 +43,14 @@ export function RulePreviewPanel({
       }}
     >
       {state.status === 'loading' && (
-        <div role="status" aria-live="polite" style={{ fontSize: 12, color: color.fgMuted }}>
+        <div role="status" aria-live="polite" style={{ fontSize: text.sm, color: color.fgMuted }}>
           Checking current sender data…
         </div>
       )}
 
       {state.status === 'error' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span role="alert" style={{ fontSize: 12, color: color.red }}>
+          <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
             {state.message}
           </span>
           <Button tone="default" size="sm" onClick={onRetry}>
@@ -65,7 +65,7 @@ export function RulePreviewPanel({
             <strong
               style={{
                 fontFamily: font.display,
-                fontSize: 18,
+                fontSize: text.xl,
                 fontWeight: 600,
                 letterSpacing: '-0.02em',
                 color: color.fg,
@@ -74,13 +74,13 @@ export function RulePreviewPanel({
             >
               {state.result.wouldMatchCount.toLocaleString('en-US')}
             </strong>
-            <span style={{ fontSize: 12, color: color.fgSoft }}>
+            <span style={{ fontSize: text.sm, color: color.fgSoft }}>
               sender{state.result.wouldMatchCount === 1 ? '' : 's'} would match if this rule were
               active now · {state.result.evaluatedSenders.toLocaleString('en-US')} evaluated
             </span>
           </div>
 
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
             {state.result.actionableSenderCount.toLocaleString('en-US')} actionable now ·{' '}
             {state.result.protectedWouldMatchCount.toLocaleString('en-US')} matching Protected
             sender
@@ -106,7 +106,7 @@ export function RulePreviewPanel({
                     display: 'flex',
                     alignItems: 'baseline',
                     gap: 8,
-                    fontSize: 12,
+                    fontSize: text.sm,
                     flexWrap: 'wrap',
                   }}
                 >
@@ -117,7 +117,7 @@ export function RulePreviewPanel({
                     <span
                       style={{
                         fontFamily: font.mono,
-                        fontSize: 11,
+                        fontSize: text.xs,
                         color: color.fgMuted,
                         maxWidth: 260,
                         overflow: 'hidden',
@@ -133,12 +133,12 @@ export function RulePreviewPanel({
               ))}
             </ul>
           ) : (
-            <span style={{ fontSize: 12, color: color.fgMuted }}>
+            <span style={{ fontSize: text.sm, color: color.fgMuted }}>
               Nothing matches right now — the rule would take no action today.
             </span>
           )}
 
-          <span style={{ fontSize: 11, color: color.fgMuted }}>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
             Observe preview — this check is read-only.
           </span>
         </>

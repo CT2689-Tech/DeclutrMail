@@ -18,9 +18,8 @@ export default function TriageError({
       error={error}
       reset={reset}
       boundary="triage"
-      eyebrow="Triage hit a snag"
       headline="We couldn't load your triage queue."
-      body="Your mailbox and decisions are untouched. Try again, or review senders while we sort this out."
+      body="Your mailbox is unchanged. Try again, or review senders."
       escape={{ href: '/senders', label: 'Back to Senders' }}
     />
   );

@@ -69,9 +69,8 @@ export type EventName =
   | 'autopilot_preset_changed'
   | 'autopilot_pattern_suggestion_shown'
   | 'autopilot_pattern_suggestion_decided'
-  // — Calibrated feedback + review (D246) —
+  // — Calibrated feedback (D246) —
   | 'product_feedback_submitted'
-  | 'weekly_review_viewed'
   // — Quiet hours (U18 — D92/D95) —
   | 'quiet_hours_updated'
   // — Marketing surface (D19 pricing) —
@@ -116,6 +115,7 @@ export type DecisionJourney = 'first_relief' | 'daily';
 
 export type PageSurface =
   | 'landing'
+  | 'home'
   | 'senders'
   | 'sender_detail'
   | 'activity'
@@ -351,7 +351,7 @@ export interface EventPayloads {
     /**
      * Positional section on the current public page; page_viewed carries the
      * route family. `nav_sign_in` is the header's secondary returning-user
-     * affordance — kept distinct from `nav` so the primary "Get started" CTA
+     * affordance — kept distinct from `nav` so the primary "Start free" CTA
      * keeps a comparable series after both started emitting (2026-08-05).
      */
     placement: 'nav' | 'nav_sign_in' | 'hero' | 'pricing_teaser' | 'final' | 'demo';
@@ -496,18 +496,11 @@ export interface EventPayloads {
     evidence_count: number;
   };
 
-  // — Calibrated feedback + review (D246) —
+  // — Calibrated feedback (D246) —
   product_feedback_submitted:
     | { surface: 'activity'; rating: 'expected' | 'surprising' }
     | { surface: 'brief'; rating: 'useful' | 'not_useful' | 'wrong_reason' }
     | { surface: 'followups'; rating: 'useful' | 'not_followup' };
-  weekly_review_viewed: {
-    completed: number;
-    skipped: number;
-    failed: number;
-    recovered: number;
-    protected: number;
-  };
 
   // — Quiet hours (U18 — D92/D95) —
   quiet_hours_updated: {

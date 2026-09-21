@@ -18,9 +18,8 @@ export default function FollowupsError({
       error={error}
       reset={reset}
       boundary="followups"
-      eyebrow="Follow-ups hit a snag"
       headline="We couldn't load your follow-ups."
-      body="Your reminders are safe. Try again, or continue in Triage while we sort this out."
+      body="Your follow-ups are unchanged. Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}
     />
   );

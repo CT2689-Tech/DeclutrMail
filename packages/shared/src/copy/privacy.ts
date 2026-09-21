@@ -50,9 +50,6 @@ export const PRIVACY_STORAGE_LABEL = 'Gmail details DeclutrMail stores:' as cons
 /** Sub-label that introduces the never-stored list. */
 export const PRIVACY_NEVER_LABEL = 'DeclutrMail never fetches or stores:' as const;
 
-/** The user-facing field label for the Gmail snippet (D7 framing). */
-export const GMAIL_PREVIEW_FIELD_LABEL = 'Gmail preview snippet' as const;
-
 /**
  * Pre-consent disclosure rendered beside every CTA that starts Google OAuth.
  *

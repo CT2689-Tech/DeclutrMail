@@ -32,6 +32,7 @@ import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { TriageScreen } from './triage-screen';
+import { storeTriageMode } from './test-mode';
 import { TriageUndoTray } from './triage-undo-tray';
 import TriagePage from '@/app/(app)/triage/page';
 
@@ -156,6 +157,10 @@ async function confirmOpenSheet(verb: 'Archive' | 'Unsubscribe') {
   await waitFor(() => expect(confirm).not.toBeDisabled());
   fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 }
+
+// These suites drive the list's expand → verb path; focus mode has its own
+// suite (`triage-focus.test.tsx`).
+beforeEach(() => storeTriageMode('list'));
 
 beforeEach(() => {
   resetTriageStore();

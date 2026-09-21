@@ -1,14 +1,13 @@
 'use client';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   Avatar,
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
-  NumericDisplay,
   Spark,
   tokens,
   toast,
@@ -49,8 +48,8 @@ import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE } from '@/lib/api/actions'
 import { useQueryClient } from '@tanstack/react-query';
 import { adaptProtectionReason, adaptSenderDetail } from '../api/adapters';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
-import { DecisionTimeline, KpiStrip, type TimelineItem } from '../uplift-d';
-import { unsubscribeStatusCopy } from '../grid/sender-card';
+import { DecisionTimeline, type TimelineItem } from '../uplift-d';
+import { unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
@@ -60,26 +59,28 @@ import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import { useNow } from '@/lib/use-now';
 
-const { color, font, radius, shadow, space } = tokens;
+const { color, font, motion, radius, space, text } = tokens;
+
+/** `page` = the `/senders/:id` route; `pane` = beside the Senders list. */
+export type DetailLayout = 'page' | 'pane';
 
 /**
- * Sender Detail page — Variant D composition per ADR-0012 (amends D39).
+ * Sender Detail — one content component, two frames: the `/senders/:id`
+ * page and the Senders list's side pane (`SenderDetailPane`).
  *
- * Order (Variant D):
- *   1. Editorial hero card — avatar + name + meta + Fraunces narrative
- *      + K/A/U/L fact-derived actions + collapsed optional suggestion.
- *   2. 4-cell KPI strip — Volume / Read rate / Relationship /
- *      Reading cost (replaces D44's 5-stat strip; absorbs the
- *      open-rate footnote previously in Charts).
- *   3. Recent messages (unchanged).
- *   4. Decision timeline — vertical timeline (replaces D46
- *      table-style history per ADR-0012).
+ * Order (2026-09 simplification of ADR-0012's Variant D):
+ *   1. Identity — logo, name, address; Protected switch with its exact
+ *      reason (D245); unsub status; a quiet "Open in Gmail" link.
+ *   2. ONE number — email in the last 90 days — and one sentence.
+ *   3. The five verbs; the fact-derived primary is the one filled button.
+ *      The engine's suggestion stays a separate quiet disclosure (D245).
+ *   4. Quiet stats row — read rate · 12-month trend · last seen · you
+ *      wrote (the stats that left the list row).
+ *   5. Recent messages.
+ *   6. Decision timeline.
  *
- * Removed from the surface (StatsStrip deleted; remaining component
- * files preserved on disk, deletion deferred to a follow-up cleanup PR):
- *   - <Charts> (heatmap + open-rate; founder feedback: "chart adds noise")
- *   - <DecisionHistory> table (replaced by <DecisionTimeline>)
- *   - <SenderDetailHeader> (inlined into the hero card composition)
+ * Gone from the surface: the bordered hero card, the Gmail-category
+ * eyebrow, the KPI cards, the charts and the old decision-history list.
  *
  * Action lifecycle (D226): every destructive action routes through
  * `requestAction` → `<ConfirmActionModal>` (mandatory preview) →
@@ -95,13 +96,17 @@ const { color, font, radius, shadow, space } = tokens;
  * Edge states (D211/D212): loading / error / not-found / ready are
  * each their own branch with a designed UI.
  */
-export function SenderDetailPage({ state }: { state: SenderDetailState }) {
-  if (state.kind === 'loading') return <LoadingState />;
-  if (state.kind === 'error') return <SenderDetailErrorState message={state.message} />;
-  return <ReadyState initial={state.detail} />;
+export function SenderDetailPage({
+  state,
+  layout = 'page',
+}: {
+  state: SenderDetailState;
+  layout?: DetailLayout;
+}) {
+  if (state.kind === 'loading') return <LoadingState layout={layout} />;
+  if (state.kind === 'error') return <SenderDetailErrorState layout={layout} />;
+  return <ReadyState initial={state.detail} layout={layout} />;
 }
-
-const GENERIC_RETRY_MESSAGE = "We couldn't load this sender right now.";
 
 /**
  * D226 overdue release — how long the polled action handle may stay
@@ -158,7 +163,16 @@ function parseSenderDetailSource(raw: string | null): SenderDetailSource {
   return 'search';
 }
 
-export function SenderDetailRoute({ id }: { id: string }) {
+export function SenderDetailRoute({
+  id,
+  layout = 'page',
+  onClose,
+}: {
+  id: string;
+  layout?: DetailLayout;
+  /** Pane only — what "back" means when the list is already on screen. */
+  onClose?: () => void;
+}) {
   const detail = useSenderDetail(id);
   // QA-sender-detail-20260902-09, Codex adversarial review round 2: the
   // `adapted == null` guard below (added to stop a background refetch
@@ -211,7 +225,8 @@ export function SenderDetailRoute({ id }: { id: string }) {
   useEffect(() => {
     if (firedFor.current === id) return;
     firedFor.current = id;
-    const source = parseSenderDetailSource(fromParam);
+    // The pane has no `?from=` of its own — it only opens from the list.
+    const source = layout === 'pane' ? 'senders_table' : parseSenderDetailSource(fromParam);
     void track('sender_detail_opened', { sender_id: id, source });
     addBreadcrumb({
       category: 'navigation',
@@ -219,7 +234,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
       level: 'info',
       data: { source },
     });
-  }, [id, fromParam]);
+  }, [id, fromParam, layout]);
 
   const isLoading =
     detail.isLoading || messages.isLoading || timeseries.isLoading || history.isLoading;
@@ -267,7 +282,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
       (mailboxResetAtRef.current == null || q.errorUpdatedAt >= mailboxResetAtRef.current),
   );
   if (notFound) {
-    return <NotFoundState />;
+    return <NotFoundState layout={layout} {...(onClose ? { onClose } : {})} />;
   }
 
   // QA-sender-detail-20260902-09, defect found by Codex adversarial
@@ -285,9 +300,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
   if (detail.isError && (adapted == null || !cachedDataIsTrustworthy)) {
     return (
       <SenderDetailErrorState
-        message={
-          detail.error instanceof ApiError ? "We couldn't load this sender." : GENERIC_RETRY_MESSAGE
-        }
+        layout={layout}
         onRetry={() => {
           detail.refetch();
           messages.refetch();
@@ -307,7 +320,7 @@ export function SenderDetailRoute({ id }: { id: string }) {
   if (anyChildError && (adapted == null || !cachedDataIsTrustworthy)) {
     return (
       <SenderDetailErrorState
-        message={GENERIC_RETRY_MESSAGE}
+        layout={layout}
         onRetry={() => {
           detail.refetch();
           messages.refetch();
@@ -319,13 +332,13 @@ export function SenderDetailRoute({ id }: { id: string }) {
   }
 
   if (isLoading || adapted == null) {
-    return <LoadingState />;
+    return <LoadingState layout={layout} />;
   }
 
-  return <ReadyState initial={adapted} />;
+  return <ReadyState initial={adapted} layout={layout} />;
 }
 
-function ReadyState({ initial }: { initial: SenderDetail }) {
+function ReadyState({ initial, layout }: { initial: SenderDetail; layout: DetailLayout }) {
   const auth = useOptionalAuth();
   const actionMailboxId = auth?.me.activeMailboxId ?? undefined;
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
@@ -481,18 +494,17 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   }, [initial, setPolicy.isPending]);
 
   const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
-  // QA-sender-detail-20260902-15: D245 requires showing the EXACT
-  // protection reason, and the only place it lived was a `title=`
-  // tooltip — which never opens on touch. Rendered once, as the visible
-  // line below the header; the toggle beside it is the way to unprotect.
-  const protectionReasonText = detail.isProtected
+  // D245 requires the EXACT protection reason, visibly (QA-sender-detail-
+  // 20260902-15: it lived only in a `title=` tooltip, which never opens
+  // on touch). One short line beside the switch; with no recorded reason
+  // it says only the state.
+  const protectionLine = detail.isProtected
     ? (() => {
         const reason = normalizeProtectionReason(detail.protectionReason);
-        // No recorded reason → no line: the pressed "Protected" toggle
-        // already says the state.
-        return reason === null ? null : `Protected — ${protectionReasonClause(reason)}.`;
+        return reason === null ? 'Protected' : `Protected — ${protectionReasonClause(reason)}.`;
       })()
-    : null;
+    : 'Protect';
+  const NameHeading = layout === 'pane' ? 'h2' : 'h1';
   const openAllInGmailHref = activeMailboxEmail
     ? GmailOpenLinkService.buildFromSearchLink({
         mailboxEmail: activeMailboxEmail,
@@ -500,31 +512,9 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
       })
     : null;
 
-  // Fact-based Volume signal (spec v1.2 Decision 6 — ban editorial
-  // inference; founder 2026-06-06): the "X/mo" cadence shown both in
-  // the hero narrative and the KPI cell was `stats.monthlyVolume`,
-  // a single-month value labelled "/mo" — a sender mailing 50 last
-  // month and 5 the month before averaged to "13/mo" which the user
-  // read as a steady cadence. We now display the LATEST month's
-  // count plus its actual month name, and a 12-month sparkline below.
-  // No averages, no derived /mo unit. `volumes` is reused by the
-  // KpiStrip cell's Spark and the hero count.
+  // 12 monthly counts for the trend sparkline — the raw series, no
+  // averages and no bucketed adjective (founder 2026-06-06).
   const volumes = useMemo(() => timeseries.map((p) => p.volume), [timeseries]);
-  const latestPoint = timeseries.length > 0 ? timeseries[timeseries.length - 1] : null;
-  const latestMonthAbbrev = latestPoint != null ? monthAbbrev(latestPoint.yearMonth) : null;
-  // QA-sender-detail-20260902-03: an empty `now` (pre-mount / SSR) must
-  // pick SOME value so the first client render matches the server's — same
-  // `useNow()` hydration contract as `recent-messages.tsx`. Codex
-  // adversarial review caught the first version of this defaulting to
-  // "current" (`true`): that means EVERY page load's first paint shows
-  // the "so far in {month}" framing for a stale month too, briefly
-  // reintroducing the exact bug this fix exists to remove, self-correcting
-  // only after mount. Defaulting to "not current" is the safer bias — the
-  // worst case becomes a genuinely-current sender showing "Last mailed you
-  // in {month} — N that month" for one tick before upgrading to "so far
-  // in", which understates rather than overstates freshness.
-  const latestIsCurrentMonth =
-    latestPoint != null && now != null && isCurrentYearMonth(latestPoint.yearMonth, now);
 
   // ADR-0020 composite preview (mirrors senders-screen.tsx:380).
   // Without this prop, ConfirmActionModal's time-window pills + summary
@@ -1143,18 +1133,7 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
   }, [history, now]);
 
   return (
-    <div
-      className="dm-sender-detail-page"
-      style={{
-        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
-        margin: '0 auto',
-        fontFamily: font.sans,
-      }}
-    >
+    <DetailFrame layout={layout}>
       {/* D230 manual path — the "finish in Gmail" step for a mailto
           sender. Transient right after this tab's confirm; persistent
           (from the wire row) whenever the standing unsub policy exists
@@ -1184,94 +1163,31 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
         ) : null;
       })()}
 
-      {/* 1. Editorial hero card — identity, observed facts, actions, optional suggestion */}
-      <section
-        className="dm-sender-detail-hero"
-        style={{
-          background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: 20,
-          padding: 'clamp(18px, 5vw, 32px)',
-          boxShadow: shadow.pop,
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          aria-hidden
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: `radial-gradient(circle at 100% 0%, ${color.primaryWash} 0%, transparent 50%)`,
-            pointerEvents: 'none',
-          }}
-        />
-        {/* Avatar + identity strip */}
-        <div
-          className="dm-sender-detail-identity-row"
-          style={{
-            display: 'flex',
-            gap: 22,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            marginBottom: 22,
-            position: 'relative',
-          }}
-        >
-          <span
-            className="dm-sender-detail-avatar"
-            style={{ display: 'inline-flex', flexShrink: 0 }}
-          >
-            <Avatar
-              name={sender.name}
-              domain={sender.domain}
-              size={72}
-              hasMark={sender.brandMark}
-            />
-          </span>
-          <div
-            className="dm-sender-detail-identity"
-            style={{
-              display: 'flex',
-              flex: '1 1 180px',
-              flexDirection: 'column',
-              gap: 4,
-              minWidth: 0,
-              overflow: 'hidden',
-            }}
-          >
-            <span
+      {/* 1. Identity — who this is, and whether they are Protected. */}
+      <header style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
+        <div style={{ display: 'flex', gap: space[4], alignItems: 'center', minWidth: 0 }}>
+          <Avatar name={sender.name} domain={sender.domain} size={56} hasMark={sender.brandMark} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+            {/* The pane sits beside the Senders list, which owns the h1. */}
+            <NameHeading
               style={{
-                fontSize: 10,
-                textTransform: 'uppercase',
-                letterSpacing: '0.08em',
-                color: color.fgMuted,
-                fontWeight: 500,
+                margin: 0,
+                fontSize: text['2xl'],
+                fontWeight: 600,
+                lineHeight: 1.2,
+                color: color.fg,
+                overflowWrap: 'anywhere',
               }}
             >
-              {detail.gmailCategory}
-            </span>
-            {/* ADR-0016 §A1 — sender name uses `NumericDisplay
-                variant="display"` (Fraunces 28/400/-0.025em) so the
-                Detail h1 scale matches the SenderTable total cell +
-                Hero slice headline. Card↔Detail navigation now lands
-                on a consistent display-numeric scale. Was ad-hoc
-                28px/600 w/ system default font fallback. */}
-            <h1 style={{ margin: 0 }}>
-              <NumericDisplay
-                className="dm-sender-detail-name"
-                value={sender.name}
-                variant="display"
-                style={{ maxWidth: '100%' }}
-              />
-            </h1>
+              {sender.name}
+            </NameHeading>
             <span
               // Address, not domain — the header has to name WHICH
               // sender this page is about; a brand can own several rows
               // that share a domain (`senderAddressLine`).
               style={{
                 fontFamily: font.mono,
-                fontSize: 12.5,
+                fontSize: text.sm,
                 color: color.fgMuted,
                 overflowWrap: 'anywhere',
               }}
@@ -1279,352 +1195,191 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
               {senderAddressLine(sender)}
             </span>
           </div>
-          <div
-            className="dm-sender-detail-header-actions"
-            style={{
-              marginLeft: 'auto',
-              display: 'flex',
-              gap: space[2],
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              justifyContent: 'flex-end',
-            }}
-          >
-            {/* Unsub status pill (D9 Wave 2). Mirrors the senders-list
-                chip: shown while a standing unsubscribe policy exists,
-                copy keyed by the REAL execution outcome (`unsubStatus`
-                from the senders read API) via the shared UNSUB_PILL map
-                — never a static "queued" that outlives a terminal
-                done/failed state. Reads `policyType` + `unsubStatus`
-                directly so Detail and list share one source of truth. */}
-            {detail.policyType === 'unsubscribe' && (
-              <UnsubStatusPill status={detail.unsubStatus} method={detail.unsubscribeMethod} />
-            )}
-
-            {/* Open-all-in-Gmail (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).
-                DeclutrMail never renders message bodies (D7); the
-                fastest path to "see every email from this sender" is
-                to deep-link the user into Gmail's own search UI.
-                PostHog tag identifies which surface drove the click;
-                Sentry breadcrumb is the trace handle. */}
-            {openAllInGmailHref && (
-              <a
-                href={openAllInGmailHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => {
-                  void track('gmail_deep_link_opened', {
-                    source: 'sender_detail_open_all',
-                    deep_link_kind: 'all_from_sender',
-                  });
-                  addBreadcrumb({
-                    category: 'navigation',
-                    message: `gmail-deep-link: all-from-sender ${sender.id}`,
-                    level: 'info',
-                  });
-                }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  height: 30,
-                  padding: '0 12px',
-                  borderRadius: radius.pill,
-                  background: color.card,
-                  border: `1px solid ${color.line}`,
-                  color: color.fg,
-                  fontFamily: font.sans,
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  textDecoration: 'none',
-                }}
-                // QA-sender-detail-20260902-05: aria-label and title
-                // described this one control two different ways to two
-                // different users ("open all messages" vs. "search every
-                // email"), and "all"/"every" overclaim scope — the link is
-                // a `from:` search (GmailOpenLinkService.buildFromSearchLink),
-                // and Gmail's default search excludes Spam and Trash.
-                aria-label="Open a Gmail search for email from this sender"
-                title="Open a Gmail search for email from this sender"
-              >
-                Open in Gmail
-                <ExternalLinkIcon />
-              </a>
-            )}
-            {/* The EXACT reason, on the surface that owns this sender
-                (CLAUDE.md §2.6 / D245). This toggle said only "Protect"
-                — three of the four reasons are AUTOMATIC, so a user
-                looking at a protected sender here had no way to learn
-                why, and the identical gap on the Settings list was the
-                2026-08-07 finding. Wording comes from the one shared
-                source, so Detail, Triage, the Screener and Settings
-                cannot drift apart. */}
-            <Button
-              tone={detail.isProtected ? 'primary' : 'default'}
-              size="sm"
-              onClick={toggleProtect}
-              ariaPressed={detail.isProtected}
-              disabled={setPolicy.isPending}
-              // A pressed "Protected" reads as a status; nothing else here
-              // says the click removes it. The reason stays on the visible
-              // line below, not in this tooltip.
-              title={
-                detail.isProtected
-                  ? 'Select to unprotect'
-                  : 'Protect this sender from bulk and automatic actions that move email.'
-              }
-            >
-              {/* QA-sender-detail-20260902-15: labelled "Protect" even
-                  while already protected — a diamond glyph was the only
-                  active-state signal, and glyphs aren't a reliable
-                  screen-reader or at-a-glance cue. The word itself now
-                  carries the state. */}
-              {detail.isProtected ? 'Protected' : 'Protect'}
-            </Button>
-          </div>
         </div>
 
-        {/* QA-sender-detail-20260902-15: the EXACT reason (D245) now has a
-            visible line, not just a `title=` tooltip that never opens on
-            touch — evidenced by this run's own reproduction sender showing
-            4 Protect/Unprotect toggles inside 2 days on the Decision
-            Timeline below, consistent with someone clicking to find out
-            which state they were in. */}
-        {protectionReasonText != null && (
-          <p
-            style={{
-              margin: '2px 0 0',
-              fontSize: 12,
-              color: color.fgMuted,
-              fontFamily: font.sans,
-            }}
-          >
-            {protectionReasonText}
-          </p>
-        )}
-
-        <style>{`@media (max-width: 600px) {
-          .dm-sender-detail-identity-row {
-            column-gap: 12px !important;
-            row-gap: 14px !important;
-          }
-          .dm-sender-detail-avatar > * {
-            width: 56px !important;
-            height: 56px !important;
-          }
-          .dm-sender-detail-header-actions {
-            width: 100% !important;
-            margin-left: 0 !important;
-            justify-content: flex-start !important;
-          }
-          .dm-sender-detail-name {
-            width: 100% !important;
-          }
-        }`}</style>
-
-        {/* Fraunces narrative — ADR-0011 hero-surface editorial relaxation */}
-        <p
+        <div
           style={{
-            fontFamily: font.display,
-            fontSize: 24,
-            lineHeight: 1.32,
-            fontWeight: 500,
-            color: color.fgSoft,
-            margin: '0 0 14px',
-            maxWidth: 720,
-            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            gap: space[3],
+            flexWrap: 'wrap',
+            minWidth: 0,
           }}
         >
-          {/* Fact-based hero (founder 2026-06-06): pre-fix this read
-              "Mails you 13×/mo" — a derived monthly-average over the
-              last 12 buckets, which lied for any sender with a recent
-              spike or quiet stretch. Now: latest month's actual count
-              + month name; no averages, no /mo unit.
+          {/* The EXACT reason, on the surface that owns this sender
+              (CLAUDE.md §2.6 / D245) — three of the four reasons are
+              AUTOMATIC, so the state alone never says why. One visible
+              line beside the switch (QA-sender-detail-20260902-15: a
+              `title=` tooltip never opens on touch); wording comes from
+              the one shared source, so Detail, Triage, the Screener and
+              Settings cannot drift apart. */}
+          <ProtectSwitch
+            checked={detail.isProtected}
+            disabled={setPolicy.isPending}
+            onToggle={toggleProtect}
+          />
+          <span style={{ fontSize: text.sm, color: color.fgMuted, flex: '1 1 160px', minWidth: 0 }}>
+            {protectionLine}
+          </span>
 
-              QA-sender-detail-20260902-01/-03 (2026-09-02): the fallback
-              used to read "Hasn't mailed you yet." for ANY empty
-              12-month timeseries, which is true only when the sender has
-              never mailed the user at all (`totalReceived === 0`) — a
-              sender whose one message predates the 12-month window read
-              the identical false "never" sentence, contradicted by the
-              Relationship KPI and Recent Messages one glance below it on
-              the same screen. Split on `totalReceived` instead. Also: a
-              non-current `latestPoint` (mail arrived months ago, nothing
-              since) used the same "Sent N in Month." framing as a
-              genuinely current month, reading as live cadence — named
-              explicitly below instead. */}
-          {latestPoint != null ? (
-            <>
-              {latestIsCurrentMonth ? (
-                <>
-                  <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span>{' '}
-                  {latestPoint.volume === 1 ? 'email' : 'emails'} so far in {latestMonthAbbrev}
-                </>
-              ) : (
-                <>
-                  Last mailed you in {latestMonthAbbrev} —{' '}
-                  <span style={{ color: color.fg, fontWeight: 600 }}>{latestPoint.volume}</span>{' '}
-                  {latestPoint.volume === 1 ? 'email' : 'emails'} that month
-                </>
-              )}
-              {stats.readRate !== null && (
-                <>
-                  {/* The percentage lives once, in the "Read rate" KPI cell
-                      below. This sentence keeps the one fact that cell has
-                      no room for — the population the rate is computed
-                      over. `sender.monthlyVolume` is the identical 90-day
-                      count `readRate`'s denominator comes from server-side
-                      (`senders.read-service.ts`'s `last90dMsgs`);
-                      QA-sender-detail-20260902-04: 0% of 2 emails and 0% of
-                      200 are not the same claim. */}
-                  {' · '}
-                  <span style={{ color: color.fg, fontWeight: 600 }}>
-                    {sender.monthlyVolume}
-                  </span>{' '}
-                  in the last 90 days
-                </>
-              )}
-            </>
-          ) : sender.totalReceived > 0 ? (
-            <>Nothing in the last 12 months. Their last email was {relTime(stats.lastSeenDays)}.</>
-          ) : (
-            <>Hasn&rsquo;t mailed you yet.</>
+          {/* Unsub status (D9 Wave 2). Mirrors the senders-list chip:
+              shown while a standing unsubscribe policy exists, copy keyed
+              by the REAL execution outcome (`unsubStatus`) via the shared
+              UNSUB_PILL map — never a static "queued" that outlives a
+              terminal done/failed state. */}
+          {detail.policyType === 'unsubscribe' && (
+            <UnsubStatusPill status={detail.unsubStatus} method={detail.unsubscribeMethod} />
           )}
-        </p>
 
-        {/* THE SPLIT (F012). A third-party sweeper can mark mail read
-            through the API, and on the mailbox this was measured against
-            one did so 20,819 times — 27.5% of everything we counted as
-            read. Those are already out of the percentage above; saying so
-            is what lets the product EXPLAIN a number that looks lower than
-            the user expects, instead of silently compensating and leaving
-            them to wonder. Rendered only when there is something to
-            disclose, and only when the Read rate cell shows a rate. A visible
-            footnote (same muted line style as the protection reason), not
-            hero type. */}
-        {latestPoint != null &&
-          stats.readRate !== null &&
-          (stats.readRateSweeperMarked ?? 0) > 0 && (
-            <p
-              style={{
-                position: 'relative',
-                margin: '-6px 0 14px',
-                fontSize: 12,
-                color: color.fgMuted,
-                fontFamily: font.sans,
+          {/* DeclutrMail never renders message bodies (D7); the fastest
+              path to "see this sender's email" is Gmail's own search. */}
+          {openAllInGmailHref && (
+            <a
+              href={openAllInGmailHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                void track('gmail_deep_link_opened', {
+                  source: 'sender_detail_open_all',
+                  deep_link_kind: 'all_from_sender',
+                });
+                addBreadcrumb({
+                  category: 'navigation',
+                  message: `gmail-deep-link: all-from-sender ${sender.id}`,
+                  level: 'info',
+                });
               }}
+              style={{
+                fontSize: text.sm,
+                fontWeight: 500,
+                color: color.fgSoft,
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+              // QA-sender-detail-20260902-05: one description for every
+              // user, and no "all"/"every" — the link is a `from:` search
+              // (GmailOpenLinkService.buildFromSearchLink), and Gmail's
+              // default search excludes Spam and Trash.
+              aria-label="Open a Gmail search for email from this sender"
+              title="Open a Gmail search for email from this sender"
             >
-              {stats.readRateSweeperMarked!.toLocaleString('en-US')} marked read by another tool{' '}
-              {stats.readRateSweeperMarked === 1 ? 'is' : 'are'} not counted in the read rate.
-            </p>
+              Open in Gmail
+            </a>
           )}
-
-        {/* "Estimated reading cost" line RETIRED per spec v1.2 Decision 6
-            (ban editorial inference). The 1.6 min/msg coefficient was
-            never calibrated against real user data; rendering it inside
-            an editorial Fraunces moment made the guess feel authoritative.
-            The factual volume + marked-read line above stays. */}
-
-        {/* Fact-derived K/A/U/L actions stay primary (D245). */}
-        <div style={{ position: 'relative' }}>
-          {/* The page's own action feedback — same model and wording as a
-              senders-list row: working (verbs inert), then how it ended. */}
-          <RowActivityProvider value={pageActivity}>
-            <ActionToolbar sender={sender} onAction={requestAction} />
-          </RowActivityProvider>
         </div>
+      </header>
 
-        {/* Suggestions are optional secondary disclosure below actions.
-            QA-sender-detail-20260902-07: `toolbarHighlight` lets the
-            banner say so when it disagrees with the toolbar's own
-            fact-derived primary verb, instead of leaving two unsourced
-            "what should I do" signals on the screen. */}
+      {/* 2. The one number — email received in the engine's 90-day window
+          (`monthlyVolume` is `last90dMsgs` server-side, the same count the
+          read rate below is computed over) — and one sentence that adds
+          only the lifetime total (`totalReceived`). No averages, no
+          derived cadence (founder 2026-06-06).
+          QA-sender-detail-20260902-01: "Hasn't mailed you yet." is true
+          only when the sender never mailed at all, so it keys on
+          `totalReceived`, never on an empty recent window. */}
+      {sender.totalReceived > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: space[1] }}>
+          <span
+            data-testid="sender-detail-window-count"
+            style={{
+              fontFamily: font.display,
+              fontSize: text['4xl'],
+              fontWeight: 500,
+              lineHeight: 1,
+              color: color.fg,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {sender.monthlyVolume != null ? sender.monthlyVolume.toLocaleString('en-US') : '—'}
+          </span>
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+            {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
+            {sender.totalReceived.toLocaleString('en-US')} total
+          </p>
+        </div>
+      ) : (
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+          Hasn&rsquo;t mailed you yet.
+        </p>
+      )}
+
+      {/* 3. The five verbs (K/A/U/L/D). The fact-derived primary is the
+          one filled button (D245); the engine's read stays a separate,
+          quiet disclosure because the two are allowed to disagree. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
+        {/* The page's own action feedback — same model and wording as a
+            senders-list row: working (verbs inert), then how it ended. */}
+        <RowActivityProvider value={pageActivity}>
+          <ActionToolbar sender={sender} onAction={requestAction} shortcuts={layout === 'page'} />
+        </RowActivityProvider>
         {recommendation != null && (
-          <div style={{ position: 'relative', marginTop: 12 }}>
-            <RecommendationBanner
-              recommendation={recommendation}
-              toolbarHighlight={derivePrimaryVerbId(sender)}
-            />
-          </div>
+          <RecommendationBanner
+            recommendation={recommendation}
+            toolbarHighlight={derivePrimaryVerbId(sender)}
+          />
         )}
-      </section>
+      </div>
 
-      {/* 2. 4-cell KPI strip — replaces D44 5-stat strip; absorbs open-rate footnote */}
-      <KpiStrip
-        cells={[
-          // Volume cell — fact-based (founder 2026-06-06). Was:
-          // `value=stats.monthlyVolume`, `unit='/mo'`,
-          // `micro=trendCaption(volumeTrend)` — all three were derived
-          // from a single calendar-month query labelled as monthly
-          // cadence, plus a trend bucket computed against a 3-month
-          // average. Now: latest month's actual count + month name,
-          // with the 12-month sparkline + a "12 mo" caption beneath.
-          // When timeseries is empty the cell renders an em-dash so
-          // the strip's grid stays intact without faking a zero.
-          {
-            label: 'Volume',
-            value: latestPoint != null ? latestPoint.volume : '—',
-            // QA-sender-detail-20260902-03, gap found by Codex adversarial
-            // review: the hero sentence learned to distinguish a current
-            // month from a stale one, but this cell — a SEPARATE render
-            // site over the same `latestPoint` — still paired the count
-            // with a bare month name either way, so a stale month read
-            // "3 Sep" exactly like the hero's original bug. The year
-            // disambiguates a past month without a wordy prefix a
-            // compact KPI cell has no room for.
-            unit:
-              latestPoint != null
-                ? latestIsCurrentMonth
-                  ? latestMonthAbbrev
-                  : `${latestMonthAbbrev} ${latestPoint.yearMonth.slice(0, 4)}`
-                : null,
-            micro:
-              latestPoint != null && volumes.length > 0 ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <Spark values={volumes} />
-                  <span>12 mo</span>
-                </div>
-              ) : null,
-          },
-          // `null` readRate = no timeseries — em-dash cell, matching the
-          // Volume cell's honesty rule above (never a fabricated 0%).
-          {
-            label: 'Read rate',
-            value: stats.readRate !== null ? formatReadRatePct(stats.readRate) : '—',
-            unit: stats.readRate !== null ? '%' : null,
-            // The micro line carries the window — this cell sits beside
-            // lifetime cells, so an unqualified rate reads as lifetime.
-            // QA-sender-detail-20260902-01 (sibling): "no data yet" reads
-            // as a promise the number is coming, which is false for any
-            // sender dormant &gt;90 days — name the empty window instead.
-            micro:
-              stats.readRate === null
-                ? 'no email in the last 90 days'
-                : 'marked read in the last 90 days',
-          },
-          {
-            label: 'Relationship',
-            value: relationshipDisplay(stats.relationshipMonths, sender.firstSeenAt).value,
-            unit: relationshipDisplay(stats.relationshipMonths, sender.firstSeenAt).unit,
-            micro: relationshipDisplay(stats.relationshipMonths, sender.firstSeenAt).since,
-          },
-          // "Reading cost" KPI cell RETIRED per spec v1.2 Decision 6.
-          // Was the same uncalibrated 1.6 min/msg estimate as the
-          // editorial line above. Cell may return when a calibrated
-          // per-user coefficient lands.
-        ]}
-      />
+      {/* 4. Quiet stats — the four facts that left the list row. */}
+      <div>
+        <dl
+          aria-label="Sender stats"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(88px, 1fr))',
+            gap: space[3],
+            margin: 0,
+            padding: `${space[4]}px 0`,
+            borderTop: `1px solid ${color.line}`,
+            borderBottom: `1px solid ${color.line}`,
+          }}
+        >
+          {/* `null` readRate = no email in the window — an em-dash, never
+              a fabricated 0%. Labelled "marked read": Gmail exposes no
+              open events, only the UNREAD flag. */}
+          <Stat label="Marked read">
+            {stats.readRate !== null ? (
+              <>
+                <span style={{ fontFamily: font.mono }}>{formatReadRatePct(stats.readRate)}%</span>
+                {/* The window rides with the rate: beside lifetime facts
+                    an unqualified rate reads as lifetime. */}
+                <span style={{ fontSize: text.xs, color: color.fgMuted }}> · 90 days</span>
+              </>
+            ) : (
+              '—'
+            )}
+          </Stat>
+          <Stat label="12-month trend">
+            {volumes.length > 0 ? <Spark values={volumes} width={72} height={20} /> : '—'}
+          </Stat>
+          <Stat label="Last seen">{relTime(stats.lastSeenDays)}</Stat>
+          <Stat label="You wrote">
+            <span style={{ fontFamily: font.mono }}>{sender.wroteToCount}×</span>
+          </Stat>
+        </dl>
+        {/* THE SPLIT (F012). A third-party sweeper can mark mail read
+            through the API; those are already out of the percentage
+            above. Saying so lets the product EXPLAIN a number that looks
+            lower than expected instead of silently compensating. Only
+            when there is something to disclose and a rate to explain. */}
+        {stats.readRate !== null && (stats.readRateSweeperMarked ?? 0) > 0 && (
+          <p style={{ margin: `${space[2]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+            {stats.readRateSweeperMarked!.toLocaleString('en-US')} marked read by another tool — not
+            counted.
+          </p>
+        )}
+      </div>
 
-      {/* 3. Recent messages (unchanged) */}
+      {/* 5. Recent messages */}
       <RecentMessages
         messages={recentMessages}
         mailboxEmail={activeMailboxEmail}
         senderEmail={detail.email}
       />
 
-      {/* 4. Decision timeline — replaces D46 table-style history.
-          Rows are actions taken on this sender (`activity_log`), so this
-          card and the Activity feed can never disagree. */}
+      {/* 6. Decision timeline. Rows are actions taken on this sender
+          (`activity_log`), so this list and the Activity feed can never
+          disagree. */}
       <DecisionTimeline
         heading="Decision timeline"
         empty={
@@ -1640,12 +1395,10 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           <a
             href={`/activity?sender_q=${encodeURIComponent(detail.email)}`}
             style={{
-              fontFamily: font.mono,
-              fontSize: 11,
+              fontSize: text.sm,
               color: color.fgSoft,
               textDecoration: 'none',
-              fontWeight: 600,
-              letterSpacing: '0.04em',
+              fontWeight: 500,
               whiteSpace: 'nowrap',
             }}
           >
@@ -1676,79 +1429,120 @@ function ReadyState({ initial }: { initial: SenderDetail }) {
           resetsAt: auth?.me.cleanupResetsAt ?? null,
         }}
       />
-    </div>
+    </DetailFrame>
   );
 }
 
 /* ────────────────── HELPERS ────────────────── */
 
 /**
- * `YYYY-MM` (timeseries axis key) maps to a short month name
- * (`May`, `Jun`). Pure JS Date — no timezone subtlety since the
- * timeseries buckets are month-resolution. Returns `''` for malformed
- * input so the hero copy gracefully degrades rather than rendering
- * `undefined` next to the count. `Intl.DateTimeFormat` is locale-aware;
- * explicit `en-US` keeps the abbrev stable across deploys.
+ * The one frame every state renders in, so loading → ready → error never
+ * shifts the column. `page` is a centred reading column; `pane` fills
+ * the side pane the Senders list gives it (the pane owns the scroll).
  */
-function monthAbbrev(yearMonth: string): string {
-  const m = /^(\d{4})-(\d{2})$/.exec(yearMonth);
-  if (m == null) return '';
-  const year = Number(m[1]);
-  const month = Number(m[2]) - 1;
-  if (Number.isNaN(year) || month < 0 || month > 11) return '';
-  return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(new Date(year, month, 1));
+function DetailFrame({ layout, children }: { layout: DetailLayout; children: ReactNode }) {
+  return (
+    <div
+      className="dm-sender-detail-page"
+      data-layout={layout}
+      style={{
+        boxSizing: 'border-box',
+        width: '100%',
+        padding: layout === 'pane' ? '20px 16px 32px' : '24px 24px 40px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: space[6],
+        ...(layout === 'page' ? { maxWidth: 760, margin: '0 auto' } : {}),
+        fontFamily: font.sans,
+      }}
+    >
+      <style>{`@media (max-width: 480px) {
+        .dm-sender-detail-page { padding-left: 16px !important; padding-right: 16px !important; }
+      }`}</style>
+      {children}
+    </div>
+  );
 }
 
-// QA-sender-detail-20260902-03: whether `latestPoint` is the calendar
-// month the reader is IN right now, vs. a completed month with nothing
-// since — the two need different framing ("so far in" vs "last mailed
-// you in") or a stale month reads as live cadence.
-// Exported for a direct, environment-independent unit test (Codex
-// adversarial review round 2: the integration-level test can't prove the
-// UTC-vs-local distinction, since ambient "now" only diverges from UTC
-// within a day of a month boundary).
-export function isCurrentYearMonth(yearMonth: string, nowMs: number): boolean {
-  const m = /^(\d{4})-(\d{2})$/.exec(yearMonth);
-  if (m == null) return false;
-  // Codex adversarial review: `sender_timeseries.year_month` buckets by
-  // `getUTCFullYear()`/`getUTCMonth()` server-side
-  // (incremental-sync.worker.ts's `startOfMonthISO`), so comparing
-  // against the browser's LOCAL month can disagree for up to ~24h around
-  // a month boundary depending on the reader's timezone offset. UTC
-  // matches the bucket's own basis.
-  const now = new Date(nowMs);
-  return Number(m[1]) === now.getUTCFullYear() && Number(m[2]) - 1 === now.getUTCMonth();
+function Stat({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+      <dt style={{ fontSize: text.xs, color: color.fgMuted }}>{label}</dt>
+      <dd style={{ margin: 0, fontSize: text.md, color: color.fg, minHeight: 20 }}>{children}</dd>
+    </div>
+  );
 }
 
-// `trendCaption` retired (founder 2026-06-06): the bucket strings
-// ("↑ up vs prior 3mo") leaned on the same misleading derivation as
-// the original Volume cell. The sparkline now carries the temporal
-// signal; the latest-month count carries the magnitude. If we ever
-// want a textual trend chip back, derive it from a rolling window
-// the user can compute themselves from the sparkline (e.g. "5 in May
-// vs 12 avg prior 11mo") rather than a bucketed adjective.
-
-// QA-sender-detail-20260902-13: the `&gt;=12mo` branch used to restate
-// `months` in a second unit ("13 yr" / micro "159 months") — the reader
-// can already compute 159÷12; the fact they can't compute is the start
-// date, which `firstSeenAt` carries and this cell never showed.
-function relationshipDisplay(months: number, firstSeenAt: string) {
-  if (months < 12) {
-    return {
-      value: months,
-      unit: months === 1 ? 'mo' : 'mo',
-      since:
-        months === 0
-          ? 'New'
-          : `since ${monthAbbrev(firstSeenAt.slice(0, 7))} ${firstSeenAt.slice(0, 4)}`,
-    };
-  }
-  const years = Math.floor(months / 12);
-  return {
-    value: years,
-    unit: years === 1 ? 'yr' : 'yr',
-    since: `since ${monthAbbrev(firstSeenAt.slice(0, 7))} ${firstSeenAt.slice(0, 4)}`,
-  };
+/**
+ * Protect as a quiet switch. The accessible name stays "Protected" in
+ * both states — `aria-checked` carries the state, so the control never
+ * needs a label that flips meaning under the pointer.
+ */
+function ProtectSwitch({
+  checked,
+  disabled,
+  onToggle,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label="Protected"
+      className="dm-sender-detail-protect"
+      onClick={onToggle}
+      disabled={disabled}
+      title={
+        checked
+          ? 'Select to unprotect'
+          : 'Protect this sender from bulk and automatic actions that move email.'
+      }
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        background: 'transparent',
+        border: 'none',
+        padding: 0,
+        cursor: disabled ? 'default' : 'pointer',
+        opacity: disabled ? 0.6 : 1,
+        flexShrink: 0,
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: 32,
+          height: 18,
+          borderRadius: radius.pill,
+          background: checked ? color.primary : color.mutedBg,
+          border: `1px solid ${checked ? color.primary : color.border}`,
+          position: 'relative',
+          transition: `background ${motion.fast} ${motion.ease}`,
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            top: 1,
+            left: checked ? 15 : 1,
+            width: 14,
+            height: 14,
+            borderRadius: radius.pill,
+            background: color.card,
+            transition: `left ${motion.fast} ${motion.ease}`,
+          }}
+        />
+      </span>
+      {/* 44px touch target on phones without growing the visual. */}
+      <style>{`@media (max-width: 600px) {
+        .dm-sender-detail-protect { min-height: 44px; min-width: 44px; }
+      }`}</style>
+    </button>
+  );
 }
 
 function historyRowToTimelineItem(
@@ -1769,14 +1563,14 @@ function historyRowToTimelineItem(
     // it's still there to paste into a support message.
     what: (
       <span title={`op ${row.opId}`}>
-        <span style={{ color: '#4B5552' }}>{row.source}</span> · <strong>{row.action}</strong>
+        <span style={{ color: color.fgSoft }}>{row.source}</span> · <strong>{row.action}</strong>
         {row.count != null && (
-          <span style={{ color: '#646D69', fontSize: 11.5 }}> · {row.count} messages</span>
+          <span style={{ color: color.fgMuted, fontSize: text.sm }}> · {row.count} messages</span>
         )}
         {/* Same fact, same word as Activity's row — the two surfaces read
             one `activity_log.reverted_at` and must not disagree. */}
         {row.undoneAt != null && (
-          <span style={{ color: '#646D69', fontSize: 11.5 }}> · Undone</span>
+          <span style={{ color: color.fgMuted, fontSize: text.sm }}> · Undone</span>
         )}
       </span>
     ),
@@ -1801,134 +1595,94 @@ function formatRelative(iso: string, now: number): string {
   return `${Math.round(days / 365)}yr ago`;
 }
 
-function LoadingState() {
+function LoadingState({ layout }: { layout: DetailLayout }) {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        maxWidth: 1180,
-        margin: '0 auto',
-        fontFamily: font.sans,
-      }}
-    >
-      {[280, 90, 220, 240].map((h, i) => (
-        <div
-          key={i}
-          aria-hidden="true"
-          style={{
-            height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: radius.lg,
-            backgroundImage: `linear-gradient(90deg, ${color.lineSoft} 0%, rgba(14,20,19,0.03) 50%, ${color.lineSoft} 100%)`,
-            backgroundSize: '200% 100%',
-            backgroundPosition: '0 0',
-          }}
-        />
-      ))}
-      <span style={{ position: 'absolute', left: -9999 }}>Loading sender details</span>
-    </div>
+    <DetailFrame layout={layout}>
+      <div role="status" aria-live="polite" style={{ display: 'contents' }}>
+        {[56, 64, 32, 56, 200].map((h, i) => (
+          <div
+            key={i}
+            aria-hidden="true"
+            style={{ height: h, background: color.mutedBg, borderRadius: radius.md }}
+          />
+        ))}
+        <span style={{ position: 'absolute', left: -9999 }}>Loading sender details</span>
+      </div>
+    </DetailFrame>
   );
 }
 
-function NotFoundState() {
+function NotFoundState({ layout, onClose }: { layout: DetailLayout; onClose?: () => void }) {
   return (
-    <div
-      style={{
-        padding: '20px 24px 28px',
-        maxWidth: 720,
-        margin: '0 auto',
-        fontFamily: font.sans,
-      }}
-    >
+    <DetailFrame layout={layout}>
       <EmptyState
         title="Sender not found"
         body="This sender isn't in this mailbox."
         action={
-          <Button tone="primary" onClick={() => window.history.back()}>
-            Back to Senders
-          </Button>
+          // In the pane the list is already on screen — closing is "back".
+          layout === 'pane' ? (
+            onClose && (
+              <Button tone="primary" onClick={onClose}>
+                Close
+              </Button>
+            )
+          ) : (
+            <Button tone="primary" onClick={() => window.history.back()}>
+              Back to Senders
+            </Button>
+          )
         }
       />
-    </div>
+    </DetailFrame>
   );
 }
 
-// QA-sender-detail-20260902-09: `message` used to prefix the body with
-// near-identical prose to `title` whenever the underlying error was a
-// real `ApiError` ("We couldn't load this sender." + "We couldn't load
-// this sender" as the title, one word apart) — the `=== GENERIC_RETRY_
-// MESSAGE` check only caught the ONE generic literal, not this
-// near-duplicate. Status codes already never reach primary copy (2026-
-// 07-28 sweep); the fix is to stop repeating the title at all, not to
-// catch a second literal. `_message` stays in the signature — both
-// call sites already compute and pass it — but the body no longer reads
-// it.
+// QA-sender-detail-20260902-09: the body never repeats the title. Status
+// codes never reach primary copy (2026-07-28 sweep).
 function SenderDetailErrorState({
-  message: _message,
+  layout,
   onRetry,
 }: {
-  message: string;
+  layout: DetailLayout;
   onRetry?: () => void;
 }) {
   const handleRetry = onRetry ?? (() => window.location.reload());
   return (
-    <div
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '20px clamp(12px, 4vw, 24px) 28px',
-        fontFamily: font.sans,
-      }}
-    >
+    <DetailFrame layout={layout}>
       <RecoverableErrorState
         title="We couldn't load this sender"
         description="Nothing in your mailbox changed."
         onRetry={handleRetry}
       />
       {/* QA-sender-detail-20260902-17: "Try again" was the only action —
-          a dead end for any error that keeps recurring (a genuinely
-          nonexistent/foreign sender resolves to `NotFoundState` below,
-          which already has this escape hatch; this branch covers actual
-          load failures — 4xx/5xx/network — where retrying may never
-          succeed either). */}
-      <div style={{ textAlign: 'center', marginTop: 12 }}>
-        <a
-          href="/senders"
-          style={{
-            fontFamily: font.sans,
-            fontSize: 12.5,
-            fontWeight: 600,
-            color: color.fgSoft,
-            textDecoration: 'none',
-          }}
-        >
-          Back to Senders
-        </a>
-      </div>
-    </div>
+          a dead end for a load failure that keeps recurring. The pane
+          needs no link: the list is beside it and the close button is
+          always in its header. */}
+      {layout === 'page' && (
+        <div style={{ textAlign: 'center' }}>
+          <a
+            href="/senders"
+            style={{
+              fontSize: text.sm,
+              fontWeight: 600,
+              color: color.fgSoft,
+              textDecoration: 'none',
+            }}
+          >
+            Back to Senders
+          </a>
+        </div>
+      )}
+    </DetailFrame>
   );
 }
 
 /**
- * Unsub status pill — Sender Detail header surface (D9 Wave 2; replaces
- * the static "Unsub queued" pill that ignored terminal outcomes).
- * Mirrors the senders-list row chip so a user navigating between
- * list ↔ detail never sees a contradiction: both render the shared
- * `UNSUB_PILL` copy map keyed by the wire `unsubStatus` (`none` covers
- * a recorded intent with no tracked execution — mailto manual per D230,
- * or method-none).
- *
- * Visual: pale-amber wash so it does not compete with the deep-teal
- * primary actions. Uses the
- * canonical `color.amberBg` token (no hand-rolled rgba).
+ * Unsub status pill (D9 Wave 2). Mirrors the senders-list row chip so a
+ * user navigating between list ↔ detail never sees a contradiction: both
+ * render the shared `UNSUB_PILL` copy map keyed by the wire `unsubStatus`
+ * (`none` covers a recorded intent with no tracked execution — mailto
+ * manual per D230, or method-none). Amber is the Unsubscribe colour.
  */
 function UnsubStatusPill({
   status,
@@ -1947,50 +1701,15 @@ function UnsubStatusPill({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        height: 26,
-        padding: '0 10px',
+        padding: '3px 10px',
         borderRadius: radius.pill,
         background: color.amberBg,
         color: color.amber,
-        border: `1px solid ${color.amber}`,
-        fontFamily: font.sans,
-        fontSize: 11.5,
+        fontSize: text.xs,
         fontWeight: 600,
-        letterSpacing: '0.01em',
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          display: 'inline-block',
-          width: 6,
-          height: 6,
-          borderRadius: '50%',
-          background: color.amber,
-        }}
-      />
       {copy.label}
     </span>
-  );
-}
-
-/** Small chevron-out glyph for the "Open all in Gmail" CTA. */
-function ExternalLinkIcon() {
-  return (
-    <svg
-      width={12}
-      height={12}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-      <polyline points="15 3 21 3 21 9" />
-      <line x1="10" y1="14" x2="21" y2="3" />
-    </svg>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { TriageSessionStats } from './data';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
 
 /**
@@ -44,6 +45,7 @@ export function TriageEmptyState({
   stats,
   onOpenUpgrade,
   syncFailed = false,
+  footnote,
 }: {
   stats: TriageSessionStats;
   onOpenUpgrade?: () => void;
@@ -55,6 +57,8 @@ export function TriageEmptyState({
    * confident "nothing to do" claim as a genuinely caught-up mailbox.
    */
   syncFailed?: boolean;
+  /** One muted line under the completion numerals (the D214 "today" fact). */
+  footnote?: ReactNode;
 }) {
   // D212 resting state (2026-07-02 audit W5) — the queue is empty and
   // the user decided NOTHING today: a fresh morning visit, or a new
@@ -73,23 +77,7 @@ export function TriageEmptyState({
         title="This mailbox's last scan didn't finish."
         description="Your Gmail is untouched. Retry the scan in Settings → Gmail accounts."
         action={
-          <a
-            href="/settings#mailboxes"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              height: 32,
-              padding: '0 14px',
-              background: color.card,
-              color: color.fg,
-              border: `1px solid ${color.line}`,
-              borderRadius: 7,
-              fontFamily: font.sans,
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
+          <a href="/settings#mailboxes" style={LINK_BUTTON}>
             Open Settings
           </a>
         }
@@ -102,23 +90,7 @@ export function TriageEmptyState({
         title="Nothing needs a decision right now."
         description="New decisions appear as senders send again."
         action={
-          <a
-            href="/senders"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              height: 32,
-              padding: '0 14px',
-              background: color.card,
-              color: color.fg,
-              border: `1px solid ${color.line}`,
-              borderRadius: 7,
-              fontFamily: font.sans,
-              fontSize: 13,
-              fontWeight: 600,
-              textDecoration: 'none',
-            }}
-          >
+          <a href="/senders" style={LINK_BUTTON}>
             Browse senders
           </a>
         }
@@ -129,27 +101,32 @@ export function TriageEmptyState({
   const showPlusNudge =
     stats.tier === 'free' && stats.freeRemaining != null && stats.freeRemaining <= 5;
   const showProNudge = stats.tier === 'plus';
+  // What you actually did today, as one quiet line. D9 — "unsubscribes"
+  // counts DECISIONS, which execute async (one-click may fail, mailto is
+  // manual); "unsubscribed" would overclaim (mirrors the Activity tile).
+  const tally: Array<[number, string]> = [
+    [stats.decidedToday, 'decided'],
+    [stats.archivedToday, 'archived'],
+    [stats.unsubscribedToday, stats.unsubscribedToday === 1 ? 'unsubscribe' : 'unsubscribes'],
+    [stats.laterToday, 'to Later'],
+  ];
   return (
     <div
       style={{
-        padding: '32px 24px 40px',
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: 14,
+        padding: '56px 16px 40px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 18,
+        gap: 20,
         textAlign: 'center',
         fontFamily: font.sans,
       }}
     >
-      {/* Halo icon — checkmark in a teal disc. */}
       <span
         aria-hidden="true"
         style={{
-          width: 56,
-          height: 56,
+          width: 72,
+          height: 72,
           borderRadius: 9999,
           background: color.primarySoft,
           color: color.primary,
@@ -159,12 +136,12 @@ export function TriageEmptyState({
         }}
       >
         <svg
-          width="22"
-          height="22"
+          width="32"
+          height="32"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          strokeWidth="2.4"
+          strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
         >
@@ -175,8 +152,7 @@ export function TriageEmptyState({
       <div>
         <h2
           style={{
-            fontFamily: font.display,
-            fontSize: 22,
+            fontSize: text['2xl'],
             fontWeight: 600,
             letterSpacing: '-0.014em',
             margin: 0,
@@ -184,92 +160,84 @@ export function TriageEmptyState({
         >
           You&rsquo;re done for now.
         </h2>
-        <p
-          style={{
-            fontSize: 13.5,
-            color: color.fgSoft,
-            margin: '8px 0 0',
-            lineHeight: 1.55,
-            maxWidth: 460,
-          }}
-        >
+        <p style={{ fontSize: text.md, color: color.fgSoft, margin: '8px 0 0', lineHeight: 1.55 }}>
           New decisions appear as senders send again.
         </p>
       </div>
 
-      {/* Stats summary — what you actually did today. */}
-      <div
+      <p
+        data-dm-triage-tally
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-          gap: 10,
-          width: '100%',
-          maxWidth: 520,
+          margin: 0,
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          gap: '4px 16px',
+          fontSize: text.sm,
+          color: color.fgMuted,
         }}
       >
-        <StatTile label="Decided" value={stats.decidedToday} />
-        <StatTile label="Archived" value={stats.archivedToday} />
-        {/* D9 — counts unsubscribe DECISIONS this session, which execute
-            async (one-click may fail, mailto is manual). "Unsubscribes"
-            counts the actions taken without claiming verified success;
-            "Unsubscribed" would overclaim (mirrors the Activity tile). */}
-        <StatTile label="Unsubscribes" value={stats.unsubscribedToday} />
-        <StatTile label="To Later" value={stats.laterToday} />
-      </div>
+        {/* Zero entries drop out — except the lead, which is why this
+            screen renders at all. */}
+        {tally
+          .filter(([value], i) => i === 0 || value > 0)
+          .map(([value, label]) => (
+            <span key={label}>
+              <span
+                style={{
+                  fontFamily: font.mono,
+                  fontWeight: 600,
+                  color: color.fg,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {value.toLocaleString('en-US')}
+              </span>{' '}
+              {label}
+            </span>
+          ))}
+      </p>
+      {footnote}
 
-      {/* D33 Free-tier nudge — "See Plus" surfaces when the D19
-          monthly cleanup cap is in view (≤5 cleanup actions left). */}
+      {/* D33 Free-tier nudge — surfaces when the D19 monthly cleanup cap
+          is in view (≤5 cleanup actions left). */}
       {showPlusNudge && (
         <div
           style={{
-            marginTop: 6,
-            padding: '14px 16px',
-            background: color.primaryWash,
-            border: `1px solid ${color.primaryBorder}`,
-            borderRadius: 10,
             display: 'flex',
             alignItems: 'center',
             gap: 12,
             flexWrap: 'wrap',
             justifyContent: 'center',
-            maxWidth: 520,
           }}
         >
-          <span style={{ fontSize: 12.5, color: color.fg, textAlign: 'left' }}>
-            <strong style={{ fontWeight: 600 }}>
-              {stats.freeRemaining === 0
-                ? `You've used all ${FREE_CLEANUP_LIMIT} free cleanup actions this month.`
-                : `${stats.freeRemaining} of your ${FREE_CLEANUP_LIMIT} free cleanup actions left this month.`}
-            </strong>{' '}
-            <span style={{ color: color.fgSoft }}>
-              Plus removes the cap — unlimited archive, delete, and unsubscribe.
-            </span>
+          <span style={{ fontSize: text.sm, color: color.fgSoft }}>
+            {stats.freeRemaining === 0
+              ? `You've used all ${FREE_CLEANUP_LIMIT} free cleanup actions this month.`
+              : `${stats.freeRemaining} of your ${FREE_CLEANUP_LIMIT} free cleanup actions left this month.`}
           </span>
-          <Button tone="primary" size="sm" onClick={onOpenUpgrade ?? (() => {})}>
+          <Button tone="primary" size="md" onClick={onOpenUpgrade ?? (() => {})}>
             See Plus
           </Button>
         </div>
       )}
 
-      {/* D33 Plus-tier nudge — single soft link, not a banner. Hidden for Pro users (no
-          nudge shown). */}
+      {/* D33 Plus-tier nudge — single soft link, not a banner. Hidden
+          for Pro users (no nudge shown). */}
       {showProNudge && (
         <button
           type="button"
           onClick={onOpenUpgrade ?? (() => {})}
           style={{
-            marginTop: 4,
             background: 'transparent',
             border: 'none',
             padding: 0,
-            font: 'inherit',
             fontFamily: font.sans,
-            fontSize: 12.5,
+            fontSize: text.sm,
             color: color.fgSoft,
             cursor: 'pointer',
             textDecoration: 'underline',
             textUnderlineOffset: 3,
-            textDecorationColor: color.lineSoft,
           }}
         >
           See Pro automation &rarr;
@@ -279,40 +247,17 @@ export function TriageEmptyState({
   );
 }
 
-function StatTile({ label, value }: { label: string; value: number }) {
-  return (
-    <div
-      style={{
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: 9,
-        padding: '10px 12px',
-      }}
-    >
-      <div
-        style={{
-          fontFamily: font.display,
-          fontWeight: 600,
-          fontSize: 22,
-          letterSpacing: '-0.018em',
-          color: color.fg,
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {value.toLocaleString('en-US')}
-      </div>
-      <div
-        style={{
-          fontFamily: font.mono,
-          fontSize: 9.5,
-          color: color.fgMuted,
-          marginTop: 2,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-        }}
-      >
-        {label}
-      </div>
-    </div>
-  );
-}
+const LINK_BUTTON = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  height: 36,
+  padding: '0 14px',
+  background: color.card,
+  color: color.fg,
+  border: `1px solid ${color.line}`,
+  borderRadius: 8,
+  fontFamily: font.sans,
+  fontSize: text.base,
+  fontWeight: 600,
+  textDecoration: 'none',
+} as const;

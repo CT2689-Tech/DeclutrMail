@@ -16,6 +16,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useUiStore } from '@declutrmail/shared';
 
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -599,18 +600,24 @@ describe('BriefScreen — D61 history', () => {
     const user = userEvent.setup();
     renderScreen();
 
-    // Latest: "yesterday" is correct and stays.
-    await waitFor(() => expect(screen.getByText(/yesterday's email/i)).toBeInTheDocument());
-    expect(
-      screen.getByRole('heading', { name: /noise .*messages yesterday/i }),
-    ).toBeInTheDocument();
+    // Latest: "yesterday" is correct and stays — on the visible Noise
+    // heading and in the help text the screen registers for the `?`.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('heading', { name: /noise .*messages yesterday/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(String(useUiStore.getState().screenHelp?.body)).toMatch(/yesterday's email/i);
 
     await user.selectOptions(await screen.findByLabelText('Brief day'), '2026-05-23');
 
     // Past day: named, not "yesterday". PAST_BRIEF ran 2026-05-23 and
     // covers Fri 2026-05-22.
-    await waitFor(() => expect(screen.getByText(/\bemail from Fri, May 22/i)).toBeInTheDocument());
-    expect(screen.queryByText(/yesterday's email/i)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByText('Lease renewal needs signing')).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('heading', { name: /messages yesterday/i })).not.toBeInTheDocument();
+    expect(String(useUiStore.getState().screenHelp?.body)).toMatch(/email from Fri, May 22/i);
   });
 
   it('hides the switcher and still renders today when history fails', async () => {

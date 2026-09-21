@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import type { ActionVerb } from './types';
 
-const { color, font } = tokens;
+const { color, font, text, motion } = tokens;
 
 /**
  * The verification detail the senders confirm modal has always shown and
@@ -108,10 +108,7 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
         >
           <div
             style={{
-              fontFamily: font.mono,
-              fontSize: 10,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
+              fontSize: text.xs,
               color: color.fgMuted,
             }}
           >
@@ -134,7 +131,7 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
                   onClick={() => reachControl.onChange(opt.value)}
                   style={{
                     fontFamily: font.sans,
-                    fontSize: 12.5,
+                    fontSize: text.sm,
                     fontWeight: 500,
                     padding: '6px 12px',
                     borderRadius: 999,
@@ -142,7 +139,7 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
                     color: active ? color.fgInverse : color.fgSoft,
                     border: `1px solid ${active ? color.fg : color.line}`,
                     cursor: 'pointer',
-                    transition: 'background 120ms, color 120ms',
+                    transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
                   }}
                 >
                   {opt.label}
@@ -164,14 +161,14 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
           {reachControl.reach === 'inbox_only' &&
             reachControl.inboxCount === 0 &&
             reachControl.allMailCount > 0 && (
-              <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+              <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.45 }}>
                 Switch to &quot;Inbox + archived&quot; to reach{' '}
                 {reachControl.allMailCount.toLocaleString('en-US')} archived email
                 {reachControl.allMailCount === 1 ? '' : 's'}.
               </span>
             )}
           {reachControl.reach === 'all_mail' && (
-            <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+            <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.45 }}>
               Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
               every email — inbox email to the inbox, archived email to the archive.
             </span>
@@ -183,7 +180,7 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
         <span
           role="status"
           data-testid="mail-location-line"
-          style={{ fontSize: 12, color: color.fgSoft, lineHeight: 1.45 }}
+          style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.45 }}
         >
           {location}
         </span>
@@ -199,10 +196,8 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
           rel="noopener noreferrer"
           style={{
             alignSelf: 'flex-start',
-            fontFamily: font.mono,
-            fontSize: 11,
+            fontSize: text.xs,
             color: color.fgSoft,
-            letterSpacing: '0.04em',
           }}
         >
           Check these in Gmail first ↗
@@ -221,10 +216,9 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
               border: 'none',
               padding: 0,
               cursor: 'pointer',
-              fontFamily: font.mono,
-              fontSize: 11,
+              fontFamily: 'inherit',
+              fontSize: text.xs,
               color: color.fgMuted,
-              letterSpacing: '0.04em',
             }}
           >
             {showSubjects
@@ -250,12 +244,11 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
                     display: 'flex',
                     gap: 8,
                     alignItems: 'baseline',
-                    fontFamily: font.mono,
-                    fontSize: 11.5,
+                    fontSize: text.sm,
                     color: color.fgSoft,
                   }}
                 >
-                  <span style={{ width: 18, color: color.fgMuted }}>
+                  <span style={{ width: 18, color: color.fgMuted, fontFamily: font.mono }}>
                     {String(i + 1).padStart(2, '0')}
                   </span>
                   {row.date !== null && (
@@ -263,6 +256,7 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
                       style={{
                         color: color.fgMuted,
                         flex: '0 0 auto',
+                        fontFamily: font.mono,
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
@@ -278,10 +272,8 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
                   marginTop: 6,
                   paddingTop: 6,
                   borderTop: `1px dashed ${color.line}`,
-                  fontFamily: font.mono,
-                  fontSize: 10.5,
+                  fontSize: text.xs,
                   color: color.fgMuted,
-                  letterSpacing: '0.04em',
                 }}
               >
                 Subjects only · we never fetch or store full email contents

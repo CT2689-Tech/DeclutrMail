@@ -32,7 +32,7 @@ export type ActivityWindow = '7d' | '30d' | '90d' | 'all';
  */
 export type ActivitySourceFilter = 'all' | ActivityLogEntry['source'];
 
-/** Factual weekly-review classification; null means still in progress/nonterminal. */
+/** Factual review-outcome classification; null means still in progress/nonterminal. */
 export type ActivityReviewOutcome = 'completed' | 'skipped' | 'failed' | 'recovered' | 'protected';
 
 /**
@@ -74,18 +74,6 @@ export interface ActivityRow {
   executionState: ActivityExecutionState | null;
   /** D246 review bucket, also used by exact evidence links. */
   reviewOutcome: ActivityReviewOutcome | null;
-}
-
-/** Exact seven-day counts shown by the in-app weekly review. */
-export interface ActivityWeeklyReview {
-  window: '7d';
-  from: string;
-  to: string;
-  completed: number;
-  skipped: number;
-  failed: number;
-  recovered: number;
-  protected: number;
 }
 
 /**
@@ -233,6 +221,14 @@ export interface ActivitySummary {
   decidedSenders: number;
   /** Row counts per canonical verb (a decision each, D227 K/A/U/L/D). */
   byVerb: Record<CanonicalVerb, number>;
+  /**
+   * Messages moved per canonical verb — `SUM(affected_count)` grouped by
+   * action, the same non-reverted rows `byVerb` counts. Split out because
+   * the verbs do not mean the same thing for a total: Later mail comes
+   * back to the inbox when it wakes, so a "cleared" figure can only sum
+   * `archive` + `delete`. Keep and Unsubscribe rows are written with 0.
+   */
+  emailsByVerb: Record<CanonicalVerb, number>;
   /**
    * Total messages moved by canonical-verb decisions —
    * `SUM(affected_count)`. Keep rows contribute 0 by design (the

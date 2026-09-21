@@ -1,10 +1,8 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
 import {
   Button,
-  Card,
   CASA_VERIFICATION_APPROVED_ON,
   DATA_EXPORT_FORMAT_MANIFEST,
   DATA_EXPORT_LIMITATION,
@@ -14,7 +12,6 @@ import {
   GMAIL_MESSAGE_DATA_INVENTORY,
   GMAIL_OAUTH_ACCESS,
   GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY,
-  PRIVACY_BADGE_HEADLINE,
   PrivacyBadge,
   ScreenIntro,
   tokens,
@@ -26,12 +23,13 @@ import type { DataExportFormat } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
-import { ContextualHelp } from '@/features/help/contextual-help';
+import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { track } from '@/lib/posthog';
 import { useBillingSubscription } from '@/features/billing/api/use-billing-subscription';
 import { useDataExport } from '../api/use-data-export';
+import { DrillRow, PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Settings → Privacy & Data (D116 + D217 + D228) — the dedicated
@@ -47,6 +45,7 @@ const { color, font } = tokens;
  *      CSVs (message index / senders / decisions) via GET
  *      /api/account/export.
  *      D228-allowlisted columns only.
+ *   4b. Cookie preferences — the D147 change/withdrawal surface.
  *   5. Leave cleanly — pointers to disconnect + account deletion.
  *   6. Legal & evidence — CASA Tier 2 row (static copy, link lands
  *      when the letter publishes) + policy notes.
@@ -91,306 +90,191 @@ export function PrivacyDataView({
 
   return (
     <div
+      className="dm-settings-page"
       style={{
-        padding: '20px 24px 28px',
+        padding: '20px 24px 40px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
-        maxWidth: 760,
+        gap: 28,
+        maxWidth: 720,
         margin: '0 auto',
         fontFamily: font.sans,
       }}
     >
+      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
+      <PageHeader title="Privacy & data" backToSettings />
       <ScreenIntro
         id="settings-privacy"
-        title="Privacy & Data"
-        body={
-          <>
-            Exactly what DeclutrMail stores about your email, what it never touches, and how to take
-            your data with you — or leave entirely.
-          </>
-        }
+        title="Privacy & data"
+        body="What DeclutrMail fetches, saves, shares and deletes — Google grants broader access than it uses."
       />
 
-      {/* 1 — the D228 trust badge (locked copy module). */}
-      <PrivacyBadge variant="card" />
+      {/* 1 — the D228 trust badge (locked copy module). The storage
+          boundary is stated HERE and nowhere else on the page. */}
+      <PrivacyBadge variant="card" style={{ boxShadow: 'none' }} />
 
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Complete Gmail data inventory</h3>
-          <p style={mutedTextStyle}>
-            Google grants broader access than DeclutrMail uses. Each group shows what is accessed,
-            saved, created, shared, exported, and deleted.
-          </p>
-          <div style={{ marginTop: 12 }}>
-            <ContextualHelp question="How is Google access different from stored data?">
-              Google permission lets DeclutrMail request the limited Gmail fields listed below. The
-              inventory then separates what is fetched, what stays in DeclutrMail, what is derived,
-              and when each category is removed. Full message bodies, attachments, and inline images
-              are never fetched.
-            </ContextualHelp>
-          </div>
-          <InventoryGroup
-            title="Access granted"
-            items={GMAIL_OAUTH_ACCESS.map((item) => ({
-              id: item.scope,
-              label: item.label,
-              detail: item.usedFor,
-            }))}
-          />
-          <InventoryGroup
-            title="Connection and sync data"
-            items={GMAIL_CONNECTION_DATA_INVENTORY.map(inventoryDisplayItem)}
-          />
-          <InventoryGroup
-            title="Message data"
-            items={GMAIL_MESSAGE_DATA_INVENTORY.map(inventoryDisplayItem)}
-          />
-          <InventoryGroup
-            title="Derived product data"
-            items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
-          />
-          <InventoryGroup
-            title="Records we keep to investigate problems"
-            items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
-          />
-          <p style={{ ...mutedTextStyle, marginTop: 12 }}>
-            Anthropic only ever sees the items marked above for Brief summaries or optional sender
-            explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
-          </p>
-          <p style={{ ...mutedTextStyle, marginTop: 8 }}>
-            Brandfetch receives a sender&rsquo;s email domain and nothing else about you — never
-            your address, your account, or any message. {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
-            <a
-              href={GMAIL_DATA_PROCESSORS.Brandfetch.privacyUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Brandfetch&rsquo;s privacy policy
-            </a>
-            .
-          </p>
-        </div>
-      </Card>
+      <Section title="Gmail data inventory">
+        <InventoryGroup
+          title="Access granted"
+          items={GMAIL_OAUTH_ACCESS.map((item) => ({
+            id: item.scope,
+            label: item.label,
+            detail: item.usedFor,
+          }))}
+        />
+        <InventoryGroup
+          title="Connection and sync data"
+          items={GMAIL_CONNECTION_DATA_INVENTORY.map(inventoryDisplayItem)}
+        />
+        <InventoryGroup
+          title="Message data"
+          items={GMAIL_MESSAGE_DATA_INVENTORY.map(inventoryDisplayItem)}
+        />
+        <InventoryGroup
+          title="Derived product data"
+          items={GMAIL_DERIVED_DATA_INVENTORY.map(inventoryDisplayItem)}
+        />
+        <InventoryGroup
+          title="Records we keep to investigate problems"
+          items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
+        />
+        <p style={{ ...bodyTextStyle, padding: '12px 0 0', borderTop: `1px solid ${color.line}` }}>
+          Anthropic only ever sees the items marked above for Brief summaries or optional sender
+          explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
+        </p>
+        <p style={{ ...bodyTextStyle, padding: '8px 0 12px' }}>
+          Brandfetch receives a sender&rsquo;s email domain and nothing else about you — never your
+          address, your account, or any message. {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
+          <a
+            href={GMAIL_DATA_PROCESSORS.Brandfetch.privacyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: color.primary }}
+          >
+            Brandfetch&rsquo;s privacy policy
+          </a>
+          .
+        </p>
+      </Section>
 
       {/* 2 — which mailboxes the storage list applies to. */}
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Connected mailboxes</h3>
-          {mailboxes.length === 0 ? (
-            <p style={mutedTextStyle}>
-              No mailboxes connected — no Gmail data is being saved right now.
-            </p>
-          ) : (
-            <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
-              {mailboxes.map((m, i) => (
-                <li
-                  key={m.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 10,
-                    padding: '8px 0',
-                    borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
-                    fontSize: 13,
-                  }}
-                >
-                  <span
-                    style={{
-                      flex: '1 1 190px',
-                      minWidth: 0,
-                      fontFamily: font.mono,
-                      fontSize: 12.5,
-                      overflowWrap: 'anywhere',
-                    }}
-                  >
-                    {m.email}
-                  </span>
-                  <span style={{ fontSize: 11, color: color.fgMuted, flex: '0 1 auto' }}>
-                    {m.status === 'disconnected' ? 'disconnected — sync stopped' : 'data saved'}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </Card>
+      <Section title="Connected mailboxes">
+        {mailboxes.length === 0 ? (
+          <p style={{ ...bodyTextStyle, ...blockRowStyle }}>
+            No mailboxes connected — no Gmail data is being saved right now.
+          </p>
+        ) : (
+          mailboxes.map((m) => (
+            <SettingsRow
+              key={m.id}
+              label={
+                <span style={{ fontFamily: font.mono, overflowWrap: 'anywhere' }}>{m.email}</span>
+              }
+            >
+              <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                {m.status === 'disconnected' ? 'disconnected — sync stopped' : 'data saved'}
+              </span>
+            </SettingsRow>
+          ))
+        )}
+      </Section>
 
       {/* 3 — undo retention. */}
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Undo retention</h3>
-          <p style={mutedTextStyle}>
-            {undoDays !== null ? (
-              <>
-                Archive, Later, and archived unsubscribe email can be undone from Activity for{' '}
-                <strong style={{ color: color.fg }}>{undoDays} days</strong> on your plan.
-              </>
-            ) : (
-              <>
-                Archive, Later, and archived unsubscribe email can be undone from Activity for at
-                least {MIN_UNDO_WINDOW_DAYS} days on any plan.
-              </>
-            )}{' '}
-            {UNIFORM_UNDO_WINDOW_DAYS === null
-              ? "Delete also uses your plan's Activity Undo window."
-              : `Delete also uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`}{' '}
-            Gmail Trash recovery is separate and lasts up to 30 days; a delivered unsubscribe
-            request cannot be recalled. Account deletion waits for open undo windows unless you
-            waive them.
-          </p>
-        </div>
-      </Card>
+      <Section title="Undo retention">
+        <p style={{ ...bodyTextStyle, ...blockRowStyle }}>
+          {undoDays !== null ? (
+            <>
+              Archive, Later, and archived unsubscribe email can be undone from Activity for{' '}
+              <strong style={{ color: color.fg }}>{undoDays} days</strong> on your plan.
+            </>
+          ) : (
+            <>
+              Archive, Later, and archived unsubscribe email can be undone from Activity for at
+              least {MIN_UNDO_WINDOW_DAYS} days on any plan.
+            </>
+          )}{' '}
+          {UNIFORM_UNDO_WINDOW_DAYS === null
+            ? "Delete also uses your plan's Activity Undo window."
+            : `Delete also uses the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window.`}{' '}
+          Gmail Trash recovery is separate and lasts up to 30 days; a delivered unsubscribe request
+          cannot be recalled. Account deletion waits for open undo windows unless you waive them.
+        </p>
+      </Section>
 
       {/* 4 — data export (D116 + DPDP). */}
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Export my data</h3>
-          <p style={mutedTextStyle}>
+      <Section title="Export my data">
+        <div style={blockRowStyle}>
+          {/* QA-sender-detail-20260902-02: the JSON export genuinely
+              includes the Gmail preview snippet on every message, so this
+              paragraph must never claim exports contain no email text. */}
+          <p style={bodyTextStyle}>
             {DATA_EXPORT_LIMITATION} Current JSON includes{' '}
             {DATA_EXPORT_FORMAT_MANIFEST.json.description} The CSVs each cover the dataset named on
-            the button. App preferences and billing records are not included.{' '}
-            {/* QA-sender-detail-20260902-02: the JSON export above genuinely
-                includes the Gmail preview snippet on every message — this
-                used to say "Exports never contain message bodies", which a
-                reader downloading and forwarding the file would reasonably
-                read as false. The locked headline is the accurate claim. */}
-            {PRIVACY_BADGE_HEADLINE}
+            the button. App preferences and billing records are not included.
           </p>
           <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Button
-              tone="default"
-              disabled={exportPendingFormat !== null}
-              onClick={() => onExport('json')}
-            >
-              {exportPendingFormat === 'json'
-                ? DATA_EXPORT_FORMAT_MANIFEST.json.pendingLabel
-                : DATA_EXPORT_FORMAT_MANIFEST.json.buttonLabel}
-            </Button>
-            <Button
-              tone="default"
-              disabled={exportPendingFormat !== null}
-              onClick={() => onExport('csv')}
-            >
-              {exportPendingFormat === 'csv'
-                ? DATA_EXPORT_FORMAT_MANIFEST.csv.pendingLabel
-                : DATA_EXPORT_FORMAT_MANIFEST.csv.buttonLabel}
-            </Button>
-            <Button
-              tone="default"
-              disabled={exportPendingFormat !== null}
-              onClick={() => onExport('senders-csv')}
-            >
-              {exportPendingFormat === 'senders-csv'
-                ? DATA_EXPORT_FORMAT_MANIFEST['senders-csv'].pendingLabel
-                : DATA_EXPORT_FORMAT_MANIFEST['senders-csv'].buttonLabel}
-            </Button>
-            <Button
-              tone="default"
-              disabled={exportPendingFormat !== null}
-              onClick={() => onExport('decisions-csv')}
-            >
-              {exportPendingFormat === 'decisions-csv'
-                ? DATA_EXPORT_FORMAT_MANIFEST['decisions-csv'].pendingLabel
-                : DATA_EXPORT_FORMAT_MANIFEST['decisions-csv'].buttonLabel}
-            </Button>
+            {EXPORT_FORMATS.map((format) => (
+              <Button
+                key={format}
+                tone="default"
+                disabled={exportPendingFormat !== null}
+                onClick={() => onExport(format)}
+              >
+                {exportPendingFormat === format
+                  ? DATA_EXPORT_FORMAT_MANIFEST[format].pendingLabel
+                  : DATA_EXPORT_FORMAT_MANIFEST[format].buttonLabel}
+              </Button>
+            ))}
           </div>
           {exportFailed && (
-            <p role="alert" style={{ fontSize: 12, color: color.danger, margin: '10px 0 0' }}>
-              The export could not be prepared. Wait a moment and try again — exports are limited to
-              a few every five minutes.
+            <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: '10px 0 0' }}>
+              The export could not be prepared. Exports are limited to a few every five minutes —
+              wait, then try again.
             </p>
           )}
         </div>
-      </Card>
+      </Section>
+
+      {/* D147 — the standing surface to change or withdraw the cookie
+          choice (GDPR Art. 7(3)); also mounted on the public /cookies page. */}
+      <CookiePreferences />
 
       {/* 5 — leave cleanly (D116's exits, pointing at the owning flows). */}
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Leave cleanly</h3>
-          <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
-            <li style={{ ...exitRowStyle, borderTop: 'none' }}>
-              <div>
-                <div style={exitTitleStyle}>Disconnect a mailbox</div>
-                <div style={exitDetailStyle}>
-                  Removes DeclutrMail's saved Google credential and stops sync and Gmail actions.
-                  Saved Gmail and DeclutrMail data stays so reconnecting can continue its history;
-                  Gmail is unchanged. Choose Manage in the top-bar account menu.
-                </div>
-              </div>
-            </li>
-            <li style={exitRowStyle}>
-              <div>
-                <div style={exitTitleStyle}>
-                  Disconnect &amp; delete one mailbox&apos;s saved data
-                </div>
-                <div style={exitDetailStyle}>
-                  Also permanently deletes that mailbox&apos;s saved email details, sender data,
-                  decisions, rules, Activity, and Undo data. Your DeclutrMail account, other
-                  mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose
-                  Manage in the top-bar account menu.
-                </div>
-              </div>
-            </li>
-            <li style={exitRowStyle}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={exitTitleStyle}>Delete account and data</div>
-                <div style={exitDetailStyle}>
-                  Permanently removes everything, with a grace period and a typed confirmation.
-                </div>
-              </div>
-              <Link href="/settings#account" style={{ textDecoration: 'none' }}>
-                <Button tone="default" size="sm">
-                  Open in Account
-                </Button>
-              </Link>
-            </li>
-          </ul>
-        </div>
-      </Card>
+      <Section title="Leave cleanly">
+        <SettingsRow
+          label="Disconnect a mailbox"
+          detail="Removes DeclutrMail's saved Google credential and stops sync and Gmail actions. Saved Gmail and DeclutrMail data stays so reconnecting can continue its history; Gmail is unchanged. Choose Manage in the top-bar account menu."
+        />
+        <SettingsRow
+          label="Disconnect & delete one mailbox's saved data"
+          detail="Also permanently deletes that mailbox's saved email details, sender data, decisions, rules, Activity, and Undo data. Your DeclutrMail account, other mailboxes, disconnected Gmail address, and your email in Gmail remain. Choose Manage in the top-bar account menu."
+        />
+        <DrillRow href="/settings#account" label="Delete account and data" />
+      </Section>
 
       {/* 6 — legal & evidence (CASA row: static copy per plan). */}
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px' }}>
-          <h3 style={cardTitleStyle}>Legal &amp; evidence</h3>
-          <ul style={{ listStyle: 'none', margin: '10px 0 0', padding: 0 }}>
-            <li style={{ ...exitRowStyle, borderTop: 'none' }}>
-              <div>
-                <div style={exitTitleStyle}>CASA Tier 2 verification</div>
-                <div style={exitDetailStyle}>
-                  DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security
-                  assessment. Google approved our OAuth verification on{' '}
-                  {CASA_VERIFICATION_APPROVED_ON} for the single restricted scope we request,
-                  gmail.modify. It is recertified annually.
-                </div>
-              </div>
-            </li>
-            <li style={exitRowStyle}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={exitTitleStyle}>Privacy Policy &amp; Terms of Service</div>
-                <div style={exitDetailStyle}>
-                  Exactly what we store and the terms you agree to — both are published and current.
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                <Link href="/privacy" style={{ textDecoration: 'none' }}>
-                  <Button tone="default" size="sm">
-                    Privacy Policy
-                  </Button>
-                </Link>
-                <Link href="/terms" style={{ textDecoration: 'none' }}>
-                  <Button tone="default" size="sm">
-                    Terms
-                  </Button>
-                </Link>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </Card>
+      <Section title="Legal & evidence">
+        <SettingsRow
+          label="CASA Tier 2 verification"
+          detail={
+            <>
+              DeclutrMail&apos;s Gmail access goes through Google&apos;s CASA security assessment.
+              Google approved our OAuth verification on {CASA_VERIFICATION_APPROVED_ON} for the
+              single restricted scope we request, gmail.modify. It is recertified annually.
+            </>
+          }
+        />
+        <DrillRow href="/privacy" label="Privacy Policy" />
+        <DrillRow href="/terms" label="Terms" />
+      </Section>
     </div>
   );
+}
+
+const EXPORT_FORMATS = ['json', 'csv', 'senders-csv', 'decisions-csv'] as const;
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return <SettingsGroup title={title}>{children}</SettingsGroup>;
 }
 
 function inventoryDisplayItem(item: {
@@ -451,11 +335,25 @@ function InventoryGroup({
   items: ReadonlyArray<{ id: string; label: string; detail: string }>;
 }) {
   return (
-    <details style={{ marginTop: 12 }}>
-      <summary style={{ cursor: 'pointer', fontWeight: 600, color: color.fg }}>{title}</summary>
-      <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+    <details style={{ borderTop: `1px solid ${color.line}` }}>
+      <summary
+        style={{
+          cursor: 'pointer',
+          minHeight: 44,
+          boxSizing: 'border-box',
+          padding: '12px 0',
+          fontSize: text.md,
+          color: color.fg,
+        }}
+      >
+        {title}
+      </summary>
+      <ul style={{ margin: '0 0 12px', paddingLeft: 20 }}>
         {items.map((item) => (
-          <li key={item.id} style={{ marginBottom: 8, color: color.fgMuted, lineHeight: 1.5 }}>
+          <li
+            key={item.id}
+            style={{ marginBottom: 8, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}
+          >
             <strong style={{ color: color.fg }}>{item.label}</strong> — {item.detail}
           </li>
         ))}
@@ -464,29 +362,15 @@ function InventoryGroup({
   );
 }
 
-const cardTitleStyle = {
-  fontSize: 15,
-  fontWeight: 600,
-  margin: 0,
-  color: color.fg,
-} as const;
-
-const mutedTextStyle = {
-  fontSize: 13,
+const bodyTextStyle = {
+  fontSize: text.sm,
   color: color.fgSoft,
   lineHeight: 1.55,
-  margin: '8px 0 0',
+  margin: 0,
 } as const;
 
-const exitRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  flexWrap: 'wrap',
-  gap: 12,
-  padding: '10px 0',
-  borderTop: `1px solid ${color.lineSoft}`,
+/** A free-form block that sits in a group the way a row does. */
+const blockRowStyle = {
+  padding: '12px 0',
+  borderTop: `1px solid ${color.line}`,
 } as const;
-
-const exitTitleStyle = { fontSize: 13.5, fontWeight: 500, color: color.fg } as const;
-
-const exitDetailStyle = { fontSize: 12, color: color.fgMuted, marginTop: 2 } as const;

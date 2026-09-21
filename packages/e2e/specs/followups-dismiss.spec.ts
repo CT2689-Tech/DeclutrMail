@@ -12,7 +12,7 @@ import { dbConnect } from '../helpers/db';
  * the feature was smoked — then drives the REAL UI:
  *
  *   1. /followups renders the seeded row in its D85 age bucket.
- *   2. The per-row trash button ("Mark resolved — <name>") removes the
+ *   2. The per-row button ("Mark resolved in DeclutrMail — <name>") removes the
  *      row optimistically; the screen refetches server truth.
  *   3. Durability is asserted in the DB: `status='dismissed'` +
  *      `dismissed_at` set, plus the D88 `followup-dismiss` activity row.
@@ -79,13 +79,10 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
   await page.goto('/followups');
   await expect(page.getByText(RECIPIENT_NAME)).toBeVisible({ timeout: 30_000 });
 
-  // ---- Dismiss via the D88 trash affordance.
-  // The label deliberately spells out what this does NOT assert (D88 /
-  // D245) — a dismissal in DeclutrMail is not an observed reply.
+  // ---- Dismiss via the D88 affordance. The label says WHERE it is
+  // resolved (D88 / D245) — a dismissal here is not an observed reply.
   await page
-    .getByRole('button', {
-      name: `Mark resolved in DeclutrMail — ${RECIPIENT_NAME}; does not mark a recipient reply`,
-    })
+    .getByRole('button', { name: `Mark resolved in DeclutrMail — ${RECIPIENT_NAME}` })
     .click();
   await expect(page.getByText(RECIPIENT_NAME)).toBeHidden({ timeout: 15_000 });
 
@@ -112,13 +109,10 @@ test('Mark resolved dismisses the row, audits it, and survives reload', async ({
 
   // ---- D86: dismissed rows stay gone after a full reload.
   await page.reload();
-  await expect(
-    // Either the summary line or the D91 empty state, in their CURRENT
-    // wording — both drifted from what this spec pinned ("threads
-    // awaiting reply" / "No follow-ups waiting."), and the page
-    // deliberately says "observed" everywhere to avoid implying live
-    // Gmail state (D90/D245).
-    page.getByText(/threads? with no later reply observed|No follow-ups observed\./).first(),
-  ).toBeVisible({ timeout: 30_000 });
+  // The screen has settled (header rendered) before asserting absence —
+  // a bare toBeHidden would pass against a still-loading page.
+  await expect(page.getByRole('heading', { level: 1, name: 'Follow-ups' })).toBeVisible({
+    timeout: 30_000,
+  });
   await expect(page.getByText(RECIPIENT_NAME)).toBeHidden();
 });

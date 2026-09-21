@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from 'react';
 
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import type { CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
 import { formatBillingDate, type SubscriptionRecord } from './billing-model';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text } = tokens;
 
 type CancelReason = NonNullable<CancelRequest['reason']>;
 
@@ -161,10 +162,15 @@ export function CancelModal({
         }
       >
         <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow>Preview · before anything changes</Eyebrow>
+          <GroupTitle as="div">Preview · before anything changes</GroupTitle>
           <h2
             id="dm-cancel-title"
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 600,
+              letterSpacing: '-0.014em',
+              margin: '6px 0 0',
+            }}
           >
             {backsEntitlement
               ? `Cancel your ${tierLabel} plan?`
@@ -181,7 +187,7 @@ export function CancelModal({
               display: 'flex',
               flexDirection: 'column',
               gap: 8,
-              fontSize: 13,
+              fontSize: text.md,
               color: color.fgSoft,
               lineHeight: 1.5,
             }}
@@ -253,7 +259,7 @@ export function CancelModal({
                 borderRadius: radius.md,
               }}
             >
-              <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft, lineHeight: 1.5 }}>
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
                 <strong style={{ fontWeight: 600, color: color.fg }}>Pause instead?</strong> Billing
                 stops for 30 days and picks up automatically after that. Your senders, rules and
                 history stay exactly as they are.
@@ -267,10 +273,10 @@ export function CancelModal({
                 <div
                   role="alert"
                   style={{
-                    fontSize: 12,
-                    color: color.red,
-                    background: 'rgba(239,68,68,0.08)',
-                    border: `1px solid ${color.red}`,
+                    fontSize: text.sm,
+                    color: color.danger,
+                    background: color.dangerBg,
+                    border: `1px solid ${color.danger}`,
                     borderRadius: 8,
                     padding: '8px 10px',
                   }}
@@ -281,7 +287,7 @@ export function CancelModal({
             </div>
           ) : null}
 
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12.5 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.sm }}>
             <span style={{ color: color.fgMuted }}>Why are you canceling? (optional)</span>
             <select
               value={reason}
@@ -293,7 +299,7 @@ export function CancelModal({
                 background: color.paper,
                 color: color.fg,
                 fontFamily: font.sans,
-                fontSize: 13,
+                fontSize: text.md,
                 padding: '0 8px',
               }}
             >
@@ -310,10 +316,10 @@ export function CancelModal({
             <div
               role="alert"
               style={{
-                fontSize: 12,
-                color: color.red,
-                background: 'rgba(239,68,68,0.08)',
-                border: `1px solid ${color.red}`,
+                fontSize: text.sm,
+                color: color.danger,
+                background: color.dangerBg,
+                border: `1px solid ${color.danger}`,
                 borderRadius: 8,
                 padding: '8px 10px',
               }}

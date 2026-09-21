@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
-import { color, font, radius } from '../tokens/tokens';
+import { color, font, radius, text } from '../tokens/tokens';
 
 export type PillTone = 'default' | 'primary' | 'amber' | 'emerald' | 'red' | 'dark';
 
@@ -39,7 +39,7 @@ export function Pill({
         border: `1px solid ${t.br}`,
         borderRadius: radius.pill,
         fontFamily: font.sans,
-        fontSize: 11,
+        fontSize: text.xs,
         fontWeight: 500,
         whiteSpace: 'nowrap',
         ...style,

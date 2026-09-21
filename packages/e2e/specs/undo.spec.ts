@@ -100,9 +100,9 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   const { id: senderId, domain: senderDomain, inboxCount } = target!;
   const senderKey = await senderKeyById(sql, mailboxId, senderId);
 
-  // ---- Senders grid → the target card's ⋯ popover → Archive.
+  // ---- Senders list → the target row's ⋯ popover → Archive.
   await page.goto('/senders');
-  const card = page.getByTestId(`sender-card-${senderId}`);
+  const card = page.getByTestId(`sender-row-${senderId}`);
   await expect(card).toBeVisible({ timeout: 30_000 });
   await card.scrollIntoViewIfNeeded();
   await card.getByRole('button', { name: 'More actions' }).click();

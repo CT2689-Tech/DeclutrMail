@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Card, Pill, Skeleton, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, Pill, Skeleton, tokens, useIsAtMost } from '@declutrmail/shared';
 import {
   parseTimeToMinutes,
   QuietHoursConfigSchema,
   type QuietHoursConfig,
 } from '@declutrmail/shared/contracts';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Per-mailbox quiet-hours config card (U18 — D92/D95).
@@ -69,13 +69,13 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
   const { mailboxEmail, mailboxStatus, state, saving, onSave, onRetry } = props;
 
   return (
-    <Card padding={20} style={{ display: 'grid', gap: 14 }}>
+    <section aria-label={`Quiet hours for ${mailboxEmail}`} style={{ display: 'grid', gap: 14 }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span
           style={{
-            fontFamily: font.sans,
-            fontSize: 14,
-            fontWeight: 600,
+            fontFamily: font.mono,
+            fontSize: text.md,
+            fontWeight: 500,
             color: color.fg,
             overflowWrap: 'anywhere',
           }}
@@ -101,7 +101,7 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
             display: 'grid',
             gap: 10,
             fontFamily: font.sans,
-            fontSize: 13,
+            fontSize: text.md,
             color: color.fgSoft,
           }}
         >
@@ -125,7 +125,7 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
           onSave={onSave}
         />
       )}
-    </Card>
+    </section>
   );
 }
 
@@ -187,7 +187,7 @@ function QuietHoursForm({
 
   const labelStyle = {
     fontFamily: font.sans,
-    fontSize: 12,
+    fontSize: text.sm,
     fontWeight: 500,
     color: color.fgSoft,
     display: 'grid',
@@ -195,7 +195,7 @@ function QuietHoursForm({
   } as const;
   const inputStyle = {
     fontFamily: font.sans,
-    fontSize: 13,
+    fontSize: text.md,
     color: color.fg,
     background: color.card,
     border: `1px solid ${color.line}`,
@@ -213,7 +213,7 @@ function QuietHoursForm({
           alignItems: 'center',
           gap: 8,
           fontFamily: font.sans,
-          fontSize: 13,
+          fontSize: text.md,
           color: color.fg,
           width: 'fit-content',
           cursor: saving ? 'default' : 'pointer',
@@ -285,13 +285,16 @@ function QuietHoursForm({
       </div>
 
       {crossesMidnight && (
-        <span style={{ fontFamily: font.sans, fontSize: 12, color: color.fgMuted }}>
+        <span style={{ fontFamily: font.sans, fontSize: text.sm, color: color.fgMuted }}>
           Crosses midnight — quiet from {draft.startLocal} until {draft.endLocal} the next day.
         </span>
       )}
 
       {validationError && (
-        <span role="alert" style={{ fontFamily: font.sans, fontSize: 12, color: color.red }}>
+        <span
+          role="alert"
+          style={{ fontFamily: font.sans, fontSize: text.sm, color: color.danger }}
+        >
           {validationError}
         </span>
       )}
@@ -301,7 +304,9 @@ function QuietHoursForm({
           {saving ? 'Saving…' : 'Save quiet hours'}
         </Button>
         {!dirty && !saving && (
-          <span style={{ fontFamily: font.sans, fontSize: 12, color: color.fgMuted }}>Saved</span>
+          <span style={{ fontFamily: font.sans, fontSize: text.sm, color: color.fgMuted }}>
+            Saved
+          </span>
         )}
       </div>
     </div>

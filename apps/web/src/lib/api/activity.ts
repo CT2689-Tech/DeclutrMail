@@ -132,17 +132,6 @@ export interface ActivityRowWire {
   reviewOutcome: ActivityReviewOutcomeWire | null;
 }
 
-export interface ActivityWeeklyReviewWire {
-  window: '7d';
-  from: string;
-  to: string;
-  completed: number;
-  skipped: number;
-  failed: number;
-  recovered: number;
-  protected: number;
-}
-
 /**
  * Envelope meta for `GET /api/activity`, DERIVED from the runtime
  * schema rather than hand-mirrored.
@@ -230,19 +219,6 @@ export async function fetchActivity(
   // render a confident wrong number; a throw here surfaces it as a
   // query error the screen already has a state for.
   return parseActivityListEnvelope(envelope);
-}
-
-export function fetchActivityWeeklyReview(
-  senderQuery = '',
-  signal?: AbortSignal,
-): Promise<Envelope<ActivityWeeklyReviewWire, unknown>> {
-  return apiGet<ActivityWeeklyReviewWire>('/api/activity/weekly-review', {
-    // The card narrows with the rest of the screen. No other filter is
-    // sent: it is a fixed 7-day factual review, and its count links
-    // navigate to that window.
-    query: senderQuery ? { sender_q: senderQuery } : {},
-    signal,
-  });
 }
 
 /** Reverse only this Activity action and wait for confirmed completion. */

@@ -21,7 +21,7 @@ import {
 } from './data';
 import { VERB_LABEL } from './verbs';
 
-const { color, font } = tokens;
+const { color, font, motion, text } = tokens;
 
 /**
  * Live impact figure — the sender's current-inbox count from
@@ -203,7 +203,7 @@ export function DecidePreview({
       aria-label={`Preview · ${VERB_LABEL[verb]} ${name}`}
       style={{
         background: color.paper,
-        border: `1px solid ${verb === 'delete' ? color.red : color.line}`,
+        border: `1px solid ${verb === 'delete' ? color.danger : color.line}`,
         borderRadius: 9,
         padding: '12px 14px',
         display: 'flex',
@@ -214,12 +214,9 @@ export function DecidePreview({
     >
       <span
         style={{
-          fontFamily: font.mono,
-          fontSize: 10,
+          fontSize: text.xs,
           fontWeight: 600,
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          color: verb === 'delete' ? color.red : color.primary,
+          color: verb === 'delete' ? color.danger : color.primary,
         }}
       >
         {previewEyebrowLabel(VERB_LABEL[verb])}
@@ -228,10 +225,10 @@ export function DecidePreview({
       <MailboxActionContext mailboxEmail={mailboxEmail} />
 
       <div>
-        <h3 style={{ fontSize: 14, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
+        <h3 style={{ fontSize: text.md, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
           {title}
         </h3>
-        <p style={{ fontSize: 12.5, color: color.fgSoft, margin: '4px 0 0', lineHeight: 1.5 }}>
+        <p style={{ fontSize: text.sm, color: color.fgSoft, margin: '4px 0 0', lineHeight: 1.5 }}>
           {lead}
         </p>
       </div>
@@ -246,17 +243,7 @@ export function DecidePreview({
           aria-label="Where it applies"
           style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
         >
-          <div
-            style={{
-              fontFamily: font.mono,
-              fontSize: 10,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: color.fgMuted,
-            }}
-          >
-            Where it applies
-          </div>
+          <div style={{ fontSize: text.xs, color: color.fgMuted }}>Where it applies</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {(
               [
@@ -278,7 +265,7 @@ export function DecidePreview({
                   onClick={() => onReachChange?.(opt.value)}
                   style={{
                     fontFamily: font.sans,
-                    fontSize: 12.5,
+                    fontSize: text.sm,
                     fontWeight: 500,
                     padding: '6px 12px',
                     borderRadius: 999,
@@ -286,7 +273,7 @@ export function DecidePreview({
                     color: active ? color.fgInverse : color.fgSoft,
                     border: `1px solid ${active ? color.fg : color.line}`,
                     cursor: 'pointer',
-                    transition: 'background 120ms, color 120ms',
+                    transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
                   }}
                 >
                   {opt.label}
@@ -306,7 +293,7 @@ export function DecidePreview({
             })}
           </div>
           {activeReach === 'all_mail' && (
-            <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.45 }}>
+            <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.45 }}>
               Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo puts each
               email back where it was.
             </span>
@@ -347,11 +334,11 @@ export function DecidePreview({
         <div
           role="status"
           style={{
-            fontSize: 12,
+            fontSize: text.sm,
             lineHeight: 1.5,
-            color: color.red,
+            color: color.danger,
             background: color.card,
-            border: `1px solid ${color.red}`,
+            border: `1px solid ${color.danger}`,
             borderRadius: 8,
             padding: '8px 10px',
           }}
@@ -364,7 +351,7 @@ export function DecidePreview({
 
       {/* Engine recap — why the engine queued this sender. */}
       {row.recommendation != null && (
-        <div style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
+        <div style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
           <div
             style={{
               display: 'flex',
@@ -375,14 +362,7 @@ export function DecidePreview({
           >
             <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this:</span>
             {ageLabel !== null && (
-              <span
-                style={{
-                  fontFamily: font.mono,
-                  fontSize: 9.5,
-                  color: color.fgMuted,
-                  whiteSpace: 'nowrap',
-                }}
-              >
+              <span style={{ fontSize: text.xs, color: color.fgMuted, whiteSpace: 'nowrap' }}>
                 {ageLabel}
               </span>
             )}
@@ -441,13 +421,13 @@ function ImpactFigure({
 }) {
   const strongStyle: React.CSSProperties = {
     fontFamily: font.display,
-    fontSize: 18,
+    fontSize: text.xl,
     fontWeight: 600,
     letterSpacing: '-0.02em',
     color: color.fg,
     fontVariantNumeric: 'tabular-nums',
   };
-  const captionStyle: React.CSSProperties = { fontSize: 12, color: color.fgSoft };
+  const captionStyle: React.CSSProperties = { fontSize: text.sm, color: color.fgSoft };
 
   if (!moves) {
     return (

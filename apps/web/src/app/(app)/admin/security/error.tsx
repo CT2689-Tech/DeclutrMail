@@ -18,7 +18,6 @@ export default function AdminSecurityError({
       error={error}
       reset={reset}
       boundary="admin-security"
-      eyebrow="Security log hit a snag"
       headline="We couldn't load the security audit log."
       body="Events are still being recorded — only this view failed. Try again in a moment."
       escape={{ href: '/senders', label: 'Back to Senders' }}

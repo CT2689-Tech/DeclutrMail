@@ -10,7 +10,7 @@ import {
 import { captureFeatureException } from '@/lib/sentry';
 import type { TriageDecisionRow } from './data';
 
-const { color } = tokens;
+const { color, text } = tokens;
 
 /**
  * The D245 manual Unprotect — a standing-policy write, not a mail
@@ -73,7 +73,7 @@ export function UnprotectButton({
       >
         {setPolicy.isPending ? 'Removing protection…' : 'Unprotect'}
       </Button>
-      <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.4 }}>
+      <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.4 }}>
         Nothing moves. Automatic protection won&rsquo;t re-apply; you can protect this sender by
         hand.
       </span>

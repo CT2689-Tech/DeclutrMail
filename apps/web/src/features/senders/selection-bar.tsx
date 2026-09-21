@@ -19,7 +19,7 @@ import {
   type Sender,
 } from './data';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /** The bulk verbs the bar offers (D52 + ADR-0019 K/A/U/L/D order). */
 export type SelectionBarVerb = Extract<
@@ -82,7 +82,7 @@ export function SelectionBar({
         alignItems: 'center',
         gap: 8,
         color: color.fgInverseSoft,
-        fontSize: 12,
+        fontSize: text.sm,
       }}
     >
       Multi-sender actions require {multiSenderPlanName()}.
@@ -106,7 +106,10 @@ export function SelectionBar({
   const allProtected = senders.every(isStandingProtected);
   const protectedLockNote = (dark: boolean) =>
     allProtected ? (
-      <span role="note" style={{ color: dark ? color.fgInverseSoft : color.fgSoft, fontSize: 12 }}>
+      <span
+        role="note"
+        style={{ color: dark ? color.fgInverseSoft : color.fgSoft, fontSize: text.sm }}
+      >
         {senders.length === 1
           ? `${senders[0]!.name} is protected — unprotect it first`
           : `All ${senders.length} are protected — unprotect to include them`}
@@ -163,14 +166,16 @@ export function SelectionBar({
           border: `1px solid ${danger ? color.danger : primary ? color.amber : color.lineInverse}`,
           borderRadius: stretch ? 10 : 7,
           fontFamily: font.sans,
-          fontSize: stretch ? 14 : 12.5,
+          fontSize: stretch ? text.md : text.sm,
           fontWeight: 600,
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: disabled ? 0.4 : 1,
         }}
       >
         {label}
-        <span style={{ fontFamily: font.mono, fontSize: stretch ? 12 : 11, opacity: 0.8 }}>
+        <span
+          style={{ fontFamily: font.mono, fontSize: stretch ? text.sm : text.xs, opacity: 0.8 }}
+        >
           {countLabel}
         </span>
       </button>
@@ -187,7 +192,7 @@ export function SelectionBar({
           <strong
             style={{
               fontFamily: font.mono,
-              fontSize: 16,
+              fontSize: text.lg,
               fontWeight: 700,
               color: color.fg,
               fontVariantNumeric: 'tabular-nums',
@@ -195,7 +200,7 @@ export function SelectionBar({
           >
             {senders.length}
           </strong>
-          <span style={{ fontSize: 13.5, color: color.fgSoft, flex: 1 }}>
+          <span style={{ fontSize: text.base, color: color.fgSoft, flex: 1 }}>
             sender{senders.length === 1 ? '' : 's'} selected
           </span>
           <button
@@ -206,10 +211,8 @@ export function SelectionBar({
               borderRadius: 7,
               padding: '6px 12px',
               color: color.fgSoft,
-              fontFamily: font.mono,
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
+              fontFamily: font.sans,
+              fontSize: text.sm,
               cursor: 'pointer',
             }}
           >
@@ -252,14 +255,14 @@ export function SelectionBar({
         <strong
           style={{
             fontFamily: font.mono,
-            fontSize: 13,
+            fontSize: text.base,
             fontWeight: 700,
             fontVariantNumeric: 'tabular-nums',
           }}
         >
           {senders.length}
         </strong>
-        <span style={{ fontSize: 12.5, color: color.fgInverseSoft }}>
+        <span style={{ fontSize: text.sm, color: color.fgInverseSoft }}>
           sender{senders.length === 1 ? '' : 's'} selected
         </span>
         <button
@@ -268,10 +271,8 @@ export function SelectionBar({
             background: 'transparent',
             border: 'none',
             color: color.fgInverseMuted,
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            textTransform: 'uppercase',
-            letterSpacing: '0.1em',
+            fontFamily: font.sans,
+            fontSize: text.sm,
             cursor: 'pointer',
           }}
         >

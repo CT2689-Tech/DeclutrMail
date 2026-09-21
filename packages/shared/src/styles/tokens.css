@@ -316,27 +316,6 @@ button {
   background-clip: padding-box;
 }
 
-/* Peek affordance — an identity block that opens a dialog reveals its
-   clickability on hover: name underlines, glyph brightens (opt-in via
-   data-dm-peek on the trigger; data-dm-peek-name / data-dm-peek-glyph
-   on the parts). Cursor alone was invisible (2026-07-16 smoke); a
-   hover-only glyph was invisible on touch — the default view's only
-   path to per-sender analytics had zero affordance on phones
-   (launch-audit grid pass, 2026-07-28). Rest state is now dimmed, not
-   hidden. */
-[data-dm-peek]:hover [data-dm-peek-name] {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-[data-dm-peek] [data-dm-peek-glyph] {
-  opacity: 0.55;
-  transition: opacity 0.12s ease;
-}
-[data-dm-peek]:hover [data-dm-peek-glyph],
-[data-dm-peek]:focus-visible [data-dm-peek-glyph] {
-  opacity: 1;
-}
-
 /* Premium hover-lift for cards (opt-in via data-dm-lift). */
 [data-dm-lift] {
   transition:
@@ -410,11 +389,14 @@ button {
 .dm-topbar-hamburger {
   display: none;
 }
-.dm-trust-strip {
-  display: flex;
+.dm-tabbar {
+  display: none;
 }
-.dm-trust-extra {
-  display: inline-flex;
+:root {
+  /* Height the mobile tab bar takes from the viewport bottom. 0 on
+     desktop. Bottom-anchored floating surfaces add it to their offset;
+     the shell's scroller subtracts it from the undo-tray reserve. */
+  --dm-tabbar-inset: 0px;
 }
 @media (max-width: 900px) {
   .dm-sidebar-desktop {
@@ -423,20 +405,99 @@ button {
   .dm-topbar-hamburger {
     display: inline-flex;
   }
-  .dm-trust-extra {
-    display: none;
+  .dm-tabbar {
+    display: flex;
+  }
+  :root {
+    --dm-tabbar-inset: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+  /* The undo tray is fixed to the viewport with a numeric inline
+     `bottom`; the margin lifts it clear of the tab bar. */
+  [data-dm-undo-tray] {
+    margin-bottom: var(--dm-tabbar-inset);
   }
 }
-/* Phone widths — the topbar's fixed chrome (hamburger + theme toggle +
-   Sync now + account pill) leaves under ~40px between them, and the
-   strip clips `overflow: hidden` MID-WORD, painting a slice of "UNDO
-   WINDOWS" as garbage ("o wir") on every authed screen. Drop the whole
-   strip instead: both claims are buttons that route to Activity and
-   Settings, and both routes are one tap away in the drawer nav. */
-@media (max-width: 600px) {
-  .dm-trust-strip {
-    display: none;
+
+/* Top-bar icon buttons: compact with a pointer, 44px touch targets
+   below the `sm` breakpoint. */
+.dm-topbar-icon {
+  width: 32px;
+  height: 32px;
+}
+@media (max-width: 900px) {
+  .dm-topbar-icon {
+    width: 44px;
+    height: 44px;
   }
+}
+
+/* Nav rows — hover lives here so it needs no JS and follows the theme.
+   The active row sets its own inline background, which outranks this. */
+.dm-nav-row {
+  background: transparent;
+}
+.dm-nav-row:hover {
+  background: var(--dm-line-soft);
+}
+/* The drawer is touch-first: rows grow from 36px to a 44px target.
+   `min-height` beats the inline `height`. */
+@media (max-width: 900px) {
+  .dm-nav-row {
+    min-height: 44px;
+  }
+}
+/* Plan/lock chips stay out of the resting sidebar; they surface on the
+   row the user is pointing at or has focused. `opacity` (not `display`)
+   keeps them in the accessibility tree the whole time. */
+.dm-nav-lock {
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+.dm-nav-row:hover .dm-nav-lock,
+.dm-nav-row:focus-visible .dm-nav-lock {
+  opacity: 1;
+}
+
+/* Every screen sets its own max-width; most forget to centre it. Block
+   children with `width: auto` and no max-width resolve auto margins to
+   0, so full-bleed screens are unaffected. The scroller must stay
+   `display: block` — in a flex container an auto margin would
+   shrink-wrap the child instead. */
+.dm-main-scroll > * {
+  margin-inline: auto;
+}
+
+/* Route change — a short fade of the content region. Two identical
+   keyframes: the shell alternates between them on navigation, because
+   changing `animation-name` restarts the animation without remounting
+   the page. Opacity only: a transform here would become the containing
+   block for every `position: fixed` sheet and modal inside a screen. */
+@keyframes dm-route-in-a {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dm-route-in-b {
+  from {
+    opacity: 0;
+  }
+}
+.dm-main-scroll[data-route-flip='a'] {
+  animation: dm-route-in-a 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+.dm-main-scroll[data-route-flip='b'] {
+  animation: dm-route-in-b 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* One banner slot. Until the user expands it, everything after the
+   first banner that actually rendered is hidden — in CSS so the rule
+   already holds on the server-rendered first paint. */
+.dm-banner-item:empty {
+  display: none;
+}
+.dm-banner-slot[data-expanded='false'] .dm-banner-item:not(:empty) ~ .dm-banner-item {
+  display: none;
 }
 
 /* ─────────────────────────────────────────────────────────────

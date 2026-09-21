@@ -7,7 +7,7 @@ import { ConfirmModalFrame } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
 import { resolveSenderIdentity } from './sender-label';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * D226 mandatory preview for the D104 approve flow — both "Approve
@@ -95,7 +95,7 @@ export function ApproveConfirmModal({
       onConfirm={onConfirm}
     >
       {coversMoreThanShown && (
-        <p style={{ margin: '0 0 8px', fontSize: 11.5, lineHeight: 1.5, color: color.fgMuted }}>
+        <p style={{ margin: '0 0 8px', fontSize: text.xs, lineHeight: 1.5, color: color.fgMuted }}>
           {approxTotal != null
             ? `Showing ${shown} of ~${approxTotal}.`
             : `Showing ${shown} — approving covers all pending.`}
@@ -107,7 +107,7 @@ export function ApproveConfirmModal({
             key={m.id}
             style={{
               fontFamily: font.mono,
-              fontSize: 11,
+              fontSize: text.xs,
               color: color.fgSoft,
               background: color.paper,
               border: `1px solid ${color.line}`,

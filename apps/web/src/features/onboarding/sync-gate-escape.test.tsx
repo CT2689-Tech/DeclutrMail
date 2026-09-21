@@ -49,7 +49,7 @@ describe('SyncGate failed — first-run escape hatch', () => {
       </QueryWrapper>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect and start over' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect Gmail' }));
     await waitFor(() => expect(deletedPath).toBe(`/api/mailboxes/${MAILBOX_ID}`));
   });
 
@@ -82,7 +82,7 @@ describe('SyncGate failed — first-run escape hatch', () => {
         <SyncGate status={FAILED} />
       </QueryWrapper>,
     );
-    expect(screen.getByRole('button', { name: 'Disconnect and start over' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Disconnect Gmail' })).toBeDisabled();
     // Sign out never needs an id — the session is the subject.
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeEnabled();
   });
@@ -98,7 +98,7 @@ describe('SyncGate failed — first-run escape hatch', () => {
       </QueryWrapper>,
     );
     expect(screen.getByRole('button', { name: 'Go back to primary@example.com' })).toBeVisible();
-    expect(screen.queryByRole('button', { name: 'Disconnect and start over' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Disconnect Gmail' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
   });
 });

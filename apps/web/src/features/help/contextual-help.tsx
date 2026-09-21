@@ -3,7 +3,7 @@ import { tokens } from '@declutrmail/shared';
 
 import { GLOSSARY_TERMS, type GlossaryTermId } from './glossary-content';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * Small, native disclosure for help beside a specific decision.
@@ -27,7 +27,7 @@ export function ContextualHelp({ question, children }: { question: string; child
         style={{
           color: color.primary,
           cursor: 'pointer',
-          fontSize: 12.5,
+          fontSize: text.sm,
           fontWeight: 600,
           lineHeight: 1.5,
         }}
@@ -37,7 +37,7 @@ export function ContextualHelp({ question, children }: { question: string; child
       <div
         style={{
           color: color.fgSoft,
-          fontSize: 12.5,
+          fontSize: text.sm,
           lineHeight: 1.6,
           padding: '8px 2px 1px',
         }}

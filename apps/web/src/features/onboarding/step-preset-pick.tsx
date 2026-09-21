@@ -17,7 +17,7 @@ import { track } from '@/lib/posthog';
 import { useSubmitPresetPicks } from './api/use-onboarding';
 import { StepShell } from './step-shell';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /** Brief seed-wait poll (D110 sequencing): every 2.5s while empty. */
 const RULES_SEED_POLL_MS = 2_500;
@@ -152,9 +152,8 @@ export function StepPresetPick({
 
   return (
     <StepShell
-      eyebrow="Step 4 of 5 · Optional suggestions"
       title="Choose what DeclutrMail should suggest."
-      sub="Suggestions only — nothing changes until you approve it. You can turn on automation later in Autopilot."
+      sub="Suggestions only — nothing changes until you approve it."
       maxWidth={560}
       corner={corner}
     >
@@ -198,8 +197,8 @@ export function StepPresetPick({
                   background: isOn ? color.primary : 'transparent',
                   display: 'grid',
                   placeItems: 'center',
-                  color: '#fff',
-                  fontSize: 12,
+                  color: color.fgInverse,
+                  fontSize: text.sm,
                   lineHeight: 1,
                 }}
               >
@@ -207,13 +206,10 @@ export function StepPresetPick({
               </span>
               <span style={{ flex: 1 }}>
                 <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                  <strong style={{ fontWeight: 600, fontSize: 14 }}>{preset.name}</strong>
+                  <strong style={{ fontWeight: 600, fontSize: text.md }}>{preset.name}</strong>
                   <span
                     style={{
-                      fontFamily: font.mono,
-                      fontSize: 10,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
+                      fontSize: text.xs,
                       color: color.fgMuted,
                       border: `1px solid ${color.lineSoft}`,
                       borderRadius: 4,
@@ -226,7 +222,7 @@ export function StepPresetPick({
                 <span
                   style={{
                     display: 'block',
-                    fontSize: 13,
+                    fontSize: text.md,
                     color: color.fgMuted,
                     marginTop: 3,
                     lineHeight: 1.5,
@@ -243,7 +239,7 @@ export function StepPresetPick({
       {/* Honest seed status — never blocks submission (picks persist
           in preferences and the seeder applies them; see docblock). */}
       {!rules.isLoading && !rulesSeeded && (
-        <p style={{ color: color.fgMuted, fontSize: 12, margin: '0 0 14px', maxWidth: 460 }}>
+        <p style={{ color: color.fgMuted, fontSize: text.sm, margin: '0 0 14px', maxWidth: 460 }}>
           Your suggestions are still being prepared. Selections made now will appear when they are
           ready.
         </p>
@@ -308,9 +304,8 @@ export function StepFirstSenderReview({
 
   return (
     <StepShell
-      eyebrow="Step 4 of 5 · First review"
       title="Choose your starting point."
-      sub="Your answer helps us pick the first senders worth reviewing. Nothing changes until you approve it."
+      sub="This picks your first senders to review — nothing changes until you approve it."
       maxWidth={560}
       corner={corner}
     >
@@ -345,7 +340,7 @@ function GoalSelector({
       aria-label="What would help most right now?"
       style={{ display: 'grid', gap: 10, width: '100%', marginBottom: 24 }}
     >
-      <p style={{ margin: 0, color: color.fg, fontSize: 14, fontWeight: 600 }}>
+      <p style={{ margin: 0, color: color.fg, fontSize: text.md, fontWeight: 600 }}>
         What would help most right now?
       </p>
       {GOALS.map((goal) => {
@@ -368,8 +363,10 @@ function GoalSelector({
               fontFamily: font.sans,
             }}
           >
-            <strong style={{ display: 'block', fontSize: 14 }}>{goal.title}</strong>
-            <span style={{ display: 'block', color: color.fgMuted, fontSize: 12, marginTop: 3 }}>
+            <strong style={{ display: 'block', fontSize: text.md }}>{goal.title}</strong>
+            <span
+              style={{ display: 'block', color: color.fgMuted, fontSize: text.sm, marginTop: 3 }}
+            >
               {goal.description}
             </span>
           </button>

@@ -26,7 +26,6 @@ export function RouteErrorScreen({
   error,
   reset,
   boundary,
-  eyebrow,
   headline,
   body,
   escape,
@@ -35,8 +34,6 @@ export function RouteErrorScreen({
   reset: () => void;
   /** Sentry boundary tag — closed union, matches the route segment. */
   boundary: ErrorBoundary;
-  /** Short amber pill copy, e.g. "Settings hit a snag". */
-  eyebrow: string;
   /** e.g. "We couldn't load your settings." */
   headline: string;
   /** One reassuring sentence — what is safe + what to do next. */
@@ -78,21 +75,6 @@ export function RouteErrorScreen({
           gap: 18,
         }}
       >
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: text.xs,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: color.amber,
-            background: color.amberBg,
-            border: `1px solid ${color.amber}`,
-            borderRadius: 9999,
-            padding: '4px 10px',
-          }}
-        >
-          {eyebrow}
-        </span>
         <h1
           style={{
             fontFamily: font.display,

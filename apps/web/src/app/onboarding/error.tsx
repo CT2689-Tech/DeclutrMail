@@ -18,10 +18,9 @@ export default function OnboardingError({
       error={error}
       reset={reset}
       boundary="onboarding"
-      eyebrow="Setup hit a snag"
       headline="We couldn't load this onboarding step."
-      body="Nothing is lost — your progress is saved on our side. Try again, and if you just connected Gmail, the connection almost certainly succeeded."
-      escape={{ href: '/', label: 'Back to home' }}
+      body="Try again. Setup picks up from the last step the server recorded."
+      escape={{ href: '/', label: 'Back to the website' }}
     />
   );
 }

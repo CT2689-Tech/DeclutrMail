@@ -9,7 +9,16 @@ export default function SettingsHelpPage() {
   return (
     <>
       <ProductGlossary />
-      <div style={{ width: '100%', maxWidth: 860, margin: '0 auto', padding: '0 24px 40px' }}>
+      <div
+        className="dm-settings-page"
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          maxWidth: 720,
+          margin: '0 auto',
+          padding: '0 24px 40px',
+        }}
+      >
         <ContactSupportForm />
       </div>
     </>

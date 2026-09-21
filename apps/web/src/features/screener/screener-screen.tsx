@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { ErrorState, Eyebrow, ScreenIntro, tokens, toast } from '@declutrmail/shared';
+import { ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 
 // Cross-feature query-key imports are the invalidation contract (D200)
@@ -38,11 +38,11 @@ import {
   type ScreenerQueueRow,
   type ScreenerScreenState,
 } from './data';
-import { ScreenerEmptyState, screenerEmptyTitle } from './empty-state';
+import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * D226 overdue release — how long the polled decision handle may stay
@@ -618,45 +618,47 @@ export function ScreenerScreen({
   return (
     <div
       style={{
-        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
+        padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
         gap: 16,
-        maxWidth: 1180,
+        width: '100%',
+        boxSizing: 'border-box',
+        maxWidth: 880,
+        margin: '0 auto',
         fontFamily: font.sans,
       }}
     >
-      <div>
-        <Eyebrow>Screener · new senders</Eyebrow>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <h1
           style={{
-            fontFamily: font.display,
-            fontSize: 26,
+            fontSize: text['2xl'],
             fontWeight: 600,
-            letterSpacing: '-0.018em',
-            margin: '4px 0 0',
+            letterSpacing: '-0.015em',
+            margin: 0,
+            color: color.fg,
           }}
         >
-          {state.kind === 'ready'
-            ? // Only the count query knows the true total — the queue
-              // loads a working window (top N), so `rows.length` is a
-              // page size. Until the count resolves, claim no number
-              // rather than presenting the page size as the total.
-              totalPending !== null
-              ? `${totalPending} new sender${totalPending === 1 ? '' : 's'} to decide`
-              : 'New senders to decide'
-            : state.kind === 'empty'
-              ? screenerEmptyTitle(activeMailbox?.readiness)
-              : state.kind === 'error'
-                ? "Couldn't load the Screener."
-                : 'Loading the Screener…'}
+          Screener
         </h1>
+        {/* Only the count query knows the true total — the queue loads a
+            working window (top N), so `rows.length` is a page size. Until
+            the count resolves, claim no number rather than presenting the
+            page size as the total. */}
+        {state.kind === 'ready' && totalPending !== null && (
+          <span style={{ fontSize: text.md, color: color.fgMuted }}>
+            <span style={{ fontFamily: font.mono, fontVariantNumeric: 'tabular-nums' }}>
+              {totalPending.toLocaleString('en-US')}
+            </span>{' '}
+            new sender{totalPending === 1 ? '' : 's'}
+          </span>
+        )}
       </div>
 
       <ScreenIntro
         id="screener"
         title="How the Screener works"
-        body="One decision per new sender. Their mail keeps arriving until you choose."
+        body="One decision per new sender; their email keeps arriving until you choose."
         learnMore={{
           href: '/methodology#action-method',
           label: 'How action previews protect you',
@@ -682,7 +684,11 @@ export function ScreenerScreen({
         <div
           role="list"
           aria-label="Senders waiting for your decision"
-          style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            borderBottom: `1px solid ${color.line}`,
+          }}
         >
           {state.rows.map((row) => (
             <div key={row.id} role="listitem">
@@ -728,23 +734,12 @@ function ScreenerErrorState({ error, onRetry }: { error: unknown; onRetry: () =>
 /** Skeleton stack — matches the row's vertical rhythm. */
 function LoadingState() {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
-    >
+    <div role="status" aria-live="polite" style={{ display: 'flex', flexDirection: 'column' }}>
       {[0, 1, 2].map((i) => (
         <div
           key={i}
           aria-hidden="true"
-          style={{
-            height: 68,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
-            backgroundImage: `linear-gradient(90deg, ${color.lineSoft} 0%, rgba(14,20,19,0.03) 50%, ${color.lineSoft} 100%)`,
-            backgroundSize: '200% 100%',
-          }}
+          style={{ height: 68, borderTop: `1px solid ${color.line}` }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading the Screener queue</span>

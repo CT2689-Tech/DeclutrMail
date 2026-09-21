@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof CookiePreferences> = {
           'cookie-banner choice (GDPR Art. 7(3)). Essential cookies are always on; the two ' +
           'radios govern optional PostHog analytics only, applied on select with no Save step. ' +
           'Withdrawing stops capture immediately and resets the analytics identity. Mounted in ' +
-          'Settings and on the public /cookies page.',
+          'Settings → Privacy & data and on the public /cookies page.',
       },
     },
   },

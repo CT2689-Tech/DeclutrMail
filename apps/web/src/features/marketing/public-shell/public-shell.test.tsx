@@ -31,7 +31,7 @@ describe('PublicHeader auth entry', () => {
   it('sends every auth action to Google OAuth, never to /sign-in', () => {
     const { container } = render(<PublicHeader />);
 
-    const authLinks = screen.getAllByRole('link', { name: /Sign in|Get started/ });
+    const authLinks = screen.getAllByRole('link', { name: /Sign in|Start free/ });
     expect(authLinks.length).toBeGreaterThan(0);
     for (const link of authLinks) {
       expect(link).toHaveAttribute('href', OAUTH_START);
@@ -41,17 +41,17 @@ describe('PublicHeader auth entry', () => {
   });
 
   /**
-   * "Sign in" (returning user) and "Get started" (new user) must stay
+   * "Sign in" (returning user) and "Start free" (new user) must stay
    * separable in the D159 acquisition funnel. Both emit `connect_gmail`
    * because both start the same OAuth flow, so `placement` is the only
    * discriminator — a shared value would silently merge the two series.
    */
-  it('keeps the sign-in and get-started CTAs on distinct placements', () => {
+  it('keeps the sign-in and start-free CTAs on distinct placements', () => {
     render(<PublicHeader />);
 
     const actions = document.querySelector('.dm-public-actions') as HTMLElement;
     fireEvent.click(within(actions).getByRole('link', { name: 'Sign in' }));
-    fireEvent.click(within(actions).getByRole('link', { name: /Get started/ }));
+    fireEvent.click(within(actions).getByRole('link', { name: /Start free/ }));
 
     expect(track.mock.calls.map(([, props]) => props.placement)).toEqual(['nav_sign_in', 'nav']);
     for (const [event, props] of track.mock.calls) {

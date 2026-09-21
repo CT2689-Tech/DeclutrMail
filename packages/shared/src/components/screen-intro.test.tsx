@@ -3,31 +3,21 @@ import { describe, expect, it } from 'vitest';
 
 import { ScreenIntro } from './screen-intro';
 
-describe('ScreenIntro accessibility', () => {
-  it('names its dismiss control for the screen introduction', () => {
-    const markup = renderToStaticMarkup(
-      <ScreenIntro id="senders" title="Senders" body="Review senders." />,
-    );
-
-    expect(markup).toContain('aria-label="Dismiss Senders intro"');
-    expect(markup).not.toContain('aria-label="Dismiss intro"');
-  });
-
-  it('requires descriptive text for an optional supporting link', () => {
+// The registration half (store write on mount, clear on unmount) needs
+// effects, which SSR never runs — it is covered with the help button in
+// apps/web/src/features/shell/help-button.test.tsx.
+describe('ScreenIntro', () => {
+  it('spends no layout on the screen — help lives behind the top bar button', () => {
     const markup = renderToStaticMarkup(
       <ScreenIntro
         id="triage"
         title="Triage"
         body="Make a decision."
-        learnMore={{
-          href: '/help#actions-in-gmail-terms',
-          label: 'What each action does',
-        }}
+        tip="Use the keyboard."
+        learnMore={{ href: '/help#actions-in-gmail-terms', label: 'What each action does' }}
       />,
     );
 
-    expect(markup).toContain('href="/help#actions-in-gmail-terms"');
-    expect(markup).toContain('What each action does →');
-    expect(markup).not.toContain('Learn more');
+    expect(markup).toBe('');
   });
 });

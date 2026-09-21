@@ -2,15 +2,16 @@
 
 import Link from 'next/link';
 
-import { Button, Eyebrow, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
+import { bannerSurface } from './autopilot-banner-stack';
 import { observeDigestSummary } from './observe-digest';
 import { presetDisplayName } from './preset-labels';
 
-const { color, font } = tokens;
+const { color, text } = tokens;
 
 /**
  * D10 day-7 prompt — shown once a rule's 7-day Observe window has
@@ -77,31 +78,14 @@ export function ObserveWindowBanner({
   return (
     <div
       role="status"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        padding: '14px 16px',
-        background: color.paper,
-        border: `1px solid ${color.border}`,
-        borderRadius: 10,
-        fontFamily: font.sans,
-      }}
+      style={{ ...bannerSurface, display: 'flex', flexDirection: 'column', gap: 10 }}
     >
-      <div>
-        <Eyebrow>Observe window complete</Eyebrow>
-        <div style={{ fontSize: 13, fontWeight: 600, color: color.fg, margin: '2px 0 0' }}>
-          {rules.length === 1
-            ? 'Autopilot has collected matches for a week.'
-            : `Autopilot has collected matches for a week — ${rules.length} rules are ready.`}
-        </div>
-        {/* Under-tier gets no sub-line: each row below already says
-            "Approve or dismiss them below" and links the upgrade. */}
-        {canActivate ? (
-          <div style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 4, lineHeight: 1.5 }}>
-            Each rule keeps observing until you switch it to Active.
-          </div>
-        ) : null}
+      {/* Under-tier and entitled alike get no sub-line: each row below
+          already says what to do next. */}
+      <div style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>
+        {rules.length === 1
+          ? 'Autopilot has collected matches for a week.'
+          : `Autopilot has collected matches for a week — ${rules.length} rules are ready.`}
       </div>
 
       <ul
@@ -128,7 +112,7 @@ export function ObserveWindowBanner({
                 alignItems: 'center',
                 flexWrap: 'wrap',
                 gap: 10,
-                fontSize: 12.5,
+                fontSize: text.sm,
               }}
             >
               <span style={{ flex: 1, minWidth: 0, color: color.fgSoft }}>
@@ -169,7 +153,7 @@ export function ObserveWindowBanner({
                 <Link
                   href={upgradeHref}
                   style={{
-                    fontSize: 12,
+                    fontSize: text.sm,
                     fontWeight: 600,
                     color: color.fg,
                     textDecoration: 'underline',

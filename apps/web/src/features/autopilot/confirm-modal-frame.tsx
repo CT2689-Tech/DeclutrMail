@@ -5,7 +5,7 @@ import { Button, Eyebrow, Kbd, tokens, useIsAtMost } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { MailboxActionContextView } from '@/features/auth/mailbox-action-context-view';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Shared chrome for the Autopilot D226 preview modals (approve +
@@ -164,11 +164,16 @@ export function ConfirmModalFrame({
           <Eyebrow>Preview · before anything changes</Eyebrow>
           <h2
             id={titleId}
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 600,
+              letterSpacing: '-0.014em',
+              margin: '6px 0 0',
+            }}
           >
             {title}
           </h2>
-          <p style={{ fontSize: 13, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}>
+          <p style={{ fontSize: text.md, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}>
             {lead}
           </p>
         </div>
@@ -180,10 +185,10 @@ export function ConfirmModalFrame({
             <div
               role="alert"
               style={{
-                fontSize: 12,
-                color: color.red,
+                fontSize: text.sm,
+                color: color.danger,
                 background: 'rgba(239,68,68,0.08)',
-                border: `1px solid ${color.red}`,
+                border: `1px solid ${color.danger}`,
                 borderRadius: 8,
                 padding: '8px 10px',
               }}
@@ -204,7 +209,7 @@ export function ConfirmModalFrame({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>{footnote}</span>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>{footnote}</span>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             <Button tone="default" onClick={onCancel} disabled={isBusy}>
               Cancel

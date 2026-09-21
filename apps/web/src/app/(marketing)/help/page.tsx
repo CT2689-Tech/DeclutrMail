@@ -4,8 +4,7 @@
 // client JS is the D159 page-view tracker island. Each question is a
 // LegalSection with a stable slug so answers deep-link (`/help#undo-windows`,
 // D219). One content array feeds BOTH the rendered Q&A and the FAQPage
-// JSON-LD (same single-source rule as the landing FAQ — parallel
-// copies are how the two drift apart).
+// JSON-LD (parallel copies are how the two drift apart).
 //
 // CONTENT CONTRACT (CLAUDE.md §2.1, D7, D228): the storage answer
 // quotes the locked privacy copy module from `@declutrmail/shared`
@@ -38,8 +37,7 @@ const LAST_UPDATED = '2026-08-04';
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
- * plain strings (plus an optional trailing link) — the landing FAQ
- * pattern (features/marketing/landing/faq.tsx).
+ * plain strings (plus an optional trailing link).
  */
 const FAQS: ReadonlyArray<{
   id: string;
@@ -114,8 +112,7 @@ const FAQS: ReadonlyArray<{
 
 /**
  * schema.org FAQPage mirroring the rendered Q&A verbatim (Google
- * requires the marked-up answers to appear on the page) — same
- * construction as the landing FAQ's JSON-LD.
+ * requires the marked-up answers to appear on the page).
  */
 const FAQ_JSON_LD = {
   '@context': 'https://schema.org',

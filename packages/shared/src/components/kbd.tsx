@@ -1,7 +1,7 @@
 'use client';
 
 import type { CSSProperties, ReactNode } from 'react';
-import { color, font } from '../tokens/tokens';
+import { color, font, text } from '../tokens/tokens';
 
 /** A keyboard-key chip — used in hint strips and command rows. */
 export function Kbd({ children, style }: { children: ReactNode; style?: CSSProperties }) {
@@ -27,7 +27,7 @@ export function Kbd({ children, style }: { children: ReactNode; style?: CSSPrope
         borderLeft: customBorder ?? defaultBorder,
         borderRadius: 4,
         fontFamily: font.mono,
-        fontSize: 10,
+        fontSize: text.xs,
         fontWeight: 600,
         ...restStyle,
       }}

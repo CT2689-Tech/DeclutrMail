@@ -303,7 +303,7 @@ function Row({
           border: 'none',
           borderRadius: radius.sm,
           fontFamily: font.sans,
-          fontSize: 13,
+          fontSize: tokens.text.base,
           fontWeight: 500,
           color: disabled ? color.fgMuted : TONE_TO_FG[verb.tone],
           cursor: disabled ? 'not-allowed' : 'pointer',
@@ -337,7 +337,7 @@ function Icon({ glyph }: { glyph: string | undefined }) {
     return <span style={{ width: 20 }} />;
   }
   return (
-    <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>
+    <span aria-hidden="true" style={{ fontSize: tokens.text.md, lineHeight: 1 }}>
       {glyph}
     </span>
   );
@@ -349,7 +349,7 @@ function Kbd({ shortcut }: { shortcut: string }) {
       aria-hidden="true"
       style={{
         fontFamily: font.mono,
-        fontSize: 10,
+        fontSize: tokens.text.xs,
         color: color.fgMuted,
         background: color.mutedBg,
         padding: '2px 6px',
@@ -402,7 +402,7 @@ export function ActionPopoverTrigger({
         borderRadius: radius.sm,
         padding: '6px 9px',
         fontFamily: font.sans,
-        fontSize: 14,
+        fontSize: tokens.text.md,
         color: color.fgMuted,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,

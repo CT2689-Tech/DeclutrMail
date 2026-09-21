@@ -160,6 +160,16 @@ export const shadow = {
   lift: 'var(--dm-shadow-lift)',
 } as const;
 
+/**
+ * Motion — two durations, one easing. Every transition in the app uses
+ * these; `prefers-reduced-motion` is handled globally in tokens.css.
+ */
+export const motion = {
+  fast: '120ms',
+  base: '220ms',
+  ease: 'cubic-bezier(0.2, 0, 0, 1)',
+} as const;
+
 /** Responsive ceilings (px) — see useIsAtMost. */
 export const breakpoint = {
   xs: 480,
@@ -180,6 +190,7 @@ export const tokens = {
   space,
   radius,
   shadow,
+  motion,
   breakpoint,
 } as const;
 

@@ -2,12 +2,14 @@
 
 import { useState, type FormEvent } from 'react';
 
-import { Button, Card, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
+
+import { SettingsGroup } from '@/features/settings/settings-list';
 
 import { postSupportRequest } from '@/lib/api/support-request';
 import { track } from '@/lib/posthog';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text } = tokens;
 
 type Status = 'idle' | 'submitting' | 'confirmed' | 'error';
 
@@ -39,39 +41,35 @@ export function ContactSupportForm() {
 
   if (status === 'confirmed') {
     return (
-      <Card padding={0}>
-        <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-          <p
-            role="status"
-            style={{ margin: 0, fontSize: 13, fontWeight: 600, color: color.primary }}
-          >
-            Message sent — we reply within 2 business days.
-          </p>
-        </div>
-      </Card>
+      <SettingsGroup title="Contact support">
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            padding: '12px 0',
+            borderTop: `1px solid ${color.line}`,
+            fontSize: text.md,
+            color: color.primary,
+          }}
+        >
+          Message sent — we reply within 2 business days.
+        </p>
+      </SettingsGroup>
     );
   }
 
   return (
-    <Card padding={0}>
+    <SettingsGroup title="Contact support">
       <form
         onSubmit={(e) => void submit(e)}
-        style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}
+        style={{
+          padding: '12px 0',
+          borderTop: `1px solid ${color.line}`,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+        }}
       >
-        <h3
-          style={{
-            fontSize: 15,
-            fontWeight: 600,
-            margin: 0,
-            color: color.fg,
-            fontFamily: font.sans,
-          }}
-        >
-          Contact support
-        </h3>
-        <p style={{ fontSize: 12.5, color: color.fgSoft, lineHeight: 1.5, margin: 0 }}>
-          Send a message straight to our team — we reply within 2 business days.
-        </p>
         <input
           type="text"
           required
@@ -85,10 +83,10 @@ export function ContactSupportForm() {
           maxLength={150}
           disabled={status === 'submitting'}
           style={{
-            height: 34,
+            height: 36,
             padding: '0 10px',
             fontFamily: font.sans,
-            fontSize: 13,
+            fontSize: text.md,
             color: color.fg,
             background: color.card,
             border: `1px solid ${status === 'error' ? color.dangerBorder : color.border}`,
@@ -112,7 +110,7 @@ export function ContactSupportForm() {
           style={{
             padding: '8px 10px',
             fontFamily: font.sans,
-            fontSize: 13,
+            fontSize: text.md,
             color: color.fg,
             background: color.card,
             border: `1px solid ${status === 'error' ? color.dangerBorder : color.border}`,
@@ -126,7 +124,7 @@ export function ContactSupportForm() {
             {status === 'submitting' ? 'Sending…' : 'Send message'}
           </Button>
           {status === 'error' ? (
-            <span role="alert" style={{ fontSize: 12.5, color: color.danger }}>
+            <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
               Couldn't send that — try again, or email{' '}
               <a href="mailto:support@declutrmail.com" style={{ color: color.danger }}>
                 support@declutrmail.com
@@ -136,6 +134,6 @@ export function ContactSupportForm() {
           ) : null}
         </div>
       </form>
-    </Card>
+    </SettingsGroup>
   );
 }

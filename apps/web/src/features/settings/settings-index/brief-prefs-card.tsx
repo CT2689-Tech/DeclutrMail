@@ -1,9 +1,10 @@
 'use client';
 
-import { Button, Card, tokens } from '@declutrmail/shared';
+import { tokens } from '@declutrmail/shared';
 import type { BriefPrefs } from '@declutrmail/shared/contracts';
+import { SettingsRow, SettingsRowStatus, SettingsSaveError } from '../settings-list';
 
-const { color, font } = tokens;
+const { color, font, text, radius } = tokens;
 
 /** Selectable local hours, 0–23 (D64). */
 const HOURS: readonly number[] = Array.from({ length: 24 }, (_, h) => h);
@@ -28,7 +29,8 @@ export type BriefPrefsCardState =
   | { kind: 'ready'; prefs: BriefPrefs };
 
 /**
- * Settings → Notifications (D64) — the Daily Brief's delivery hour.
+ * Settings → Notifications (D64) — the Daily Brief's delivery hour,
+ * rendered as one row inside the Notifications group.
  *
  * The Brief covers the previous local day and generates EVERY day
  * (D66's weekday-only schedule retired 2026-08-25: it meant Saturday's
@@ -41,7 +43,7 @@ export type BriefPrefsCardState =
  * Offering it would be a promise the schedule cannot keep.
  *
  * Dumb component (same contract as EmailPrefsCard): the container owns
- * the PATCH; this card renders state and emits `onChange(hour)`.
+ * the PATCH; this row renders state and emits `onChange(hour)`.
  */
 export function BriefPrefsCard({
   state,
@@ -59,92 +61,54 @@ export function BriefPrefsCard({
   /** True when the last PATCH failed (inline error line). */
   saveFailed: boolean;
 }) {
+  if (state.kind !== 'ready') {
+    return (
+      <SettingsRowStatus
+        state={state}
+        loadingLabel="Loading Brief preferences…"
+        errorLabel="Could not load Brief preferences."
+      />
+    );
+  }
   return (
-    <Card padding={0}>
-      <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>Daily Brief</h3>
-        <p style={mutedTextStyle}>
-          Your Brief covers the previous day and is ready every morning. Pick the hour it lands —
-          the change applies to your next Brief, not today&rsquo;s.
-        </p>
-        {state.kind === 'loading' ? (
-          <p role="status" style={mutedTextStyle}>
-            Loading Brief preferences…
-          </p>
-        ) : state.kind === 'error' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
-            <span style={{ fontSize: 13, color: color.danger }}>
-              Could not load Brief preferences.
-            </span>
-            <Button tone="default" size="sm" onClick={state.onRetry}>
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <div style={{ marginTop: 12 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: color.fg }}>Ready at</div>
-                <div style={{ fontSize: 12, color: color.fgMuted, marginTop: 2 }}>
-                  {timezone
-                    ? `Your local time — ${timezone}.`
-                    : 'Your local time, once your timezone is detected.'}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                <select
-                  value={state.prefs.hour}
-                  disabled={pending}
-                  onChange={(e) => onChange(Number(e.target.value))}
-                  aria-label="Daily Brief delivery hour"
-                  style={selectStyle}
-                >
-                  {HOURS.map((hour) => (
-                    <option key={hour} value={hour}>
-                      {formatHourLabel(hour)}
-                    </option>
-                  ))}
-                </select>
-                <span role="status" style={{ fontSize: 11, color: color.fgMuted, minWidth: 44 }}>
-                  {pending ? 'Saving…' : ''}
-                </span>
-              </div>
-            </div>
-            {saveFailed && (
-              <p role="alert" style={{ fontSize: 12, color: color.danger, margin: '8px 0 0' }}>
-                Could not save the delivery time. Try again.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    </Card>
+    <>
+      <SettingsRow
+        label="Daily Brief ready at"
+        // The zone is the one thing that changes what the user picks.
+        detail={timezone ?? 'Timezone not detected yet.'}
+      >
+        <span role="status" style={{ fontSize: text.sm, color: color.fgMuted }}>
+          {pending ? 'Saving…' : ''}
+        </span>
+        <select
+          value={state.prefs.hour}
+          disabled={pending}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-label="Daily Brief delivery hour"
+          style={selectStyle}
+        >
+          {HOURS.map((hour) => (
+            <option key={hour} value={hour}>
+              {formatHourLabel(hour)}
+            </option>
+          ))}
+        </select>
+      </SettingsRow>
+      {saveFailed && (
+        <SettingsSaveError>Could not save the delivery time. Try again.</SettingsSaveError>
+      )}
+    </>
   );
 }
 
 const selectStyle = {
   fontFamily: font.sans,
-  fontSize: 13,
+  fontSize: text.md,
   color: color.fg,
   background: color.card,
   border: `1px solid ${color.line}`,
-  borderRadius: 7,
+  borderRadius: radius.md,
   padding: '6px 8px',
   height: 32,
   boxSizing: 'border-box',
-} as const;
-
-const mutedTextStyle = {
-  fontSize: 13,
-  color: color.fgSoft,
-  lineHeight: 1.55,
-  margin: '8px 0 0',
 } as const;

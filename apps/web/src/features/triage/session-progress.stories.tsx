@@ -5,13 +5,11 @@
 // `triage-screen.stories.tsx` so it typechecks without
 // `@storybook/react` installed.
 //
-// Variants cover the burn-down's whole range:
-//   • MidSession   — some decided, more to go (the common case)
-//   • JustStarted  — one decided, a full queue behind it
-//   • AllDone      — everything decided this session (100% bar, "all done")
-//   • FreshArrival — 0 decided → renders NOTHING (a "0 decided" bar is
-//                    noise; the burn-down only appears after the first
-//                    confirmed decision).
+// Variants:
+//   • FocusPosition — focus mode: the card's position, "3 of 12"
+//   • ListDecided   — list mode: decisions made, "3 of 12"
+//   • JustArrived   — nothing has left the queue yet (empty bar)
+//   • EmptyQueueRendersNothing — a zero total renders NOTHING
 
 import { tokens } from '@declutrmail/shared';
 import { SessionProgress } from './session-progress';
@@ -39,7 +37,7 @@ const meta: StoryMeta<typeof SessionProgress> = {
     docs: {
       description: {
         component:
-          'Session burn-down for the triage header — "X decided · Y to go" plus a thin progress bar. `decided` is the client-session counter (D200 — ephemeral, resets on mount); it increments ONLY on server confirmation (D226), so the bar can never run ahead of reality. Renders nothing until the first confirmed decision.',
+          'The Triage screen’s one count — "3 of 12" plus a thin bar. `total` is the longest the queue has been this session and `done` is how many have left it; both are read off the queue, which only shrinks on a server-confirmed decision (D226), so the bar can never run ahead of reality.',
       },
     },
   },
@@ -66,30 +64,26 @@ function frame(children: React.ReactNode) {
   );
 }
 
-/** Mid-session — 3 decided, 5 still waiting (the common case). */
-export const MidSession: Story<typeof SessionProgress> = {
-  args: { decided: 3, remaining: 5 },
+/** Focus mode — two decided, the third sender on stage. */
+export const FocusPosition: Story<typeof SessionProgress> = {
+  args: { current: 3, done: 2, total: 12, label: 'Decision 3 of 12' },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/** Just started — one decision in, a full queue behind it. */
-export const JustStarted: Story<typeof SessionProgress> = {
-  args: { decided: 1, remaining: 11 },
+/** List mode — the label counts decisions made. */
+export const ListDecided: Story<typeof SessionProgress> = {
+  args: { current: 3, done: 3, total: 12, label: '3 of 12 decided' },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/** All done — everything decided this session: full bar + "all done". */
-export const AllDone: Story<typeof SessionProgress> = {
-  args: { decided: 9, remaining: 0 },
+/** Just arrived — a full queue, an empty bar. */
+export const JustArrived: Story<typeof SessionProgress> = {
+  args: { current: 1, done: 0, total: 12, label: 'Decision 1 of 12' },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/**
- * Fresh arrival — 0 decided renders NOTHING. A "0 decided" bar on
- * arrival is noise; the queue legend already carries the waiting count.
- * This story is the contract proof of the null return.
- */
-export const FreshArrivalRendersNothing: Story<typeof SessionProgress> = {
-  args: { decided: 0, remaining: 8 },
+/** A zero total renders NOTHING — this story is the contract proof of the null return. */
+export const EmptyQueueRendersNothing: Story<typeof SessionProgress> = {
+  args: { current: 0, done: 0, total: 0, label: 'Decision 0 of 0' },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };

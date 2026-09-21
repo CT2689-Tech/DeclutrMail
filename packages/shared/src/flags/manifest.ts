@@ -30,13 +30,6 @@ export const FLAG_MANIFEST = {
       'renders light regardless of any stored preference) and the ' +
       'ThemeToggle is not rendered.',
   },
-  senderPeek: {
-    default: true,
-    description:
-      'Grid hover/focus peek overlay on sender cards (D49 usability ' +
-      'pass). Off: cards render without the peek affordance; all verbs ' +
-      'remain reachable through the card itself.',
-  },
   infiniteScroll: {
     default: true,
     description:

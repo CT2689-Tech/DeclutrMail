@@ -5,7 +5,7 @@ import { createContext, useContext } from 'react';
 import { tokens } from '@declutrmail/shared';
 import { getActionSemantics } from '@declutrmail/shared/actions';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /** The mail-moving verbs a sender row can be busy with. */
 export type RowActivityVerb = 'archive' | 'later' | 'delete';
@@ -78,11 +78,10 @@ const EMPTY: RowActivityById = new Map();
 const RowActivityContext = createContext<RowActivityById>(EMPTY);
 
 /**
- * Activity by sender id, for every row layout at once. A context rather
- * than a prop: the table, the grid card, the domain-group card and the
- * phone row all end in the same `SenderActionRow`, and threading one map
- * through each of them (and their stories) is four chances to forget one
- * — the table had no busy state at all for exactly that reason.
+ * Activity by sender id. A context rather than a prop: the row, its
+ * `SenderActionRow` and the domain-group header all read it, and
+ * threading one map through each (and their stories) is a chance to
+ * forget one.
  */
 export const RowActivityProvider = RowActivityContext.Provider;
 
@@ -91,7 +90,7 @@ export function useRowActivity(senderId: string): SenderRowActivity | undefined 
 }
 
 /**
- * One line for a COLLAPSED group of senders (the grid's brand card): how
+ * One line for a COLLAPSED group of senders (the domain-group row): how
  * many members are working, else how their actions ended. `null` when no
  * member was acted on. Counts only — a group card names no single verb.
  */
@@ -139,7 +138,7 @@ export function rowStatusLabel(activity: SenderRowActivity): string {
 
 /** Text colour for the button-slot status. Body-strength, never faded. */
 export function rowStatusColor(activity: SenderRowActivity): string {
-  if (activity.phase === 'failed') return color.red;
+  if (activity.phase === 'failed') return color.danger;
   if (activity.phase === 'done' && activity.affectedCount !== 0) return color.primary;
   return color.fg;
 }
@@ -218,12 +217,12 @@ export const isRowBusy = (activity: SenderRowActivity | undefined): boolean =>
 
 /**
  * The pill — same footprint as the unsubscribe lifecycle pill it sits
- * beside, so table, grid and phone rows share one grammar.
+ * beside, so every row shares one grammar.
  */
 export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
   const tone =
     activity.phase === 'failed'
-      ? { fg: color.red, bg: color.redBg, border: color.redBorder }
+      ? { fg: color.danger, bg: color.dangerBg, border: color.dangerBorder }
       : activity.phase === 'mixed'
         ? // Part of the bulk failed — a caution. Body-colour text keeps contrast.
           { fg: color.fg, bg: color.amberBg, border: color.amber }
@@ -243,10 +242,9 @@ export function RowActivityPill({ activity }: { activity: SenderRowActivity }) {
           : undefined
       }
       style={{
-        fontFamily: font.mono,
-        fontSize: 9.5,
-        letterSpacing: '0.10em',
-        textTransform: 'uppercase',
+        fontFamily: font.sans,
+        fontSize: text.xs,
+        fontWeight: 500,
         color: tone.fg,
         background: tone.bg,
         border: `1px solid ${tone.border}`,

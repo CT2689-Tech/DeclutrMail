@@ -1,6 +1,7 @@
 'use client';
 
-import { Button, DESTRUCTIVE_ACTIONS_PREVIEW_HINT, Kbd, tokens } from '@declutrmail/shared';
+import { useEffect, useRef } from 'react';
+import { Button, Kbd, tokens } from '@declutrmail/shared';
 import {
   canArchive,
   canDelete,
@@ -12,6 +13,7 @@ import {
   type Sender,
 } from '../data';
 import { derivePrimaryVerbId } from '../action-row';
+import { isTypingTarget } from '../keyboard';
 import {
   isRowBusy,
   RowActivityPill,
@@ -62,7 +64,7 @@ function primaryVerbReason(sender: Sender, highlight: Verdict): string | null {
   return null;
 }
 
-const { color, font, radius } = tokens;
+const { color, font } = tokens;
 
 /**
  * The canonical verb set — K/A/U/L/D (CLAUDE.md §2.2, ADR-0019).
@@ -102,20 +104,50 @@ const VERBS: ReadonlyArray<{ verb: ActionVerb; shortcut: string; verdict: Verdic
  * mandatory `<ConfirmActionModal>` (the action preview per D226).
  * Keep applies immediately and records `sender_policy(policy_type=keep)`.
  *
- * The observed-fact primary verb is highlighted. Recommendation and
- * confidence data never changes action order or emphasis (D245).
+ * The observed-fact primary verb is the one filled button; the other four
+ * are quiet text buttons. Recommendation and confidence data never changes
+ * action order or emphasis (D245).
+ *
+ * `shortcuts` binds K/A/U/L/D to the same `onAction` a click uses and
+ * shows the key hints. The full page turns it on; the list's side pane
+ * leaves it off — the list owns those keys there — and then shows no
+ * hints either, so a key is never advertised where it does nothing.
  */
 export function ActionToolbar({
   sender,
   onAction,
+  shortcuts = false,
 }: {
   sender: Sender;
   onAction: (req: ActionRequest) => void;
+  shortcuts?: boolean;
 }) {
   const highlight = derivePrimaryVerbId(sender);
   // This sender's own in-flight / finished action (see `row-activity`).
   const activity = useRowActivity(sender.id);
   const busy = isRowBusy(activity);
+
+  // Latest values for the key handler, so the listener binds once.
+  const live = useRef({ sender, onAction, busy });
+  live.current = { sender, onAction, busy };
+  useEffect(() => {
+    if (!shortcuts) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      if (isTypingTarget(e.target)) return;
+      // Inert while the preview (or any other modal / menu) is open —
+      // same guards as the Senders list's selection shortcuts.
+      if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return;
+      const entry = VERBS.find((v) => v.shortcut.toLowerCase() === e.key.toLowerCase());
+      if (!entry) return;
+      const { sender: s, onAction: act, busy: isBusy } = live.current;
+      if (isBusy || isVerbUnavailable(entry.verb, s)) return;
+      e.preventDefault();
+      act({ verb: entry.verb, senders: [s] });
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [shortcuts]);
 
   return (
     <div
@@ -125,34 +157,22 @@ export function ActionToolbar({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        padding: '12px 14px',
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
+        gap: 4,
         flexWrap: 'wrap',
         fontFamily: font.sans,
       }}
     >
       {VERBS.map(({ verb, shortcut, verdict }) => {
-        const disabled =
-          (verb === 'Archive' && !canArchive(sender)) ||
-          (verb === 'Unsubscribe' && !canUnsubscribe(sender)) ||
-          (verb === 'Later' && !canLater(sender)) ||
-          (verb === 'Delete' && !canDelete(sender));
+        const disabled = isVerbUnavailable(verb, sender);
         const isHighlighted = highlight === verdict && !disabled;
         // QA-sender-detail-20260902-14: Delete has `canBePrimary: false`
         // (verb-registry.ts) — it can never be `isHighlighted`, so it
         // rendered with the exact same `tone='default'` fill as Keep, the
         // safest verb. A colour-only accent (matching the registry's own
-        // `tone: 'danger'` for this verb) keeps the toolbar's uniform
-        // WEIGHT — no verb dominates as "the suggestion" — while making
-        // Delete visually findable before the D226 confirm step, not just
-        // after.
+        // `tone: 'danger'` for this verb) makes Delete findable before the
+        // D226 confirm step, not just after, without adding weight.
         const deleteAccentStyle =
-          verb === 'Delete' && !isHighlighted && !disabled
-            ? { color: color.danger, borderColor: color.danger }
-            : null;
+          verb === 'Delete' && !isHighlighted && !disabled ? { color: color.danger } : null;
         // QA-sender-detail-20260902-07/-16: the highlighted verb had no
         // stated reason, and the only verb `canUnsubscribe` ever disables
         // — no List-Unsubscribe channel — rendered greyed out with no
@@ -184,7 +204,7 @@ export function ActionToolbar({
                     : verb === 'Keep'
                       ? 'primary'
                       : 'dark'
-                  : 'default'
+                  : 'ghost'
             }
             size="md"
             disabled={disabled}
@@ -203,7 +223,7 @@ export function ActionToolbar({
                 : {})}
             {...(buttonTitle ? { title: buttonTitle } : {})}
             onClick={() => onAction({ verb, senders: [sender] })}
-            {...(status
+            {...(status || !shortcuts
               ? {}
               : {
                   iconRight: isHighlighted ? (
@@ -223,9 +243,11 @@ export function ActionToolbar({
             ariaLabel={
               status
                 ? again
-                  ? `${rowStatusLabel(status)} — ${verb} again (${shortcut})`
+                  ? `${rowStatusLabel(status)} — ${verb} again${shortcuts ? ` (${shortcut})` : ''}`
                   : rowStatusLabel(status)
-                : `${verb} (${shortcut})`
+                : shortcuts
+                  ? `${verb} (${shortcut})`
+                  : verb
             }
           >
             {status ? <RowActivityStatus activity={status} /> : verb}
@@ -233,18 +255,15 @@ export function ActionToolbar({
         );
       })}
       {activity && !takesButtonSlot(activity) && <RowActivityPill activity={activity} />}
-      <span style={{ flex: 1 }} />
-      <span
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          color: color.fgMuted,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-        }}
-      >
-        {DESTRUCTIVE_ACTIONS_PREVIEW_HINT}
-      </span>
     </div>
+  );
+}
+
+function isVerbUnavailable(verb: ActionVerb, sender: Sender): boolean {
+  return (
+    (verb === 'Archive' && !canArchive(sender)) ||
+    (verb === 'Unsubscribe' && !canUnsubscribe(sender)) ||
+    (verb === 'Later' && !canLater(sender)) ||
+    (verb === 'Delete' && !canDelete(sender))
   );
 }

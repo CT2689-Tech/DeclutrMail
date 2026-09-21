@@ -266,7 +266,7 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(startMailboxReactivationSpy).toHaveBeenCalledWith(MAILBOX_C.id);
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole('button', { name: '+ Connect another Gmail account' }));
+    await user.click(screen.getByRole('button', { name: 'Add Gmail account' }));
     expect(startMailboxConnectSpy).toHaveBeenLastCalledWith(undefined);
     expect(startMailboxConnectSpy).toHaveBeenCalledTimes(1);
     expect(startMailboxReactivationSpy).toHaveBeenCalledTimes(1);
@@ -306,5 +306,24 @@ describe('AccountMenu Gmail reconnect health', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Gmail accounts' })).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
+  });
+
+  // Settings and Billing left the sidebar; this menu is now their only
+  // entry point in the chrome, so losing either link strands the route.
+  it('links to Settings and Billing, closing the menu on the way', async () => {
+    const user = userEvent.setup();
+    render(<AccountMenu />);
+    await user.click(screen.getByRole('button', { name: MAILBOX_A.email }));
+
+    const dialog = screen.getByRole('dialog', { name: 'Gmail accounts' });
+    expect(within(dialog).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/settings',
+    );
+    const billing = within(dialog).getByRole('link', { name: 'Billing' });
+    expect(billing).toHaveAttribute('href', '/billing');
+
+    await user.click(billing);
+    expect(screen.queryByRole('dialog', { name: 'Gmail accounts' })).not.toBeInTheDocument();
   });
 });

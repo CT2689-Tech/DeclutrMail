@@ -11,7 +11,7 @@ import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 import type { DomainBatch } from './domain-batch';
 import type { BatchVerb } from './domain-batch-card';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Batch action sheet — the D226-mandatory preview for a domain-batch
@@ -181,7 +181,7 @@ export function BatchActionSheet({
           <h2
             id="dm-triage-batch-sheet-title"
             style={{
-              fontSize: 19,
+              fontSize: text.xl,
               fontWeight: 600,
               letterSpacing: '-0.014em',
               margin: '6px 0 12px',
@@ -194,10 +194,14 @@ export function BatchActionSheet({
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <MailboxActionContextView mailboxEmail={mailboxEmail} />
           <div role="region" aria-label={`Preview · ${verb} ${batch.domain} batch`}>
-            <h3 style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
+            <h3
+              style={{ fontSize: text.lg, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}
+            >
               {title}
             </h3>
-            <p style={{ fontSize: 12.5, color: color.fgSoft, margin: '4px 0 0', lineHeight: 1.5 }}>
+            <p
+              style={{ fontSize: text.sm, color: color.fgSoft, margin: '4px 0 0', lineHeight: 1.5 }}
+            >
               {lead}
             </p>
           </div>
@@ -216,9 +220,9 @@ export function BatchActionSheet({
             }}
           >
             {preview === 'loading' ? (
-              <span style={{ fontSize: 12, color: color.fgSoft }}>Counting the inbox…</span>
+              <span style={{ fontSize: text.sm, color: color.fgSoft }}>Counting the inbox…</span>
             ) : preview === 'unavailable' ? (
-              <span style={{ fontSize: 12, color: color.fgSoft }}>
+              <span style={{ fontSize: text.sm, color: color.fgSoft }}>
                 Couldn&rsquo;t load the preview. Nothing can move until it loads.
               </span>
             ) : (
@@ -226,7 +230,7 @@ export function BatchActionSheet({
                 <strong
                   style={{
                     fontFamily: font.display,
-                    fontSize: 22,
+                    fontSize: text['2xl'],
                     fontWeight: 600,
                     letterSpacing: '-0.02em',
                     color: color.fg,
@@ -235,7 +239,7 @@ export function BatchActionSheet({
                 >
                   {preview.totals.all.toLocaleString('en-US')}
                 </strong>
-                <span style={{ fontSize: 12, color: color.fgSoft }}>
+                <span style={{ fontSize: text.sm, color: color.fgSoft }}>
                   email{preview.totals.all === 1 ? '' : 's'} in Inbox now. Rechecked when it runs.
                 </span>
               </>
@@ -258,7 +262,7 @@ export function BatchActionSheet({
                     alignItems: 'baseline',
                     justifyContent: 'space-between',
                     gap: 12,
-                    fontSize: 12,
+                    fontSize: text.sm,
                     color: color.fgSoft,
                     padding: '4px 2px',
                     borderBottom: `1px solid ${color.lineSoft}`,
@@ -276,7 +280,8 @@ export function BatchActionSheet({
                   </span>
                   <span
                     style={{
-                      fontFamily: font.mono,
+                      // Mono for the numeral only — the protected label is words.
+                      ...(s.protected ? null : { fontFamily: font.mono }),
                       fontVariantNumeric: 'tabular-nums',
                       flexShrink: 0,
                     }}
@@ -288,7 +293,7 @@ export function BatchActionSheet({
                 </div>
               ))}
               {preview.protectedCount > 0 && (
-                <span style={{ fontSize: 11.5, color: color.fgMuted, marginTop: 2 }}>
+                <span style={{ fontSize: text.xs, color: color.fgMuted, marginTop: 2 }}>
                   {preview.protectedCount} protected sender
                   {preview.protectedCount === 1 ? '' : 's'} will be skipped.
                 </span>
@@ -316,7 +321,7 @@ export function BatchActionSheet({
         >
           <span
             style={{
-              fontSize: 11.5,
+              fontSize: text.xs,
               color: quotaShort ? color.amber : color.fgMuted,
               fontWeight: quotaShort ? 600 : 400,
             }}

@@ -21,6 +21,14 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-09-21 — A redesign brief moved a pre-consent disclosure away from the button it belongs to, and four gate findings followed
+**PR:** Apple-simple redesign (branch `claude/product-simplification-ideas-5a8515`)
+**Caught by:** orchestrator review of an agent report · design-system-agent · flow-completeness-auditor · `edge-states/inventory.test.ts`
+**What happened:** Nine agents rebuilt the app in parallel from one brief. (1) The brief told the marketing agent to keep the OAuth scope disclosure "ONCE, beside the final CTA". Its copy contract (`packages/shared/src/copy/privacy.ts`) says it sits beside EVERY CTA that starts Google OAuth — the hero button goes straight to Google's consent screen. The agent followed the brief and flagged it; the brief was wrong. Restored, collapsed, beside the hero CTA. (2) Triage focus mode added an `S` shortcut for Skip — the letter D227 retired with "Screen". (3) The new `?sender=<id>` pane survived a mailbox switch holding the OLD mailbox's id and landed on "not found". (4) The focus card was pinned only while a preview was open, so a background refetch or a failed decision could swap the sender under the user. (5) The new `/home` route shipped without an edge-state inventory row — the inventory test caught it; (6) `HelpButton` was exported from `@declutrmail/shared` with one consumer and no story.
+**Correct approach:** Before a brief says "show X once", grep for X's copy contract — a budget cut is never allowed to move a disclosure off its decision point. Any new URL-held id is mailbox-scoped state and needs the scope reset in the same change. Any "current item" derived from a refetching list needs a pin.
+**Rule:** New URL/selection state ⇒ wire `useMailboxScopeReset` in the same diff. New key binding ⇒ check it against K/A/U/L/D + the retired `S`.
+**Enforcement update:** none (tests added for 2–5; candidates for the flow-completeness-auditor prompt: "URL-held ids" and "derived current item").
+
 ## 2026-09-19 — A brevity sweep cut three disclosures narrower than the data, and left one duplicate behind
 
 **PR:** copy-brevity sweep (branch `claude/product-verbosity-audit-dde978`)

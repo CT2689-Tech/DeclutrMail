@@ -10,28 +10,27 @@ vi.mock('next/navigation', () => ({ usePathname: () => pathnameRef.current }));
 import { PublicNavLinks, isPublicNavLinkActive } from './public-nav-links';
 
 const links = [
-  { href: '/inbox-simulator', label: 'Demo' },
-  { href: '/compare', label: 'Compare' },
+  { href: '/how-it-works', label: 'How it works' },
   { href: '/pricing', label: 'Pricing' },
+  { href: '/inbox-simulator', label: 'Demo' },
 ] as const;
 
 describe('PublicNavLinks', () => {
   it.each([
     ['/inbox-simulator', '/inbox-simulator'],
     ['/demo', '/inbox-simulator'],
-    ['/compare', '/compare'],
-    ['/vs/clean-email', '/compare'],
+    ['/how-it-works', '/how-it-works'],
     ['/pricing', '/pricing'],
   ])('maps %s to the stable %s navigation tab', (pathname, href) => {
     expect(isPublicNavLinkActive(pathname, href)).toBe(true);
   });
 
   it('marks only the current navigation destination', () => {
-    pathnameRef.current = '/vs/sanebox';
+    pathnameRef.current = '/demo';
     render(<PublicNavLinks links={links} />);
 
-    expect(screen.getByRole('link', { name: 'Compare' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('link', { name: 'Demo' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Demo' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'How it works' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: 'Pricing' })).not.toHaveAttribute('aria-current');
   });
 
@@ -40,7 +39,7 @@ describe('PublicNavLinks', () => {
     render(<PublicNavLinks links={links} />);
 
     expect(screen.getAllByRole('link')).toHaveLength(3);
-    expect(screen.getByRole('link', { name: 'Compare' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'How it works' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: 'Demo' })).not.toHaveAttribute('aria-current');
     expect(screen.getByRole('link', { name: 'Pricing' })).not.toHaveAttribute('aria-current');
   });

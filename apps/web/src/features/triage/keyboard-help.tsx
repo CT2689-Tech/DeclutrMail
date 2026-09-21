@@ -10,7 +10,7 @@ import { isTypingTarget } from '@/features/senders/keyboard';
 
 import { VERB_ORDER, VERB_SHORTCUT } from './types';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Triage keyboard-hint overlay — press `?` to reveal, Escape (or the
@@ -22,8 +22,11 @@ const { color, font } = tokens;
  * aspirational:
  *
  *   - K/A/U/L/D    → `resolveShortcut` in `action-toolbar.tsx` (bound
- *                     while a row is expanded; D29 + D227)
- *   - Enter/Space  → row header expand/collapse (`triage-row.tsx`)
+ *                     for the focus card, or the expanded list row;
+ *                     D29 + D227)
+ *   - →            → skip to the next sender (`focus-stack.tsx`)
+ *   - Enter/Space  → list row expand/collapse (`triage-row.tsx`)
+ *   - → ← ↑ swipes → Keep / Archive / Later on touch (`use-swipe-verb.ts`)
  *   - Z            → undo last decision (`triage-undo-tray.tsx`, D35)
  *   - Esc          → close the action sheet (`action-sheet.tsx`) or
  *                     dismiss an inline preview (`triage-screen.tsx`)
@@ -58,11 +61,11 @@ export function TriageKeyboardHelp() {
 
 /** Verb → what the shortcut does, in the user's terms (D227 verbs). */
 const VERB_HELP: Record<(typeof VERB_ORDER)[number], string> = {
-  Keep: 'Keep the expanded sender',
-  Archive: 'Archive the expanded sender',
-  Unsubscribe: 'Unsubscribe from the expanded sender',
-  Later: 'Move the expanded sender to Later',
-  Delete: 'Move the expanded sender’s inbox email to Gmail Trash',
+  Keep: 'Keep this sender',
+  Archive: 'Archive this sender',
+  Unsubscribe: 'Unsubscribe from this sender',
+  Later: 'Move this sender to Later',
+  Delete: 'Move this sender’s inbox email to Gmail Trash',
 };
 
 /**
@@ -117,7 +120,7 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
         >
           <h2
             id="dm-triage-help-title"
-            style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}
+            style={{ fontSize: text.lg, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}
           >
             Keyboard shortcuts
           </h2>
@@ -126,10 +129,11 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
             aria-label="Close shortcuts"
             onClick={onClose}
             style={{
-              all: 'unset',
+              background: 'none',
+              border: 'none',
               cursor: 'pointer',
               color: color.fgMuted,
-              fontSize: 16,
+              fontSize: text.lg,
               lineHeight: 1,
               padding: 2,
             }}
@@ -139,19 +143,27 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div style={{ padding: '8px 20px 16px' }}>
-          <SectionLabel>Decide (expanded row)</SectionLabel>
+          <SectionLabel>Decide</SectionLabel>
           {VERB_ORDER.map((verb) => (
             <ShortcutRow key={verb} keys={VERB_SHORTCUT[verb]} label={VERB_HELP[verb]} />
           ))}
 
           <SectionLabel>Navigate</SectionLabel>
-          <ShortcutRow keys="Enter / Space" label="Expand or collapse the focused row" />
+          <ShortcutRow keys="→" label="Skip to the next sender" />
+          <ShortcutRow keys="Enter / Space" label="Open or close a list row" />
           <ShortcutRow keys="Z" label="Undo the last decision" />
 
           <SectionLabel>In a preview</SectionLabel>
           <ShortcutRow keys="⌘⏎" label="Confirm the preview" />
           <ShortcutRow keys="Esc" label="Cancel the sheet / dismiss an inline preview" />
           <ShortcutRow keys="?" label="Toggle this overlay" />
+
+          {/* D37 — gestures are invisible without a legend; it lives
+              here rather than as a caption on every card. */}
+          <SectionLabel>On touch</SectionLabel>
+          <ShortcutRow keys="Swipe →" label="Keep" />
+          <ShortcutRow keys="Swipe ←" label="Archive" />
+          <ShortcutRow keys="Swipe ↑" label="Later" />
         </div>
       </div>
     </>
@@ -162,11 +174,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        fontFamily: font.mono,
-        fontSize: 10,
+        fontSize: text.xs,
         fontWeight: 600,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
         color: color.fgMuted,
         margin: '14px 0 6px',
       }}
@@ -187,7 +196,7 @@ function ShortcutRow({ keys, label }: { keys: string; label: string }) {
         borderBottom: `1px solid ${color.lineSoft}`,
       }}
     >
-      <span style={{ fontSize: 13, color: color.fg }}>{label}</span>
+      <span style={{ fontSize: text.base, color: color.fg }}>{label}</span>
       <Kbd>{keys}</Kbd>
     </div>
   );

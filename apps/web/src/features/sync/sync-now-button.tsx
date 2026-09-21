@@ -14,7 +14,7 @@ import { SYNC_STATUS_KEY, useSyncStatus } from '@/features/onboarding/api/use-sy
 import { useRetryInitialSync } from './api/use-retry-initial-sync';
 import { useSyncNow } from './api/use-sync-now';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text, motion } = tokens;
 
 /**
  * "Sync now" button (D38 prod-ready pass; freshness + completion watch
@@ -256,9 +256,9 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
           className="dm-topbar-collapse"
           title={`Last synced ${new Date(lastSyncedAt).toLocaleString('en-US')}`}
           style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            letterSpacing: '0.06em',
+            fontFamily: font.sans,
+            fontSize: text.xs,
+            fontVariantNumeric: 'tabular-nums',
             color: color.fgMuted,
             whiteSpace: 'nowrap',
           }}
@@ -283,11 +283,11 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
           border: `1px solid ${color.line}`,
           color: color.fg,
           fontFamily: font.sans,
-          fontSize: 12.5,
+          fontSize: text.sm,
           fontWeight: 500,
           cursor: busy ? 'progress' : 'pointer',
           opacity: busy ? 0.7 : 1,
-          transition: 'background 120ms ease, opacity 120ms ease',
+          transition: `background ${motion.fast} ${motion.ease}, opacity ${motion.fast} ${motion.ease}`,
         }}
       >
         <SyncIcon spinning={busy} />
@@ -331,9 +331,8 @@ function FailedSyncIndicator({
           red button below 900px. */}
       <span
         style={{
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          letterSpacing: '0.06em',
+          fontFamily: font.sans,
+          fontSize: text.xs,
           color: color.danger,
           whiteSpace: 'nowrap',
         }}

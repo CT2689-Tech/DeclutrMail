@@ -16,7 +16,6 @@ export default function LaterError({
       error={error}
       reset={reset}
       boundary="snoozed"
-      eyebrow="Later hit a snag"
       headline="We couldn't load your Later items."
       body="Nothing was moved or rescheduled. Try again, or continue in Triage."
       escape={{ href: '/triage', label: 'Back to Triage' }}

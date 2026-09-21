@@ -55,7 +55,7 @@ describe('ComparisonIndexScreen', () => {
   it('tracks both lower-funnel choices in the final comparison CTA', () => {
     render(<ComparisonIndexScreen />);
 
-    fireEvent.click(screen.getByRole('link', { name: /Connect Gmail/i }));
+    fireEvent.click(screen.getByRole('link', { name: /Start free/i }));
     fireEvent.click(screen.getByRole('link', { name: 'See every tier' }));
 
     expect(track).toHaveBeenNthCalledWith(1, 'landing_cta_clicked', {

@@ -4,7 +4,7 @@
  * Google's OAuth verification recertifies annually, so the date is a
  * claim that goes stale on a known schedule. It was previously written
  * out on four separate surfaces — `/privacy`, `/security`, Settings →
- * Privacy & Data, and (as of the trust-strip change) the landing page —
+ * Privacy & Data, and the landing page's privacy block —
  * which meant the next recertification would update only the ones
  * somebody remembered. This is the repo's signature defect class (a
  * surface asserting something it does not know) pointed at the
@@ -31,7 +31,7 @@ const CLAIM_SITES = [
   'src/app/(marketing)/security/page.tsx',
   'src/app/(marketing)/privacy/page.tsx',
   'src/features/settings/privacy-data/privacy-data-screen.tsx',
-  'src/features/marketing/landing/hero.tsx',
+  'src/features/marketing/landing/sections.tsx',
 ] as const;
 
 const read = (relative: string) => readFileSync(path.resolve(process.cwd(), relative), 'utf8');

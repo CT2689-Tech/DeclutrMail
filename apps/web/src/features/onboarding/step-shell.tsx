@@ -1,26 +1,26 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Eyebrow, tokens } from '@declutrmail/shared';
+import { tokens } from '@declutrmail/shared';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Shared chrome for the onboarding steps that are NOT the sync gate
  * (D106). Mirrors the sync gate's centered single-column shell so the
- * five steps read as one flow. The gate keeps its own internal shell
+ * five steps read as one flow: a title, at most one sentence, the
+ * control. The gate keeps its own internal shell
  * (untouched — D109).
  */
 export function StepShell({
-  eyebrow,
   title,
   sub,
   maxWidth = 520,
   corner,
   children,
 }: {
-  eyebrow: string;
   title: string;
+  /** At most one sentence. */
   sub?: string;
   maxWidth?: number;
   /** D106 — the top-right skip affordance slot. */
@@ -52,20 +52,20 @@ export function StepShell({
           alignItems: 'center',
         }}
       >
-        <Eyebrow>{eyebrow}</Eyebrow>
         <h1
           style={{
             fontFamily: font.display,
-            fontSize: 30,
+            fontSize: text['3xl'],
             fontWeight: 600,
             letterSpacing: '-0.02em',
-            margin: '6px 0 4px',
+            lineHeight: 1.15,
+            margin: '0 0 8px',
           }}
         >
           {title}
         </h1>
         {sub && (
-          <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 24px', maxWidth: 460 }}>
+          <p style={{ color: color.fgMuted, fontSize: text.md, margin: '0 0 24px', maxWidth: 460 }}>
             {sub}
           </p>
         )}

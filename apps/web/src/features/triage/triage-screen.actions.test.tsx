@@ -36,6 +36,7 @@ import { undoKeys } from '@/features/undo/query-keys';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS } from './data';
 import { resetTriageStore, useTriageStore } from './store';
 import { ACTION_OVERDUE_MS, TriageScreen } from './triage-screen';
+import { storeTriageMode } from './test-mode';
 import { ACTION_POLL_MS } from '@/lib/api/use-action';
 
 // Toast is the ONLY user-visible failure surface in this flow (D35 —
@@ -125,6 +126,10 @@ async function confirmOpenSheet(
   await waitFor(() => expect(confirm).not.toBeDisabled());
   fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 }
+
+// These suites drive the list's expand → verb path; focus mode has its own
+// suite (`triage-focus.test.tsx`).
+beforeEach(() => storeTriageMode('list'));
 
 describe('TriageScreen — D226 mutation wiring', () => {
   beforeEach(() => {

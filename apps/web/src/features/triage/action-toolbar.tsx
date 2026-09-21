@@ -1,19 +1,13 @@
 'use client';
 
 import { useEffect } from 'react';
-import {
-  Button,
-  DESTRUCTIVE_ACTIONS_PREVIEW_HINT,
-  Kbd,
-  Tooltip,
-  tokens,
-} from '@declutrmail/shared';
+import { Button, Kbd, Tooltip, tokens } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { lessonForVerb } from '@/features/tour/verb-lessons';
 import { canArchive, canLater, canUnsubscribe, type TriageDecisionRow } from './data';
 import { VERB_ORDER, VERB_SHORTCUT, recommendedVerb, type ActionVerb } from './types';
 
-const { color, font, radius } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Pure key→verb resolver — exported so tests assert the K/A/U/L/D
@@ -60,6 +54,7 @@ export function ActionToolbar({
   onAction,
   keyboardEnabled = true,
   disabled = false,
+  layout = 'row',
 }: {
   row: TriageDecisionRow;
   onAction: (verb: ActionVerb) => void;
@@ -75,7 +70,13 @@ export function ActionToolbar({
    * server-side (D226 busy state).
    */
   disabled?: boolean;
+  /**
+   * `'bar'` is the touch layout: 44px targets, the suggested verb on its
+   * own full-width line, no key hints (there is no keyboard to press).
+   */
+  layout?: 'row' | 'bar';
 }) {
+  const bar = layout === 'bar';
   // Same verdict-aware gate the row's verdict pill reads
   // (`types.ts`). It was a flat `> 0.85` duplicated in both files,
   // which made Archive — whose reachable band tops out at 0.74 without
@@ -111,14 +112,12 @@ export function ActionToolbar({
       role="toolbar"
       aria-label={`Decide on ${row.senderName}`}
       style={{
-        display: 'flex',
-        alignItems: 'center',
+        // Bar: a two-column grid — five labelled 44px targets do not fit
+        // one 375px row ("Unsubscribe" alone is ~115px).
+        ...(bar
+          ? { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }
+          : { display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' }),
         gap: 8,
-        padding: '10px 12px',
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
-        flexWrap: 'wrap',
         fontFamily: font.sans,
       }}
     >
@@ -131,15 +130,10 @@ export function ActionToolbar({
         // SR status line.
         const reason = verbDisabledReason(verb, row);
         const isHighlighted = recommended === verb && !verbIsDisabled;
-        const tone = isHighlighted
-          ? verb === 'Unsubscribe'
-            ? 'warn'
-            : verb === 'Keep'
-              ? 'primary'
-              : 'dark'
-          : verb === 'Delete'
-            ? 'danger'
-            : 'default';
+        // The suggestion is the only filled button; every other verb is
+        // quiet so the eye lands on one thing. Delete stays danger-
+        // coloured text — a colour, not a fill.
+        const tone = isHighlighted ? (verb === 'Unsubscribe' ? 'warn' : 'primary') : 'ghost';
         // D38 — what this verb does to the sender's mail, on hover AND
         // on focus. The button's aria-label already carries the verb and
         // its shortcut; the tooltip is the DESCRIPTION, wired through
@@ -151,23 +145,31 @@ export function ActionToolbar({
             size="md"
             disabled={verbIsDisabled}
             onClick={() => onAction(verb)}
+            style={{
+              ...(bar ? { height: 44, width: '100%', fontSize: text.md } : { height: 36 }),
+              ...(!isHighlighted
+                ? { color: verb === 'Delete' ? color.danger : color.fg, borderColor: color.line }
+                : null),
+            }}
             {...(reason != null ? { title: reason } : {})}
             {...(describedBy != null ? { ariaDescribedBy: describedBy } : {})}
-            iconRight={
-              isHighlighted ? (
-                <Kbd
-                  style={{
-                    background: color.lineInverse,
-                    border: 'none',
-                    color: color.fgInverse,
-                  }}
-                >
-                  {VERB_SHORTCUT[verb]}
-                </Kbd>
-              ) : (
-                <Kbd>{VERB_SHORTCUT[verb]}</Kbd>
-              )
-            }
+            {...(bar
+              ? {}
+              : {
+                  iconRight: isHighlighted ? (
+                    <Kbd
+                      style={{
+                        background: color.lineInverse,
+                        border: 'none',
+                        color: color.fgInverse,
+                      }}
+                    >
+                      {VERB_SHORTCUT[verb]}
+                    </Kbd>
+                  ) : (
+                    <Kbd>{VERB_SHORTCUT[verb]}</Kbd>
+                  ),
+                })}
             ariaLabel={
               reason != null
                 ? `${verb} (${VERB_SHORTCUT[verb]}) — ${reason}`
@@ -177,35 +179,40 @@ export function ActionToolbar({
             {verb}
           </Button>
         );
-        if (lesson === undefined) return <span key={verb}>{button()}</span>;
+        // Column flex so the Tooltip's inline wrapper stretches and the
+        // button's `width: 100%` resolves against the slot, not itself.
+        const slotStyle = bar
+          ? ({
+              display: 'flex',
+              flexDirection: 'column',
+              // The suggestion leads, on its own full-width line.
+              ...(isHighlighted ? { gridColumn: '1 / -1', order: -1 } : null),
+            } as const)
+          : undefined;
+        if (lesson === undefined) {
+          return (
+            <span key={verb} style={slotStyle}>
+              {button()}
+            </span>
+          );
+        }
         return (
-          <Tooltip
-            key={verb}
-            content={
-              <>
-                <span style={{ fontWeight: 600 }}>{lesson.label}</span>
-                <span style={{ fontFamily: font.mono }}> · {lesson.shortcut}</span>
-                <br />
-                {lesson.effect}
-              </>
-            }
-          >
-            {({ describedBy }) => button(describedBy)}
-          </Tooltip>
+          <span key={verb} style={slotStyle}>
+            <Tooltip
+              content={
+                <>
+                  <span style={{ fontWeight: 600 }}>{lesson.label}</span>
+                  <span style={{ fontFamily: font.mono }}> · {lesson.shortcut}</span>
+                  <br />
+                  {lesson.effect}
+                </>
+              }
+            >
+              {({ describedBy }) => button(describedBy)}
+            </Tooltip>
+          </span>
         );
       })}
-      <span style={{ flex: 1 }} />
-      <span
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          color: color.fgMuted,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-        }}
-      >
-        {DESTRUCTIVE_ACTIONS_PREVIEW_HINT}
-      </span>
       {/* Visible reason when Unsubscribe is gated off for lack of a
           channel — the title attr alone is hover-only and disabled
           buttons drop out of the tab order, so the reason must also
@@ -215,8 +222,10 @@ export function ActionToolbar({
           role="note"
           style={{
             width: '100%',
-            fontSize: 11.5,
-            color: color.fgSoft,
+            gridColumn: '1 / -1',
+            textAlign: 'center',
+            fontSize: text.sm,
+            color: color.fgMuted,
             lineHeight: 1.5,
           }}
         >

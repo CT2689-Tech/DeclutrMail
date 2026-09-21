@@ -6,7 +6,7 @@
  * after a fetched-and-empty response) is also asserted.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   act,
   fireEvent,
@@ -16,6 +16,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useRevertUndo, useRevertUndoMember } from '@/lib/api/use-action';
 
 const mockAuth = vi.hoisted(() => ({
@@ -24,15 +25,29 @@ const mockAuth = vi.hoisted(() => ({
   cleanupRemaining: null as number | null,
   /** Active mailbox's initial-sync readiness (QA-onboarding-20260828-01). */
   readiness: 'ready' as 'queued' | 'syncing' | 'ready' | 'failed' | null,
+  activeMailboxId: 'mb-1',
 }));
 
 // The screen reads the active mailbox label via `useAuth`; stub it so the
 // test renders without mounting the real AuthProvider (which fetches `me`).
+// The pane is the detail agent's surface (its own tests cover it); here it
+// only has to prove WHICH sender the list opened.
+vi.mock('./detail/sender-detail-pane', () => ({
+  SenderDetailPane: ({ senderId, onClose }: { senderId: string; onClose: () => void }) => (
+    <aside data-testid="sender-detail-pane">
+      {senderId}
+      <button type="button" onClick={onClose}>
+        Close sender details
+      </button>
+    </aside>
+  ),
+}));
+
 vi.mock('@/features/auth/auth-provider', () => {
   const useMockAuth = () => ({
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: 'w' },
-      activeMailboxId: 'mb-1',
+      activeMailboxId: mockAuth.activeMailboxId,
       tier: mockAuth.tier,
       cleanupRemaining: mockAuth.cleanupRemaining,
       mailboxes: [
@@ -77,7 +92,7 @@ import {
   type FetchStubHandler,
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
-import { SENDERS_LAYOUT_STORAGE_KEY, useSendersStore } from './store';
+import { useSendersStore } from './store';
 import { sendersKeys } from './api/query-keys';
 import type { SenderListRow } from '@/lib/api/senders';
 
@@ -143,6 +158,7 @@ beforeEach(() => {
   mockAuth.tier = 'plus';
   mockAuth.cleanupRemaining = null;
   mockAuth.readiness = 'ready';
+  mockAuth.activeMailboxId = 'mb-1';
 });
 
 /**
@@ -205,63 +221,6 @@ function renderScreenWithToasts() {
       <ToastHost />
     </QueryWrapper>,
   );
-}
-
-/**
- * Stock /api/senders/summary response (#145, real-data counts). Defaults
- * match a small, single-sender mailbox so tests that don't care about
- * the summary don't need to override; per-test overrides shape the
- * aggregates when the summary IS what's under test.
- */
-function sendersSummaryHandler(
-  overrides: Partial<{
-    totalSenders: number;
-    activeSenders: number;
-    last30dVolume: number;
-    noiseReducible: number;
-    protected: number;
-    needsReview: number;
-    byBucket: {
-      one_time: number;
-      protect: number;
-      people: number;
-      needs_review: number;
-      quiet: number;
-      dormant: number;
-      bulk: number;
-      other: number;
-    };
-    qCapture: { value: string | null };
-  }> = {},
-) {
-  return {
-    method: 'GET' as const,
-    path: '/api/senders/summary',
-    respond: (_req: Request, url: URL) => {
-      if (overrides.qCapture) overrides.qCapture.value = url.searchParams.get('q');
-      return jsonOk({
-        data: {
-          totalSenders: overrides.totalSenders ?? 1,
-          activeSenders: overrides.activeSenders ?? 1,
-          last30dVolume: overrides.last30dVolume ?? 30,
-          noiseReducible: overrides.noiseReducible ?? 0,
-          protected: overrides.protected ?? 0,
-          needsReview: overrides.needsReview ?? 0,
-          byBucket: overrides.byBucket ?? {
-            one_time: 0,
-            protect: 0,
-            people: 0,
-            needs_review: 0,
-            quiet: 0,
-            dormant: 0,
-            bulk: 0,
-            other: 1,
-          },
-          asOf: '2026-06-01T00:00:00.000Z',
-        },
-      });
-    },
-  };
 }
 
 /** A populated /api/senders page with a single eligible sender (`ROW`). */
@@ -336,9 +295,8 @@ function compositePreviewHandler(all: number) {
 describe('SendersScreen — edge states', () => {
   beforeEach(() => {
     installFetchStub([]);
-    // Reset the view to grid (D49 — default) so a prior
-    // test that flipped the toggle doesn't leak into the next.
-    useSendersStore.setState({ view: 'grid' });
+    // Reset the sort so a prior test doesn't leak into the next.
+    useSendersStore.setState({ sort: 'total', direction: 'desc' });
   });
   afterEach(() => resetFetchStub());
 
@@ -367,7 +325,6 @@ describe('SendersScreen — edge states', () => {
           return attempts === 1 ? jsonServerError() : oneSenderHandler().respond();
         },
       },
-      sendersSummaryHandler(),
     ]);
 
     renderScreen();
@@ -384,9 +341,6 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(screen.getAllByText(/Sender A/).length).toBeGreaterThan(0));
     expect(attempts).toBe(2);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: 'Manual decisions vs automatic rules →' }),
-    ).toHaveAttribute('href', '/methodology#automation-method');
   });
 
   it('renders the no-ACTIVE-senders state on the default visit, with a show-all escape hatch', async () => {
@@ -443,10 +397,9 @@ describe('SendersScreen — edge states', () => {
       ]);
 
       renderScreen();
-      await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
-      expect(
-        screen.getByText(/your mailbox is still syncing\. this list will update/i),
-      ).toBeInTheDocument();
+      await waitFor(() =>
+        expect(screen.getByRole('heading', { name: /still syncing/i })).toBeInTheDocument(),
+      );
       expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
     },
   );
@@ -474,14 +427,12 @@ describe('SendersScreen — edge states', () => {
     ]);
 
     renderScreen();
-    // "Scan failed" renders twice — the freshness strip AND the
-    // empty-state heading — so disambiguate on the heading role.
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: /scan failed/i })).toBeInTheDocument(),
     );
-    expect(
-      screen.getByText(/last scan didn.t finish, so this list may be incomplete/i),
-    ).toBeInTheDocument();
+    // Said once: the empty state owns it, the warning line stays out.
+    expect(screen.getAllByText(/scan failed/i)).toHaveLength(1);
+    expect(screen.getByText(/retry in settings/i)).toBeInTheDocument();
     expect(screen.queryByText(/no active senders/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no senders yet/i)).not.toBeInTheDocument();
   });
@@ -511,17 +462,17 @@ describe('SendersScreen — edge states', () => {
       ]);
 
       renderScreen();
-      await waitFor(() => expect(screen.getByText(/no senders yet/i)).toBeInTheDocument());
+      await waitFor(() =>
+        expect(screen.getByRole('heading', { name: /still syncing/i })).toBeInTheDocument(),
+      );
 
       fireEvent.change(screen.getByPlaceholderText('Search senders…'), {
         target: { value: 'anything' },
       });
 
-      await waitFor(() =>
-        expect(
-          screen.getByText(/still syncing, so this search can.t be answered/i),
-        ).toBeInTheDocument(),
-      );
+      // Past the search debounce: the same state, never "no senders match".
+      await new Promise((r) => setTimeout(r, 600));
+      expect(screen.getByRole('heading', { name: /still syncing/i })).toBeInTheDocument();
       expect(screen.queryByText(/no senders match/i)).not.toBeInTheDocument();
     },
   );
@@ -554,11 +505,8 @@ describe('SendersScreen — edge states', () => {
       target: { value: 'anything' },
     });
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(/last scan didn.t finish, so this search can.t be answered/i),
-      ).toBeInTheDocument(),
-    );
+    await new Promise((r) => setTimeout(r, 600));
+    expect(screen.getByRole('heading', { name: /scan failed/i })).toBeInTheDocument();
     expect(screen.queryByText(/no senders match/i)).not.toBeInTheDocument();
   });
 
@@ -610,41 +558,18 @@ describe('SendersScreen — edge states', () => {
     expect(lastQ).toBe('dealskhoj');
   });
 
-  it('shows the server snapshot time and mailbox scope beside sender counts', async () => {
-    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+  it('says nothing about freshness on a healthy list, and states the count once', async () => {
+    installFetchStub([oneSenderHandler()]);
 
     renderScreen();
 
     await screen.findAllByText(/Sender A/);
-    const freshness = screen.getByTestId('sender-results-freshness');
-    // Coverage line answers "am I looking at everything?" — indexed
-    // total + a results-as-of time (2026-07-16 founder smoke).
-    // QA-senders-filtering-20260901-09: no longer repeats "for
-    // {mailboxEmail}" — the eyebrow above already names the mailbox.
-    expect(freshness).toHaveTextContent(/senders in this mailbox/i);
-    expect(freshness).not.toHaveTextContent(/for me@example\.com/i);
-    // QA-sync-20260831-10 item 3: `asOf` is a request-compute timestamp,
-    // not a measured sync completion, even in this healthy branch —
-    // "Results as of" describes what the value actually is.
-    expect(freshness).toHaveTextContent(/results as of/i);
-    expect(
-      freshness.querySelector('time[datetime="2026-05-29T12:00:00.000Z"]'),
-    ).toBeInTheDocument();
-    // QA-senders-filtering-20260901-07, Codex round-1 review: the
-    // `datetime` attribute check above only proves the ISO value is
-    // present — it says nothing about which timezone the VISIBLE label
-    // renders in, which is the entire fix. Computed rather than
-    // hardcoded (e.g. "PDT") so this passes under whatever TZ the test
-    // runner's own environment resolves — the fix is "reader's own
-    // zone", not "always this one".
-    const expectedZoneName = new Intl.DateTimeFormat('en-US', { timeZoneName: 'short' })
-      .formatToParts(new Date('2026-05-29T12:00:00.000Z'))
-      .find((p) => p.type === 'timeZoneName')?.value;
-    expect(expectedZoneName).toBeTruthy();
-    expect(freshness).toHaveTextContent(expectedZoneName!);
-    // One responsive line serves both desktop and mobile; it wraps instead
-    // of being hidden behind either view's layout breakpoint.
-    expect(freshness).toHaveStyle({ display: 'flex', flexWrap: 'wrap' });
+    expect(screen.queryByTestId('sender-results-freshness')).not.toBeInTheDocument();
+    expect(screen.queryByText(/results as of/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/senders match|in this mailbox/i)).not.toBeInTheDocument();
+    // The default view is active-only and no chip says so — the hero does.
+    expect(screen.getByTestId('senders-hero')).toHaveTextContent(/active senders/);
+    expect(screen.queryByRole('group', { name: 'Active filters' })).not.toBeInTheDocument();
   });
 
   it('does not claim "Results as of" a time it never measured while the mailbox is still syncing (QA-onboarding-20260828-01)', async () => {
@@ -655,7 +580,7 @@ describe('SendersScreen — edge states', () => {
     // pre-disconnect snapshot "Results as of <now>" asserts a currency
     // the app never checked.
     mockAuth.readiness = 'syncing';
-    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+    installFetchStub([oneSenderHandler()]);
 
     renderScreen();
 
@@ -681,7 +606,7 @@ describe('SendersScreen — edge states', () => {
     // Same negative control as the `syncing` case above, for the
     // readiness value that fix's own guard didn't cover.
     mockAuth.readiness = 'failed';
-    installFetchStub([oneSenderHandler(), sendersSummaryHandler()]);
+    installFetchStub([oneSenderHandler()]);
 
     renderScreen();
 
@@ -730,7 +655,6 @@ describe('SendersScreen — edge states', () => {
           });
         },
       },
-      sendersSummaryHandler(),
     ]);
 
     renderScreen();
@@ -742,7 +666,9 @@ describe('SendersScreen — edge states', () => {
       target: { value: 'filtered' },
     });
 
-    expect(await screen.findByText('Updating results…', {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(
+      await screen.findByText(/rows are read-only/, {}, { timeout: 2000 }),
+    ).toBeInTheDocument();
     const region = screen.getByTestId('sender-results-region');
     expect(region).toHaveAttribute('aria-busy', 'true');
     expect(region).toHaveAttribute('aria-disabled', 'true');
@@ -777,21 +703,16 @@ describe('SendersScreen — edge states', () => {
     await waitFor(() => expect(region).toHaveAttribute('aria-busy', 'false'));
     const freshCheckbox = screen.getByRole('checkbox', { name: /select filtered sender/i });
     expect(freshCheckbox).not.toBeDisabled();
-    expect(screen.queryByText('Updating results…')).not.toBeInTheDocument();
-    expect(
-      screen
-        .getByTestId('sender-results-freshness')
-        .querySelector('time[datetime="2026-06-02T09:30:00.000Z"]'),
-    ).toBeInTheDocument();
+    expect(screen.queryByTestId('sender-results-freshness')).not.toBeInTheDocument();
   });
 
   // QA-senders-20260901-01: the case above is a NEW-key placeholder swap
   // (`isPlaceholderData`). The other real trigger — a SAME-key background
   // refetch, e.g. the `invalidateQueries(['senders'])` every bulk action
   // fires on completion — left the old `showingStaleRows` flag `false`
-  // throughout, so the chips and freshness caption kept asserting the
-  // PREVIOUS response's numbers as current with no cue at all.
-  it('flags the chip counts and freshness caption as updating during a same-key background refetch', async () => {
+  // throughout, so the headline count kept asserting the PREVIOUS
+  // response's number as current with no cue at all.
+  it('flags the hero count as updating during a same-key background refetch', async () => {
     let resolveRefetch: ((response: Response) => void) | null = null;
     let fetchCount = 0;
     installFetchStub([
@@ -828,7 +749,6 @@ describe('SendersScreen — edge states', () => {
           });
         },
       },
-      sendersSummaryHandler(),
     ]);
 
     const client = createTestQueryClient();
@@ -846,22 +766,16 @@ describe('SendersScreen — edge states', () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByTestId('sender-results-freshness')).toHaveTextContent(/Updating results…/),
+      expect(screen.getByTestId('senders-hero')).toHaveAttribute('aria-busy', 'true'),
     );
     // The prior response's row is still shown (this is NOT a placeholder
     // swap) — the read-only fieldset guard must NOT engage for this path,
-    // only the two aggregates.
+    // only the aggregate.
     const region = screen.getByTestId('sender-results-region');
     expect(region).toHaveAttribute('aria-busy', 'false');
-    expect(screen.getByRole('group', { name: 'Filter and sort senders' })).toHaveAttribute(
-      'aria-busy',
-      'true',
-    );
-    // Codex round-1 review: the caption must not claim the rows are
-    // read-only when they demonstrably aren't (the checkbox stays live).
-    expect(screen.getByTestId('sender-results-freshness')).not.toHaveTextContent(
-      /rows are read-only/,
-    );
+    // Nothing may claim the rows are read-only when they demonstrably
+    // aren't (the checkbox stays live).
+    expect(screen.queryByText(/rows are read-only/)).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /select sender a/i })).not.toBeDisabled();
 
     await act(async () => {
@@ -891,13 +805,7 @@ describe('SendersScreen — edge states', () => {
     });
 
     await waitFor(() =>
-      expect(screen.getByTestId('sender-results-freshness')).not.toHaveTextContent(
-        /Updating results…/,
-      ),
-    );
-    expect(screen.getByRole('group', { name: 'Filter and sort senders' })).toHaveAttribute(
-      'aria-busy',
-      'false',
+      expect(screen.getByTestId('senders-hero')).toHaveAttribute('aria-busy', 'false'),
     );
   });
 
@@ -928,7 +836,6 @@ describe('SendersScreen — edge states', () => {
           });
         },
       },
-      sendersSummaryHandler(),
     ]);
 
     renderScreen();
@@ -1066,10 +973,9 @@ describe('SendersScreen — edge states', () => {
       fireEvent.click(screen.getByRole('button', { name: /Show active only/i }));
       await screen.findByText(/under these filters/);
 
-      expect(screen.getByText(/1 sender matches outside these filters/)).toBeInTheDocument();
       expect(screen.queryByText(/found nothing/)).not.toBeInTheDocument();
-      // And the way back is one click, with the query intact.
-      fireEvent.click(screen.getByRole('button', { name: /^Show all matches$/ }));
+      // The way back is one click, names what it found, and keeps the query.
+      fireEvent.click(screen.getByRole('button', { name: /^Show 1 without filters$/ }));
       expect(await screen.findByTestId('senders-widened-notice')).toBeInTheDocument();
     });
 
@@ -1104,13 +1010,14 @@ describe('SendersScreen — edge states', () => {
       });
 
       expect(
-        await screen.findByText(
-          /Nothing matches outside your filters either/,
-          undefined,
+        await screen.findByRole(
+          'heading',
+          { name: /No senders match "zzzznotasender"/ },
           AFTER_SEARCH_DEBOUNCE,
         ),
       ).toBeInTheDocument();
       expect(screen.queryByTestId('senders-widened-notice')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /without filters/ })).not.toBeInTheDocument();
     });
 
     // QA-senders-20260901-09: a non-activity filter (protected/has-unsub/
@@ -1146,6 +1053,7 @@ describe('SendersScreen — edge states', () => {
 
       // Off the default 'active' filter, onto 'protected' — the branch
       // `describeNarrowedFilters` has no activity bucket name for.
+      fireEvent.click(screen.getByRole('button', { name: /^filter/i }));
       fireEvent.click(screen.getByRole('radio', { name: /only active/i }));
       fireEvent.click(screen.getByRole('button', { name: /^protected/i }));
 
@@ -1162,13 +1070,10 @@ describe('SendersScreen — edge states', () => {
     });
   });
 
-  // QA-senders-filtering-20260901-01: a filter-only zero result (no
-  // search term, so the F011 widen-probe never runs) used to hide the
-  // ENTIRE ComposeStrip along with the rows, leaving "Clear search &
-  // filters" as the only way out — which also threw away a search term
-  // that was never set. The strip must stay mounted so a single filter
-  // can be adjusted instead of the whole compose being nuked.
-  it('keeps the filter bar mounted when filters alone narrow to zero — no search term (QA-senders-filtering-20260901-01)', async () => {
+  // A filter-only zero result (no search term, so the F011 widen-probe
+  // never runs) must leave the filter itself adjustable — not only a
+  // clear-everything exit that also throws away a search never made.
+  it('keeps the filter removable when filters alone narrow to zero — no search term (QA-senders-filtering-20260901-01)', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -1192,18 +1097,18 @@ describe('SendersScreen — edge states', () => {
     renderScreen();
     await screen.findAllByText(/Sender A/);
 
+    fireEvent.click(screen.getByRole('button', { name: /^filter/i }));
     fireEvent.click(screen.getByRole('button', { name: /^protected/i }));
+    fireEvent.keyDown(document, { key: 'Escape' });
 
-    expect(
-      await screen.findByText('Nothing matches this combination of filters.'),
-    ).toBeInTheDocument();
+    await screen.findByRole('heading', { name: 'No senders match these filters' });
     // The gentle exit, not the search-shaped one — there was no search.
     expect(screen.getByRole('button', { name: /^Clear filters$/ })).toBeInTheDocument();
     expect(screen.queryByText(/Clear search & filters/)).not.toBeInTheDocument();
-    // The load-bearing assertion: the filter chip itself is STILL there,
-    // so the user can turn "protected" back off directly instead of
+    // The load-bearing assertion: the filter itself is STILL on screen as
+    // a chip, so "protected" can be turned back off directly instead of
     // clearing everything.
-    expect(screen.getByRole('button', { name: /^protected/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove filter: Protected' })).toBeInTheDocument();
   });
 
   it('narrows the list server-side when the "you wrote to them" chip is toggled (D38)', async () => {
@@ -1246,6 +1151,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findAllByText(/Sender A/);
     expect(screen.getAllByText(/Replied Sender/).length).toBeGreaterThan(0);
 
+    fireEvent.click(screen.getByRole('button', { name: /^filter/i }));
     fireEvent.click(screen.getByRole('button', { name: /you wrote to them/i }));
 
     // The refetch carries wrote-to=true and the never-written-to sender drops out.
@@ -1368,7 +1274,6 @@ describe('SendersScreen — edge states', () => {
     let trashed = false;
     let currentMailOnly: string | null = null;
     installFetchStub([
-      sendersSummaryHandler(),
       {
         method: 'GET',
         path: '/api/senders',
@@ -2154,7 +2059,6 @@ describe('SendersScreen — edge states', () => {
             });
           },
         },
-        sendersSummaryHandler(),
         compositePreviewHandler(12),
         {
           // Aggregated preview for the bulk-refusal step (Beta + Gamma).
@@ -2302,7 +2206,7 @@ describe('SendersScreen — edge states', () => {
  */
 describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   beforeEach(() => {
-    useSendersStore.setState({ view: 'grid', sort: 'total', direction: 'desc' });
+    useSendersStore.setState({ sort: 'total', direction: 'desc' });
   });
   afterEach(() => resetFetchStub());
 
@@ -2561,8 +2465,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
   });
 
   // Founder report 2026-09-20: "After selecting any action … no clue if the
-  // request went through. Rows stay as-is for a long time." — made in the
-  // TABLE layout, which had no busy state at all.
+  // request went through. Rows stay as-is for a long time."
   describe('rows say what is happening to them', () => {
     function bulkStub(
       batch: () => Record<string, unknown>,
@@ -2604,7 +2507,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     const donePills = () =>
       [...document.querySelectorAll('[data-dm-row-activity="done"]')].map((el) => el.textContent);
     const rowOf = (name: RegExp) =>
-      screen.getByRole('checkbox', { name }).closest('tr, article') as HTMLElement;
+      screen.getByRole('checkbox', { name }).closest('[role="listitem"]') as HTMLElement;
 
     it('un-marks the rows when ONE sender of the bulk is undone from the pill', async () => {
       // The pill's per-sender Undo sends `memberToken`, not `token` — the
@@ -2644,7 +2547,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     });
 
     it('leaves busy rows out of a shift-range that spans them', async () => {
-      useSendersStore.setState({ view: 'table' });
       const idle = (id: string) => ({
         ...ROW,
         id,
@@ -2681,8 +2583,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(box('b')).not.toBeChecked();
     });
 
-    it('marks every member of a bulk busy in the TABLE layout while the job runs, then done', async () => {
-      useSendersStore.setState({ view: 'table' });
+    it('marks every member of a bulk busy while the job runs, then done', async () => {
       let state: Record<string, unknown> = running;
       bulkStub(() => state);
       renderScreen();
@@ -2719,7 +2620,6 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(screen.queryByText('Archiving…')).toBeNull();
       expect(rowOf(/select sender a/i)).not.toHaveAttribute('aria-busy');
       expect(within(rowOf(/select sender a/i)).getByRole('checkbox')).toBeEnabled();
-      useSendersStore.setState({ view: 'grid' });
     });
 
     it('holds the confirm modal on "Submitting…" until the server accepts, then closes it', async () => {
@@ -3728,46 +3628,198 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 });
 
 /**
- * Grid/table toggle (D49) + cursor pagination (D202). These tests
- * exercise "Load more" pagination + the infinite-scroll sentinel.
+ * One list + the detail pane, and cursor pagination (D202): "Load more"
+ * + the infinite-scroll sentinel.
  */
-describe('SendersScreen — view toggle (D49) + pagination & load more (D202)', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    useSendersStore.setState({ view: 'grid' });
-  });
+describe('SendersScreen — one list, detail pane, pagination & load more (D202)', () => {
   afterEach(() => {
     resetFetchStub();
-    // The layout now persists per device — never leak it to a later suite.
-    localStorage.clear();
   });
 
-  it('opens in the table layout after a page load when this device last chose it', async () => {
-    // Founder report 2026-09-20: a refresh / back-forward load fell back
-    // to grid. A fresh load = default store + whatever storage holds.
-    localStorage.setItem(
-      SENDERS_LAYOUT_STORAGE_KEY,
-      JSON.stringify({ view: 'table', density: 'comfortable' }),
-    );
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-    ]);
+  it('renders ONE list — no grid, table or density switch', async () => {
+    installFetchStub([oneSenderHandler()]);
 
     renderScreen();
     await waitFor(() => expect(screen.getByText('Sender A')).toBeInTheDocument());
-    expect(screen.queryByTestId('sender-grid')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Table' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('list', { name: 'Senders' })).toBeInTheDocument();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^(grid|table|compact|comfortable)$/i }),
+    ).toBeNull();
+    expect(screen.getByRole('heading', { level: 1, name: 'Senders' })).toBeInTheDocument();
+  });
+
+  const ROW_B = {
+    ...ROW,
+    id: 's2',
+    displayName: 'Sender B',
+    email: 'b@b.example',
+    domain: 'b.example',
+  };
+
+  /** The pane exists only from 1100px up; the test DOM defaults narrower. */
+  function wideViewport() {
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => {
+      const limit = /\(max-width:\s*(\d+)px\)/.exec(query);
+      return {
+        matches: limit != null && 1440 <= Number(limit[1]),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      } as unknown as MediaQueryList;
+    }) as typeof window.matchMedia;
+    onTestFinished(() => {
+      window.matchMedia = originalMatchMedia;
+    });
+  }
+
+  function twoSendersHandler() {
+    return {
+      method: 'GET' as const,
+      path: '/api/senders',
+      respond: () =>
+        jsonOk({
+          data: [ROW, ROW_B],
+          meta: {
+            pagination: { nextCursor: null, hasMore: false, limit: 25 },
+            query: { totalMatching: 2, globalMaxTotal: 120, asOf: '2026-05-29T12:00:00.000Z' },
+          },
+        }),
+    };
+  }
+
+  it('opens a sender beside the list from a row click, follows j/k, and closes on Esc', async () => {
+    wideViewport();
+    installFetchStub([twoSendersHandler()]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
+    expect(screen.getByTestId('sender-detail-pane')).toHaveTextContent(ROW.id);
+
+    fireEvent.keyDown(window, { key: 'j' });
+    expect(screen.getByTestId('sender-detail-pane')).toHaveTextContent('s2');
+    expect(screen.getByRole('link', { name: 'Sender B' })).toHaveAttribute('aria-current', 'true');
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
+  });
+
+  // The pane shows ONE sender; a verb key must not act on a checkbox
+  // selection somewhere else in the list.
+  it('ignores the bulk verb keys while the pane is open, and restores them once it closes', async () => {
+    wideViewport();
+    installFetchStub([twoSendersHandler()]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('link', { name: 'Sender B' }));
+    expect(screen.getByTestId('sender-detail-pane')).toHaveTextContent('s2');
+
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(screen.queryByText(/archive email from 1 sender/i)).not.toBeInTheDocument();
+
+    // Not a dead key: with the pane closed the same press previews the selection.
+    fireEvent.click(screen.getByRole('button', { name: 'Close sender details' }));
+    expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
+    fireEvent.keyDown(document.body, { key: 'a' });
+    expect(await screen.findByText(/archive email from 1 sender/i)).toBeInTheDocument();
+  });
+
+  // The open sender's id belongs to the mailbox it was opened in — after a
+  // switch it would refetch against the new mailbox and 404.
+  it('closes the pane when the active mailbox changes', async () => {
+    wideViewport();
+    installFetchStub([twoSendersHandler()]);
+
+    const view = renderScreen();
+    fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
+    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+
+    // Control: a re-render in the SAME mailbox leaves the pane alone.
+    view.rerender(
+      <QueryWrapper client={lastClient}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+
+    mockAuth.activeMailboxId = 'mb-2';
+    view.rerender(
+      <QueryWrapper client={lastClient}>
+        <SendersScreen />
+      </QueryWrapper>,
+    );
+    await waitFor(() => expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument());
+  });
+
+  it('closes the pane on the mailbox scope-reset event', async () => {
+    wideViewport();
+    installFetchStub([twoSendersHandler()]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
+    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
+    });
+    expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
+  });
+
+  // Esc belongs to whatever is on top: the top-bar help popover (a dialog)
+  // closes first, the pane on the next press.
+  it('leaves Esc to an open dialog, then closes the pane on the next press', async () => {
+    wideViewport();
+    installFetchStub([twoSendersHandler()]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
+
+    const popover = document.createElement('div');
+    popover.setAttribute('role', 'dialog');
+    document.body.appendChild(popover);
+    onTestFinished(() => popover.remove());
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+
+    popover.remove();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
+  });
+
+  // The help popover handles Esc on `document` and, in a browser, React
+  // unmounts it before the pane's `window` listener runs — so by then no
+  // dialog is left in the DOM to defer to. The consumed press is the signal.
+  it('does not close the pane on an Esc a layer above already consumed', async () => {
+    wideViewport();
+    installFetchStub([twoSendersHandler()]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
+
+    const consume = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') e.preventDefault();
+    };
+    document.addEventListener('keydown', consume);
+    onTestFinished(() => document.removeEventListener('keydown', consume));
+
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+
+    document.removeEventListener('keydown', consume);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
+  });
+
+  it('never opens the pane from a checkbox or a verb', async () => {
+    installFetchStub([oneSenderHandler()]);
+
+    renderScreen();
+    fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^More actions for/ }));
+    expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
   });
 
   it('loads the next page when "Load more" is clicked (D202 cursor pagination)', async () => {
@@ -3837,16 +3889,22 @@ describe('SendersScreen — view toggle (D49) + pagination & load more (D202)', 
     // Manual IntersectionObserver harness — happy-dom has no layout, so
     // intersection is driven by hand: capture the observer callback and
     // fire it as if the sentinel scrolled into the 400px margin.
-    const callbacks: IntersectionObserverCallback[] = [];
-    const observed: Element[] = [];
+    //
+    // Observers are matched to the element they watch, never taken by
+    // creation order: `next/link` also constructs IntersectionObservers
+    // (viewport prefetch) for the row links, at a time of its choosing, so
+    // "the newest observer" is sometimes a link's — whose callback loads
+    // nothing (this test failed ~3 runs in 4 that way).
+    const observers: FakeIO[] = [];
     class FakeIO {
       cb: IntersectionObserverCallback;
+      observed: Element[] = [];
       constructor(cb: IntersectionObserverCallback) {
         this.cb = cb;
-        callbacks.push(cb);
+        observers.push(this);
       }
       observe(el: Element) {
-        observed.push(el);
+        this.observed.push(el);
       }
       disconnect() {}
       unobserve() {}
@@ -3895,11 +3953,12 @@ describe('SendersScreen — view toggle (D49) + pagination & load more (D202)', 
       renderScreen();
       await waitFor(() => expect(screen.getByText('Sender A')).toBeInTheDocument());
       const sentinel = screen.getByTestId('load-more-sentinel');
-      expect(observed).toContain(sentinel);
+      const sentinelObserver = observers.filter((io) => io.observed.includes(sentinel)).at(-1);
+      expect(sentinelObserver).toBeDefined();
 
       // Scroll the sentinel "into view" — next page fetches with NO click.
       act(() => {
-        callbacks.at(-1)!(
+        sentinelObserver!.cb(
           [{ isIntersecting: true } as IntersectionObserverEntry],
           {} as IntersectionObserver,
         );
@@ -3913,50 +3972,21 @@ describe('SendersScreen — view toggle (D49) + pagination & load more (D202)', 
       globalThis.IntersectionObserver = prevIO;
     }
   });
-
-  it('defaults to grid view and flips to table when the toggle is clicked (D49)', async () => {
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/senders',
-        respond: () =>
-          jsonOk({
-            data: [ROW],
-            meta: {
-              pagination: { nextCursor: null, hasMore: false, limit: 25 },
-              query: { totalMatching: 0, globalMaxTotal: 0, asOf: '2026-05-29T12:00:00.000Z' },
-            },
-          }),
-      },
-    ]);
-
-    renderScreen();
-    // Default — grid is visible.
-    await waitFor(() => expect(screen.getByTestId('sender-grid')).toBeInTheDocument());
-    // Flip to table — find the segmented control's Table button.
-    const tableBtn = screen.getByRole('button', { name: 'Table' });
-    fireEvent.click(tableBtn);
-    await waitFor(() => expect(useSendersStore.getState().view).toBe('table'));
-    // After flipping, the grid is gone.
-    expect(screen.queryByTestId('sender-grid')).not.toBeInTheDocument();
-  });
 });
 
 /**
  * Real-data counts mandate (#145) — headline figures MUST reflect
- * mailbox-wide aggregates from the server (`?q=` forwarded to both the
- * list and summary endpoints; hero count from `meta.query.totalMatching`),
- * never the ≤50-row loaded page.
+ * mailbox-wide aggregates from the server (`?q=` forwarded to the list
+ * endpoint; hero count from `meta.query.totalMatching`), never the
+ * ≤50-row loaded page.
  */
-describe('SendersScreen — summary-driven aggregates (#145)', () => {
+describe('SendersScreen — server-driven aggregates (#145)', () => {
   beforeEach(() => {
     installFetchStub([]);
-    useSendersStore.setState({ view: 'grid' });
   });
   afterEach(() => resetFetchStub());
 
-  it('typed search forwards ?q= to both the list AND the summary endpoint', async () => {
-    const summaryQ = { value: null as string | null };
+  it('typed search forwards ?q= to the list endpoint', async () => {
     let listQ: string | null = null;
     installFetchStub([
       {
@@ -3977,25 +4007,15 @@ describe('SendersScreen — summary-driven aggregates (#145)', () => {
           });
         },
       },
-      sendersSummaryHandler({
-        totalSenders: 1,
-        activeSenders: 1,
-        last30dVolume: 30,
-        noiseReducible: 0,
-        protected: 0,
-        needsReview: 0,
-        qCapture: summaryQ,
-      }),
     ]);
 
     renderScreen();
     await screen.findAllByText(/Sender A/);
-    // Type into the search box; both endpoints must receive the debounced `q`.
+    // Type into the search box; the list must receive the debounced `q`.
     fireEvent.change(screen.getByRole('combobox', { name: /search senders/i }), {
       target: { value: 'foo' },
     });
-    await waitFor(() => expect(summaryQ.value).toBe('foo'), { timeout: 2000 });
-    expect(listQ).toBe('foo');
+    await waitFor(() => expect(listQ).toBe('foo'), { timeout: 2000 });
   });
 });
 

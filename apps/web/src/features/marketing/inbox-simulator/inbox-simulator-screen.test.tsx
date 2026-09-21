@@ -584,7 +584,7 @@ describe('InboxSimulatorScreen', () => {
   it('tracks the simulator OAuth exit through the shared public CTA event', () => {
     render(<InboxSimulatorScreen />);
 
-    fireEvent.click(screen.getByRole('link', { name: /^Review my Gmail senders/ }));
+    fireEvent.click(screen.getByRole('link', { name: /^Start free/ }));
 
     expect(track).toHaveBeenCalledWith('landing_cta_clicked', {
       cta: 'connect_gmail',
@@ -618,7 +618,7 @@ describe('InboxSimulatorScreen', () => {
   it('uses one label for the connect action', () => {
     render(<InboxSimulatorScreen />);
     expect(screen.queryByText(/^Connect Gmail/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Review my Gmail senders/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^Start free/).length).toBeGreaterThan(0);
   });
 
   it('names the tier that grants Autopilot, derived from the manifest', () => {

@@ -115,42 +115,13 @@ for (const route of HYDRATED_ROUTES) {
     // `scripts/assert-e2e-ran.mjs` FAILS a suite that reports any skip,
     // so an empty seed would turn a healthy run red.
     if (route !== '/senders') return;
-    const firstPeek = page.locator('button[data-dm-peek]').first();
-    if ((await firstPeek.count()) === 0) return;
-
-    // RETRY the click until the peek actually opens.
-    //
-    // A single click here was flaky on CI (run 32752069060), and not for
-    // the reason it looked like. The trace's DOM snapshots carry 16
-    // `data-dm-peek` buttons and zero rendered peek panels: the click
-    // succeeded and did nothing, then `getAttribute` sat out its full
-    // 15s implicit wait for a link that was never going to appear.
-    //
-    // The button is in the SERVER HTML — `isFeatureEnabled('senderPeek')`
-    // is a static lookup, so it renders identically either side of
-    // hydration — but its `onClick` exists only after React attaches.
-    // Playwright sees a visible, enabled <button> and clicks it happily
-    // in that gap. `expectRouteHydrates` waits a FIXED 750ms, which is a
-    // sleep rather than a hydration signal, and `/senders` is the
-    // heaviest route in the product (this file's own header says so), so
-    // a loaded runner outlives the sleep.
-    //
-    // `toPass` re-runs the whole block, so a click that lands pre-
-    // hydration is simply retried once React is listening. It still
-    // FAILS if the panel never opens — the one thing this must not do is
-    // swallow the absence, which is what `detailRoute === null` below
-    // was written to do and never could: `getAttribute` throws on a
-    // missing element rather than returning null, and `a[href^=...]`
-    // only matches elements that already have an href, so that branch
-    // was unreachable twice over.
-    const detailLink = page.locator('a[href^="/senders/"]').first();
-    await expect(async () => {
-      await firstPeek.click();
-      await expect(detailLink, 'peek panel did not open').toBeAttached({ timeout: 2_000 });
-    }).toPass({ timeout: 30_000 });
-
+    // Every list row's name is a real link to its detail page, present
+    // in the server HTML — no click (and so no hydration race) is needed
+    // to discover the route.
+    const detailLink = page.locator('[data-testid^="sender-row-"] a[href^="/senders/"]').first();
+    if ((await detailLink.count()) === 0) return;
     const detailRoute = await detailLink.getAttribute('href');
-    expect(detailRoute, 'peek panel rendered no full-page link').not.toBeNull();
+    expect(detailRoute, 'sender row rendered no detail link').not.toBeNull();
     await expectRouteHydrates(page, detailRoute!);
   });
 }

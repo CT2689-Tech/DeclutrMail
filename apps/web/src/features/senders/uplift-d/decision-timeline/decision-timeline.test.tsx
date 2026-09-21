@@ -70,11 +70,11 @@ describe('<DecisionTimeline /> — Variant D', () => {
     expect(filled).toContain('background:var(--dm-primary)');
   });
 
-  it('renders non-current items outlined (background = card)', () => {
+  it('renders non-current items outlined (background = page)', () => {
     const outlined = renderToStaticMarkup(
       <DecisionTimeline items={[{ id: '1', when: '3w ago', what: 'x' }]} />,
     );
-    expect(outlined).toContain('background:var(--dm-card)');
+    expect(outlined).toContain('background:var(--dm-bg)');
   });
 
   it('renders a connector line for all items except the last', () => {

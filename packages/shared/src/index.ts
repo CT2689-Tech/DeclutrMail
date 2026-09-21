@@ -137,13 +137,14 @@ export { InlineProgress } from './components/inline-progress';
 export type { InlineProgressProps } from './components/inline-progress';
 
 export { Sidebar } from './shell/sidebar';
+export type { NavCount } from './shell/sidebar';
 export { AppShell } from './shell/app-shell';
 
 // D200 — Zustand client-state scaffold. Server state lives in
 // TanStack Query; client-only ephemeral flags shared across features
 // live here.
 export { useUiStore } from './state/ui-store';
-export type { UiState, UiActions } from './state/ui-store';
+export type { UiState, UiActions, ScreenHelp } from './state/ui-store';
 
 // D19 — tier manifest + entitlement model. Pure TS (also importable via
 // the `@declutrmail/shared/entitlements` subpath without the component
@@ -191,7 +192,6 @@ export {
   PRIVACY_BADGE_LEAD,
   PRIVACY_STORAGE_LABEL,
   PRIVACY_NEVER_LABEL,
-  GMAIL_PREVIEW_FIELD_LABEL,
   OAUTH_SCOPE_DISCLOSURE,
   CASA_VERIFICATION_APPROVED_ON,
   CASA_VERIFICATION_APPROVED_MONTH,

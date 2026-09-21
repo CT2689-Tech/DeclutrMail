@@ -20,7 +20,7 @@ describe('ProductStoryShell CTA tracking', () => {
     fireEvent.click(screen.getByRole('link', { name: 'See the walkthrough' }));
     expect(track).not.toHaveBeenCalled();
 
-    const connectLinks = screen.getAllByRole('link', { name: 'Connect your Gmail' });
+    const connectLinks = screen.getAllByRole('link', { name: 'Start free' });
     fireEvent.click(connectLinks[0]!);
     fireEvent.click(connectLinks[1]!);
     fireEvent.click(screen.getByRole('link', { name: 'Compare plans' }));

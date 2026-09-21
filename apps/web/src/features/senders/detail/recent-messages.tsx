@@ -1,7 +1,6 @@
 'use client';
 
 import { EmptyState, tokens } from '@declutrmail/shared';
-import { GMAIL_PREVIEW_FIELD_LABEL } from '@declutrmail/shared/copy';
 import { absoluteFromIso, fmtSize, relTimeFromIso } from './data';
 import type { RecentMessage } from './types';
 import { track } from '@/lib/posthog';
@@ -9,7 +8,7 @@ import { addBreadcrumb } from '@/lib/sentry';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { useNow } from '@/lib/use-now';
 
-const { color, font, radius } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * Recent messages list (D39 #4, D41).
@@ -37,14 +36,10 @@ export function RecentMessages({
     <section
       aria-label="Recent messages"
       style={{
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.lg,
-        padding: '16px 20px',
         fontFamily: font.sans,
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
+        gap: 4,
       }}
     >
       <style>{`@media (max-width: 600px) {
@@ -56,48 +51,13 @@ export function RecentMessages({
           justify-self: end;
         }
       }`}</style>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'baseline',
-          flexWrap: 'wrap',
-          gap: 8,
-        }}
-      >
-        {/* QA-sender-detail-20260902-11: the eyebrow and the heading said
-            the same thing ("Recent messages" / "Last N from this sender"),
-            and the heading's count was just how many rows happened to
-            load — it grew as the list paginated. One heading, no count. */}
-        <h2
-          style={{
-            margin: 0,
-            fontSize: 15,
-            fontWeight: 600,
-            letterSpacing: '-0.01em',
-            color: color.fg,
-          }}
-        >
-          Recent messages
-        </h2>
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: 10.5,
-            color: color.fgMuted,
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-          }}
-        >
-          {/* QA-sender-detail-20260902-02: "we never render bodies" sat
-              directly above each row's `message.snippet` line — real
-              Gmail body-derived text (confirmed live: transaction
-              amounts, account digits, merchant names). Name what's
-              actually shown instead of a claim the row beneath it
-              contradicts. */}
-          Opens in Gmail · subject and the {GMAIL_PREVIEW_FIELD_LABEL} only
-        </span>
-      </div>
+      {/* QA-sender-detail-20260902-11: one heading, no count — a count
+          here was just how many rows happened to load. The old caption
+          beside it ("subject and the Gmail preview only") restated what
+          the rows already show; trust copy belongs at a decision point. */}
+      <h2 style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>
+        Recent messages
+      </h2>
 
       {messages.length === 0 ? (
         <EmptyState title="No recent messages" body="New email from this sender shows up here." />
@@ -116,7 +76,7 @@ export function RecentMessages({
             <li
               key={m.id}
               style={{
-                borderTop: idx === 0 ? 'none' : `1px solid ${color.lineSoft}`,
+                borderTop: idx === 0 ? 'none' : `1px solid ${color.line}`,
                 padding: '10px 0',
               }}
             >
@@ -207,7 +167,7 @@ function MessageRow({
             }}
             style={{
               display: 'block',
-              fontSize: 13.5,
+              fontSize: text.md,
               fontWeight: message.unread ? 600 : 500,
               color: color.fg,
               textDecoration: 'none',
@@ -222,7 +182,7 @@ function MessageRow({
           <span
             style={{
               display: 'block',
-              fontSize: 13.5,
+              fontSize: text.md,
               fontWeight: message.unread ? 600 : 500,
               color: color.fg,
               overflow: 'hidden',
@@ -236,7 +196,7 @@ function MessageRow({
         <span
           style={{
             display: 'block',
-            fontSize: 12,
+            fontSize: text.sm,
             color: color.fgMuted,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -257,8 +217,7 @@ function MessageRow({
         // `title=""` on the server render.
         {...(absolute ? { title: absolute } : {})}
         style={{
-          fontFamily: font.mono,
-          fontSize: 11,
+          fontSize: text.xs,
           color: color.fgSoft,
           whiteSpace: 'nowrap',
           fontVariantNumeric: 'tabular-nums',
@@ -273,7 +232,7 @@ function MessageRow({
           alignItems: 'center',
           gap: 6,
           fontFamily: font.mono,
-          fontSize: 11,
+          fontSize: text.xs,
           color: color.fgMuted,
           whiteSpace: 'nowrap',
         }}

@@ -5,7 +5,7 @@ import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { describeWouldAction } from './action-label';
 import { resolveSenderIdentity, SENDER_SYNCING_LABEL } from './sender-label';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * One row in a D104 "Pending Autopilot suggestions" group.
@@ -78,7 +78,7 @@ export function PendingSuggestionRow({
           {isIdentified ? (
             <span
               style={{
-                fontSize: 13,
+                fontSize: text.md,
                 fontWeight: 600,
                 color: color.fg,
                 maxWidth: 320,
@@ -93,8 +93,7 @@ export function PendingSuggestionRow({
           ) : (
             <span
               style={{
-                fontFamily: font.mono,
-                fontSize: 11.5,
+                fontSize: text.xs,
                 fontWeight: 600,
                 color: color.fg,
                 padding: '2px 7px',
@@ -107,7 +106,7 @@ export function PendingSuggestionRow({
               {SENDER_SYNCING_LABEL}
             </span>
           )}
-          <span style={{ fontSize: 13, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
+          <span style={{ fontSize: text.md, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
         </div>
         <div
           style={{
@@ -115,7 +114,7 @@ export function PendingSuggestionRow({
             alignItems: 'center',
             gap: 8,
             marginTop: 4,
-            fontSize: 11.5,
+            fontSize: text.xs,
             color: color.fgMuted,
           }}
         >

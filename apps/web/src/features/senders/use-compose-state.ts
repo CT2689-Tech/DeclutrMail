@@ -14,7 +14,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
 import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { parseSendersScope } from './api/senders-scope';
-import { DEFAULT_COMPOSE, EMPTY_COMPOSE, type ComposeState } from './compose-strip';
+import { DEFAULT_COMPOSE, EMPTY_COMPOSE, type ComposeState } from './filters';
 import { useSendersStore } from './store';
 
 interface SenderScope {

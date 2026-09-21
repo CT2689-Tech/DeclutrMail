@@ -23,7 +23,7 @@ const SIZES: Record<
   ButtonSize,
   { h: number; px: number; fs: number; gap: number; radius: number }
 > = {
-  sm: { h: 26, px: 10, fs: 11.5, gap: 5, radius: 6 },
+  sm: { h: 28, px: 12, fs: 12, gap: 5, radius: 6 },
   md: { h: 32, px: 14, fs: 13, gap: 7, radius: 7 },
   lg: { h: 38, px: 18, fs: 14, gap: 8, radius: 8 },
 };

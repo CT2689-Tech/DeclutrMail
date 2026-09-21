@@ -122,7 +122,7 @@ describe('DevAuthController.login', () => {
       expect.objectContaining({ userId: 'u1', workspaceId: 'w1' }),
     );
     expect(res.cookie).toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(302, expect.stringContaining('/senders'));
+    expect(res.redirect).toHaveBeenCalledWith(302, expect.stringContaining('/home'));
   });
 });
 

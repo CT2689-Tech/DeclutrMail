@@ -255,10 +255,7 @@ describe('BillingScreen — designed states', () => {
     expect(screen.getByTestId('plan-option-pro')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'See the full comparison →' })).toHaveAttribute(
-      'href',
-      '/pricing',
-    );
+    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveAttribute('href', '/pricing');
     expect(screen.queryByText(/couldn't load/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -1812,6 +1809,39 @@ describe('BillingScreen — paid subscriber', () => {
     const banner = await screen.findByTestId('founding-banner');
     expect(within(banner).getByText('Founding Pro member')).toBeInTheDocument();
     expect(within(banner).getByText(/price locked at \$129\/yr/)).toBeInTheDocument();
+  });
+
+  it('one notice slot: the money notice leads, the rest wait behind "+N"', async () => {
+    mockTier = 'pro';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...PRO_SUB,
+          foundingMember: true,
+          pendingCheckout: null,
+          complimentary: null,
+          subscription: {
+            ...SUB,
+            cycle: 'annual',
+            foundingMember: true,
+            scheduledChange: {
+              tier: 'plus',
+              cycle: 'annual',
+              effectiveAt: SUB.currentPeriodEnd!,
+              state: 'scheduled',
+            },
+          },
+        },
+      }),
+    );
+    renderScreen();
+
+    // The scheduled change outranks the founding banner.
+    expect(await screen.findByTestId('scheduled-plan-change-notice')).toBeInTheDocument();
+    expect(screen.queryByTestId('founding-banner')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('notice-slot-toggle'));
+    expect(screen.getByTestId('founding-banner')).toBeInTheDocument();
   });
 
   it('cancel flow: preview copy (D120/D121) → confirm posts reason → card updates', async () => {

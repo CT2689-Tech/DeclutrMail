@@ -9,7 +9,7 @@ import { useNow } from '@/lib/use-now';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * The live "what moves" figure for the preview — the sender's
@@ -192,12 +192,9 @@ export function ActionPreviewPresentation({
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span
             style={{
-              fontFamily: font.mono,
-              fontSize: 10,
+              fontSize: text.xs,
               fontWeight: 600,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: color.primary,
+              color: color.fgMuted,
             }}
           >
             {previewEyebrowLabel(verb)}
@@ -221,7 +218,7 @@ export function ActionPreviewPresentation({
         {lead !== null && (
           <p
             style={{
-              fontSize: 12.5,
+              fontSize: text.sm,
               color: color.fgSoft,
               margin: '4px 0 0',
               lineHeight: 1.5,
@@ -257,7 +254,7 @@ export function ActionPreviewPresentation({
       {counts && detailSlot}
 
       {quotaRemaining !== null && quotaRemaining !== undefined && (
-        <div style={{ fontSize: 11.5, color: color.fgMuted }}>
+        <div style={{ fontSize: text.xs, color: color.fgMuted }}>
           Uses {unitsNeeded.toLocaleString('en-US')} of your{' '}
           {quotaRemaining.toLocaleString('en-US')} cleanup action
           {quotaRemaining === 1 ? '' : 's'} left this month.
@@ -268,7 +265,7 @@ export function ActionPreviewPresentation({
       {verb !== 'Keep' && (
         <div
           style={{
-            fontSize: 12,
+            fontSize: text.sm,
             color: color.fgMuted,
             lineHeight: 1.5,
             fontFamily: font.sans,
@@ -286,8 +283,7 @@ export function ActionPreviewPresentation({
             {ageLabel !== null && (
               <span
                 style={{
-                  fontFamily: font.mono,
-                  fontSize: 9.5,
+                  fontSize: text.xs,
                   color: color.fgMuted,
                   whiteSpace: 'nowrap',
                 }}
@@ -326,13 +322,13 @@ function ImpactFigure({
 }) {
   const strongStyle: CSSProperties = {
     fontFamily: font.display,
-    fontSize: mode === 'modal' ? 22 : 18,
+    fontSize: mode === 'modal' ? text['2xl'] : text.xl,
     fontWeight: 600,
     letterSpacing: '-0.02em',
     color: color.fg,
     fontVariantNumeric: 'tabular-nums',
   };
-  const captionStyle: CSSProperties = { fontSize: 12, color: color.fgSoft };
+  const captionStyle: CSSProperties = { fontSize: text.sm, color: color.fgSoft };
 
   if (!counts) {
     return (

@@ -112,12 +112,9 @@ describe('FollowupsScreen — edge states', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /no follow-ups observed\./i }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /^no follow-ups$/i })).toBeInTheDocument(),
     );
-    expect(screen.getByText(/in the last 60 days/i)).toBeInTheDocument();
-    expect(screen.getByText(/next check runs within about six hours/i)).toBeInTheDocument();
+    expect(screen.getByText(/last 60 days/i)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });
@@ -126,7 +123,7 @@ describe('FollowupsScreen — populated list', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it('renders the stats summary line + grouped sections per D90', async () => {
+  it('renders the header + grouped sections per D90', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -137,13 +134,11 @@ describe('FollowupsScreen — populated list', () => {
 
     renderScreen();
 
-    // Stats summary line — total + "over a week" counts.
-    await waitFor(() =>
-      expect(screen.getByText(/2 threads with no later reply observed/i)).toBeInTheDocument(),
-    );
-    expect(screen.getByText(/1 over a week/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Follow-ups' }),
+    ).toBeInTheDocument();
 
-    // Both priority group headings render.
+    // Both priority group headings render, each carrying its count once.
     expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /1.3 days · 1/i })).toBeInTheDocument();
 
@@ -174,15 +169,10 @@ describe('FollowupsScreen — populated list', () => {
 
     renderScreen();
 
-    expect(await screen.findByText(/based on your sent email/i)).toBeInTheDocument();
-    expect(screen.getByText(/not live gmail status/i)).toBeInTheDocument();
-    const disclosure = screen
-      .getByText('Why a thread may still appear — and how to hide it')
-      .closest('details');
-    expect(disclosure).not.toBeNull();
-    expect(disclosure).toHaveTextContent(/run about every six\s+hours/i);
-    expect(disclosure).toHaveTextContent(/last 60 days/i);
-    expect(disclosure).toHaveTextContent(/does not mark a recipient reply or change Gmail/i);
+    // The two behaviour-changing facts stay visible beside the list.
+    const note = await screen.findByText(/about every six hours/i);
+    expect(note).toHaveTextContent(/recent reply can still show/i);
+    expect(note).toHaveTextContent(/nothing changes in Gmail/i);
     expect(
       screen.getByRole('button', {
         name: /mark resolved in declutrmail — big boss/i,
@@ -243,8 +233,8 @@ describe('FollowupsScreen — D88 dismiss', () => {
     // (success invalidates the list).
     await waitFor(() => expect(dismissCalls).toBe(1));
     await waitFor(() => expect(listCalls).toBeGreaterThanOrEqual(2));
-    // Stats summary reflects the surviving row.
-    expect(screen.getByText(/1 thread with no later reply observed/i)).toBeInTheDocument();
+    // The emptied group's heading goes with its last row.
+    expect(screen.queryByRole('heading', { name: /over a week/i })).not.toBeInTheDocument();
   });
 
   it('transitions to the D91 empty state when the last row is dismissed', async () => {
@@ -271,9 +261,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
     fireEvent.click(screen.getByRole('button', { name: /mark resolved in declutrmail/i }));
 
     await waitFor(() =>
-      expect(
-        screen.getByRole('heading', { name: /no follow-ups observed\./i }),
-      ).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /^no follow-ups$/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText('Big Boss')).not.toBeInTheDocument();
   });
@@ -314,7 +302,7 @@ describe('FollowupsScreen — D88 dismiss', () => {
     // …then the 500 rolls the snapshot back — the row returns, nothing
     // pretends to have worked.
     await waitFor(() => expect(screen.getByText('Big Boss')).toBeInTheDocument());
-    expect(screen.getByText(/2 threads with no later reply observed/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
   });
 });
 

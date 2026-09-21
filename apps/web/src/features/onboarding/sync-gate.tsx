@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
@@ -10,72 +9,55 @@ import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-ma
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
 
-const { color, font } = tokens;
+const { color, font, text, radius, motion } = tokens;
 
 /**
  * Onboarding sync gate (D109, D224).
  *
  * "Reading your inbox…" — the strict gate (D6) shown after a Gmail
- * connect, before the app opens. The progress bar + stage indicator
- * are driven by REAL backend state (`progress_pct`, `current_stage`)
- * — no fake ticking (D109 hard rule).
+ * connect, before the app opens. ONE progress bar bound to the real
+ * `progress_pct` and ONE sentence naming the real `current_stage` —
+ * no fake ticking (D109 hard rule), no aspirational stage list.
  *
  * This file is the PRESENTATIONAL view: it takes a `SyncStatus` and
  * renders. Polling + the ready→advance redirect live in the route
  * (`app/onboarding/page.tsx`) so Storybook can drive every state
  * (queued / syncing / ready / failed) without a network.
  *
- * Privacy (D7 / D228): the shared `PrivacyBadge` ("We never fetch or
- * store full email contents" + the generated storage list) is the
- * load-bearing trust artifact. The gate shows only stage labels + a
- * percentage; it never renders message-derived data.
- *
- * The counter phrasing this comment used to quote ("Full bodies
- * fetched: 0") is BANNED by CLAUDE.md §2.1 and is asserted absent by
- * this file's own tests — it was stale text one copy-paste away from
- * becoming real copy.
+ * Privacy (D7 / D228): the gate shows a stage sentence + a percentage
+ * and never renders message-derived data. The trust badge is NOT here:
+ * a waiting screen is not a decision point — it renders on the promise
+ * step, directly above the button that starts Google consent.
  */
-
-/** The six user-facing stages (D109), in order. */
-const UI_STAGES = [
-  'Reading sender info',
-  'Grouping by sender',
-  'Calculating email patterns',
-  'Detecting spikes & cadence',
-  'Preparing recommendations',
-  'Done — your inbox is ready',
-] as const;
 
 /**
- * Resolve which of the six UI stages is "active" right now.
- *
- * The backend has fewer, coarser DB stages than the six aspirational
- * UI labels, so the active row is derived from REAL `progress_pct`
- * (0–100 → one of six buckets) rather than a 1:1 stage map — this
- * keeps the animation honest (it only moves when the worker reports
- * progress) while still lighting all six rows over a sync's lifetime.
- * A `ready` readiness pins every row complete regardless of the
- * percentage the worker last wrote.
+ * ONE sentence per REAL backend stage (D224). Typed against the
+ * contract's stage union, so a new worker stage is a compile error here
+ * until it has a sentence — the gate can never show a label for work
+ * the worker is not doing.
  */
-function activeStageIndex(status: SyncStatus): number {
-  if (status.readiness_status === 'ready') return UI_STAGES.length;
-  // A non-finite percentage must not defeat the clamps below: every
-  // comparison against NaN is false, so `Math.min/max` propagate it
-  // unchanged and NO row would light up — the frozen-gate shape.
-  const pct = Number.isFinite(status.progress_pct) ? status.progress_pct : 0;
-  const bucket = Math.floor((pct / 100) * UI_STAGES.length);
-  // Clamp to len-2, NOT len-1. len-1 IS "Done — your inbox is ready", so
-  // the old bound did precisely what its comment said it prevented: the
-  // worker writes `computing_recommendations, 90` and then
-  // `finalizing, 97` while still `syncing`, and for that whole span —
-  // the score cascade over every sender, minutes on a large mailbox —
-  // the gate rendered "Done — your inbox is ready" in bold with
-  // aria-current="step", under a heading still reading "Reading your
-  // inbox…", while the app stayed gated (audit 2026-08-21).
-  //
-  // "Done" is now reachable ONLY from `readiness_status === 'ready'`
-  // above, which is the one signal that means it.
-  return Math.min(UI_STAGES.length - 2, Math.max(0, bucket));
+const STAGE_SENTENCE: Record<SyncStage, string> = {
+  queued: 'Waiting to start.',
+  fetching_metadata: 'Reading sender info.',
+  building_sender_index: 'Grouping email by sender.',
+  computing_recommendations: 'Preparing recommendations.',
+  finalizing: 'Finishing up.',
+  ready: 'Your inbox is ready.',
+  failed: 'The scan stopped.',
+};
+
+/**
+ * The sentence under the bar. "Your inbox is ready" is reachable ONLY
+ * from `readiness_status === 'ready'` — the one signal that means it.
+ * The worker writes late stages at 90–97% while the app is still gated
+ * (the score cascade over every sender, minutes on a large mailbox), and
+ * a stage/readiness disagreement must never read as done (audit
+ * 2026-08-21).
+ */
+function stageSentence(status: SyncStatus): string {
+  if (status.readiness_status === 'ready') return STAGE_SENTENCE.ready;
+  if (status.current_stage === 'ready') return STAGE_SENTENCE.finalizing;
+  return STAGE_SENTENCE[status.current_stage];
 }
 
 /**
@@ -131,22 +113,13 @@ export interface SyncGateEscape {
   returning?: boolean;
 }
 
-/**
- * The gate's eyebrow line. The D106 step machine makes the gate step 3
- * of FIVE for the first-run flow; a secondary-mailbox connect (D116)
- * is not part of that flow, so its route passes plain "One-time scan".
- */
-const DEFAULT_EYEBROW = 'Step 3 of 5 · One-time scan';
-
 export function SyncGate({
   status,
   escape,
-  eyebrow = DEFAULT_EYEBROW,
   mailboxId,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
-  eyebrow?: string;
   /**
    * The mailbox this gate is DISPLAYING. BOTH gates pass it — including
    * first-run, where "the active mailbox" is resolved from a cached
@@ -160,38 +133,26 @@ export function SyncGate({
   if (status.readiness_status === 'failed') {
     return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
   }
-  return <SyncProgress status={status} escape={escape} eyebrow={eyebrow} />;
+  return <SyncProgress status={status} escape={escape} />;
 }
 
 function SyncProgress({
   status,
   escape,
-  eyebrow,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
-  eyebrow: string;
 }) {
-  const active = activeStageIndex(status);
-  const pct = Math.min(100, Math.max(0, status.progress_pct));
+  // A non-finite percentage must not defeat the clamp: every comparison
+  // against NaN is false, so Math.min/max would propagate it into the
+  // width and aria-valuenow — the frozen-gate shape.
+  const pct = Number.isFinite(status.progress_pct)
+    ? Math.min(100, Math.max(0, status.progress_pct))
+    : 0;
 
   return (
     <Shell>
-      <Eyebrow>{eyebrow}</Eyebrow>
-      <h1
-        style={{
-          fontFamily: font.display,
-          fontSize: 30,
-          fontWeight: 600,
-          letterSpacing: '-0.02em',
-          margin: '6px 0 4px',
-        }}
-      >
-        Reading your inbox…
-      </h1>
-      <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 22px', maxWidth: 460 }}>
-        This is a one-time scan. You can close this tab — we’ll email you when your inbox is ready.
-      </p>
+      <h1 style={titleStyle}>Reading your inbox…</h1>
 
       {/* Progress bar — width is the real progress_pct. */}
       <div
@@ -201,11 +162,11 @@ function SyncProgress({
         aria-valuemax={100}
         aria-label="Inbox scan progress"
         style={{
-          height: 8,
+          height: 6,
           width: '100%',
-          maxWidth: 460,
+          marginTop: 20,
           background: color.lineSoft,
-          borderRadius: 9999,
+          borderRadius: radius.pill,
           overflow: 'hidden',
         }}
       >
@@ -214,92 +175,31 @@ function SyncProgress({
             height: '100%',
             width: `${pct}%`,
             background: color.primary,
-            borderRadius: 9999,
-            transition: 'width 400ms ease',
+            borderRadius: radius.pill,
+            transition: `width ${motion.base} ${motion.ease}`,
           }}
         />
       </div>
 
-      {/* Six-stage indicator. */}
-      <ol
-        style={{
-          listStyle: 'none',
-          padding: 0,
-          margin: '22px 0 0',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-          maxWidth: 460,
-        }}
+      {/* The real current_stage, as one sentence. */}
+      <p
+        role="status"
+        data-testid="sync-stage"
+        style={{ color: color.fgMuted, fontSize: text.md, margin: '12px 0 0' }}
       >
-        {UI_STAGES.map((label, i) => {
-          const state = i < active ? 'done' : i === active ? 'active' : 'pending';
-          return (
-            <li
-              key={label}
-              aria-current={state === 'active' ? 'step' : undefined}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                fontSize: 14,
-                color:
-                  state === 'pending'
-                    ? color.fgMuted
-                    : state === 'active'
-                      ? color.fg
-                      : color.fgSoft,
-                fontWeight: state === 'active' ? 600 : 400,
-              }}
-            >
-              <StageDot state={state} />
-              {label}
-            </li>
-          );
-        })}
-      </ol>
-
-      <PrivacyBadge variant="inline" style={PRIVACY_BADGE_STYLE} />
-      {escape && <SyncEscapeHatch escape={escape} />}
-    </Shell>
-  );
-}
-
-/**
- * "Stay here" keeps waiting on the gate; "Go back" switches the active
- * mailbox to the primary and leaves — the secondary keeps syncing in
- * the background, and the account-switcher badge + ready-toast (D116)
- * announce completion, so the in-background promise is honest.
- */
-function SyncEscapeHatch({ escape }: { escape: SyncGateEscape }) {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
-  return (
-    <div
-      role="region"
-      aria-label="Keep waiting or return to your other inbox"
-      style={{
-        marginTop: 26,
-        maxWidth: 460,
-        width: '100%',
-        padding: '14px 16px',
-        border: `1px solid ${color.border}`,
-        borderRadius: 12,
-        background: color.card,
-      }}
-    >
-      <p style={{ margin: '0 0 12px', fontSize: 13, color: color.fgMuted, lineHeight: 1.5 }}>
-        We’ll keep syncing this inbox in the background and let you know when it’s ready.
+        {stageSentence(status)}
       </p>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-        <Button tone="primary" onClick={() => setDismissed(true)}>
-          Stay here
-        </Button>
-        <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
-          {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
-        </Button>
-      </div>
-    </div>
+
+      {/* The secondary keeps syncing in the background after the hop; the
+          account-switcher badge + ready-toast (D116) announce completion. */}
+      {escape && (
+        <div style={{ marginTop: 24 }}>
+          <Button tone="ghost" onClick={escape.onReturn} disabled={escape.returning ?? false}>
+            {escape.returning ? 'Switching…' : `Go back to ${escape.returnToEmail}`}
+          </Button>
+        </div>
+      )}
+    </Shell>
   );
 }
 
@@ -326,21 +226,8 @@ function SyncFailed({
     'Something interrupted the scan. Your Gmail is untouched — try again.';
   return (
     <Shell>
-      <Eyebrow tone="amber">Scan interrupted</Eyebrow>
-      <h1
-        style={{
-          fontFamily: font.display,
-          fontSize: 28,
-          fontWeight: 600,
-          letterSpacing: '-0.02em',
-          margin: '6px 0 4px',
-        }}
-      >
-        We hit a snag reading your inbox.
-      </h1>
-      <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 20px', maxWidth: 460 }}>
-        {copy}
-      </p>
+      <h1 style={titleStyle}>The inbox scan stopped.</h1>
+      <p style={{ color: color.fgMuted, fontSize: text.md, margin: '8px 0 20px' }}>{copy}</p>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
         {needsReconnect ? (
           // QA-sync-20260831-07: "Try again" here would re-queue a full
@@ -390,7 +277,7 @@ function SyncFailed({
               onClick={() => mailboxId && disconnect.mutate(mailboxId)}
               disabled={!mailboxId || disconnect.isPending}
             >
-              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect and start over'}
+              {disconnect.isPending ? 'Disconnecting…' : 'Disconnect Gmail'}
             </Button>
             <Button tone="ghost" onClick={() => logout.mutate()} disabled={logout.isPending}>
               {logout.isPending ? 'Signing out…' : 'Sign out'}
@@ -398,60 +285,18 @@ function SyncFailed({
           </>
         )}
       </div>
-      <PrivacyBadge variant="inline" style={PRIVACY_BADGE_STYLE} />
     </Shell>
   );
 }
 
-/**
- * Gate placement for the shared trust badge (D228), `inline` variant —
- * the full card renders once, at the decision point (step-promise).
- * Full-width within the 460px shell column, left-aligned (the Shell
- * centers text for the heading/stages).
- */
-const PRIVACY_BADGE_STYLE: React.CSSProperties = {
-  marginTop: 26,
-  width: '100%',
-  textAlign: 'left',
-};
-
-function StageDot({ state }: { state: 'done' | 'active' | 'pending' }) {
-  if (state === 'done') {
-    return (
-      <span
-        aria-hidden
-        style={{
-          width: 16,
-          height: 16,
-          borderRadius: 9999,
-          background: color.primary,
-          color: '#fff',
-          display: 'inline-grid',
-          placeItems: 'center',
-          fontSize: 10,
-          flexShrink: 0,
-        }}
-      >
-        ✓
-      </span>
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      style={{
-        width: 16,
-        height: 16,
-        borderRadius: 9999,
-        border: `2px solid ${state === 'active' ? color.primary : color.border}`,
-        background: state === 'active' ? color.primarySoft : 'transparent',
-        flexShrink: 0,
-        // A gentle pulse on the active dot signals live work.
-        animation: state === 'active' ? 'dm-pulse 1.4s ease-in-out infinite' : undefined,
-      }}
-    />
-  );
-}
+const titleStyle = {
+  fontFamily: font.display,
+  fontSize: text['3xl'],
+  fontWeight: 600,
+  letterSpacing: '-0.02em',
+  lineHeight: 1.15,
+  margin: 0,
+} as const;
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -468,7 +313,6 @@ function Shell({ children }: { children: React.ReactNode }) {
         fontFamily: font.sans,
       }}
     >
-      <style>{'@keyframes dm-pulse{0%,100%{opacity:1}50%{opacity:0.4}}'}</style>
       <div
         style={{
           width: '100%',
@@ -484,5 +328,4 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-export { activeStageIndex, UI_STAGES };
-export type { SyncStage };
+export { stageSentence };

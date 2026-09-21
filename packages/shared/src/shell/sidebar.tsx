@@ -1,10 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { isValidElement } from 'react';
-
 import { Logo } from '../components/logo';
-import { color, font, radius } from '../tokens/tokens';
+import { color, font, motion, radius, text } from '../tokens/tokens';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 
 interface NavItem {
@@ -13,59 +10,63 @@ interface NavItem {
   icon: string;
 }
 
-interface NavGroup {
-  heading: string | null;
-  items: NavItem[];
-}
+/**
+ * A row's count. The object form carries a spoken label for counts whose
+ * bare number would read ambiguously next to the row name ("Screener 3").
+ */
+export type NavCount = string | number | { text: string | number; label: string };
 
 // Honest nav (U-NAV, D207): the sidebar lists ONLY surfaces that are
-// real on main. `screener` (PR #220) and `billing` (PR #219) shipped,
-// so their fb75b05-trimmed entries are restored verbatim below.
-const NAV: NavGroup[] = [
+// real on main. One flat list in journey order — decide, automate,
+// review. Billing and Settings live in the account menu: they are
+// account chores, not places the daily ritual passes through.
+export const NAV: readonly NavItem[] = [
+  { id: 'home', icon: 'M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10' },
   {
-    heading: 'Decide',
-    items: [
-      {
-        id: 'senders',
-        icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
-      },
-      { id: 'triage', icon: 'M3 6h18M6 12h12M9 18h6' },
-      { id: 'screener', icon: 'M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c1 0 2 0 3 .5' },
-    ],
+    id: 'senders',
+    icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
   },
-  {
-    heading: 'Automate',
-    items: [
-      { id: 'autopilot', icon: 'M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
-      { id: 'quiet', icon: 'M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2' },
-    ],
-  },
-  {
-    heading: 'Review',
-    items: [
-      { id: 'brief', icon: 'M4 4h12l4 4v12a2 2 0 0 1-2 2H4zM14 4v4h6' },
-      { id: 'followups', icon: 'M3 12h6l3-9 6 18 3-9h3' },
-      { id: 'snoozed', icon: 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z' },
-      { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
-    ],
-  },
-  {
-    heading: 'Account',
-    items: [
-      { id: 'billing', icon: 'M2 6h20v12H2zM2 10h20' },
-      {
-        id: 'settings',
-        icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
-      },
-    ],
-  },
+  { id: 'triage', icon: 'M3 6h18M6 12h12M9 18h6' },
+  { id: 'screener', icon: 'M9 12l2 2 4-4M21 12c0 5-4 9-9 9s-9-4-9-9 4-9 9-9c1 0 2 0 3 .5' },
+  { id: 'autopilot', icon: 'M12 2L2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5' },
+  { id: 'quiet', icon: 'M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2' },
+  { id: 'brief', icon: 'M4 4h12l4 4v12a2 2 0 0 1-2 2H4zM14 4v4h6' },
+  { id: 'followups', icon: 'M3 12h6l3-9 6 18 3-9h3' },
+  { id: 'snoozed', icon: 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z' },
+  { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
 ];
+
+export const SIDEBAR_WIDTH = 220;
+export const SIDEBAR_RAIL_WIDTH = 56;
+
+export function NavIcon({ d, size = 16 }: { d: string; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ flexShrink: 0 }}
+    >
+      <path d={d} />
+    </svg>
+  );
+}
 
 export function Sidebar({
   active,
   onNavigate,
   onNavigateIntent,
   counts = {},
+  locks = {},
+  collapsed = false,
+  onToggleCollapsed,
+  animateWidth = false,
 }: {
   active: string;
   onNavigate: (id: string) => void;
@@ -75,28 +76,45 @@ export function Sidebar({
    * and touch start; active destinations are ignored.
    */
   onNavigateIntent?: ((id: string) => void) | undefined;
+  /** Per-item count, rendered as quiet numerals (a dot on the rail). */
+  counts?: Partial<Record<string, NavCount>>;
   /**
-   * Per-item badge slot. A `string | number` renders the built-in
-   * count pill; a React element renders as-is (bring-your-own badge —
-   * the web app mounts its D74 `ScreenerBadge` this way).
+   * Per-item lock: the name of the plan that unlocks the row ("Plus").
+   * The shell stays entitlement-agnostic — the host decides what is
+   * locked. Hidden at rest and revealed on row hover / keyboard focus
+   * (tokens.css `.dm-nav-lock`); it stays in the accessibility tree
+   * throughout, so a screen reader hears the gate without hovering.
    */
-  counts?: Partial<Record<string, string | number | ReactNode>>;
+  locks?: Partial<Record<string, string>>;
+  /** Icon-only rail. The mobile drawer never collapses. */
+  collapsed?: boolean;
+  /** Omit to render no collapse toggle (the mobile drawer). */
+  onToggleCollapsed?: (() => void) | undefined;
+  /**
+   * Animate the width change. Off until the user toggles, so a persisted
+   * rail does not visibly slide shut on every page load.
+   */
+  animateWidth?: boolean;
 }) {
   const labels = useLabels();
   return (
     <aside
+      data-collapsed={collapsed ? 'true' : 'false'}
       style={{
-        width: 220,
+        width: collapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH,
         flexShrink: 0,
         height: '100%',
-        overflow: 'auto',
-        borderRight: `1px solid ${color.border}`,
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        borderRight: `1px solid ${color.line}`,
         background: color.paper,
-        padding: '14px 10px',
+        padding: collapsed ? '16px 8px' : '16px 12px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        gap: 20,
         fontFamily: font.sans,
+        ...(animateWidth ? { transition: `width ${motion.base} ${motion.ease}` } : {}),
       }}
     >
       {/* Brand. ADR-0036 is the whole specification: the mark, the
@@ -104,119 +122,159 @@ export function Sidebar({
           component, not to this consumer. `size` is the only lever, and
           24 selects the compact cut (ADR-0036 §Two cuts) — the correct
           geometry at this size, and narrow enough that the lockup fits
-          the 220px rail. */}
-      <div style={{ display: 'flex', alignItems: 'center', padding: '4px 6px' }}>
-        <Logo size={24} />
+          the 220px rail. The icon rail has room for the mark alone. */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'flex-start',
+          height: 28,
+          padding: collapsed ? 0 : '0 8px',
+        }}
+      >
+        <Logo size={24} variant={collapsed ? 'mark' : 'horizontal'} />
       </div>
 
       <nav
         aria-label="Product navigation"
-        style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}
       >
-        {NAV.map((group, gi) => {
-          const headingId =
-            group.heading == null
-              ? undefined
-              : `sidebar-group-${group.heading.toLowerCase()}-heading`;
+        {NAV.map((item) => {
+          const on = active === item.id;
+          const label = labels[item.id];
+          const count = counts[item.id];
+          const lock = locks[item.id];
+          const lockLabel = lock == null ? undefined : `${lock} feature`;
+          const countText = typeof count === 'object' ? count.text : count;
+          const countLabel = typeof count === 'object' ? count.label : undefined;
+          const signalNavigationIntent = () => {
+            if (!on) onNavigateIntent?.(item.id);
+          };
           return (
-            <section
-              key={group.heading ?? `g${gi}`}
-              aria-labelledby={headingId}
-              style={{ display: 'flex', flexDirection: 'column', gap: 2 }}
+            <button
+              key={item.id}
+              type="button"
+              className="dm-nav-row"
+              onClick={() => onNavigate(item.id)}
+              onFocus={signalNavigationIntent}
+              onTouchStart={signalNavigationIntent}
+              onMouseEnter={signalNavigationIntent}
+              aria-current={on ? 'page' : undefined}
+              // The rail hides the label, so the row needs its name back;
+              // `title` is the hover tooltip.
+              aria-label={
+                collapsed ? [label, lockLabel, countLabel].filter(Boolean).join(', ') : undefined
+              }
+              title={collapsed ? label : undefined}
+              style={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap: 10,
+                height: 36,
+                flexShrink: 0,
+                padding: collapsed ? 0 : '0 10px',
+                borderRadius: radius.sm,
+                border: 'none',
+                // Resting + hover backgrounds live in tokens.css
+                // (`.dm-nav-row`) so hover needs no JS and works in both
+                // themes; only the active state is decided here.
+                ...(on ? { background: color.primarySoft } : {}),
+                color: on ? color.primary : color.fg,
+                fontFamily: font.sans,
+                fontSize: text.md,
+                fontWeight: on ? 600 : 400,
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: `background ${motion.fast} ${motion.ease}`,
+              }}
             >
-              {group.heading != null && (
-                <h2
-                  id={headingId}
+              <NavIcon d={item.icon} />
+              {!collapsed && (
+                <span
                   style={{
-                    margin: 0,
-                    padding: '4px 10px 6px',
-                    fontFamily: font.mono,
-                    fontSize: 9.5,
-                    fontWeight: 500,
-                    color: color.fgMuted,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.14em',
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  {group.heading}
-                </h2>
+                  {label}
+                </span>
               )}
-              {group.items.map((item) => {
-                const on = active === item.id;
-                const badge = counts[item.id];
-                const signalNavigationIntent = () => {
-                  if (!on) onNavigateIntent?.(item.id);
-                };
-                return (
-                  <button
-                    key={item.id}
-                    onClick={() => onNavigate(item.id)}
-                    onFocus={signalNavigationIntent}
-                    onTouchStart={signalNavigationIntent}
-                    aria-current={on ? 'page' : undefined}
-                    onMouseEnter={(e) => {
-                      signalNavigationIntent();
-                      if (!on) e.currentTarget.style.background = 'rgba(14,20,19,0.04)';
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!on) e.currentTarget.style.background = 'transparent';
-                    }}
+              {!collapsed && lock != null && (
+                <span
+                  className="dm-nav-lock"
+                  aria-label={lockLabel}
+                  style={{ fontSize: text.xs, color: color.fgMuted }}
+                >
+                  {lock}
+                </span>
+              )}
+              {countText != null &&
+                (collapsed ? (
+                  <span
+                    aria-hidden="true"
+                    data-testid={`nav-dot-${item.id}`}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 9,
-                      padding: '6px 10px',
-                      borderRadius: radius.sm,
-                      border: 'none',
-                      background: on ? color.primarySoft : 'transparent',
-                      color: on ? color.primary : color.fg,
-                      fontFamily: font.sans,
-                      fontSize: 13,
-                      fontWeight: on ? 600 : 500,
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      transition: 'background 0.12s',
+                      position: 'absolute',
+                      top: 8,
+                      right: 12,
+                      width: 6,
+                      height: 6,
+                      borderRadius: radius.pill,
+                      background: color.primary,
+                    }}
+                  />
+                ) : (
+                  <span
+                    aria-label={countLabel}
+                    style={{
+                      fontFamily: font.mono,
+                      fontSize: text.xs,
+                      color: on ? color.primary : color.fgMuted,
                     }}
                   >
-                    <svg
-                      width="15"
-                      height="15"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <path d={item.icon} />
-                    </svg>
-                    <span style={{ flex: 1 }}>{labels[item.id]}</span>
-                    {badge != null &&
-                      (isValidElement(badge) ? (
-                        badge
-                      ) : (
-                        <span
-                          style={{
-                            fontFamily: font.mono,
-                            fontSize: 10,
-                            fontWeight: 600,
-                            padding: '1px 6px',
-                            borderRadius: radius.pill,
-                            background: on ? color.primary : color.mutedBg,
-                            color: on ? color.fgInverse : color.fgMuted,
-                          }}
-                        >
-                          {badge}
-                        </span>
-                      ))}
-                  </button>
-                );
-              })}
-            </section>
+                    {countText}
+                  </span>
+                ))}
+            </button>
           );
         })}
       </nav>
+
+      {onToggleCollapsed && (
+        <button
+          type="button"
+          className="dm-nav-row"
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+          title={collapsed ? 'Expand sidebar' : undefined}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: collapsed ? 'center' : 'flex-start',
+            gap: 10,
+            height: 36,
+            flexShrink: 0,
+            padding: collapsed ? 0 : '0 10px',
+            borderRadius: radius.sm,
+            border: 'none',
+            color: color.fgMuted,
+            fontFamily: font.sans,
+            fontSize: text.sm,
+            cursor: 'pointer',
+            textAlign: 'left',
+            transition: `background ${motion.fast} ${motion.ease}`,
+          }}
+        >
+          <NavIcon d={collapsed ? 'M9 6l6 6-6 6M4 4v16' : 'M15 6l-6 6 6 6M20 4v16'} />
+          {!collapsed && <span>Collapse</span>}
+        </button>
+      )}
     </aside>
   );
 }

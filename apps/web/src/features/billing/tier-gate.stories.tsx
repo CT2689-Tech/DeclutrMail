@@ -59,17 +59,7 @@ function frame(tier: Me['tier']) {
           <TierGate
             capability="brief"
             title="Your Morning Brief"
-            pitch="A daily summary of yesterday's email, written in plain English — in-app, at an hour you choose."
-            bullets={[
-              'REPLY — what actually needs you',
-              'FYI — facts to know',
-              // Matches the route's bullet exactly. D68's card says
-              // "one-click archive"; D226's non-skippable preview means
-              // the flow is always review → Archive → confirm, so the
-              // gate sells the capability without the impossible claim.
-              // See FOUNDER-FOLLOWUPS.md 2026-08-10 (plan drift).
-              'NOISE — archive the whole pile in one confirmed action',
-            ]}
+            pitch="A daily summary of yesterday's email, in-app, at an hour you choose."
           >
             <div
               style={{

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, Eyebrow, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, tokens, useIsAtMost } from '@declutrmail/shared';
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
@@ -40,8 +40,9 @@ import {
   type SubscriptionRecord,
 } from './billing-model';
 import { launchCheckout } from './checkout';
+import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text } = tokens;
 
 /** Self-serve checkout targets (D19) — mirrors `PurchasableTierSchema`. */
 type PaidTier = 'plus' | 'pro';
@@ -518,7 +519,6 @@ export function PlanPicker({
         background: color.card,
         border: `1px solid ${color.border}`,
         borderRadius: radius.lg,
-        boxShadow: tokens.shadow.card,
         padding: '20px 22px',
         display: 'flex',
         flexDirection: 'column',
@@ -534,7 +534,7 @@ export function PlanPicker({
           flexWrap: 'wrap',
         }}
       >
-        <Eyebrow>Plans</Eyebrow>
+        <GroupTitle as="div">Plans</GroupTitle>
         <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
       </div>
 
@@ -629,17 +629,11 @@ export function PlanPicker({
         )
       ) : null}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        <Link
-          href="/pricing"
-          style={{ fontSize: 12.5, color: color.primary, textDecoration: 'none' }}
-        >
-          See the full comparison →
-        </Link>
-        <span style={{ fontSize: 11.5, color: color.fgMuted }}>
-          All paid plans: {MONEY_BACK_NOTE}
-        </span>
-      </div>
+      {/* The money-back note lives in the confirm panel — the point where
+          money moves — and nowhere else on this screen. */}
+      <Link href="/pricing" style={{ fontSize: text.sm, color: color.fgMuted }}>
+        Compare plans
+      </Link>
     </section>
   );
 }
@@ -722,7 +716,7 @@ function CycleToggle({
               padding: '0 14px',
               borderRadius: radius.pill,
               fontFamily: font.sans,
-              fontSize: 12.5,
+              fontSize: text.sm,
               fontWeight: 600,
               background: on ? color.fg : 'transparent',
               color: on ? color.bg : color.fgSoft,
@@ -829,7 +823,7 @@ function PlanCard({
       }}
     >
       <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-        <span style={{ fontSize: 14, fontWeight: 650, color: color.fg }}>
+        <span style={{ fontSize: text.md, fontWeight: 650, color: color.fg }}>
           {tierId === 'pro' ? '⭐ ' : ''}
           {tier.name}
         </span>
@@ -837,7 +831,7 @@ function PlanCard({
           <span
             style={{
               fontFamily: font.mono,
-              fontSize: 9.5,
+              fontSize: text.xs,
               fontWeight: 600,
               textTransform: 'uppercase',
               letterSpacing: '0.08em',
@@ -848,22 +842,22 @@ function PlanCard({
           </span>
         ) : null}
       </span>
-      <span style={{ fontSize: 15, color: color.fg, fontVariantNumeric: 'tabular-nums' }}>
+      <span style={{ fontSize: text.lg, color: color.fg, fontVariantNumeric: 'tabular-nums' }}>
         {price ? `${price.amount}${price.per}` : '—'}
         {price?.note ? (
-          <span style={{ color: color.fgMuted, fontSize: 11.5 }}> · {price.note}</span>
+          <span style={{ color: color.fgMuted, fontSize: text.sm }}> · {price.note}</span>
         ) : null}
       </span>
-      <span style={{ fontSize: 11.5, color: color.fgMuted, lineHeight: 1.4 }}>
+      <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.4 }}>
         {TIER_JOBS[tierId]}
       </span>
       {foundingPrice && tier.promo ? (
-        <span style={{ fontSize: 11, color: color.primary, lineHeight: 1.4 }}>
+        <span style={{ fontSize: text.xs, color: color.primary, lineHeight: 1.4 }}>
           {tier.promo.name}: {foundingPrice}/yr for the first 250 — confirmed at checkout.
         </span>
       ) : null}
       {foundingMemberNote ? (
-        <span style={{ fontSize: 11, color: color.fgMuted, lineHeight: 1.4 }}>
+        <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.4 }}>
           {foundingMemberNote}
         </span>
       ) : null}
@@ -917,7 +911,7 @@ function RazorpaySwitchPanel({
         background: color.paper,
         border: `1px solid ${color.line}`,
         borderRadius: radius.md,
-        fontSize: 13,
+        fontSize: text.md,
         color: color.fgSoft,
         lineHeight: 1.55,
       }}
@@ -930,7 +924,12 @@ function RazorpaySwitchPanel({
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <a
           href={mailto}
-          style={{ fontSize: 12.5, color: color.primary, fontWeight: 600, textDecoration: 'none' }}
+          style={{
+            fontSize: text.sm,
+            color: color.primary,
+            fontWeight: 600,
+            textDecoration: 'none',
+          }}
         >
           Email support with your request →
         </a>
@@ -1008,14 +1007,14 @@ function ChangePlanPanel({
         borderRadius: radius.md,
       }}
     >
-      <Eyebrow>Preview · before anything changes</Eyebrow>
+      <GroupTitle as="div">Preview · before anything changes</GroupTitle>
       {samePlan ? (
-        <p style={{ margin: 0, fontSize: 13, color: color.fgSoft }}>
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           This is your current plan and billing cycle — nothing to change.
         </p>
       ) : (
         <>
-          <p style={{ margin: 0, fontSize: 13, color: color.fg }}>
+          <p style={{ margin: 0, fontSize: text.md, color: color.fg }}>
             <strong style={{ fontWeight: 600 }}>
               {TIER_MANIFEST[fromTier].name} ({fromCycle}) → {TIER_MANIFEST[target].name} ({cycle})
             </strong>
@@ -1032,7 +1031,7 @@ function ChangePlanPanel({
             ) : null}
           </p>
           {isDowngrade ? (
-            <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
               <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your current
               plan stays active
               {effectiveDate ? ` through ${effectiveDate}` : ' through this billing period'}, then{' '}
@@ -1040,7 +1039,7 @@ function ChangePlanPanel({
               period you already paid for.
             </p>
           ) : (
-            <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
               {/* QA-billing-20260901-10, Codex round 2: this whole panel is
                   labeled "Preview · before anything changes" — nothing has
                   been charged or credited yet, Confirm hasn't been clicked.
@@ -1096,7 +1095,7 @@ function ChangePlanPanel({
               2026-07-30). The guarantee still governs the ORIGINAL charge;
               /refunds is where its terms live. */}
           {isDowngrade ? null : (
-            <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
           )}
         </>
       )}
@@ -1105,10 +1104,10 @@ function ChangePlanPanel({
         <div
           role="alert"
           style={{
-            fontSize: 12,
-            color: color.red,
-            background: 'rgba(239,68,68,0.08)',
-            border: `1px solid ${color.red}`,
+            fontSize: text.sm,
+            color: color.danger,
+            background: color.dangerBg,
+            border: `1px solid ${color.danger}`,
             borderRadius: 8,
             padding: '8px 10px',
           }}
@@ -1211,11 +1210,11 @@ function ConfirmPanel({
         borderRadius: radius.md,
       }}
     >
-      <Eyebrow>Preview · before anything changes</Eyebrow>
+      <GroupTitle as="div">Preview · before anything changes</GroupTitle>
       {razorpayOffered ? (
         <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
           {/* D117 — the provider is the user's explicit regional choice. */}
-          <legend style={{ fontSize: 12, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
+          <legend style={{ fontSize: text.sm, color: color.fgMuted, padding: 0, marginBottom: 6 }}>
             How would you like to pay?
           </legend>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1243,7 +1242,7 @@ function ConfirmPanel({
             display: 'flex',
             alignItems: 'baseline',
             gap: 8,
-            fontSize: 12.5,
+            fontSize: text.sm,
             color: color.fg,
             cursor: 'pointer',
           }}
@@ -1265,17 +1264,17 @@ function ConfirmPanel({
         </label>
       ) : null}
 
-      <p style={{ margin: 0, fontSize: 12.5, color: color.fgSoft }}>{impact}</p>
-      <p style={{ margin: 0, fontSize: 11.5, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+      <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>{impact}</p>
+      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
 
       {errorMessage != null && (
         <div
           role="alert"
           style={{
-            fontSize: 12,
-            color: color.red,
-            background: 'rgba(239,68,68,0.08)',
-            border: `1px solid ${color.red}`,
+            fontSize: text.sm,
+            color: color.danger,
+            background: color.dangerBg,
+            border: `1px solid ${color.danger}`,
             borderRadius: 8,
             padding: '8px 10px',
           }}
@@ -1320,7 +1319,7 @@ function ProviderRadio({
         border: `1px solid ${checked ? color.primaryBorder : color.line}`,
         borderRadius: radius.md,
         cursor: 'pointer',
-        fontSize: 12.5,
+        fontSize: text.sm,
       }}
     >
       <input
@@ -1361,7 +1360,7 @@ function DowngradePanel({
         background: color.paper,
         border: `1px solid ${color.line}`,
         borderRadius: radius.md,
-        fontSize: 13,
+        fontSize: text.md,
         color: color.fgSoft,
         lineHeight: 1.55,
       }}

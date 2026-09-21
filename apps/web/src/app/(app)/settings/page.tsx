@@ -1,9 +1,9 @@
 // /settings — Settings index (U23 — D34, D114, D116, D216).
 //
-// Sectioned single-page settings: Mailboxes, Action preferences (D34
-// skip-sheet toggles), Email notifications, Sender lists link, Privacy
-// & Data link, Plan & Billing summary, and the Account danger zone
-// (#218's AccountDeletionSection). The `?cancelDeletion=1` deep link
+// One column of grouped rows: Gmail accounts, Actions (D34 preview
+// placement), Notifications, drill-ins (protected senders, privacy &
+// data, help, plan & billing), and the Account group (#218's
+// AccountDeletionSection). The `?cancelDeletion=1` deep link
 // (from the deletion-scheduled email) scrolls to + highlights the
 // Account section.
 

@@ -292,7 +292,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     renderPage();
 
     expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
-    expect(screen.getByText('Step 3 of 5 · One-time scan')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
   });
 
   // The skip affordance was briefly dropped from step 5 only. It is the
@@ -314,7 +314,10 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     ]);
     renderPage();
 
-    expect(await screen.findByText('Step 5 of 5 · Review senders')).toBeInTheDocument();
+    // pinned === 0 lands on step 5's completion panel.
+    expect(
+      await screen.findByRole('heading', { name: 'No decisions waiting.' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Skip setup for now/i })).toBeInTheDocument();
   });
 
@@ -337,7 +340,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     expect(screen.getByRole('button', { name: /Skip setup for now/i })).toBeInTheDocument();
   });
 
-  it('onboarded user is redirected out to /senders', async () => {
+  it('onboarded user is redirected out to /home', async () => {
     installFetchStub([
       meAuthed('ready'),
       onboardingState({ onboardedAt: '2026-06-11T00:00:00.000Z' }),
@@ -345,7 +348,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     ]);
     renderPage();
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
   });
 
   it('preserves a validated pricing choice through first-run onboarding', async () => {
@@ -375,7 +378,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     ]);
     renderPage();
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
   });
 });
 
@@ -386,18 +389,16 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     renderPage();
 
     expect(await screen.findByText('Reading your inbox…')).toBeInTheDocument();
-    expect(screen.getByText('One-time scan')).toBeInTheDocument();
-    expect(screen.queryByText(/Step 3 of 5/)).not.toBeInTheDocument();
     // Escape hatch back to the other active mailbox is offered.
     expect(screen.getByText(/a@b\.com/)).toBeInTheDocument();
   });
 
-  it('keeps the normal secondary-connect ready exit on /senders', async () => {
+  it('keeps the normal secondary-connect ready exit on /home', async () => {
     searchParams = new URLSearchParams({ mailbox: 'mb2' });
     installFetchStub([secondaryMe(), syncStatus(true)]);
     renderPage();
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
   });
 
   it('returns a ready targeted reconnect to its fixed Settings result and encodes the target', async () => {
@@ -420,13 +421,13 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
       installFetchStub([secondaryMe(), syncStatus(true)]);
       renderPage();
 
-      await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+      await waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
       expect(replace).not.toHaveBeenCalledWith(expect.stringContaining('reconnect_result'));
     },
   );
 
   it.each([
-    ['normal secondary connect', '', '/senders'],
+    ['normal secondary connect', '', '/home'],
     ['targeted reconnect', '1', '/settings'],
   ])(
     'uses the correct fixed exit from the escape hatch for %s',
@@ -444,7 +445,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     },
   );
 
-  it('routes to /senders instead of faking a scan when the target has gone inactive with no other mailbox to escape to (QA-onboarding-20260828-04)', async () => {
+  it('routes to /home instead of faking a scan when the target has gone inactive with no other mailbox to escape to (QA-onboarding-20260828-04)', async () => {
     // The negative control: before the fix, `sync.data ?? {queued, 0%}`
     // fabricated a status object on ANY missing data — including a
     // persistent error — so this screen kept rendering "Reading your
@@ -454,7 +455,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     installFetchStub([soloMe(), syncStatusNoActiveMailbox]);
     renderPage();
 
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/senders'));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/home'));
   });
 
   it.each(['first-run', 'secondary'])(
@@ -493,11 +494,11 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     },
   );
 
-  it('does NOT bail to /senders on a transient sync-status error with no other mailbox — only the exact NO_ACTIVE_MAILBOX code traps (Codex adversarial review, round 1)', async () => {
+  it('does NOT bail to /home on a transient sync-status error with no other mailbox — only the exact NO_ACTIVE_MAILBOX code traps (Codex adversarial review, round 1)', async () => {
     // `sync.isError` alone (the pre-review version of `trapped`) also
     // covers an exhausted 5xx or a network failure — both of which
     // production keeps retryable and self-healing (`refetchOnWindowFocus`
-    // in `use-sync-status.ts`). Bailing to /senders on every such error
+    // in `use-sync-status.ts`). Bailing to /home on every such error
     // would cut that recovery short for a target mailbox that never
     // actually went inactive. Negative control: reverting `trapped` back
     // to `sync.isError && !other` makes this assertion fail.
@@ -513,6 +514,6 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
     renderPage();
 
     await screen.findByText("We couldn't check your inbox scan. Try checking again.");
-    expect(replace).not.toHaveBeenCalledWith('/senders');
+    expect(replace).not.toHaveBeenCalledWith('/home');
   });
 });

@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { color, font, radius } from '../../tokens/tokens';
+import { color, font, radius, text } from '../../tokens/tokens';
 
 /**
  * Promoted shared empty-state primitive (D212).
@@ -115,7 +115,7 @@ export function EmptyState({
       <div>
         <h3
           style={{
-            fontSize: 15,
+            fontSize: text.lg,
             fontWeight: 600,
             margin: 0,
             letterSpacing: '-0.01em',
@@ -126,7 +126,7 @@ export function EmptyState({
         {copy != null && (
           <p
             style={{
-              fontSize: 13,
+              fontSize: text.base,
               color: color.fgMuted,
               margin: '6px 0 0',
               lineHeight: 1.5,
@@ -157,7 +157,7 @@ export function EmptyState({
             maxWidth: 520,
           }}
         >
-          <span style={{ fontSize: 12.5, color: color.fg, textAlign: 'left' }}>
+          <span style={{ fontSize: text.base, color: color.fg, textAlign: 'left' }}>
             <strong style={{ fontWeight: 600 }}>{tierNudge.headline}</strong>{' '}
             <span style={{ color: color.fgSoft }}>{tierNudge.body}</span>
           </span>

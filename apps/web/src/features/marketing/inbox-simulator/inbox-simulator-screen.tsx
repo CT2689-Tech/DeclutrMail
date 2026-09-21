@@ -965,7 +965,7 @@ export function InboxSimulatorScreen() {
             cta="connect_gmail"
             placement="demo"
           >
-            Review my Gmail senders →
+            Start free →
           </TrackedCta>
           <a href="/methodology">See privacy and control details</a>
         </div>
@@ -1236,7 +1236,7 @@ function DemoCompletion({
       </div>
       <div className="dm-simulator-complete-actions">
         <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
-          Review my Gmail senders →
+          Start free →
         </TrackedCta>
         <Button tone="default" onClick={onExplore}>
           Explore all sample senders
@@ -1269,7 +1269,7 @@ function ExploreCompletion({
       <OutcomeSummary decisions={decisions} />
       <div className="dm-simulator-complete-actions">
         <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
-          Review my Gmail senders →
+          Start free →
         </TrackedCta>
         <Button tone="default" onClick={onReset}>
           Start again

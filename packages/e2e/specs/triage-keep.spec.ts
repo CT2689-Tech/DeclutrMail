@@ -85,9 +85,13 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   test.skip(target === null, 'no policy-free, uniquely-named sender in the triage queue');
   const { senderName, senderKey } = target!;
 
-  // ---- Open /triage and find the target row. The header's
-  // accessible name flips expand ↔ collapse with state, so match both.
+  // ---- Open /triage. Focus mode is the default (one sender on stage);
+  // the target can sit anywhere in the queue, so switch to the list —
+  // "See all" — and find its row. The header's accessible name flips
+  // expand ↔ collapse with state, so match both.
   await page.goto('/triage');
+  await expect(page.getByRole('region', { name: 'Current decision' })).toBeVisible();
+  await page.getByRole('button', { name: 'See all' }).click();
   const queue = page.getByRole('list', { name: 'Triage queue' });
   await expect(queue).toBeVisible();
   const escaped = senderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

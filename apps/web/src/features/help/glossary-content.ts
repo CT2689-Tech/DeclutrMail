@@ -77,32 +77,26 @@ export type GlossaryTermId = keyof typeof GLOSSARY_TERMS;
 
 export const GLOSSARY_GROUPS: ReadonlyArray<{
   title: string;
-  description: string;
   terms: readonly GlossaryTermId[];
 }> = [
   {
     title: 'Mail and sender context',
-    description: 'What DeclutrMail groups and shows while you review.',
     terms: ['sender', 'gmailPreview'],
   },
   {
     title: 'Decisions and actions',
-    description: 'The difference between your intent, advice, and a Gmail change.',
     terms: ['decision', 'action', 'suggestion', 'rule'],
   },
   {
     title: 'Standing sender controls',
-    description: 'How to tell DeclutrMail to leave a sender alone.',
     terms: ['protected'],
   },
   {
     title: 'Autopilot modes',
-    description: 'Whether a rule only suggests or can apply changes itself.',
     terms: ['observe', 'active'],
   },
   {
     title: 'Destinations and recovery',
-    description: 'Where email goes and which recovery window applies.',
     terms: ['later', 'activityUndo', 'gmailTrashRecovery'],
   },
 ];

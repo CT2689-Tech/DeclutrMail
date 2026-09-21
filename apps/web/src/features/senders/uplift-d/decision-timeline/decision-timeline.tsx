@@ -20,7 +20,7 @@
 import type { ReactNode } from 'react';
 import { tokens } from '@declutrmail/shared';
 
-const { color, font, radius, shadow, text, space } = tokens;
+const { color, font, text, space } = tokens;
 
 export interface TimelineItem {
   /** Stable key for React reconciliation. */
@@ -76,22 +76,8 @@ export interface DecisionTimelineProps {
  */
 export function DecisionTimeline({ heading, action, items, empty }: DecisionTimelineProps) {
   return (
-    <section
-      className="dm-decision-timeline"
-      style={{
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.lg,
-        padding: `${space[5]}px ${space[6]}px`,
-        boxShadow: shadow.card,
-        marginBottom: space[4],
-        fontFamily: font.sans,
-      }}
-    >
+    <section className="dm-decision-timeline" style={{ fontFamily: font.sans }}>
       <style>{`@media (max-width: 600px) {
-        .dm-decision-timeline {
-          padding: ${space[4]}px !important;
-        }
         .dm-decision-timeline-item {
           grid-template-columns: 62px 18px minmax(0, 1fr) !important;
           gap: ${space[2]}px !important;
@@ -107,22 +93,13 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
             alignItems: 'baseline',
             justifyContent: 'space-between',
             gap: space[3],
-            marginBottom: space[4],
+            marginBottom: space[2],
           }}
         >
           {heading != null && (
-            <h3
-              style={{
-                fontSize: text.xs,
-                textTransform: 'uppercase',
-                letterSpacing: '0.1em',
-                color: color.fgMuted,
-                fontWeight: 500,
-                margin: 0,
-              }}
-            >
+            <h2 style={{ fontSize: text.md, color: color.fg, fontWeight: 600, margin: 0 }}>
               {heading}
-            </h3>
+            </h2>
           )}
           {action}
         </div>
@@ -150,7 +127,6 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
                   fontSize: text.sm,
                   color: color.fgMuted,
                   fontVariantNumeric: 'tabular-nums',
-                  fontFamily: font.mono,
                 }}
               >
                 {item.when}
@@ -161,7 +137,7 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
                   width: 11,
                   height: 11,
                   borderRadius: '50%',
-                  background: item.current ? color.primary : color.card,
+                  background: item.current ? color.primary : color.bg,
                   border: `2px solid ${color.primary}`,
                   zIndex: 1,
                   marginLeft: 3,
@@ -180,7 +156,7 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
                     top: '50%',
                     width: 2,
                     height: '100%',
-                    background: color.lineSoft,
+                    background: color.line,
                     zIndex: 0,
                   }}
                 />

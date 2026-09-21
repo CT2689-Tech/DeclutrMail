@@ -207,39 +207,31 @@ describe('SettingsScreen', () => {
   it('renders every section, including the mounted deletion section', async () => {
     renderScreen();
 
-    expect(screen.getByRole('heading', { name: 'Gmail accounts' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Action preferences' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Email notifications' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Autopilot rules' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Quiet hours' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Protected senders' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Product glossary' })).toBeInTheDocument();
-    // D147 cookie change/withdrawal card, with the effective default
-    // (no stored choice → essential-only) selected.
-    expect(screen.getByRole('heading', { name: 'Cookie preferences' })).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: /essential only/i })).toBeChecked();
-    expect(screen.getByRole('heading', { name: 'Plan & Billing' })).toBeInTheDocument();
+    for (const name of ['Gmail accounts', 'Actions', 'Notifications', 'More', 'Account']) {
+      expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
+    }
+    // Drill-ins to the pages that have no sidebar entry. Autopilot and
+    // Quiet hours are sidebar destinations and do not repeat here.
+    for (const [name, href] of [
+      ['Protected senders', '/settings/senders'],
+      ['Privacy & data', '/settings/privacy'],
+      ['Help & glossary', '/settings/help'],
+      [/plan & billing/i, '/billing'],
+    ] as const) {
+      expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
+    }
+    expect(screen.queryByRole('link', { name: /autopilot/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /quiet hours/i })).not.toBeInTheDocument();
+    // Deep-link targets that emails and OAuth returns point at.
+    for (const id of ['mailboxes', 'notifications', 'account']) {
+      expect(document.getElementById(id)).not.toBeNull();
+    }
     // #218's AccountDeletionSection.
-    expect(screen.getByRole('heading', { name: 'Delete account and data' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Delete account and data' }),
+    ).toBeInTheDocument();
     // Both mailboxes listed.
     expect(screen.getByText('chintan.a.thakkar.crypt@gmail.com')).toBeInTheDocument();
-    // The D114 left-nav anchor rail.
-    const nav = screen.getByRole('navigation', { name: /settings sections/i });
-    expect(nav).toBeInTheDocument();
-    expect(within(nav).getByRole('link', { name: 'Notifications' })).toHaveAttribute(
-      'href',
-      '#notifications',
-    );
-    expect(within(nav).getByRole('link', { name: 'Account' })).toHaveAttribute('href', '#account');
-    expect(within(nav).getByRole('link', { name: 'Help & glossary' })).toHaveAttribute(
-      'href',
-      '#help',
-    );
-    expect(screen.getByRole('link', { name: 'Open product glossary' })).toHaveAttribute(
-      'href',
-      '/settings/help',
-    );
     // Plan summary resolves from the billing read.
     await waitFor(() => expect(screen.getByText('Pro')).toBeInTheDocument());
     // Humanized last-synced stamps resolve from the per-mailbox
@@ -732,13 +724,15 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByText(/billing is not enabled in this environment/i)).toBeInTheDocument(),
+      expect(
+        screen.getByRole('link', { name: /plan & billing.*not enabled/i }),
+      ).toBeInTheDocument(),
     );
-    expect(screen.queryByText(/current plan/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Pro')).not.toBeInTheDocument();
     // The flag being off is deterministic — a retry would be noise.
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
     // The billing link still works — /billing owns the rest.
-    expect(screen.getByRole('link', { name: /manage plan & billing/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /plan & billing/i })).toHaveAttribute(
       'href',
       '/billing',
     );
@@ -761,10 +755,8 @@ describe('SettingsScreen', () => {
 
     // A generic upstream 503 — and BILLING_NOT_PROVISIONED, which also
     // 503s — is an outage, not the flag being off.
-    await waitFor(() =>
-      expect(screen.getByText(/could not load your plan right now/i)).toBeInTheDocument(),
-    );
-    expect(screen.queryByText(/billing is not enabled/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/could not load your plan/i)).toBeInTheDocument());
+    expect(screen.queryByText(/not enabled/i)).not.toBeInTheDocument();
   });
 
   it('recovers the plan card when its Retry succeeds', async () => {
@@ -795,8 +787,8 @@ describe('SettingsScreen', () => {
     const retry = await screen.findByRole('button', { name: /^retry$/i }, { timeout: 5000 });
     await userEvent.click(retry);
 
-    await waitFor(() => expect(screen.getByText(/current plan/i)).toBeInTheDocument());
-    expect(screen.queryByText(/could not load your plan right now/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Pro')).toBeInTheDocument());
+    expect(screen.queryByText(/could not load your plan/i)).not.toBeInTheDocument();
   });
 
   it('renders per-card retry when the settings read fails (page stays usable)', async () => {
@@ -1086,7 +1078,7 @@ describe('SettingsScreen', () => {
     me = makeMe(mailboxesAtProLimit());
     renderScreen();
 
-    const connect = await screen.findByRole('button', { name: /connect another gmail account/i });
+    const connect = await screen.findByRole('button', { name: /add gmail account/i });
     await waitFor(() => expect(connect).toBeDisabled());
     expect(screen.getByRole('link', { name: /upgrade for more/i })).toHaveAttribute(
       'href',
@@ -1127,8 +1119,8 @@ describe('SettingsScreen', () => {
     expect(
       await screen.findByRole('heading', { name: 'Delete account and data' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Privacy & Data' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Plan & Billing' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Privacy & data' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /plan & billing/i })).toBeInTheDocument();
     // The "no mailboxes connected" empty state, not a broken list.
     expect(screen.getByText(/no mailboxes connected/i)).toBeInTheDocument();
     // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.

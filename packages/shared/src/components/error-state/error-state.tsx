@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 
 import { Button } from '../button';
-import { color, font, radius } from '../../tokens/tokens';
+import { color, font, radius, text } from '../../tokens/tokens';
 
 /**
  * Shared retryable read-failure surface.
@@ -52,7 +52,7 @@ export function ErrorState({
         style={{
           color: color.amber,
           fontFamily: font.mono,
-          fontSize: 11,
+          fontSize: text.xs,
           fontWeight: 600,
           letterSpacing: '0.08em',
           textTransform: 'uppercase',
@@ -64,7 +64,7 @@ export function ErrorState({
         <h3
           style={{
             color: color.fg,
-            fontSize: 15,
+            fontSize: text.lg,
             fontWeight: 600,
             margin: 0,
             letterSpacing: '-0.01em',
@@ -75,7 +75,7 @@ export function ErrorState({
         <p
           style={{
             color: color.fgSoft,
-            fontSize: 13,
+            fontSize: text.base,
             lineHeight: 1.5,
             margin: '6px 0 0',
             maxWidth: 400,

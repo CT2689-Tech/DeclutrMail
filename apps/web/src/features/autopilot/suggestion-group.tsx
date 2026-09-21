@@ -6,7 +6,7 @@ import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { PendingSuggestionRow } from './pending-suggestion-row';
 import { presetDisplayName } from './preset-labels';
 
-const { color, font } = tokens;
+const { color, text } = tokens;
 
 /**
  * D104 — one rule's slice of the pending-suggestions buffer:
@@ -63,7 +63,7 @@ export function SuggestionGroup({
       >
         <h3
           style={{
-            fontSize: 12.5,
+            fontSize: text.sm,
             fontWeight: 600,
             letterSpacing: '-0.008em',
             margin: 0,
@@ -75,7 +75,9 @@ export function SuggestionGroup({
             <span style={{ fontWeight: 400, color: color.fgMuted }}> · {daysLeft}</span>
           )}
         </h3>
-        <span style={{ fontSize: 11, color: color.fgMuted, fontFamily: font.mono }}>
+        <span
+          style={{ fontSize: text.xs, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
+        >
           {matches.length} waiting
         </span>
       </div>

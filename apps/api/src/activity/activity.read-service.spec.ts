@@ -1822,113 +1822,8 @@ describe('ActivityReadService', () => {
 
   // ── DQ16 — summary aggregate (share receipt) ─────────────────────────
 
-  describe('weekly review outcomes (D246)', () => {
-    /**
-     * The card sits on a page whose every other number follows the
-     * sender filter. Left unscoped it reported other senders' outcomes
-     * above a one-sender feed, and its count links dropped the filter
-     * on click.
-     */
-    it('counts only the filtered sender when a sender filter is active', async () => {
-      const mine = 'weekly-scope-mine';
-      const other = 'weekly-scope-other';
-      await seedSender(db, mailboxA.mailboxAccountId, mine, 'mine@scope.com', 'Scope Mine');
-      await seedSender(db, mailboxA.mailboxAccountId, other, 'other@scope.com', 'Scope Other');
-
-      for (const senderKey of [mine, other]) {
-        await seedActivity(db, {
-          mailboxAccountId: mailboxA.mailboxAccountId,
-          occurredAt: new Date(NOW_MS - ONE_DAY_MS),
-          source: 'manual',
-          action: 'archive',
-          senderKey,
-        });
-      }
-      const ruleId = await seedRule(db, mailboxA.mailboxAccountId, 'Scope rule');
-      await db.insert(ruleMatchLog).values([
-        {
-          ruleId,
-          mailboxAccountId: mailboxA.mailboxAccountId,
-          senderKey: mine,
-          modeAtMatch: 'observe' as const,
-          confidence: '0.90',
-          reason: 'user skipped',
-          resolution: 'dismissed' as const,
-          resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
-          dismissReason: 'user' as const,
-        },
-        {
-          ruleId,
-          mailboxAccountId: mailboxA.mailboxAccountId,
-          senderKey: other,
-          modeAtMatch: 'active' as const,
-          confidence: '0.90',
-          reason: 'became protected',
-          resolution: 'dismissed' as const,
-          resolvedAt: new Date(NOW_MS - ONE_DAY_MS),
-          dismissReason: 'protected' as const,
-        },
-      ]);
-
-      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
-        completed: 2,
-        skipped: 1,
-        protected: 1,
-      });
-      expect(
-        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'mine@scope.com'),
-      ).toMatchObject({
-        completed: 1,
-        skipped: 1,
-        protected: 0,
-      });
-      expect(
-        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'Scope Other'),
-      ).toMatchObject({
-        completed: 1,
-        skipped: 0,
-        protected: 1,
-      });
-    });
-
-    it('reports an all-zero week for a sender nobody has acted on', async () => {
-      await seedSender(db, mailboxA.mailboxAccountId, 'weekly-quiet', 'quiet@scope.com', 'Quiet');
-      expect(
-        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'quiet@scope.com'),
-      ).toMatchObject({ completed: 0, skipped: 0, failed: 0, recovered: 0, protected: 0 });
-    });
-
-    it('scopes an in-flight failure to the sender whose action failed', async () => {
-      const senderKey = 'weekly-failed-scope';
-      const senderId = await seedSender(
-        db,
-        mailboxA.mailboxAccountId,
-        senderKey,
-        'broke@scope.com',
-        'Broke Scope',
-      );
-      await seedExecutionAttempt(db, {
-        mailboxAccountId: mailboxA.mailboxAccountId,
-        senderId,
-        senderKey,
-        status: 'failed',
-        errorCode: 'InvalidGrantError',
-        createdAt: new Date(NOW_MS - ONE_DAY_MS),
-      });
-      await seedSender(db, mailboxA.mailboxAccountId, 'weekly-fine', 'fine@scope.com', 'Fine');
-
-      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
-        failed: 1,
-      });
-      expect(
-        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'broke@scope.com'),
-      ).toMatchObject({ failed: 1 });
-      expect(
-        await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS, 'fine@scope.com'),
-      ).toMatchObject({ failed: 0 });
-    });
-
-    it('counts only terminal factual outcomes and substantiates skip/protection links', async () => {
+  describe('review outcomes (D246)', () => {
+    it('keeps skipped/protected matches out of the feed and substantiates their evidence links', async () => {
       const senderKey = 'weekly-sender';
       await seedSender(
         db,
@@ -1987,15 +1882,6 @@ describe('ActivityReadService', () => {
         ])
         .returning({ id: ruleMatchLog.id });
 
-      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
-        window: '7d',
-        completed: 1,
-        skipped: 1,
-        failed: 1,
-        recovered: 0,
-        protected: 1,
-      });
-
       const unfiltered = await svc.listActivity({
         mailboxAccountId: mailboxA.mailboxAccountId,
         window: '7d',
@@ -2025,7 +1911,7 @@ describe('ActivityReadService', () => {
       });
     });
 
-    it('excludes user-reverted actions from completed/recovered counts and evidence', async () => {
+    it('excludes user-reverted actions from completed/recovered evidence', async () => {
       const senderKey = 'weekly-undone';
       const senderId = await seedSender(
         db,
@@ -2104,11 +1990,6 @@ describe('ActivityReadService', () => {
         revertedAt: new Date(NOW_MS - ONE_DAY_MS),
       });
 
-      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
-        completed: 1,
-        recovered: 0,
-      });
-
       const evidence = await svc.listActivity({
         mailboxAccountId: mailboxA.mailboxAccountId,
         window: '7d',
@@ -2172,11 +2053,6 @@ describe('ActivityReadService', () => {
         actionJobId: recoveryId,
       });
 
-      expect(await svc.getWeeklyReview(mailboxA.mailboxAccountId, NOW_MS)).toMatchObject({
-        completed: 0,
-        failed: 0,
-        recovered: 1,
-      });
       const evidence = await svc.listActivity({
         mailboxAccountId: mailboxA.mailboxAccountId,
         window: '7d',
@@ -2195,7 +2071,7 @@ describe('ActivityReadService', () => {
       // iteration both compare raw sql expressions (`resolvedAt` wrapper,
       // the failed-terminal-time CASE) against Date bounds. postgres.js
       // rejects a Date bound outside a column encoder, which 500'd the
-      // weekly-review evidence links and truncated every support bundle.
+      // outcome evidence links and truncated every support bundle.
       const senderKey = 'driver-parity-sender';
       const senderId = await seedSender(
         db,
@@ -2330,6 +2206,7 @@ describe('ActivityReadService', () => {
         occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
         source: 'manual',
         action: 'archive',
+        affectedCount: 50,
         senderKey: 'sk-reverted',
         revertedAt: new Date(NOW_MS - 30 * 60 * 1000),
       });
@@ -2338,6 +2215,7 @@ describe('ActivityReadService', () => {
         occurredAt: new Date(NOW_MS - 1 * ONE_DAY_MS),
         source: 'manual',
         action: 'archive',
+        affectedCount: 4,
         senderKey: 'sk-standing',
       });
 
@@ -2347,6 +2225,7 @@ describe('ActivityReadService', () => {
         nowMs: NOW_MS,
       });
       expect(summary.byVerb.archive).toBe(1);
+      expect(summary.emailsByVerb.archive).toBe(4);
       expect(summary.decidedSenders).toBe(1);
     });
 
@@ -2386,6 +2265,13 @@ describe('ActivityReadService', () => {
       });
       expect(summary.byVerb).toEqual({ keep: 1, archive: 1, unsubscribe: 1, later: 1, delete: 1 });
       expect(summary.emailsHandled).toBe(25);
+      expect(summary.emailsByVerb).toEqual({
+        keep: 0,
+        archive: 12,
+        unsubscribe: 3,
+        later: 4,
+        delete: 6,
+      });
       expect(summary.decidedSenders).toBe(5);
       // `since` = earliest CANONICAL row (-5d delete), not the -20d
       // followup-dismiss row.
@@ -2512,6 +2398,7 @@ describe('ActivityReadService', () => {
         since: null,
         decidedSenders: 0,
         byVerb: { keep: 0, archive: 0, unsubscribe: 0, later: 0, delete: 0 },
+        emailsByVerb: { keep: 0, archive: 0, unsubscribe: 0, later: 0, delete: 0 },
         emailsHandled: 0,
         undoCount: 0,
       });

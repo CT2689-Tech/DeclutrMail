@@ -1828,6 +1828,16 @@ preference kept in `localStorage`; grid remains the default for a device
 that never chose, and mobile remains card-list only. The sort is not
 persisted. Everything else in D49 stands.
 
+**[REVERSAL 2026-09-21 on D49 — whole decision]** Founder-approved
+"Apple-simple" redesign: the card grid, the 12-column table, the
+`[Grid | Table]` toggle, the density toggle and the per-device layout
+preference above are all retired. Senders is ONE list on every width
+(logo, name, address, one number, one verb button + the `⋯` menu). On
+viewports ≥ 1100px a row opens the sender in a detail pane beside the
+list (`/senders?sender=<id>`); below that it navigates to
+`/senders/[id]`. The per-sender stats the card carried (read rate,
+trend, last seen, you wrote) live in the pane / detail page.
+
 ### D50 — Per-row interaction: **Collapse/expand pattern matching Triage D36**
 
 **[GRILL PATCH 2026-05-18 → D198]** Uses the shared `useExpandableRow`

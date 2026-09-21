@@ -102,7 +102,7 @@ export function FinalCta({ competitorName }: { competitorName?: string }) {
           cta="connect_gmail"
           placement="final"
         >
-          Connect Gmail <span aria-hidden="true">→</span>
+          Start free <span aria-hidden="true">→</span>
         </TrackedCta>
         <TrackedCta
           href="/pricing"

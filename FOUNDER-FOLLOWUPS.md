@@ -23,6 +23,19 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-21 — Apple-simple redesign: six decisions left for the founder
+**Source:** session 2026-09-21 (redesign PR on `claude/product-simplification-ideas-5a8515`)
+**Why:** The redesign shipped everything that could be verified without touching real mail or production data. These were deliberately left out or need a yes/no:
+1. **Confirm in place (inline confirm instead of the modal).** Not built. It changes the D226 preview surface, and the dev DB is connected to a real Gmail account, so a confirm path cannot be smoked safely without a sandbox mailbox.
+2. **"Biggest senders by size" sort.** `mail_messages.size_bytes` is stored but there is no per-sender aggregate; a sort needs a new column/index on the senders aggregate = a production migration (Tier 1).
+3. **"Recommended" sort.** `SenderListSort` names `'recommended'` but the API returns 400 for it, so it was not added to the menu. Either implement it server-side or delete the type member.
+4. **Sender Detail keyboard shortcuts.** The full page showed K/A/U/L/D key hints that were bound to nothing. They are now bound: `K` applies Keep immediately (D40, no mail moves), the other four open the preview. Off in the split-view pane. Remove the `shortcuts` prop in `detail/action-toolbar.tsx` to revert.
+5. **One name for the sync.** The product says "sync", "scan" and "reading your inbox" for the same operation (pre-existing; Home added the third). Pick one.
+6. **Senders vs Triage disagree on the suggested verb** for the same sender (e.g. Bank of America: Senders leads with Keep, Triage suggests Archive). Pre-existing — two engines; now more visible because both screens show one primary verb.
+**How:** Reply per item; each is its own small PR.
+**Verifies by:** Items move to Done with the PR number or the decision.
+**Status:** Open
+
 ### 2026-09-19 — Confirm Brandfetch's terms cover cached logo delivery, or pick a plan that does
 **Source:** QA-activity-20260918-01 · ADR-0034 tier 3
 **Why:** ADR-0034 records that Brandfetch's general terms make cached delivery subject to a specific written agreement, and that a developer key alone is not one. The tier has run in production since PR #562 (2026-08-19) and DeclutrMail caches what it fetches. Specifically: Brandfetch artwork stops being SERVED after the 30-day cache period (`icons.service.ts` skips stale provider bytes) but is never DELETED — there is no sweep against `domain_icons`, so bytes for a sender nobody views again stay in Postgres past that window. "We honour the 30-day cache term" is therefore not what the code guarantees. The disclosure gap is closed (`/privacy` §8, the data registry, a truth-gate); this licensing question is a separate one that only the founder can settle, and an agent cannot verify a vendor's current terms on the founder's behalf.

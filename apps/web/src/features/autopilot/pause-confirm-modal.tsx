@@ -6,7 +6,7 @@ import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { presetDisplayName } from './preset-labels';
 
-const { color, font } = tokens;
+const { color, font, text } = tokens;
 
 /**
  * D105 master-pause confirmation modal.
@@ -121,13 +121,18 @@ export function PauseConfirmModal({
           <Eyebrow>Preview · before anything changes</Eyebrow>
           <h2
             id="dm-pause-title"
-            style={{ fontSize: 19, fontWeight: 600, letterSpacing: '-0.014em', margin: '6px 0 0' }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 600,
+              letterSpacing: '-0.014em',
+              margin: '6px 0 0',
+            }}
           >
             Pause {n} Autopilot rule{plural}
           </h2>
           <p
             id="dm-pause-lead"
-            style={{ fontSize: 13, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}
+            style={{ fontSize: text.md, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}
           >
             Every running rule is <strong>paused</strong>: no new suggestions, no automated actions.
             Pending suggestions stay and can still be dismissed.
@@ -138,7 +143,7 @@ export function PauseConfirmModal({
           {affected.length === 0 ? (
             <div
               style={{
-                fontSize: 12.5,
+                fontSize: text.sm,
                 color: color.fgMuted,
                 fontStyle: 'italic',
               }}
@@ -158,7 +163,7 @@ export function PauseConfirmModal({
                   key={r.id}
                   style={{
                     fontFamily: font.mono,
-                    fontSize: 11,
+                    fontSize: text.xs,
                     color: color.fgSoft,
                     background: color.paper,
                     border: `1px solid ${color.line}`,
@@ -176,10 +181,10 @@ export function PauseConfirmModal({
             <div
               role="alert"
               style={{
-                fontSize: 12,
-                color: color.red,
+                fontSize: text.sm,
+                color: color.danger,
                 background: 'rgba(239,68,68,0.08)',
-                border: `1px solid ${color.red}`,
+                border: `1px solid ${color.danger}`,
                 borderRadius: 8,
                 padding: '8px 10px',
               }}
@@ -200,7 +205,7 @@ export function PauseConfirmModal({
             borderTop: `1px solid ${color.line}`,
           }}
         >
-          <span style={{ fontSize: 11.5, color: color.fgMuted }}>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
             Re-enable each rule from the rules list.
           </span>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>

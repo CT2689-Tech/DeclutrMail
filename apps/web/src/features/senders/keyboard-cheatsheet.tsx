@@ -11,7 +11,7 @@ import {
 
 import { isTypingTarget } from './keyboard';
 
-const { color, font } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /**
  * Keyboard cheatsheet (§3.1) — the premium-app pattern: shortcuts stay
@@ -75,8 +75,7 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
         style={{
           position: 'fixed',
           inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
+          background: 'var(--dm-scrim)',
           zIndex: 200,
         }}
       />
@@ -94,9 +93,8 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
           maxHeight: '72vh',
           overflow: 'auto',
           background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
+          borderRadius: radius.lg,
+          boxShadow: shadow.pop,
           zIndex: 201,
           fontFamily: font.sans,
         }}
@@ -110,10 +108,7 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
             borderBottom: `1px solid ${color.line}`,
           }}
         >
-          <h2
-            id="dm-cheatsheet-title"
-            style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}
-          >
+          <h2 id="dm-cheatsheet-title" style={{ fontSize: text.lg, fontWeight: 600, margin: 0 }}>
             Keyboard shortcuts
           </h2>
           <button
@@ -124,7 +119,7 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
               all: 'unset',
               cursor: 'pointer',
               color: color.fgMuted,
-              fontSize: 16,
+              fontSize: text.lg,
               lineHeight: 1,
               padding: 2,
             }}
@@ -134,11 +129,16 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div style={{ padding: '8px 20px 16px' }}>
-          <SectionLabel>Sender actions</SectionLabel>
+          <SectionLabel>Selected senders</SectionLabel>
           {CANONICAL_VERBS.map((verb) => {
             const { copy, shortcut } = getActionDescriptor(verb);
             return <ShortcutRow key={verb} keys={shortcut ?? '—'} label={copy.primary} />;
           })}
+
+          <SectionLabel>Sender list</SectionLabel>
+          <ShortcutRow keys="J / ↓" label="Next sender" />
+          <ShortcutRow keys="K / ↑" label="Previous sender" />
+          <ShortcutRow keys="Esc" label="Close sender details" />
 
           <SectionLabel>In a preview</SectionLabel>
           <ShortcutRow keys="⌘⏎" label="Confirm the action" />
@@ -154,11 +154,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        fontFamily: font.mono,
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
+        fontSize: text.xs,
         color: color.fgMuted,
         margin: '14px 0 6px',
       }}
@@ -179,7 +175,7 @@ function ShortcutRow({ keys, label }: { keys: string; label: string }) {
         borderBottom: `1px solid ${color.lineSoft}`,
       }}
     >
-      <span style={{ fontSize: 13, color: color.fg }}>{label}</span>
+      <span style={{ fontSize: text.base, color: color.fg }}>{label}</span>
       <Kbd>{keys}</Kbd>
     </div>
   );

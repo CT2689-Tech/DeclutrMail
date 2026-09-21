@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useNow } from '@/lib/use-now';
-import { Button, Card, tokens } from '@declutrmail/shared';
+import { Button, tokens } from '@declutrmail/shared';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
+import { SettingsGroup } from '../settings-list';
 
-const { color, font } = tokens;
+const { color, font, text, motion, radius } = tokens;
 const MAILBOX_LIMIT_EXPLANATION_ID = 'mailboxes-inbox-limit-explanation';
 
 /**
@@ -53,196 +54,14 @@ export function MailboxesCard({
   const atLimit = inboxLimit !== null && activeCount >= inboxLimit;
 
   return (
-    <Card padding={0}>
-      <div style={{ padding: '18px 20px', fontFamily: font.sans }}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: color.fg }}>
-          Gmail accounts
-        </h3>
-        <p style={mutedTextStyle}>
-          Connected Gmail accounts and their connection health. Switch or disconnect from the
-          account menu in the top bar.
-        </p>
-
-        {mailboxes.length === 0 ? (
-          <p style={mutedTextStyle}>No mailboxes connected yet — connect one to start.</p>
-        ) : (
-          <ul style={{ listStyle: 'none', margin: '12px 0 0', padding: 0 }}>
-            {mailboxes.map((m, i) => {
-              const isSelected = m.id === activeMailboxId && m.status === 'active';
-              const health = healthById[m.id];
-              const needsReconnect = m.status === 'active' && health?.needsReconnect === true;
-              const showReconnect = m.status === 'disconnected' || needsReconnect;
-              const indexedDataState =
-                m.indexedDataState ?? (m.status === 'active' ? 'indexed' : 'retained');
-              const deletionInFlight =
-                indexedDataState === 'deletion_pending' ||
-                indexedDataState === 'deleting' ||
-                indexedDataState === 'deletion_delayed';
-              // A disabled control must say why in VISIBLE text — a `title`
-              // tooltip reaches neither touch nor keyboard nor a screen reader.
-              // The tier-limit reason renders once at the card footer instead,
-              // so only the per-row deletion reason is carried here.
-              const reconnectBlockedReason = deletionInFlight
-                ? indexedDataState === 'deletion_delayed'
-                  ? 'Data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
-                  : "You can reconnect once we've finished erasing what we stored."
-                : undefined;
-              const reconnectBlockedReasonId = `mailbox-${m.id}-reconnect-blocked`;
-              const reconnectBlocked = deletionInFlight || (atLimit && !needsReconnect);
-              const reconnectHighlighted = m.id === highlightMailboxId;
-              return (
-                <li
-                  key={m.id}
-                  id={`mailbox-${m.id}`}
-                  tabIndex={-1}
-                  data-reconnect-highlighted={reconnectHighlighted ? 'true' : undefined}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: 10,
-                    padding: '9px 0',
-                    borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
-                    borderRadius: 8,
-                    scrollMarginTop: 24,
-                    background: reconnectHighlighted ? color.primarySoft : 'transparent',
-                    outline: reconnectHighlighted ? `2px solid ${color.primary}` : 'none',
-                    outlineOffset: 2,
-                    transition: 'background-color 300ms, outline-color 300ms',
-                  }}
-                >
-                  <span
-                    aria-hidden
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 999,
-                      flexShrink: 0,
-                      background:
-                        m.status === 'disconnected'
-                          ? color.fgMuted
-                          : needsReconnect
-                            ? color.danger
-                            : color.primary,
-                    }}
-                  />
-                  <span style={{ flex: '1 1 220px', minWidth: 160 }}>
-                    <span
-                      style={{
-                        display: 'block',
-                        fontSize: 13.5,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        color: m.status === 'disconnected' ? color.fgMuted : color.fg,
-                      }}
-                    >
-                      {m.email}
-                    </span>
-                    {m.status === 'active' && health?.lastSyncedAt && now !== null && (
-                      <span
-                        style={{ display: 'block', fontSize: 11, color: color.fgMuted }}
-                        title={new Date(health.lastSyncedAt).toLocaleString('en-US')}
-                      >
-                        Synced {relAge(health.lastSyncedAt, now)}
-                      </span>
-                    )}
-                  </span>
-                  <span
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'flex-end',
-                      flexWrap: 'wrap',
-                      gap: 8,
-                      marginLeft: 'auto',
-                      minWidth: 0,
-                    }}
-                  >
-                    {isSelected && <StatusTag tone="primary">Active</StatusTag>}
-                    {m.status === 'disconnected' ? (
-                      <StatusTag
-                        tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}
-                      >
-                        {mailboxDataStatusLabel(indexedDataState)}
-                      </StatusTag>
-                    ) : needsReconnect ? (
-                      <StatusTag tone="danger">Needs reconnect</StatusTag>
-                    ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
-                      <StatusTag tone="muted">Syncing…</StatusTag>
-                    ) : m.readiness === 'failed' ? (
-                      <>
-                        {/* QA-sync-20260831-09: "scan" is this product's
-                            sanctioned term for this event (the onboarding
-                            gate, the retry endpoint's own semantics, and
-                            check-microcopy.sh's ban list all use it) —
-                            "sync" was the odd one out on this card. */}
-                        <StatusTag tone="danger">Scan failed</StatusTag>
-                        {/* The sibling #418 missed: the onboarding gate got a
-                            real retry while this card kept a dead-end tag
-                            (fix-the-class, D158 triage). Same endpoint, same
-                            explicit mailbox scoping — the row's id, never
-                            "whatever is active". */}
-                        <RetrySyncButton mailboxId={m.id} />
-                      </>
-                    ) : m.readiness === 'ready' && health?.hasSyncError ? (
-                      // QA-sync-20260831-04: readiness stays `ready` for a
-                      // failed INCREMENTAL sync by the worker's own design
-                      // (only an initial-sync failure ever flips it) — a
-                      // persistently-broken mailbox otherwise read as plain
-                      // "Ready" here, worse than no tag at all.
-                      <StatusTag tone="danger">Not syncing</StatusTag>
-                    ) : m.readiness === 'ready' ? (
-                      <StatusTag tone="muted">Ready</StatusTag>
-                    ) : (
-                      // readiness === null: no sync row exists yet (D116), so
-                      // the first scan has not been recorded. Never fold this
-                      // into "Ready" — that claims a scan we cannot see.
-                      <StatusTag tone="muted">Not synced yet</StatusTag>
-                    )}
-                    {showReconnect && (
-                      <>
-                        {reconnectBlockedReason && (
-                          <span
-                            id={reconnectBlockedReasonId}
-                            style={{
-                              fontSize: 11,
-                              color: color.fgMuted,
-                              flex: '1 1 200px',
-                              minWidth: 0,
-                              textAlign: 'right',
-                            }}
-                          >
-                            {reconnectBlockedReason}
-                          </span>
-                        )}
-                        <ReconnectButton
-                          disabled={reconnectBlocked}
-                          describedBy={
-                            reconnectBlockedReason
-                              ? reconnectBlockedReasonId
-                              : atLimit && !needsReconnect
-                                ? MAILBOX_LIMIT_EXPLANATION_ID
-                                : undefined
-                          }
-                          email={m.email}
-                          label={
-                            indexedDataState === 'deleted' ? 'Reconnect · start fresh' : 'Reconnect'
-                          }
-                          onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
-                        />
-                      </>
-                    )}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
+    <SettingsGroup
+      id="mailboxes"
+      title="Gmail accounts"
+      focusable
+      footer={
         <div
           style={{
-            marginTop: 14,
+            marginTop: 12,
             display: 'flex',
             alignItems: 'center',
             flexWrap: 'wrap',
@@ -250,10 +69,13 @@ export function MailboxesCard({
           }}
         >
           <Button tone="default" onClick={() => onConnect()} disabled={atLimit}>
-            + Connect another Gmail account
+            {mailboxes.length === 0 ? 'Connect Gmail' : 'Add Gmail account'}
           </Button>
           {atLimit && (
-            <span id={MAILBOX_LIMIT_EXPLANATION_ID} style={{ fontSize: 12, color: color.fgMuted }}>
+            <span
+              id={MAILBOX_LIMIT_EXPLANATION_ID}
+              style={{ fontSize: text.sm, color: color.fgMuted }}
+            >
               Your plan includes {inboxLimit} connected {inboxLimit === 1 ? 'inbox' : 'inboxes'} —{' '}
               <Link href="/billing" style={{ color: color.primary }}>
                 upgrade for more
@@ -262,8 +84,195 @@ export function MailboxesCard({
             </span>
           )}
         </div>
-      </div>
-    </Card>
+      }
+    >
+      {mailboxes.length === 0 ? (
+        <p
+          style={{
+            fontSize: text.md,
+            color: color.fgMuted,
+            margin: 0,
+            padding: '12px 0',
+            borderTop: `1px solid ${color.line}`,
+          }}
+        >
+          No mailboxes connected yet.
+        </p>
+      ) : (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          {mailboxes.map((m) => {
+            const isSelected = m.id === activeMailboxId && m.status === 'active';
+            const health = healthById[m.id];
+            const needsReconnect = m.status === 'active' && health?.needsReconnect === true;
+            const showReconnect = m.status === 'disconnected' || needsReconnect;
+            const indexedDataState =
+              m.indexedDataState ?? (m.status === 'active' ? 'indexed' : 'retained');
+            const deletionInFlight =
+              indexedDataState === 'deletion_pending' ||
+              indexedDataState === 'deleting' ||
+              indexedDataState === 'deletion_delayed';
+            // A disabled control must say why in VISIBLE text — a `title`
+            // tooltip reaches neither touch nor keyboard nor a screen reader.
+            // The tier-limit reason renders once at the card footer instead,
+            // so only the per-row deletion reason is carried here.
+            const reconnectBlockedReason = deletionInFlight
+              ? indexedDataState === 'deletion_delayed'
+                ? 'Data deletion is delayed and will retry. Reconnect becomes available after deletion completes.'
+                : "You can reconnect once we've finished erasing what we stored."
+              : undefined;
+            const reconnectBlockedReasonId = `mailbox-${m.id}-reconnect-blocked`;
+            const reconnectBlocked = deletionInFlight || (atLimit && !needsReconnect);
+            const reconnectHighlighted = m.id === highlightMailboxId;
+            return (
+              <li
+                key={m.id}
+                id={`mailbox-${m.id}`}
+                tabIndex={-1}
+                data-reconnect-highlighted={reconnectHighlighted ? 'true' : undefined}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 10,
+                  minHeight: 44,
+                  padding: '8px 0',
+                  boxSizing: 'border-box',
+                  borderTop: `1px solid ${color.line}`,
+                  scrollMarginTop: 24,
+                  background: reconnectHighlighted ? color.primarySoft : 'transparent',
+                  outline: reconnectHighlighted ? `2px solid ${color.primary}` : 'none',
+                  outlineOffset: 2,
+                  transition: `background-color ${motion.base} ${motion.ease}, outline-color ${motion.base} ${motion.ease}`,
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    flexShrink: 0,
+                    background:
+                      m.status === 'disconnected'
+                        ? color.fgMuted
+                        : needsReconnect
+                          ? color.danger
+                          : color.primary,
+                  }}
+                />
+                <span style={{ flex: '1 1 220px', minWidth: 160 }}>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontFamily: font.mono,
+                      fontSize: text.md,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: m.status === 'disconnected' ? color.fgMuted : color.fg,
+                    }}
+                  >
+                    {m.email}
+                  </span>
+                  {m.status === 'active' && health?.lastSyncedAt && now !== null && (
+                    <span
+                      style={{ display: 'block', fontSize: text.sm, color: color.fgMuted }}
+                      title={new Date(health.lastSyncedAt).toLocaleString('en-US')}
+                    >
+                      Synced {relAge(health.lastSyncedAt, now)}
+                    </span>
+                  )}
+                </span>
+                <span
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    marginLeft: 'auto',
+                    minWidth: 0,
+                  }}
+                >
+                  {isSelected && <StatusTag tone="primary">Active</StatusTag>}
+                  {m.status === 'disconnected' ? (
+                    <StatusTag tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}>
+                      {mailboxDataStatusLabel(indexedDataState)}
+                    </StatusTag>
+                  ) : needsReconnect ? (
+                    <StatusTag tone="danger">Needs reconnect</StatusTag>
+                  ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
+                    <StatusTag tone="muted">Syncing…</StatusTag>
+                  ) : m.readiness === 'failed' ? (
+                    <>
+                      {/* QA-sync-20260831-09: "scan" is this product's
+                            sanctioned term for this event (the onboarding
+                            gate, the retry endpoint's own semantics, and
+                            check-microcopy.sh's ban list all use it) —
+                            "sync" was the odd one out on this card. */}
+                      <StatusTag tone="danger">Scan failed</StatusTag>
+                      {/* The sibling #418 missed: the onboarding gate got a
+                            real retry while this card kept a dead-end tag
+                            (fix-the-class, D158 triage). Same endpoint, same
+                            explicit mailbox scoping — the row's id, never
+                            "whatever is active". */}
+                      <RetrySyncButton mailboxId={m.id} />
+                    </>
+                  ) : m.readiness === 'ready' && health?.hasSyncError ? (
+                    // QA-sync-20260831-04: readiness stays `ready` for a
+                    // failed INCREMENTAL sync by the worker's own design
+                    // (only an initial-sync failure ever flips it) — a
+                    // persistently-broken mailbox otherwise read as plain
+                    // "Ready" here, worse than no tag at all.
+                    <StatusTag tone="danger">Not syncing</StatusTag>
+                  ) : m.readiness === 'ready' ? (
+                    <StatusTag tone="muted">Ready</StatusTag>
+                  ) : (
+                    // readiness === null: no sync row exists yet (D116), so
+                    // the first scan has not been recorded. Never fold this
+                    // into "Ready" — that claims a scan we cannot see.
+                    <StatusTag tone="muted">Not synced yet</StatusTag>
+                  )}
+                  {showReconnect && (
+                    <>
+                      {reconnectBlockedReason && (
+                        <span
+                          id={reconnectBlockedReasonId}
+                          style={{
+                            fontSize: text.sm,
+                            color: color.fgMuted,
+                            flex: '1 1 200px',
+                            minWidth: 0,
+                            textAlign: 'right',
+                          }}
+                        >
+                          {reconnectBlockedReason}
+                        </span>
+                      )}
+                      <ReconnectButton
+                        disabled={reconnectBlocked}
+                        describedBy={
+                          reconnectBlockedReason
+                            ? reconnectBlockedReasonId
+                            : atLimit && !needsReconnect
+                              ? MAILBOX_LIMIT_EXPLANATION_ID
+                              : undefined
+                        }
+                        email={m.email}
+                        label={
+                          indexedDataState === 'deleted' ? 'Reconnect · start fresh' : 'Reconnect'
+                        }
+                        onClick={() => (needsReconnect ? onConnect(m.id) : onReactivate(m.id))}
+                      />
+                    </>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </SettingsGroup>
   );
 }
 
@@ -308,14 +317,14 @@ function ReconnectButton({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        height: 26,
+        height: 28,
         padding: '0 10px',
         background: color.card,
         color: color.fg,
         border: `1px solid ${color.line}`,
-        borderRadius: 6,
+        borderRadius: radius.sm,
         fontFamily: font.sans,
-        fontSize: 11.5,
+        fontSize: text.sm,
         fontWeight: 600,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
@@ -347,9 +356,10 @@ function RetrySyncButton({ mailboxId }: { mailboxId: string }) {
         border: `1px solid ${color.line}`,
         background: 'transparent',
         color: color.fg,
-        borderRadius: 6,
+        borderRadius: radius.sm,
         padding: '3px 10px',
-        fontSize: 12,
+        fontFamily: font.sans,
+        fontSize: text.sm,
         cursor: retry.isPending ? 'default' : 'pointer',
       }}
     >
@@ -373,10 +383,8 @@ function StatusTag({ tone, children }: { tone: 'primary' | 'muted' | 'danger'; c
   return (
     <span
       style={{
-        fontSize: 10,
-        fontWeight: 600,
-        letterSpacing: '0.05em',
-        textTransform: 'uppercase',
+        fontSize: text.sm,
+        fontWeight: 500,
         color: fg,
         flexShrink: 0,
       }}
@@ -385,10 +393,3 @@ function StatusTag({ tone, children }: { tone: 'primary' | 'muted' | 'danger'; c
     </span>
   );
 }
-
-const mutedTextStyle = {
-  fontSize: 13,
-  color: color.fgSoft,
-  lineHeight: 1.55,
-  margin: '8px 0 0',
-} as const;

@@ -18,7 +18,7 @@ import {
 import { DecidePreview, type DecidePreviewCount } from './decide-preview';
 import { VERB_KEY_HINT, VERB_LABEL, VERB_ORDER, verdictLabel } from './verbs';
 
-const { color, font } = tokens;
+const { color, font, motion, text } = tokens;
 
 /** Pill tone per engine verdict — matches the Triage row semantics. */
 const VERDICT_TONE: Record<'keep' | 'archive' | 'unsubscribe' | 'later', PillTone> = {
@@ -102,14 +102,11 @@ export function ScreenerRow({
     <div
       aria-busy={busy}
       style={{
-        background: color.card,
-        border: `1px solid ${expanded ? color.primaryBorder : color.line}`,
-        borderRadius: 10,
-        overflow: 'hidden',
-        boxShadow: expanded
-          ? '0 8px 24px -8px rgba(20,30,50,0.10), 0 2px 6px -2px rgba(20,30,50,0.05)'
-          : '0 1px 2px rgba(20,30,50,0.04)',
-        transition: 'border-color 0.15s, box-shadow 0.15s, opacity 0.15s',
+        // Hairline list row — no card chrome; the open row is marked by
+        // a wash, not a border + shadow.
+        borderTop: `1px solid ${color.line}`,
+        background: expanded ? color.primaryWash : 'transparent',
+        transition: `opacity ${motion.fast} ${motion.ease}`,
         opacity: busy ? 0.6 : 1,
       }}
     >
@@ -134,15 +131,8 @@ export function ScreenerRow({
             : '32px minmax(0, 1fr) auto auto 18px',
           gap: isPhone ? 8 : 12,
           alignItems: 'center',
-          padding: '12px 14px',
+          padding: '12px 8px',
           cursor: 'pointer',
-          background: expanded ? 'rgba(0,107,95,0.04)' : 'transparent',
-        }}
-        onMouseEnter={(e) => {
-          if (!expanded) e.currentTarget.style.background = 'rgba(14,20,19,0.018)';
-        }}
-        onMouseLeave={(e) => {
-          if (!expanded) e.currentTarget.style.background = 'transparent';
         }}
       >
         <Avatar name={row.senderName} domain={row.senderDomain} size={32} hasMark={row.brandMark} />
@@ -152,7 +142,7 @@ export function ScreenerRow({
             <span
               style={{
                 fontWeight: 600,
-                fontSize: 14,
+                fontSize: text.md,
                 letterSpacing: '-0.005em',
                 color: color.fg,
                 overflow: 'hidden',
@@ -166,7 +156,7 @@ export function ScreenerRow({
             <span
               style={{
                 fontFamily: font.mono,
-                fontSize: 10.5,
+                fontSize: text.xs,
                 color: color.fgMuted,
                 flexShrink: 0,
               }}
@@ -177,7 +167,7 @@ export function ScreenerRow({
           {/* Sample subject — the latest message (D71). */}
           <span
             style={{
-              fontSize: 12,
+              fontSize: text.sm,
               color: color.fgSoft,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
@@ -194,9 +184,9 @@ export function ScreenerRow({
         {!isPhone && (
           <span
             style={{
-              fontFamily: font.mono,
-              fontSize: 10.5,
+              fontSize: text.xs,
               color: color.fgMuted,
+              fontVariantNumeric: 'tabular-nums',
               whiteSpace: 'nowrap',
             }}
           >
@@ -221,7 +211,7 @@ export function ScreenerRow({
                 row.recommendation.confidence,
               );
               return band === null ? null : (
-                <span style={{ fontFamily: font.mono, fontSize: 9.5, opacity: 0.85 }}>
+                <span style={{ opacity: 0.85 }}>
                   {' · '}
                   {band}
                 </span>
@@ -229,7 +219,7 @@ export function ScreenerRow({
             })()}
           </Pill>
         ) : (
-          <span style={{ fontFamily: font.mono, fontSize: 10, color: color.fgMuted }}>New</span>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>New</span>
         )}
 
         {/* Chevron. */}
@@ -240,10 +230,9 @@ export function ScreenerRow({
             alignItems: 'center',
             justifyContent: 'center',
             color: color.fgMuted,
-            fontFamily: font.mono,
-            fontSize: 14,
+            fontSize: text.md,
             transform: expanded ? 'rotate(90deg)' : 'none',
-            transition: 'transform 0.15s',
+            transition: `transform ${motion.fast} ${motion.ease}`,
           }}
         >
           ›
@@ -254,7 +243,7 @@ export function ScreenerRow({
       {expanded && (
         <div
           id={`screener-row-body-${row.id}`}
-          style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px 14px 16px' }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 8px 16px' }}
         >
           {/* K/A/U/L/D toolbar. */}
           <div
@@ -288,24 +277,24 @@ export function ScreenerRow({
                     padding: '6px 12px',
                     borderRadius: 7,
                     fontFamily: font.sans,
-                    fontSize: 12.5,
+                    fontSize: text.sm,
                     fontWeight: 600,
                     cursor: busy || noUnsubscribeChannel ? 'not-allowed' : 'pointer',
                     opacity: noUnsubscribeChannel ? 0.55 : 1,
                     border: `1px solid ${
-                      active ? (verb === 'delete' ? color.red : color.primary) : color.line
+                      active ? (verb === 'delete' ? color.danger : color.primary) : color.line
                     }`,
                     background: active
                       ? verb === 'delete'
-                        ? 'rgba(190,30,30,0.08)'
+                        ? color.dangerBg
                         : color.primarySoft
                       : color.card,
                     color: active
                       ? verb === 'delete'
-                        ? color.red
+                        ? color.danger
                         : color.primary
                       : verb === 'delete'
-                        ? color.red
+                        ? color.danger
                         : color.fg,
                   }}
                 >
@@ -314,7 +303,7 @@ export function ScreenerRow({
                     aria-hidden="true"
                     style={{
                       fontFamily: font.mono,
-                      fontSize: 9.5,
+                      fontSize: text.xs,
                       color: color.fgMuted,
                       border: `1px solid ${color.lineSoft}`,
                       borderRadius: 4,
@@ -330,7 +319,7 @@ export function ScreenerRow({
 
           {/* Detail grid — first seen, count so far, engine reasoning. */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={{ fontSize: 12, color: color.fgSoft }}>
+            <span style={{ fontSize: text.sm, color: color.fgSoft }}>
               <span style={{ fontWeight: 600 }}>First seen:</span> {firstSeenLabel(row.firstSeenAt)}{' '}
               ·{' '}
               {/* `senders.total_received` — every label, not inbox-only.
@@ -359,7 +348,7 @@ export function ScreenerRow({
               in inbox
             </span>
             {row.recommendation != null && (
-              <span style={{ fontSize: 12, color: color.fgMuted, lineHeight: 1.5 }}>
+              <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
                 <span style={{ fontWeight: 600, color: color.fgSoft }}>
                   Why this is suggested:{' '}
                 </span>
@@ -371,7 +360,7 @@ export function ScreenerRow({
                     when unknown — the fixtures have no engine run. */}
                 {ageLabel !== null && (
                   <span
-                    style={{ fontFamily: font.mono, fontSize: 9.5, color: color.fgMuted }}
+                    style={{ fontSize: text.xs, color: color.fgMuted }}
                   >{` · ${ageLabel}`}</span>
                 )}
               </span>
@@ -379,14 +368,14 @@ export function ScreenerRow({
             <Link
               href={`/senders/${row.senderId}`}
               style={{
-                fontSize: 12,
+                fontSize: text.sm,
                 fontWeight: 600,
                 color: color.primary,
                 textDecoration: 'none',
                 width: 'fit-content',
               }}
             >
-              Open sender →
+              Open sender
             </Link>
           </div>
 

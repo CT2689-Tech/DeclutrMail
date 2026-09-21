@@ -21,7 +21,6 @@ describe('RouteErrorScreen', () => {
         error={error}
         reset={reset}
         boundary="settings"
-        eyebrow="Settings hit a snag"
         headline="We couldn't load your settings."
         body="Nothing was changed."
         escape={{ href: '/senders', label: 'Back to Senders' }}

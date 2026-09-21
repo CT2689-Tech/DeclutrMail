@@ -2,70 +2,48 @@
 
 import { tokens } from '@declutrmail/shared';
 
-const { color, font } = tokens;
+const { color, font, motion, text } = tokens;
 
 /**
- * Session burn-down for the triage header — "3 decided · 5 to go" plus
- * a thin progress bar.
+ * The screen's one count — "3 of 12" plus a thin bar.
  *
- * `decided` is the client-session counter from the triage store
- * (D200 — ephemeral, resets on mount; the durable per-day number is
- * `stats.decidedToday`). It increments ONLY on server confirmation
- * (D226), so the bar can never run ahead of reality. `remaining` is
- * the live queue length.
+ * `total` is the longest the queue has been this session and `done` is
+ * how many of those have left it. Both are read off the queue itself,
+ * which only shrinks on a server-confirmed decision (D226), so the bar
+ * can never run ahead of reality — and an Undo that returns a sender
+ * walks it back.
  *
- * Renders nothing until the first confirmed decision — a "0 decided"
- * bar on arrival is noise, and the queue legend already carries the
- * count of waiting decisions.
+ * `current` is what the label counts: the focus card's position in
+ * focus mode, the decisions made in list mode.
  */
 export function SessionProgress({
-  decided,
-  remaining,
-  messagesMoved = 0,
+  current,
+  done,
+  total,
+  label,
 }: {
-  decided: number;
-  remaining: number;
-  /** Worker-confirmed messages moved this session; 0 hides the line. */
-  messagesMoved?: number;
+  current: number;
+  done: number;
+  total: number;
+  /** Accessible name — says what `current` counts. */
+  label: string;
 }) {
-  if (decided === 0) return null;
-  const total = decided + remaining;
-  const pct = total === 0 ? 100 : Math.round((decided / total) * 100);
+  if (total === 0) return null;
+  const pct = Math.round((done / total) * 100);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 5,
-        minWidth: 160,
-        fontFamily: font.sans,
-      }}
-    >
-      <span
-        style={{
-          fontFamily: font.mono,
-          fontSize: 10.5,
-          fontWeight: 600,
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase',
-          color: color.fgMuted,
-          fontVariantNumeric: 'tabular-nums',
-        }}
-      >
-        {decided} decided · {remaining === 0 ? 'all done' : `${remaining} to go`}
-        {messagesMoved > 0 && <> · {messagesMoved.toLocaleString('en-US')} messages moved</>}
-      </span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: font.sans }}>
       <div
         role="progressbar"
         aria-valuemin={0}
         aria-valuemax={total}
-        aria-valuenow={decided}
-        aria-label={`Session progress: ${decided} of ${total} decisions made`}
+        aria-valuenow={done}
+        aria-label={label}
         style={{
+          width: 72,
           height: 3,
           borderRadius: 9999,
-          background: color.lineSoft,
+          background: color.line,
           overflow: 'hidden',
         }}
       >
@@ -75,10 +53,20 @@ export function SessionProgress({
             height: '100%',
             borderRadius: 9999,
             background: color.primary,
-            transition: 'width 0.25s ease-out',
+            transition: `width ${motion.base} ${motion.ease}`,
           }}
         />
       </div>
+      <span
+        style={{
+          fontSize: text.sm,
+          color: color.fgMuted,
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {current} of {total}
+      </span>
     </div>
   );
 }
