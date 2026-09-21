@@ -3,18 +3,16 @@
 import { useEffect, useState } from 'react';
 import {
   Button,
-  Eyebrow,
   GMAIL_DISCONNECT_DATA_INVENTORY,
   GMAIL_INDEXED_DATA_DELETION_INVENTORY,
   GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY,
   mailboxDataDeletionConfirmPhrase,
   tokens,
-  useIsAtMost,
 } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 
-const { color, font } = tokens;
+const { color, font, radius, shadow, space, text } = tokens;
 
 /** Everything except the OAuth credential survives standard Disconnect. */
 const GMAIL_DISCONNECT_RETAINED_DATA_INVENTORY = Object.freeze([
@@ -62,7 +60,6 @@ export function MailboxDataControlsDialog({
   }, [open, busy, onCancel]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(open);
-  const isPhone = useIsAtMost('xs');
   if (!mailbox) return null;
 
   const requiredPhrase = mailboxDataDeletionConfirmPhrase(mailbox.email);
@@ -70,65 +67,54 @@ export function MailboxDataControlsDialog({
   const alreadyDisconnected = mailbox.status === 'disconnected';
 
   return (
-    <>
-      <div
-        data-testid="mailbox-data-controls-backdrop"
-        onClick={busy ? undefined : onCancel}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.48)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 180,
-        }}
-      />
+    // The shared sheet shell: a centred dialog on desktop, a bottom sheet
+    // on phones — pure CSS, so no post-hydration jump.
+    <div
+      data-testid="mailbox-data-controls-backdrop"
+      className="dm-scrim dm-sheet-layer"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget && !busy) onCancel();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 180,
+        display: 'flex',
+        justifyContent: 'center',
+        padding: space[4],
+        overflowY: 'auto',
+      }}
+    >
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-mailbox-data-controls-title"
         aria-describedby="dm-mailbox-data-controls-lead"
-        style={
-          isPhone
-            ? {
-                position: 'fixed',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                width: '100%',
-                maxHeight: '90vh',
-                overflow: 'auto',
-                background: color.card,
-                border: `1px solid ${color.border}`,
-                borderRadius: '16px 16px 0 0',
-                borderBottom: 'none',
-                boxShadow: '0 -12px 40px rgba(14,20,19,0.32)',
-                zIndex: 181,
-                fontFamily: font.sans,
-                paddingBottom: 'env(safe-area-inset-bottom)',
-              }
-            : {
-                position: 'fixed',
-                top: '7vh',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 'min(660px, calc(100vw - 28px))',
-                maxHeight: '86vh',
-                overflow: 'auto',
-                background: color.card,
-                border: `1px solid ${color.border}`,
-                borderRadius: 14,
-                boxShadow: '0 24px 60px rgba(14,20,19,0.32)',
-                zIndex: 181,
-                fontFamily: font.sans,
-              }
-        }
+        className="dm-sheet dm-sheet-panel"
+        style={{
+          width: '100%',
+          maxWidth: 620,
+          maxHeight: '90vh',
+          overflow: 'auto',
+          background: color.card,
+          boxShadow: shadow.modal,
+          fontFamily: font.sans,
+          color: color.fg,
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
       >
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow>Gmail account data controls</Eyebrow>
+        <div style={{ padding: '28px 28px 8px' }}>
           <h2
             id="dm-mailbox-data-controls-title"
-            style={{ fontSize: 19, fontWeight: 600, margin: '6px 0 0', color: color.fg }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              margin: 0,
+              color: color.fg,
+              overflowWrap: 'anywhere',
+            }}
           >
             {alreadyDisconnected
               ? `Manage data for ${mailbox.email}`
@@ -136,7 +122,7 @@ export function MailboxDataControlsDialog({
           </h2>
           <p
             id="dm-mailbox-data-controls-lead"
-            style={{ fontSize: 13, color: color.fgSoft, lineHeight: 1.5, margin: '8px 0 0' }}
+            style={{ fontSize: text.md, color: color.fgSoft, lineHeight: 1.5, margin: '8px 0 0' }}
           >
             {alreadyDisconnected
               ? 'Gmail access and sync are already stopped. Choose whether to keep or permanently delete this mailbox’s saved data.'
@@ -145,7 +131,7 @@ export function MailboxDataControlsDialog({
           </p>
         </div>
 
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ padding: '8px 28px', display: 'flex', flexDirection: 'column' }}>
           {!alreadyDisconnected && (
             <section style={optionStyle(false)} aria-labelledby="dm-disconnect-keep-title">
               <h3 id="dm-disconnect-keep-title" style={optionTitleStyle}>
@@ -165,7 +151,7 @@ export function MailboxDataControlsDialog({
                 items={GMAIL_DISCONNECT_RETAINED_DATA_INVENTORY}
               />
               <div style={{ marginTop: 12 }}>
-                <Button tone="default" onClick={onDisconnect} disabled={busy}>
+                <Button tone="default" size="lg" onClick={onDisconnect} disabled={busy}>
                   {isDisconnecting ? 'Disconnecting…' : 'Disconnect and keep data'}
                 </Button>
               </div>
@@ -197,12 +183,8 @@ export function MailboxDataControlsDialog({
             <p
               style={{
                 margin: '12px 0 0',
-                padding: '9px 10px',
-                borderRadius: 8,
                 color: color.danger,
-                background: color.dangerBg,
-                border: `1px solid ${color.dangerBorder}`,
-                fontSize: 12,
+                fontSize: text.sm,
                 lineHeight: 1.5,
               }}
             >
@@ -211,9 +193,13 @@ export function MailboxDataControlsDialog({
             </p>
             <label
               htmlFor="dm-mailbox-data-delete-phrase"
-              style={{ display: 'block', marginTop: 12, fontSize: 12, color: color.fgMuted }}
+              style={{ display: 'block', marginTop: 16, fontSize: text.sm, color: color.fgMuted }}
             >
-              Type <strong style={{ fontFamily: font.mono }}>{requiredPhrase}</strong> to continue
+              Type{' '}
+              <strong style={{ color: color.fg, fontWeight: 600, overflowWrap: 'anywhere' }}>
+                {requiredPhrase}
+              </strong>{' '}
+              to continue
             </label>
             <input
               id="dm-mailbox-data-delete-phrase"
@@ -226,18 +212,22 @@ export function MailboxDataControlsDialog({
                 width: '100%',
                 boxSizing: 'border-box',
                 marginTop: 6,
-                padding: '9px 11px',
-                borderRadius: 8,
-                border: `1px solid ${phraseMatches ? color.emerald : color.border}`,
-                background: color.paper,
+                height: 44,
+                padding: '0 14px',
+                borderRadius: radius.md,
+                border: 'none',
+                boxShadow: phraseMatches ? `inset 0 0 0 1.5px ${color.emerald}` : 'none',
+                background: color.fill,
                 color: color.fg,
-                fontFamily: font.mono,
-                fontSize: 13,
+                fontFamily: font.sans,
+                fontSize: text.md,
+                outline: 'none',
               }}
             />
             <div style={{ marginTop: 10 }}>
               <Button
                 tone="danger"
+                size="lg"
                 onClick={() => onDeleteIndexedData(typed)}
                 disabled={!phraseMatches || busy}
               >
@@ -254,12 +244,12 @@ export function MailboxDataControlsDialog({
             <div
               role="alert"
               style={{
-                padding: '9px 10px',
-                borderRadius: 8,
+                margin: '8px 0 12px',
+                padding: '10px 12px',
+                borderRadius: radius.md,
                 color: color.danger,
                 background: color.dangerBg,
-                border: `1px solid ${color.dangerBorder}`,
-                fontSize: 12,
+                fontSize: text.sm,
               }}
             >
               {error}
@@ -271,16 +261,15 @@ export function MailboxDataControlsDialog({
           style={{
             display: 'flex',
             justifyContent: 'flex-end',
-            padding: '13px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
+            padding: '12px 28px 28px',
           }}
         >
-          <Button tone="default" onClick={onCancel} disabled={busy}>
+          <Button tone="default" size="lg" onClick={onCancel} disabled={busy}>
             Keep current setup
           </Button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -293,10 +282,10 @@ function InventoryList({
 }) {
   return (
     <details style={{ marginTop: 10 }}>
-      <summary style={{ cursor: 'pointer', color: color.fg, fontSize: 12, fontWeight: 600 }}>
+      <summary style={{ cursor: 'pointer', color: color.fg, fontSize: text.sm, fontWeight: 600 }}>
         {title} ({items.length} {items.length === 1 ? 'category' : 'categories'})
       </summary>
-      <ul style={{ margin: '7px 0 0', paddingLeft: 20, color: color.fgMuted, fontSize: 12 }}>
+      <ul style={{ margin: '8px 0 0', paddingLeft: 20, color: color.fgSoft, fontSize: text.sm }}>
         {items.map((item) => (
           <li key={item.id} style={{ marginBottom: 5, lineHeight: 1.4 }}>
             {item.label}
@@ -307,19 +296,24 @@ function InventoryList({
   );
 }
 
+/** Two plain sections on one surface, split by a hairline — no boxes inside the sheet. */
 function optionStyle(danger: boolean) {
   return {
-    padding: '14px 15px',
-    borderRadius: 11,
-    border: `1px solid ${danger ? color.dangerBorder : color.border}`,
-    background: danger ? color.dangerBg : color.paper,
+    padding: '20px 0',
+    borderTop: danger ? `1px solid ${color.lineSoft}` : 'none',
   } as const;
 }
 
-const optionTitleStyle = { margin: 0, color: color.fg, fontSize: 15, fontWeight: 600 } as const;
+const optionTitleStyle = {
+  margin: 0,
+  color: color.fg,
+  fontSize: text.lg,
+  fontWeight: 600,
+  letterSpacing: '-0.01em',
+} as const;
 const optionBodyStyle = {
   margin: '6px 0 0',
   color: color.fgSoft,
-  fontSize: 12.5,
-  lineHeight: 1.52,
+  fontSize: text.sm,
+  lineHeight: 1.55,
 } as const;

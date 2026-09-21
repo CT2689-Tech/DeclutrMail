@@ -1,16 +1,23 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
+import type { AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
 import type { RulePreviewState } from './types';
 import { resolveSenderIdentity } from './sender-label';
 
-const { color, font, text } = tokens;
+const { color, font, space, text } = tokens;
+
+type Align = 'start' | 'center';
 
 /**
  * Dry-run preview results for one rule (D103's "If active now, this
  * rule would have affected: X senders" — preset-scoped per D192).
  *
- * Renders inside the RuleCard under the "Preview matches" button.
+ * Three pieces, because two surfaces lay the same result out
+ * differently: the RuleCard shows all of it inline (`RulePreviewPanel`),
+ * while the turn-on sheet leads with the one number (`RulePreviewHero`)
+ * and keeps the totals and the sample behind Details.
+ *
  * Read-only: the dry-run endpoint mutates nothing, so there is no
  * confirm step here — this is information, not an action preview.
  *
@@ -32,117 +39,210 @@ export function RulePreviewPanel({
       role="region"
       aria-label={`Current match preview for rule ${ruleName}`}
       style={{
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: 9,
-        padding: '12px 14px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        gap: space[3],
         fontFamily: font.sans,
       }}
     >
-      {state.status === 'loading' && (
-        <div role="status" aria-live="polite" style={{ fontSize: text.sm, color: color.fgMuted }}>
-          Checking current sender data…
-        </div>
-      )}
-
-      {state.status === 'error' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span role="alert" style={{ fontSize: text.sm, color: color.danger }}>
-            {state.message}
-          </span>
-          <Button tone="default" size="sm" onClick={onRetry}>
-            Try again
-          </Button>
-        </div>
-      )}
-
+      <RulePreviewHero state={state} onRetry={onRetry} align="start" />
       {state.status === 'ready' && (
         <>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-            <strong
-              style={{
-                fontFamily: font.display,
-                fontSize: text.xl,
-                fontWeight: 600,
-                letterSpacing: '-0.02em',
-                color: color.fg,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {state.result.wouldMatchCount.toLocaleString('en-US')}
-            </strong>
-            <span style={{ fontSize: text.sm, color: color.fgSoft }}>
-              sender{state.result.wouldMatchCount === 1 ? '' : 's'} would match if this rule were
-              active now · {state.result.evaluatedSenders.toLocaleString('en-US')} evaluated
-            </span>
-          </div>
-
+          <RulePreviewTotals result={state.result} />
+          <RulePreviewSample ruleName={ruleName} result={state.result} />
+          {/* Pressing "Preview matches" must never read as having done
+              something to the mail. */}
           <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-            {state.result.actionableSenderCount.toLocaleString('en-US')} actionable now ·{' '}
-            {state.result.protectedWouldMatchCount.toLocaleString('en-US')} matching Protected
-            sender
-            {state.result.protectedWouldMatchCount === 1 ? '' : 's'} skipped
-          </span>
-
-          {state.result.sample.length > 0 ? (
-            <ul
-              aria-label={`Sample matches for rule ${ruleName}`}
-              style={{
-                listStyle: 'none',
-                margin: 0,
-                padding: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 6,
-              }}
-            >
-              {state.result.sample.map((s) => (
-                <li
-                  key={s.senderKey}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'baseline',
-                    gap: 8,
-                    fontSize: text.sm,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  <span style={{ fontWeight: 600, color: color.fg }}>
-                    {resolveSenderIdentity(s).label}
-                  </span>
-                  {resolveSenderIdentity(s).source === 'name' && s.senderEmail != null && (
-                    <span
-                      style={{
-                        fontFamily: font.mono,
-                        fontSize: text.xs,
-                        color: color.fgMuted,
-                        maxWidth: 260,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {s.senderEmail}
-                    </span>
-                  )}
-                  <span style={{ color: color.fgMuted }}>{s.reason}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-              Nothing matches right now — the rule would take no action today.
-            </span>
-          )}
-
-          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-            Observe preview — this check is read-only.
+            This preview changes nothing.
           </span>
         </>
       )}
     </div>
   );
+}
+
+/**
+ * The ONE number the user acts on: senders the rule would act on right
+ * now (`actionableSenderCount`). Also owns the loading and failed states,
+ * so a surface that gates a commit on the preview has one place to look.
+ */
+export function RulePreviewHero({
+  state,
+  onRetry,
+  align = 'center',
+}: {
+  state: RulePreviewState;
+  onRetry: () => void;
+  align?: Align;
+}) {
+  const justify = align === 'center' ? 'center' : 'flex-start';
+
+  if (state.status === 'loading') {
+    return (
+      <div role="status" aria-live="polite" style={{ fontSize: text.md, color: color.fgMuted }}>
+        Checking current sender data…
+      </div>
+    );
+  }
+
+  if (state.status === 'error') {
+    return (
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: justify,
+          gap: space[3],
+          flexWrap: 'wrap',
+        }}
+      >
+        <span role="alert" style={{ fontSize: text.md, color: color.danger }}>
+          {state.message}
+        </span>
+        <Button tone="default" size="sm" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  const n = state.result.actionableSenderCount;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'baseline',
+        justifyContent: justify,
+        gap: space[2],
+        flexWrap: 'wrap',
+      }}
+    >
+      <strong
+        style={{
+          fontSize: text['3xl'],
+          lineHeight: 1.1,
+          fontWeight: 600,
+          letterSpacing: '-0.02em',
+          color: color.fg,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {n.toLocaleString('en-US')}
+      </strong>
+      <span style={{ fontSize: text.md, color: color.fgMuted }}>
+        sender{n === 1 ? '' : 's'} actionable now
+      </span>
+    </div>
+  );
+}
+
+/**
+ * The other two counts from the same dry-run, in one line. `withProtected`
+ * is off where the surface already states the Protected skip (the turn-on
+ * sheet's note) — a fact is said once per surface.
+ */
+export function RulePreviewTotals({
+  result,
+  withProtected = true,
+}: {
+  result: AutopilotRulePreviewResultDto;
+  withProtected?: boolean;
+}) {
+  return (
+    <span style={{ fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
+      {result.wouldMatchCount.toLocaleString('en-US')} of{' '}
+      {result.evaluatedSenders.toLocaleString('en-US')} senders checked match.
+      {withProtected && (
+        <>
+          {' '}
+          {result.protectedWouldMatchCount.toLocaleString('en-US')} Protected sender
+          {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} skipped.
+        </>
+      )}
+    </span>
+  );
+}
+
+/** Up to ten matching senders: name + address left, the matcher's reason right. */
+export function RulePreviewSample({
+  ruleName,
+  result,
+}: {
+  ruleName: string;
+  result: AutopilotRulePreviewResultDto;
+}) {
+  if (result.sample.length === 0) {
+    return (
+      <span style={{ fontSize: text.sm, color: color.fgMuted }}>Nothing matches right now.</span>
+    );
+  }
+  return (
+    <ul
+      aria-label={`Sample matches for rule ${ruleName}`}
+      style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column' }}
+    >
+      {result.sample.map((s, i) => {
+        const identity = resolveSenderIdentity(s);
+        return (
+          <li
+            key={s.senderKey}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: space[3],
+              padding: `${space[2]}px 0`,
+              borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
+              minWidth: 0,
+            }}
+          >
+            <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+              <span style={{ ...ellipsis, fontSize: text.base, fontWeight: 600, color: color.fg }}>
+                {identity.label}
+              </span>
+              {identity.source === 'name' && s.senderEmail != null && (
+                <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
+                  {s.senderEmail}
+                </span>
+              )}
+            </span>
+            <span
+              style={{
+                fontSize: text.sm,
+                color: color.fgMuted,
+                textAlign: 'right',
+                fontVariantNumeric: 'tabular-nums',
+                flexShrink: 0,
+                maxWidth: '50%',
+              }}
+            >
+              {reasonLabel(s.reason)}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+const ellipsis = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+} as const;
+
+/**
+ * The matcher's reason arrives as one server-built string. The new-sender
+ * preset writes "New sender (3d old, 1 msgs)" — every row in that list is
+ * a new sender, so only the figures are worth the column: "3 days old ·
+ * 1 email". Same numbers; any other reason passes through untouched.
+ */
+export function reasonLabel(reason: string): string {
+  const m = /^New sender \((?:(\d+)d old)?(?:, )?(?:(\d+) msgs)?\)$/.exec(reason);
+  if (m == null) return reason;
+  const [, days, msgs] = m;
+  const parts = [
+    ...(days == null ? [] : [`${days} day${days === '1' ? '' : 's'} old`]),
+    ...(msgs == null ? [] : [`${msgs} email${msgs === '1' ? '' : 's'}`]),
+  ];
+  return parts.length === 0 ? reason : parts.join(' · ');
 }

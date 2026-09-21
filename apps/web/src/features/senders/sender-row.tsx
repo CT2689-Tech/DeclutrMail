@@ -3,8 +3,12 @@
 /**
  * The Senders list row — the ONE per-sender layout, on every width.
  *
- *   [☐] [logo]  Name ◆            1,204   [Archive →] [⋯]
- *               address · status  emails
+ *   [logo]  Name ◆ (status)     1,204 emails   [Archive] (⋯)
+ *           address
+ *
+ * The checkbox has no column of its own: it OVERLAYS the logo on row
+ * hover / focus, whenever any row is selected, and always on touch
+ * (see `sender-list.tsx`), so the list shares the title's left edge.
  *
  * The row answers "who, how much, what do I do" and nothing else; trend,
  * read rate, last seen and the volume chart live in the detail pane.
@@ -26,7 +30,7 @@
 import { useCallback, useRef, useState, type MouseEvent } from 'react';
 import type * as React from 'react';
 import Link from 'next/link';
-import { Avatar, tokens } from '@declutrmail/shared';
+import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from './action-row';
 import { isStandingProtected, senderAddressLine, type ActionRequest, type Sender } from './data';
 import { RowCheckbox } from './row-checkbox';
@@ -39,7 +43,7 @@ import {
 } from './row-activity';
 import { unsubscribeStatusCopy } from './unsub-status';
 
-const { color, font, motion, text } = tokens;
+const { color, motion, radius, text } = tokens;
 
 /** Minimum travel (px) on the dominant axis before a row swipe resolves. */
 export const ROW_SWIPE_THRESHOLD_PX = 56;
@@ -106,22 +110,22 @@ const SHIELD = (
   </svg>
 );
 
-/** The right-aligned count: display numerals over a tiny unit label. */
+/** The right-aligned count: number and unit on one baseline. */
 function CountCell({ value, unit }: { value: number; unit: string }) {
   return (
     <div
       style={{
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-end',
-        minWidth: 56,
-        lineHeight: 1.2,
+        alignItems: 'baseline',
+        justifyContent: 'flex-end',
+        gap: 4,
+        minWidth: 72,
+        whiteSpace: 'nowrap',
       }}
     >
       <span
         style={{
-          fontFamily: font.display,
-          fontSize: text.lg,
+          fontSize: text.md,
           fontWeight: 600,
           color: color.fg,
           fontVariantNumeric: 'tabular-nums',
@@ -133,6 +137,9 @@ function CountCell({ value, unit }: { value: number; unit: string }) {
     </div>
   );
 }
+
+/** Row grid: logo (checkbox overlays it) · who · count · actions. */
+const ROW_GRID = '44px minmax(0,1fr) auto auto';
 
 export function SenderRow({
   s,
@@ -187,33 +194,44 @@ export function SenderRow({
       style={{
         position: 'relative',
         display: 'grid',
-        gridTemplateColumns: '28px 40px minmax(0,1fr) auto auto',
+        gridTemplateColumns: ROW_GRID,
         alignItems: 'center',
-        columnGap: 12,
-        minHeight: 64,
-        padding: '0 8px',
-        borderBottom: `1px solid ${color.line}`,
+        columnGap: 14,
+        minHeight: 72,
+        padding: '0 12px',
+        borderRadius: radius.lg,
         cursor: 'pointer',
         // Busy is a TINT, never a fade: opacity on the row would also fade
         // the status, the one thing the user needs to read.
-        background: active ? color.mutedBg : busy ? color.paper : undefined,
-        boxShadow: active ? `inset 2px 0 0 ${color.primary}` : undefined,
+        background: active ? color.primarySoft : busy ? color.fill : undefined,
         transition: `background ${motion.fast} ${motion.ease}`,
         // pan-y: vertical scroll stays with the browser; horizontal swipes
         // reach the pointer handlers.
         ...(compact ? { touchAction: 'pan-y' as const } : null),
       }}
     >
-      <div className="dm-srow-check" style={{ display: 'flex', justifyContent: 'center' }}>
-        <RowCheckbox
-          checked={selected}
-          onChange={(_, evt) => onToggleSelect(evt)}
-          ariaLabel={`Select ${s.name}`}
-          disabled={busy}
-        />
+      <div style={{ position: 'relative', width: 44, height: 44 }}>
+        <span className="dm-srow-avatar" style={{ display: 'flex' }}>
+          <Avatar name={s.name} domain={s.domain} size={44} hasMark={s.brandMark} />
+        </span>
+        <div
+          className="dm-srow-check"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <RowCheckbox
+            checked={selected}
+            onChange={(_, evt) => onToggleSelect(evt)}
+            ariaLabel={`Select ${s.name}`}
+            disabled={busy}
+          />
+        </div>
       </div>
-
-      <Avatar name={s.name} domain={s.domain} size={40} hasMark={s.brandMark} />
 
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -253,39 +271,27 @@ export function SenderRow({
               {SHIELD}
             </span>
           )}
+          {unsub && (
+            <span title={unsub.title} style={{ display: 'inline-flex', flex: '0 0 auto' }}>
+              <Pill>{unsub.label}</Pill>
+            </span>
+          )}
           {/* Only where no button is on the row to carry the status. */}
           {activity && compact && <RowActivityPill activity={activity} />}
         </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
-          <span
-            title={addressLine}
-            style={{
-              fontFamily: font.mono,
-              fontSize: text.sm,
-              color: color.fgMuted,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              minWidth: 0,
-            }}
-          >
-            {addressLine}
-          </span>
-          {unsub && (
-            <span
-              title={unsub.title}
-              style={{
-                fontSize: text.xs,
-                fontWeight: 500,
-                color: color.amber,
-                whiteSpace: 'nowrap',
-                flex: '0 0 auto',
-              }}
-            >
-              {unsub.label}
-            </span>
-          )}
-        </div>
+        <span
+          title={addressLine}
+          style={{
+            fontSize: text.sm,
+            color: color.fgMuted,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            minWidth: 0,
+          }}
+        >
+          {addressLine}
+        </span>
       </div>
 
       <CountCell value={s.totalReceived} unit={s.totalReceived === 1 ? 'email' : 'emails'} />
@@ -303,6 +309,7 @@ export function SenderRow({
             display: 'flex',
             alignItems: 'center',
             paddingLeft: 20,
+            borderRadius: radius.lg,
             background: color.card,
             opacity: 0.92,
             pointerEvents: 'none',
@@ -349,7 +356,7 @@ export function DomainGroupRow({
   // the group has to say it, or acting inside a brand looks like nothing.
   const activity = useGroupActivitySummary(memberIds);
   return (
-    <div role="listitem" style={{ borderBottom: `1px solid ${color.line}` }}>
+    <div role="listitem">
       <button
         type="button"
         data-testid={`domain-group-${domain}`}
@@ -358,14 +365,16 @@ export function DomainGroupRow({
         onClick={onToggleExpand}
         className="dm-srow"
         style={{
+          position: 'relative',
           display: 'grid',
-          gridTemplateColumns: '28px 40px minmax(0,1fr) auto',
+          gridTemplateColumns: '44px minmax(0,1fr) auto',
           alignItems: 'center',
-          columnGap: 12,
+          columnGap: 14,
           width: '100%',
-          minHeight: 64,
-          padding: '0 8px',
+          minHeight: 52,
+          padding: '0 12px',
           border: 'none',
+          borderRadius: radius.lg,
           background: 'transparent',
           font: 'inherit',
           textAlign: 'left',
@@ -396,13 +405,20 @@ export function DomainGroupRow({
             <path d="m9 6 6 6-6 6" />
           </svg>
         </span>
-        <Avatar name={domain} domain={domain} size={40} />
-        <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
+        {/* A quiet section header, not another row of content. */}
+        <span
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 8,
+            minWidth: 0,
+            fontSize: text.sm,
+            fontWeight: 600,
+            color: color.fgMuted,
+          }}
+        >
           <span
             style={{
-              fontSize: text.md,
-              fontWeight: 600,
-              color: color.fg,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -410,7 +426,7 @@ export function DomainGroupRow({
           >
             {domain}
           </span>
-          <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+          <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
             {senderCount} senders
             {activity && !expanded && (
               <>

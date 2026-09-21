@@ -2,7 +2,7 @@
 
 import { tokens } from '@declutrmail/shared';
 
-const { color, font, motion, text } = tokens;
+const { color, font, motion, radius, text } = tokens;
 
 /**
  * The screen's one count — "3 of 12" plus a thin bar.
@@ -40,10 +40,10 @@ export function SessionProgress({
         aria-valuenow={done}
         aria-label={label}
         style={{
-          width: 72,
+          width: 88,
           height: 3,
-          borderRadius: 9999,
-          background: color.line,
+          borderRadius: radius.pill,
+          background: color.fill,
           overflow: 'hidden',
         }}
       >
@@ -51,7 +51,7 @@ export function SessionProgress({
           style={{
             width: `${pct}%`,
             height: '100%',
-            borderRadius: 9999,
+            borderRadius: radius.pill,
             background: color.primary,
             transition: `width ${motion.base} ${motion.ease}`,
           }}
@@ -60,6 +60,7 @@ export function SessionProgress({
       <span
         style={{
           fontSize: text.sm,
+          fontWeight: 500,
           color: color.fgMuted,
           fontVariantNumeric: 'tabular-nums',
           whiteSpace: 'nowrap',

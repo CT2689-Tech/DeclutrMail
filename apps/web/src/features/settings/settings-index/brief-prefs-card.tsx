@@ -2,9 +2,9 @@
 
 import { tokens } from '@declutrmail/shared';
 import type { BriefPrefs } from '@declutrmail/shared/contracts';
-import { SettingsRow, SettingsRowStatus, SettingsSaveError } from '../settings-list';
+import { SelectWell, SettingsRow, SettingsRowStatus, SettingsSaveError } from '../settings-list';
 
-const { color, font, text, radius } = tokens;
+const { color, text } = tokens;
 
 /** Selectable local hours, 0–23 (D64). */
 const HOURS: readonly number[] = Array.from({ length: 24 }, (_, h) => h);
@@ -80,19 +80,18 @@ export function BriefPrefsCard({
         <span role="status" style={{ fontSize: text.sm, color: color.fgMuted }}>
           {pending ? 'Saving…' : ''}
         </span>
-        <select
+        <SelectWell
           value={state.prefs.hour}
           disabled={pending}
           onChange={(e) => onChange(Number(e.target.value))}
           aria-label="Daily Brief delivery hour"
-          style={selectStyle}
         >
           {HOURS.map((hour) => (
             <option key={hour} value={hour}>
               {formatHourLabel(hour)}
             </option>
           ))}
-        </select>
+        </SelectWell>
       </SettingsRow>
       {saveFailed && (
         <SettingsSaveError>Could not save the delivery time. Try again.</SettingsSaveError>
@@ -100,15 +99,3 @@ export function BriefPrefsCard({
     </>
   );
 }
-
-const selectStyle = {
-  fontFamily: font.sans,
-  fontSize: text.md,
-  color: color.fg,
-  background: color.card,
-  border: `1px solid ${color.line}`,
-  borderRadius: radius.md,
-  padding: '6px 8px',
-  height: 32,
-  boxSizing: 'border-box',
-} as const;

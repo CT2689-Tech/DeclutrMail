@@ -1187,7 +1187,9 @@ describe('SendersScreen — edge states', () => {
 
     // Pressing `A` opens the mandatory preview — never a direct mutation.
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(await screen.findByText(/archive email from 1 sender/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ }),
+    ).toBeInTheDocument();
   });
 
   it('archives a single sender for real (enqueue → poll → receipt → working undo) (D226, P6)', async () => {
@@ -1255,7 +1257,7 @@ describe('SendersScreen — edge states', () => {
 
     // Intent → preview (mandatory, D226) → confirm via ⌘⏎.
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     // Wait for the REAL inbox count to load so confirm is no longer gated.
     await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
@@ -1342,7 +1344,12 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'd' });
     await screen.findByText(/currently match.*Trash/i);
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('radio', { name: /All inbox/i }));
+    fireEvent.change(
+      within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
+      {
+        target: { value: 'all' },
+      },
+    );
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await findRowStatus();
     // Founder decision 2026-09-20: the row STAYS where it is, marked done,
@@ -1428,7 +1435,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
@@ -1524,14 +1531,15 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     await screen.findByText(/currently match.*Archive/i);
 
     // Pick the narrowest window — the chip states 12 of the 250.
     const dialog = screen.getByRole('dialog');
-    const yearChip = within(dialog).getByRole('radio', { name: /1 year\+/i });
-    expect(yearChip).toHaveTextContent('12');
-    fireEvent.click(yearChip);
+    expect(within(dialog).getByRole('option', { name: /1 year\+/i })).toHaveTextContent('12');
+    fireEvent.change(within(dialog).getByRole('combobox', { name: /How far back/i }), {
+      target: { value: '365' },
+    });
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(postedBody).not.toBeNull());
@@ -1588,7 +1596,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     await screen.findByText(/currently match.*Archive/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
@@ -1630,7 +1638,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // Preview resolves to 0 current matches and the confirm is disabled.
     await screen.findByText(/emails currently match.*Archive/i);
@@ -1693,7 +1701,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // Count check failed → explicit no-change state and a blocked confirm.
     await screen.findByText(/couldn't load the preview/i);
@@ -1721,7 +1729,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
-    await screen.findByText(/unsubscribe from 1 sender/i);
+    await screen.findByRole('heading', { name: /^Unsubscribe from .+\?$/ });
 
     // Once the count resolves to 0, the backlog toggle disappears — no offer
     // to archive mail that isn't there.
@@ -1745,7 +1753,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'u' });
-    await screen.findByText(/unsubscribe from 1 sender/i);
+    await screen.findByRole('heading', { name: /^Unsubscribe from .+\?$/ });
 
     // The secondary chip row group label + chip options appear.
     await screen.findByRole('radiogroup', { name: /also act on past emails/i });
@@ -1884,7 +1892,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // X = sample rows actually shown, Y = the real total; X <= Y always.
     const disclosure = await screen.findByText(/show what currently matches \(3 of 3\)/i);
@@ -1915,11 +1923,11 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // A second verb key with the preview open must not stack a new modal.
     fireEvent.keyDown(document.body, { key: 'u' });
-    expect(screen.queryByText(/unsubscribe from 1 sender/i)).toBeNull();
+    expect(screen.queryByRole('heading', { name: /^Unsubscribe from .+\?$/ })).toBeNull();
   });
 
   it('honors L and U shortcuts too (advertised aria-keyshortcuts are truthful)', async () => {
@@ -1929,12 +1937,20 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'l' });
-    expect(await screen.findByText(/move 1 sender to later/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /^(Move .+ to Later\?|Nothing .+)$/ }),
+    ).toBeInTheDocument();
     // Cancel the preview, then verify U routes to the unsubscribe preview.
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByText(/move 1 sender to later/i)).toBeNull());
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', { name: /^(Move .+ to Later\?|Nothing .+)$/ }),
+      ).toBeNull(),
+    );
     fireEvent.keyDown(document.body, { key: 'u' });
-    expect(await screen.findByText(/unsubscribe from 1 sender/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /^Unsubscribe from .+\?$/ }),
+    ).toBeInTheDocument();
   });
 
   it('does not fire a verb shortcut while typing in the search field', async () => {
@@ -1946,7 +1962,7 @@ describe('SendersScreen — edge states', () => {
     const search = screen.getByRole('combobox', { name: /search senders/i });
     search.focus();
     fireEvent.keyDown(search, { key: 'a' });
-    expect(screen.queryByText(/archive email from 1 sender/i)).toBeNull();
+    expect(screen.queryByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ })).toBeNull();
   });
 
   it('does not fire a verb shortcut while the cheatsheet is open', async () => {
@@ -1958,7 +1974,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: '?' }); // open cheatsheet
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(screen.queryByText(/archive email from 1 sender/i)).toBeNull();
+    expect(screen.queryByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ })).toBeNull();
   });
 
   it('does not stack the cheatsheet on top of an open preview', async () => {
@@ -1968,7 +1984,7 @@ describe('SendersScreen — edge states', () => {
     const checkbox = await screen.findByRole('checkbox', { name: /select sender a/i });
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' }); // open the preview
-    await screen.findByText(/archive email from 1 sender/i);
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // `?` while the preview is open must not pop a second modal over it.
     fireEvent.keyDown(document.body, { key: '?' });
@@ -2371,7 +2387,10 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     // title and the scope line must both say 1 — a title of "2 senders"
     // over a 1-sender mutation is the contradiction the preview exists
     // to make impossible.
-    expect(within(dialog).getByText(/Archive email from 1 sender$/)).toBeInTheDocument();
+    // A one-sender request reads as a single-sender sheet: no sender count.
+    expect(within(dialog).getByRole('heading', { name: /^Archive .+\?$/ })).not.toHaveTextContent(
+      /senders/,
+    );
     expect(within(dialog).queryByText(/from 2 senders/)).not.toBeInTheDocument();
     // And it can actually run — the upgrade swap is for a ZERO allowance.
     expect(
@@ -2458,13 +2477,15 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     const dialog = await screen.findByRole('dialog');
     await waitFor(() => expect(previewedSenderIds).toEqual(['a']));
-    expect(within(dialog).getByText('Archive email from 1 sender')).toBeInTheDocument();
-    expect(within(dialog).getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-      '3 selected · 2 eligible · 1 skipped',
+    expect(within(dialog).getByRole('heading', { name: /^Archive .+\?$/ })).not.toHaveTextContent(
+      /senders/,
     );
-    expect(
-      within(dialog).getByText(/1 protected sender skipped — unprotect to include it/),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Senders included in this bulk action')).toHaveTextContent(
+      '3 selected, 2 eligible, 1 skipped',
+    );
+    // Said once, in the note; the way to include it sits in Details.
+    expect(within(dialog).getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Unprotect a sender to include it/)).toBeInTheDocument();
     expect(within(dialog).getByText(/1 of 2 eligible senders/)).toBeVisible();
   });
 
@@ -3083,16 +3104,18 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await selectBothAndPress('a');
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
-    await screen.findByText(/archive email from 2 senders/i);
     await screen.findByText(/currently match.*Archive/i);
-    // The aggregated total (12 + 18) renders in the modal — headline +
-    // the "All inbox" chip count both read 30.
-    expect(within(screen.getByRole('dialog')).getAllByText('30').length).toBeGreaterThan(0);
-    // Per-window chips read the AGGREGATED totals too (8 + 9 = 17 for
+    // The aggregated total (12 + 18) is the title's count.
+    expect(
+      within(screen.getByRole('dialog')).getByRole('heading', {
+        name: 'Archive 30 emails from 2 senders?',
+      }),
+    ).toBeInTheDocument();
+    // Per-window options read the AGGREGATED totals too (8 + 9 = 17 for
     // "30 days+") — never the single-sender composite preview, which is
     // absent on bulk flows.
     expect(
-      within(screen.getByRole('dialog')).getByRole('radio', { name: /30 days\+/i }),
+      within(screen.getByRole('dialog')).getByRole('option', { name: /30 days\+/i }),
     ).toHaveTextContent('17');
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
@@ -3420,8 +3443,8 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     renderScreen();
     await selectBothAndPress('d');
     // Destructive treatment — same Trash copy as single-sender Delete.
-    await screen.findByText(/move email from 2 senders to gmail trash/i);
-    await screen.findByText(/moves to gmail trash/i);
+    await screen.findByText(/delete email from 2 senders/i);
+    await screen.findByText(/move to gmail trash/i);
     // D226: a failed preview must BLOCK the destructive confirm.
     await screen.findByText(/couldn't load the preview/i);
     const dialog = screen.getByRole('dialog');
@@ -3510,7 +3533,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(deleteBtn).toHaveAttribute('aria-keyshortcuts', 'D');
     fireEvent.click(deleteBtn);
     // The click routes through the SAME mandatory preview.
-    expect(await screen.findByText(/move email from 1 sender to gmail trash/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /^(Delete .+\?|Nothing .+)$/ }),
+    ).toBeInTheDocument();
   });
 
   const PROTECTED_B = {
@@ -3588,12 +3613,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
 
     // The preview covers the 1 eligible sender AND says what it dropped.
-    await screen.findByText(/archive email from 1 sender/i);
-    expect(
-      screen.getByText(/1 protected sender skipped — unprotect to include it/i),
-    ).toBeInTheDocument();
+    await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
+    expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
+    expect(screen.getByText(/Unprotect a sender to include it/)).toBeInTheDocument();
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-      '2 selected · 1 eligible · 1 skipped',
+      '2 selected, 1 eligible, 1 skipped',
     );
   });
 
@@ -3727,13 +3751,17 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     expect(await screen.findByTestId('sender-detail-pane')).toHaveTextContent('s2');
 
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(screen.queryByText(/archive email from 1 sender/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ }),
+    ).not.toBeInTheDocument();
 
     // Not a dead key: with the pane closed the same press previews the selection.
     fireEvent.click(screen.getByRole('button', { name: 'Close sender details' }));
     expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'a' });
-    expect(await screen.findByText(/archive email from 1 sender/i)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ }),
+    ).toBeInTheDocument();
   });
 
   // The open sender's id belongs to the mailbox it was opened in — after a

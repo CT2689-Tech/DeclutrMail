@@ -2,11 +2,9 @@
 
 import { tokens } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
-import { useState } from 'react';
-
 import type { ActionVerb } from './types';
 
-const { color, font, text, motion } = tokens;
+const { color, text } = tokens;
 
 /**
  * The verification detail the senders confirm modal has always shown and
@@ -81,109 +79,67 @@ export function actionMovesMail(verb: ActionVerb, archiveHistoric: boolean): boo
 
 /**
  * "Where it is now", the Gmail cross-check, and the current-match
- * sample — omitted individually when the caller has no data for them, so
- * the compact preview renders nothing at all.
+ * sample — omitted individually when the caller has no data for them.
+ *
+ * Renders FLAT, for the inside of a "Details" well (ADR-0042): no boxes,
+ * no nested disclosure. The reach CHOICE is not here — it changes the
+ * count, so the sheet renders it as its one control (`SheetSegmented`);
+ * what stays here is the sentence explaining the widened reach.
  */
 export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDetail | undefined }) {
-  const [showSubjects, setShowSubjects] = useState(false);
   if (detail === undefined) return null;
   const location = detail.mailLocationLine ?? null;
   const sample = detail.matchSample;
-  const reachControl = detail.reachControl;
+  const allMail = detail.reachControl?.reach === 'all_mail';
   if (
     location === null &&
     sample === undefined &&
     detail.verifyInGmailUrl === undefined &&
-    reachControl === undefined
+    !allMail
   ) {
     return null;
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {reachControl !== undefined && (
-        <div
-          role="radiogroup"
-          aria-label="Where it applies"
-          style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
-        >
-          <div
-            style={{
-              fontSize: text.xs,
-              color: color.fgMuted,
-            }}
-          >
-            Where it applies
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {(
-              [
-                { value: 'inbox_only', label: 'Inbox only', count: reachControl.inboxCount },
-                { value: 'all_mail', label: 'Inbox + archived', count: reachControl.allMailCount },
-              ] as const
-            ).map((opt) => {
-              const active = reachControl.reach === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => reachControl.onChange(opt.value)}
-                  style={{
-                    fontFamily: font.sans,
-                    fontSize: text.sm,
-                    fontWeight: 500,
-                    padding: '6px 12px',
-                    borderRadius: 999,
-                    background: active ? color.fg : 'transparent',
-                    color: active ? color.fgInverse : color.fgSoft,
-                    border: `1px solid ${active ? color.fg : color.line}`,
-                    cursor: 'pointer',
-                    transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
-                  }}
-                >
-                  {opt.label}
-                  <span
-                    style={{
-                      marginLeft: 6,
-                      fontVariantNumeric: 'tabular-nums',
-                      opacity: active ? 0.85 : 0.7,
-                    }}
-                  >
-                    {opt.count.toLocaleString('en-US')}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          {/* Empty inbox, archived mail exists: the default stays the safe
-              one (founder decision 2026-09-19) and this names the way out. */}
-          {reachControl.reach === 'inbox_only' &&
-            reachControl.inboxCount === 0 &&
-            reachControl.allMailCount > 0 && (
-              <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.45 }}>
-                Switch to &quot;Inbox + archived&quot; to reach{' '}
-                {reachControl.allMailCount.toLocaleString('en-US')} archived email
-                {reachControl.allMailCount === 1 ? '' : 's'}.
-              </span>
-            )}
-          {reachControl.reach === 'all_mail' && (
-            <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.45 }}>
-              Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
-              every email — inbox email to the inbox, archived email to the archive.
-            </span>
-          )}
-        </div>
+    <>
+      {allMail && (
+        <span>
+          Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
+          every email — inbox email to the inbox, archived email to the archive.
+        </span>
       )}
 
       {location !== null && (
-        <span
-          role="status"
-          data-testid="mail-location-line"
-          style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.45 }}
-        >
-          {location}
-        </span>
+        // Static text, not a live region: the sheet owns the one
+        // `role="status"`, and two of them make screen readers race.
+        <span data-testid="mail-location-line">{location}</span>
+      )}
+
+      {sample !== undefined && sample.rows.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>Latest matching email</span>
+          {sample.rows.map((row, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
+              {row.date !== null && (
+                <span
+                  style={{
+                    color: color.fgMuted,
+                    flex: '0 0 auto',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {row.date}
+                </span>
+              )}
+              <span style={{ color: color.fg, minWidth: 0, overflowWrap: 'anywhere' }}>
+                {row.subject}
+              </span>
+            </div>
+          ))}
+          {/* D7 — the trust line goes wherever subjects do. */}
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
+            Subjects only. We never fetch or store full email contents.
+          </span>
+        </div>
       )}
 
       {/* Approximate by construction: Gmail's `older_than:` is day-granular
@@ -194,94 +150,11 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
           href={detail.verifyInGmailUrl}
           target="_blank"
           rel="noopener noreferrer"
-          style={{
-            alignSelf: 'flex-start',
-            fontSize: text.xs,
-            color: color.fgSoft,
-          }}
+          style={{ alignSelf: 'flex-start', color: color.fg, fontWeight: 550 }}
         >
-          Check these in Gmail first ↗
+          Check these in Gmail
         </a>
       )}
-
-      {sample !== undefined && sample.rows.length > 0 && (
-        <>
-          <button
-            type="button"
-            onClick={() => setShowSubjects((v) => !v)}
-            aria-expanded={showSubjects}
-            style={{
-              alignSelf: 'flex-start',
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              fontSize: text.xs,
-              color: color.fgMuted,
-            }}
-          >
-            {showSubjects
-              ? 'Hide current matches ▴'
-              : `Show what currently matches (${sample.rows.length.toLocaleString('en-US')} of ${sample.total.toLocaleString('en-US')}) ▾`}
-          </button>
-          {showSubjects && (
-            <div
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 4,
-                padding: '8px 10px',
-                background: color.card,
-                border: `1px solid ${color.line}`,
-                borderRadius: 6,
-              }}
-            >
-              {sample.rows.map((row, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    alignItems: 'baseline',
-                    fontSize: text.sm,
-                    color: color.fgSoft,
-                  }}
-                >
-                  <span style={{ width: 18, color: color.fgMuted, fontFamily: font.mono }}>
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
-                  {row.date !== null && (
-                    <span
-                      style={{
-                        color: color.fgMuted,
-                        flex: '0 0 auto',
-                        fontFamily: font.mono,
-                        fontVariantNumeric: 'tabular-nums',
-                      }}
-                    >
-                      {row.date}
-                    </span>
-                  )}
-                  <span style={{ color: color.fg, minWidth: 0 }}>{row.subject}</span>
-                </div>
-              ))}
-              {/* D7 — the trust line goes wherever subjects do. */}
-              <div
-                style={{
-                  marginTop: 6,
-                  paddingTop: 6,
-                  borderTop: `1px dashed ${color.line}`,
-                  fontSize: text.xs,
-                  color: color.fgMuted,
-                }}
-              >
-                Subjects only · we never fetch or store full email contents
-              </div>
-            </div>
-          )}
-        </>
-      )}
-    </div>
+    </>
   );
 }

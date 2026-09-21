@@ -45,7 +45,7 @@ export function QuietRoute() {
       style={{
         padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'grid',
-        gap: 16,
+        gap: 24,
         width: '100%',
         boxSizing: 'border-box',
         maxWidth: 880,
@@ -57,8 +57,8 @@ export function QuietRoute() {
         style={{
           margin: 0,
           fontSize: text['2xl'],
-          fontWeight: 600,
-          letterSpacing: '-0.015em',
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
           color: color.fg,
         }}
       >
@@ -75,7 +75,7 @@ export function QuietRoute() {
           description="Connect a Gmail account to set quiet hours for it."
         />
       ) : (
-        <div>
+        <div style={{ display: 'grid', gap: 32, maxWidth: 720 }}>
           {mailboxes.map((mailbox) => (
             <QuietHoursCardContainer key={mailbox.id} mailbox={mailbox} />
           ))}
@@ -128,15 +128,8 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
   };
 
   return (
-    // One hairline row per mailbox — no card chrome.
-    <div
-      style={{
-        display: 'grid',
-        gap: 8,
-        padding: '18px 0',
-        borderTop: `1px solid ${color.line}`,
-      }}
-    >
+    // One raised settings group per mailbox, its address as the group title.
+    <div style={{ display: 'grid', gap: 8 }}>
       <QuietHoursCard
         mailboxEmail={mailbox.email}
         mailboxStatus={mailbox.status}
@@ -215,6 +208,8 @@ function QuietQueueSummary({
         lineHeight: 1.5,
         color: color.fgMuted,
         margin: 0,
+        padding: '0 16px',
+        fontVariantNumeric: 'tabular-nums',
       }}
     >
       {summary}

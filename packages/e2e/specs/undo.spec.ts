@@ -108,25 +108,21 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   await card.getByRole('button', { name: 'More actions' }).click();
   await card.getByRole('menuitem', { name: /Archive/ }).click();
 
-  // ---- D226 mandatory preview modal — real count, then confirm.
-  const modal = page.getByRole('dialog');
+  // ---- D226 mandatory preview sheet — real count, then confirm.
+  // The sheet is named by its title, which states the live count and
+  // the verb as a question ("Archive 3 emails?", ADR-0042).
+  const count = inboxCount.toLocaleString('en-US');
+  const modal = page.getByRole('dialog', {
+    name: `Archive ${count} email${inboxCount === 1 ? '' : 's'}?`,
+  });
   await expect(modal).toBeVisible();
-  // QA-archive-20260901-01: the eyebrow now names the verb.
-  await expect(modal).toContainText('Preview · Archive');
-  // The modal's sender-context strip names the domain (the title is
-  // count-based: "Archive all mail from 1 sender").
+  // The sender's domain and the counting note sit in the sheet's
+  // Details disclosure — present in the DOM, one click away.
   await expect(modal).toContainText(senderDomain);
-  // The confirm button is the verb alone ("📥 Archive"); the D226 real
-  // count lives in the preview BODY. Asserting the count on the button
-  // pinned copy that no longer exists, so this checks it where the user
-  // actually reads it.
-  // The confirm CTA is the only button carrying the ⌘⏎ chip, and that
-  // chip is part of its accessible name — matching on the verb alone
-  // finds nothing, and matching a count finds nothing either.
-  const confirm = modal.getByRole('button', { name: /Archive.*⌘⏎/ });
-  await expect(confirm).toBeEnabled();
-  await expect(modal).toContainText(`${inboxCount.toLocaleString()}`);
   await expect(modal).toContainText(/emails? currently match/);
+  // The confirm button is the verb + the same live count.
+  const confirm = modal.getByRole('button', { name: `Archive ${count}` });
+  await expect(confirm).toBeEnabled();
   await confirm.click();
 
   // ---- Arm the teardown safety net FIRST, from the DB, not the UI.

@@ -115,7 +115,7 @@ describe('Avatar (monogram, ADR-0024)', () => {
     for (const size of [22, 28, 40, 72]) {
       const markup = renderToStaticMarkup(<Avatar name="Chase" domain="chase.com" size={size} />);
 
-      expect(markup).toContain('font-family:var(--dm-font-mono)');
+      expect(markup).toContain('font-family:var(--dm-font-sans)');
       expect(markup).toContain('font-weight:600');
       expect(markup).toContain('letter-spacing:-0.02em');
     }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNow } from '@/lib/use-now';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, toast, tokens } from '@declutrmail/shared';
+import { Button, Tooltip, toast, tokens } from '@declutrmail/shared';
 
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import {
@@ -15,6 +15,9 @@ import { useRetryInitialSync } from './api/use-retry-initial-sync';
 import { useSyncNow } from './api/use-sync-now';
 
 const { color, font, radius, text, motion } = tokens;
+
+/** Hover fill for the round top-bar control — CSS so it needs no JS. */
+const SYNC_BUTTON_CLASS = 'dm-sync-round';
 
 /**
  * "Sync now" button (D38 prod-ready pass; freshness + completion watch
@@ -38,11 +41,11 @@ const { color, font, radius, text, motion } = tokens;
  *     surface left standing. Renders "Scan failed" + a "Scan again"
  *     button wired to `useRetryInitialSync`, or "Reconnect Gmail" when
  *     the failure needs reauthorization — never a doomed Sync-now CTA.
- *   - **Idle** — ready + not in-flight. Click → mutation fires. A muted
- *     "synced Xm ago" label sits beside the button (hover = absolute
- *     time) so the user always knows data freshness.
+ *   - **Idle** — ready + not in-flight. Click → mutation fires. A round
+ *     36px icon button; its tooltip (hover or keyboard focus) carries
+ *     "Synced Xm ago · Sync now" plus the absolute time.
  *   - **Pending/Watching** — request in flight OR completion watch
- *     running. `aria-busy`, label "Syncing…", disabled.
+ *     running. `aria-busy`, icon spins, tooltip reads "Syncing…", disabled.
  *
  * Completion watch: the 202 from `POST /v1/sync/incremental` only means
  * "queued" — it says nothing about the run finishing. Before the
@@ -247,56 +250,60 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
     });
   };
 
+  // One quiet round control. Freshness lives in its tooltip (hover or
+  // keyboard focus) instead of a standing label beside it.
+  const action = busy ? 'Syncing…' : 'Sync now';
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      {lastSyncedAt !== null && now !== null && (
-        <span
-          // Collapsed below `sm` so the topbar keeps the account switcher
-          // fully on-screen on a phone (the sync button stays as icon-only).
-          className="dm-topbar-collapse"
-          title={`Last synced ${new Date(lastSyncedAt).toLocaleString('en-US')}`}
+    <Tooltip
+      placement="bottom"
+      content={
+        lastSyncedAt !== null && now !== null ? (
+          <>
+            Synced {relAge(lastSyncedAt, now)} · {action}
+            <span
+              style={{
+                display: 'block',
+                fontSize: text.xs,
+                color: color.fgInverseMuted,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {new Date(lastSyncedAt).toLocaleString('en-US')}
+            </span>
+          </>
+        ) : (
+          action
+        )
+      }
+    >
+      {({ describedBy }) => (
+        <button
+          type="button"
+          className={SYNC_BUTTON_CLASS}
+          onClick={() => void startSync()}
+          disabled={busy}
+          aria-busy={busy}
+          aria-label="Check Gmail for new emails"
+          aria-describedby={describedBy}
           style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 36,
+            height: 36,
+            padding: 0,
+            borderRadius: radius.pill,
+            border: 'none',
+            color: busy ? color.primary : color.fgMuted,
             fontFamily: font.sans,
-            fontSize: text.xs,
-            fontVariantNumeric: 'tabular-nums',
-            color: color.fgMuted,
-            whiteSpace: 'nowrap',
+            cursor: busy ? 'progress' : 'pointer',
+            transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
           }}
         >
-          synced {relAge(lastSyncedAt, now)}
-        </span>
+          <SyncIcon spinning={busy} />
+        </button>
       )}
-      <button
-        type="button"
-        onClick={() => void startSync()}
-        disabled={busy}
-        aria-busy={busy}
-        aria-label="Check Gmail for new emails"
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: 6,
-          height: 30,
-          padding: '0 12px',
-          borderRadius: radius.pill,
-          background: busy ? color.mutedBg : color.card,
-          border: `1px solid ${color.line}`,
-          color: color.fg,
-          fontFamily: font.sans,
-          fontSize: text.sm,
-          fontWeight: 500,
-          cursor: busy ? 'progress' : 'pointer',
-          opacity: busy ? 0.7 : 1,
-          transition: `background ${motion.fast} ${motion.ease}, opacity ${motion.fast} ${motion.ease}`,
-        }}
-      >
-        <SyncIcon spinning={busy} />
-        {/* Label collapses below `sm` — the button stays icon-only on a
-            phone so the topbar row fits without clipping the switcher.
-            The `aria-label` above keeps it accessible when text is hidden. */}
-        <span className="dm-topbar-collapse">{busy ? 'Syncing…' : 'Sync now'}</span>
-      </button>
-    </span>
+    </Tooltip>
   );
 }
 
@@ -321,18 +328,15 @@ function FailedSyncIndicator({
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
-      {/* No `dm-topbar-collapse` here (design-system-agent review): that
-          class is for labels a nearby icon or button text already makes
-          redundant on mobile ("synced Xm ago" beside the sync icon,
-          "Sync now"/"Syncing…" beside its own icon). "Scan failed" is
-          the ONLY thing that says something is wrong — the action
-          button's own text ("Reconnect Gmail"/"Scan again") explains
-          what to do, not why, so collapsing this left an unexplained
-          red button below 900px. */}
+      {/* Never hidden at any width (design-system-agent review): "Scan
+          failed" is the ONLY thing that says something is wrong — the
+          action button's own text ("Reconnect Gmail"/"Scan again")
+          explains what to do, not why. */}
       <span
         style={{
           fontFamily: font.sans,
-          fontSize: text.xs,
+          fontSize: text.sm,
+          fontWeight: 600,
           color: color.danger,
           whiteSpace: 'nowrap',
         }}
@@ -358,7 +362,7 @@ function FailedSyncIndicator({
 }
 
 /**
- * 14px refresh icon. `spinning=true` plays an infinite rotation while
+ * 18px refresh icon. `spinning=true` plays an infinite rotation while
  * the mutation is in flight — the keyframe is registered once at module
  * scope below.
  *
@@ -369,8 +373,8 @@ function FailedSyncIndicator({
 function SyncIcon({ spinning }: { spinning: boolean }) {
   return (
     <svg
-      width={14}
-      height={14}
+      width={18}
+      height={18}
       viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
@@ -379,10 +383,10 @@ function SyncIcon({ spinning }: { spinning: boolean }) {
       <path
         d="M21 12a9 9 0 1 1-3.5-7.1"
         stroke="currentColor"
-        strokeWidth={2}
+        strokeWidth={1.75}
         strokeLinecap="round"
       />
-      <path d="M21 3v6h-6" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+      <path d="M21 3v6h-6" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" />
     </svg>
   );
 }
@@ -405,12 +409,11 @@ export function SyncNowAnimationStyle() {
       @media (prefers-reduced-motion: reduce) {
         [style*="dm-sync-spin"] { animation: none !important; }
       }
-      /* Topbar mobile collapse (matches the shell's 900px sm breakpoint).
-         The freshness label + Sync-now text hide so the account switcher
-         stays fully on-screen on a phone. CSS-driven (not a JS hook) so
-         there is no post-hydration flash — same rationale as tokens.css. */
+      .dm-sync-round { background: transparent; }
+      .dm-sync-round:hover:not(:disabled) { background: var(--dm-fill); }
+      /* 44px touch target below the shell's 900px sm breakpoint. */
       @media (max-width: 900px) {
-        .dm-topbar-collapse { display: none; }
+        .dm-sync-round { min-width: 44px; min-height: 44px; }
       }
     `}</style>
   );

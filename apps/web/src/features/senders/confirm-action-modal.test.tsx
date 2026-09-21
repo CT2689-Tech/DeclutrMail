@@ -329,7 +329,7 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     // title comes off the request's senders, not `selectedCount -
     // skipped` — those agreed only before the quota cap gave a request a
     // second reason to cover fewer senders than the selection.
-    expect(screen.getByText('Archive email from 1 sender')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Archive 4 emails?' })).toBeInTheDocument();
     expect(screen.queryByText(/from 40 senders/)).not.toBeInTheDocument();
     expect(screen.getByText(/1 of 40 eligible senders/)).toBeInTheDocument();
     expect(screen.getByText(/all you have left this month/)).toBeInTheDocument();
@@ -382,10 +382,12 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
     expect(screen.getByText(/2 of 4 eligible senders/)).toBeInTheDocument();
     expect(screen.queryByText(/4 senders you selected/)).not.toBeInTheDocument();
     // The title is the acted-on count, stated by the caller.
-    expect(screen.getByText('Archive email from 2 senders')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Archive 4 emails from 2 senders?' }),
+    ).toBeInTheDocument();
     // And the scope line keeps the real selection total intact.
     expect(screen.getByLabelText('Senders included in this bulk action')).toHaveTextContent(
-      '5 selected · 4 eligible · 1 skipped',
+      '5 selected, 4 eligible, 1 skipped',
     );
   });
 
@@ -480,7 +482,10 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
       screen.getByRole('button', { name: /Show what currently matches \(1 of 4\)/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/will move to Archive/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('note', { name: 'Gmail account: active@gmail.com' })).toBeVisible();
+    // In the collapsed Details disclosure (ADR-0042) — present, one click away.
+    expect(
+      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
+    ).toBeInTheDocument();
   });
 
   it('discloses that an unsubscribe backlog move consumes a second Free action', () => {
@@ -611,9 +616,16 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
   // predicate is an assertion, not a narrowing, so the object reached
   // `join` with nothing in the type system to stop it. Nothing asserted
   // on the assembled string, which is why it survived to production.
-  it.each(['Archive them', 'Delete them'] as const)(
-    'renders real copy after "Also:" when the %s backlog verb is picked',
-    (label) => {
+  it.each([
+    [
+      'Archive them',
+      /Unsubscribe and archive 4 emails\?/,
+      'Moves out of your inbox, stays in Gmail.',
+    ],
+    ['Delete them', /Unsubscribe and delete 4 emails\?/, 'Email in Inbox moves to Gmail Trash.'],
+  ] as const)(
+    'renders real copy for the backlog verb when %s is picked',
+    (label, heading, backlogFact) => {
       const { container } = render(
         <ConfirmActionModal
           request={request('Unsubscribe')}
@@ -626,7 +638,8 @@ describe('ConfirmActionModal — backlog secondary belongs to Unsubscribe only',
       fireEvent.click(screen.getByRole('radio', { name: label }));
 
       expect(container.textContent).not.toContain('[object Object]');
-      expect(container.textContent).toMatch(/Also: \S/);
+      expect(screen.getByRole('heading', { name: heading })).toBeInTheDocument();
+      expect(container.textContent).toContain(backlogFact);
     },
   );
 });
@@ -691,7 +704,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
 
   it('hides the window chips when no window can change the outcome', () => {
     renderDelete(emptyInbox, 71);
-    expect(screen.queryByRole('radiogroup', { name: /How far back/i })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
     // …and drops the qualifier that described the now-absent control.
     expect(screen.queryByText(/older than 180 days/)).toBeNull();
   });
@@ -738,7 +751,7 @@ describe('ConfirmActionModal — arrival volume vs INBOX-now counts', () => {
     );
     // The inbox is NOT empty, so the window row stays — widening it is a
     // real next step and the copy must not claim an empty inbox.
-    expect(screen.getByRole('radiogroup', { name: /How far back/i })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: /How far back/i })).toBeTruthy();
     expect(
       screen.getByText(
         /None of the 30 inbox emails from this sender are older than the 6 months\+ window\. Widen the window to include them\./,
@@ -976,7 +989,7 @@ describe('ConfirmActionModal — preview trust affordances', () => {
     ).toBeTruthy();
     // The chips themselves stay: merging them would let "All inbox" stand
     // in for "6 months+", which can diverge at execution.
-    expect(screen.getByRole('radiogroup', { name: /How far back/i })).toBeTruthy();
+    expect(screen.getByRole('combobox', { name: /How far back/i })).toBeTruthy();
   });
 
   it('stays quiet when every window narrows something (B)', () => {
@@ -1163,12 +1176,13 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     );
     fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     // 180d default window over the all-mail buckets — the figure appears
-    // on both the chip and the headline, so assert the pair.
-    expect(screen.getAllByText('700').length).toBeGreaterThanOrEqual(2);
+    // on both the chip and the title, so assert the pair.
+    expect(screen.getByRole('heading', { name: 'Delete 700 emails?' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /Inbox \+ archived/ })).toHaveTextContent('700');
     expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
-    // The un-windowed chip stops claiming "inbox" once the reach is wider.
-    expect(screen.getByRole('radio', { name: /All mail/ })).toBeInTheDocument();
-    expect(screen.queryByRole('radio', { name: /All inbox/ })).toBeNull();
+    // The un-windowed option stops claiming "inbox" once the reach is wider.
+    expect(screen.getByRole('option', { name: /All mail/ })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: /All inbox/ })).toBeNull();
     // The widened scope + the per-message undo promise (ADR-0028 §5:
     // "Undo restores each message to where it was") are stated where
     // the choice is made.
@@ -1216,7 +1230,7 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     );
     // The window chips are suppressed (five zeros), but the reach row is
     // exactly the escape hatch and must stay visible.
-    expect(screen.queryByRole('radiogroup', { name: /How far back/i })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
     expect(reachRow()).not.toBeNull();
     expect(
       screen.getByText(/Switch to "Inbox \+ archived" to reach 977 archived emails\./),
@@ -1230,8 +1244,10 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
     // to "All mail", so the user gets 977, not a silently-shaved 700.
     fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.queryByText(/in your inbox now/)).toBeNull();
-    expect(screen.getByRole('radio', { name: /All mail/ })).toHaveAttribute('aria-checked', 'true');
-    expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(1);
+    expect((screen.getByRole('option', { name: /All mail/ }) as HTMLOptionElement).selected).toBe(
+      true,
+    );
+    expect(screen.getByRole('heading', { name: 'Delete 977 emails?' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Delete/ })).toBeEnabled();
   });
 
@@ -1258,7 +1274,10 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={nothingAnywhere}
       />,
     );
-    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+    // Both reaches count 0, so the choice changes nothing and is not offered
+    // (ADR-0042) — and the zero still blocks confirm.
+    expect(reachRow()).toBeNull();
+    expect(screen.getByRole('heading', { name: /Nothing in your inbox from/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
   });
 
@@ -1335,12 +1354,18 @@ describe('ConfirmActionModal — ADR-0028 reach on the Unsubscribe+Delete second
     // secondary's window defaults to "All" (unwindowed), so this is the
     // full inbox bucket (`buckets.all` = 4), not a 180d-narrowed figure.
     expect(screen.getByText(/emails currently match for Trash/)).toBeInTheDocument();
-    expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(2);
+    expect(
+      screen.getByRole('heading', { name: 'Unsubscribe and delete 4 emails?' }),
+    ).toBeInTheDocument();
+    expect(inboxChip).toHaveTextContent('4');
 
     fireEvent.click(archivedChip);
     expect(archivedChip).toHaveAttribute('aria-checked', 'true');
-    // "977" appears twice — the headline and the chip's own badge.
-    expect(screen.getAllByText('977').length).toBeGreaterThanOrEqual(2);
+    // "977" on the title and on the chip's own badge.
+    expect(
+      screen.getByRole('heading', { name: 'Unsubscribe and delete 977 emails?' }),
+    ).toBeInTheDocument();
+    expect(archivedChip).toHaveTextContent('977');
   });
 
   it('forwards secondary.reach only when Delete them is the active secondary at all-mail reach', () => {
@@ -1384,7 +1409,9 @@ describe('ConfirmActionModal — ADR-0028 reach on the Unsubscribe+Delete second
     // = 4), not a stale all-mail figure left over from the Delete chip
     // choice.
     expect(screen.getByText(/emails currently match for Archive/)).toBeInTheDocument();
-    expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(1);
+    expect(
+      screen.getByRole('heading', { name: 'Unsubscribe and archive 4 emails?' }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -1436,12 +1463,14 @@ describe('ConfirmActionModal — ADR-0028 reach on a bulk selection (amendment 2
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
 
-    expect(screen.getByText(/Email in Inbox moves to Gmail Trash/)).toBeInTheDocument();
+    expect(screen.getByText('They move to Gmail Trash.')).toBeInTheDocument();
     fireEvent.click(archived);
     expect(screen.getByText(/across inbox \+ archived/)).toBeInTheDocument();
-    // The lead follows the chip — it must not keep claiming "in Inbox".
-    expect(screen.queryByText(/Email in Inbox moves to Gmail Trash/)).toBeNull();
-    expect(screen.getByText(/in Inbox or archived moves to Gmail Trash/)).toBeInTheDocument();
+    // The subtitle follows the chip — it must not keep describing inbox mail only.
+    expect(screen.queryByText('They move to Gmail Trash.')).toBeNull();
+    expect(
+      screen.getByText(/Inbox and archived email both move to Gmail Trash/),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Delete/ }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ reach: 'all_mail' }));
   });
@@ -2008,10 +2037,10 @@ describe('ConfirmActionModal — each fact is stated once (D226)', () => {
       />,
     );
     const text = container.textContent ?? '';
-    // One spelling survives — `activityUndo`'s. `finality` restated it
-    // ("After delivery, the unsubscribe request cannot be recalled.")
-    // and both used to render, back to back, twice over.
-    expect(occurrences(text, 'cannot be undone')).toBe(1);
+    // One spelling survives — the note's, shared with Triage's sheet.
+    // `activityUndo` and `finality` used to render back to back, twice over.
+    expect(occurrences(text, 'can’t be recalled')).toBe(1);
+    expect(occurrences(text, 'cannot be undone')).toBe(0);
     expect(occurrences(text, 'cannot be recalled')).toBe(0);
   });
 
@@ -2106,9 +2135,9 @@ describe('ConfirmActionModal — Delete title names its destination', () => {
         compositePreview={livePreview}
       />,
     );
-    expect(
-      screen.getByRole('heading', { name: /move email from 1 sender to gmail trash/i }),
-    ).toBeInTheDocument();
+    // The count is the title; the destination is the sentence under it.
+    expect(screen.getByRole('heading', { name: 'Delete 1 email?' })).toBeInTheDocument();
+    expect(document.getElementById('dm-confirm-lead')).toHaveTextContent(/move to Gmail Trash/);
   });
 });
 
@@ -2117,8 +2146,8 @@ describe('ConfirmActionModal — Delete title names its destination', () => {
 // changes"), while Triage's identical sheets both name it. Shares the
 // same `n` the H3 title one line below already states, so the two never
 // drift from each other.
-describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-20260901-01)', () => {
-  it("names the verb for a single sender, matching the title's count", () => {
+describe('ConfirmActionModal — the title names the verb and the count (QA-archive-20260901-01)', () => {
+  it('names the verb and the live email count for a single sender', () => {
     render(
       <ConfirmActionModal
         request={request('Archive')}
@@ -2127,8 +2156,7 @@ describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-2026
         compositePreview={livePreview}
       />,
     );
-    expect(screen.getByText('Preview · Archive')).toBeInTheDocument();
-    expect(screen.queryByText('Preview · before anything changes')).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Archive 4 emails?' })).toBeInTheDocument();
   });
 
   it('names the verb and the real sender count for a bulk selection', () => {
@@ -2150,7 +2178,9 @@ describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-2026
         bulkPreview={{ data: bulkData, loading: false, error: false }}
       />,
     );
-    expect(screen.getByText('Preview · Archive · 2 senders')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Archive 4 emails from 2 senders?' }),
+    ).toBeInTheDocument();
   });
 
   // Codex review 2026-09-03: `request.actionableCount` is a snapshot
@@ -2182,10 +2212,12 @@ describe('ConfirmActionModal — preview eyebrow names the verb (QA-archive-2026
         bulkPreview={{ data: bulkData, loading: false, error: false }}
       />,
     );
-    // `previewEyebrowLabel` omits the count entirely at n=1 — the same
-    // wording a genuine single-sender request renders.
-    expect(screen.getByText('Preview · Archive')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Archive 4 emails from 1 sender?' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/2 senders/)).toBeNull();
+    // …and the one it skipped is said once, in the note.
+    expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
   });
 
   // Codex review 2026-09-03, round 2: `nothingToActOn` only blocks verbs
@@ -2340,5 +2372,64 @@ describe('ConfirmActionModal — submitting', () => {
     expect(screen.getByRole('button', { name: /Cancel/ })).toBeEnabled();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ADR-0042 — a chooser whose options all give one count is noise, and a
+// zero names the reason it is zero in the title.
+describe('ConfirmActionModal — choosers only where they change the count (ADR-0042)', () => {
+  it('hides the window chooser when every window gives the same count, and still sends the window', () => {
+    const onConfirm = vi.fn();
+    const flat = { all: 7, olderThan30d: 7, olderThan90d: 7, olderThan180d: 7, olderThan365d: 7 };
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={onConfirm}
+        compositePreview={{ ...livePreview, counts: flat }}
+      />,
+    );
+    expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Delete 7 emails?' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Delete 7/ }));
+    // A render flag only: the payload keeps the Delete default window.
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ olderThanDays: 180 }));
+  });
+
+  it('titles a window-only zero with the window, and names the way out', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={{
+          ...livePreview,
+          counts: { all: 9, olderThan30d: 9, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 },
+        }}
+      />,
+    );
+    expect(
+      screen.getByRole('heading', { name: `Nothing older than 6 months from ${sender.name}` }),
+    ).toBeInTheDocument();
+    expect(document.getElementById('dm-confirm-lead')).toHaveTextContent(/Widen the window/);
+    expect(screen.getByRole('combobox', { name: /How far back/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
+  });
+
+  it('switches the count when a different window is chosen', () => {
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        onCancel={() => {}}
+        onConfirm={() => {}}
+        compositePreview={livePreview}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: 'Delete 1 email?' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: /How far back/i }), {
+      target: { value: '30' },
+    });
+    expect(screen.getByRole('heading', { name: 'Delete 3 emails?' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete 3' })).toBeEnabled();
   });
 });

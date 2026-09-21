@@ -164,8 +164,9 @@ function SyncProgress({
         style={{
           height: 6,
           width: '100%',
-          marginTop: 20,
-          background: color.lineSoft,
+          maxWidth: 360,
+          marginTop: 28,
+          background: color.fill,
           borderRadius: radius.pill,
           overflow: 'hidden',
         }}
@@ -185,7 +186,13 @@ function SyncProgress({
       <p
         role="status"
         data-testid="sync-stage"
-        style={{ color: color.fgMuted, fontSize: text.md, margin: '12px 0 0' }}
+        style={{
+          color: color.fgMuted,
+          fontSize: text.lg,
+          lineHeight: 1.45,
+          margin: '16px 0 0',
+          fontVariantNumeric: 'tabular-nums',
+        }}
       >
         {stageSentence(status)}
       </p>
@@ -227,8 +234,19 @@ function SyncFailed({
   return (
     <Shell>
       <h1 style={titleStyle}>The inbox scan stopped.</h1>
-      <p style={{ color: color.fgMuted, fontSize: text.md, margin: '8px 0 20px' }}>{copy}</p>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+      <p
+        style={{ color: color.fgMuted, fontSize: text.lg, lineHeight: 1.45, margin: '12px 0 28px' }}
+      >
+        {copy}
+      </p>
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 8,
+        }}
+      >
         {needsReconnect ? (
           // QA-sync-20260831-07: "Try again" here would re-queue a full
           // scan against the SAME revoked/expired token, fail again at
@@ -237,8 +255,10 @@ function SyncFailed({
           // fix is reconnecting.
           <Button
             tone="primary"
+            size="xl"
             onClick={() => canRetry && startMailboxConnect(mailboxId ?? undefined)}
             disabled={!canRetry}
+            style={{ minWidth: 240 }}
           >
             Reconnect Gmail
           </Button>
@@ -249,8 +269,10 @@ function SyncFailed({
           // nothing re-queued a `failed` one.
           <Button
             tone="primary"
+            size="xl"
             onClick={() => canRetry && retry.mutate()}
             disabled={!canRetry || retry.isPending}
+            style={{ minWidth: 240 }}
           >
             {retry.isPending ? 'Starting…' : 'Try again'}
           </Button>
@@ -271,7 +293,7 @@ function SyncFailed({
               or walk away. Uses the row-scoped id; disabled without one.
             - Sign out ends the session outright. */}
         {!escape && (
-          <>
+          <div style={{ display: 'flex', gap: 4, justifyContent: 'center', flexWrap: 'wrap' }}>
             <Button
               tone="ghost"
               onClick={() => mailboxId && disconnect.mutate(mailboxId)}
@@ -282,7 +304,7 @@ function SyncFailed({
             <Button tone="ghost" onClick={() => logout.mutate()} disabled={logout.isPending}>
               {logout.isPending ? 'Signing out…' : 'Sign out'}
             </Button>
-          </>
+          </div>
         )}
       </div>
     </Shell>
@@ -290,11 +312,12 @@ function SyncFailed({
 }
 
 const titleStyle = {
-  fontFamily: font.display,
+  fontFamily: font.sans,
   fontSize: text['3xl'],
-  fontWeight: 600,
-  letterSpacing: '-0.02em',
-  lineHeight: 1.15,
+  fontWeight: 650,
+  letterSpacing: '-0.025em',
+  lineHeight: 1.12,
+  color: color.fg,
   margin: 0,
 } as const;
 
@@ -308,7 +331,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: '32px 24px',
+        padding: '48px 24px',
         background: color.bg,
         fontFamily: font.sans,
       }}

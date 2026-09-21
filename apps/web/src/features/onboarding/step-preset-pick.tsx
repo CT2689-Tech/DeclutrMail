@@ -17,7 +17,7 @@ import { track } from '@/lib/posthog';
 import { useSubmitPresetPicks } from './api/use-onboarding';
 import { StepShell } from './step-shell';
 
-const { color, font, text } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /** Brief seed-wait poll (D110 sequencing): every 2.5s while empty. */
 const RULES_SEED_POLL_MS = 2_500;
@@ -161,7 +161,7 @@ export function StepPresetPick({
       <div
         role="group"
         aria-label="Starting rules"
-        style={{ display: 'grid', gap: 10, width: '100%', marginBottom: 20 }}
+        style={{ display: 'grid', gap: 12, width: '100%', marginBottom: 28 }}
       >
         {presets.map((preset) => {
           const isOn = picked.has(preset.key);
@@ -176,10 +176,12 @@ export function StepPresetPick({
                 alignItems: 'flex-start',
                 gap: 12,
                 textAlign: 'left',
-                padding: '14px 16px',
-                background: isOn ? color.primarySoft : color.card,
-                border: `1px solid ${isOn ? color.primaryBorder : color.lineSoft}`,
-                borderRadius: 10,
+                padding: '16px 18px',
+                background: color.card,
+                border: 'none',
+                // Selected = teal ring on the raised surface, not a border.
+                boxShadow: isOn ? `0 0 0 2px ${color.primary}, ${shadow.card}` : shadow.card,
+                borderRadius: radius.xl,
                 cursor: 'pointer',
                 fontFamily: font.sans,
                 color: color.fg,
@@ -188,12 +190,13 @@ export function StepPresetPick({
               <span
                 aria-hidden="true"
                 style={{
-                  width: 18,
-                  height: 18,
+                  width: 22,
+                  height: 22,
                   flexShrink: 0,
-                  marginTop: 1,
-                  borderRadius: 5,
-                  border: `1.5px solid ${isOn ? color.primary : color.line}`,
+                  marginTop: 0,
+                  borderRadius: radius.pill,
+                  border: 'none',
+                  boxShadow: isOn ? 'none' : `inset 0 0 0 1.5px ${color.line}`,
                   background: isOn ? color.primary : 'transparent',
                   display: 'grid',
                   placeItems: 'center',
@@ -210,10 +213,11 @@ export function StepPresetPick({
                   <span
                     style={{
                       fontSize: text.xs,
-                      color: color.fgMuted,
-                      border: `1px solid ${color.lineSoft}`,
-                      borderRadius: 4,
-                      padding: '1px 6px',
+                      fontWeight: 600,
+                      color: color.fgSoft,
+                      background: color.fill,
+                      borderRadius: radius.pill,
+                      padding: '2px 8px',
                     }}
                   >
                     {VERB_LABEL[preset.verb]}
@@ -222,9 +226,9 @@ export function StepPresetPick({
                 <span
                   style={{
                     display: 'block',
-                    fontSize: text.md,
+                    fontSize: text.sm,
                     color: color.fgMuted,
-                    marginTop: 3,
+                    marginTop: 4,
                     lineHeight: 1.5,
                   }}
                 >
@@ -247,10 +251,10 @@ export function StepPresetPick({
 
       <Button
         tone="primary"
-        size="lg"
+        size="xl"
         onClick={onContinue}
         disabled={submit.isPending || goal === null}
-        style={{ minWidth: 220, height: 44 }}
+        style={{ minWidth: 240 }}
       >
         {submit.isPending
           ? 'Saving…'
@@ -312,10 +316,10 @@ export function StepFirstSenderReview({
       <GoalSelector value={goal} onChange={setGoal} />
       <Button
         tone="primary"
-        size="lg"
+        size="xl"
         onClick={onContinue}
         disabled={submit.isPending || goal === null}
-        style={{ minWidth: 220, height: 44 }}
+        style={{ minWidth: 240 }}
       >
         {submit.isPending
           ? 'Getting it ready…'
@@ -338,9 +342,17 @@ function GoalSelector({
     <div
       role="radiogroup"
       aria-label="What would help most right now?"
-      style={{ display: 'grid', gap: 10, width: '100%', marginBottom: 24 }}
+      style={{ display: 'grid', gap: 12, width: '100%', marginBottom: 32 }}
     >
-      <p style={{ margin: 0, color: color.fg, fontSize: text.md, fontWeight: 600 }}>
+      <p
+        style={{
+          margin: '0 0 0 4px',
+          color: color.fgMuted,
+          fontSize: text.sm,
+          fontWeight: 600,
+          textAlign: 'left',
+        }}
+      >
         What would help most right now?
       </p>
       {GOALS.map((goal) => {
@@ -354,10 +366,11 @@ function GoalSelector({
             onClick={() => onChange(goal.id)}
             style={{
               textAlign: 'left',
-              padding: '12px 14px',
-              borderRadius: 10,
-              border: `1px solid ${selected ? color.primaryBorder : color.lineSoft}`,
-              background: selected ? color.primarySoft : color.card,
+              padding: '14px 18px',
+              borderRadius: radius.xl,
+              border: 'none',
+              boxShadow: selected ? `0 0 0 2px ${color.primary}, ${shadow.card}` : shadow.card,
+              background: color.card,
               color: color.fg,
               cursor: 'pointer',
               fontFamily: font.sans,

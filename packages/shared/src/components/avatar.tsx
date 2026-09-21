@@ -79,7 +79,7 @@
 
 import { resolveFlag } from '../flags/resolve';
 import { brandRoot } from '../senders/brand-root';
-import { font } from '../tokens/tokens';
+import { font, shadow } from '../tokens/tokens';
 
 /**
  * Smallest avatar that may carry a logo. Below this a brand mark is
@@ -167,9 +167,14 @@ export function Avatar({
         // brand color. Theme tokens still own depth and contrast.
         background: `linear-gradient(145deg, hsl(0 0% var(--dm-avatar-highlight-l, 97%)) 0%, hsl(0 0% var(--dm-avatar-bg-l, 93%)) 64%, hsl(0 0% var(--dm-avatar-shadow-l, 89%)) 100%)`,
         border: `1px solid hsl(0 0% var(--dm-avatar-rim-l, 78%) / var(--dm-avatar-rim-a, 0.52))`,
-        boxShadow: `inset 0 1px 0 hsl(0 0% var(--dm-avatar-shine-l, 100%) / var(--dm-avatar-shine-a, 0.72)), 0 1px 2px rgb(14 20 19 / var(--dm-avatar-depth-a, 0.08))`,
+        // List-size and larger tiles sit on the card shadow so a logo
+        // reads as an object; tiny inline avatars keep the contact shadow.
+        boxShadow:
+          size >= 40
+            ? `inset 0 1px 0 hsl(0 0% var(--dm-avatar-shine-l, 100%) / var(--dm-avatar-shine-a, 0.72)), ${shadow.card}`
+            : `inset 0 1px 0 hsl(0 0% var(--dm-avatar-shine-l, 100%) / var(--dm-avatar-shine-a, 0.72)), 0 1px 2px rgb(14 20 19 / var(--dm-avatar-depth-a, 0.08))`,
         color: `hsl(0 0% var(--dm-avatar-fg-l, 30%))`,
-        fontFamily: font.mono,
+        fontFamily: font.sans,
         fontSize: size * 0.4,
         fontWeight: 600,
         letterSpacing: '-0.02em',

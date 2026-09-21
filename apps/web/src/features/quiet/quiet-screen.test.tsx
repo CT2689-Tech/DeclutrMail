@@ -126,7 +126,7 @@ describe('QuietRoute', () => {
     ]);
 
     renderRoute();
-    const checkbox = await screen.findByRole('checkbox', { name: 'Quiet hours on' });
+    const checkbox = await screen.findByRole('switch', { name: 'Quiet hours' });
     await userEvent.click(checkbox); // enabled: true → false (dirty)
     await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
 

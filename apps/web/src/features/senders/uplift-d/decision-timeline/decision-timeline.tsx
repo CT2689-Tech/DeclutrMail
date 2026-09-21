@@ -5,11 +5,10 @@
 // promotion). Replaces the table-style decision history in the Sender
 // detail page (D46) per ADR-0012's detail-page composition patch on D39.
 //
-// Design intent (~/.claude/plans/how-can-we-uplift-foamy-cloud.md §D2):
-// a vertical timeline with a connector line between events, "today"
-// marker filled solid + soft halo, prior events outlined. Each item:
-//   [when (relative, mono)]  [● node]  [what happened]
-// Connector line drawn from the second item down through the last.
+// Rendered as a quiet list (2026-09-21 craft pass — the connector-and-
+// node timeline read as decoration). Each item:
+//   [• what happened]                                  [when]
+// The standing decision (`current`) carries one small teal dot.
 //
 // The component is presentation-only. The consumer assembles the items
 // from `activity_log` — what actually happened to the sender. The
@@ -28,7 +27,7 @@ export interface TimelineItem {
   /**
    * Relative time label — "today", "3w ago", "2mo ago", "2yr ago".
    * The consumer formats this; the component just renders the string
-   * mono-spaced in a fixed-width column.
+   * right-aligned in the row.
    */
   when: ReactNode;
   /**
@@ -77,15 +76,6 @@ export interface DecisionTimelineProps {
 export function DecisionTimeline({ heading, action, items, empty }: DecisionTimelineProps) {
   return (
     <section className="dm-decision-timeline" style={{ fontFamily: font.sans }}>
-      <style>{`@media (max-width: 600px) {
-        .dm-decision-timeline-item {
-          grid-template-columns: 62px 18px minmax(0, 1fr) !important;
-          gap: ${space[2]}px !important;
-        }
-        .dm-decision-timeline-connector {
-          left: 70px !important;
-        }
-      }`}</style>
       {(heading != null || action != null) && (
         <div
           style={{
@@ -105,74 +95,52 @@ export function DecisionTimeline({ heading, action, items, empty }: DecisionTime
         </div>
       )}
       {items.length === 0 && empty}
+      {/* A quiet list: what happened, then when — hairlines between rows.
+          The standing decision carries one small teal dot. */}
       <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-        {items.map((item, i) => {
-          const isLast = i === items.length - 1;
-          return (
-            <li
-              className="dm-decision-timeline-item"
-              key={item.id}
-              data-current={item.current ? 'true' : undefined}
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '84px 18px 1fr',
-                gap: space[3],
-                padding: `${space[2]}px 0`,
-                position: 'relative',
-                alignItems: 'center',
-              }}
-            >
-              <span
-                style={{
-                  fontSize: text.sm,
-                  color: color.fgMuted,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {item.when}
-              </span>
-              <span
-                aria-hidden
-                style={{
-                  width: 11,
-                  height: 11,
-                  borderRadius: '50%',
-                  background: item.current ? color.primary : color.bg,
-                  border: `2px solid ${color.primary}`,
-                  zIndex: 1,
-                  marginLeft: 3,
-                  boxShadow: item.current ? `0 0 0 4px ${color.primarySoft}` : 'none',
-                  position: 'relative',
-                }}
-              />
-              {/* connector line drawn from this node down to the next */}
-              {!isLast && (
+        {items.map((item, i) => (
+          <li
+            className="dm-decision-timeline-item"
+            key={item.id}
+            data-current={item.current ? 'true' : undefined}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              alignItems: 'baseline',
+              gap: space[3],
+              padding: `${space[3]}px 0`,
+              borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
+            }}
+          >
+            <span style={{ fontSize: text.md, lineHeight: 1.4, color: color.fg, minWidth: 0 }}>
+              {item.current && (
                 <span
-                  className="dm-decision-timeline-connector"
                   aria-hidden
                   style={{
-                    position: 'absolute',
-                    left: 92,
-                    top: '50%',
-                    width: 2,
-                    height: '100%',
-                    background: color.line,
-                    zIndex: 0,
+                    display: 'inline-block',
+                    width: 6,
+                    height: 6,
+                    marginRight: 8,
+                    verticalAlign: 'middle',
+                    borderRadius: '50%',
+                    background: color.primary,
                   }}
                 />
               )}
-              <span
-                style={{
-                  fontSize: text.md,
-                  lineHeight: 1.4,
-                  color: color.fg,
-                }}
-              >
-                {item.what}
-              </span>
-            </li>
-          );
-        })}
+              {item.what}
+            </span>
+            <span
+              style={{
+                fontSize: text.xs,
+                color: color.fgMuted,
+                whiteSpace: 'nowrap',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {item.when}
+            </span>
+          </li>
+        ))}
       </ol>
     </section>
   );

@@ -22,7 +22,7 @@ import { presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
-const { color, font, radius, text } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /**
  * Entitlement-aware Autopilot entry.
@@ -73,7 +73,7 @@ export function AutopilotObservePreview() {
         margin: '0 auto',
         display: 'flex',
         flexDirection: 'column',
-        gap: 20,
+        gap: 32,
         fontFamily: font.sans,
       }}
     >
@@ -82,25 +82,31 @@ export function AutopilotObservePreview() {
           style={{
             margin: 0,
             fontSize: text['2xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.015em',
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
             color: color.fg,
           }}
         >
           Autopilot
         </h1>
-        <p style={{ margin: '4px 0 0', color: color.fgMuted, fontSize: text.md, lineHeight: 1.5 }}>
+        <p style={{ margin: '6px 0 0', color: color.fgMuted, fontSize: text.md, lineHeight: 1.5 }}>
           See what each preset rule would match right now. Previews are read-only.
         </p>
       </div>
 
       <section
         aria-labelledby="autopilot-preview-rules"
-        style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
       >
         <h2
           id="autopilot-preview-rules"
-          style={{ margin: 0, fontSize: text.sm, fontWeight: 600, color: color.fgSoft }}
+          style={{
+            margin: 0,
+            paddingLeft: 16,
+            fontSize: text.sm,
+            fontWeight: 600,
+            color: color.fgMuted,
+          }}
         >
           Rules
         </h2>
@@ -126,10 +132,13 @@ export function AutopilotObservePreview() {
               listStyle: 'none',
               padding: 0,
               margin: 0,
-              borderBottom: `1px solid ${color.line}`,
+              background: color.card,
+              boxShadow: shadow.card,
+              borderRadius: radius.xl,
+              overflow: 'hidden',
             }}
           >
-            {rules.data.map((rule) => (
+            {rules.data.map((rule, index) => (
               <li
                 key={rule.id}
                 style={{
@@ -138,8 +147,17 @@ export function AutopilotObservePreview() {
                   justifyContent: 'space-between',
                   gap: 12,
                   flexWrap: 'wrap',
-                  padding: '12px 0',
-                  borderTop: `1px solid ${color.line}`,
+                  minHeight: 56,
+                  boxSizing: 'border-box',
+                  padding: '10px 16px',
+                  // Inset hairline between rows; none against the group's edge.
+                  backgroundImage:
+                    index === 0
+                      ? undefined
+                      : `linear-gradient(${color.lineSoft}, ${color.lineSoft})`,
+                  backgroundSize: 'calc(100% - 16px) 1px',
+                  backgroundPosition: 'right top',
+                  backgroundRepeat: 'no-repeat',
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
@@ -184,7 +202,7 @@ export function AutopilotObservePreview() {
       {/* Same shape as the shared paywall: one sentence, one priced
           button, a quiet compare link, the money-back note once. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft, lineHeight: 1.5 }}>
+        <p style={{ margin: 0, fontSize: text.md, color: color.fgMuted, lineHeight: 1.5 }}>
           Matching and batch approval are part of {grantingName}
           {actName === grantingName ? ', and so are' : `; ${actName} adds`} rules that act without
           asking.
@@ -195,10 +213,11 @@ export function AutopilotObservePreview() {
             style={{
               display: 'inline-flex',
               alignItems: 'center',
-              minHeight: 36,
-              padding: '0 16px',
-              borderRadius: radius.md,
+              minHeight: 44,
+              padding: '0 22px',
+              borderRadius: radius.pill,
               background: color.primary,
+              boxShadow: shadow.button,
               color: color.fgInverse,
               fontSize: text.md,
               fontWeight: 600,
@@ -211,12 +230,22 @@ export function AutopilotObservePreview() {
           </Link>
           <Link
             href="/pricing"
-            style={{ color: color.primary, fontSize: text.sm, textDecoration: 'none' }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              minHeight: 44,
+              padding: '0 16px',
+              borderRadius: radius.pill,
+              color: color.fgSoft,
+              fontSize: text.md,
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
           >
             Compare plans
           </Link>
         </div>
-        <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
       </div>
     </div>
   );

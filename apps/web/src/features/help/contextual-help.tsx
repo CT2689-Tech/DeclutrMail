@@ -16,10 +16,9 @@ export function ContextualHelp({ question, children }: { question: string; child
   return (
     <details
       style={{
-        border: `1px solid ${color.lineSoft}`,
-        borderRadius: radius.md,
-        background: color.paper,
-        padding: '10px 12px',
+        borderRadius: radius.lg,
+        background: color.fill,
+        padding: '12px 14px',
         fontFamily: font.sans,
       }}
     >

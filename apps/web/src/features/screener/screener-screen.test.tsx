@@ -144,7 +144,7 @@ describe('ScreenerScreen — empty / loading / error states', () => {
   it('error state offers an explicit retry', () => {
     const html = renderState({ kind: 'error', error: new Error('boom'), retry: () => {} });
     expect(html).toContain('role="alert"');
-    expect(html).toContain('Needs attention');
+    expect(html).toContain('didn&#x27;t load');
     expect(html).toContain('Try again');
     assertNoScreenVerb(html);
   });

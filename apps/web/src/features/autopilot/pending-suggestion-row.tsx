@@ -5,7 +5,15 @@ import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { describeWouldAction } from './action-label';
 import { resolveSenderIdentity, SENDER_SYNCING_LABEL } from './sender-label';
 
-const { color, font, text } = tokens;
+const { color, font, motion, radius, text } = tokens;
+
+/** Flat list: inset hairlines between rows, neutral fill on hover, soft teal when selected. */
+const SUGGESTION_ROW_CSS = `.dm-suggestion-row { transition: background ${motion.fast} ${motion.ease}; }
+.dm-suggestion-row + .dm-suggestion-row::before { content: ''; position: absolute; top: 0; left: 42px; right: 12px; height: 1px; background: ${color.lineSoft}; }
+.dm-suggestion-row:hover { background: ${color.fill}; }
+.dm-suggestion-row[data-selected='true'] { background: ${color.primarySoft}; }
+.dm-suggestion-row:hover::before, .dm-suggestion-row:hover + .dm-suggestion-row::before,
+.dm-suggestion-row[data-selected='true']::before, .dm-suggestion-row[data-selected='true'] + .dm-suggestion-row::before { opacity: 0; }`;
 
 /**
  * One row in a D104 "Pending Autopilot suggestions" group.
@@ -47,24 +55,29 @@ export function PendingSuggestionRow({
 
   return (
     <li
+      className="dm-suggestion-row"
+      data-selected={selected ? 'true' : undefined}
       style={{
+        position: 'relative',
         display: 'flex',
         alignItems: 'center',
         flexWrap: 'wrap',
         gap: 12,
-        padding: '12px 14px',
-        background: color.card,
-        border: `1px solid ${selected ? color.primary : color.lineSoft}`,
-        borderRadius: 10,
+        minHeight: 68,
+        boxSizing: 'border-box',
+        padding: '12px',
+        margin: '0 -12px',
+        borderRadius: radius.lg,
         fontFamily: font.sans,
       }}
     >
+      <style>{SUGGESTION_ROW_CSS}</style>
       <input
         type="checkbox"
         checked={selected}
         onChange={() => onToggleSelect(match.id)}
         aria-label={`Select suggestion for ${senderLabel}`}
-        style={{ accentColor: color.primary, width: 15, height: 15, flexShrink: 0 }}
+        style={{ accentColor: color.primary, width: 18, height: 18, flexShrink: 0, margin: 0 }}
       />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
@@ -95,11 +108,10 @@ export function PendingSuggestionRow({
               style={{
                 fontSize: text.xs,
                 fontWeight: 600,
-                color: color.fg,
-                padding: '2px 7px',
-                background: color.paper,
-                border: `1px solid ${color.line}`,
-                borderRadius: 5,
+                color: color.fgSoft,
+                padding: '2px 8px',
+                background: color.fill,
+                borderRadius: radius.pill,
               }}
               title={SENDER_SYNCING_LABEL}
             >
@@ -113,16 +125,17 @@ export function PendingSuggestionRow({
             display: 'flex',
             alignItems: 'center',
             gap: 8,
-            marginTop: 4,
-            fontSize: text.xs,
+            marginTop: 2,
+            fontSize: text.sm,
             color: color.fgMuted,
+            fontVariantNumeric: 'tabular-nums',
           }}
         >
           {identity.source === 'name' && match.senderEmail != null && (
             <>
               <span
                 style={{
-                  fontFamily: font.mono,
+                  fontFamily: font.sans,
                   maxWidth: 280,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -140,7 +153,7 @@ export function PendingSuggestionRow({
         </div>
       </div>
       <Button
-        tone="default"
+        tone="ghost"
         size="sm"
         onClick={() => onDismiss(match.id)}
         disabled={isDismissing}

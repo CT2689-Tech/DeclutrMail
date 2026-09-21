@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -47,7 +48,6 @@ import {
   type BillingPlanView,
   type NonBackingRecord,
 } from './billing-model';
-import { CancelModal } from './cancel-modal';
 import { InvoiceHistory } from './invoice-history';
 import { PaymentMethodCard } from './payment-method-card';
 import { usePauseSubscription } from './api/use-pause-subscription';
@@ -65,7 +65,14 @@ import {
 import { PlanPicker } from './plan-picker';
 import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font, radius, text } = tokens;
+// Opens only after "Cancel plan" is pressed, and carries the shared
+// confirm sheet — loading it on demand keeps /billing inside its
+// first-load bundle budget. It renders nothing while closed.
+const CancelModal = dynamic(() => import('./cancel-modal').then((m) => m.CancelModal), {
+  ssr: false,
+});
+
+const { color, font, radius, shadow, text } = tokens;
 
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
@@ -630,7 +637,7 @@ export function BillingScreen({
         padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 20,
+        gap: 32,
         maxWidth: 1080,
         margin: '0 auto',
         fontFamily: font.sans,
@@ -640,8 +647,8 @@ export function BillingScreen({
         style={{
           margin: 0,
           fontSize: text['2xl'],
-          fontWeight: 600,
-          letterSpacing: '-0.01em',
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
           color: color.fg,
         }}
       >
@@ -1003,10 +1010,9 @@ export function PaymentProcessingNotice({
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
-        padding: '12px 14px',
+        padding: '14px 16px',
         background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: radius.md,
+        borderRadius: radius.lg,
         fontSize: text.md,
         lineHeight: 1.55,
         color: color.fg,
@@ -1285,34 +1291,45 @@ function CurrentPlanCard({
       data-testid="current-plan-card"
       style={{
         background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-        padding: '20px 22px',
+        boxShadow: shadow.card,
+        borderRadius: radius.xl,
+        padding: 'clamp(20px, 4vw, 28px)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 12,
+        gap: 14,
       }}
     >
       <GroupTitle as="div">Current plan</GroupTitle>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <span
-          style={{
-            fontFamily: font.display,
-            fontSize: text['2xl'],
-            fontWeight: 650,
-            letterSpacing: '-0.015em',
-            color: color.fg,
-          }}
-        >
-          {manifest.name}
-        </span>
-        <span
-          style={{ fontSize: text.md, color: color.fgSoft, fontVariantNumeric: 'tabular-nums' }}
-        >
-          {priceLabel}
-        </span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: -4 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontFamily: font.sans,
+              fontSize: text['2xl'],
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              color: color.fg,
+            }}
+          >
+            {manifest.name}
+          </span>
+          <span
+            style={{
+              fontSize: text.lg,
+              fontWeight: 600,
+              color: color.fg,
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {priceLabel}
+          </span>
+        </div>
         {renewal ? (
-          <span style={{ fontSize: text.md, color: color.fgMuted }}>· Next renewal {renewal}</span>
+          <span
+            style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
+          >
+            Next renewal {renewal}
+          </span>
         ) : null}
       </div>
 
@@ -1416,10 +1433,9 @@ function CurrentPlanCard({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 8,
-                padding: '12px 14px',
-                background: color.paper,
-                border: `1px solid ${color.line}`,
-                borderRadius: radius.md,
+                padding: '14px 16px',
+                background: color.fill,
+                borderRadius: radius.lg,
               }}
             >
               <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
@@ -1454,8 +1470,7 @@ function CurrentPlanCard({
                     fontSize: text.sm,
                     color: color.danger,
                     background: color.dangerBg,
-                    border: `1px solid ${color.danger}`,
-                    borderRadius: 8,
+                    borderRadius: radius.md,
                     padding: '8px 10px',
                   }}
                 >
@@ -1507,10 +1522,9 @@ function ScheduledPlanChangeNotice({
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
-        padding: '12px 14px',
+        padding: '14px 16px',
         background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: radius.md,
+        borderRadius: radius.lg,
         fontSize: text.md,
         lineHeight: 1.55,
         color: color.fg,
@@ -1647,10 +1661,9 @@ function NonBackingSubscriptionNotice({
     display: 'flex',
     flexDirection: 'column',
     gap: 10,
-    padding: '12px 14px',
-    background: color.paper,
-    border: `1px solid ${color.line}`,
-    borderRadius: radius.md,
+    padding: '14px 16px',
+    background: color.fill,
+    borderRadius: radius.lg,
     fontSize: text.md,
     lineHeight: 1.55,
     color: color.fg,
@@ -1859,8 +1872,7 @@ function NonBackingSubscriptionNotice({
             fontSize: text.sm,
             color: color.danger,
             background: color.dangerBg,
-            border: `1px solid ${color.danger}`,
-            borderRadius: 8,
+            borderRadius: radius.md,
             padding: '8px 10px',
           }}
         >
@@ -1877,9 +1889,8 @@ function NonBackingSubscriptionNotice({
             flexDirection: 'column',
             gap: 8,
             padding: '10px 12px',
-            background: color.card,
-            border: `1px solid ${color.border}`,
-            borderRadius: radius.md,
+            background: color.fill,
+            borderRadius: radius.lg,
           }}
         >
           <strong style={{ fontWeight: 600 }}>Resume without starting a new billing period</strong>
@@ -1951,10 +1962,9 @@ function FoundingBanner({ provider }: { provider: BillingProviderId }) {
         display: 'flex',
         alignItems: 'baseline',
         gap: 8,
-        padding: '10px 14px',
+        padding: '14px 16px',
         background: color.primarySoft,
-        border: `1px solid ${color.primaryBorder}`,
-        borderRadius: radius.md,
+        borderRadius: radius.lg,
         fontSize: text.md,
         color: color.fg,
       }}
@@ -1976,10 +1986,9 @@ function BillingDisabledNotice() {
       role="status"
       data-testid="billing-disabled-notice"
       style={{
-        padding: '12px 14px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
+        padding: '14px 16px',
+        background: color.fill,
+        borderRadius: radius.lg,
         fontSize: text.md,
         lineHeight: 1.55,
         color: color.fgSoft,
@@ -2013,9 +2022,8 @@ function LoadingState() {
           aria-hidden="true"
           style={{
             height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 10,
+            background: color.fill,
+            borderRadius: radius.xl,
           }}
         />
       ))}

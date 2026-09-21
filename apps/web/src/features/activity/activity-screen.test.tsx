@@ -550,10 +550,10 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     ]);
     renderScreen();
 
-    const gmail = await screen.findByTitle('Open Sender One in Gmail');
-    // The pill holds the Gmail link and nothing else: no spacer glyph, no
+    const gmail = await screen.findByRole('link', { name: 'Open Sender One in Gmail' });
+    // The frame holds the Gmail link and nothing else: no spacer glyph, no
     // divider standing in front of a control that is not there.
-    expect(gmail.parentElement?.children).toHaveLength(1);
+    expect(gmail.closest('[data-row-actions-frame]')?.children).toHaveLength(1);
     expect(screen.queryByText('—')).not.toBeInTheDocument();
   });
 });
@@ -2267,7 +2267,7 @@ describe('ActivityScreen — B12 Open in Gmail', () => {
     );
     expect(link.getAttribute('href')).not.toContain('/u/0');
     expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('title', 'Open Sender One in Gmail');
+    expect(link).toHaveAccessibleName('Open Sender One in Gmail');
   });
 });
 

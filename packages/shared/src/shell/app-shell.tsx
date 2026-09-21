@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { color, font, motion, radius, text } from '../tokens/tokens';
+import { color, font, motion, radius, shadow, text } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 import { useLocalState } from '../hooks/use-local-state';
@@ -63,6 +63,9 @@ export function AppShell({
   // server and first client render agree on the expanded default.
   const [collapsed, setCollapsed] = useLocalState<boolean>('sidebar.collapsed', false);
   const [animateWidth, setAnimateWidth] = useState(false);
+  // The top bar is borderless at rest; a hairline appears only once
+  // content has scrolled under it.
+  const [scrolled, setScrolled] = useState(false);
 
   // Route fade. Flips between two identical keyframes on navigation
   // (see tokens.css) — adjusting state during render is React's
@@ -158,12 +161,8 @@ export function AppShell({
           <div
             onClick={() => setDrawerOpen(false)}
             aria-hidden="true"
-            style={{
-              position: 'fixed',
-              inset: 0,
-              background: 'var(--dm-scrim)',
-              zIndex: 80,
-            }}
+            className="dm-scrim"
+            style={{ position: 'fixed', inset: 0, zIndex: 80 }}
           />
           <div
             ref={drawerRef}
@@ -188,10 +187,12 @@ export function AppShell({
                 width: 44,
                 height: 44,
                 border: 'none',
-                borderRadius: radius.md,
+                borderRadius: radius.pill,
                 background: color.card,
+                boxShadow: shadow.card,
                 color: color.fg,
                 fontSize: text.xl,
+                lineHeight: 1,
                 cursor: 'pointer',
               }}
             >
@@ -218,18 +219,20 @@ export function AppShell({
         }}
       >
         {/* Top bar — hamburger (mobile only), then help + the host's
-            controls on the right. Deliberately quiet: no fill, one
-            hairline. */}
+            controls on the right. Deliberately quiet: no fill, and a
+            hairline only while content is scrolled beneath it. */}
         <div
+          data-scrolled={scrolled ? 'true' : 'false'}
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            minHeight: 48,
+            gap: 4,
+            minHeight: 56,
             padding: '0 16px',
-            borderBottom: `1px solid ${color.line}`,
+            borderBottom: `1px solid ${scrolled ? color.lineSoft : 'transparent'}`,
             background: 'transparent',
             flexShrink: 0,
+            transition: `border-color ${motion.fast} ${motion.ease}`,
           }}
         >
           <button
@@ -297,6 +300,10 @@ export function AppShell({
           // route fade (tokens.css). It must stay `display: block`.
           className="dm-main-scroll"
           data-route-flip={routeFlip}
+          onScroll={(event) => {
+            const next = event.currentTarget.scrollTop > 0;
+            if (next !== scrolled) setScrolled(next);
+          }}
           style={{
             flex: 1,
             minHeight: 0,
@@ -327,7 +334,7 @@ export function AppShell({
             height: 56,
             boxSizing: 'content-box',
             paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            borderTop: `1px solid ${color.line}`,
+            borderTop: `1px solid ${color.lineSoft}`,
             background: color.paper,
           }}
         >
@@ -384,7 +391,7 @@ function tabStyle(on: boolean) {
     color: on ? color.primary : color.fgMuted,
     fontFamily: font.sans,
     fontSize: text.xs,
-    fontWeight: on ? 600 : 400,
+    fontWeight: on ? 600 : 500,
     cursor: 'pointer',
     transition: `color ${motion.fast} ${motion.ease}`,
   };

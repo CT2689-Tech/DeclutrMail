@@ -34,11 +34,10 @@ export function toast(msg: string, tone: ToastTone = 'info'): void {
   }, 3600);
 }
 
-const TONE_BG: Record<ToastTone, string> = {
-  // Ink chip — was the literal '#1F2826'; the fg token keeps the same
-  // near-black chip on light and flips to a light chip on dark, so the
-  // fgInverse text below stays readable in both themes.
-  info: color.fg,
+// Every toast is the same inverse surface (fg ink: near-black on light,
+// light on dark); the tone rides as a small dot, never a coloured slab.
+const TONE_DOT: Record<ToastTone, string | null> = {
+  info: null,
   success: color.emerald,
   warn: color.amber,
   danger: color.red,
@@ -101,11 +100,11 @@ export function ToastAnnouncement({ msg, tone }: { msg: string; tone: ToastTone 
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 9,
-        padding: '10px 16px',
-        background: TONE_BG[tone],
+        gap: 10,
+        padding: '12px 18px',
+        background: color.fg,
         color: color.fgInverse,
-        borderRadius: radius.pill,
+        borderRadius: radius.lg,
         fontFamily: font.sans,
         fontSize: text.base,
         fontWeight: 500,
@@ -114,6 +113,18 @@ export function ToastAnnouncement({ msg, tone }: { msg: string; tone: ToastTone 
         animation: 'dm-toast-in 0.22s cubic-bezier(0.2,0.7,0.3,1)',
       }}
     >
+      {TONE_DOT[tone] !== null && (
+        <span
+          aria-hidden="true"
+          style={{
+            width: 8,
+            height: 8,
+            flex: '0 0 auto',
+            borderRadius: radius.pill,
+            background: TONE_DOT[tone],
+          }}
+        />
+      )}
       {msg}
     </div>
   );

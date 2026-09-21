@@ -34,7 +34,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { QueryClient } from '@tanstack/react-query';
-import { useUiStore } from '@declutrmail/shared';
+import { tokens, useUiStore } from '@declutrmail/shared';
 
 import {
   addFetchHandlers,
@@ -153,6 +153,10 @@ afterEach(() => {
   window.matchMedia = originalMatchMedia;
 });
 
+// The inline (D34) confirm: the bare verb while the live count loads, verb +
+// count once it resolves. The toolbar's own button is "Archive (A)".
+const INLINE_ARCHIVE_CONFIRM = /^Archive( [\d,]+)?$/;
+
 describe('focus mode — resting states', () => {
   it('loading: one card-sized skeleton, and neither a count nor a mode toggle', () => {
     renderScreen({ kind: 'loading' });
@@ -229,7 +233,8 @@ describe('focus mode — the card', () => {
     ]);
     const filled = within(toolbar)
       .getAllByRole('button')
-      .filter((b) => b.style.background !== 'transparent');
+      // Unfilled verbs are quiet capsules: transparent or the neutral fill.
+      .filter((b) => !['transparent', tokens.color.fill].includes(b.style.background));
     expect(filled.map((b) => b.getAttribute('aria-label'))).toEqual(['Unsubscribe (U)']);
   });
 
@@ -275,7 +280,11 @@ describe('focus mode — deciding runs the EXISTING lifecycle (D226)', () => {
     renderScreen(ready([GROUPON, LINKEDIN]));
     fireEvent.keyDown(window, { key: 'a' });
     const sheet = await screen.findByRole('dialog');
-    await waitFor(() => expect(within(sheet).getByText('47')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        within(sheet).getByRole('heading', { name: 'Archive 47 emails?' }),
+      ).toBeInTheDocument(),
+    );
     fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(posts).toEqual([]);
@@ -332,12 +341,12 @@ describe('focus mode — deciding runs the EXISTING lifecycle (D226)', () => {
     renderScreen(ready([GROUPON, LINKEDIN]));
     fireEvent.keyDown(window, { key: 'a' });
     expect(screen.queryByRole('dialog')).toBeNull();
-    const confirm = await within(card()).findByRole('button', { name: 'Confirm Archive' });
+    const confirm = await within(card()).findByRole('button', { name: INLINE_ARCHIVE_CONFIRM });
     // Fails closed until the live count resolves, then arms.
     await waitFor(() => expect(confirm).not.toBeDisabled());
-    expect(within(card()).getByText(/or press A again/)).toBeInTheDocument();
+    expect(within(card()).getByText(/Press A again to confirm/)).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(within(card()).queryByRole('button', { name: 'Confirm Archive' })).toBeNull();
+    expect(within(card()).queryByRole('button', { name: INLINE_ARCHIVE_CONFIRM })).toBeNull();
   });
 
   it('mailto unsubscribe: the D230 callout appears above the card', async () => {
@@ -413,7 +422,7 @@ describe('focus mode — Skip', () => {
     useTriageStore.getState().setRememberPreference('Archive', true);
     renderScreen(ready([GROUPON, LINKEDIN]));
     fireEvent.keyDown(window, { key: 'a' });
-    await within(card()).findByRole('button', { name: 'Confirm Archive' });
+    await within(card()).findByRole('button', { name: INLINE_ARCHIVE_CONFIRM });
     fireEvent.click(screen.getByRole('button', { name: 'Skip (→)' }));
     expect(useTriageStore.getState().pendingAction).toBeNull();
     expect(cardTitle()).toBe(LINKEDIN.senderName);

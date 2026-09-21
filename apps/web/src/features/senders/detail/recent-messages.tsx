@@ -39,7 +39,7 @@ export function RecentMessages({
         fontFamily: font.sans,
         display: 'flex',
         flexDirection: 'column',
-        gap: 4,
+        gap: 8,
       }}
     >
       <style>{`@media (max-width: 600px) {
@@ -76,8 +76,8 @@ export function RecentMessages({
             <li
               key={m.id}
               style={{
-                borderTop: idx === 0 ? 'none' : `1px solid ${color.line}`,
-                padding: '10px 0',
+                borderTop: idx === 0 ? 'none' : `1px solid ${color.lineSoft}`,
+                padding: '12px 0',
               }}
             >
               <MessageRow message={m} mailboxEmail={mailboxEmail} senderEmail={senderEmail} />
@@ -171,6 +171,7 @@ function MessageRow({
               fontWeight: message.unread ? 600 : 500,
               color: color.fg,
               textDecoration: 'none',
+              lineHeight: 1.35,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -218,7 +219,7 @@ function MessageRow({
         {...(absolute ? { title: absolute } : {})}
         style={{
           fontSize: text.xs,
-          color: color.fgSoft,
+          color: color.fgMuted,
           whiteSpace: 'nowrap',
           fontVariantNumeric: 'tabular-nums',
         }}
@@ -231,8 +232,8 @@ function MessageRow({
           display: 'inline-flex',
           alignItems: 'center',
           gap: 6,
-          fontFamily: font.mono,
           fontSize: text.xs,
+          fontVariantNumeric: 'tabular-nums',
           color: color.fgMuted,
           whiteSpace: 'nowrap',
         }}

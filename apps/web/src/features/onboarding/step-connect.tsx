@@ -11,7 +11,7 @@ import {
 
 import { StepShell } from './step-shell';
 
-const { color, font, text, radius } = tokens;
+const { color, font, text, radius, shadow } = tokens;
 
 /**
  * Step 2 — Connect (D108).
@@ -48,14 +48,16 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
       <ol
         style={{
           listStyle: 'none',
-          padding: '16px 0',
-          margin: '8px 0 24px',
+          padding: 0,
+          margin: '4px 0 32px',
           width: '100%',
           textAlign: 'left',
-          borderTop: `1px solid ${color.line}`,
-          borderBottom: `1px solid ${color.line}`,
+          // A sequence, so a numbered list — inside one raised group.
+          background: color.card,
+          boxShadow: shadow.card,
+          borderRadius: radius.xl,
+          overflow: 'hidden',
           display: 'grid',
-          gap: 12,
           fontSize: text.md,
           lineHeight: 1.5,
           fontFamily: font.sans,
@@ -91,9 +93,9 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
 
       <Button
         tone="primary"
-        size="lg"
+        size="xl"
         onClick={() => window.location.assign(startUrl)}
-        style={{ minWidth: 220, height: 44 }}
+        style={{ minWidth: 240 }}
       >
         Continue to Google
       </Button>
@@ -111,26 +113,42 @@ function ConsentStep({
   children: ReactNode;
 }) {
   return (
-    <li style={{ display: 'grid', gridTemplateColumns: '24px 1fr', gap: 10 }}>
+    <li
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '28px 1fr',
+        gap: 12,
+        padding: '14px 16px',
+        // Inset hairline above every step but the first.
+        backgroundImage:
+          number === '1' ? undefined : `linear-gradient(${color.lineSoft}, ${color.lineSoft})`,
+        backgroundSize: 'calc(100% - 56px) 1px',
+        backgroundPosition: 'right top',
+        backgroundRepeat: 'no-repeat',
+      }}
+    >
       <span
         aria-hidden="true"
         style={{
-          width: 22,
-          height: 22,
+          width: 28,
+          height: 28,
           borderRadius: radius.pill,
           display: 'grid',
           placeItems: 'center',
           background: color.primarySoft,
-          color: color.primaryDeep,
-          fontFamily: font.mono,
-          fontSize: text.xs,
-          fontWeight: 600,
+          color: color.primary,
+          fontFamily: font.sans,
+          fontSize: text.sm,
+          fontWeight: 650,
+          fontVariantNumeric: 'tabular-nums',
         }}
       >
         {number}
       </span>
-      <span>
-        <strong style={{ display: 'block', fontWeight: 600, color: color.fg }}>{title}</strong>
+      <span style={{ fontSize: text.sm, lineHeight: 1.5 }}>
+        <strong style={{ display: 'block', fontSize: text.md, fontWeight: 600, color: color.fg }}>
+          {title}
+        </strong>
         <span style={{ color: color.fgMuted }}>{children}</span>
       </span>
     </li>
@@ -141,7 +159,9 @@ function ConsentStep({
 function ConsentDetails({ label, items }: { label: string; items: readonly string[] }) {
   return (
     <details style={{ marginTop: 5 }}>
-      <summary style={{ color: color.primary, cursor: 'pointer', fontSize: text.sm }}>
+      <summary
+        style={{ color: color.primary, cursor: 'pointer', fontSize: text.sm, fontWeight: 500 }}
+      >
         {label}
       </summary>
       <ul style={{ margin: '6px 0 0', paddingLeft: 18, display: 'grid', gap: 3 }}>

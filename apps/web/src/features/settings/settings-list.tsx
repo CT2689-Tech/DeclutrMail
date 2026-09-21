@@ -1,17 +1,22 @@
 'use client';
 
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode, SelectHTMLAttributes } from 'react';
 import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
+import { SwitchTrack } from './switch';
 
-const { color, font, text, motion, radius } = tokens;
+const { color, font, text, motion, radius, shadow } = tokens;
 
 /**
- * List primitives for Settings and its sub-screens: a titled group of
- * hairline-separated rows (label left, control / value / chevron right).
- * One grammar for every preference so a section never needs its own
- * card, heading and paragraph to be understood.
+ * List primitives for Settings and its sub-screens: a titled group is ONE
+ * raised surface holding its rows (label left, control / value / chevron
+ * right), separated by inset hairlines. One grammar for every preference
+ * so a section never needs its own card, heading and paragraph to be
+ * understood.
  */
+
+/** Horizontal inset shared by the group title, every row and the footer. */
+const ROW_INSET = 16;
 
 /**
  * Page header — one line: the h1 plus optional right-aligned controls.
@@ -43,15 +48,18 @@ export function PageHeader({
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            width: 32,
-            height: 32,
+            width: 36,
+            height: 36,
             marginLeft: -8,
-            borderRadius: radius.md,
+            borderRadius: radius.pill,
             color: color.fgMuted,
             transform: 'rotate(180deg)',
           }}
+          className="dm-settings-back"
         >
-          <Chevron />
+          <style>{`.dm-settings-back { transition: background ${motion.fast} ${motion.ease}; }
+.dm-settings-back:hover { background: ${color.fill}; }`}</style>
+          <Chevron size={16} />
         </Link>
       )}
       <h1
@@ -59,8 +67,8 @@ export function PageHeader({
           margin: 0,
           fontFamily: font.sans,
           fontSize: text['2xl'],
-          fontWeight: 600,
-          letterSpacing: '-0.01em',
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
           color: color.fg,
           minWidth: 0,
         }}
@@ -79,18 +87,22 @@ export function PageHeader({
  */
 export function GroupTitle({
   as: Tag = 'h2',
+  inset = false,
   children,
 }: {
   as?: 'h2' | 'div';
+  /** Align with the rows of a raised group (which sit 16px inside it). */
+  inset?: boolean;
   children: ReactNode;
 }) {
   return (
     <Tag
       style={{
-        margin: '0 0 4px',
+        margin: '0 0 8px',
+        paddingLeft: inset ? ROW_INSET : 0,
         fontFamily: font.sans,
         fontSize: text.sm,
-        fontWeight: 500,
+        fontWeight: 600,
         color: color.fgMuted,
       }}
     >
@@ -124,16 +136,35 @@ export function SettingsGroup({
       aria-label={title}
       style={{ scrollMarginTop: 24, fontFamily: font.sans, ...style }}
     >
-      <GroupTitle>{title}</GroupTitle>
-      <style>{`.dm-settings-drill { transition: background ${motion.fast} ${motion.ease}; }
-.dm-settings-drill:hover { background: ${color.lineSoft}; }`}</style>
-      {/* Every row draws its own top hairline, so the first row's is the
-          group's top edge and the container only closes the bottom. */}
-      <div style={{ borderBottom: `1px solid ${color.line}` }}>{children}</div>
-      {footer}
+      <GroupTitle inset>{title}</GroupTitle>
+      <style>{GROUP_CSS}</style>
+      <div
+        className="dm-settings-rows"
+        style={{
+          background: color.card,
+          boxShadow: shadow.card,
+          borderRadius: radius.xl,
+          overflow: 'hidden',
+        }}
+      >
+        {children}
+      </div>
+      {footer != null && <div style={{ padding: `0 ${ROW_INSET}px` }}>{footer}</div>}
     </section>
   );
 }
+
+/**
+ * Every row draws an inset hairline above itself; the first row of a
+ * group (direct child, or first inside a wrapping card component) hides
+ * it, so the raised surface has no line against its own edge.
+ */
+const GROUP_CSS = `.dm-settings-row { position: relative; }
+.dm-settings-row::before { content: ''; position: absolute; top: 0; left: ${ROW_INSET}px; right: 0; height: 1px; background: ${color.lineSoft}; }
+.dm-settings-rows > .dm-settings-row:first-child::before,
+.dm-settings-rows > :first-child > .dm-settings-row:first-child::before { display: none; }
+.dm-settings-drill { transition: background ${motion.fast} ${motion.ease}; }
+.dm-settings-drill:hover { background: ${color.fill}; }`;
 
 const rowStyle = {
   display: 'flex',
@@ -141,10 +172,9 @@ const rowStyle = {
   justifyContent: 'space-between',
   flexWrap: 'wrap',
   gap: 12,
-  minHeight: 44,
-  padding: 0,
+  minHeight: 56,
+  padding: `0 ${ROW_INSET}px`,
   boxSizing: 'border-box',
-  borderTop: `1px solid ${color.line}`,
 } as const;
 
 export function SettingsRow({
@@ -161,9 +191,9 @@ export function SettingsRow({
   style?: CSSProperties;
 }) {
   return (
-    <div style={{ ...rowStyle, ...style }}>
-      <div style={{ minWidth: 0, flex: '1 1 200px', padding: '8px 0' }}>
-        <div style={{ fontSize: text.md, color: color.fg }}>{label}</div>
+    <div className="dm-settings-row" style={{ ...rowStyle, ...style }}>
+      <div style={{ minWidth: 0, flex: '1 1 200px', padding: '10px 0' }}>
+        <div style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>{label}</div>
         {detail != null && (
           <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>{detail}</div>
         )}
@@ -190,10 +220,10 @@ export function DrillRow({
   return (
     <Link
       href={href}
-      className="dm-settings-drill"
+      className="dm-settings-row dm-settings-drill"
       style={{ ...rowStyle, flexWrap: 'nowrap', textDecoration: 'none', color: color.fg }}
     >
-      <span style={{ fontSize: text.md, minWidth: 0 }}>{label}</span>
+      <span style={{ fontSize: text.md, fontWeight: 500, minWidth: 0 }}>{label}</span>
       <span
         style={{
           display: 'inline-flex',
@@ -211,11 +241,11 @@ export function DrillRow({
   );
 }
 
-function Chevron() {
+function Chevron({ size = 14 }: { size?: number }) {
   return (
     <svg
-      width={14}
-      height={14}
+      width={size}
+      height={size}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -242,7 +272,7 @@ export function SettingsRowStatus({
 }) {
   if (state.kind === 'loading') {
     return (
-      <div style={rowStyle}>
+      <div className="dm-settings-row" style={rowStyle}>
         <span role="status" style={{ fontSize: text.md, color: color.fgMuted }}>
           {loadingLabel}
         </span>
@@ -250,7 +280,7 @@ export function SettingsRowStatus({
     );
   }
   return (
-    <div style={rowStyle}>
+    <div className="dm-settings-row" style={rowStyle}>
       <span style={{ fontSize: text.md, color: color.danger }}>{errorLabel}</span>
       <Button tone="default" size="sm" onClick={state.onRetry}>
         Retry
@@ -262,7 +292,7 @@ export function SettingsRowStatus({
 /** Inline failed-save line under a group's rows. */
 export function SettingsSaveError({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: '6px 0 0' }}>
+    <p role="alert" style={{ fontSize: text.sm, color: color.danger, margin: '8px 0 0' }}>
       {children}
     </p>
   );
@@ -299,46 +329,76 @@ export function SettingsSwitch({
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 8,
+        gap: 10,
         minHeight: 44,
         background: 'transparent',
         border: 'none',
         padding: 0,
         cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled && !pending ? 0.6 : 1,
+        opacity: disabled && !pending ? 0.45 : 1,
         fontFamily: font.sans,
       }}
     >
       <span style={{ fontSize: text.sm, color: color.fgMuted, minWidth: 48, textAlign: 'right' }}>
         {pending ? 'Saving…' : stateLabel}
       </span>
+      <SwitchTrack on={on} />
+    </button>
+  );
+}
+
+/**
+ * A native `<select>` drawn as a capsule well: neutral fill, no outline,
+ * a muted chevron on the right. Native so keyboard, screen readers and
+ * the phone picker all behave exactly as before.
+ */
+export function SelectWell({
+  style,
+  children,
+  ...props
+}: SelectHTMLAttributes<HTMLSelectElement> & { style?: CSSProperties }) {
+  return (
+    <span style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+      <style>{`.dm-select-well { transition: background ${motion.fast} ${motion.ease}; }
+.dm-select-well:hover:not(:disabled) { background: ${color.fillHover}; }
+.dm-select-well:focus-visible { outline: 2px solid ${color.primary}; outline-offset: 2px; }`}</style>
+      <select
+        {...props}
+        className="dm-select-well"
+        style={{
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          fontFamily: font.sans,
+          fontSize: text.md,
+          fontWeight: 500,
+          fontVariantNumeric: 'tabular-nums',
+          color: color.fg,
+          background: color.fill,
+          border: 'none',
+          borderRadius: radius.pill,
+          height: 36,
+          padding: '0 34px 0 14px',
+          boxSizing: 'border-box',
+          cursor: props.disabled ? 'default' : 'pointer',
+          opacity: props.disabled ? 0.6 : 1,
+          ...style,
+        }}
+      >
+        {children}
+      </select>
       <span
         aria-hidden="true"
         style={{
-          width: 36,
-          height: 22,
-          borderRadius: radius.pill,
-          background: on ? color.primary : color.mutedBg,
-          border: `1px solid ${on ? color.primary : color.border}`,
-          position: 'relative',
-          transition: `background ${motion.fast} ${motion.ease}`,
-          flexShrink: 0,
-          boxSizing: 'border-box',
+          position: 'absolute',
+          right: 12,
+          display: 'inline-flex',
+          color: color.fgMuted,
+          pointerEvents: 'none',
+          transform: 'rotate(90deg)',
         }}
       >
-        <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            left: on ? 16 : 2,
-            width: 16,
-            height: 16,
-            borderRadius: radius.pill,
-            background: on ? color.fgInverse : color.fgMuted,
-            transition: `left ${motion.fast} ${motion.ease}`,
-          }}
-        />
+        <Chevron size={12} />
       </span>
-    </button>
+    </span>
   );
 }

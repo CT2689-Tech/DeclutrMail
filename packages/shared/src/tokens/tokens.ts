@@ -28,6 +28,10 @@ export const color = {
   line: 'var(--dm-line)',
   lineSoft: 'var(--dm-line-soft)',
   mutedBg: 'var(--dm-muted-bg)',
+  /** Neutral fill for quiet buttons, segmented controls and input wells. */
+  fill: 'var(--dm-fill)',
+  fillHover: 'var(--dm-fill-hover)',
+  scrim: 'var(--dm-scrim)',
 
   /** Deep-teal accent. */
   primary: 'var(--dm-primary)',
@@ -119,16 +123,16 @@ export const font = {
 
 /** Normalised type scale (px). */
 export const text = {
-  '2xs': 10,
-  xs: 11,
-  sm: 12,
-  base: 13,
-  md: 14,
-  lg: 16,
-  xl: 18,
-  '2xl': 22,
-  '3xl': 28,
-  '4xl': 34,
+  '2xs': 11,
+  xs: 12,
+  sm: 13,
+  base: 14,
+  md: 15,
+  lg: 17,
+  xl: 20,
+  '2xl': 24,
+  '3xl': 32,
+  '4xl': 44,
 } as const;
 
 /** 4px spacing scale (px). */
@@ -147,10 +151,12 @@ export const space = {
 } as const;
 
 export const radius = {
-  sm: 6,
-  md: 8,
-  lg: 12,
-  xl: 16,
+  sm: 8,
+  md: 10,
+  lg: 14,
+  xl: 20,
+  /** Sheets and dialogs — the largest surface gets the softest corner. */
+  '2xl': 28,
   pill: 9999,
 } as const;
 
@@ -158,6 +164,8 @@ export const shadow = {
   card: 'var(--dm-shadow-card)',
   pop: 'var(--dm-shadow-pop)',
   lift: 'var(--dm-shadow-lift)',
+  modal: 'var(--dm-shadow-modal)',
+  button: 'var(--dm-shadow-button)',
 } as const;
 
 /**

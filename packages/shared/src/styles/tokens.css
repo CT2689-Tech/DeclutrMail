@@ -96,14 +96,31 @@
   --dm-avatar-depth-a: 0.08;
 
   /* Elevation */
-  --dm-shadow-card: 0 1px 2px rgba(20, 30, 50, 0.04), 0 0 0 1px rgba(20, 30, 50, 0.012);
-  --dm-shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.14);
-  --dm-shadow-lift: 0 8px 24px -8px rgba(20, 30, 50, 0.1), 0 2px 6px -2px rgba(20, 30, 50, 0.05);
+  /* Layered, never one grey blur: a hairline ring for the edge, a tight
+     contact shadow, and a wide soft one for the height. */
+  --dm-shadow-card:
+    0 0 0 1px rgba(14, 20, 19, 0.05), 0 1px 2px rgba(14, 20, 19, 0.04),
+    0 6px 16px -8px rgba(14, 20, 19, 0.08);
+  --dm-shadow-pop:
+    0 0 0 1px rgba(14, 20, 19, 0.06), 0 4px 10px -4px rgba(14, 20, 19, 0.1),
+    0 16px 36px -10px rgba(14, 20, 19, 0.2);
+  --dm-shadow-lift:
+    0 0 0 1px rgba(14, 20, 19, 0.05), 0 2px 6px -2px rgba(14, 20, 19, 0.06),
+    0 12px 28px -10px rgba(14, 20, 19, 0.14);
+  --dm-shadow-modal:
+    0 0 0 1px rgba(14, 20, 19, 0.06), 0 12px 24px -12px rgba(14, 20, 19, 0.18),
+    0 40px 96px -20px rgba(14, 20, 19, 0.38);
+  /* A filled button sits ON the page: top highlight + contact shadow. */
+  --dm-shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 1px 2px rgba(14, 20, 19, 0.18);
+
+  /* Neutral fill — quiet buttons, segmented controls, input wells. */
+  --dm-fill: rgba(14, 20, 19, 0.05);
+  --dm-fill-hover: rgba(14, 20, 19, 0.085);
 
   /* Scrollbar + scrim */
   --dm-scrollbar: rgba(14, 20, 19, 0.14);
   --dm-scrollbar-hover: rgba(14, 20, 19, 0.24);
-  --dm-scrim: rgba(14, 20, 19, 0.34);
+  --dm-scrim: rgba(14, 20, 19, 0.26);
 
   /* Focus ring */
   --dm-ring: #006b5f;
@@ -176,9 +193,22 @@
   --dm-avatar-shine-a: 0.13;
   --dm-avatar-depth-a: 0.22;
 
-  --dm-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.2);
-  --dm-shadow-pop: 0 10px 28px rgba(0, 0, 0, 0.55);
-  --dm-shadow-lift: 0 8px 24px -8px rgba(0, 0, 0, 0.5), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
+  --dm-shadow-card:
+    0 0 0 1px rgba(238, 246, 243, 0.06), 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 6px 16px -8px rgba(0, 0, 0, 0.5);
+  --dm-shadow-pop:
+    0 0 0 1px rgba(238, 246, 243, 0.08), 0 4px 10px -4px rgba(0, 0, 0, 0.5),
+    0 16px 36px -10px rgba(0, 0, 0, 0.7);
+  --dm-shadow-lift:
+    0 0 0 1px rgba(238, 246, 243, 0.07), 0 2px 6px -2px rgba(0, 0, 0, 0.45),
+    0 12px 28px -10px rgba(0, 0, 0, 0.6);
+  --dm-shadow-modal:
+    0 0 0 1px rgba(238, 246, 243, 0.1), 0 12px 24px -12px rgba(0, 0, 0, 0.6),
+    0 40px 96px -20px rgba(0, 0, 0, 0.8);
+  --dm-shadow-button: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 1px 2px rgba(0, 0, 0, 0.5);
+
+  --dm-fill: rgba(238, 246, 243, 0.07);
+  --dm-fill-hover: rgba(238, 246, 243, 0.12);
 
   --dm-scrollbar: rgba(238, 246, 243, 0.16);
   --dm-scrollbar-hover: rgba(238, 246, 243, 0.28);
@@ -234,7 +264,7 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='0.05'/%3E%3C/svg%3E");
   color: var(--dm-fg);
   font-family: var(--dm-font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -514,5 +544,65 @@ button {
   }
   [data-dm-lift]:hover {
     transform: none;
+  }
+}
+
+/* ── Interaction feel ───────────────────────────────────────────
+   Press: every button gives a little under the finger. Scrim: the page
+   behind a sheet recedes (blur + dim) instead of going grey. Sheet: it
+   arrives from slightly below and slightly small. All three are
+   zeroed by the reduced-motion block above. */
+[data-dm-button]:not(:disabled):not([aria-disabled='true']):active {
+  transform: scale(0.97);
+}
+.dm-scrim {
+  background: var(--dm-scrim);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  animation: dm-scrim-in 180ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+.dm-sheet {
+  animation: dm-sheet-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+}
+@keyframes dm-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes dm-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+}
+
+/* The preview sheet: a centred dialog on desktop, a bottom sheet on
+   phones — CSS-driven so there is no post-hydration jump. */
+.dm-sheet-layer {
+  align-items: center;
+}
+.dm-sheet-panel {
+  border-radius: 28px;
+  margin: auto;
+}
+.dm-sheet-details > summary::-webkit-details-marker {
+  display: none;
+}
+.dm-sheet-details > summary:hover {
+  background: var(--dm-fill);
+}
+.dm-sheet-details[open] .dm-sheet-details-chevron {
+  transform: rotate(180deg);
+}
+@media (max-width: 520px) {
+  .dm-sheet-layer {
+    align-items: flex-end;
+    padding: 0 !important;
+  }
+  .dm-sheet-panel {
+    max-width: none !important;
+    margin: auto 0 0;
+    border-radius: 28px 28px 0 0;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }

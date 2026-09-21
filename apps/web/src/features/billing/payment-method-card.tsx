@@ -27,7 +27,7 @@ import type { BillingProviderId } from '@declutrmail/shared/contracts';
 import { usePaymentMethodSession } from './api/use-payment-method';
 import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, text } = tokens;
+const { color, radius, shadow, text } = tokens;
 
 export function PaymentMethodCard({
   provider,
@@ -65,9 +65,11 @@ export function PaymentMethodCard({
       data-testid="payment-method-card"
       style={{
         background: color.card,
-        border: `1px solid ${isPastDue ? color.amber : color.border}`,
-        borderRadius: radius.lg,
-        padding: '20px 22px',
+        // Past due is said in amber lettering below; the ring only marks
+        // which surface needs attention.
+        boxShadow: isPastDue ? `0 0 0 2px ${color.amber}, ${shadow.card}` : shadow.card,
+        borderRadius: radius.xl,
+        padding: 'clamp(20px, 4vw, 28px)',
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
@@ -75,7 +77,7 @@ export function PaymentMethodCard({
     >
       <GroupTitle as="div">Payment method</GroupTitle>
 
-      <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55, color: color.fgSoft }}>
+      <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55, color: color.fgMuted }}>
         {showSupportPath ? (
           mandateExplains ? (
             <>
@@ -149,8 +151,7 @@ export function PaymentMethodCard({
                 fontSize: text.sm,
                 color: color.danger,
                 background: color.dangerBg,
-                border: `1px solid ${color.danger}`,
-                borderRadius: 8,
+                borderRadius: radius.md,
                 padding: '8px 10px',
               }}
             >

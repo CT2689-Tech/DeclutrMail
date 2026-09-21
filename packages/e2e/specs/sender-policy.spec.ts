@@ -95,10 +95,10 @@ test('Protect toggle persists across reload and restores on toggle-back', async 
   // ---- Toggle ON (or off, if the sender is already protected).
   await protectChip.click();
   await expect(protectChip).toHaveAttribute('aria-checked', checkedFor(!initialPressed));
-  // The confirmation toast — exact, so the reason line beside the switch
-  // ("Protected — …") is not a second match.
+  // The confirmation toast — scoped to live regions, because the Protected
+  // row itself is labelled "Protected" in both states.
   await expect(
-    page.getByText(initialPressed ? 'Unprotected' : 'Protected', { exact: true }),
+    page.getByRole('status').filter({ hasText: initialPressed ? /^Unprotected$/ : /^Protected$/ }),
   ).toBeVisible();
 
   // Server durability — the SET-STATE patch landed in sender_policies.

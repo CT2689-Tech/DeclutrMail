@@ -144,7 +144,7 @@ describe('PrivacyDataView', () => {
 
   it('states that encrypted OAuth credentials are excluded from exports', () => {
     renderView();
-    const credentialRow = screen.getByText('Encrypted Google OAuth credential').closest('li');
+    const credentialRow = screen.getByText('Encrypted Google OAuth credential').closest('div');
     expect(credentialRow).toHaveTextContent('Not currently included in a data export.');
     expect(screen.queryByText(/we don't store them/i)).not.toBeInTheDocument();
   });

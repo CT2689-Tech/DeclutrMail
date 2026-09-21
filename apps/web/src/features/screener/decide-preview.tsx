@@ -21,7 +21,7 @@ import {
 } from './data';
 import { VERB_LABEL } from './verbs';
 
-const { color, font, motion, text } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
 
 /**
  * Live impact figure — the sender's current-inbox count from
@@ -202,19 +202,19 @@ export function DecidePreview({
       role="region"
       aria-label={`Preview · ${VERB_LABEL[verb]} ${name}`}
       style={{
-        background: color.paper,
-        border: `1px solid ${verb === 'delete' ? color.danger : color.line}`,
-        borderRadius: 9,
-        padding: '12px 14px',
+        background: color.card,
+        boxShadow: shadow.lift,
+        borderRadius: radius.xl,
+        padding: 'clamp(16px, 3vw, 22px)',
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
+        gap: 14,
         fontFamily: font.sans,
       }}
     >
       <span
         style={{
-          fontSize: text.xs,
+          fontSize: text.sm,
           fontWeight: 600,
           color: verb === 'delete' ? color.danger : color.primary,
         }}
@@ -225,10 +225,10 @@ export function DecidePreview({
       <MailboxActionContext mailboxEmail={mailboxEmail} />
 
       <div>
-        <h3 style={{ fontSize: text.md, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}>
+        <h3 style={{ fontSize: text.lg, fontWeight: 650, letterSpacing: '-0.015em', margin: 0 }}>
           {title}
         </h3>
-        <p style={{ fontSize: text.sm, color: color.fgSoft, margin: '4px 0 0', lineHeight: 1.5 }}>
+        <p style={{ fontSize: text.md, color: color.fgMuted, margin: '4px 0 0', lineHeight: 1.5 }}>
           {lead}
         </p>
       </div>
@@ -243,8 +243,20 @@ export function DecidePreview({
           aria-label="Where it applies"
           style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
         >
-          <div style={{ fontSize: text.xs, color: color.fgMuted }}>Where it applies</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}>
+            Where it applies
+          </div>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignSelf: 'flex-start',
+              flexWrap: 'wrap',
+              gap: 2,
+              padding: 3,
+              background: color.fill,
+              borderRadius: radius.pill,
+            }}
+          >
             {(
               [
                 { value: 'inbox_only', label: 'Inbox only', count: liveInboxNumber(inboxCount) },
@@ -266,12 +278,14 @@ export function DecidePreview({
                   style={{
                     fontFamily: font.sans,
                     fontSize: text.sm,
-                    fontWeight: 500,
-                    padding: '6px 12px',
-                    borderRadius: 999,
-                    background: active ? color.fg : 'transparent',
-                    color: active ? color.fgInverse : color.fgSoft,
-                    border: `1px solid ${active ? color.fg : color.line}`,
+                    fontWeight: 600,
+                    height: 32,
+                    padding: '0 14px',
+                    borderRadius: radius.pill,
+                    background: active ? color.card : 'transparent',
+                    color: active ? color.fg : color.fgMuted,
+                    boxShadow: active ? shadow.card : 'none',
+                    border: 'none',
                     cursor: 'pointer',
                     transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
                   }}
@@ -282,7 +296,7 @@ export function DecidePreview({
                       style={{
                         marginLeft: 6,
                         fontVariantNumeric: 'tabular-nums',
-                        opacity: active ? 0.85 : 0.7,
+                        opacity: active ? 1 : 0.8,
                       }}
                     >
                       {opt.count.toLocaleString('en-US')}
@@ -293,7 +307,7 @@ export function DecidePreview({
             })}
           </div>
           {activeReach === 'all_mail' && (
-            <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.45 }}>
+            <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.45 }}>
               Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo puts each
               email back where it was.
             </span>
@@ -310,10 +324,9 @@ export function DecidePreview({
           // figure instead of squeezing the count.
           flexWrap: 'wrap',
           gap: 8,
-          padding: '10px 12px',
-          background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: 8,
+          padding: '12px 14px',
+          background: color.fill,
+          borderRadius: radius.lg,
         }}
       >
         <ImpactFigure
@@ -337,10 +350,9 @@ export function DecidePreview({
             fontSize: text.sm,
             lineHeight: 1.5,
             color: color.danger,
-            background: color.card,
-            border: `1px solid ${color.danger}`,
-            borderRadius: 8,
-            padding: '8px 10px',
+            background: color.dangerBg,
+            borderRadius: radius.lg,
+            padding: '12px 14px',
           }}
         >
           <strong style={{ fontWeight: 600 }}>This sender is Protected</strong> — {name} is kept

@@ -46,10 +46,9 @@ export function ContactSupportForm() {
           role="status"
           style={{
             margin: 0,
-            padding: '12px 0',
-            borderTop: `1px solid ${color.line}`,
+            padding: '17px 16px',
             fontSize: text.md,
-            color: color.primary,
+            color: color.fg,
           }}
         >
           Message sent — we reply within 2 business days.
@@ -63,13 +62,13 @@ export function ContactSupportForm() {
       <form
         onSubmit={(e) => void submit(e)}
         style={{
-          padding: '12px 0',
-          borderTop: `1px solid ${color.line}`,
+          padding: 16,
           display: 'flex',
           flexDirection: 'column',
           gap: 10,
         }}
       >
+        <style>{`.dm-support-field:focus-visible { box-shadow: 0 0 0 2px ${color.primary}; }`}</style>
         <input
           type="text"
           required
@@ -82,15 +81,16 @@ export function ContactSupportForm() {
           aria-label="Subject"
           maxLength={150}
           disabled={status === 'submitting'}
+          className="dm-support-field"
           style={{
-            height: 36,
-            padding: '0 10px',
+            height: 44,
+            padding: '0 14px',
             fontFamily: font.sans,
             fontSize: text.md,
             color: color.fg,
-            background: color.card,
-            border: `1px solid ${status === 'error' ? color.dangerBorder : color.border}`,
-            borderRadius: radius.sm,
+            background: color.fill,
+            border: `1px solid ${status === 'error' ? color.dangerBorder : 'transparent'}`,
+            borderRadius: radius.md,
             outline: 'none',
           }}
         />
@@ -107,14 +107,15 @@ export function ContactSupportForm() {
           placeholder="What's going on?"
           aria-label="Message"
           disabled={status === 'submitting'}
+          className="dm-support-field"
           style={{
-            padding: '8px 10px',
+            padding: '12px 14px',
             fontFamily: font.sans,
             fontSize: text.md,
             color: color.fg,
-            background: color.card,
-            border: `1px solid ${status === 'error' ? color.dangerBorder : color.border}`,
-            borderRadius: radius.sm,
+            background: color.fill,
+            border: `1px solid ${status === 'error' ? color.dangerBorder : 'transparent'}`,
+            borderRadius: radius.md,
             outline: 'none',
             resize: 'vertical',
           }}

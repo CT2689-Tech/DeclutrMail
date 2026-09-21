@@ -5,18 +5,19 @@ import { color, font, radius, text } from '../tokens/tokens';
 
 export type PillTone = 'default' | 'primary' | 'amber' | 'emerald' | 'red' | 'dark';
 
-const PILL_TONES: Record<PillTone, { bg: string; fg: string; br: string }> = {
-  default: { bg: color.mutedBg, fg: color.fg, br: color.border },
-  primary: { bg: color.primarySoft, fg: color.primary, br: color.primaryBorder },
-  // Semantic fgs ride the theme tokens (not the old darker literals) so
-  // the washes stay readable when the dark palette brightens them.
-  amber: { bg: color.amberBg, fg: color.amber, br: 'rgba(245,158,11,0.30)' },
-  emerald: { bg: color.emeraldBg, fg: color.emerald, br: 'rgba(5,150,105,0.25)' },
-  red: { bg: color.redBg, fg: color.red, br: color.redBorder },
-  dark: { bg: color.fg, fg: color.fgInverse, br: color.fg },
+// Soft-fill capsules: the tint IS the shape, so there is no outline.
+const PILL_TONES: Record<PillTone, { bg: string; fg: string }> = {
+  default: { bg: color.fill, fg: color.fgSoft },
+  primary: { bg: color.primarySoft, fg: color.primary },
+  // Semantic fgs ride the theme tokens so the washes stay readable when
+  // the dark palette brightens them.
+  amber: { bg: color.amberBg, fg: color.amber },
+  emerald: { bg: color.emeraldBg, fg: color.emerald },
+  red: { bg: color.redBg, fg: color.red },
+  dark: { bg: color.fg, fg: color.fgInverse },
 };
 
-/** Small rounded status/label chip. */
+/** Small soft-fill status/label capsule. */
 export function Pill({
   children,
   tone = 'default',
@@ -33,14 +34,17 @@ export function Pill({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 5,
-        padding: '2px 8px',
+        height: 22,
+        padding: '0 9px',
+        boxSizing: 'border-box',
         background: t.bg,
         color: t.fg,
-        border: `1px solid ${t.br}`,
+        border: 'none',
         borderRadius: radius.pill,
         fontFamily: font.sans,
         fontSize: text.xs,
-        fontWeight: 500,
+        fontWeight: 600,
+        lineHeight: 1,
         whiteSpace: 'nowrap',
         ...style,
       }}

@@ -146,9 +146,7 @@ describe('checkout provider gate (D117)', () => {
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByLabelText(/UPI · cards · netbanking/));
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'annual', provider: 'razorpay' }),
@@ -169,9 +167,7 @@ describe('checkout provider gate (D117)', () => {
     fireEvent.click(within(panel).getByRole('checkbox'));
     expect(within(panel).queryByLabelText(/UPI · cards · netbanking/)).not.toBeInTheDocument();
 
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({

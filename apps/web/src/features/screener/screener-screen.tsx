@@ -623,7 +623,7 @@ export function ScreenerScreen({
         padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
+        gap: 24,
         width: '100%',
         boxSizing: 'border-box',
         maxWidth: 880,
@@ -635,8 +635,8 @@ export function ScreenerScreen({
         <h1
           style={{
             fontSize: text['2xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.015em',
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
             margin: 0,
             color: color.fg,
           }}
@@ -649,7 +649,7 @@ export function ScreenerScreen({
             page size as the total. */}
         {state.kind === 'ready' && totalPending !== null && (
           <span style={{ fontSize: text.md, color: color.fgMuted }}>
-            <span style={{ fontFamily: font.mono, fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
               {totalPending.toLocaleString('en-US')}
             </span>{' '}
             new sender{totalPending === 1 ? '' : 's'}
@@ -686,10 +686,10 @@ export function ScreenerScreen({
         <div
           role="list"
           aria-label="Senders waiting for your decision"
+          className="dm-screener-list"
           style={{
             display: 'flex',
             flexDirection: 'column',
-            borderBottom: `1px solid ${color.line}`,
           }}
         >
           {state.rows.map((row) => (
@@ -741,7 +741,7 @@ function LoadingState() {
         <div
           key={i}
           aria-hidden="true"
-          style={{ height: 68, borderTop: `1px solid ${color.line}` }}
+          style={{ height: 72, borderTop: `1px solid ${color.lineSoft}` }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading the Screener queue</span>

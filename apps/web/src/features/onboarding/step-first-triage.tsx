@@ -122,18 +122,25 @@ export function StepFirstTriage({
             would not take them back out — so no total here is provable. */}
         <h1
           style={{
-            fontFamily: font.display,
+            fontFamily: font.sans,
             fontSize: text['3xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.15,
-            margin: '0 0 8px',
+            fontWeight: 650,
+            letterSpacing: '-0.025em',
+            lineHeight: 1.12,
+            color: color.fg,
+            margin: '0 0 12px',
           }}
         >
           {meta.pinned === 0 ? 'No decisions waiting.' : 'You’re done for today.'}
         </h1>
         <p
-          style={{ color: color.fgMuted, fontSize: text.md, margin: '0 auto 24px', maxWidth: 460 }}
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            margin: '0 auto 28px',
+            maxWidth: 460,
+          }}
         >
           {meta.pinned === 0
             ? "We didn't find enough repeated email to review here."
@@ -141,9 +148,10 @@ export function StepFirstTriage({
         </p>
         <Button
           tone="primary"
+          size="xl"
           onClick={() => finish(meta.pinned === 0 ? 'empty' : 'completed')}
           disabled={completing}
-          style={{ minWidth: 220 }}
+          style={{ minWidth: 240 }}
         >
           {completing ? 'Finishing…' : 'Continue to Senders'}
         </Button>
@@ -181,13 +189,21 @@ export function StepFirstTriage({
             style={{
               margin: 0,
               fontSize: text['2xl'],
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
               color: color.fg,
             }}
           >
             Review senders{' '}
-            <span style={{ fontFamily: font.mono, fontSize: text.md, color: color.fgMuted }}>
+            <span
+              style={{
+                fontSize: text.md,
+                fontWeight: 500,
+                letterSpacing: 0,
+                color: color.fgMuted,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
               {Math.min(meta.decided + 1, meta.pinned)} of {meta.pinned}
             </span>
           </h1>

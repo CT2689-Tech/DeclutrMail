@@ -93,28 +93,31 @@ export function AccountMenu() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      {/* Trigger max-width is class-driven so it can narrow below the
-          shell's 900px sm breakpoint — on a phone the topbar row would
-          otherwise push this switcher's right edge off-screen (untappable).
-          CSS-driven (not a JS hook) so there is no post-hydration flash. */}
+      {/* The trigger is the avatar alone at every width — the menu it
+          opens states the address. Clipped, not display:none, so the
+          address stays the button's accessible name. */}
       <style>{`
-        .dm-account-trigger { max-width: 220px; }
-        @media (max-width: 900px) {
-          .dm-account-trigger { max-width: 44vw; }
+        .dm-account-label {
+          position: absolute;
+          width: 1px;
+          height: 1px;
+          margin: -1px;
+          overflow: hidden;
+          clip: rect(0 0 0 0);
+          white-space: nowrap;
         }
-        /* Small phones: the avatar alone. The top bar has no room for the
-           address at 320px, and the menu it opens states it. Clipped, not
-           display:none, so the address stays the button's accessible name. */
-        @media (max-width: 480px) {
-          .dm-account-label {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0 0 0 0);
-            white-space: nowrap;
-          }
+        .dm-account-trigger { width: 36px; height: 36px; }
+        .dm-account-trigger:hover { background: var(--dm-fill); }
+        @media (max-width: 900px) {
+          .dm-account-trigger { width: 44px; height: 44px; }
+        }
+        .dm-account-menu { animation: dm-account-menu-in 120ms cubic-bezier(0.2, 0, 0, 1) both; }
+        @keyframes dm-account-menu-in {
+          from { opacity: 0; transform: scale(0.97); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .dm-account-menu { animation: none; }
         }
       `}</style>
       <button
@@ -127,46 +130,38 @@ export function AccountMenu() {
         aria-controls="dm-account-menu"
         title={activeLabel}
         style={{
+          position: 'relative',
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '0 8px 0 4px',
-          height: 32,
-          background: 'transparent',
+          justifyContent: 'center',
+          padding: 0,
           border: 'none',
           borderRadius: radius.pill,
           color: color.fgSoft,
           cursor: 'pointer',
           fontFamily: font.sans,
-          fontSize: text.sm,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
+          transition: `background ${motion.fast} ${motion.ease}`,
         }}
       >
         <span
           aria-hidden
           style={{
-            width: 24,
-            height: 24,
+            width: 32,
+            height: 32,
             flexShrink: 0,
             borderRadius: radius.pill,
             background: color.primary,
             color: color.fgInverse,
+            boxShadow: shadow.button,
             display: 'inline-grid',
             placeItems: 'center',
-            fontSize: text.xs,
+            fontSize: text.base,
             fontWeight: 600,
           }}
         >
           {activeLabel.slice(0, 1).toUpperCase()}
         </span>
-        <span
-          className="dm-account-label"
-          style={{ fontFamily: font.mono, overflow: 'hidden', textOverflow: 'ellipsis' }}
-        >
-          {activeLabel}
-        </span>
+        <span className="dm-account-label">{activeLabel}</span>
       </button>
 
       {open && (
@@ -176,33 +171,36 @@ export function AccountMenu() {
           role="dialog"
           aria-label="Gmail accounts"
           tabIndex={-1}
+          className="dm-account-menu"
           style={{
             position: 'absolute',
-            top: 40,
+            top: 44,
             right: 0,
-            width: 300,
+            transformOrigin: 'top right',
+            width: 320,
             maxWidth: 'calc(100vw - 24px)',
             maxHeight: 'calc(100vh - 72px)',
             overflowY: 'auto',
             overscrollBehavior: 'contain',
             boxSizing: 'border-box',
             background: color.card,
-            borderRadius: radius.lg,
+            borderRadius: radius.xl,
             boxShadow: shadow.pop,
             padding: 8,
             fontFamily: font.sans,
             fontSize: text.md,
             zIndex: 90,
+            outline: 'none',
           }}
         >
           {/* -04: nothing else in this menu says switching rescopes every
               screen, not just this pill — a first-timer switching by
               accident had no way to know why their sender list changed. */}
-          <div style={{ padding: '4px 8px 8px', fontSize: text.xs, color: color.fgMuted }}>
+          <div style={{ padding: '8px 12px 10px', fontSize: text.sm, color: color.fgMuted }}>
             Everything you see is scoped to the active account.
           </div>
           {me.mailboxes.length === 0 && (
-            <div style={{ padding: '6px 8px', color: color.fgMuted }}>No mailboxes connected.</div>
+            <div style={{ padding: '6px 12px', color: color.fgMuted }}>No mailboxes connected.</div>
           )}
           {me.mailboxes.map((m) => {
             const isSelected = m.id === activeMailbox?.id;
@@ -212,23 +210,22 @@ export function AccountMenu() {
             const reconnectBlocked = isMailboxDataDeletionInFlight(indexedDataState);
             const lifecycleLabel = mailboxDataLifecycleLabel(indexedDataState);
             return (
-              <div
-                key={m.id}
-                data-testid={`account-mailbox-${m.id}`}
-                style={{ borderTop: `1px solid ${color.line}` }}
-              >
+              <div key={m.id} data-testid={`account-mailbox-${m.id}`} style={{ marginTop: 2 }}>
                 <div
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: 8,
-                    padding: '6px 8px',
+                    minHeight: 44,
+                    boxSizing: 'border-box',
+                    padding: '4px 8px',
+                    borderRadius: radius.md,
                     // Highlight the active mailbox so it reads as the
                     // current selection (not just a ✓) — the switch
                     // button is inert on the active row, which otherwise
                     // looked like "can't select it".
-                    background: isSelected ? color.primarySoft : 'transparent',
+                    background: isSelected ? color.fill : 'transparent',
                   }}
                 >
                   <button
@@ -262,8 +259,8 @@ export function AccountMenu() {
                       border: 'none',
                       color: isDisconnected ? color.fgMuted : color.fg,
                       cursor: isDisconnected ? 'not-allowed' : 'pointer',
-                      fontFamily: font.mono,
-                      fontSize: text.sm,
+                      fontFamily: font.sans,
+                      fontSize: text.md,
                       textAlign: 'left',
                     }}
                   >
@@ -276,7 +273,7 @@ export function AccountMenu() {
                         minWidth: 0,
                         display: 'block',
                         overflow: 'hidden',
-                        fontWeight: isSelected ? 600 : 400,
+                        fontWeight: isSelected ? 600 : 500,
                       }}
                     >
                       <span
@@ -417,9 +414,9 @@ export function AccountMenu() {
           })}
           <div
             style={{
-              borderTop: `1px solid ${color.line}`,
-              marginTop: 6,
-              paddingTop: 6,
+              borderTop: `1px solid ${color.lineSoft}`,
+              marginTop: 8,
+              paddingTop: 8,
               display: 'flex',
               flexDirection: 'column',
               gap: 2,
@@ -434,7 +431,7 @@ export function AccountMenu() {
                 id="account-menu-inbox-limit-gate"
                 data-testid="inbox-limit-gate"
                 style={{
-                  padding: '6px 8px',
+                  padding: '6px 12px',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
@@ -638,9 +635,10 @@ function menuItemStyle() {
     fontSize: text.md,
     textAlign: 'left' as const,
     textDecoration: 'none',
-    // No inline min-height — it would outrank the class's 44px on touch.
-    padding: '8px',
-    borderRadius: radius.sm,
+    fontWeight: 500,
+    height: 44,
+    padding: '0 12px',
+    borderRadius: radius.md,
     transition: `background ${motion.fast} ${motion.ease}`,
   };
 }

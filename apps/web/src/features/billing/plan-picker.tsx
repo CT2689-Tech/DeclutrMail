@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { Button, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
@@ -42,7 +42,7 @@ import {
 import { launchCheckout } from './checkout';
 import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font, radius, text } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
 
 /** Self-serve checkout targets (D19) — mirrors `PurchasableTierSchema`. */
 type PaidTier = 'plus' | 'pro';
@@ -524,13 +524,9 @@ export function PlanPicker({
       aria-label="Plans"
       data-testid="plan-picker"
       style={{
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-        padding: '20px 22px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 14,
+        gap: 16,
       }}
     >
       <div
@@ -550,7 +546,7 @@ export function PlanPicker({
         style={{
           display: 'flex',
           flexDirection: isPhone ? 'column' : 'row',
-          gap: 10,
+          gap: 16,
           flexWrap: 'wrap',
           alignItems: 'stretch',
         }}
@@ -639,7 +635,10 @@ export function PlanPicker({
 
       {/* The money-back note lives in the confirm panel — the point where
           money moves — and nowhere else on this screen. */}
-      <Link href="/pricing" style={{ fontSize: text.sm, color: color.fgMuted }}>
+      <Link
+        href="/pricing"
+        style={{ alignSelf: 'flex-start', fontSize: text.sm, color: color.fgMuted }}
+      >
         Compare plans
       </Link>
     </section>
@@ -702,8 +701,7 @@ function CycleToggle({
       data-testid="cycle-toggle"
       style={{
         display: 'inline-flex',
-        background: color.paper,
-        border: `1px solid ${color.border}`,
+        background: color.fill,
         borderRadius: radius.pill,
         padding: 3,
         gap: 2,
@@ -726,9 +724,10 @@ function CycleToggle({
               fontFamily: font.sans,
               fontSize: text.sm,
               fontWeight: 600,
-              background: on ? color.fg : 'transparent',
-              color: on ? color.bg : color.fgSoft,
-              transition: 'background 0.12s, color 0.12s',
+              background: on ? color.card : 'transparent',
+              color: on ? color.fg : color.fgMuted,
+              boxShadow: on ? shadow.card : 'none',
+              transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
             }}
           >
             {opt.label}
@@ -820,52 +819,60 @@ function PlanCard({
       data-testid={`plan-option-${tierId}`}
       aria-current={isCurrentPlan ? 'true' : undefined}
       style={{
-        flex: '1 1 160px',
-        padding: '14px 16px',
-        background: isSelected ? color.primarySoft : color.paper,
-        border: `1px solid ${isSelected ? color.primaryBorder : color.line}`,
-        borderRadius: radius.md,
+        flex: '1 1 180px',
+        padding: 22,
+        background: color.card,
+        // Selected = a teal ring on the raised surface, never a border.
+        boxShadow: isSelected ? `0 0 0 2px ${color.primary}, ${shadow.lift}` : shadow.card,
+        borderRadius: radius.xl,
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
+        gap: 8,
+        transition: `box-shadow ${motion.fast} ${motion.ease}`,
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-        <span style={{ fontSize: text.md, fontWeight: 650, color: color.fg }}>
-          {tierId === 'pro' ? '⭐ ' : ''}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span
+          style={{
+            fontSize: text.lg,
+            fontWeight: 650,
+            letterSpacing: '-0.01em',
+            color: color.fg,
+          }}
+        >
           {tier.name}
         </span>
-        {isCurrentPlan ? (
-          <span
-            style={{
-              fontFamily: font.mono,
-              fontSize: text.xs,
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-              color: color.primary,
-            }}
-          >
-            Current
-          </span>
-        ) : null}
+        {isCurrentPlan ? <Pill tone="primary">Current</Pill> : null}
       </span>
-      <span style={{ fontSize: text.lg, color: color.fg, fontVariantNumeric: 'tabular-nums' }}>
+      <span
+        style={{
+          fontSize: text.xl,
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
+          color: color.fg,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
         {price ? `${price.amount}${price.per}` : '—'}
         {price?.note ? (
-          <span style={{ color: color.fgMuted, fontSize: text.sm }}> · {price.note}</span>
+          <span
+            style={{ color: color.fgMuted, fontSize: text.sm, fontWeight: 400, letterSpacing: 0 }}
+          >
+            {' '}
+            · {price.note}
+          </span>
         ) : null}
       </span>
       <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.4 }}>
         {TIER_JOBS[tierId]}
       </span>
       {foundingPrice && tier.promo ? (
-        <span style={{ fontSize: text.xs, color: color.primary, lineHeight: 1.4 }}>
+        <span style={{ fontSize: text.sm, color: color.primary, lineHeight: 1.4 }}>
           {tier.promo.name}: {foundingPrice}/yr for the first 250 — confirmed at checkout.
         </span>
       ) : null}
       {foundingMemberNote ? (
-        <span style={{ fontSize: text.xs, color: color.fgMuted, lineHeight: 1.4 }}>
+        <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.4 }}>
           {foundingMemberNote}
         </span>
       ) : null}
@@ -873,9 +880,10 @@ function PlanCard({
         // marginTop auto pins every CTA to the card's bottom edge so
         // the row of buttons sits on ONE line regardless of how much
         // text each card carries.
-        <div style={{ marginTop: 'auto', paddingTop: 10 }}>
+        <div style={{ marginTop: 'auto', paddingTop: 12 }}>
           <Button
             tone={tierId === 'free' ? 'default' : 'primary'}
+            style={{ width: '100%' }}
             onClick={onSelect}
             ariaLabel={cta}
           >
@@ -915,10 +923,10 @@ function RazorpaySwitchPanel({
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
-        padding: '14px 16px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
+        padding: 'clamp(18px, 4vw, 24px)',
+        background: color.card,
+        boxShadow: shadow.card,
+        borderRadius: radius.xl,
         fontSize: text.md,
         color: color.fgSoft,
         lineHeight: 1.55,
@@ -939,7 +947,7 @@ function RazorpaySwitchPanel({
             textDecoration: 'none',
           }}
         >
-          Email support with your request →
+          Email support
         </a>
         <Button tone="default" onClick={onDismiss}>
           Keep current plan
@@ -1009,10 +1017,10 @@ function ChangePlanPanel({
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
-        padding: '14px 16px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
+        padding: 'clamp(18px, 4vw, 24px)',
+        background: color.card,
+        boxShadow: shadow.card,
+        borderRadius: radius.xl,
       }}
     >
       <GroupTitle as="div">Preview · before anything changes</GroupTitle>
@@ -1115,8 +1123,7 @@ function ChangePlanPanel({
             fontSize: text.sm,
             color: color.danger,
             background: color.dangerBg,
-            border: `1px solid ${color.danger}`,
-            borderRadius: 8,
+            borderRadius: radius.md,
             padding: '8px 10px',
           }}
         >
@@ -1212,10 +1219,10 @@ function ConfirmPanel({
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
-        padding: '14px 16px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
+        padding: 'clamp(18px, 4vw, 24px)',
+        background: color.card,
+        boxShadow: shadow.card,
+        borderRadius: radius.xl,
       }}
     >
       <GroupTitle as="div">Preview · before anything changes</GroupTitle>
@@ -1282,8 +1289,7 @@ function ConfirmPanel({
             fontSize: text.sm,
             color: color.danger,
             background: color.dangerBg,
-            border: `1px solid ${color.danger}`,
-            borderRadius: 8,
+            borderRadius: radius.md,
             padding: '8px 10px',
           }}
         >
@@ -1293,7 +1299,7 @@ function ConfirmPanel({
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <Button tone="primary" onClick={onConfirm} disabled={isPending || pricePoint === null}>
-          {isPending ? 'Opening checkout…' : 'Confirm — continue to secure checkout →'}
+          {isPending ? 'Opening checkout…' : 'Continue to checkout'}
         </Button>
         <Button tone="default" onClick={onDismiss} disabled={isPending}>
           Keep current plan
@@ -1322,10 +1328,12 @@ function ProviderRadio({
         display: 'flex',
         alignItems: 'baseline',
         gap: 8,
-        padding: '8px 10px',
-        background: checked ? color.primarySoft : color.card,
-        border: `1px solid ${checked ? color.primaryBorder : color.line}`,
-        borderRadius: radius.md,
+        minHeight: 48,
+        boxSizing: 'border-box',
+        padding: '12px 14px',
+        background: checked ? color.primarySoft : color.fill,
+        boxShadow: checked ? `inset 0 0 0 2px ${color.primary}` : 'none',
+        borderRadius: radius.lg,
         cursor: 'pointer',
         fontSize: text.sm,
       }}
@@ -1364,10 +1372,10 @@ function DowngradePanel({
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
-        padding: '14px 16px',
-        background: color.paper,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
+        padding: 'clamp(18px, 4vw, 24px)',
+        background: color.card,
+        boxShadow: shadow.card,
+        borderRadius: radius.xl,
         fontSize: text.md,
         color: color.fgSoft,
         lineHeight: 1.55,
@@ -1381,7 +1389,7 @@ function DowngradePanel({
       </p>
       <div>
         <Button tone="default" onClick={onRequestCancel}>
-          Continue to cancellation →
+          Continue to cancellation
         </Button>
       </div>
     </div>

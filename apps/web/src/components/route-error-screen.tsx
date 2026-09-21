@@ -16,11 +16,11 @@
 
 import Link from 'next/link';
 import { useEffect } from 'react';
-import { TechnicalDetails, tokens } from '@declutrmail/shared';
+import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
 import { initSentryBrowser } from '@/lib/sentry';
 import { captureErrorBoundaryException, type ErrorBoundary } from '@/lib/error-capture';
 
-const { color, font, text } = tokens;
+const { color, font, motion, radius, text } = tokens;
 
 export function RouteErrorScreen({
   error,
@@ -51,6 +51,9 @@ export function RouteErrorScreen({
     })();
   }, [error, boundary]);
 
+  // The shared ErrorState composition (amber disc, title, one muted
+  // sentence, one capsule) — kept inline only so the headline stays this
+  // page's h1 and the escape link + support reference can sit beneath.
   return (
     <main
       style={{
@@ -61,9 +64,11 @@ export function RouteErrorScreen({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 24,
+        padding: '56px 24px',
       }}
     >
+      <style>{`.dm-route-escape { transition: background ${motion.fast} ${motion.ease}; }
+.dm-route-escape:hover { background: ${color.fill}; }`}</style>
       <div
         style={{
           maxWidth: 480,
@@ -72,15 +77,33 @@ export function RouteErrorScreen({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 18,
         }}
       >
+        <span
+          aria-hidden="true"
+          style={{
+            width: 56,
+            height: 56,
+            borderRadius: radius.pill,
+            background: color.amberBg,
+            color: color.amber,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: text['2xl'],
+            fontWeight: 650,
+            lineHeight: 1,
+            marginBottom: 20,
+          }}
+        >
+          !
+        </span>
         <h1
           style={{
-            fontFamily: font.display,
-            fontSize: text['3xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.018em',
+            fontFamily: font.sans,
+            fontSize: text['2xl'],
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
             margin: 0,
           }}
         >
@@ -89,67 +112,40 @@ export function RouteErrorScreen({
         <p
           style={{
             fontSize: text.md,
-            color: color.fgSoft,
-            lineHeight: 1.6,
-            margin: 0,
+            color: color.fgMuted,
+            lineHeight: 1.5,
+            margin: '8px 0 0',
+            maxWidth: 400,
           }}
         >
           {body}
         </p>
 
-        {error.digest != null && (
-          <TechnicalDetails summary="Show support reference">
-            <code style={{ fontFamily: font.mono, fontSize: text.xs }}>
-              Reference: {error.digest}
-            </code>
-          </TechnicalDetails>
-        )}
-
         <div
           style={{
             display: 'flex',
-            gap: 10,
-            marginTop: 6,
-            flexWrap: 'wrap',
-            justifyContent: 'center',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 4,
+            marginTop: 24,
           }}
         >
-          <button
-            type="button"
-            onClick={() => reset()}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: 32,
-              padding: '0 14px',
-              background: color.primary,
-              color: color.fgInverse,
-              border: `1px solid ${color.primary}`,
-              borderRadius: 7,
-              fontFamily: font.sans,
-              fontSize: 13,
-              fontWeight: 600,
-              cursor: 'pointer',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <Button tone="primary" size="lg" onClick={() => reset()} style={{ minWidth: 200 }}>
             Try again
-          </button>
+          </Button>
           <Link
             href={escape.href}
+            className="dm-route-escape"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              height: 32,
-              padding: '0 14px',
-              background: color.card,
-              color: color.fg,
-              border: `1px solid ${color.line}`,
-              borderRadius: 7,
+              height: 44,
+              padding: '0 18px',
+              borderRadius: radius.pill,
+              color: color.fgSoft,
               fontFamily: font.sans,
-              fontSize: 13,
+              fontSize: text.md,
               fontWeight: 600,
               textDecoration: 'none',
               whiteSpace: 'nowrap',
@@ -158,6 +154,16 @@ export function RouteErrorScreen({
             {escape.label}
           </Link>
         </div>
+
+        {error.digest != null && (
+          <div style={{ marginTop: 16 }}>
+            <TechnicalDetails summary="Show support reference">
+              <span style={{ fontSize: text.xs, fontVariantNumeric: 'tabular-nums' }}>
+                Reference: {error.digest}
+              </span>
+            </TechnicalDetails>
+          </div>
+        )}
       </div>
     </main>
   );

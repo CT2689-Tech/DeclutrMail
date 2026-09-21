@@ -10,8 +10,8 @@ import { color, font, radius, text } from '../../tokens/tokens';
  *
  * This is deliberately separate from `EmptyState`: an empty response is
  * successful and calm, while a failed fetch means the visible data is
- * unknown. The solid amber treatment and alert semantics keep those two
- * states distinguishable without making a transient read failure look
+ * unknown. The amber disc and alert semantics keep those two states
+ * distinguishable without making a transient read failure look
  * destructive.
  *
  * The component is presentational and never accepts a raw error object. A
@@ -35,56 +35,59 @@ export function ErrorState({
     <div
       role="alert"
       style={{
-        padding: '32px 24px',
-        background: color.amberBg,
-        border: `1px solid ${color.amber}`,
-        borderRadius: radius.lg,
+        padding: '56px 24px',
         textAlign: 'center',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 12,
+        gap: 20,
         fontFamily: font.sans,
       }}
     >
       <span
         aria-hidden="true"
+        data-dm-error-mark=""
         style={{
+          width: 56,
+          height: 56,
+          borderRadius: radius.pill,
+          background: color.amberBg,
           color: color.amber,
-          fontFamily: font.mono,
-          fontSize: text.xs,
-          fontWeight: 600,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: text['2xl'],
+          fontWeight: 650,
+          lineHeight: 1,
         }}
       >
-        Needs attention
+        !
       </span>
       <div>
         <h3
           style={{
             color: color.fg,
-            fontSize: text.lg,
-            fontWeight: 600,
+            fontSize: text.xl,
+            fontWeight: 650,
             margin: 0,
-            letterSpacing: '-0.01em',
+            letterSpacing: '-0.02em',
           }}
         >
           {title}
         </h3>
         <p
           style={{
-            color: color.fgSoft,
-            fontSize: text.base,
+            color: color.fgMuted,
+            fontSize: text.md,
             lineHeight: 1.5,
-            margin: '6px 0 0',
+            margin: '8px auto 0',
             maxWidth: 400,
           }}
         >
           {description}
         </p>
       </div>
-      <Button tone="primary" onClick={onRetry} style={{ minHeight: 44 }}>
+      <Button tone="primary" size="lg" onClick={onRetry} style={{ minHeight: 44 }}>
         {retryLabel}
       </Button>
     </div>

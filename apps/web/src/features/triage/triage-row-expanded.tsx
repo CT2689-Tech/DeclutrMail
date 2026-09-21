@@ -66,8 +66,8 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
             alignItems: 'baseline',
             justifyContent: 'space-between',
             gap: 8,
-            marginBottom: 4,
-            fontSize: text.xs,
+            marginBottom: 6,
+            fontSize: text.sm,
             color: color.fgMuted,
           }}
         >
@@ -151,16 +151,16 @@ function Stat({ label, value, muted = false }: { label: string; value: string; m
     <div>
       <div
         style={{
-          fontFamily: font.mono,
           fontWeight: 600,
           fontSize: text.lg,
+          letterSpacing: '-0.01em',
           color: muted ? color.fgMuted : color.fg,
           fontVariantNumeric: 'tabular-nums',
         }}
       >
         {value}
       </div>
-      <div style={{ fontSize: text.xs, color: color.fgMuted, marginTop: 2 }}>{label}</div>
+      <div style={{ fontSize: text.xs, color: color.fgMuted, marginTop: 4 }}>{label}</div>
     </div>
   );
 }

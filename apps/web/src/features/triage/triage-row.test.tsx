@@ -64,8 +64,8 @@ afterEach(() => {
   window.matchMedia = originalMatchMedia;
 });
 
-const NARROW_TEMPLATE = '32px minmax(0, 1fr) 18px';
-const WIDE_TEMPLATE = '32px minmax(0, 1fr) auto 18px';
+const NARROW_TEMPLATE = '44px minmax(0, 1fr) 18px';
+const WIDE_TEMPLATE = '44px minmax(0, 1fr) auto 18px';
 
 function renderRow(row: TriageDecisionRow, { expanded = false } = {}) {
   return render(
@@ -91,6 +91,16 @@ function daysAgoIso(days: number): string {
   d.setDate(d.getDate() - days);
   d.setHours(9, 0, 0, 0);
   return d.toISOString();
+}
+
+// The inline preview's confirm button, scoped to the preview region — the
+// verb toolbar beside it carries buttons whose names also start with the
+// verb ("Archive (A)"). The label is verb + live count ("Archive 2"),
+// the bare verb while the count is unknown or zero, "<verb> anyway" on a
+// Protected row.
+function inlineConfirm(name: RegExp) {
+  const region = screen.getByRole('region', { name: /^Preview · / });
+  return within(region).getByRole('button', { name });
 }
 
 describe('lastSeenLabel — "today" is a calendar day, not 24 hours', () => {
@@ -506,7 +516,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
     // exist on BOTH paths — otherwise skipping the sheet silently skips
     // the acknowledgement while `override: true` still goes on the wire.
     renderInline(rowById('t-sarah')); // protectionReason: 'manual' (the wire's user-set spelling)
-    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive anyway$/)).toBeInTheDocument();
   });
 
   it('states that the protection SURVIVES the action, and offers Unprotect', () => {
@@ -525,7 +535,7 @@ describe('TriageRow — inline preview Protected acknowledgement (D245/D42)', ()
   it('says nothing about protection on an unprotected row', () => {
     const { container } = renderInline(rowById('t-groupon'));
     expect(container.textContent).not.toMatch(/stays Protected/);
-    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive 2$/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Unprotect$/i })).toBeNull();
   });
 });
@@ -620,7 +630,7 @@ describe('TriageRow — the D226 inline preview survives collapse (mobile bypass
     expect(
       screen.getByRole('region', { name: `Preview · Archive ${rowById('t-sarah').senderName}` }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Confirm Archive anyway/i })).toBeInTheDocument();
+    expect(inlineConfirm(/^Archive anyway$/)).toBeInTheDocument();
   });
 
   it('renders no preview when no action is pending, collapsed or expanded', () => {
@@ -663,7 +673,7 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
 
   it('EXPANDED: offers the verb shortcut, because the toolbar keydown is live', () => {
     const { container } = renderPreview(true);
-    expect(container.textContent).toMatch(/press A again/);
+    expect(container.textContent).toMatch(/Press A again to confirm/);
     expect(container.textContent).toMatch(/Esc cancels/);
   });
 
@@ -683,15 +693,17 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
         inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
       />,
     );
-    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).not.toMatch(/Press A again/i);
     expect(container.textContent).toMatch(/Esc cancels/);
-    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeDisabled();
+    expect(inlineConfirm(/^Archive$/)).toBeDisabled();
+    // …and says why, or a dead button reads as a broken one.
+    expect(container.textContent).toMatch(/Counting the inbox/);
   });
 
   it('EXPANDED with a resolved count: confirm is enabled', () => {
     // Two-sided: a disabled state only ever observed disabled proves nothing.
     renderPreview(true);
-    expect(screen.getByRole('button', { name: /^Confirm Archive$/i })).toBeEnabled();
+    expect(inlineConfirm(/^Archive 2$/)).toBeEnabled();
   });
 
   it('COLLAPSED: offers Esc only — the verb key fires nothing on a closed row', () => {
@@ -700,7 +712,7 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
     // Escape is a window listener on the pending inline surface, so it
     // survives the collapse and stays honest.
     const { container } = renderPreview(false);
-    expect(container.textContent).not.toMatch(/press A again/);
+    expect(container.textContent).not.toMatch(/Press A again/i);
     expect(container.textContent).toMatch(/Esc cancels/);
   });
 });
@@ -718,7 +730,7 @@ describe('TriageRow — inline zero-count no-op gate', () => {
   });
 
   it.each(['Archive', 'Later', 'Delete'] as const)(
-    'disables Confirm %s and says why at a resolved count of zero',
+    'disables the %s confirm and says why at a resolved count of zero',
     (verb) => {
       const row = rowById('t-groupon');
       const { rerender } = render(
@@ -731,8 +743,8 @@ describe('TriageRow — inline zero-count no-op gate', () => {
         />,
       );
 
-      expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeDisabled();
-      expect(screen.getByText(/Nothing to act on/i)).toBeInTheDocument();
+      expect(inlineConfirm(new RegExp(`^${verb}$`))).toBeDisabled();
+      expect(screen.getByText(/Nothing in your inbox from/i)).toBeInTheDocument();
       // The shortcut hint must not advertise a key the screen refuses.
       expect(screen.queryByText(/press .* again/i)).toBeNull();
 
@@ -745,12 +757,12 @@ describe('TriageRow — inline zero-count no-op gate', () => {
           inlinePreview={inline(verb, 1)}
         />,
       );
-      expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeEnabled();
-      expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
+      expect(inlineConfirm(new RegExp(`^${verb} 1$`))).toBeEnabled();
+      expect(screen.queryByText(/Nothing in your inbox/i)).toBeNull();
     },
   );
 
-  it('leaves Confirm Unsubscribe armed at zero — it cuts future mail', () => {
+  it('leaves the Unsubscribe confirm armed at zero — it cuts future mail', () => {
     const row = rowById('t-groupon');
     render(
       <TriageRow
@@ -762,8 +774,8 @@ describe('TriageRow — inline zero-count no-op gate', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: /^Confirm Unsubscribe$/ })).toBeEnabled();
-    expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
+    expect(inlineConfirm(/^Unsubscribe$/)).toBeEnabled();
+    expect(screen.queryByText(/Nothing in your inbox/i)).toBeNull();
   });
 
   it('keeps the verb toolbar live so a zero count does not trap the row', () => {

@@ -105,7 +105,7 @@ const VERBS: ReadonlyArray<{ verb: ActionVerb; shortcut: string; verdict: Verdic
  * Keep applies immediately and records `sender_policy(policy_type=keep)`.
  *
  * The observed-fact primary verb is the one filled button; the other four
- * are quiet text buttons. Recommendation and confidence data never changes
+ * are quiet fill capsules. Recommendation and confidence data never changes
  * action order or emphasis (D245).
  *
  * `shortcuts` binds K/A/U/L/D to the same `onAction` a click uses and
@@ -157,7 +157,7 @@ export function ActionToolbar({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 4,
+        gap: 8,
         flexWrap: 'wrap',
         fontFamily: font.sans,
       }}
@@ -204,7 +204,7 @@ export function ActionToolbar({
                     : verb === 'Keep'
                       ? 'primary'
                       : 'dark'
-                  : 'ghost'
+                  : 'default'
             }
             size="md"
             disabled={disabled}

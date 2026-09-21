@@ -3,12 +3,16 @@
 import { Button, tokens } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
 
-import { ActionPreviewPresentation, type PreviewCount } from './action-preview-presentation';
+import {
+  buildPreviewFacts,
+  cleanupCostLine,
+  type PreviewCount,
+} from './action-preview-presentation';
 import type { TriageDecisionRow } from './data';
 import { ProtectedActionNotice } from './protected-notice';
 import { VERB_SHORTCUT, type ActionVerb } from './types';
 
-const { color, text } = tokens;
+const { color, radius, space, text } = tokens;
 
 /**
  * The D34 remember-preference path: the sheet is suppressed but D226's
@@ -101,19 +105,79 @@ export function InlinePreviewBlock({
   // the sheet where `confirmDisabled` gates the button and nothing else —
   // a zero Archive count must not trap the row out of Delete or Later.
   const confirmDisabled = busy || blocked || nothingToActOn;
+  // Same facts as the sheet (`buildPreviewFacts`), laid out as one line:
+  // count + where it goes, then how to undo it. Everything the sheet keeps
+  // behind "Details" stays behind a disclosure here too.
+  const facts = buildPreviewFacts({
+    verb: preview.verb,
+    row,
+    archiveHistoric: preview.archiveHistoric,
+    inboxCount: preview.inboxCount,
+    wakeAt: preview.wakeAt ?? null,
+  });
+  const costLine = cleanupCostLine(facts.unitsNeeded, preview.quotaRemaining);
+  const hasDetails =
+    accountContext != null || facts.disclosures.length > 0 || preview.detailSlot != null;
   return (
-    <div style={{ textAlign: 'left' }}>
-      <ActionPreviewPresentation
-        verb={preview.verb}
-        row={row}
-        archiveHistoric={preview.archiveHistoric}
-        inboxCount={preview.inboxCount}
-        wakeAt={preview.wakeAt ?? null}
-        mode="inline"
-        accountContext={accountContext}
-        quotaRemaining={preview.quotaRemaining}
-        detailSlot={preview.detailSlot}
-      />
+    <div
+      role="region"
+      aria-label={`Preview · ${preview.verb} ${row.senderName}`}
+      data-dm-preview-mode="inline"
+      style={{
+        textAlign: 'left',
+        padding: space[4],
+        borderRadius: radius.lg,
+        background: color.fill,
+      }}
+    >
+      <p style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>
+        {facts.nothingToMove ? facts.title : facts.compactLine}
+      </p>
+      {/* Why confirm is disabled while the live count is not a number —
+          the same two lines the sheet's status shows. A disabled button
+          with no reason reads as a broken one. */}
+      {blocked && (
+        <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+          {preview.inboxCount === 'unavailable'
+            ? 'Couldn’t load the preview. Nothing can move until it loads.'
+            : 'Counting the inbox…'}
+        </p>
+      )}
+      {facts.note !== null && (
+        <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+          {facts.note}
+        </p>
+      )}
+      {costLine !== null && (
+        <p style={{ margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+          {costLine}
+        </p>
+      )}
+      {hasDetails && (
+        <details style={{ marginTop: space[2] }}>
+          <summary
+            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 550, color: color.fgSoft }}
+          >
+            Details
+          </summary>
+          <div
+            style={{
+              marginTop: space[2],
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space[2],
+              fontSize: text.sm,
+              color: color.fgSoft,
+            }}
+          >
+            {accountContext}
+            {facts.disclosures.map((line) => (
+              <span key={line}>{line}</span>
+            ))}
+            {preview.detailSlot}
+          </div>
+        </details>
+      )}
       {/* Protected acknowledgement (D245/D42) — the inline half of the
           same statement the sheet makes. D226 lets the sheet be skipped
           via D34's remember-preference, but the preview always renders,
@@ -137,23 +201,28 @@ export function InlinePreviewBlock({
           confirming meant an UNDOCUMENTED second click on the same verb —
           users read the preview and believed the action fired. Fails
           closed exactly like the sheet does (`confirmDisabled`). */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: space[3] }}>
         <Button
-          tone={preview.verb === 'Delete' ? 'danger' : 'primary'}
+          tone={
+            preview.verb === 'Delete'
+              ? 'danger'
+              : preview.verb === 'Unsubscribe'
+                ? 'warn'
+                : 'primary'
+          }
           size="md"
           disabled={confirmDisabled}
           onClick={onConfirm}
         >
-          Confirm {preview.verb}
-          {row.protectionReason != null ? ' anyway' : ''}
+          {row.protectionReason != null ? `${preview.verb} anyway` : facts.primaryLabel}
         </Button>
         <span style={{ fontSize: text.xs, color: color.fgMuted }}>
           {/* A zero count is the third case: the screen refuses that
               dispatch, so no key fires it either. */}
           {nothingToActOn ? (
-            <>Nothing to act on · Esc cancels</>
+            <>Esc cancels</>
           ) : shortcutLive && !busy && !blocked ? (
-            <>or press {VERB_SHORTCUT[preview.verb]} again · Esc cancels</>
+            <>Press {VERB_SHORTCUT[preview.verb]} again to confirm · Esc cancels</>
           ) : (
             <>Esc cancels</>
           )}

@@ -13,7 +13,10 @@ import { TriageRowExpanded } from './triage-row-expanded';
 import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
 import { whyLine } from './why-line';
 
-const { color, font, motion, text } = tokens;
+const { color, motion, radius, shadow, text } = tokens;
+
+/** List-row logo — the Senders row geometry. */
+const LOGO = 44;
 
 /** Pill tone per verdict — matches the toolbar's highlight semantics. */
 const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
@@ -136,7 +139,7 @@ export function TriageRow({
       {...(isNarrow ? swipeHandlers : {})}
       style={{
         position: 'relative',
-        borderBottom: `1px solid ${color.line}`,
+        borderBottom: `1px solid ${color.lineSoft}`,
         transition: `opacity ${motion.fast} ${motion.ease}`,
         opacity: busy ? 0.6 : 1,
         // pan-y: vertical drags stay with the browser (list scrolling
@@ -161,19 +164,45 @@ export function TriageRow({
         aria-expanded={expanded}
         aria-controls={`triage-row-body-${row.id}`}
         aria-label={`${row.senderName} — ${expanded ? 'collapse' : 'expand'} triage detail`}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = color.fill;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'transparent';
+        }}
         style={{
           display: 'grid',
           gridTemplateColumns: isNarrow
-            ? '32px minmax(0, 1fr) 18px'
-            : '32px minmax(0, 1fr) auto 18px',
-          gap: 12,
+            ? `${LOGO}px minmax(0, 1fr) 18px`
+            : `${LOGO}px minmax(0, 1fr) auto 18px`,
+          columnGap: 14,
+          rowGap: 6,
           alignItems: 'center',
-          padding: '14px 4px',
-          minHeight: 44,
+          // Inset from the hairline, and bled past the column edge so the
+          // logo still sits on the page's left edge while the hover fill
+          // gets room to breathe.
+          margin: '4px -12px',
+          padding: '10px 12px',
+          minHeight: 64,
+          borderRadius: radius.lg,
           cursor: 'pointer',
+          transition: `background ${motion.fast} ${motion.ease}`,
         }}
       >
-        <Avatar name={row.senderName} domain={row.senderDomain} size={32} hasMark={row.brandMark} />
+        <span
+          style={{
+            display: 'inline-flex',
+            borderRadius: Math.round(LOGO * 0.28),
+            boxShadow: shadow.card,
+          }}
+        >
+          <Avatar
+            name={row.senderName}
+            domain={row.senderDomain}
+            size={LOGO}
+            hasMark={row.brandMark}
+          />
+        </span>
 
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
@@ -191,21 +220,22 @@ export function TriageRow({
             >
               {row.senderName}
             </span>
+            <span
+              title={row.senderDomain}
+              style={{
+                fontSize: text.sm,
+                color: color.fgMuted,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minWidth: 0,
+                flexShrink: 1000,
+              }}
+            >
+              {row.senderDomain}
+            </span>
             {row.protectionReason !== null && <ProtectedMark />}
           </div>
-          <span
-            title={row.senderDomain}
-            style={{
-              fontFamily: font.mono,
-              fontSize: text.xs,
-              color: color.fgMuted,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {row.senderDomain}
-          </span>
           {/* The why-line wraps below identity on narrow widths; it
               stays on one line on desktop because the grid template
               keeps the identity cell minmax(0, 1fr). */}
@@ -214,7 +244,6 @@ export function TriageRow({
             style={{
               fontSize: text.sm,
               color: color.fgSoft,
-              marginTop: 2,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -272,7 +301,11 @@ export function TriageRow({
       {expanded && (
         <div
           id={`triage-row-body-${row.id}`}
-          style={{ display: 'flex', flexDirection: 'column', padding: '0 4px 12px 48px' }}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            padding: isNarrow ? '4px 0 16px' : `4px 0 16px ${LOGO + 14}px`,
+          }}
         >
           <ActionToolbar
             row={row}
@@ -280,6 +313,7 @@ export function TriageRow({
             keyboardEnabled={!actionsDisabled}
             disabled={actionsDisabled}
             layout={isNarrow ? 'bar' : 'row'}
+            align="start"
           />
           <TriageRowExpanded row={row} />
         </div>
@@ -322,8 +356,8 @@ export function ProtectedMark() {
     <span
       title="Protected — automatic and bulk actions stay off unless you choose otherwise"
       style={{
-        padding: '1px 8px',
-        borderRadius: 9999,
+        padding: '2px 8px',
+        borderRadius: radius.pill,
         fontSize: text.xs,
         fontWeight: 600,
         background: color.primarySoft,

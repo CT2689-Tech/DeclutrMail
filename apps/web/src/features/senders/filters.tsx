@@ -145,25 +145,35 @@ const CARET = (
   </svg>
 );
 
+// A quiet capsule (the `default` Button look) — fill, never an outline.
 function headerButtonStyle(on: boolean): React.CSSProperties {
   return {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6,
-    height: 34,
-    padding: '0 12px',
-    border: `1px solid ${on ? color.fg : color.border}`,
-    borderRadius: radius.md,
-    background: color.card,
+    height: 36,
+    padding: '0 16px',
+    border: 'none',
+    borderRadius: radius.pill,
+    background: on ? color.fillHover : color.fill,
     color: color.fg,
     fontFamily: font.sans,
     fontSize: text.base,
     fontWeight: 500,
     cursor: 'pointer',
     whiteSpace: 'nowrap',
-    transition: `border-color ${motion.fast} ${motion.ease}`,
+    transition: `background ${motion.fast} ${motion.ease}`,
   };
 }
+
+// Menus fade + scale from their anchor (top-right), and header capsules
+// get the Button's hover step — both need selectors.
+const FILTERS_CSS = `
+@keyframes dm-menu-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.dm-menu{transform-origin:top right;animation:dm-menu-in ${motion.fast} ${motion.ease}}
+.dm-hdr-btn:hover{background:${color.fillHover} !important}
+.dm-menu-row:hover,.dm-menu-row:focus-visible{background:${color.fill} !important}
+`;
 
 /** Close on outside mousedown + Escape while `open`. */
 function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
@@ -193,8 +203,8 @@ const POPOVER_STYLE: React.CSSProperties = {
   maxHeight: 'min(70vh, 560px)',
   overflowY: 'auto',
   background: color.card,
-  border: `1px solid ${color.line}`,
-  borderRadius: radius.lg,
+  border: 'none',
+  borderRadius: radius.xl,
   boxShadow: shadow.pop,
   fontFamily: font.sans,
 };
@@ -234,19 +244,21 @@ export function FilterButton(props: FilterPanelProps) {
   const n = isDefaultCompose(props.state) ? 0 : activeFilterChips(props.state).length;
   return (
     <span ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+      <style>{FILTERS_CSS}</style>
       <button
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
+        className="dm-hdr-btn"
         style={headerButtonStyle(n > 0)}
       >
         Filter
         {n > 0 && (
           <span
             style={{
-              fontFamily: font.mono,
               fontSize: text.xs,
+              fontWeight: 600,
               color: color.fgMuted,
               fontVariantNumeric: 'tabular-nums',
             }}
@@ -261,7 +273,12 @@ export function FilterButton(props: FilterPanelProps) {
         </BottomSheet>
       ) : (
         open && (
-          <div role="dialog" aria-label="Filters" style={{ ...POPOVER_STYLE, width: 340 }}>
+          <div
+            role="dialog"
+            aria-label="Filters"
+            className="dm-menu"
+            style={{ ...POPOVER_STYLE, width: 340 }}
+          >
             <FilterPanel {...props} />
           </div>
         )
@@ -286,7 +303,7 @@ export function FilterPanel({
       role="group"
       aria-label="Filter senders"
       aria-busy={updating}
-      style={{ display: 'flex', flexDirection: 'column', gap: 16, padding: 16 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 20, padding: 20 }}
     >
       <Section label="Activity" hint={isTouch ? undefined : 'Alt-click to exclude'}>
         <ActivityChip bucket="active" state={state} count={counts?.active} onChange={onChange} />
@@ -370,12 +387,13 @@ const TEXT_BUTTON: React.CSSProperties = {
 const FIELD_STYLE: React.CSSProperties = {
   width: '100%',
   boxSizing: 'border-box',
-  padding: '7px 10px',
+  height: 40,
+  padding: '0 14px',
   fontFamily: font.sans,
   fontSize: text.base,
-  border: `1px solid ${color.border}`,
+  border: 'none',
   borderRadius: radius.md,
-  background: color.card,
+  background: color.fill,
   color: color.fg,
 };
 
@@ -413,8 +431,8 @@ function Count({ value, negated, on }: { value: number; negated: boolean; on: bo
   return (
     <span
       style={{
-        fontFamily: font.mono,
         fontSize: text.xs,
+        fontWeight: 600,
         color: 'inherit',
         opacity: on ? 0.85 : 0.6,
         fontVariantNumeric: 'tabular-nums',
@@ -556,8 +574,9 @@ function OnOffChip({
   );
 }
 
-// Included = filled ink. Excluded = outlined ink + a visible "not" — never
-// colour alone, and never the danger hue (that is Delete's).
+// Included = filled ink. Excluded = an ink ring + a visible "not" — never
+// colour alone, and never the danger hue (that is Delete's). At rest a
+// quiet fill capsule, no outline.
 function chipStyle({
   active,
   negated,
@@ -569,16 +588,18 @@ function chipStyle({
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6,
-    padding: '5px 10px',
-    border: `1px solid ${active || negated ? color.fg : color.line}`,
+    height: 32,
+    padding: '0 12px',
+    border: 'none',
+    boxShadow: negated ? `inset 0 0 0 1.5px ${color.fg}` : undefined,
     borderRadius: radius.pill,
-    background: active ? color.fg : negated ? color.mutedBg : color.card,
+    background: active ? color.fg : negated ? 'transparent' : color.fill,
     color: active ? color.card : negated ? color.fg : color.fgSoft,
     fontFamily: font.sans,
     fontSize: text.sm,
     fontWeight: 500,
     cursor: 'pointer',
-    transition: `background ${motion.fast} ${motion.ease}, border-color ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
+    transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
     userSelect: 'none',
   };
 }
@@ -633,7 +654,7 @@ function DomainField({
           if (e.key === 'Enter') commit(draft);
         }}
         placeholder="amazon.com"
-        style={{ ...FIELD_STYLE, fontFamily: font.mono }}
+        style={FIELD_STYLE}
       />
       <datalist id={listId}>
         {suggestions.map((d) => (
@@ -721,13 +742,26 @@ export function ActiveFilterChips({
           onClick={() => onChange(chip.cleared)}
           style={{
             ...chipStyle({ active: false, negated: false }),
+            paddingRight: 4,
             color: color.fg,
-            // The domain is the one chip whose text is an address fragment.
-            ...(chip.key === 'domain' ? { fontFamily: font.mono } : null),
           }}
         >
           <span>{chip.label}</span>
-          <span aria-hidden="true" style={{ color: color.fgMuted }}>
+          {/* The whole capsule removes; the × is its ghost-circle glyph. */}
+          <span
+            aria-hidden="true"
+            style={{
+              width: 24,
+              height: 24,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: radius.pill,
+              color: color.fgMuted,
+              fontSize: text.md,
+              lineHeight: 1,
+            }}
+          >
             ×
           </span>
         </button>
@@ -789,6 +823,7 @@ export function SortMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
+        className="dm-hdr-btn"
         style={headerButtonStyle(false)}
       >
         <span style={{ color: color.fgMuted }}>Sort:</span>
@@ -799,11 +834,12 @@ export function SortMenu({
         <div
           role="menu"
           aria-label="Sort senders"
-          style={{ ...POPOVER_STYLE, minWidth: 200, padding: 6 }}
+          className="dm-menu"
+          style={{ ...POPOVER_STYLE, minWidth: 220, padding: 6 }}
         >
           {[...groups].map(([groupLabel, options]) => (
             <div key={groupLabel}>
-              <div style={{ padding: '6px 10px 2px' }}>
+              <div style={{ padding: '10px 12px 4px' }}>
                 <SectionLabel>{groupLabel}</SectionLabel>
               </div>
               {options.map((opt) => {
@@ -818,25 +854,28 @@ export function SortMenu({
                       onChange({ sort: opt.sort, direction: opt.direction });
                       setOpen(false);
                     }}
+                    className="dm-menu-row"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 8,
+                      gap: 10,
                       width: '100%',
-                      padding: '7px 10px',
-                      background: active ? color.mutedBg : 'transparent',
+                      height: 40,
+                      padding: '0 12px',
+                      background: 'transparent',
                       border: 'none',
-                      borderRadius: radius.sm,
+                      borderRadius: radius.md,
                       cursor: 'pointer',
                       fontFamily: font.sans,
                       fontSize: text.base,
+                      fontWeight: active ? 600 : 400,
                       color: color.fg,
                       textAlign: 'left',
                     }}
                   >
                     <span
                       aria-hidden
-                      style={{ width: 12, color: active ? color.primary : 'transparent' }}
+                      style={{ width: 14, color: active ? color.primary : 'transparent' }}
                     >
                       ✓
                     </span>

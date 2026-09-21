@@ -4,7 +4,7 @@ import { Button, PrivacyBadge, tokens } from '@declutrmail/shared';
 
 import { StepShell } from './step-shell';
 
-const { color, text } = tokens;
+const { color, radius, shadow, text } = tokens;
 
 /**
  * Step 1 — the Promise screen (D107).
@@ -25,14 +25,21 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
       {/* The privacy boundary, stated once, at the decision point —
           directly above the button that starts Google consent. */}
       <PrivacyBadge
-        style={{ width: '100%', textAlign: 'left', margin: '16px 0 24px', boxShadow: 'none' }}
+        style={{
+          width: '100%',
+          textAlign: 'left',
+          margin: '20px 0 32px',
+          border: 'none',
+          borderRadius: radius.xl,
+          boxShadow: shadow.card,
+        }}
       />
 
-      <Button tone="primary" size="lg" onClick={onConnect} style={{ minWidth: 220, height: 44 }}>
+      <Button tone="primary" size="xl" onClick={onConnect} style={{ minWidth: 240 }}>
         Connect Gmail
       </Button>
 
-      <p style={{ color: color.fgMuted, fontSize: text.sm, marginTop: 16 }}>
+      <p style={{ color: color.fgMuted, fontSize: text.sm, marginTop: 20 }}>
         <a href="/privacy" style={{ color: color.fgMuted }}>
           Privacy policy
         </a>

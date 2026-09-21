@@ -20,7 +20,7 @@ export function ProductGlossary() {
         padding: '20px 24px 28px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 28,
+        gap: 32,
         fontFamily: font.sans,
       }}
     >
@@ -56,17 +56,17 @@ function GlossaryEntry({ id }: { id: GlossaryTermId }) {
   return (
     <div
       id={id}
+      className="dm-settings-row"
       style={{
-        borderTop: `1px solid ${color.line}`,
         display: 'grid',
-        gap: 4,
+        gap: isPhone ? 2 : 16,
         gridTemplateColumns: isPhone ? '1fr' : 'minmax(130px, 0.34fr) minmax(0, 1fr)',
-        padding: '12px 0',
+        padding: '14px 16px',
         scrollMarginTop: 20,
       }}
     >
       <dt style={{ color: color.fg, fontSize: text.md, fontWeight: 500 }}>{entry.term}</dt>
-      <dd style={{ color: color.fgSoft, fontSize: text.sm, lineHeight: 1.6, margin: 0 }}>
+      <dd style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6, margin: 0 }}>
         {entry.definition}
       </dd>
     </div>

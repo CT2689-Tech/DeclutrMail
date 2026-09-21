@@ -1,7 +1,7 @@
 'use client';
 
 import { Logo } from '../components/logo';
-import { color, font, motion, radius, text } from '../tokens/tokens';
+import { color, font, motion, radius, shadow, text } from '../tokens/tokens';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 
 interface NavItem {
@@ -39,7 +39,7 @@ export const NAV: readonly NavItem[] = [
 export const SIDEBAR_WIDTH = 220;
 export const SIDEBAR_RAIL_WIDTH = 56;
 
-export function NavIcon({ d, size = 16 }: { d: string; size?: number }) {
+export function NavIcon({ d, size = 18 }: { d: string; size?: number }) {
   return (
     <svg
       width={size}
@@ -47,7 +47,7 @@ export function NavIcon({ d, size = 16 }: { d: string; size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="2"
+      strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -107,16 +107,22 @@ export function Sidebar({
         boxSizing: 'border-box',
         overflowX: 'hidden',
         overflowY: 'auto',
-        borderRight: `1px solid ${color.line}`,
+        // A source list: the paper tone does the separating, the hairline
+        // only finishes the edge.
+        borderRight: `1px solid ${color.lineSoft}`,
         background: color.paper,
-        padding: collapsed ? '16px 8px' : '16px 12px',
+        padding: collapsed ? '20px 8px 12px' : '20px 12px 12px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 20,
+        gap: 24,
         fontFamily: font.sans,
         ...(animateWidth ? { transition: `width ${motion.base} ${motion.ease}` } : {}),
       }}
     >
+      {/* Hover is the neutral fill, not a line tone. The selector outranks
+          tokens.css `.dm-nav-row:hover`; the active row's inline
+          background outranks both. */}
+      <style>{`aside .dm-nav-row:hover{background:var(--dm-fill)}`}</style>
       {/* Brand. ADR-0036 is the whole specification: the mark, the
           wordmark, the ratio between them and the tone belong to the
           component, not to this consumer. `size` is the only lever, and
@@ -137,7 +143,7 @@ export function Sidebar({
 
       <nav
         aria-label="Product navigation"
-        style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}
       >
         {NAV.map((item) => {
           const on = active === item.id;
@@ -175,22 +181,26 @@ export function Sidebar({
                 height: 36,
                 flexShrink: 0,
                 padding: collapsed ? 0 : '0 10px',
-                borderRadius: radius.sm,
+                borderRadius: radius.md,
                 border: 'none',
-                // Resting + hover backgrounds live in tokens.css
-                // (`.dm-nav-row`) so hover needs no JS and works in both
-                // themes; only the active state is decided here.
-                ...(on ? { background: color.primarySoft } : {}),
-                color: on ? color.primary : color.fg,
+                // Resting + hover backgrounds are CSS (`.dm-nav-row`) so
+                // hover needs no JS and works in both themes; only the
+                // active state is decided here. Active is a raised card,
+                // not a tinted slab — the teal is spent on the icon alone.
+                ...(on ? { background: color.card, boxShadow: shadow.card } : {}),
+                color: on ? color.fg : color.fgSoft,
                 fontFamily: font.sans,
                 fontSize: text.md,
-                fontWeight: on ? 600 : 400,
+                fontWeight: on ? 600 : 500,
+                letterSpacing: '-0.006em',
                 cursor: 'pointer',
                 textAlign: 'left',
                 transition: `background ${motion.fast} ${motion.ease}`,
               }}
             >
-              <NavIcon d={item.icon} />
+              <span style={{ display: 'inline-flex', color: on ? color.primary : color.fgMuted }}>
+                <NavIcon d={item.icon} />
+              </span>
               {!collapsed && (
                 <span
                   style={{
@@ -232,9 +242,10 @@ export function Sidebar({
                   <span
                     aria-label={countLabel}
                     style={{
-                      fontFamily: font.mono,
-                      fontSize: text.xs,
-                      color: on ? color.primary : color.fgMuted,
+                      fontSize: text.sm,
+                      fontWeight: 500,
+                      fontVariantNumeric: 'tabular-nums',
+                      color: color.fgMuted,
                     }}
                   >
                     {countText}
@@ -252,27 +263,24 @@ export function Sidebar({
           onClick={onToggleCollapsed}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           aria-expanded={!collapsed}
-          title={collapsed ? 'Expand sidebar' : undefined}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            gap: 10,
-            height: 36,
+            justifyContent: 'center',
+            alignSelf: collapsed ? 'center' : 'flex-start',
+            width: 32,
+            height: 32,
             flexShrink: 0,
-            padding: collapsed ? 0 : '0 10px',
-            borderRadius: radius.sm,
+            padding: 0,
+            borderRadius: radius.pill,
             border: 'none',
             color: color.fgMuted,
-            fontFamily: font.sans,
-            fontSize: text.sm,
             cursor: 'pointer',
-            textAlign: 'left',
             transition: `background ${motion.fast} ${motion.ease}`,
           }}
         >
-          <NavIcon d={collapsed ? 'M9 6l6 6-6 6M4 4v16' : 'M15 6l-6 6 6 6M20 4v16'} />
-          {!collapsed && <span>Collapse</span>}
+          <NavIcon d={collapsed ? 'M9 6l6 6-6 6M4 4v16' : 'M15 6l-6 6 6 6M20 4v16'} size={16} />
         </button>
       )}
     </aside>

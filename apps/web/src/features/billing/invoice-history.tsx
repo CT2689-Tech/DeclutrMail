@@ -33,13 +33,13 @@ import { formatProviderAmount, formatBillingDate } from './billing-model';
 import { useInvoiceDocument, useInvoices } from './api/use-invoices';
 import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, text } = tokens;
+const { color, radius, shadow, text } = tokens;
 
 const SECTION_STYLE = {
   background: color.card,
-  border: `1px solid ${color.border}`,
-  borderRadius: radius.lg,
-  padding: '20px 22px',
+  boxShadow: shadow.card,
+  borderRadius: radius.xl,
+  padding: 'clamp(20px, 4vw, 28px)',
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
@@ -72,7 +72,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         <GroupTitle as="div">Invoices</GroupTitle>
         <div
           aria-hidden="true"
-          style={{ height: 72, background: color.paper, borderRadius: radius.md }}
+          style={{ height: 72, background: color.fill, borderRadius: radius.lg }}
         />
         <span style={{ position: 'absolute', left: -9999 }}>Loading invoices</span>
       </section>
@@ -142,8 +142,6 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                 padding: '0 0 4px',
                 fontSize: text.xs,
                 fontWeight: 600,
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
                 color: color.fgMuted,
               }}
             >
@@ -182,18 +180,29 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     alignItems: isPhone ? 'flex-start' : 'center',
                     gap: isPhone ? 6 : 12,
                     flexWrap: 'wrap',
+                    minHeight: 52,
+                    boxSizing: 'border-box',
                     padding: '10px 0',
                     borderBottom: `1px solid ${color.lineSoft}`,
                     fontSize: text.md,
                   }}
                 >
-                  <span aria-hidden="true" style={{ color: color.fg, minWidth: isPhone ? 0 : 120 }}>
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      color: color.fg,
+                      fontWeight: 500,
+                      fontVariantNumeric: 'tabular-nums',
+                      minWidth: isPhone ? 0 : 120,
+                    }}
+                  >
                     {date ?? '—'}
                   </span>
                   <span
                     aria-hidden="true"
                     style={{
                       color: color.fg,
+                      fontWeight: 600,
                       fontVariantNumeric: 'tabular-nums',
                       minWidth: isPhone ? 0 : 90,
                     }}
@@ -225,6 +234,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     ) : invoice.documentAvailable ? (
                       <Button
                         tone="default"
+                        size="sm"
                         disabled={mint.isPending}
                         onClick={() => mint.mutate(invoice.id)}
                       >
@@ -272,8 +282,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             fontSize: text.sm,
             color: color.danger,
             background: color.dangerBg,
-            border: `1px solid ${color.danger}`,
-            borderRadius: 8,
+            borderRadius: radius.md,
             padding: '8px 10px',
           }}
         >

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Avatar, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Avatar, Kbd, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
 import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
@@ -18,7 +18,23 @@ import {
 import { DecidePreview, type DecidePreviewCount } from './decide-preview';
 import { VERB_KEY_HINT, VERB_LABEL, VERB_ORDER, verdictLabel } from './verbs';
 
-const { color, font, motion, text } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
+
+/**
+ * Flat list row: hairline between rows (inset past the logo), neutral
+ * fill on hover, a soft teal wash when open. Pulled 12px into the gutter
+ * so the fill has room while the logo stays on the page's left edge.
+ */
+const SCREENER_ROW_CSS = `.dm-screener-row { position: relative; margin: 0 -12px; border-radius: ${radius.lg}; transition: background ${motion.fast} ${motion.ease}, opacity ${motion.fast} ${motion.ease}; }
+.dm-screener-list > * + * > .dm-screener-row::before { content: ''; position: absolute; top: 0; left: 68px; right: 12px; height: 1px; background: ${color.lineSoft}; }
+.dm-screener-row:not([data-expanded='true']):hover { background: ${color.fill}; }
+.dm-screener-row[data-expanded='true'] { background: ${color.primaryWash}; }
+.dm-screener-list > * > .dm-screener-row:hover::before,
+.dm-screener-list > * > .dm-screener-row[data-expanded='true']::before,
+.dm-screener-list > *:has(> .dm-screener-row:hover) + * > .dm-screener-row::before,
+.dm-screener-list > *:has(> .dm-screener-row[data-expanded='true']) + * > .dm-screener-row::before { opacity: 0; }
+.dm-screener-verb { transition: background ${motion.fast} ${motion.ease}, transform ${motion.fast} ${motion.ease}; }
+.dm-screener-verb:not(:disabled):active { transform: scale(0.97); }`;
 
 /** Pill tone per engine verdict — matches the Triage row semantics. */
 const VERDICT_TONE: Record<'keep' | 'archive' | 'unsubscribe' | 'later', PillTone> = {
@@ -101,15 +117,15 @@ export function ScreenerRow({
   return (
     <div
       aria-busy={busy}
+      className="dm-screener-row"
+      data-expanded={expanded ? 'true' : undefined}
       style={{
-        // Hairline list row — no card chrome; the open row is marked by
-        // a wash, not a border + shadow.
-        borderTop: `1px solid ${color.line}`,
-        background: expanded ? color.primaryWash : 'transparent',
-        transition: `opacity ${motion.fast} ${motion.ease}`,
+        // Flat list row — no card chrome; the open row is marked by a
+        // wash, not a border + shadow.
         opacity: busy ? 0.6 : 1,
       }}
     >
+      <style>{SCREENER_ROW_CSS}</style>
       {/* Collapsed header — always rendered. */}
       <div
         onClick={onToggleExpand}
@@ -127,15 +143,18 @@ export function ScreenerRow({
         style={{
           display: 'grid',
           gridTemplateColumns: isPhone
-            ? '32px minmax(0, 1fr) auto 18px'
-            : '32px minmax(0, 1fr) auto auto 18px',
-          gap: isPhone ? 8 : 12,
+            ? '44px minmax(0, 1fr) auto 18px'
+            : '44px minmax(0, 1fr) auto auto 18px',
+          gap: isPhone ? 10 : 12,
           alignItems: 'center',
-          padding: '12px 8px',
+          minHeight: 72,
+          boxSizing: 'border-box',
+          padding: '12px',
+          borderRadius: radius.lg,
           cursor: 'pointer',
         }}
       >
-        <Avatar name={row.senderName} domain={row.senderDomain} size={32} hasMark={row.brandMark} />
+        <Avatar name={row.senderName} domain={row.senderDomain} size={44} hasMark={row.brandMark} />
 
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
@@ -155,8 +174,7 @@ export function ScreenerRow({
             </span>
             <span
               style={{
-                fontFamily: font.mono,
-                fontSize: text.xs,
+                fontSize: text.sm,
                 color: color.fgMuted,
                 flexShrink: 0,
               }}
@@ -168,7 +186,7 @@ export function ScreenerRow({
           <span
             style={{
               fontSize: text.sm,
-              color: color.fgSoft,
+              color: color.fgMuted,
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -184,7 +202,7 @@ export function ScreenerRow({
         {!isPhone && (
           <span
             style={{
-              fontSize: text.xs,
+              fontSize: text.sm,
               color: color.fgMuted,
               fontVariantNumeric: 'tabular-nums',
               whiteSpace: 'nowrap',
@@ -219,7 +237,7 @@ export function ScreenerRow({
             })()}
           </Pill>
         ) : (
-          <span style={{ fontSize: text.xs, color: color.fgMuted }}>New</span>
+          <Pill>New</Pill>
         )}
 
         {/* Chevron. */}
@@ -243,7 +261,7 @@ export function ScreenerRow({
       {expanded && (
         <div
           id={`screener-row-body-${row.id}`}
-          style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '4px 8px 16px' }}
+          style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '0 12px 16px 68px' }}
         >
           {/* K/A/U/L/D toolbar. */}
           <div
@@ -266,6 +284,7 @@ export function ScreenerRow({
                 <button
                   key={verb}
                   type="button"
+                  className="dm-screener-verb"
                   disabled={busy || noUnsubscribeChannel}
                   onClick={() => onVerbClick(verb)}
                   aria-pressed={active}
@@ -273,17 +292,20 @@ export function ScreenerRow({
                   style={{
                     display: 'inline-flex',
                     alignItems: 'center',
-                    gap: 6,
-                    padding: '6px 12px',
-                    borderRadius: 7,
+                    gap: 8,
+                    height: 36,
+                    padding: '0 8px 0 14px',
+                    borderRadius: radius.pill,
                     fontFamily: font.sans,
-                    fontSize: text.sm,
+                    fontSize: text.base,
                     fontWeight: 600,
                     cursor: busy || noUnsubscribeChannel ? 'not-allowed' : 'pointer',
-                    opacity: noUnsubscribeChannel ? 0.55 : 1,
-                    border: `1px solid ${
-                      active ? (verb === 'delete' ? color.danger : color.primary) : color.line
-                    }`,
+                    opacity: noUnsubscribeChannel ? 0.45 : 1,
+                    border: 'none',
+                    // Pressed = tinted fill + a ring in the verb's colour.
+                    boxShadow: active
+                      ? `inset 0 0 0 1.5px ${verb === 'delete' ? color.danger : color.primary}`
+                      : shadow.card,
                     background: active
                       ? verb === 'delete'
                         ? color.dangerBg
@@ -299,18 +321,8 @@ export function ScreenerRow({
                   }}
                 >
                   {VERB_LABEL[verb]}
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      fontFamily: font.mono,
-                      fontSize: text.xs,
-                      color: color.fgMuted,
-                      border: `1px solid ${color.lineSoft}`,
-                      borderRadius: 4,
-                      padding: '0 4px',
-                    }}
-                  >
-                    {VERB_KEY_HINT[verb]}
+                  <span aria-hidden="true">
+                    <Kbd>{VERB_KEY_HINT[verb]}</Kbd>
                   </span>
                 </button>
               );

@@ -63,9 +63,9 @@ export function SuggestionGroup({
       >
         <h3
           style={{
-            fontSize: text.sm,
+            fontSize: text.md,
             fontWeight: 600,
-            letterSpacing: '-0.008em',
+            letterSpacing: '-0.01em',
             margin: 0,
             color: color.fgSoft,
           }}
@@ -76,7 +76,7 @@ export function SuggestionGroup({
           )}
         </h3>
         <span
-          style={{ fontSize: text.xs, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
+          style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
         >
           {matches.length} waiting
         </span>
@@ -90,7 +90,6 @@ export function SuggestionGroup({
           margin: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: 8,
         }}
       >
         {matches.map((match) => (

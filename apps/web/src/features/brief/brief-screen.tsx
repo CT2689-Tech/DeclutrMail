@@ -35,6 +35,8 @@ import {
   type NoiseTarget,
 } from './api/use-noise-archive';
 import { NoiseArchiveSheet } from './noise-archive-sheet';
+import { flatRowCss } from '@/features/settings/flat-list';
+import { SelectWell } from '@/features/settings/settings-list';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
@@ -54,8 +56,8 @@ const COLUMN = {
 const H1_STYLE = {
   margin: 0,
   fontSize: text['2xl'],
-  fontWeight: 600,
-  letterSpacing: '-0.015em',
+  fontWeight: 650,
+  letterSpacing: '-0.02em',
   color: color.fg,
 } as const;
 
@@ -237,7 +239,7 @@ function BriefBody({
   }, [brief.id, brief.openedAt, isToday, markOpened]);
 
   return (
-    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 32 }}>
       <div
         style={{
           display: 'flex',
@@ -354,7 +356,7 @@ function BriefMeta({
       }}
     >
       {hasHistory ? (
-        <select
+        <SelectWell
           // Fall back to the latest option when the selected day is not
           // among the past ones — the range can narrow (a mailbox switch
           // resets the scoped cache and refetches), and a <select> whose
@@ -367,15 +369,7 @@ function BriefMeta({
           value={selectedDayValue}
           onChange={(e) => onSelectRunDate(e.target.value === '' ? null : e.target.value)}
           aria-label="Brief day"
-          style={{
-            fontFamily: font.sans,
-            fontSize: text.sm,
-            color: color.fg,
-            background: color.card,
-            border: `1px solid ${color.line}`,
-            borderRadius: 6,
-            padding: '3px 6px',
-          }}
+          style={{ fontSize: text.sm, height: 32 }}
         >
           {days.map((row, i) => (
             <option key={row.id} value={i === 0 ? '' : row.runDateLocal}>
@@ -383,7 +377,7 @@ function BriefMeta({
               {i === 0 ? ' — latest' : ''}
             </option>
           ))}
-        </select>
+        </SelectWell>
       ) : (
         <span>{dateLabel}</span>
       )}
@@ -463,8 +457,9 @@ function ReplyFyiSection({
   return (
     <section
       aria-label={`${label} (${rows.length})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
+      <style>{flatRowCss('dm-brief-row', 70)}</style>
       <SectionHeading label={label} count={rows.length} total={total} />
       <ul
         style={{
@@ -532,8 +527,9 @@ function NoiseSection({
       // screen reader must not get the un-anchored number this whole
       // surface is careful to avoid.
       aria-label={`Noise (${groups.length} senders, ${totalMessages} messages ${dayWord})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
+      <style>{flatRowCss('dm-noise-row', 12)}</style>
       <SectionHeading
         label="Noise"
         count={groups.length}
@@ -614,8 +610,8 @@ export function NoiseArchiveBar({
         justifyContent: 'space-between',
         gap: 12,
         flexWrap: 'wrap',
-        padding: '12px 0 0',
-        borderTop: `1px solid ${color.line}`,
+        padding: '16px 0 0',
+        borderTop: `1px solid ${color.lineSoft}`,
       }}
     >
       {/* Every terminal state gets a PERSISTENT line here. A toast is
@@ -728,16 +724,37 @@ function SectionHeading({
         alignItems: 'baseline',
         gap: 6,
         margin: 0,
-        fontSize: text.sm,
-        fontWeight: 600,
-        color: color.fgSoft,
+        fontSize: text.lg,
+        fontWeight: 650,
+        letterSpacing: '-0.01em',
+        color: color.fg,
       }}
     >
       {label}
-      <span style={{ color: color.fgMuted, fontWeight: 500, fontVariantNumeric: 'tabular-nums' }}>
+      <span
+        style={{
+          color: color.fgMuted,
+          fontSize: text.md,
+          fontWeight: 500,
+          letterSpacing: 0,
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
         · {countLabel}
       </span>
-      {subline && <span style={{ color: color.fgMuted, fontWeight: 500 }}>· {subline}</span>}
+      {subline && (
+        <span
+          style={{
+            color: color.fgMuted,
+            fontSize: text.md,
+            fontWeight: 500,
+            letterSpacing: 0,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          · {subline}
+        </span>
+      )}
     </h2>
   );
 }
@@ -776,11 +793,14 @@ function ReplyFyiRow({
           : 'auto minmax(180px, 1.1fr) minmax(220px, 2fr) auto',
         alignItems: 'center',
         gap: isMobile ? '8px 12px' : 14,
-        padding: '12px 0',
-        borderTop: `1px solid ${color.line}`,
+        minHeight: 72,
+        boxSizing: 'border-box',
+        paddingTop: 12,
+        paddingBottom: 12,
       }}
+      className="dm-brief-row"
     >
-      <Avatar size={32} name={displayName} domain={row.senderEmail} />
+      <Avatar size={44} name={displayName} domain={row.senderEmail} />
       <div style={{ minWidth: 0 }}>
         <div
           style={{
@@ -805,9 +825,7 @@ function ReplyFyiRow({
             {row.senderName || row.senderEmail}
           </span>
         </div>
-        <div style={{ fontSize: text.sm, color: color.fgMuted, fontFamily: font.mono }}>
-          {domain}
-        </div>
+        <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>{domain}</div>
       </div>
       <div
         title={row.subject}
@@ -919,10 +937,13 @@ function NoiseRow({
         gridTemplateColumns: isMobile ? 'auto auto 1fr' : 'auto auto minmax(180px, 2fr) auto auto',
         alignItems: 'center',
         gap: isMobile ? '8px 12px' : 14,
-        padding: '12px 0',
-        borderTop: `1px solid ${color.line}`,
+        minHeight: 72,
+        boxSizing: 'border-box',
+        paddingTop: 12,
+        paddingBottom: 12,
         opacity: archived ? 0.6 : 1,
       }}
+      className="dm-noise-row"
     >
       {selectable ? (
         <input
@@ -931,17 +952,29 @@ function NoiseRow({
           disabled={busy}
           onChange={() => onToggle(target.senderKey)}
           aria-label={`Include ${target.senderName} in the archive`}
-          style={{ width: 16, height: 16, accentColor: color.primary, cursor: 'pointer' }}
+          style={{
+            width: 18,
+            height: 18,
+            margin: 0,
+            accentColor: color.primary,
+            cursor: 'pointer',
+          }}
         />
       ) : (
         <span
           aria-hidden="true"
-          style={{ width: 16, height: 16, display: 'inline-block', textAlign: 'center' }}
+          style={{
+            width: 18,
+            height: 18,
+            display: 'inline-block',
+            textAlign: 'center',
+            color: color.fgMuted,
+          }}
         >
           {archived ? '✓' : '—'}
         </span>
       )}
-      <Avatar size={32} name={target.senderName || '·'} />
+      <Avatar size={44} name={target.senderName || '·'} />
       <div
         style={{
           fontSize: text.md,
@@ -1052,7 +1085,7 @@ function LoadingState() {
         <div
           key={i}
           aria-hidden="true"
-          style={{ height: 56, borderTop: `1px solid ${color.line}` }}
+          style={{ height: 72, borderTop: `1px solid ${color.lineSoft}` }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading today&rsquo;s Brief</span>
@@ -1081,7 +1114,7 @@ function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => vo
  */
 function NotYetState({ onRefresh }: { onRefresh: () => void }) {
   return (
-    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 32 }}>
       <h1 style={H1_STYLE}>Daily Brief</h1>
       <EmptyState
         title="Your Brief lands soon"

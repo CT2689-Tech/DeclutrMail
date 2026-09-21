@@ -14,7 +14,7 @@ import { useEffect, type ReactNode } from 'react';
 import { useFocusTrap } from '../hooks/use-focus-trap';
 import { tokens } from '../tokens/tokens';
 
-const { color, radius } = tokens;
+const { color, radius, shadow, space } = tokens;
 
 export function BottomSheet({
   open,
@@ -47,45 +47,41 @@ export function BottomSheet({
   return (
     <>
       <div
+        className="dm-scrim"
         onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 140,
-        }}
+        style={{ position: 'fixed', inset: 0, zIndex: 140 }}
       />
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label={ariaLabel}
+        className="dm-sheet"
         style={{
           position: 'fixed',
           left: 0,
           right: 0,
           bottom: 0,
           width: '100%',
+          boxSizing: 'border-box',
           maxHeight: `${maxHeightVh}vh`,
           overflow: 'auto',
           background: color.card,
-          borderRadius: `${radius.xl}px ${radius.xl}px 0 0`,
-          border: `1px solid ${color.border}`,
-          borderBottom: 'none',
-          boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
+          borderRadius: `${radius['2xl']}px ${radius['2xl']}px 0 0`,
+          boxShadow: shadow.modal,
           zIndex: 141,
-          padding: '8px 16px calc(16px + env(safe-area-inset-bottom))',
+          padding: `${space[2]}px ${space[5]}px calc(${space[5]}px + env(safe-area-inset-bottom))`,
         }}
       >
+        {/* Grab handle — the sheet's one affordance that it came from below. */}
         <div
           aria-hidden="true"
           style={{
             width: 36,
-            height: 4,
+            height: 5,
             borderRadius: radius.pill,
-            background: color.line,
-            margin: '4px auto 12px',
+            background: color.fillHover,
+            margin: `${space[1]}px auto ${space[4]}px`,
           }}
         />
         {children}

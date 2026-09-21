@@ -1140,7 +1140,8 @@ describe('SenderDetailRoute', () => {
       // looking at an automatically-protected sender had no way to
       // learn why (three of the four reasons are automatic).
       // Rendered ONCE, as the visible line — not repeated as a tooltip.
-      expect(screen.getByText(/^Protected — .+\.$/)).toBeInTheDocument();
+      // It sits under the row's "Protected" label, so it is the reason alone.
+      expect(screen.getByTestId('protection-reason')).toHaveTextContent(/marked it Protected\.$/);
       // The tooltip carries the one thing the label cannot: that a click
       // unprotects. It does not repeat the reason.
       const protectedToggle = screen.getByRole('switch', { name: 'Protected', checked: true });
@@ -1422,7 +1423,9 @@ describe('SenderDetailRoute', () => {
         fireEvent.click(archiveFreed);
         await tick(500);
         expect(previewGets).toBeGreaterThan(previewGetsBefore);
-        expect(within(screen.getByRole('dialog')).getAllByText('5').length).toBeGreaterThan(0);
+        expect(
+          within(screen.getByRole('dialog')).getByRole('heading', { name: 'Archive 5 emails?' }),
+        ).toBeInTheDocument();
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(2);

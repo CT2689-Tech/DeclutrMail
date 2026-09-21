@@ -394,9 +394,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(within(panel).getByText('30-day money-back guarantee')).toBeInTheDocument();
 
     // Click 2 — confirm into the provider surface.
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({
@@ -454,9 +452,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // The charge line follows the claim onto the promotional point.
     expect(within(panel).getByText(/\$129 billed annually, starting today/)).toBeInTheDocument();
 
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() =>
       expect(checkoutBody).toEqual({
         tierId: 'pro',
@@ -507,9 +503,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // Paddle and is charged USD unless they pick otherwise.
     expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
     expect(within(panel).getByLabelText(/Card · PayPal · Apple Pay/)).toBeChecked();
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'monthly', provider: 'paddle' }),
@@ -563,9 +557,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     const panel = screen.getByTestId('checkout-panel');
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     expect(
       await within(panel).findByText(
@@ -606,9 +598,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     const panel = screen.getByTestId('checkout-panel');
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     // The truth CHANGED with #433: the provider SESSION exists and the
     // server claim is held (an orphaned Razorpay subscription is
@@ -647,9 +637,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     const panel = screen.getByTestId('checkout-panel');
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Checkout started');
@@ -682,9 +670,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     const panel = screen.getByTestId('checkout-panel');
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await within(panel).findByRole('alert');
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
@@ -722,9 +708,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     const panel = screen.getByTestId('checkout-panel');
     expect(subscriptionReads).toBe(1);
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     // PRE-CLAIM: the guard threw before any provider call, so surfacing a
     // payment reservation would assert a charge that cannot exist — and
@@ -740,9 +724,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // ended, disable the picker, and unmount the panel carrying this
     // message — reinstating the lie the code exists to delete.
     expect(subscriptionReads).toBe(1);
-    expect(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    ).toBeEnabled();
+    expect(within(panel).getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
   });
 
   it('the settling window explains itself instead of telling you to cancel', async () => {
@@ -971,9 +953,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // No pending state before the overlay reports payment (§10 — the
@@ -1044,9 +1024,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     act(() => capturedCheckoutEvents().onCompleted?.());
@@ -1087,9 +1065,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // Fake timers ONLY from here — the slow timer registers when the
@@ -1135,9 +1111,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     const panel = screen.getByTestId('checkout-panel');
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     expect(await within(panel).findByRole('alert')).toBeInTheDocument();
     expect(launchCheckout).not.toHaveBeenCalled();
@@ -1178,9 +1152,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const panel = screen.getByTestId('checkout-panel');
     expect(subscriptionReads).toBe(1);
 
-    fireEvent.click(
-      within(panel).getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     // The refetch is the fix; the message alone would leave the user stuck.
     await waitFor(() => expect(subscriptionReads).toBeGreaterThan(1));
@@ -1569,9 +1541,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // Another tab's ambiguous change surfaces its lock while the
@@ -1632,9 +1602,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // The reservation exists BEFORE any payment happened — with an id.
@@ -1647,9 +1615,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // A second confirm (this or any tab) finds the reservation and
     // stands down: exactly ONE session was ever created.
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Checkout started',
     );
@@ -1719,9 +1685,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       }),
     );
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
 
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Plan change unconfirmed',
@@ -1785,9 +1749,7 @@ describe('BillingScreen — checkout funnel events', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     expect(tracked('checkout_started')).toEqual([
@@ -1821,9 +1783,7 @@ describe('BillingScreen — checkout funnel events', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
     act(() => capturedCheckoutEvents().onClosed?.());
 
@@ -1843,9 +1803,7 @@ describe('BillingScreen — checkout funnel events', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     expect(
       await screen.findByText(
         'Billing isn’t switched on yet — checkout opens here once it goes live.',
@@ -1882,9 +1840,7 @@ describe('BillingScreen — checkout funnel events', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
 
     expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(tracked('checkout_session_created')).toHaveLength(1);
@@ -1903,7 +1859,7 @@ describe('BillingScreen — paid subscriber', () => {
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Pro')).toBeInTheDocument();
     expect(within(card).getByText('$19/mo')).toBeInTheDocument();
-    expect(within(card).getByText('· Next renewal Jul 1, 2026')).toBeInTheDocument();
+    expect(within(card).getByText('Next renewal Jul 1, 2026')).toBeInTheDocument();
     // The provider is plumbing, not plan facts — never on the card.
     expect(within(card).queryByText(/via Paddle/)).not.toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
@@ -2420,7 +2376,7 @@ describe('BillingScreen — paid subscriber', () => {
     // rather than the old misleading "No refund for unused time" line.
     expect(within(panel).getByText(/the next step covers cancellation\./)).toBeInTheDocument();
 
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to cancellation →' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to cancellation' }));
     expect(screen.getByTestId('cancel-modal')).toBeInTheDocument();
     expect(screen.queryByTestId('downgrade-panel')).not.toBeInTheDocument();
   });

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNow } from '@/lib/use-now';
-import { Button, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Button, Pill, tokens } from '@declutrmail/shared';
+import { Switch } from '@/features/settings/switch';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 import type { AutopilotActionKind, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { observeDigestSummary } from './observe-digest';
@@ -10,19 +11,19 @@ import { presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
-const { color, font, motion, text } = tokens;
+const { color, font, text } = tokens;
 
 /** The plan granting unattended action — derived, never hardcoded. */
 const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
 /**
  * One preset rule in the D101 rules-management list — a quiet row:
- * name + status word + enabled switch, a one-line description, then
- * "Preview matches" (D103 dry-run, scoped to presets per D192) and a
- * Resume affordance for paused rules. The rest of D101's surface —
- * last-run summary, pending-match count, the D10 observe-window
- * countdown, the Observe digest and the confidence-threshold slider —
- * sits behind the row's Details disclosure.
+ * name + status pill + enabled switch, a one-line description, then
+ * ONE "Details" capsule (and Resume for paused rules). Details holds the
+ * rest of D101's surface — last-run summary, pending-match count, the
+ * D10 observe-window countdown, the Observe digest, the
+ * confidence-threshold slider — and "Preview matches" (D103 dry-run,
+ * scoped to presets per D192), which stays an explicit request.
  *
  * Mode changes that START automation (observe/paused → active) do NOT
  * live here — activation is the day-7 banner's explicit, previewed
@@ -90,22 +91,24 @@ export function RuleCard({
   return (
     <li
       data-rule-id={rule.id}
+      className="dm-rule-row"
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
-        padding: '14px 0',
-        borderTop: `1px solid ${color.line}`,
+        gap: 4,
+        padding: '12px 16px',
         fontFamily: font.sans,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <style>{RULE_ROW_CSS}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
         <div
           style={{
             flex: 1,
             minWidth: 0,
             display: 'flex',
-            alignItems: 'baseline',
+            alignItems: 'center',
             gap: 8,
             flexWrap: 'wrap',
           }}
@@ -113,11 +116,11 @@ export function RuleCard({
           <span style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>{name}</span>
           <ModeStatus rule={rule} canActivate={canActivate} />
         </div>
-        <EnabledSwitch
-          ruleName={name}
-          enabled={rule.enabled}
+        <Switch
+          checked={rule.enabled}
           disabled={isSaving}
-          onToggle={() => onToggleEnabled(!rule.enabled)}
+          ariaLabel={`${rule.enabled ? 'Disable' : 'Enable'} rule ${name}`}
+          onChange={() => onToggleEnabled(!rule.enabled)}
         />
       </div>
 
@@ -129,7 +132,25 @@ export function RuleCard({
         {explanation === null ? '' : ` · ${explanation}`}
       </p>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+          marginTop: 6,
+          marginLeft: -12,
+        }}
+      >
+        <Button
+          tone="ghost"
+          size="sm"
+          onClick={() => setDetailsOpen((open) => !open)}
+          ariaLabel={`${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`}
+          ariaExpanded={detailsOpen}
+        >
+          {detailsOpen ? 'Hide details' : 'Details'}
+        </Button>
         {rule.mode === 'paused' && (
           <Button
             tone="default"
@@ -141,20 +162,6 @@ export function RuleCard({
             {isSaving ? 'Resuming…' : 'Resume'}
           </Button>
         )}
-        <QuietButton
-          onClick={onTogglePreview}
-          ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
-        >
-          {previewOpen ? 'Hide preview' : 'Preview matches'}
-        </QuietButton>
-        <QuietButton
-          onClick={() => setDetailsOpen((open) => !open)}
-          ariaLabel={`${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`}
-          ariaExpanded={detailsOpen}
-          ariaControls={detailsId}
-        >
-          {detailsOpen ? 'Hide details' : 'Details'}
-        </QuietButton>
       </div>
 
       {detailsOpen && (
@@ -163,12 +170,21 @@ export function RuleCard({
           style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: 8,
+            gap: 10,
+            paddingTop: 4,
             fontSize: text.sm,
             color: color.fgMuted,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              flexWrap: 'wrap',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
             <span>{lastRunSummary(rule, now !== null)}</span>
             <span aria-hidden="true">·</span>
             <span>
@@ -195,6 +211,18 @@ export function RuleCard({
               onCommit={onCommitThreshold}
             />
           )}
+
+          {/* D103/D192 — the dry-run stays an explicit, per-rule request. */}
+          <div style={{ marginLeft: -12 }}>
+            <Button
+              tone="ghost"
+              size="sm"
+              onClick={onTogglePreview}
+              ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
+            >
+              {previewOpen ? 'Hide preview' : 'Preview matches'}
+            </Button>
+          </div>
         </div>
       )}
 
@@ -205,45 +233,8 @@ export function RuleCard({
   );
 }
 
-/** Text-weight row action — quieter than a bordered button in a list. */
-function QuietButton({
-  onClick,
-  ariaLabel,
-  ariaExpanded,
-  ariaControls,
-  children,
-}: {
-  onClick: () => void;
-  ariaLabel: string;
-  ariaExpanded?: boolean;
-  ariaControls?: string;
-  children: ReactNode;
-}) {
-  const isMobile = useIsAtMost('sm');
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={ariaLabel}
-      aria-expanded={ariaExpanded}
-      aria-controls={ariaControls}
-      style={{
-        // Quiet on desktop; a full 44px touch target on phones.
-        minHeight: isMobile ? 44 : 28,
-        padding: 0,
-        background: 'transparent',
-        border: 'none',
-        color: color.primary,
-        fontFamily: font.sans,
-        fontSize: text.sm,
-        fontWeight: 500,
-        cursor: 'pointer',
-      }}
-    >
-      {children}
-    </button>
-  );
-}
+/** Inset hairline between rule rows inside the raised group. */
+const RULE_ROW_CSS = `.dm-rule-row + .dm-rule-row::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: ${color.lineSoft}; }`;
 
 /** Canonical-verb description of the rule's action (D227 — K/A/U/L/D only). */
 function describeRuleAction(kind: AutopilotActionKind): string {
@@ -263,21 +254,21 @@ function ModeStatus({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate
   // not reset it — so an off rule could read "Active" while taking no
   // actions. Since turning a rule on defaults to acting, off-but-active
   // is the ordinary end state of enable-then-disable.
-  // The switch beside it already reads "Off"; a second "Off" is noise.
+  // The switch beside it already says Off; a status word would repeat it.
   if (!rule.enabled) return null;
   let label = 'Observing';
-  let tone: string = color.fgMuted;
+  let tone: 'default' | 'primary' | 'amber' = 'default';
   if (rule.mode === 'paused') {
     label = 'Paused';
-    tone = color.amberDeep;
+    tone = 'amber';
   } else if (rule.mode === 'active') {
     // D251 — the apply worker skips `active` rules on a tier without
     // `autopilot-active` (the Pro→Plus downgrade path). "Active" here
     // would assert automation that is not happening.
     label = canActivate ? 'Active' : 'Not running';
-    tone = canActivate ? color.primary : color.amberDeep;
+    tone = canActivate ? 'primary' : 'amber';
   }
-  return <span style={{ fontSize: text.sm, fontWeight: 500, color: tone }}>{label}</span>;
+  return <Pill tone={tone}>{label}</Pill>;
 }
 
 /**
@@ -336,78 +327,6 @@ function observeWindowSummary(rule: AutopilotRuleDto, now: number | null): strin
   if (Number.isNaN(ends)) return null;
   const daysLeft = Math.max(1, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
   return `Observing · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
-}
-
-/**
- * Switch-style enabled toggle (D101 "single toggle"). Toggling off
- * stops the matcher from producing new matches; nothing in the inbox
- * moves either way, so this PATCHes directly without a D226 preview
- * (the preview ladder applies to mail-mutating actions).
- */
-function EnabledSwitch({
-  ruleName,
-  enabled,
-  disabled,
-  onToggle,
-}: {
-  ruleName: string;
-  enabled: boolean;
-  disabled: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={enabled}
-      aria-label={`${enabled ? 'Disable' : 'Enable'} rule ${ruleName}`}
-      onClick={onToggle}
-      disabled={disabled}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 8,
-        minHeight: 44,
-        background: 'transparent',
-        border: 'none',
-        padding: 0,
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.6 : 1,
-        fontFamily: font.sans,
-      }}
-    >
-      <span style={{ fontSize: text.sm, color: color.fgMuted, minWidth: 20, textAlign: 'right' }}>
-        {enabled ? 'On' : 'Off'}
-      </span>
-      <span
-        aria-hidden="true"
-        style={{
-          width: 36,
-          height: 22,
-          borderRadius: 999,
-          background: enabled ? color.primary : color.mutedBg,
-          border: `1px solid ${enabled ? color.primary : color.border}`,
-          position: 'relative',
-          transition: `background ${motion.fast} ${motion.ease}`,
-          flexShrink: 0,
-          boxSizing: 'border-box',
-        }}
-      >
-        <span
-          style={{
-            position: 'absolute',
-            top: 2,
-            left: enabled ? 16 : 2,
-            width: 16,
-            height: 16,
-            borderRadius: 999,
-            background: enabled ? color.fgInverse : color.fgMuted,
-            transition: `left ${motion.fast} ${motion.ease}`,
-          }}
-        />
-      </span>
-    </button>
-  );
 }
 
 /**
@@ -484,8 +403,8 @@ function ThresholdSlider({
       />
       <span
         style={{
-          fontFamily: font.mono,
           fontSize: text.sm,
+          fontWeight: 600,
           color: color.fgSoft,
           minWidth: 32,
           fontVariantNumeric: 'tabular-nums',

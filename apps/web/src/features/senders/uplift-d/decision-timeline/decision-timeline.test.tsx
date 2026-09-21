@@ -60,24 +60,20 @@ describe('<DecisionTimeline /> — Variant D', () => {
     expect(html).toContain('You chose Keep');
   });
 
-  it('renders the current item node filled (background = primary)', () => {
-    const filled = renderToStaticMarkup(
+  it('marks only the current item with the teal dot', () => {
+    const current = renderToStaticMarkup(
       <DecisionTimeline items={[{ id: '1', when: 'today', current: true, what: 'x' }]} />,
     );
-    // Filled node: background uses the primary token; SSR renders the
-    // inline style attribute verbatim. Tokens are var() references
-    // since the dark-mode pass — assert the token, not a hex.
-    expect(filled).toContain('background:var(--dm-primary)');
-  });
-
-  it('renders non-current items outlined (background = page)', () => {
-    const outlined = renderToStaticMarkup(
+    // Tokens are var() references since the dark-mode pass.
+    expect(current).toContain('background:var(--dm-primary)');
+    expect(current).toContain('data-current="true"');
+    const past = renderToStaticMarkup(
       <DecisionTimeline items={[{ id: '1', when: '3w ago', what: 'x' }]} />,
     );
-    expect(outlined).toContain('background:var(--dm-bg)');
+    expect(past).not.toContain('background:var(--dm-primary)');
   });
 
-  it('renders a connector line for all items except the last', () => {
+  it('separates items with a hairline — none above the first', () => {
     const html = renderToStaticMarkup(
       <DecisionTimeline
         items={[
@@ -87,16 +83,6 @@ describe('<DecisionTimeline /> — Variant D', () => {
         ]}
       />,
     );
-    // The connector is the absolutely-positioned spacer span with
-    // left:92px. Count its occurrences — should equal items.length - 1.
-    const matches = html.match(/left:92px/g) ?? [];
-    expect(matches.length).toBe(2);
-  });
-
-  it('renders no connector for a single-item timeline', () => {
-    const html = renderToStaticMarkup(
-      <DecisionTimeline items={[{ id: '1', when: 'today', what: 'x' }]} />,
-    );
-    expect(html).not.toContain('left:92px');
+    expect(html.match(/border-top:1px solid var\(--dm-line-soft\)/g) ?? []).toHaveLength(2);
   });
 });

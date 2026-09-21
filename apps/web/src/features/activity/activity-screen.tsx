@@ -21,6 +21,7 @@ import {
   ErrorState as RecoverableErrorState,
   ScreenIntro,
   TechnicalDetails,
+  Tooltip,
   tokens,
   useIsAtMost,
 } from '@declutrmail/shared';
@@ -344,8 +345,8 @@ export function ActivityScreen() {
             margin: 0,
             marginRight: 'auto',
             fontSize: text['2xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.01em',
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
             color: color.fg,
           }}
         >
@@ -559,7 +560,7 @@ function Timeline({
   const now = useNow();
   const days = useMemo(() => groupByDay(rows, timeZone), [rows, timeZone]);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {days.map((day, index) => {
         const label = activityDayLabel(day.rows[0]!.occurredAt, now, timeZone);
         return (
@@ -570,11 +571,13 @@ function Timeline({
               style={{
                 position: 'sticky',
                 top: 0,
-                zIndex: 1,
-                margin: 0,
-                padding: '8px 0',
-                background: color.bg,
-                borderBottom: `1px solid ${color.line}`,
+                zIndex: 2,
+                margin: '0 -12px',
+                padding: '10px 12px 8px',
+                // Translucent + blurred so rows scroll softly beneath it.
+                background: `color-mix(in srgb, ${color.bg} 80%, transparent)`,
+                WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
+                backdropFilter: 'blur(14px) saturate(1.3)',
                 fontSize: text.sm,
                 fontWeight: 600,
                 color: color.fgMuted,
@@ -588,6 +591,7 @@ function Timeline({
                   key={row.id}
                   row={row}
                   isSelected={selectedIds.has(row.id)}
+                  selectionActive={selectedIds.size > 0}
                   onToggleSelect={() => onToggle(row.id)}
                   failedTokens={failedTokens}
                   isMobile={isMobile}
@@ -663,9 +667,11 @@ function LoadMoreRegion({
   const pill: CSSProperties = {
     fontFamily: font.sans,
     fontSize: text.sm,
-    background: 'transparent',
+    background: color.fill,
+    border: 'none',
     borderRadius: radius.pill,
-    padding: '8px 16px',
+    minHeight: 36,
+    padding: '0 18px',
   };
 
   return (
@@ -681,7 +687,6 @@ function LoadMoreRegion({
             ...pill,
             fontWeight: 600,
             color: color.amber,
-            border: `1px solid ${color.amber}`,
             cursor: 'pointer',
           }}
         >
@@ -694,9 +699,8 @@ function LoadMoreRegion({
           disabled={isFetchingNextPage}
           style={{
             ...pill,
-            fontWeight: 500,
+            fontWeight: 600,
             color: isFetchingNextPage ? color.fgMuted : color.fg,
-            border: `1px solid ${color.line}`,
             cursor: isFetchingNextPage ? 'wait' : 'pointer',
           }}
         >
@@ -707,10 +711,8 @@ function LoadMoreRegion({
   );
 }
 
-/** Standalone numerals — the one place the mono face is used on this
- *  screen. A count inside a sentence stays in the sentence's face. */
+/** Standalone numerals — sans, tabular, so columns of counts line up. */
 const numeralStyle: CSSProperties = {
-  fontFamily: font.mono,
   fontVariantNumeric: 'tabular-nums',
 };
 
@@ -759,53 +761,26 @@ function SummaryRow({
     <section
       aria-live="polite"
       aria-label="Activity summary"
-      style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
     >
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: '4px 18px' }}>
-        <span style={{ fontSize: text.sm, color: color.fgMuted }}>{windowLabel}</span>
-        {SUMMARY_VERBS.map(({ key, verb, label }) => {
-          const isActive = verbs.includes(verb);
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => onVerbs(toggled(verbs, verb))}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'baseline',
-                gap: 5,
-                padding: '4px 0',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: `1px solid ${isActive ? color.primary : 'transparent'}`,
-                fontFamily: font.sans,
-                fontSize: text.sm,
-                color: isActive ? color.primary : color.fgMuted,
-                cursor: 'pointer',
-              }}
-            >
-              <span
-                style={{
-                  ...numeralStyle,
-                  fontSize: text.md,
-                  fontWeight: 600,
-                  color: isActive ? color.primary : color.fg,
-                }}
-              >
-                {stats[key]}
-              </span>
-              {label}
-            </button>
-          );
-        })}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <span style={{ fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}>
+          {windowLabel}
+        </span>
         {/* The one number naming a problem has to reach those records
             (QA-activity-20260918-08). */}
         {stats.needsAttention > 0 && (
           <Link
             href={failedHref}
             style={{
-              marginLeft: 'auto',
               fontSize: text.sm,
               fontWeight: 600,
               color: color.amber,
@@ -815,6 +790,63 @@ function SummaryRow({
             {stats.needsAttention} failed · Review
           </Link>
         )}
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+          gap: 4,
+          margin: '0 -12px',
+        }}
+      >
+        {SUMMARY_VERBS.map(({ key, verb, label }) => {
+          const isActive = verbs.includes(verb);
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={isActive}
+              onClick={() => onVerbs(toggled(verbs, verb))}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.background = color.fill;
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.background = 'transparent';
+              }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 2,
+                minHeight: 56,
+                padding: '8px 12px',
+                background: isActive ? color.primarySoft : 'transparent',
+                border: 'none',
+                borderRadius: radius.lg,
+                fontFamily: font.sans,
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: `background ${motion.fast} ${motion.ease}`,
+              }}
+            >
+              <span
+                style={{
+                  ...numeralStyle,
+                  fontSize: text.xl,
+                  fontWeight: 600,
+                  letterSpacing: '-0.01em',
+                  lineHeight: 1.2,
+                  color: isActive ? color.primary : color.fg,
+                }}
+              >
+                {stats[key]}
+              </span>
+              <span style={{ fontSize: text.xs, color: isActive ? color.primary : color.fgMuted }}>
+                {label}
+              </span>
+            </button>
+          );
+        })}
       </div>
       {/* `aggregateStats` counts activity_log ROWS and ignores the source
           chips — neither of which the numbers can say for themselves
@@ -1039,18 +1071,19 @@ const textButtonStyle: CSSProperties = {
   cursor: 'pointer',
 };
 
+/** Filter / Export — quiet neutral capsules, the shared Button's `default`. */
 const headerButtonStyle: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 8,
-  minHeight: 36,
-  padding: '0 14px',
+  minHeight: 40,
+  padding: '0 16px',
   fontFamily: font.sans,
   fontSize: text.base,
-  fontWeight: 500,
-  border: `1px solid ${color.line}`,
+  fontWeight: 600,
+  border: 'none',
   borderRadius: radius.pill,
-  background: 'transparent',
+  background: color.fill,
   color: color.fg,
   cursor: 'pointer',
 };
@@ -1102,7 +1135,7 @@ function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: b
         style={{
           ...headerButtonStyle,
           ...(isMobile ? { minHeight: 44 } : {}),
-          ...(count > 0 ? { borderColor: color.primary, color: color.primary } : {}),
+          ...(count > 0 ? { background: color.primarySoft, color: color.primary } : {}),
         }}
       >
         Filter
@@ -1118,12 +1151,15 @@ function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: b
             right: 0,
             zIndex: 20,
             width: 380,
-            padding: 16,
+            padding: 20,
             background: color.card,
-            borderRadius: radius.lg,
+            borderRadius: radius.xl,
             boxShadow: shadow.pop,
+            transformOrigin: 'top right',
+            animation: `dm-activity-pop-in ${motion.fast} ${motion.ease} both`,
           }}
         >
+          <style>{`@keyframes dm-activity-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }`}</style>
           <FilterFields {...fields} />
         </div>
       )}
@@ -1142,20 +1178,16 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
   return (
     <>
       <div
+        className="dm-scrim"
         onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
-        }}
+        style={{ position: 'fixed', inset: 0, zIndex: 150 }}
       />
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Activity filters"
+        className="dm-sheet"
         style={{
           position: 'fixed',
           left: 0,
@@ -1164,12 +1196,12 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
           maxHeight: '82vh',
           overflow: 'auto',
           background: color.card,
-          borderTopLeftRadius: radius.xl,
-          borderTopRightRadius: radius.xl,
-          boxShadow: shadow.lift,
+          borderTopLeftRadius: radius['2xl'],
+          borderTopRightRadius: radius['2xl'],
+          boxShadow: shadow.modal,
           zIndex: 151,
           fontFamily: font.sans,
-          padding: '10px 16px 20px',
+          padding: '10px 20px calc(20px + env(safe-area-inset-bottom))',
           display: 'flex',
           flexDirection: 'column',
           gap: 12,
@@ -1182,7 +1214,7 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
             width: 36,
             height: 4,
             borderRadius: radius.pill,
-            background: color.line,
+            background: color.fillHover,
             margin: '2px auto 4px',
           }}
         />
@@ -1194,18 +1226,27 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
             gap: 12,
           }}
         >
-          <span style={{ fontSize: text.lg, fontWeight: 600, color: color.fg }}>Filter</span>
+          <span
+            style={{
+              fontSize: text.xl,
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              color: color.fg,
+            }}
+          >
+            Filter
+          </span>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close filters"
-            style={{ ...textButtonStyle, minWidth: 44, minHeight: 44, fontSize: text.md }}
+            style={{ ...iconButtonStyle, width: 44, height: 44 }}
           >
-            ✕
+            <CloseGlyph />
           </button>
         </div>
         <FilterFields {...fields} touch />
-        <Button tone="primary" onClick={onClose}>
+        <Button tone="primary" size="lg" onClick={onClose}>
           View results
         </Button>
       </div>
@@ -1321,8 +1362,9 @@ function DateInput({
         display: 'inline-flex',
         alignItems: 'center',
         gap: 6,
-        padding: '2px 10px',
-        border: `1px solid ${color.line}`,
+        minHeight: 36,
+        padding: '0 12px',
+        background: color.fill,
         borderRadius: radius.pill,
       }}
     >
@@ -1385,17 +1427,28 @@ function SenderSearchInput({
         boxSizing: 'border-box',
         display: fullWidth ? 'flex' : 'inline-flex',
         alignItems: 'center',
-        gap: 6,
-        minHeight: fullWidth ? 44 : 36,
-        padding: '0 12px',
-        border: `1px solid ${color.line}`,
+        gap: 8,
+        minHeight: fullWidth ? 44 : 40,
+        padding: '0 16px',
+        background: color.fill,
         borderRadius: radius.pill,
-        minWidth: 220,
+        minWidth: 240,
       }}
     >
-      <span aria-hidden="true" style={{ color: color.fgMuted, fontSize: text.md }}>
-        ⌕
-      </span>
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        aria-hidden="true"
+        style={{ color: color.fgMuted, flexShrink: 0 }}
+      >
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.5-3.5" />
+      </svg>
       <input
         type="search"
         placeholder="Search sender…"
@@ -1543,13 +1596,8 @@ function ActivitySupportBundleDialog({
       <div
         data-testid="activity-support-bundle-backdrop"
         onClick={exportBundle.isPending ? undefined : onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.48)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 180,
-        }}
+        className="dm-scrim"
+        style={{ position: 'fixed', inset: 0, zIndex: 180 }}
       />
       <div
         ref={trapRef}
@@ -1557,25 +1605,33 @@ function ActivitySupportBundleDialog({
         aria-modal="true"
         aria-labelledby="activity-support-bundle-title"
         aria-describedby="activity-support-bundle-lead"
+        className="dm-sheet"
         style={{
           position: 'fixed',
           top: '6vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
+          left: 0,
+          right: 0,
+          margin: '0 auto',
           width: 'min(720px, calc(100vw - 28px))',
           maxHeight: '88vh',
           overflow: 'auto',
           background: color.card,
-          borderRadius: radius.lg,
-          boxShadow: shadow.lift,
+          borderRadius: radius['2xl'],
+          boxShadow: shadow.modal,
           zIndex: 181,
           fontFamily: font.sans,
         }}
       >
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
+        <div style={{ padding: '28px 28px 16px' }}>
           <h2
             id="activity-support-bundle-title"
-            style={{ margin: 0, color: color.fg, fontSize: text.xl, fontWeight: 600 }}
+            style={{
+              margin: 0,
+              color: color.fg,
+              fontSize: text.xl,
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+            }}
           >
             Export Activity support bundle
           </h2>
@@ -1591,7 +1647,7 @@ function ActivitySupportBundleDialog({
           </p>
         </div>
 
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: '12px 28px', display: 'flex', flexDirection: 'column', gap: 20 }}>
           <section aria-labelledby="activity-support-bundle-filters">
             <h3
               id="activity-support-bundle-filters"
@@ -1708,11 +1764,10 @@ function ActivitySupportBundleDialog({
             <div
               role="alert"
               style={{
-                padding: '10px 11px',
-                borderRadius: radius.md,
+                padding: '12px 14px',
+                borderRadius: radius.lg,
                 color: color.danger,
                 background: color.dangerBg,
-                border: `1px solid ${color.dangerBorder}`,
                 fontSize: text.base,
               }}
             >
@@ -1730,8 +1785,7 @@ function ActivitySupportBundleDialog({
             display: 'flex',
             justifyContent: 'flex-end',
             gap: 8,
-            padding: '13px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
+            padding: '16px 28px 28px',
           }}
         >
           <Button tone="default" onClick={onClose} disabled={exportBundle.isPending}>
@@ -1867,58 +1921,51 @@ function BulkActionBar({
       aria-label="Bulk actions"
       style={{
         position: 'sticky',
-        top: 8,
+        top: 12,
         zIndex: 5,
+        alignSelf: 'center',
+        width: 'fit-content',
+        maxWidth: '100%',
+        boxSizing: 'border-box',
         display: 'flex',
         flexWrap: 'wrap',
         alignItems: 'center',
-        gap: 12,
-        padding: '10px 16px',
-        background: color.fg,
-        color: color.fgInverse,
-        borderRadius: radius.lg,
-        boxShadow: shadow.lift,
+        gap: 8,
+        padding: '6px 6px 6px 20px',
+        background: color.card,
+        color: color.fg,
+        borderRadius: bulkError ? radius.xl : radius.pill,
+        boxShadow: shadow.pop,
       }}
     >
-      <span style={{ fontSize: text.md, fontWeight: 600, color: color.fgInverse }}>
+      <span style={{ ...numeralStyle, fontSize: text.md, fontWeight: 600, marginRight: 8 }}>
         {selectedIds.size} row{selectedIds.size === 1 ? '' : 's'}
         {revertableCount < selectedIds.size && (
-          <span style={{ fontWeight: 400, color: color.fgInverseSoft, marginLeft: 8 }}>
-            · {revertableCount} undoable
+          <span style={{ fontWeight: 500, fontSize: text.sm, color: color.fgMuted, marginLeft: 8 }}>
+            {revertableCount} undoable
           </span>
         )}
       </span>
-      <span style={{ flex: 1 }} />
-      <button
-        type="button"
+      <Button
+        tone="primary"
+        size="md"
         onClick={runBulkUndo}
         disabled={revertableCount === 0 || bulkBusy}
-        style={{
-          fontFamily: font.sans,
-          fontSize: text.base,
-          fontWeight: 600,
-          color: color.fg,
-          background: color.card,
-          border: 'none',
-          padding: '8px 16px',
-          borderRadius: radius.pill,
-          cursor: revertableCount === 0 || bulkBusy ? 'not-allowed' : 'pointer',
-          opacity: revertableCount === 0 || bulkBusy ? 0.55 : 1,
-        }}
       >
         {bulkBusy ? 'Undoing…' : `Undo ${revertableCount}`}
-      </button>
-      <button
-        type="button"
-        onClick={onClear}
-        style={{ ...textButtonStyle, color: color.fgInverseSoft }}
-      >
+      </Button>
+      <Button tone="ghost" size="md" onClick={onClear}>
         Clear
-      </button>
+      </Button>
       {bulkError && (
         <span
           role="alert"
-          style={{ flexBasis: '100%', fontSize: text.sm, color: color.fgInverse, marginTop: 2 }}
+          style={{
+            flexBasis: '100%',
+            padding: '2px 14px 8px 0',
+            fontSize: text.sm,
+            color: color.fgSoft,
+          }}
         >
           {bulkError}
         </span>
@@ -1993,27 +2040,36 @@ function GroupedList({
         const isOpen = expanded.has(group.key);
         const totalAffected = group.rows.reduce((sum, r) => sum + r.affectedCount, 0);
         return (
-          <li key={group.key} style={{ borderBottom: `1px solid ${color.line}` }}>
+          <li key={group.key} style={{ borderBottom: `1px solid ${color.lineSoft}` }}>
             <button
               type="button"
               onClick={() => toggleGroup(group.key)}
               aria-expanded={isOpen}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = color.fill;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 12,
-                minHeight: 44,
-                padding: '12px 4px',
-                width: '100%',
+                gap: 14,
+                minHeight: 64,
+                margin: '4px -12px',
+                padding: '10px 12px',
+                width: 'calc(100% + 24px)',
                 background: 'transparent',
                 border: 'none',
+                borderRadius: radius.lg,
                 cursor: 'pointer',
                 fontFamily: font.sans,
                 textAlign: 'left',
+                transition: `background ${motion.fast} ${motion.ease}`,
               }}
             >
               <Avatar
-                size={32}
+                size={40}
                 name={group.displayName}
                 domain={group.email}
                 hasMark={group.brandMark}
@@ -2021,15 +2077,39 @@ function GroupedList({
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div
                   style={{
-                    fontSize: text.md,
-                    fontWeight: 500,
-                    color: color.fg,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    gap: 8,
+                    minWidth: 0,
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {group.displayName}
+                  <span
+                    style={{
+                      fontSize: text.md,
+                      fontWeight: 500,
+                      color: color.fg,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      minWidth: 0,
+                    }}
+                  >
+                    {group.displayName}
+                  </span>
+                  {group.domain && (
+                    <span
+                      style={{
+                        fontSize: text.sm,
+                        color: color.fgMuted,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        minWidth: 0,
+                        flexShrink: 1000,
+                      }}
+                    >
+                      {group.domain}
+                    </span>
+                  )}
                 </div>
                 <div
                   style={{
@@ -2040,23 +2120,39 @@ function GroupedList({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {group.domain && `${group.domain} · `}
                   {group.rows.length} action{group.rows.length === 1 ? '' : 's'} · {totalAffected}{' '}
                   email{totalAffected === 1 ? '' : 's'}
                 </div>
               </div>
-              <span aria-hidden="true" style={{ color: color.fgMuted }}>
-                {isOpen ? '▾' : '▸'}
-              </span>
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                style={{
+                  color: color.fgMuted,
+                  flexShrink: 0,
+                  transform: isOpen ? 'rotate(90deg)' : 'none',
+                  transition: `transform ${motion.fast} ${motion.ease}`,
+                }}
+              >
+                <path d="m9 6 6 6-6 6" />
+              </svg>
             </button>
             {isOpen && (
               // The last row's hairline would double the group's own.
-              <ul style={{ listStyle: 'none', margin: '0 0 -1px', padding: '0 0 0 44px' }}>
+              <ul style={{ listStyle: 'none', margin: '0 0 -1px', padding: 0 }}>
                 {group.rows.map((row) => (
                   <ActivityRow
                     key={row.id}
                     row={row}
                     isSelected={selectedIds.has(row.id)}
+                    selectionActive={selectedIds.size > 0}
                     onToggleSelect={() => onToggle(row.id)}
                     variant="grouped"
                     failedTokens={failedTokens}
@@ -2111,6 +2207,7 @@ export function activityRowTime(iso: string, timeZone: string, withDate: boolean
 function ActivityRow({
   row,
   isSelected,
+  selectionActive = false,
   onToggleSelect,
   variant = 'flat',
   failedTokens,
@@ -2120,6 +2217,8 @@ function ActivityRow({
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
+  /** Any row selected — every row's checkbox shows, not just the hovered one. */
+  selectionActive?: boolean;
   onToggleSelect: () => void;
   variant?: 'flat' | 'grouped';
   /** Set of undo tokens that just failed in a bulk-undo burst. Each
@@ -2143,6 +2242,13 @@ function ActivityRow({
   const isSyntheticReviewEvidence =
     row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
   const [hovered, setHovered] = useState(false);
+  const [checkFocused, setCheckFocused] = useState(false);
+  // The checkbox sits ON the logo, not in a gutter of its own: it shows
+  // while the row is hovered, focused or selected, while any selection
+  // is live, and as a corner badge on touch (no hover there). Inside a
+  // sender group there is no logo, so it always shows in the logo's slot.
+  const showCheck =
+    variant === 'grouped' || isMobile || isSelected || selectionActive || hovered || checkFocused;
 
   // D57 rule attribution — Autopilot rows name the rule that fired
   // ("by Autopilot · Newsletter graveyard"); a deleted rule degrades to
@@ -2179,31 +2285,77 @@ function ActivityRow({
       style={{
         display: 'flex',
         flexDirection: 'column',
+        justifyContent: 'center',
         gap: 6,
-        padding: '12px 4px',
-        borderBottom: `1px solid ${color.line}`,
-        background: hovered && !isMobile ? color.mutedBg : 'transparent',
+        minHeight: 64,
+        boxSizing: 'border-box',
+        // Bled past the column so the logo keeps the page's left edge
+        // while the hover fill has room.
+        margin: '0 -12px',
+        padding: '10px 12px',
+        borderRadius: radius.lg,
+        background: (hovered && !isMobile) || isSelected ? color.fill : 'transparent',
         transition: `background ${motion.fast} ${motion.ease}`,
         fontFamily: font.sans,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={onToggleSelect}
-          aria-label={`Select activity row from ${senderName}`}
-          style={{ cursor: 'pointer', accentColor: color.primary, flexShrink: 0 }}
-        />
-        {/* Inside a sender group the header already carries the identity. */}
-        {variant === 'flat' && (
-          <Avatar
-            size={32}
-            name={senderName}
-            domain={senderEmail}
-            hasMark={row.sender?.brandMark ?? false}
-          />
-        )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+        <label
+          style={{
+            position: 'relative',
+            flexShrink: 0,
+            width: 40,
+            height: 40,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          {/* Inside a sender group the header already carries the identity. */}
+          {variant === 'flat' && (
+            <Avatar
+              size={40}
+              name={senderName}
+              domain={senderEmail}
+              hasMark={row.sender?.brandMark ?? false}
+            />
+          )}
+          <span
+            style={{
+              position: 'absolute',
+              ...(variant === 'flat' && isMobile && !isSelected && !selectionActive
+                ? // Touch at rest: a small badge on the logo's corner, so
+                  // the logo stays readable and selection stays findable.
+                  { right: -4, bottom: -4, width: 22, height: 22 }
+                : { inset: variant === 'flat' ? 0 : 6 }),
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: variant === 'flat' ? 11 : radius.pill,
+              background: variant === 'flat' ? color.card : 'transparent',
+              boxShadow: variant === 'flat' ? shadow.card : 'none',
+              opacity: showCheck ? 1 : 0,
+              transition: `opacity ${motion.fast} ${motion.ease}`,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={onToggleSelect}
+              onFocus={() => setCheckFocused(true)}
+              onBlur={() => setCheckFocused(false)}
+              aria-label={`Select activity row from ${senderName}`}
+              style={{
+                width: 18,
+                height: 18,
+                margin: 0,
+                cursor: 'pointer',
+                accentColor: color.primary,
+              }}
+            />
+          </span>
+        </label>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div
             style={{
@@ -2232,6 +2384,7 @@ function ActivityRow({
                 : undefined
             }
             style={{
+              marginTop: 2,
               fontSize: text.sm,
               color: color.fgMuted,
               overflow: 'hidden',
@@ -2254,11 +2407,11 @@ function ActivityRow({
           title={absolute}
           style={{
             ...numeralStyle,
-            fontSize: text.sm,
+            fontSize: text.xs,
             color: color.fgMuted,
             whiteSpace: 'nowrap',
             flexShrink: 0,
-            minWidth: variant === 'flat' ? 64 : undefined,
+            minWidth: variant === 'flat' ? 60 : undefined,
             textAlign: 'right',
           }}
         >
@@ -2354,7 +2507,8 @@ const rowControlStyle: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 4,
-  padding: '6px 12px',
+  height: 30,
+  padding: '0 14px',
   fontFamily: font.sans,
   fontSize: text.sm,
   fontWeight: 500,
@@ -2363,6 +2517,39 @@ const rowControlStyle: CSSProperties = {
   borderRadius: radius.pill,
   whiteSpace: 'nowrap',
 };
+
+/** 32px ghost circle — the row's icon-only controls. */
+const iconButtonStyle: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 32,
+  height: 32,
+  padding: 0,
+  border: 'none',
+  borderRadius: radius.pill,
+  background: 'transparent',
+  color: color.fgMuted,
+  cursor: 'pointer',
+  transition: `background ${motion.fast} ${motion.ease}`,
+};
+
+function CloseGlyph() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
 
 /**
  * Outcome-aware recovery entry point for failed label actions. A click starts
@@ -2578,13 +2765,8 @@ function ActionRecoveryDialog({
     <>
       <div
         onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 170,
-        }}
+        className="dm-scrim"
+        style={{ position: 'fixed', inset: 0, zIndex: 170 }}
       />
       <div
         ref={trapRef}
@@ -2592,25 +2774,33 @@ function ActionRecoveryDialog({
         aria-modal="true"
         aria-labelledby="action-recovery-title"
         data-testid="action-recovery-dialog"
+        className="dm-sheet"
         style={{
           position: 'fixed',
           top: '12vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
+          left: 0,
+          right: 0,
+          margin: '0 auto',
           width: 'min(520px, calc(100vw - 32px))',
           maxHeight: '78vh',
           overflow: 'auto',
           background: color.card,
-          borderRadius: radius.lg,
-          boxShadow: shadow.lift,
+          borderRadius: radius['2xl'],
+          boxShadow: shadow.modal,
           zIndex: 171,
           fontFamily: font.sans,
         }}
       >
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
+        <div style={{ padding: '28px 28px 12px' }}>
           <h2
             id="action-recovery-title"
-            style={{ fontSize: text.xl, fontWeight: 600, margin: 0, color: color.fg }}
+            style={{
+              fontSize: text.xl,
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              margin: 0,
+              color: color.fg,
+            }}
           >
             Review this failed {failedActionNoun(row.action)}
           </h2>
@@ -2621,7 +2811,7 @@ function ActionRecoveryDialog({
           </p>
         </div>
 
-        <div style={{ padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ padding: '12px 28px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <RecoveryPreviewBody
             preview={preview}
             isStarting={isStarting}
@@ -2644,13 +2834,14 @@ function ActionRecoveryDialog({
                     min={toLocalDateTimeInput(new Date(Date.now() + 60_000))}
                     onChange={(event) => setWakeAtLocal(event.target.value)}
                     style={{
-                      border: `1px solid ${color.border}`,
+                      border: 'none',
                       borderRadius: radius.md,
-                      background: color.bg,
+                      background: color.fill,
                       color: color.fg,
                       fontFamily: font.sans,
                       fontSize: text.base,
-                      padding: '8px 10px',
+                      minHeight: 40,
+                      padding: '0 12px',
                     }}
                   />
                   {!wakeAtValid && (
@@ -2671,13 +2862,12 @@ function ActionRecoveryDialog({
             <div
               role="alert"
               style={{
-                border: `1px solid ${color.dangerBorder}`,
-                borderRadius: radius.md,
+                borderRadius: radius.lg,
                 background: color.dangerBg,
                 color: color.danger,
                 fontSize: text.base,
                 lineHeight: 1.45,
-                padding: '9px 11px',
+                padding: '12px 14px',
               }}
             >
               {recoveryConfirmErrorMessage(confirmError)}
@@ -2700,8 +2890,7 @@ function ActionRecoveryDialog({
             display: 'flex',
             justifyContent: 'flex-end',
             gap: 8,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
+            padding: '16px 28px 28px',
           }}
         >
           <Button tone="default" onClick={onClose} disabled={isConfirming}>
@@ -2842,7 +3031,9 @@ function RecoveryVerificationFailure({
 function RecoveryCount({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <div style={{ ...numeralStyle, fontSize: text.xl, color: color.fg }}>{value}</div>
+      <div style={{ ...numeralStyle, fontSize: text.xl, fontWeight: 600, color: color.fg }}>
+        {value}
+      </div>
       <div style={{ color: color.fgMuted, fontSize: text.xs }}>{label}</div>
     </div>
   );
@@ -2941,21 +3132,42 @@ function OpenInGmailLink({
   href: string | null;
 }) {
   if (!href || !row.sender) return null;
+  const name = `Open ${row.sender.displayName} in Gmail`;
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      title={`Open ${row.sender.displayName} in Gmail`}
-      style={{
-        ...rowControlStyle,
-        padding: '6px 8px',
-        color: color.fgMuted,
-        textDecoration: 'none',
-      }}
-    >
-      Gmail <span aria-hidden="true">↗</span>
-    </a>
+    <Tooltip content="Open in Gmail">
+      {({ describedBy }) => (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={name}
+          aria-describedby={describedBy}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = color.fill;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
+          style={{ ...iconButtonStyle, textDecoration: 'none' }}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M14 4h6v6" />
+            <path d="M20 4 11 13" />
+            <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
+          </svg>
+        </a>
+      )}
+    </Tooltip>
   );
 }
 
@@ -3011,16 +3223,24 @@ function UndoCell({
               ? (revert.error?.message ?? 'Could not confirm Undo. Try again.')
               : 'Revert this action.'
           }
+          onMouseEnter={(e) => {
+            if (!isPendingHere) e.currentTarget.style.background = color.fillHover;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = color.fill;
+          }}
+          data-dm-button=""
           style={{
             ...rowControlStyle,
-            border: `1px solid ${failed ? color.amber : color.line}`,
-            color: failed ? color.amber : color.primary,
+            background: color.fill,
+            color: failed ? color.amber : color.fg,
             cursor: isPendingHere ? 'wait' : 'pointer',
-            fontWeight: failed ? 600 : 500,
+            fontWeight: 600,
+            opacity: isPendingHere ? 0.6 : 1,
+            transition: `background ${motion.fast} ${motion.ease}`,
           }}
         >
           {isPendingHere ? 'Undoing…' : failed ? 'Try again' : 'Undo'}
-          <span aria-hidden="true">↺</span>
         </button>
         {failed && (
           <span role="status" style={{ color: color.amber, fontSize: text.xs, maxWidth: 260 }}>
@@ -3068,7 +3288,8 @@ function LoadingState() {
         <div
           key={i}
           aria-hidden="true"
-          style={{ height: 40, borderBottom: `1px solid ${color.line}` }}
+          className="dm-skeleton"
+          style={{ height: 56, marginBottom: 8, background: color.fill, borderRadius: radius.lg }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading activity</span>
@@ -3165,8 +3386,9 @@ function Chip({
         padding: touch ? '0 16px' : '0 12px',
         fontSize: text.sm,
         fontFamily: font.sans,
-        border: `1px solid ${isActive ? color.primary : color.line}`,
-        background: isActive ? color.primarySoft : 'transparent',
+        border: 'none',
+        fontWeight: isActive ? 600 : 500,
+        background: isActive ? color.primarySoft : color.fill,
         color: isActive ? color.primary : color.fg,
         borderRadius: radius.pill,
         cursor: 'pointer',

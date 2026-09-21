@@ -169,8 +169,9 @@ function SyncBannerFrame({ testId, children }: { testId: string; children: React
         flexWrap: 'wrap',
         gap: 16,
         padding: '10px 20px',
+        minHeight: 52,
+        boxSizing: 'border-box',
         background: color.dangerBg,
-        borderBottom: `1px solid ${color.dangerBorder}`,
         fontFamily: font.sans,
       }}
     >

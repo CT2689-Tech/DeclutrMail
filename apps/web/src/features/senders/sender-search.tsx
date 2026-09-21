@@ -5,7 +5,15 @@ import { Avatar, tokens } from '@declutrmail/shared';
 import { useSenderSuggestions } from './api/use-sender-suggestions';
 import type { Sender } from './data';
 
-const { color, font, text: typeScale } = tokens;
+const { color, font, radius, text: typeScale } = tokens;
+
+// A pill well: no border at rest, a ring only while focused. Inline styles
+// cannot express :focus-visible, and the global ring is an outline.
+const SEARCH_CSS = `
+.dm-search-well{outline:none;transition:box-shadow 120ms}
+.dm-search-well::placeholder{color:${color.fgMuted}}
+.dm-search-well:focus-visible{box-shadow:0 0 0 2px var(--dm-ring)}
+`;
 
 /**
  * How long after the last keystroke the BE typeahead is asked.
@@ -215,8 +223,36 @@ export function SenderSearch({
   };
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: 220 }}>
+    <div ref={ref} style={{ position: 'relative', width: 240 }}>
+      <style>{SEARCH_CSS}</style>
+      <span
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          left: 14,
+          top: '50%',
+          transform: 'translateY(-50%)',
+          display: 'inline-flex',
+          color: color.fgMuted,
+          pointerEvents: 'none',
+        }}
+      >
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+      </span>
       <input
+        className="dm-search-well"
         value={text}
         onChange={(e) => {
           commit(e.target.value);
@@ -246,16 +282,16 @@ export function SenderSearch({
         aria-autocomplete="list"
         aria-activedescendant={showList ? `dm-sender-opt-${active}` : undefined}
         style={{
-          height: 32,
+          height: 40,
           width: '100%',
-          padding: '0 10px',
-          background: color.card,
+          boxSizing: 'border-box',
+          padding: '0 16px 0 38px',
+          background: color.fill,
           color: color.fg,
-          border: `1px solid ${color.border}`,
-          borderRadius: 7,
+          border: 'none',
+          borderRadius: radius.pill,
           fontFamily: font.sans,
-          fontSize: typeScale.sm,
-          outline: 'none',
+          fontSize: typeScale.base,
         }}
       />
 
@@ -270,10 +306,10 @@ export function SenderSearch({
             right: 0,
             zIndex: 50,
             background: color.card,
-            border: `1px solid ${color.border}`,
-            borderRadius: 9,
+            border: 'none',
+            borderRadius: radius.xl,
             boxShadow: tokens.shadow.pop,
-            padding: 4,
+            padding: 6,
             maxHeight: 320,
             overflowY: 'auto',
           }}
@@ -300,12 +336,13 @@ export function SenderSearch({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 9,
+                gap: 10,
                 width: '100%',
-                padding: '7px 8px',
-                background: i === active ? color.primarySoft : 'transparent',
+                minHeight: 44,
+                padding: '6px 10px',
+                background: i === active ? color.fill : 'transparent',
                 border: 'none',
-                borderRadius: 6,
+                borderRadius: radius.lg,
                 cursor: 'pointer',
                 textAlign: 'left',
                 fontFamily: font.sans,
@@ -329,7 +366,6 @@ export function SenderSearch({
                 <span
                   style={{
                     display: 'block',
-                    fontFamily: font.mono,
                     fontSize: typeScale.xs,
                     color: color.fgMuted,
                     overflow: 'hidden',
@@ -342,9 +378,9 @@ export function SenderSearch({
               </span>
               <span
                 style={{
-                  fontFamily: font.mono,
                   fontSize: typeScale.xs,
                   color: color.fgMuted,
+                  fontVariantNumeric: 'tabular-nums',
                   whiteSpace: 'nowrap',
                 }}
               >

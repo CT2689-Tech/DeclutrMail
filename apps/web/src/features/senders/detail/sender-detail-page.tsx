@@ -8,6 +8,7 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  Pill,
   Spark,
   tokens,
   toast,
@@ -59,8 +60,9 @@ import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import { useNow } from '@/lib/use-now';
+import { SwitchTrack } from '@/features/settings/switch';
 
-const { color, font, motion, radius, space, text } = tokens;
+const { color, font, radius, space, text } = tokens;
 
 /** `page` = the `/senders/:id` route; `pane` = beside the Senders list. */
 export type DetailLayout = 'page' | 'pane';
@@ -499,12 +501,16 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
   // 20260902-15: it lived only in a `title=` tooltip, which never opens
   // on touch). One short line beside the switch; with no recorded reason
   // it says only the state.
-  const protectionLine = detail.isProtected
+  // Under the "Protected" label, so it drops the word and states only
+  // the reason; nothing when unprotected or with no recorded reason.
+  const protectionReasonLine = detail.isProtected
     ? (() => {
         const reason = normalizeProtectionReason(detail.protectionReason);
-        return reason === null ? 'Protected' : `Protected — ${protectionReasonClause(reason)}.`;
+        if (reason === null) return null;
+        const clause = protectionReasonClause(reason);
+        return `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`;
       })()
-    : 'Protect';
+    : null;
   const NameHeading = layout === 'pane' ? 'h2' : 'h1';
   const openAllInGmailHref = activeMailboxEmail
     ? GmailOpenLinkService.buildFromSearchLink({
@@ -1170,14 +1176,15 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
       {/* 1. Identity — who this is, and whether they are Protected. */}
       <header style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
         <div style={{ display: 'flex', gap: space[4], alignItems: 'center', minWidth: 0 }}>
-          <Avatar name={sender.name} domain={sender.domain} size={56} hasMark={sender.brandMark} />
+          <Avatar name={sender.name} domain={sender.domain} size={64} hasMark={sender.brandMark} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
             {/* The pane sits beside the Senders list, which owns the h1. */}
             <NameHeading
               style={{
                 margin: 0,
                 fontSize: text['2xl'],
-                fontWeight: 600,
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
                 lineHeight: 1.2,
                 color: color.fg,
                 overflowWrap: 'anywhere',
@@ -1190,7 +1197,6 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
               // sender this page is about; a brand can own several rows
               // that share a domain (`senderAddressLine`).
               style={{
-                fontFamily: font.mono,
                 fontSize: text.sm,
                 color: color.fgMuted,
                 overflowWrap: 'anywhere',
@@ -1210,22 +1216,6 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
             minWidth: 0,
           }}
         >
-          {/* The EXACT reason, on the surface that owns this sender
-              (CLAUDE.md §2.6 / D245) — three of the four reasons are
-              AUTOMATIC, so the state alone never says why. One visible
-              line beside the switch (QA-sender-detail-20260902-15: a
-              `title=` tooltip never opens on touch); wording comes from
-              the one shared source, so Detail, Triage, the Screener and
-              Settings cannot drift apart. */}
-          <ProtectSwitch
-            checked={detail.isProtected}
-            disabled={setPolicy.isPending}
-            onToggle={toggleProtect}
-          />
-          <span style={{ fontSize: text.sm, color: color.fgMuted, flex: '1 1 160px', minWidth: 0 }}>
-            {protectionLine}
-          </span>
-
           {/* Unsub status (D9 Wave 2). Mirrors the senders-list chip:
               shown while a standing unsubscribe policy exists, copy keyed
               by the REAL execution outcome (`unsubStatus`) via the shared
@@ -1271,6 +1261,20 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
             </a>
           )}
         </div>
+
+        {/* The EXACT reason, on the surface that owns this sender
+            (CLAUDE.md §2.6 / D245) — three of the four reasons are
+            AUTOMATIC, so the state alone never says why. One visible
+            line under the label (QA-sender-detail-20260902-15: a
+            `title=` tooltip never opens on touch); wording comes from
+            the one shared source, so Detail, Triage, the Screener and
+            Settings cannot drift apart. */}
+        <ProtectRow
+          checked={detail.isProtected}
+          reason={protectionReasonLine}
+          disabled={setPolicy.isPending}
+          onToggle={toggleProtect}
+        />
       </header>
 
       {/* 2. The one number — email received in the engine's 90-day window
@@ -1288,7 +1292,8 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
             style={{
               fontFamily: font.display,
               fontSize: text['4xl'],
-              fontWeight: 500,
+              fontWeight: 400,
+              letterSpacing: '-0.02em',
               lineHeight: 1,
               color: color.fg,
               fontVariantNumeric: 'tabular-nums',
@@ -1296,7 +1301,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           >
             {sender.monthlyVolume != null ? sender.monthlyVolume.toLocaleString('en-US') : '—'}
           </span>
-          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgMuted }}>
             {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
             {sender.totalReceived.toLocaleString('en-US')} total
           </p>
@@ -1330,12 +1335,10 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           aria-label="Sender stats"
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(88px, 1fr))',
+            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
             gap: space[3],
             margin: 0,
-            padding: `${space[4]}px 0`,
-            borderTop: `1px solid ${color.line}`,
-            borderBottom: `1px solid ${color.line}`,
+            padding: 0,
           }}
         >
           {/* `null` readRate = no email in the window — an em-dash, never
@@ -1344,7 +1347,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           <Stat label="Marked read">
             {stats.readRate !== null ? (
               <>
-                <span style={{ fontFamily: font.mono }}>{formatReadRatePct(stats.readRate)}%</span>
+                <span>{formatReadRatePct(stats.readRate)}%</span>
                 {/* The window rides with the rate: beside lifetime facts
                     an unqualified rate reads as lifetime. */}
                 <span style={{ fontSize: text.xs, color: color.fgMuted }}> · 90 days</span>
@@ -1358,7 +1361,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           </Stat>
           <Stat label="Last seen">{relTime(stats.lastSeenDays)}</Stat>
           <Stat label="You wrote">
-            <span style={{ fontFamily: font.mono }}>{sender.wroteToCount}×</span>
+            <span>{sender.wroteToCount}×</span>
           </Stat>
         </dl>
         {/* THE SPLIT (F012). A third-party sweeper can mark mail read
@@ -1468,26 +1471,46 @@ function DetailFrame({ layout, children }: { layout: DetailLayout; children: Rea
   );
 }
 
+/** One stat column: the value leads (sans, tabular), the label sits under it. */
 function Stat({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column-reverse', gap: 2, minWidth: 0 }}>
       <dt style={{ fontSize: text.xs, color: color.fgMuted }}>{label}</dt>
-      <dd style={{ margin: 0, fontSize: text.md, color: color.fg, minHeight: 20 }}>{children}</dd>
+      <dd
+        style={{
+          margin: 0,
+          fontSize: text.lg,
+          fontWeight: 600,
+          color: color.fg,
+          fontVariantNumeric: 'tabular-nums',
+          minHeight: 24,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {children}
+      </dd>
     </div>
   );
 }
 
 /**
- * Protect as a quiet switch. The accessible name stays "Protected" in
- * both states — `aria-checked` carries the state, so the control never
- * needs a label that flips meaning under the pointer.
+ * Protected as a settings row: the label and its reason on the left, the
+ * one shared switch track on the right; the whole 52px row is the control.
+ * The accessible name stays "Protected" in both states — `aria-checked`
+ * carries the state, so the control never needs a label that flips
+ * meaning under the pointer.
  */
-function ProtectSwitch({
+function ProtectRow({
   checked,
+  reason,
   disabled,
   onToggle,
 }: {
   checked: boolean;
+  /** The exact recorded reason, one sentence — null when there is none. */
+  reason: string | null;
   disabled: boolean;
   onToggle: () => void;
 }) {
@@ -1497,7 +1520,6 @@ function ProtectSwitch({
       role="switch"
       aria-checked={checked}
       aria-label="Protected"
-      className="dm-sender-detail-protect"
       onClick={onToggle}
       disabled={disabled}
       title={
@@ -1506,45 +1528,32 @@ function ProtectSwitch({
           : 'Protect this sender from bulk and automatic actions that move email.'
       }
       style={{
-        display: 'inline-flex',
+        display: 'flex',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: space[3],
+        width: '100%',
+        minHeight: 52,
+        padding: `${space[2]}px 0`,
         background: 'transparent',
         border: 'none',
-        padding: 0,
+        borderTop: `1px solid ${color.lineSoft}`,
+        borderBottom: `1px solid ${color.lineSoft}`,
+        textAlign: 'left',
+        fontFamily: font.sans,
         cursor: disabled ? 'default' : 'pointer',
         opacity: disabled ? 0.6 : 1,
-        flexShrink: 0,
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          width: 32,
-          height: 18,
-          borderRadius: radius.pill,
-          background: checked ? color.primary : color.mutedBg,
-          border: `1px solid ${checked ? color.primary : color.border}`,
-          position: 'relative',
-          transition: `background ${motion.fast} ${motion.ease}`,
-        }}
-      >
-        <span
-          style={{
-            position: 'absolute',
-            top: 1,
-            left: checked ? 15 : 1,
-            width: 14,
-            height: 14,
-            borderRadius: radius.pill,
-            background: color.card,
-            transition: `left ${motion.fast} ${motion.ease}`,
-          }}
-        />
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>Protected</span>
+        {reason !== null && (
+          <span data-testid="protection-reason" style={{ fontSize: text.sm, color: color.fgMuted }}>
+            {reason}
+          </span>
+        )}
       </span>
-      {/* 44px touch target on phones without growing the visual. */}
-      <style>{`@media (max-width: 600px) {
-        .dm-sender-detail-protect { min-height: 44px; min-width: 44px; }
-      }`}</style>
+      <SwitchTrack on={checked} />
     </button>
   );
 }
@@ -1603,11 +1612,13 @@ function LoadingState({ layout }: { layout: DetailLayout }) {
   return (
     <DetailFrame layout={layout}>
       <div role="status" aria-live="polite" style={{ display: 'contents' }}>
-        {[56, 64, 32, 56, 200].map((h, i) => (
+        {/* Identity, Protected row, the number, verbs, stats, messages. */}
+        {[64, 52, 64, 36, 48, 200].map((h, i) => (
           <div
             key={i}
             aria-hidden="true"
-            style={{ height: h, background: color.mutedBg, borderRadius: radius.md }}
+            className="dm-skeleton"
+            style={{ height: h, background: color.fill, borderRadius: radius.lg }}
           />
         ))}
         <span style={{ position: 'absolute', left: -9999 }}>Loading sender details</span>
@@ -1686,7 +1697,7 @@ function SenderDetailErrorState({
  * user navigating between list ↔ detail never sees a contradiction: both
  * render the shared `UNSUB_PILL` copy map keyed by the wire `unsubStatus`
  * (`none` covers a recorded intent with no tracked execution — mailto
- * manual per D230, or method-none). Amber is the Unsubscribe colour.
+ * manual per D230, or method-none). A neutral pill: a status, not an alarm.
  */
 function UnsubStatusPill({
   status,
@@ -1701,19 +1712,9 @@ function UnsubStatusPill({
       role="status"
       aria-label={copy.label}
       title={copy.title}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 6,
-        padding: '3px 10px',
-        borderRadius: radius.pill,
-        background: color.amberBg,
-        color: color.amber,
-        fontSize: text.xs,
-        fontWeight: 600,
-      }}
+      style={{ display: 'inline-flex' }}
     >
-      {copy.label}
+      <Pill>{copy.label}</Pill>
     </span>
   );
 }

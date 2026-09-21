@@ -107,8 +107,12 @@ describe('ActionToolbar — one filled verb, four quiet ones', () => {
     const html = renderToStaticMarkup(
       <ActionToolbar sender={sender()} onAction={() => {}} shortcuts />,
     );
-    // Keep is the primary for this sender; every other verb is a text button.
-    expect(html.split('background:transparent').length - 1).toBe(4);
+    // Keep is the primary for this sender; every other verb is a quiet
+    // fill capsule (the key hints inside are not buttons).
+    const buttons = html.match(/<button[^>]*>/g) ?? [];
+    expect(buttons).toHaveLength(5);
+    expect(buttons.filter((b) => b.includes(`background:${tokens.color.fill}`))).toHaveLength(4);
+    expect(buttons.filter((b) => b.includes(`background:${tokens.color.primary}`))).toHaveLength(1);
     expect(html).not.toContain('Nothing moves until you confirm');
   });
 });

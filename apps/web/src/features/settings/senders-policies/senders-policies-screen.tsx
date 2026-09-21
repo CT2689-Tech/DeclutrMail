@@ -38,7 +38,7 @@ import { captureFeatureException } from '@/lib/sentry';
 import { enrichSenderRow, type Sender } from '@/features/senders/data';
 import { PageHeader } from '../settings-list';
 
-const { color, font, space, radius, text } = tokens;
+const { color, font, space, radius, text, motion } = tokens;
 
 /**
  * Settings → Senders → standing policies view. Lists every sender with
@@ -100,12 +100,13 @@ export function SendersPoliciesScreen() {
         padding: '20px 24px 40px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
+        gap: 12,
         maxWidth: 880,
         margin: '0 auto',
         fontFamily: font.sans,
       }}
     >
+      <style>{POLICY_ROW_CSS}</style>
       <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <PageHeader title="Protected senders" backToSettings>
         <span
@@ -127,12 +128,12 @@ export function SendersPoliciesScreen() {
           (actions.service.ts), it is not a delivery guarantee, and a
           single action the user takes still applies. Each row carries
           its own reason, so the page does not enumerate them. */}
-      <p style={{ fontSize: text.sm, color: color.fgMuted, margin: 0 }}>
+      <p style={{ fontSize: text.md, color: color.fgMuted, margin: '0 0 12px' }}>
         Bulk and automatic actions skip these senders; an action you take on one sender yourself
         still applies.
       </p>
 
-      <section style={{ borderTop: `1px solid ${color.line}` }}>
+      <section>
         {protectedSenders.length === 0 ? (
           <div style={{ padding: `${space[5]}px 0` }}>
             <EmptyState
@@ -231,21 +232,26 @@ function PolicyRow({ sender }: { sender: Sender }) {
 
   return (
     <li
+      className="dm-policy-row"
       style={{
         display: 'grid',
-        gridTemplateColumns: isPhone ? '40px minmax(0, 1fr)' : '40px minmax(0, 1fr) auto',
+        gridTemplateColumns: isPhone ? '44px minmax(0, 1fr)' : '44px minmax(0, 1fr) auto',
         gap: space[3],
         alignItems: 'center',
-        padding: `${space[3]}px 0`,
-        borderBottom: `1px solid ${color.line}`,
+        minHeight: 72,
+        boxSizing: 'border-box',
+        padding: `${space[3]}px 12px`,
+        margin: '0 -12px',
+        borderRadius: radius.lg,
       }}
     >
-      <Avatar name={sender.name} domain={sender.domain} size={32} />
+      <Avatar name={sender.name} domain={sender.domain} size={44} />
       <div style={{ minWidth: 0 }}>
         <div
           style={{
-            fontWeight: 500,
+            fontWeight: 600,
             fontSize: text.md,
+            color: color.fg,
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -282,9 +288,10 @@ function PolicyRow({ sender }: { sender: Sender }) {
         </div>
         <div
           style={{
-            fontSize: text.sm,
+            fontSize: text.xs,
             color: color.fgMuted,
             marginTop: 2,
+            fontVariantNumeric: 'tabular-nums',
           }}
         >
           {/* `null` means no timeseries row, not "0 per month". Rendering
@@ -352,6 +359,15 @@ function PolicyRow({ sender }: { sender: Sender }) {
   );
 }
 
+/**
+ * Flat list, hairlines between rows (inset so a hovered row's fill
+ * does not fight them), hover = neutral fill.
+ */
+const POLICY_ROW_CSS = `.dm-policy-row { position: relative; transition: background ${motion.fast} ${motion.ease}; }
+.dm-policy-row + .dm-policy-row::before { content: ''; position: absolute; top: 0; left: 68px; right: 12px; height: 1px; background: ${color.lineSoft}; }
+.dm-policy-row:hover { background: ${color.fill}; }
+.dm-policy-row:hover::before, .dm-policy-row:hover + .dm-policy-row::before { opacity: 0; }`;
+
 function LoadingState() {
   return (
     <div
@@ -373,9 +389,8 @@ function LoadingState() {
           aria-hidden="true"
           style={{
             height: h,
-            background: color.card,
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: radius.lg,
+            background: color.fill,
+            borderRadius: radius.xl,
           }}
         />
       ))}

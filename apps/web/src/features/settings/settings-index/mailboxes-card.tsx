@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useNow } from '@/lib/use-now';
-import { Button, tokens } from '@declutrmail/shared';
+import { Button, Pill, tokens } from '@declutrmail/shared';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
 import { SettingsGroup } from '../settings-list';
@@ -88,12 +88,12 @@ export function MailboxesCard({
     >
       {mailboxes.length === 0 ? (
         <p
+          className="dm-settings-row"
           style={{
             fontSize: text.md,
             color: color.fgMuted,
             margin: 0,
-            padding: '12px 0',
-            borderTop: `1px solid ${color.line}`,
+            padding: '17px 16px',
           }}
         >
           No mailboxes connected yet.
@@ -129,43 +129,35 @@ export function MailboxesCard({
                 id={`mailbox-${m.id}`}
                 tabIndex={-1}
                 data-reconnect-highlighted={reconnectHighlighted ? 'true' : undefined}
+                className="dm-settings-row"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   flexWrap: 'wrap',
-                  gap: 10,
-                  minHeight: 44,
-                  padding: '8px 0',
+                  gap: 12,
+                  minHeight: 64,
+                  padding: '10px 16px',
                   boxSizing: 'border-box',
-                  borderTop: `1px solid ${color.line}`,
                   scrollMarginTop: 24,
                   background: reconnectHighlighted ? color.primarySoft : 'transparent',
                   outline: reconnectHighlighted ? `2px solid ${color.primary}` : 'none',
-                  outlineOffset: 2,
+                  outlineOffset: -2,
                   transition: `background-color ${motion.base} ${motion.ease}, outline-color ${motion.base} ${motion.ease}`,
                 }}
               >
-                <span
-                  aria-hidden
-                  style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    flexShrink: 0,
-                    background:
-                      m.status === 'disconnected'
-                        ? color.fgMuted
-                        : needsReconnect
-                          ? color.danger
-                          : color.primary,
-                  }}
+                <MailboxAvatar
+                  email={m.email}
+                  tone={
+                    m.status === 'disconnected' ? 'muted' : needsReconnect ? 'danger' : 'primary'
+                  }
                 />
-                <span style={{ flex: '1 1 220px', minWidth: 160 }}>
+                <span style={{ flex: '1 1 200px', minWidth: 140 }}>
                   <span
                     style={{
                       display: 'block',
-                      fontFamily: font.mono,
+                      fontFamily: font.sans,
                       fontSize: text.md,
+                      fontWeight: 500,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -176,7 +168,13 @@ export function MailboxesCard({
                   </span>
                   {m.status === 'active' && health?.lastSyncedAt && now !== null && (
                     <span
-                      style={{ display: 'block', fontSize: text.sm, color: color.fgMuted }}
+                      style={{
+                        display: 'block',
+                        marginTop: 2,
+                        fontSize: text.sm,
+                        color: color.fgMuted,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
                       title={new Date(health.lastSyncedAt).toLocaleString('en-US')}
                     >
                       Synced {relAge(health.lastSyncedAt, now)}
@@ -307,33 +305,17 @@ function ReconnectButton({
   onClick: () => void;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      tone="default"
+      size="sm"
       disabled={disabled}
-      aria-label={`Reconnect ${email}`}
-      aria-describedby={describedBy}
+      ariaLabel={`Reconnect ${email}`}
+      {...(describedBy ? { ariaDescribedBy: describedBy } : {})}
       onClick={onClick}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: 28,
-        padding: '0 10px',
-        background: color.card,
-        color: color.fg,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.sm,
-        fontFamily: font.sans,
-        fontSize: text.sm,
-        fontWeight: 600,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-        whiteSpace: 'nowrap',
-        flexShrink: 0,
-      }}
+      style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
     >
       {label}
-    </button>
+    </Button>
   );
 }
 
@@ -348,23 +330,9 @@ function ReconnectButton({
 function RetrySyncButton({ mailboxId }: { mailboxId: string }) {
   const retry = useRetryInitialSync(mailboxId);
   return (
-    <button
-      type="button"
-      onClick={() => retry.mutate()}
-      disabled={retry.isPending}
-      style={{
-        border: `1px solid ${color.line}`,
-        background: 'transparent',
-        color: color.fg,
-        borderRadius: radius.sm,
-        padding: '3px 10px',
-        fontFamily: font.sans,
-        fontSize: text.sm,
-        cursor: retry.isPending ? 'default' : 'pointer',
-      }}
-    >
+    <Button tone="default" size="sm" onClick={() => retry.mutate()} disabled={retry.isPending}>
       {retry.isPending ? 'Starting…' : 'Scan again'}
-    </button>
+    </Button>
   );
 }
 
@@ -378,18 +346,41 @@ function relAge(iso: string, now: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** Status as a small pill; colour only where it is the Active state or a fault. */
 function StatusTag({ tone, children }: { tone: 'primary' | 'muted' | 'danger'; children: string }) {
-  const fg = tone === 'primary' ? color.primary : tone === 'danger' ? color.danger : color.fgMuted;
   return (
-    <span
-      style={{
-        fontSize: text.sm,
-        fontWeight: 500,
-        color: fg,
-        flexShrink: 0,
-      }}
+    <Pill
+      tone={tone === 'primary' ? 'primary' : tone === 'danger' ? 'red' : 'default'}
+      style={{ flexShrink: 0, fontSize: text.xs }}
     >
       {children}
+    </Pill>
+  );
+}
+
+/** The account's initial in a 40px circle — the row's anchor, not a brand mark. */
+function MailboxAvatar({ email, tone }: { email: string; tone: 'primary' | 'muted' | 'danger' }) {
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 40,
+        height: 40,
+        borderRadius: radius.pill,
+        flexShrink: 0,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background:
+          tone === 'primary' ? color.primarySoft : tone === 'danger' ? color.redBg : color.fill,
+        color: tone === 'primary' ? color.primary : tone === 'danger' ? color.red : color.fgMuted,
+        fontFamily: font.sans,
+        fontSize: text.md,
+        fontWeight: 600,
+        textTransform: 'uppercase',
+      }}
+    >
+      {email.trim()[0] ?? '?'}
     </span>
   );
 }

@@ -1,21 +1,31 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button, Eyebrow, Kbd, tokens } from '@declutrmail/shared';
-import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
-import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
+import {
+  Avatar,
+  Button,
+  PreviewSheet,
+  SheetFact,
+  SheetSegmented,
+  tokens,
+} from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
-import { ActionPreview, type PreviewCount } from './action-preview';
+import type { PreviewCount } from './action-preview';
 import {
   ActionPreviewDetailBlock,
   actionMovesMail,
   type ActionPreviewDetail,
 } from './action-preview-detail';
+import {
+  PreviewReasoning,
+  buildPreviewFacts,
+  cleanupCostLine,
+} from './action-preview-presentation';
 import type { TriageDecisionRow } from './data';
 import { ProtectedActionNotice } from './protected-notice';
 import type { SheetableVerb } from './store';
 
-const { color, font, text } = tokens;
+const { color, font, radius, shadow, space, text } = tokens;
 
 export interface ConfirmDetails {
   archiveHistoric: boolean;
@@ -35,13 +45,17 @@ export interface ConfirmDetails {
  * preview-inline path; that preference lives in the triage Zustand
  * store (see `store.ts`).
  *
- * D226: the preview INSIDE this sheet is the mandatory preview. The
- * sheet itself is what D34 allows skipping; the preview never is.
- * `<ActionPreview mode="modal">` renders below the title.
+ * D226: this sheet IS the mandatory preview. The sheet is what D34
+ * allows skipping; the preview never is — `inline-preview.tsx` renders
+ * the same facts (`buildPreviewFacts`) in the row when it is skipped.
  *
- * Keyboard: Escape cancels; Cmd/Ctrl-Enter confirms — same shortcuts
- * as `confirm-action-modal.tsx` in the senders feature so muscle
- * memory carries between screens.
+ * Layout is the shared `PreviewSheet` (ADR-0042): the count in the
+ * title, where the email goes in the subtitle, how to undo it in the
+ * note — each once — and every other fact behind "Details".
+ *
+ * Keyboard: Escape cancels (owned by `PreviewSheet`); Cmd/Ctrl-Enter
+ * confirms — same shortcuts as `confirm-action-modal.tsx` in the senders
+ * feature so muscle memory carries between screens.
  */
 export function ActionSheet({
   open,
@@ -128,7 +142,6 @@ export function ActionSheet({
     verb === 'Delete' ||
     (verb === 'Unsubscribe' && effectiveArchiveHistoric);
   const previewUnavailable = inboxCount === 'unavailable';
-  const deleteAllMail = verb === 'Delete' && reach === 'all_mail';
   const previewPending = inboxCount === 'loading';
   const wakeAtInvalid =
     verb === 'Later' && (selectedWakeAt === null || Date.parse(selectedWakeAt) <= Date.now());
@@ -171,10 +184,7 @@ export function ActionSheet({
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !confirmDisabled) {
         e.preventDefault();
         onConfirm({
           archiveHistoric: effectiveArchiveHistoric,
@@ -191,302 +201,253 @@ export function ActionSheet({
     effectiveArchiveHistoric,
     rememberPreference,
     selectedWakeAt,
-    onCancel,
     onConfirm,
     confirmDisabled,
   ]);
 
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
-
   if (!open || !row) return null;
 
-  const danger = verb === 'Delete';
-  // Unsubscribe only: Archive/Later already move every inbox message
-  // from the sender, so the backlog toggle exists only where the
-  // primary verb does NOT touch past mail.
-  const showHistoricToggle = verb === 'Unsubscribe';
+  const facts = buildPreviewFacts({
+    verb,
+    row,
+    archiveHistoric: effectiveArchiveHistoric,
+    inboxCount,
+    wakeAt: selectedWakeAt,
+    reach,
+  });
+  const confirm = () =>
+    onConfirm({
+      archiveHistoric: effectiveArchiveHistoric,
+      rememberPreference,
+      wakeAt: verb === 'Later' ? selectedWakeAt : null,
+    });
+
+  // ADR-0028 — the reach is a control only when it changes the count.
+  const reachControl =
+    detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric)
+      ? detail.reachControl
+      : undefined;
+  const showReach =
+    reachControl !== undefined && reachControl.inboxCount !== reachControl.allMailCount;
+  // Empty inbox, archived mail exists: the default stays the safe one
+  // (founder decision 2026-09-19) and the subtitle names the way out.
+  const reachHint =
+    showReach &&
+    reachControl.reach === 'inbox_only' &&
+    reachControl.inboxCount === 0 &&
+    reachControl.allMailCount > 0
+      ? 'Switch to Inbox + archived to reach the archived email.'
+      : null;
+
+  const costLine = cleanupCostLine(facts.unitsNeeded, quotaRemaining);
+  const detailBlock =
+    detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? (
+      <ActionPreviewDetailBlock detail={detail} />
+    ) : null;
+
+  // Why confirm is unavailable — and the way out, where one exists. A zero
+  // count needs no line: the title already says nothing is there.
+  const status: ReactNode = !confirmDisabled ? null : previewSenderGone ? (
+    <StatusWithAction
+      message="This sender is no longer in this mailbox."
+      action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}
+    />
+  ) : nothingToActOn ? null : wakeAtInvalid ? (
+    'Pick a future return time.'
+  ) : previewUnavailable ? (
+    <StatusWithAction
+      message="Couldn’t load the preview. Nothing can move until it loads."
+      action={onRetryPreview ? { label: 'Retry preview', onClick: onRetryPreview } : undefined}
+    />
+  ) : (
+    'Counting the inbox…'
+  );
+
+  const hasControls = showReach || verb === 'Later' || verb === 'Unsubscribe' || isProtectedRow;
 
   return (
-    <>
-      <div
-        onClick={onCancel}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
+    <div
+      role="region"
+      aria-label={`Preview · ${verb} ${row.senderName}`}
+      data-dm-preview-mode="modal"
+    >
+      <PreviewSheet
+        onClose={onCancel}
+        testId="triage-action-sheet"
+        icon={
+          <span style={{ display: 'inline-flex', borderRadius: radius.lg, boxShadow: shadow.card }}>
+            <Avatar
+              name={row.senderName}
+              domain={row.senderDomain}
+              size={64}
+              hasMark={row.brandMark}
+            />
+          </span>
+        }
+        title={facts.title}
+        subtitle={reachHint ?? facts.subtitle ?? undefined}
+        note={facts.note ?? undefined}
+        primary={{
+          label: isProtectedRow ? `${verb} anyway` : facts.primaryLabel,
+          onClick: confirm,
+          tone: verb === 'Delete' ? 'danger' : verb === 'Unsubscribe' ? 'warn' : 'primary',
+          disabled: confirmDisabled,
         }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-triage-sheet-title"
-        style={{
-          position: 'fixed',
-          top: '12vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(540px, calc(100vw - 32px))',
-          maxHeight: '76vh',
-          overflow: 'auto',
-          background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 151,
-          fontFamily: font.sans,
-        }}
+        status={status ?? undefined}
+        details={
+          <>
+            {mailboxEmail ? (
+              <div role="note" aria-label={`Gmail account: ${mailboxEmail}`}>
+                <SheetFact label="Gmail account">{mailboxEmail}</SheetFact>
+              </div>
+            ) : null}
+            {facts.disclosures.map((line) => (
+              <span key={line}>{line}</span>
+            ))}
+            {detailBlock}
+            <PreviewReasoning row={row} />
+            {verb !== 'Delete' && (
+              <span>
+                “Don’t ask again” shows this preview in the row instead. Change it in Settings.
+              </span>
+            )}
+          </>
+        }
+        footer={
+          costLine === null && verb === 'Delete' ? undefined : (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              {costLine !== null && <span>{costLine}</span>}
+              {/*
+               * D34 — remember-preference. Persists per verb in the triage
+               * store. The sheet still renders for THIS action — the
+               * preference applies to the NEXT one. Never offered for
+               * Delete.
+               */}
+              {verb !== 'Delete' && (
+                <CheckRow
+                  checked={rememberPreference}
+                  onToggle={() => setRememberPreference((v) => !v)}
+                  label={`Don’t ask again for ${verb}`}
+                  quiet
+                />
+              )}
+            </div>
+          )
+        }
       >
-        <div style={{ padding: '20px 24px 8px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow tone={verb === 'Unsubscribe' || danger ? 'amber' : 'primary'}>
-            {previewEyebrowLabel(verb)}
-          </Eyebrow>
-          <h2
-            id="dm-triage-sheet-title"
-            style={{
-              fontSize: text.xl,
-              fontWeight: 600,
-              letterSpacing: '-0.014em',
-              margin: '6px 0 12px',
-            }}
-          >
-            {row.senderName}
-          </h2>
-        </div>
-
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Mandatory preview (D226). Same component renders inline
-              when the sheet is skipped via the remember-preference. */}
-          <ActionPreview
-            verb={verb}
-            row={row}
-            archiveHistoric={effectiveArchiveHistoric}
-            inboxCount={inboxCount}
-            wakeAt={selectedWakeAt}
-            reach={reach}
-            mode="modal"
-            mailboxEmail={mailboxEmail}
-            quotaRemaining={quotaRemaining}
-            detailSlot={
-              detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? (
-                <ActionPreviewDetailBlock detail={detail} />
-              ) : undefined
-            }
-          />
-
-          {verb === 'Later' && (
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.sm }}>
-              <span style={{ color: color.fg, fontWeight: 600 }}>Return to Inbox</span>
-              <input
-                type="datetime-local"
-                aria-label="Later return time"
-                value={selectedWakeAt === null ? '' : toLocalDateTimeInput(selectedWakeAt)}
-                min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
-                onChange={(event) => {
-                  const next = new Date(event.currentTarget.value);
-                  setSelectedWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
-                }}
-                style={{
-                  border: `1px solid ${color.line}`,
-                  borderRadius: 8,
-                  padding: '8px 10px',
-                  background: color.card,
-                  color: color.fg,
-                  fontFamily: font.sans,
-                  fontSize: text.base,
-                }}
+        {hasControls ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
+            {showReach && (
+              <SheetSegmented
+                label="Where it applies"
+                value={reachControl.reach}
+                onChange={reachControl.onChange}
+                options={[
+                  { value: 'inbox_only', label: 'Inbox only', count: reachControl.inboxCount },
+                  {
+                    value: 'all_mail',
+                    label: 'Inbox + archived',
+                    count: reachControl.allMailCount,
+                  },
+                ]}
               />
-            </label>
-          )}
+            )}
 
-          {showHistoricToggle && (
-            <button
-              onClick={() => setArchiveHistoric(!effectiveArchiveHistoric)}
-              type="button"
-              role="checkbox"
-              aria-checked={effectiveArchiveHistoric}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 12px',
-                background: effectiveArchiveHistoric ? color.primarySoft : 'transparent',
-                border: `1px solid ${effectiveArchiveHistoric ? color.primaryBorder : color.line}`,
-                borderRadius: 9,
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontFamily: font.sans,
-              }}
-            >
-              <CheckSquare on={effectiveArchiveHistoric} />
-              <span
+            {verb === 'Later' && (
+              <label
                 style={{
                   display: 'flex',
-                  flexDirection: 'column',
-                  gap: 2,
-                  fontSize: text.sm,
-                  color: color.fg,
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: space[3],
+                  minHeight: 48,
+                  padding: `0 ${space[2]}px 0 ${space[4]}px`,
+                  borderRadius: radius.lg,
+                  background: color.fill,
+                  fontSize: text.md,
+                  fontWeight: 550,
+                  textAlign: 'left',
                 }}
               >
-                <span>
-                  {/* The live count (never a lifetime estimate — D226). */}
-                  Also archive the
-                  {typeof inboxCount === 'number'
-                    ? ` ${inboxCount.toLocaleString('en-US')} email${inboxCount === 1 ? '' : 's'}`
-                    : ' emails'}{' '}
-                  already in the inbox
-                </span>
-                <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-                  Uses a second cleanup action on Free.
-                </span>
-              </span>
-            </button>
-          )}
-
-          {/*
-           * D34 — remember-preference toggle. Persists per verb (Settings
-           * page eventually owns the persisted value; for this PR it
-           * lives in the Zustand store). The sheet still renders for
-           * THIS action — the preference applies to the NEXT one.
-           */}
-          {verb !== 'Delete' && (
-            <button
-              onClick={() => setRememberPreference((v) => !v)}
-              type="button"
-              role="checkbox"
-              aria-checked={rememberPreference}
-              // Must equal the visible label (WCAG 2.5.3 label-in-name)
-              // so voice control can target the visible text.
-              aria-label={`Skip this dialog for ${verb}`}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                padding: '10px 12px',
-                // Checked state mirrors the backlog toggle above — one
-                // sheet, one checked language. A checked toggle that
-                // stayed visually mute read as unselected (2026-08-12).
-                background: rememberPreference ? color.primarySoft : 'transparent',
-                border: `1px solid ${rememberPreference ? color.primaryBorder : color.lineSoft}`,
-                borderRadius: 9,
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontFamily: font.sans,
-              }}
-            >
-              <CheckSquare on={rememberPreference} muted={!rememberPreference} />
-              <span style={{ fontSize: text.sm, color: color.fgSoft, lineHeight: 1.45 }}>
-                <strong style={{ color: color.fg, fontWeight: 600 }}>
-                  {`Skip this dialog for ${verb}`}
-                </strong>{' '}
-                — the preview shows in the row instead. Change this in Settings.
-              </span>
-            </button>
-          )}
-        </div>
-
-        {isProtectedRow && (
-          <div style={{ margin: '0 24px 12px' }}>
-            {/* Closing on success is load-bearing, not tidiness: the
-                Unprotect invalidates the triage queue, the refetch drops
-                this sender from the D245 review, and `pendingRow`
-                resolves to null — which would unmount the modal
-                mid-flow while the pending action survived in the store.
-                Cancelling deliberately leaves the user somewhere they
-                chose. */}
-            <ProtectedActionNotice row={row} verb={verb} unprotectSlot={unprotectSlot} />
-          </div>
-        )}
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
-            // Sticky, not just the last flow child: the dialog scrolls
-            // (`overflow: 'auto'` above) and its content stack — preview,
-            // verb-specific toggles, protected notice —
-            // exceeds 76vh on a 375px phone, so Cancel/Confirm and the
-            // reversibility line sat below the fold with no visible cue
-            // that more content existed (QA-triage-20260827-11).
-            position: 'sticky',
-            bottom: 0,
-            background: color.card,
-          }}
-        >
-          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-            {/* Honest reversibility (D58): a delivered network
-                unsubscribe can't be recalled — no undo token exists for
-                it by design. Only the archived backlog is undoable.
-                Archive/Later are fully reversible (D232). */}
-            {confirmDisabled
-              ? previewSenderGone
-                ? 'This sender is no longer in this mailbox. Close and refresh.'
-                : nothingToActOn
-                  ? deleteAllMail
-                    ? 'Nothing in Inbox or archived to act on.'
-                    : 'Nothing in Inbox to act on.'
-                  : wakeAtInvalid
-                    ? 'Later needs a future return time before you can confirm.'
-                    : inboxCount === 'unavailable'
-                      ? "Couldn't load the preview."
-                      : 'Loading preview…'
-              : verb === 'Unsubscribe'
-                ? effectiveArchiveHistoric
-                  ? "The unsubscribe can't be undone. The archived email can, from Activity."
-                  : "The unsubscribe request can't be undone."
-                : // Archive, Later and Delete: the preview above already
-                  // states the undo route and window (and Gmail Trash for
-                  // Delete) — once per sheet.
-                  null}
-          </span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {previewSenderGone && onRefreshTriage && (
-              <Button tone="default" onClick={onRefreshTriage}>
-                Refresh triage
-              </Button>
-            )}
-            {previewUnavailable && !previewSenderGone && onRetryPreview && (
-              <Button tone="default" onClick={onRetryPreview}>
-                Retry preview
-              </Button>
-            )}
-            <Button tone="default" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button
-              tone={danger ? 'danger' : verb === 'Unsubscribe' ? 'warn' : 'primary'}
-              disabled={confirmDisabled}
-              onClick={() =>
-                onConfirm({
-                  archiveHistoric: effectiveArchiveHistoric,
-                  rememberPreference,
-                  wakeAt: verb === 'Later' ? selectedWakeAt : null,
-                })
-              }
-              iconRight={
-                <Kbd
-                  style={{
-                    background: color.lineInverse,
-                    border: 'none',
-                    color: color.fgInverse,
+                <span>Returns</span>
+                <input
+                  type="datetime-local"
+                  aria-label="Later return time"
+                  value={selectedWakeAt === null ? '' : toLocalDateTimeInput(selectedWakeAt)}
+                  min={toLocalDateTimeInput(new Date(Date.now() + 60_000).toISOString())}
+                  onChange={(event) => {
+                    const next = new Date(event.currentTarget.value);
+                    setSelectedWakeAt(Number.isNaN(next.getTime()) ? null : next.toISOString());
                   }}
-                >
-                  ⌘⏎
-                </Kbd>
-              }
-            >
-              {isProtectedRow ? `${verb} anyway` : verb}
-            </Button>
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: color.fg,
+                    fontFamily: font.sans,
+                    fontSize: text.md,
+                    fontVariantNumeric: 'tabular-nums',
+                    minHeight: 40,
+                    minWidth: 0,
+                  }}
+                />
+              </label>
+            )}
+
+            {/* Unsubscribe only: Archive/Later already move every inbox
+                message from the sender, so the backlog toggle exists only
+                where the primary verb does NOT touch past mail. */}
+            {verb === 'Unsubscribe' && (
+              <CheckRow
+                checked={effectiveArchiveHistoric}
+                onToggle={() => setArchiveHistoric(!effectiveArchiveHistoric)}
+                label={
+                  // The live count (never a lifetime estimate — D226).
+                  `Also archive the${
+                    typeof inboxCount === 'number'
+                      ? ` ${inboxCount.toLocaleString('en-US')} email${inboxCount === 1 ? '' : 's'}`
+                      : ' emails'
+                  } already in the inbox`
+                }
+                hint="Uses a second cleanup action on Free."
+              />
+            )}
+
+            {isProtectedRow && (
+              <div style={{ textAlign: 'left' }}>
+                {/* Closing on success is load-bearing, not tidiness: the
+                    Unprotect invalidates the triage queue, the refetch drops
+                    this sender from the D245 review, and `pendingRow`
+                    resolves to null — which would unmount the modal
+                    mid-flow while the pending action survived in the store.
+                    Cancelling deliberately leaves the user somewhere they
+                    chose. */}
+                <ProtectedActionNotice row={row} verb={verb} unprotectSlot={unprotectSlot} />
+              </div>
+            )}
           </div>
-        </div>
-      </div>
-    </>
+        ) : undefined}
+      </PreviewSheet>
+    </div>
+  );
+}
+
+/** A disabled-state line with its one way out ("Retry preview"). */
+function StatusWithAction({
+  message,
+  action,
+}: {
+  message: string;
+  action?: { label: string; onClick: () => void } | undefined;
+}) {
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+      <span>{message}</span>
+      {action && (
+        <Button tone="default" size="sm" onClick={action.onClick}>
+          {action.label}
+        </Button>
+      )}
+    </span>
   );
 }
 
@@ -496,39 +457,92 @@ function toLocalDateTimeInput(iso: string): string {
   return `${date.getFullYear()}-${two(date.getMonth() + 1)}-${two(date.getDate())}T${two(date.getHours())}:${two(date.getMinutes())}`;
 }
 
-/** Inline checkbox glyph — matches `confirm-action-modal.tsx` shape. */
-function CheckSquare({ on, muted = false }: { on: boolean; muted?: boolean }) {
-  const ringColor = muted ? color.fgMuted : color.primary;
-  const ringOff = muted ? 'rgba(14,20,19,0.18)' : 'rgba(14,20,19,0.28)';
+/**
+ * One checkbox row. `quiet` is the footer preference (plain text, no
+ * well); the default is a control in the sheet body, which sits in a
+ * neutral well like the segmented control beside it. Checked reads the
+ * same on both — the teal glyph — so one sheet has one checked language
+ * (a checked toggle that stayed visually mute read as unselected,
+ * 2026-08-12).
+ */
+function CheckRow({
+  checked,
+  onToggle,
+  label,
+  hint,
+  quiet = false,
+}: {
+  checked: boolean;
+  onToggle: () => void;
+  label: string;
+  hint?: string;
+  quiet?: boolean;
+}) {
   return (
-    <span
-      aria-hidden="true"
+    <button
+      onClick={onToggle}
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      // Must equal the visible label (WCAG 2.5.3 label-in-name) so voice
+      // control can target the visible text.
+      aria-label={label}
+      data-dm-checked={checked ? 'true' : 'false'}
       style={{
-        width: 16,
-        height: 16,
-        borderRadius: 4,
-        border: `1.5px solid ${on ? ringColor : ringOff}`,
-        background: on ? ringColor : color.card,
-        display: 'inline-flex',
+        display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
+        justifyContent: quiet ? 'center' : 'flex-start',
+        gap: 10,
+        width: quiet ? 'auto' : '100%',
+        minHeight: quiet ? 36 : 48,
+        padding: quiet ? `0 ${space[2]}px` : `${space[2]}px ${space[4]}px`,
+        background: quiet ? 'transparent' : color.fill,
+        border: 'none',
+        borderRadius: radius.lg,
+        cursor: 'pointer',
+        textAlign: 'left',
+        fontFamily: font.sans,
+        color: quiet ? color.fgMuted : color.fg,
       }}
     >
-      {on && (
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#FFFFFF"
-          strokeWidth="3.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      )}
-    </span>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 6,
+          boxShadow: checked ? 'none' : `inset 0 0 0 1.5px ${color.fgMuted}`,
+          background: checked ? color.primary : 'transparent',
+          color: color.fgInverse,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {checked && (
+          <svg
+            width="11"
+            height="11"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+      </span>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontSize: quiet ? text.sm : text.md, fontWeight: quiet ? 500 : 550 }}>
+          {label}
+        </span>
+        {hint !== undefined && (
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>{hint}</span>
+        )}
+      </span>
+    </button>
   );
 }

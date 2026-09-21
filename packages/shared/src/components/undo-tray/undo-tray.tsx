@@ -250,9 +250,9 @@ function UndoTrayBody({
           minWidth: 0,
           maxWidth: 480,
           background: color.card,
-          border: `1px solid ${color.redBorder}`,
-          borderRadius: radius.lg,
-          boxShadow: shadow.card,
+          border: 'none',
+          borderRadius: radius.xl,
+          boxShadow: shadow.pop,
           padding: '10px 14px',
           fontFamily: font.sans,
           fontSize: text.base,
@@ -265,7 +265,7 @@ function UndoTrayBody({
           ...style,
         }}
       >
-        <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: text.xs }}>
+        <span style={{ color: color.fgMuted, fontSize: text.xs, fontWeight: 600 }}>
           Couldn’t load recent actions
         </span>
         {onViewActivity ? (
@@ -307,9 +307,10 @@ function UndoTrayBody({
     right: 16,
     marginInline: 'auto',
     minWidth: 0,
+    // A floating object: raised card, no outline.
     background: color.card,
-    border: `1px solid ${color.line}`,
-    boxShadow: shadow.card,
+    border: 'none',
+    boxShadow: shadow.pop,
     fontFamily: font.sans,
     fontSize: text.base,
     color: color.fg,
@@ -332,8 +333,8 @@ function UndoTrayBody({
           ...shell,
           width: 'fit-content',
           maxWidth: 'min(640px, calc(100vw - 32px))',
-          borderRadius: 999,
-          padding: compact ? '4px 6px' : '6px 8px 6px 16px',
+          borderRadius: radius.pill,
+          padding: compact ? '4px 6px' : '6px 6px 6px 18px',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -387,8 +388,8 @@ function UndoTrayBody({
         ...shell,
         width: 'min(640px, calc(100vw - 32px))',
         maxWidth: 640,
-        borderRadius: radius.lg,
-        padding: '10px 14px',
+        borderRadius: radius.xl,
+        padding: '12px 16px',
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
@@ -407,7 +408,7 @@ function UndoTrayBody({
           gap: 12,
         }}
       >
-        <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: text.xs }}>
+        <span style={{ color: color.fgMuted, fontSize: text.xs, fontWeight: 600 }}>
           Recent actions
         </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
@@ -683,7 +684,6 @@ function DecisionRow({
             style={{
               display: 'block',
               color: color.fgMuted,
-              fontFamily: font.mono,
               fontSize: text.xs,
             }}
           >

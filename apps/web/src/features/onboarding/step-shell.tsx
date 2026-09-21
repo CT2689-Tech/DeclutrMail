@@ -36,7 +36,7 @@ export function StepShell({
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: '40px 24px',
+        padding: '48px 24px',
         background: color.bg,
         fontFamily: font.sans,
         position: 'relative',
@@ -54,18 +54,27 @@ export function StepShell({
       >
         <h1
           style={{
-            fontFamily: font.display,
+            fontFamily: font.sans,
             fontSize: text['3xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.15,
-            margin: '0 0 8px',
+            fontWeight: 650,
+            letterSpacing: '-0.025em',
+            lineHeight: 1.12,
+            color: color.fg,
+            margin: '0 0 12px',
           }}
         >
           {title}
         </h1>
         {sub && (
-          <p style={{ color: color.fgMuted, fontSize: text.md, margin: '0 0 24px', maxWidth: 460 }}>
+          <p
+            style={{
+              color: color.fgMuted,
+              fontSize: text.lg,
+              lineHeight: 1.45,
+              margin: '0 0 28px',
+              maxWidth: 460,
+            }}
+          >
             {sub}
           </p>
         )}

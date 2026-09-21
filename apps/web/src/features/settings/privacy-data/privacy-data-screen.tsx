@@ -29,7 +29,7 @@ import { useBillingSubscription } from '@/features/billing/api/use-billing-subsc
 import { useDataExport } from '../api/use-data-export';
 import { DrillRow, PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
 
-const { color, font, text } = tokens;
+const { color, font, text, motion, radius, shadow } = tokens;
 
 /**
  * Settings → Privacy & Data (D116 + D217 + D228) — the dedicated
@@ -95,7 +95,7 @@ export function PrivacyDataView({
         padding: '20px 24px 40px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 28,
+        gap: 32,
         maxWidth: 720,
         margin: '0 auto',
         fontFamily: font.sans,
@@ -111,7 +111,10 @@ export function PrivacyDataView({
 
       {/* 1 — the D228 trust badge (locked copy module). The storage
           boundary is stated HERE and nowhere else on the page. */}
-      <PrivacyBadge variant="card" style={{ boxShadow: 'none' }} />
+      <PrivacyBadge
+        variant="card"
+        style={{ border: 'none', borderRadius: radius.xl, boxShadow: shadow.card }}
+      />
 
       <Section title="Gmail data inventory">
         <InventoryGroup
@@ -138,11 +141,11 @@ export function PrivacyDataView({
           title="Records we keep to investigate problems"
           items={GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY.map(inventoryDisplayItem)}
         />
-        <p style={{ ...bodyTextStyle, padding: '12px 0 0', borderTop: `1px solid ${color.line}` }}>
+        <p className="dm-settings-row" style={{ ...bodyTextStyle, padding: '14px 16px 0' }}>
           Anthropic only ever sees the items marked above for Brief summaries or optional sender
           explanations. {GMAIL_DATA_PROCESSORS.Anthropic.retention}
         </p>
-        <p style={{ ...bodyTextStyle, padding: '8px 0 12px' }}>
+        <p style={{ ...bodyTextStyle, padding: '8px 16px 14px' }}>
           Brandfetch receives a sender&rsquo;s email domain and nothing else about you — never your
           address, your account, or any message. {GMAIL_DATA_PROCESSORS.Brandfetch.retention}{' '}
           <a
@@ -160,7 +163,7 @@ export function PrivacyDataView({
       {/* 2 — which mailboxes the storage list applies to. */}
       <Section title="Connected mailboxes">
         {mailboxes.length === 0 ? (
-          <p style={{ ...bodyTextStyle, ...blockRowStyle }}>
+          <p className="dm-settings-row" style={{ ...bodyTextStyle, ...blockRowStyle }}>
             No mailboxes connected — no Gmail data is being saved right now.
           </p>
         ) : (
@@ -168,7 +171,7 @@ export function PrivacyDataView({
             <SettingsRow
               key={m.id}
               label={
-                <span style={{ fontFamily: font.mono, overflowWrap: 'anywhere' }}>{m.email}</span>
+                <span style={{ fontFamily: font.sans, overflowWrap: 'anywhere' }}>{m.email}</span>
               }
             >
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
@@ -181,7 +184,7 @@ export function PrivacyDataView({
 
       {/* 3 — undo retention. */}
       <Section title="Undo retention">
-        <p style={{ ...bodyTextStyle, ...blockRowStyle }}>
+        <p className="dm-settings-row" style={{ ...bodyTextStyle, ...blockRowStyle }}>
           {undoDays !== null ? (
             <>
               Archive, Later, and archived unsubscribe email can be undone from Activity for{' '}
@@ -203,7 +206,7 @@ export function PrivacyDataView({
 
       {/* 4 — data export (D116 + DPDP). */}
       <Section title="Export my data">
-        <div style={blockRowStyle}>
+        <div className="dm-settings-row" style={blockRowStyle}>
           {/* QA-sender-detail-20260902-02: the JSON export genuinely
               includes the Gmail preview snippet on every message, so this
               paragraph must never claim exports contain no email text. */}
@@ -327,6 +330,11 @@ function deletionTriggerDetail(
   }
 }
 
+/**
+ * One inventory category as a disclosure row inside the raised group;
+ * open, it is a clean two-column list — what is kept, and everything
+ * the registry says about it — with no nested box.
+ */
 function InventoryGroup({
   title,
   items,
@@ -335,32 +343,64 @@ function InventoryGroup({
   items: ReadonlyArray<{ id: string; label: string; detail: string }>;
 }) {
   return (
-    <details style={{ borderTop: `1px solid ${color.line}` }}>
+    <details className="dm-settings-row dm-inventory">
+      <style>{INVENTORY_CSS}</style>
       <summary
+        className="dm-inventory-summary"
         style={{
           cursor: 'pointer',
-          minHeight: 44,
+          minHeight: 56,
           boxSizing: 'border-box',
-          padding: '12px 0',
+          padding: '0 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
           fontSize: text.md,
+          fontWeight: 500,
           color: color.fg,
+          listStyle: 'none',
         }}
       >
         {title}
-      </summary>
-      <ul style={{ margin: '0 0 12px', paddingLeft: 20 }}>
-        {items.map((item) => (
-          <li
-            key={item.id}
-            style={{ marginBottom: 8, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}
+        <span
+          aria-hidden="true"
+          className="dm-inventory-chevron"
+          style={{ display: 'inline-flex', color: color.fgMuted }}
+        >
+          <svg
+            width={14}
+            height={14}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            <strong style={{ color: color.fg }}>{item.label}</strong> — {item.detail}
-          </li>
+            <polyline points="9 6 15 12 9 18" />
+          </svg>
+        </span>
+      </summary>
+      <dl style={{ margin: 0, padding: '0 16px 12px' }}>
+        {items.map((item) => (
+          <div key={item.id} className="dm-inventory-item">
+            <dt style={{ fontSize: text.sm, fontWeight: 600, color: color.fg }}>{item.label}</dt>
+            <dd style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
+              {item.detail}
+            </dd>
+          </div>
         ))}
-      </ul>
+      </dl>
     </details>
   );
 }
+
+const INVENTORY_CSS = `.dm-inventory-summary::-webkit-details-marker { display: none; }
+.dm-inventory-chevron { transition: transform ${motion.fast} ${motion.ease}; }
+.dm-inventory[open] .dm-inventory-chevron { transform: rotate(90deg); }
+.dm-inventory-item { display: grid; grid-template-columns: minmax(120px, 34%) 1fr; gap: 16px; padding: 10px 0; border-top: 1px solid ${color.lineSoft}; }
+@media (max-width: 560px) { .dm-inventory-item { grid-template-columns: 1fr; gap: 2px; } }`;
 
 const bodyTextStyle = {
   fontSize: text.sm,
@@ -371,6 +411,5 @@ const bodyTextStyle = {
 
 /** A free-form block that sits in a group the way a row does. */
 const blockRowStyle = {
-  padding: '12px 0',
-  borderTop: `1px solid ${color.line}`,
+  padding: '14px 16px',
 } as const;

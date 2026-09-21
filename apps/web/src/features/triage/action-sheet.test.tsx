@@ -123,7 +123,7 @@ describe('ActionSheet — D226 mandatory preview surface', () => {
 });
 
 describe('ActionSheet — the confirm footer stays reachable on a short viewport (QA-triage-20260827-11)', () => {
-  it('sticks the Cancel/Confirm footer to the bottom of the scrolling dialog', () => {
+  it('keeps Cancel/Confirm reachable by scrolling the sheet layer, never clipping the dialog', () => {
     const html = renderToStaticMarkup(
       <ActionSheet
         open={true}
@@ -135,18 +135,19 @@ describe('ActionSheet — the confirm footer stays reachable on a short viewport
         onConfirm={() => {}}
       />,
     );
-    // The footer holding the reversibility line + Cancel/Confirm buttons
-    // must be `position: sticky; bottom: 0` inside the scrolling dialog
-    // (`overflow: 'auto'` on the outer element) — otherwise it scrolls
-    // out of view below the fold on a 375px phone with no visible cue
-    // that more content exists. `position:sticky` appears nowhere else
-    // in this component, so its presence is the footer.
-    expect(html).toContain('position:sticky');
-    expect(html).toContain('bottom:0');
-    // And it genuinely wraps the buttons, not some unrelated element.
-    const stickyIdx = html.indexOf('position:sticky');
+    // The shared PreviewSheet (ADR-0042) no longer scrolls the dialog
+    // with a sticky footer: the fixed layer around it scrolls instead, and
+    // the dialog is never height-capped or clipped — so on a 375px phone
+    // the buttons are always reachable by scrolling, never hidden inside
+    // an inner scroll box.
+    expect(html).toMatch(/data-dm-preview-sheet=""[^>]*overflow-y:auto/);
+    const dialogTag = html.match(/<div[^>]*role="dialog"[^>]*>/)?.[0] ?? '';
+    expect(dialogTag).not.toBe('');
+    expect(dialogTag).not.toMatch(/max-height|overflow:hidden/);
+    // And the buttons live inside that dialog.
+    const dialogIdx = html.indexOf('role="dialog"');
     const cancelIdx = html.indexOf('>Cancel<');
-    expect(cancelIdx).toBeGreaterThan(stickyIdx);
+    expect(cancelIdx).toBeGreaterThan(dialogIdx);
   });
 });
 
@@ -163,7 +164,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
           onConfirm={() => {}}
         />,
       );
-      expect(html).toContain(`Skip this dialog for ${verb}`);
+      expect(html).toContain(`Don’t ask again for ${verb}`);
     }
   });
 
@@ -180,7 +181,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     );
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.
-    expect(html.toLowerCase()).toContain('the preview shows in the row instead');
+    expect(html.toLowerCase()).toContain('shows this preview in the row instead');
   });
 
   it('keeps Delete in the full confirmation sheet and states both recovery paths', () => {
@@ -200,7 +201,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     expect(html).toContain('Undo from Activity');
     // Gmail's retention is stated once on the sheet, not three times.
     expect(html.match(/up to 30 days/g)).toHaveLength(1);
-    expect(html).not.toContain('Skip this dialog for');
+    expect(html).not.toContain('Don’t ask again for');
   });
 
   it('states the undo window on a Delete sheet instead of hedging', () => {
@@ -331,8 +332,9 @@ describe('ActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText(/emails in Inbox now/i)).toBeInTheDocument();
+    // The count lives in the title, once; "current" in the Details line.
+    expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
+    expect(screen.getByText(/Counted in Inbox now/i)).toBeInTheDocument();
     expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
   });
@@ -362,7 +364,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     expect(backlog).toHaveAttribute('aria-checked', 'true');
 
     const remember = screen.getByRole('checkbox', {
-      name: 'Skip this dialog for Unsubscribe',
+      name: 'Don’t ask again for Unsubscribe',
     });
     expect(remember).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(remember);
@@ -376,12 +378,16 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     renderUnsubSheet();
     const backlog = screen.getByRole('checkbox', { name: /Also archive the/i });
     const remember = screen.getByRole('checkbox', {
-      name: 'Skip this dialog for Unsubscribe',
+      name: 'Don’t ask again for Unsubscribe',
     });
     fireEvent.click(backlog);
     fireEvent.click(remember);
-    expect(remember.style.background).toBe(backlog.style.background);
-    expect(remember.style.border).toBe(backlog.style.border);
+    // The checked treatment is the glyph; the footer row itself is quiet
+    // (no well) by design, so parity is pinned on the glyph both share.
+    const glyph = (el: HTMLElement) => el.querySelector<HTMLElement>('span[aria-hidden="true"]')!;
+    expect(glyph(remember).style.background).not.toBe('transparent');
+    expect(glyph(remember).style.background).toBe(glyph(backlog).style.background);
+    expect(glyph(remember).style.boxShadow).toBe(glyph(backlog).style.boxShadow);
   });
 });
 
@@ -401,6 +407,16 @@ describe('Store — remember-preference persists per verb (round-trip)', () => {
 describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
   const protectedRow = { ...TRIAGE_QUEUE[0]!, protectionReason: 'replied' as const };
   const plainRow = TRIAGE_QUEUE.find((r) => r.protectionReason === null)!;
+
+  // The sheet's own live status line is a second `role="status"`; the
+  // notice is the one that names the protection.
+  function notice() {
+    const hit = screen
+      .getAllByRole('status')
+      .filter((el) => /Protected/.test(el.textContent ?? ''));
+    expect(hit).toHaveLength(1);
+    return hit[0]!;
+  }
 
   function renderSheet(row: (typeof TRIAGE_QUEUE)[number]) {
     // The notice carries the Unprotect control, which is a real
@@ -428,7 +444,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // override the user is never told about is the same defect class this
     // codebase keeps fixing, so the mandatory D226 preview states it.
     renderSheet(protectedRow);
-    expect(screen.getByRole('status')).toHaveTextContent(/Protected/);
+    expect(notice()).toHaveTextContent(/Protected/);
     expect(screen.getByRole('button', { name: /Archive anyway/i })).toBeInTheDocument();
   });
 
@@ -439,11 +455,11 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // the separate control, because bundling removal into the verb has
     // no undo kind and would forge a D245 sticky override.
     renderSheet(protectedRow);
-    expect(screen.getByRole('status')).toHaveTextContent(
+    expect(notice()).toHaveTextContent(
       /stays Protected, so bulk and automatic cleanup will keep skipping it/i,
     );
     expect(screen.getByRole('button', { name: /^Unprotect$/i })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/Automatic protection won’t re-apply/i);
+    expect(notice()).toHaveTextContent(/Automatic protection won’t re-apply/i);
   });
 
   it('closes the pending action when the in-sheet Unprotect succeeds', async () => {
@@ -503,9 +519,9 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     // copy names Gmail Trash and the notice's did not. The preview
     // states reach; the notice states the consequence.
     renderSheet(protectedRow);
-    const notice = screen.getByRole('status').textContent ?? '';
-    expect(notice).not.toMatch(/moves matching inbox email/i);
-    expect(notice).not.toMatch(/Archive/);
+    const text = notice().textContent ?? '';
+    expect(text).not.toMatch(/moves matching inbox email/i);
+    expect(text).not.toMatch(/Archive/);
   });
 
   it('speaks to future mail for Unsubscribe — the partial case', () => {
@@ -524,7 +540,7 @@ describe('ActionSheet — Protected acknowledgement (D245/D42)', () => {
     );
     // Unsubscribe stops future delivery rather than moving the backlog,
     // so what the protection keeps shielding is whatever still arrives.
-    expect(screen.getByRole('status')).toHaveTextContent(/keep skipping whatever still arrives/i);
+    expect(notice()).toHaveTextContent(/keep skipping whatever still arrives/i);
   });
 
   it('says nothing about protection for an unprotected row', () => {
@@ -563,8 +579,13 @@ describe('ActionSheet — zero-count no-op gate', () => {
       fireEvent.click(confirm);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       expect(onConfirm).not.toHaveBeenCalled();
-      // The gate has to SAY why, or a dead button reads as a broken one.
-      expect(screen.getByText(/nothing in inbox to act on/i)).toBeInTheDocument();
+      // The gate has to SAY why, or a dead button reads as a broken one —
+      // the title states it.
+      expect(
+        screen.getByRole('heading', {
+          name: new RegExp(`^Nothing in your inbox from ${row.senderName}`),
+        }),
+      ).toBeInTheDocument();
 
       // One matching email is enough to make it real work again.
       rerender(
@@ -604,7 +625,7 @@ describe('ActionSheet — zero-count no-op gate', () => {
     expect(confirm).toBeEnabled();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/nothing in inbox to act on/i)).toBeNull();
+    expect(screen.queryByText(/nothing in your inbox/i)).toBeNull();
   });
 });
 
@@ -633,7 +654,7 @@ describe('ActionSheet — Later return-time picker', () => {
     expect(input).toBeInTheDocument();
     expect(input).toHaveValue('');
     expect(screen.getByRole('button', { name: /^Later/ })).toBeDisabled();
-    expect(screen.getByText(/needs a future return time/i)).toBeInTheDocument();
+    expect(screen.getByText(/Pick a future return time/i)).toBeInTheDocument();
   });
 
   it('arms confirm once a future time is picked in that input', () => {

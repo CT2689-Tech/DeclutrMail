@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Button, Kbd, tokens, useIsAtMost } from '@declutrmail/shared';
 
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
@@ -85,6 +85,8 @@ export function TriageFocusStack({
     return () => window.removeEventListener('keydown', onKey);
   }, [canSkip, onSkip]);
 
+  const stageRef = useCardExit(focusItemKey(item));
+
   let card;
   if (item.kind === 'row') {
     const row = item.row;
@@ -133,27 +135,32 @@ export function TriageFocusStack({
     );
   }
 
+  const itemKey = focusItemKey(item);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Keyed so the next item mounts fresh and plays the entrance; the
-          departing card has already dimmed while its decision confirmed.
-          Reduced motion is handled globally (tokens.css). */}
-      <style>{`@keyframes dm-triage-focus-in { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }`}</style>
-      <div
-        key={focusItemKey(item)}
-        data-dm-focus-item={focusItemKey(item)}
-        style={{ animation: `dm-triage-focus-in ${motion.base} ${motion.ease}` }}
-      >
-        {card}
+      <style>{SWAP_KEYFRAMES}</style>
+      <div ref={stageRef} style={{ position: 'relative' }}>
+        {/* Keyed so the next item mounts fresh and plays the entrance
+            from the right; the departing card leaves to the left as an
+            inert snapshot (`useCardExit`). Reduced motion is handled
+            globally (tokens.css). */}
+        <div
+          key={itemKey}
+          data-dm-focus-item={itemKey}
+          style={{ animation: `dm-triage-focus-in ${motion.base} ${motion.ease} both` }}
+        >
+          {card}
+        </div>
       </div>
       {canSkip && (
         <div style={{ display: 'flex', justifyContent: 'center' }}>
           <Button
             tone="ghost"
-            size="md"
+            size={isNarrow ? 'lg' : 'md'}
             onClick={onSkip}
             ariaLabel="Skip (→)"
-            {...(isNarrow ? { style: { height: 44, minWidth: 120 } } : { iconRight: <Kbd>→</Kbd> })}
+            {...(isNarrow ? { style: { minWidth: 120 } } : { iconRight: <Kbd>→</Kbd> })}
           >
             Skip
           </Button>
@@ -165,4 +172,71 @@ export function TriageFocusStack({
       </span>
     </div>
   );
+}
+
+const SWAP_KEYFRAMES = `@keyframes dm-triage-focus-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes dm-triage-focus-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateX(-12px); } }`;
+
+/** How long the departing snapshot stays — `motion.base`, in ms. */
+const EXIT_MS = 220;
+
+/**
+ * The departing card's exit. React has already unmounted it by the time
+ * the key changes, so the stage keeps a DOM snapshot of the last card it
+ * rendered and, on a swap, plays that snapshot out to the left.
+ *
+ * A snapshot, never a second React card: a mounted card carries the
+ * K/A/U/L/D listener, and two listeners is how one key press once
+ * decided two senders. The clone has no React handlers, no ids, and is
+ * `inert` + `aria-hidden`, so it is paint only.
+ *
+ * Only when the environment affirmatively reports no motion preference —
+ * reduced motion (and a test DOM without `matchMedia`) gets the plain
+ * swap.
+ */
+function useCardExit(itemKey: string) {
+  const stageRef = useRef<HTMLDivElement>(null);
+  const snapshot = useRef<{ key: string; node: HTMLElement } | null>(null);
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (stage == null) return;
+    const prev = snapshot.current;
+    const current = stage.querySelector<HTMLElement>('[data-dm-focus-item]');
+    snapshot.current =
+      current == null ? null : { key: itemKey, node: current.cloneNode(true) as HTMLElement };
+    if (prev == null || prev.key === itemKey) return;
+    const animate =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: no-preference)').matches;
+    if (!animate) return;
+    const ghost = prev.node;
+    ghost.removeAttribute('data-dm-focus-item');
+    for (const el of ghost.querySelectorAll('[id]')) el.removeAttribute('id');
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.setAttribute('inert', '');
+    Object.assign(ghost.style, {
+      position: 'absolute',
+      inset: '0 0 auto 0',
+      pointerEvents: 'none',
+      animation: `dm-triage-focus-out ${motion.base} ${motion.ease} both`,
+    });
+    stage.appendChild(ghost);
+    const timer = window.setTimeout(() => ghost.remove(), EXIT_MS);
+    return () => {
+      window.clearTimeout(timer);
+      ghost.remove();
+    };
+  }, [itemKey]);
+
+  // Keep the snapshot current as the card changes in place (busy dim,
+  // an opened "Why?"), so the exit shows the card as it last looked.
+  useEffect(() => {
+    const current = stageRef.current?.querySelector<HTMLElement>('[data-dm-focus-item]');
+    if (current != null) {
+      snapshot.current = { key: itemKey, node: current.cloneNode(true) as HTMLElement };
+    }
+  });
+
+  return stageRef;
 }

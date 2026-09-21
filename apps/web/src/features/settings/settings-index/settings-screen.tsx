@@ -323,7 +323,7 @@ export function SettingsScreen({
         padding: '20px 24px 40px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 28,
+        gap: 32,
         fontFamily: font.sans,
       }}
     >
@@ -430,7 +430,7 @@ export function SettingsScreen({
         data-testid="settings-account-section"
         style={{
           scrollMarginTop: 24,
-          borderRadius: radius.md,
+          borderRadius: radius.xl,
           outline: highlightAccount ? `2px solid ${color.danger}` : 'none',
           outlineOffset: 6,
           transition: `outline-color ${motion.base} ${motion.ease}`,
@@ -438,7 +438,7 @@ export function SettingsScreen({
       >
         <SettingsGroup title="Account">
           <SettingsRow label="Signed in as">
-            <span style={{ fontFamily: font.mono, fontSize: text.md, color: color.fgSoft }}>
+            <span style={{ fontFamily: font.sans, fontSize: text.md, color: color.fgMuted }}>
               {me.user.email}
             </span>
           </SettingsRow>

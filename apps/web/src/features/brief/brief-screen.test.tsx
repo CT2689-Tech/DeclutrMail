@@ -179,7 +179,7 @@ describe('BriefScreen — edge states', () => {
         screen.getByRole('heading', { name: /couldn[’']t load your brief/i }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByRole('alert')).toHaveTextContent(/needs attention/i);
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn't load your Brief/i);
     // The server answered with a failure, so the line can say so — and
     // never the raw "GET /api/… failed: 500" exception text.
     expect(screen.getByRole('alert')).toHaveTextContent(/server returned an error/i);

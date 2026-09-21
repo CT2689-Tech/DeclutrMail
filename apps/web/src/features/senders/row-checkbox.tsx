@@ -9,7 +9,7 @@ const { color } = tokens;
  * Square select control. Passes the native event up for shift-click ranges.
  *
  * The button is the HIT AREA (28px, 44px on touch via `.dm-row-check` in
- * `sender-list.tsx`); the 16px box inside it is only the drawing.
+ * `sender-list.tsx`); the 20px box inside it is only the drawing.
  */
 export function RowCheckbox({
   checked,
@@ -53,12 +53,12 @@ export function RowCheckbox({
       <span
         aria-hidden="true"
         style={{
-          width: 16,
-          height: 16,
+          width: 20,
+          height: 20,
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          borderRadius: 4,
+          borderRadius: 6,
           border: `1.5px solid ${checked ? color.primary : color.border}`,
           background: checked ? color.primary : color.card,
           color: color.fgInverse,
@@ -66,8 +66,8 @@ export function RowCheckbox({
       >
         {checked && (
           <svg
-            width="10"
-            height="10"
+            width="12"
+            height="12"
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"

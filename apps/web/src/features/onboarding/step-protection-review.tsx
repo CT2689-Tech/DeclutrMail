@@ -159,24 +159,34 @@ export function StepProtectionReview({
       <PanelShell corner={corner}>
         <h1
           style={{
-            fontFamily: font.display,
+            fontFamily: font.sans,
             fontSize: text['3xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.15,
-            margin: '0 0 8px',
+            fontWeight: 650,
+            letterSpacing: '-0.025em',
+            lineHeight: 1.12,
+            color: color.fg,
+            margin: '0 0 12px',
           }}
         >
           {done.headline}
         </h1>
-        <p style={{ color: color.fgMuted, fontSize: text.md, margin: '0 0 24px', maxWidth: 500 }}>
+        <p
+          style={{
+            color: color.fgMuted,
+            fontSize: text.lg,
+            lineHeight: 1.45,
+            margin: '0 auto 28px',
+            maxWidth: 500,
+          }}
+        >
           {done.body}
         </p>
         <Button
           tone="primary"
+          size="xl"
           onClick={() => finish(meta.pinned === 0 ? 'empty' : 'completed')}
           disabled={completing}
-          style={{ minWidth: 220 }}
+          style={{ minWidth: 240 }}
         >
           {completing ? 'Finishing…' : 'Continue to Senders'}
         </Button>
@@ -218,10 +228,11 @@ export function StepProtectionReview({
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <h1
             style={{
-              fontFamily: font.display,
+              fontFamily: font.sans,
               fontSize: text['2xl'],
-              fontWeight: 600,
-              letterSpacing: '-0.018em',
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
+              color: color.fg,
               lineHeight: 1.2,
               margin: '0 0 4px',
             }}

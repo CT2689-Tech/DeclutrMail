@@ -26,15 +26,24 @@ import { DomainGroupRow, SenderRow } from './sender-row';
 
 const { color, motion } = tokens;
 
-// Hover, and the checkbox's reveal, need selectors inline styles cannot
-// express. Checkbox: hidden until the row is hovered or focused, or any
-// row is selected — and always shown where hover does not exist (touch),
-// where its hit area also grows to 44px.
+// Hover, the hairlines and the checkbox's reveal need selectors inline
+// styles cannot express.
+// - Rows are flat with an inset hairline; hover lifts a rounded fill and
+//   drops the hairline so the two never fight.
+// - The checkbox OVERLAYS the logo (no reserved gutter): the logo fades and
+//   the checkbox appears on hover / focus-within, on a selected row, while
+//   any row is selected, and always where hover does not exist (touch),
+//   where its hit area also grows to 44px. Opacity only — the checkbox is
+//   always in the tab order, and focusing it reveals it.
 const LIST_CSS = `
-.dm-srow:hover{background:${color.mutedBg}}
+.dm-srow::after{content:'';position:absolute;left:12px;right:12px;bottom:0;height:1px;background:${color.lineSoft};pointer-events:none}
+.dm-srow:hover{background:${color.fill}}
+.dm-srow:hover::after,.dm-srow[data-active]::after{opacity:0}
 .dm-srow-check{opacity:0;transition:opacity ${motion.fast} ${motion.ease}}
-.dm-srow:hover .dm-srow-check,.dm-srow:focus-within .dm-srow-check,[data-any-selected] .dm-srow-check{opacity:1}
-@media (hover:none){.dm-srow-check{opacity:1}.dm-row-check{width:44px !important;height:44px !important}}
+.dm-srow-avatar{transition:opacity ${motion.fast} ${motion.ease}}
+.dm-srow:hover .dm-srow-check,.dm-srow:focus-within .dm-srow-check,.dm-srow[data-selected] .dm-srow-check,[data-any-selected] .dm-srow-check{opacity:1}
+.dm-srow:hover .dm-srow-avatar,.dm-srow:focus-within .dm-srow-avatar,.dm-srow[data-selected] .dm-srow-avatar,[data-any-selected] .dm-srow-avatar{opacity:0}
+@media (hover:none){.dm-srow-check{opacity:1}.dm-srow-avatar{opacity:0}.dm-row-check{width:44px !important;height:44px !important}}
 `;
 
 export interface SenderListProps {
@@ -150,7 +159,9 @@ export function SenderList({
       aria-label="Senders"
       data-testid="sender-list"
       data-any-selected={anySelected || undefined}
-      style={{ borderTop: `1px solid ${color.line}` }}
+      // Rows carry 12px of inner padding for their hover fill; pull the
+      // list out by the same amount so logos share the title's left edge.
+      style={{ margin: '0 -12px' }}
     >
       <style>{LIST_CSS}</style>
       {entries.map((entry) => {

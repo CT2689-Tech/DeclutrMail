@@ -5,7 +5,7 @@ import { Button, EmptyState, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import type { TriageSessionStats } from './data';
 
-const { color, font, text } = tokens;
+const { color, font, radius, text } = tokens;
 const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
 
 /**
@@ -125,9 +125,9 @@ export function TriageEmptyState({
       <span
         aria-hidden="true"
         style={{
-          width: 72,
-          height: 72,
-          borderRadius: 9999,
+          width: 64,
+          height: 64,
+          borderRadius: radius.pill,
           background: color.primarySoft,
           color: color.primary,
           display: 'inline-flex',
@@ -136,12 +136,12 @@ export function TriageEmptyState({
         }}
       >
         <svg
-          width="32"
-          height="32"
+          width="28"
+          height="28"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          strokeWidth="2.2"
+          strokeWidth="2.4"
           strokeLinecap="round"
           strokeLinejoin="round"
         >
@@ -153,8 +153,8 @@ export function TriageEmptyState({
         <h2
           style={{
             fontSize: text['2xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.014em',
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
             margin: 0,
           }}
         >
@@ -185,7 +185,6 @@ export function TriageEmptyState({
             <span key={label}>
               <span
                 style={{
-                  fontFamily: font.mono,
                   fontWeight: 600,
                   color: color.fg,
                   fontVariantNumeric: 'tabular-nums',
@@ -240,7 +239,7 @@ export function TriageEmptyState({
             textUnderlineOffset: 3,
           }}
         >
-          See Pro automation &rarr;
+          See Pro automation
         </button>
       )}
     </div>
@@ -251,11 +250,10 @@ const LINK_BUTTON = {
   display: 'inline-flex',
   alignItems: 'center',
   height: 36,
-  padding: '0 14px',
-  background: color.card,
+  padding: '0 16px',
+  background: color.fill,
   color: color.fg,
-  border: `1px solid ${color.line}`,
-  borderRadius: 8,
+  borderRadius: radius.pill,
   fontFamily: font.sans,
   fontSize: text.base,
   fontWeight: 600,

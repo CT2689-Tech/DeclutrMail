@@ -19,7 +19,7 @@ import {
   type Sender,
 } from './data';
 
-const { color, font, text } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /** The bulk verbs the bar offers (D52 + ADR-0019 K/A/U/L/D order). */
 export type SelectionBarVerb = Extract<
@@ -163,8 +163,8 @@ export function SelectionBar({
           width: stretch ? '100%' : undefined,
           background: danger ? color.danger : primary ? color.amber : color.lineInverse,
           color: color.fgInverse,
-          border: `1px solid ${danger ? color.danger : primary ? color.amber : color.lineInverse}`,
-          borderRadius: stretch ? 10 : 7,
+          border: 'none',
+          borderRadius: radius.pill,
           fontFamily: font.sans,
           fontSize: stretch ? text.md : text.sm,
           fontWeight: 600,
@@ -174,7 +174,11 @@ export function SelectionBar({
       >
         {label}
         <span
-          style={{ fontFamily: font.mono, fontSize: stretch ? text.sm : text.xs, opacity: 0.8 }}
+          style={{
+            fontSize: stretch ? text.sm : text.xs,
+            fontVariantNumeric: 'tabular-nums',
+            opacity: 0.8,
+          }}
         >
           {countLabel}
         </span>
@@ -191,9 +195,8 @@ export function SelectionBar({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <strong
             style={{
-              fontFamily: font.mono,
               fontSize: text.lg,
-              fontWeight: 700,
+              fontWeight: 600,
               color: color.fg,
               fontVariantNumeric: 'tabular-nums',
             }}
@@ -206,10 +209,11 @@ export function SelectionBar({
           <button
             onClick={onClear}
             style={{
-              background: 'transparent',
-              border: `1px solid ${color.line}`,
-              borderRadius: 7,
-              padding: '6px 12px',
+              background: color.fill,
+              border: 'none',
+              borderRadius: radius.pill,
+              height: 32,
+              padding: '0 14px',
               color: color.fgSoft,
               fontFamily: font.sans,
               fontSize: text.sm,
@@ -243,10 +247,10 @@ export function SelectionBar({
         display: 'flex',
         alignItems: 'center',
         gap: 14,
-        padding: '10px 12px 10px 18px',
+        padding: '8px 8px 8px 22px',
         background: color.fg,
-        borderRadius: 12,
-        boxShadow: '0 14px 34px -10px rgba(0,0,0,0.45)',
+        borderRadius: radius.pill,
+        boxShadow: shadow.pop,
       }}
     >
       <span
@@ -254,9 +258,8 @@ export function SelectionBar({
       >
         <strong
           style={{
-            fontFamily: font.mono,
             fontSize: text.base,
-            fontWeight: 700,
+            fontWeight: 600,
             fontVariantNumeric: 'tabular-nums',
           }}
         >

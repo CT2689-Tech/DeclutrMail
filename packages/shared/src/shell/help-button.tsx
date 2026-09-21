@@ -36,7 +36,10 @@ export function HelpButton() {
         aria-haspopup="dialog"
         aria-expanded={open}
         style={{
-          // Size comes from `.dm-topbar-icon` (32px, 44px on touch widths).
+          // `.dm-topbar-icon` gives 44px on touch widths; the minimums
+          // lift its 32px desktop box to the 36px round-control size.
+          minWidth: 36,
+          minHeight: 36,
           padding: 0,
           display: 'inline-flex',
           alignItems: 'center',
@@ -101,19 +104,30 @@ function HelpPopover({ onClose }: { onClose: () => void }) {
         width: 320,
         maxWidth: 'calc(100vw - 24px)',
         boxSizing: 'border-box',
-        padding: 16,
+        padding: 20,
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
         background: color.card,
-        borderRadius: radius.lg,
+        borderRadius: radius.xl,
+        transformOrigin: 'top right',
         boxShadow: shadow.pop,
         fontFamily: font.sans,
         color: color.fg,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <h2 style={{ flex: 1, margin: 0, fontSize: text.lg, fontWeight: 600 }}>{help.title}</h2>
+        <h2
+          style={{
+            flex: 1,
+            margin: 0,
+            fontSize: text.lg,
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {help.title}
+        </h2>
         <button
           type="button"
           data-focus-initial

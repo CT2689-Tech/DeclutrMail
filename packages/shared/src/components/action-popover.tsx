@@ -35,8 +35,15 @@ import {
 } from '../actions/verb-registry';
 import { tokens } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
+import { Kbd as KeyChip } from './kbd';
 
-const { color, font, radius, shadow } = tokens;
+const { color, font, motion, radius, shadow } = tokens;
+
+// Fade + scale from the trigger corner (the menu opens above, right-aligned).
+const MENU_CSS = `
+@keyframes dm-action-menu-in{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+.dm-action-menu{transform-origin:bottom right;animation:dm-action-menu-in ${motion.fast} ${motion.ease}}
+`;
 
 /**
  * Map FE `VerbTone` to a concrete fg color from the token palette.
@@ -230,37 +237,43 @@ export function ActionPopover({
   }, [onClose]);
 
   return (
-    <div
-      ref={ref}
-      role="menu"
-      aria-label={ariaLabel}
-      style={{
-        position: 'absolute',
-        bottom: 'calc(100% + 4px)',
-        right: 0,
-        background: color.card,
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.md,
-        padding: 6,
-        minWidth: 'min(220px, calc(100vw - 32px))',
-        maxWidth: 'calc(100vw - 32px)',
-        maxHeight: 'calc(100vh - 32px)',
-        overflowY: 'auto',
-        fontFamily: font.sans,
-        boxShadow: shadow.pop,
-        zIndex: 50,
-        ...style,
-        ...edgeFix,
-      }}
-    >
-      {verbs.map((verbId) => {
-        const verb = verbById(verbId);
-        if (!verb) return null;
-        const capable = capabilities[verbId] !== false;
-        const dimmed = dimmedVerb === verbId;
-        return <Row key={verbId} verb={verb} disabled={!capable} dimmed={dimmed} onPick={onPick} />;
-      })}
-    </div>
+    <>
+      <style>{MENU_CSS}</style>
+      <div
+        ref={ref}
+        role="menu"
+        aria-label={ariaLabel}
+        className="dm-action-menu"
+        style={{
+          position: 'absolute',
+          bottom: 'calc(100% + 6px)',
+          right: 0,
+          background: color.card,
+          border: 'none',
+          borderRadius: radius.xl,
+          padding: 6,
+          minWidth: 'min(220px, calc(100vw - 32px))',
+          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: 'calc(100vh - 32px)',
+          overflowY: 'auto',
+          fontFamily: font.sans,
+          boxShadow: shadow.pop,
+          zIndex: 50,
+          ...style,
+          ...edgeFix,
+        }}
+      >
+        {verbs.map((verbId) => {
+          const verb = verbById(verbId);
+          if (!verb) return null;
+          const capable = capabilities[verbId] !== false;
+          const dimmed = dimmedVerb === verbId;
+          return (
+            <Row key={verbId} verb={verb} disabled={!capable} dimmed={dimmed} onPick={onPick} />
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -282,8 +295,8 @@ function Row({
           aria-hidden="true"
           style={{
             height: 1,
-            background: color.line,
-            margin: '6px 0',
+            background: color.lineSoft,
+            margin: '6px 12px',
           }}
         />
       )}
@@ -298,10 +311,11 @@ function Row({
           gap: 10,
           alignItems: 'center',
           width: '100%',
-          padding: '8px 12px',
+          height: 40,
+          padding: '0 12px',
           background: 'transparent',
           border: 'none',
-          borderRadius: radius.sm,
+          borderRadius: radius.md,
           fontFamily: font.sans,
           fontSize: tokens.text.base,
           fontWeight: 500,
@@ -309,16 +323,16 @@ function Row({
           cursor: disabled ? 'not-allowed' : 'pointer',
           opacity: dimmed ? 0.55 : disabled ? 0.5 : 1,
           textAlign: 'left',
-          transition: 'background 100ms',
+          transition: `background ${motion.fast} ${motion.ease}`,
         }}
         onMouseEnter={(e) => {
-          if (!disabled) e.currentTarget.style.background = color.mutedBg;
+          if (!disabled) e.currentTarget.style.background = color.fill;
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.background = 'transparent';
         }}
         onFocus={(e) => {
-          if (!disabled) e.currentTarget.style.background = color.mutedBg;
+          if (!disabled) e.currentTarget.style.background = color.fill;
         }}
         onBlur={(e) => {
           e.currentTarget.style.background = 'transparent';
@@ -343,21 +357,11 @@ function Icon({ glyph }: { glyph: string | undefined }) {
   );
 }
 
+/** Right-aligned key hint — the shared key chip, hidden from AT. */
 function Kbd({ shortcut }: { shortcut: string }) {
   return (
-    <span
-      aria-hidden="true"
-      style={{
-        fontFamily: font.mono,
-        fontSize: tokens.text.xs,
-        color: color.fgMuted,
-        background: color.mutedBg,
-        padding: '2px 6px',
-        borderRadius: radius.sm,
-        letterSpacing: '0.04em',
-      }}
-    >
-      ⌨ {shortcut}
+    <span aria-hidden="true" style={{ justifySelf: 'end', display: 'inline-flex' }}>
+      <KeyChip style={{ color: color.fgMuted }}>{shortcut}</KeyChip>
     </span>
   );
 }
@@ -396,18 +400,32 @@ export function ActionPopoverTrigger({
       title={ariaLabel}
       aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onClick}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.background = color.fill;
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = 'transparent';
+      }}
       style={{
+        // A 32px ghost circle — never an outlined square.
+        width: 32,
+        height: 32,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flex: '0 0 auto',
         background: 'transparent',
-        border: `1px solid ${color.line}`,
-        borderRadius: radius.sm,
-        padding: '6px 9px',
+        border: 'none',
+        borderRadius: radius.pill,
+        padding: 0,
         fontFamily: font.sans,
-        fontSize: tokens.text.md,
+        fontSize: tokens.text.lg,
+        fontWeight: 600,
         color: color.fgMuted,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
         lineHeight: 1,
-        transition: 'border-color 100ms, color 100ms',
+        transition: `background ${motion.fast} ${motion.ease}`,
         ...style,
       }}
     >

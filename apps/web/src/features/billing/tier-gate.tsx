@@ -18,7 +18,7 @@ import { billingIntentPath } from './billing-intent';
 import { MONEY_BACK_NOTE, quotedPlanPrice } from './billing-model';
 import { useRegionProvider } from './billing-currency';
 
-const { color, font, radius, text } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
 
 /**
  * TierGate (D19/D68/D77) — entitlement gate for paid feature screens.
@@ -89,62 +89,126 @@ export function TierGate({
         boxSizing: 'border-box',
         maxWidth: 480,
         margin: '0 auto',
-        padding: '72px 24px 40px',
+        padding: '88px 24px 48px',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 12,
         textAlign: 'center',
         fontFamily: font.sans,
       }}
     >
+      <style>{`.dm-gate-cta { transition: background ${motion.fast} ${motion.ease}, transform ${motion.fast} ${motion.ease}; }
+.dm-gate-cta:hover { background: ${color.primaryDeep} !important; }
+.dm-gate-cta:active { transform: scale(0.97); }
+.dm-gate-compare { transition: background ${motion.fast} ${motion.ease}; }
+.dm-gate-compare:hover { background: ${color.fill}; }`}</style>
+      <span
+        aria-hidden="true"
+        style={{
+          width: 56,
+          height: 56,
+          borderRadius: radius.pill,
+          background: color.primarySoft,
+          color: color.primary,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 20,
+        }}
+      >
+        <svg
+          width={24}
+          height={24}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.8}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <rect x="5" y="11" width="14" height="9" rx="2.5" />
+          <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+        </svg>
+      </span>
       <h1
         style={{
           margin: 0,
           fontSize: text['2xl'],
-          fontWeight: 600,
-          letterSpacing: '-0.01em',
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
           color: color.fg,
         }}
       >
         {title}
       </h1>
 
-      <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55, color: color.fgSoft }}>{pitch}</p>
+      <p
+        style={{
+          margin: '10px 0 0',
+          fontSize: text.md,
+          lineHeight: 1.55,
+          color: color.fgMuted,
+        }}
+      >
+        {pitch}
+      </p>
 
       <Link
         href={upgradeHref}
+        className="dm-gate-cta"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          height: 44,
-          marginTop: 12,
-          padding: '0 20px',
+          justifyContent: 'center',
+          gap: 10,
+          height: 50,
+          marginTop: 28,
+          padding: '0 28px',
           background: color.primary,
           color: color.fgInverse,
-          borderRadius: radius.md,
-          fontSize: text.md,
+          borderRadius: radius.pill,
+          boxShadow: shadow.button,
+          fontSize: text.lg,
           fontWeight: 600,
+          letterSpacing: '-0.006em',
           textDecoration: 'none',
           whiteSpace: 'nowrap',
         }}
       >
         Upgrade to {requiredTier}
         {requiredMonthly ? (
-          <span style={{ fontFamily: font.mono, marginLeft: 8 }}>{requiredMonthly}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>
+            {requiredMonthly}
+          </span>
         ) : null}
       </Link>
 
-      <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-        {MONEY_BACK_NOTE} ·{' '}
-        <Link href="/pricing" style={{ color: color.fgMuted }}>
-          Compare plans
-        </Link>
+      <Link
+        href="/pricing"
+        className="dm-gate-compare"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          height: 44,
+          marginTop: 8,
+          padding: '0 18px',
+          borderRadius: radius.pill,
+          color: color.fgSoft,
+          fontSize: text.md,
+          fontWeight: 600,
+          textDecoration: 'none',
+        }}
+      >
+        Compare plans
+      </Link>
+
+      <p style={{ margin: '12px 0 0', fontSize: text.sm, color: color.fgMuted }}>
+        {MONEY_BACK_NOTE}
       </p>
 
       {footnote ? (
         <p
-          style={{ margin: '12px 0 0', fontSize: text.sm, lineHeight: 1.55, color: color.fgMuted }}
+          style={{ margin: '16px 0 0', fontSize: text.sm, lineHeight: 1.55, color: color.fgMuted }}
         >
           {footnote}
         </p>

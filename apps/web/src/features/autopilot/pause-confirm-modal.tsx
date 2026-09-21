@@ -1,25 +1,24 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Button, Eyebrow, Kbd, tokens, useIsAtMost } from '@declutrmail/shared';
-import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
+import { tokens } from '@declutrmail/shared';
 import type { AutopilotRuleDto } from '@/lib/api/autopilot';
+import { ConfirmModalFrame } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
 
-const { color, font, text } = tokens;
+const { color, space, text } = tokens;
 
 /**
- * D105 master-pause confirmation modal.
+ * D105 master-pause confirmation.
  *
  * Per D226 every Autopilot mutation must render a "what happens next"
  * preview before the mutation runs. Pause-all is non-destructive (it
  * doesn't delete or move any mail; it just stops new matches from
- * landing in the buffer) but it touches every active rule across every
- * inbox — exactly the surface D226's "preview is mandatory" rule was
- * written for. The modal enumerates the affected rules so the founder
- * sees what they're flipping before they flip it.
+ * landing in the buffer) but it touches every running rule — exactly the
+ * surface D226's "preview is mandatory" rule was written for. Details
+ * enumerates the affected rules so the user sees what they are flipping.
  *
- * Keyboard: Escape cancels; ⌘/Ctrl + Enter confirms.
+ * Keyboard: Escape cancels; ⌘/Ctrl + Enter confirms (same guard as the
+ * button: never while in flight, never when nothing would change).
  */
 export function PauseConfirmModal({
   open,
@@ -36,203 +35,52 @@ export function PauseConfirmModal({
   isPausing: boolean;
   pauseError: string | null;
 }) {
-  // Mirror the visible "Pause all" CTA's guard rails on the keyboard
-  // path: don't fire the mutation when it would no-op (no affected
-  // rules) or when it's already in flight (mid-mutation re-press would
-  // weaken the D226 single-confirmation contract). The visible button
-  // is `disabled` in both states; the keyboard shortcut must match.
-  const canConfirm = !isPausing && rules.filter((r) => r.mode !== 'paused').length > 0;
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onCancel();
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && canConfirm) onConfirm();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onCancel, onConfirm, canConfirm]);
-
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
-  const isPhone = useIsAtMost('xs');
-
   if (!open) return null;
 
-  // Only currently non-paused rules will flip — show the founder the
-  // exact set the mutation touches, not the full rule library.
+  // Only currently non-paused rules will flip — show the exact set the
+  // mutation touches, not the full rule library.
   const affected = rules.filter((r) => r.mode !== 'paused');
   const n = affected.length;
-  const plural = n === 1 ? '' : 's';
 
   return (
-    <>
-      <div
-        onClick={onCancel}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
-        }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-pause-title"
-        aria-describedby="dm-pause-lead"
-        style={
-          isPhone
-            ? {
-                position: 'fixed',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                width: '100%',
-                maxHeight: '88vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: '16px 16px 0 0',
-                border: `1px solid ${color.border}`,
-                borderBottom: 'none',
-                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
-                zIndex: 151,
-                fontFamily: font.sans,
-                paddingBottom: 'env(safe-area-inset-bottom)',
-              }
-            : {
-                position: 'fixed',
-                top: '14vh',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 'min(500px, calc(100vw - 32px))',
-                maxHeight: '76vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: 14,
-                border: `1px solid ${color.border}`,
-                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-                zIndex: 151,
-                fontFamily: font.sans,
-              }
-        }
-      >
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <Eyebrow>Preview · before anything changes</Eyebrow>
-          <h2
-            id="dm-pause-title"
-            style={{
-              fontSize: text.xl,
-              fontWeight: 600,
-              letterSpacing: '-0.014em',
-              margin: '6px 0 0',
-            }}
+    <ConfirmModalFrame
+      title={n === 0 ? 'Nothing to pause' : `Pause ${n} Autopilot rule${n === 1 ? '' : 's'}?`}
+      subtitle={
+        n === 0
+          ? 'No rules are running.'
+          : 'No new suggestions and no automated actions. Pending suggestions stay.'
+      }
+      note={n === 0 ? undefined : 'Turn each rule back on from the rules list.'}
+      confirmLabel="Pause all"
+      confirmBusyLabel="Pausing…"
+      canConfirm={n > 0}
+      isBusy={isPausing}
+      error={pauseError}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+      details={
+        n === 0 ? undefined : (
+          <ul
+            aria-label="Rules that will pause"
+            style={{ listStyle: 'none', margin: 0, padding: 0 }}
           >
-            Pause {n} Autopilot rule{plural}
-          </h2>
-          <p
-            id="dm-pause-lead"
-            style={{ fontSize: text.md, color: color.fgSoft, margin: '6px 0 0', lineHeight: 1.5 }}
-          >
-            Every running rule is <strong>paused</strong>: no new suggestions, no automated actions.
-            Pending suggestions stay and can still be dismissed.
-          </p>
-        </div>
-
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {affected.length === 0 ? (
-            <div
-              style={{
-                fontSize: text.sm,
-                color: color.fgMuted,
-                fontStyle: 'italic',
-              }}
-            >
-              No rules are running, so there is nothing to pause.
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 6,
-              }}
-            >
-              {affected.map((r) => (
-                <span
-                  key={r.id}
-                  style={{
-                    fontFamily: font.mono,
-                    fontSize: text.xs,
-                    color: color.fgSoft,
-                    background: color.paper,
-                    border: `1px solid ${color.line}`,
-                    borderRadius: 6,
-                    padding: '3px 8px',
-                  }}
-                >
-                  {presetDisplayName(r.presetKey, r.name)}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {pauseError != null && (
-            <div
-              role="alert"
-              style={{
-                fontSize: text.sm,
-                color: color.danger,
-                background: 'rgba(239,68,68,0.08)',
-                border: `1px solid ${color.danger}`,
-                borderRadius: 8,
-                padding: '8px 10px',
-              }}
-            >
-              {pauseError}
-            </div>
-          )}
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: isPhone ? 'column' : 'row',
-            alignItems: isPhone ? 'stretch' : 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
-          }}
-        >
-          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-            Re-enable each rule from the rules list.
-          </span>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <Button tone="default" onClick={onCancel} disabled={isPausing}>
-              Cancel
-            </Button>
-            <Button
-              tone="primary"
-              onClick={onConfirm}
-              disabled={isPausing || affected.length === 0}
-              iconRight={
-                <Kbd
-                  style={{
-                    background: 'rgba(255,255,255,0.16)',
-                    border: 'none',
-                    color: '#FFFFFF',
-                  }}
-                >
-                  ⌘⏎
-                </Kbd>
-              }
-            >
-              {isPausing ? 'Pausing…' : 'Pause all'}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </>
+            {affected.map((r, i) => (
+              <li
+                key={r.id}
+                style={{
+                  padding: `${space[2]}px 0`,
+                  borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
+                  fontSize: text.base,
+                  fontWeight: 600,
+                  color: color.fg,
+                }}
+              >
+                {presetDisplayName(r.presetKey, r.name)}
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    />
   );
 }

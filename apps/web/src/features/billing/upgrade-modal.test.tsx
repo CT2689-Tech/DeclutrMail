@@ -77,7 +77,10 @@ describe('UpgradeModal', () => {
       });
     });
     const dialog = screen.getByTestId('upgrade-modal');
-    expect(dialog).toHaveStyle({ bottom: '0px', left: '0px', right: '0px' });
+    // Phone layout is pure CSS now (tokens.css ≤520px): the sheet classes
+    // pin the panel to the bottom edge with no post-hydration jump.
+    expect(dialog).toHaveClass('dm-sheet-panel');
+    expect(dialog.parentElement).toHaveClass('dm-sheet-layer');
   });
 
   it('renders nothing without a gate hit', () => {

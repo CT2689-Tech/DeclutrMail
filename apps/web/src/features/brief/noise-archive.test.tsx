@@ -259,7 +259,7 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    expect(within(dialog).getByText(/before anything changes/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading', { name: /^Archive/ })).toBeInTheDocument();
     // The whole point: the click that opens a preview must not mutate.
     expect(enqueued).toHaveLength(0);
   });
@@ -329,8 +329,8 @@ describe('Brief Noise bulk archive (D65)', () => {
     const dialog = await openPreview();
     // 351 is what is in the inbox now; 7 is what yesterday held. The
     // preview must state the number that is about to move.
-    await within(dialog).findByText('351');
-    expect(within(dialog).getByText(/in Inbox now/i)).toBeInTheDocument();
+    await within(dialog).findByRole('heading', { name: /Archive 351 emails/ });
+    expect(within(dialog).getByText(/in\s+your inbox now/i)).toBeInTheDocument();
     expect(within(dialog).getByText(/This archives everything/i)).toBeInTheDocument();
   });
 
@@ -355,8 +355,8 @@ describe('Brief Noise bulk archive (D65)', () => {
     renderScreen();
 
     const dialog = await openPreview();
-    await within(dialog).findByText(/Nothing from these senders is in your inbox/i);
-    // The headline and every per-sender row all read 0.
+    await within(dialog).findByRole('heading', { name: /Nothing in your inbox from/i });
+    // Every per-sender row reads 0.
     expect(within(dialog).getAllByText('0').length).toBeGreaterThan(0);
     expect(within(dialog).getByRole('button', { name: /^Archive/ })).toBeDisabled();
     // The footer reason is the whole story — no lead describing a move

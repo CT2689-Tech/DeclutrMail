@@ -1,16 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
-import { Button, tokens } from '@declutrmail/shared';
-import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
+import { Button, PreviewSheet, tokens } from '@declutrmail/shared';
 import type { CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
 import { formatBillingDate, type SubscriptionRecord } from './billing-model';
-import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, font, radius, text } = tokens;
+const { color, font, radius, space, text } = tokens;
 
 type CancelReason = NonNullable<CancelRequest['reason']>;
 
@@ -54,7 +52,6 @@ export function CancelModal({
   onPause,
   isPausing,
   pauseError,
-  variant = 'modal',
 }: {
   open: boolean;
   /** The record this cancel targets — backing or non-backing (A6). */
@@ -73,30 +70,16 @@ export function CancelModal({
   onPause: () => void;
   isPausing: boolean;
   pauseError: string | null;
-  /** 'sheet' renders the same content pinned to the bottom edge for
-   *  phone-width callers, mirroring ADR-0018's confirm-action-modal. */
+  /** Accepted for callers; the sheet is a bottom sheet on phones by
+   *  itself now (`PreviewSheet` is CSS-responsive). */
   variant?: 'modal' | 'sheet';
 }) {
   const [reason, setReason] = useState<CancelReason | ''>('');
 
+  // A fresh open never inherits the last attempt's reason.
   useEffect(() => {
-    if (!open) return;
-    setReason('');
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  // QA-billing-20260901-11: the trap's DOM-order default landed initial
-  // focus on "Pause for 30 days" — a real, unconfirmed mutating action —
-  // because it renders before the footer's dismiss/confirm buttons.
-  // "Keep current plan" is the safe default for a modal opened to
-  // consider canceling.
-  const trapRef = useFocusTrap<HTMLDivElement>(open, {
-    initialFocusSelector: '#dm-cancel-keep-current-plan',
-  });
+    if (open) setReason('');
+  }, [open]);
 
   if (!open || !sub) return null;
 
@@ -107,259 +90,157 @@ export function CancelModal({
   // offer never renders on a subscription the API would refuse.
   const canPause = sub.provider === 'paddle' && sub.status === 'active' && !sub.cancelAtPeriodEnd;
 
-  return (
+  // Each fact its own element — they are read (and pinned) one by one.
+  const periodEnd = backsEntitlement ? (
     <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 150,
-        }}
-      />
-      <div
-        ref={trapRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dm-cancel-title"
-        data-testid="cancel-modal"
-        style={
-          variant === 'sheet'
-            ? {
-                position: 'fixed',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                width: '100%',
-                maxHeight: '88vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: '16px 16px 0 0',
-                border: `1px solid ${color.border}`,
-                borderBottom: 'none',
-                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
-                zIndex: 151,
-                fontFamily: font.sans,
-                paddingBottom: 'env(safe-area-inset-bottom)',
-              }
-            : {
-                position: 'fixed',
-                top: '14vh',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 'min(480px, calc(100vw - 32px))',
-                maxHeight: '76vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: 14,
-                border: `1px solid ${color.border}`,
-                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-                zIndex: 151,
-                fontFamily: font.sans,
-              }
-        }
-      >
-        <div style={{ padding: '20px 24px 16px', borderBottom: `1px solid ${color.line}` }}>
-          <GroupTitle as="div">Preview · before anything changes</GroupTitle>
-          <h2
-            id="dm-cancel-title"
-            style={{
-              fontSize: text.xl,
-              fontWeight: 600,
-              letterSpacing: '-0.014em',
-              margin: '6px 0 0',
-            }}
-          >
-            {backsEntitlement
-              ? `Cancel your ${tierLabel} plan?`
-              : `End your ${tierLabel} subscription?`}
-          </h2>
-        </div>
+      <span>
+        {end
+          ? `Your ${tierLabel} features stay active until ${end}.`
+          : `Your ${tierLabel} features stay active until the end of the current billing period.`}
+      </span>{' '}
+      <span>Then your account switches to Free — completed email actions stay in place.</span>
+    </>
+  ) : (
+    // A NON-BACKING record (A6): its features are not necessarily active
+    // and it does not grant the current plan — the preview claims neither.
+    <>
+      <span>
+        {end
+          ? `Your ${tierLabel} subscription ends at the end of its paid period (${end}) and won't renew.`
+          : `Your ${tierLabel} subscription ends at the end of its paid period and won't renew.`}
+      </span>{' '}
+      <span>
+        Your account is on {entitlementName} today — that plan isn&rsquo;t granted by this
+        subscription.
+      </span>
+    </>
+  );
 
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <ul
-            style={{
-              margin: 0,
-              padding: 0,
-              listStyle: 'none',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 8,
-              fontSize: text.md,
-              color: color.fgSoft,
-              lineHeight: 1.5,
-            }}
-          >
-            {backsEntitlement ? (
-              <>
-                <li>
-                  {end
-                    ? `Your ${tierLabel} features stay active until ${end}.`
-                    : `Your ${tierLabel} features stay active until the end of the current billing period.`}
-                </li>
-                <li>Then your account switches to Free — completed email actions stay in place.</li>
-              </>
-            ) : (
-              // A NON-BACKING record (A6): its features are not
-              // necessarily active and it does not grant the current
-              // plan — the preview claims neither.
-              <>
-                <li>
-                  {end
-                    ? `Your ${tierLabel} subscription ends at the end of its paid period (${end}) and won't renew.`
-                    : `Your ${tierLabel} subscription ends at the end of its paid period and won't renew.`}
-                </li>
-                <li>
-                  Your account is on {entitlementName} today — that plan isn&rsquo;t granted by this
-                  subscription.
-                </li>
-              </>
-            )}
-            <li>
-              Canceling stops your renewal and takes effect at period end — on its own it
-              isn&rsquo;t a refund.
-            </li>
-            {sub.foundingMember ? (
-              // QA-billing-20260901-09: the founding price lock is
-              // otherwise discoverable only after re-subscribing fails
-              // with FOUNDING_PRO_SOLD_OUT once the 250 slots are gone —
-              // name the cost before the click that can make it
-              // permanent, not after.
-              <li>
+  return (
+    <PreviewSheet
+      testId="cancel-modal"
+      onClose={onClose}
+      title={
+        backsEntitlement ? `Cancel your ${tierLabel} plan?` : `End your ${tierLabel} subscription?`
+      }
+      subtitle={periodEnd}
+      note={
+        <>
+          <span>
+            Canceling stops your renewal and takes effect at period end — on its own it isn&rsquo;t
+            a refund.
+          </span>
+          {sub.foundingMember ? (
+            // QA-billing-20260901-09: the founding price lock is otherwise
+            // discoverable only after re-subscribing fails with
+            // FOUNDING_PRO_SOLD_OUT once the 250 slots are gone — name the
+            // cost before the click that can make it permanent.
+            <>
+              {' '}
+              <span>
                 You&rsquo;re a Founding Pro member — this locked price doesn&rsquo;t come back once
                 canceled and the 250 slots fill up.
-              </li>
-            ) : null}
-          </ul>
-
-          {/* D118's retention offer, finally built. It was specced in
-              the D-body ("Would you like to pause instead?") and shipped
-              as nothing: no endpoint, no button — while the paused STATE
-              was fully modeled. So the one lever meant to catch a
-              cancellation never ran (matrix E3 follow-up, 2026-07-31).
-
-              Offered only where it can actually work: Paddle (Razorpay
-              has no pause primitive we drive — `PAUSE_UNSUPPORTED`), on
-              an active row that is not already on its way out. Offering
-              a button that answers 409 would be the same
-              asserting-what-we-don't-know defect this codebase keeps
-              paying for. */}
-          {canPause ? (
-            <div
-              data-testid="pause-offer"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                padding: '10px 12px',
-                background: color.paper,
-                border: `1px solid ${color.line}`,
-                borderRadius: radius.md,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
-                <strong style={{ fontWeight: 600, color: color.fg }}>Pause instead?</strong> Billing
-                stops for 30 days and picks up automatically after that. Your senders, rules and
-                history stay exactly as they are.
-              </p>
-              <div>
-                <Button tone="default" onClick={onPause} disabled={isPausing || isCanceling}>
-                  {isPausing ? 'Pausing…' : 'Pause for 30 days'}
-                </Button>
-              </div>
-              {pauseError != null ? (
-                <div
-                  role="alert"
-                  style={{
-                    fontSize: text.sm,
-                    color: color.danger,
-                    background: color.dangerBg,
-                    border: `1px solid ${color.danger}`,
-                    borderRadius: 8,
-                    padding: '8px 10px',
-                  }}
-                >
-                  {pauseError}
-                </div>
-              ) : null}
-            </div>
+              </span>
+            </>
           ) : null}
-
-          <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.sm }}>
-            <span style={{ color: color.fgMuted }}>Why are you canceling? (optional)</span>
-            <select
-              value={reason}
-              onChange={(e) => setReason(e.target.value as CancelReason | '')}
+        </>
+      }
+      primary={{
+        label: 'Cancel subscription',
+        tone: 'danger',
+        onClick: () => onConfirm(reason === '' ? undefined : reason),
+        busyLabel: isCanceling ? 'Canceling…' : undefined,
+      }}
+      // Codex round 1 (QA-billing-20260901-06): "Keep current plan" is
+      // wrong for a non-backing row — the subscription under review is NOT
+      // the current plan, so a dismiss reading "keep [this]" would claim
+      // the opposite of backsEntitlement. A danger sheet lands focus here,
+      // never on Pause (a real mutation) — QA-billing-20260901-11.
+      cancelLabel={backsEntitlement ? 'Keep current plan' : 'Never mind'}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: space[4], textAlign: 'left' }}>
+        {/* D118's retention offer. Offered only where it can actually
+            work: Paddle (Razorpay has no pause primitive we drive —
+            `PAUSE_UNSUPPORTED`), on an active row that is not already on
+            its way out. A button that answers 409 would be the same
+            asserting-what-we-don't-know defect this codebase keeps
+            paying for. */}
+        {canPause ? (
+          <div
+            data-testid="pause-offer"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: space[3],
+            }}
+          >
+            <p
               style={{
-                height: 32,
-                borderRadius: radius.md,
-                border: `1px solid ${color.border}`,
-                background: color.paper,
-                color: color.fg,
-                fontFamily: font.sans,
-                fontSize: text.md,
-                padding: '0 8px',
-              }}
-            >
-              <option value="">Prefer not to say</option>
-              {REASON_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {cancelError != null && (
-            <div
-              role="alert"
-              style={{
+                margin: 0,
+                flex: '1 1 200px',
                 fontSize: text.sm,
-                color: color.danger,
-                background: color.dangerBg,
-                border: `1px solid ${color.danger}`,
-                borderRadius: 8,
-                padding: '8px 10px',
+                color: color.fgSoft,
+                lineHeight: 1.5,
               }}
             >
-              {cancelError}
-            </div>
-          )}
-        </div>
+              <strong style={{ fontWeight: 600, color: color.fg }}>Pause instead?</strong> Billing
+              stops for 30 days and picks up automatically after that. Your senders, rules and
+              history stay exactly as they are.
+            </p>
+            <Button tone="default" size="sm" onClick={onPause} disabled={isPausing || isCanceling}>
+              {isPausing ? 'Pausing…' : 'Pause for 30 days'}
+            </Button>
+            {pauseError != null ? <ErrorLine>{pauseError}</ErrorLine> : null}
+          </div>
+        ) : null}
 
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            gap: 8,
-            padding: '14px 24px 18px',
-            borderTop: `1px solid ${color.line}`,
-          }}
-        >
-          <Button
-            id="dm-cancel-keep-current-plan"
-            tone="default"
-            onClick={onClose}
-            disabled={isCanceling}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.sm }}>
+          <span style={{ color: color.fgMuted }}>Why are you canceling? (optional)</span>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value as CancelReason | '')}
+            style={{
+              height: 40,
+              borderRadius: radius.md,
+              border: 'none',
+              background: color.fill,
+              color: color.fg,
+              fontFamily: font.sans,
+              fontSize: text.md,
+              padding: '0 12px',
+            }}
           >
-            {/* Codex round 1 (QA-billing-20260901-06): "Keep current
-                plan" is wrong for a non-backing row — the subscription
-                under review here is NOT the current plan (the preview
-                above says so explicitly), so a dismiss that reads as
-                "keep [this]" claims the opposite of backsEntitlement. */}
-            {backsEntitlement ? 'Keep current plan' : 'Never mind'}
-          </Button>
-          <Button
-            tone="danger"
-            onClick={() => onConfirm(reason === '' ? undefined : reason)}
-            disabled={isCanceling}
-          >
-            {isCanceling ? 'Canceling…' : 'Cancel subscription'}
-          </Button>
-        </div>
+            <option value="">Prefer not to say</option>
+            {REASON_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {cancelError != null && <ErrorLine>{cancelError}</ErrorLine>}
       </div>
-    </>
+    </PreviewSheet>
+  );
+}
+
+function ErrorLine({ children }: { children: ReactNode }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        flexBasis: '100%',
+        fontSize: text.sm,
+        color: color.danger,
+        background: color.dangerBg,
+        borderRadius: radius.md,
+        padding: '10px 12px',
+      }}
+    >
+      {children}
+    </div>
   );
 }

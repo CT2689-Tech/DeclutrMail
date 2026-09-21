@@ -18,6 +18,20 @@ import { findDomainBatches } from '@/features/triage/domain-batch';
 import { GUIDED_SCENARIOS, InboxSimulatorScreen } from './inbox-simulator-screen';
 import { syntheticInboxCount } from './synthetic-preview';
 
+/**
+ * The confirm sheet for one sender. A single-sender sheet is named by its
+ * question ("Archive 212 emails?", ADR-0042) and sits inside a region
+ * named for the sender; the domain batch sheet is still named by domain.
+ */
+function sheetFor(name: string): HTMLElement {
+  const byName = screen.queryByRole('dialog', { name });
+  if (byName !== null) return byName;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return within(
+    screen.getByRole('region', { name: new RegExp(`^Preview · \\w+ ${escaped}$`) }),
+  ).getByRole('dialog');
+}
+
 const STORAGE_KEY = 'dm.inbox-simulator.state.v4';
 const LEGACY_STORAGE_KEY = 'dm.inbox-simulator.decisions.v2';
 const firstRow = TRIAGE_QUEUE[0]!;
@@ -94,8 +108,9 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getAllByRole('button', { name: /Archive \(A\)/ })[0]!);
     // The real ActionSheet (D133 Task 3) — not a hand-rolled copy — so
     // the dialog's own name is the sender, and its eyebrow names the verb.
-    const dialog = screen.getByRole('dialog', { name: firstRow.senderName });
-    expect(within(dialog).getByText(/Preview · Archive/i)).toBeInTheDocument();
+    const dialog = sheetFor(firstRow.senderName);
+    // The count lives in the question the sheet is named by (ADR-0042).
+    expect(dialog).toHaveAccessibleName(/^Archive \d[\d,]* emails?\?$/);
     expect(
       screen.getByText('What actually happened').parentElement?.parentElement,
     ).not.toHaveTextContent(/moved out of Inbox into All Mail/);
@@ -268,7 +283,7 @@ describe('InboxSimulatorScreen', () => {
     // The engine visibly disagreeing with itself, and the visitor
     // overruling all of it with one verb (D226-mandatory preview first).
     fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
-    const sheet = screen.getByRole('dialog', { name: 'amazon.com' });
+    const sheet = sheetFor('amazon.com');
     expect(within(sheet).getByText(/Archive all inbox email from 5 senders/i)).toBeInTheDocument();
     // Protection shown, not claimed: the sixth sender is named as skipped,
     // never silently folded into the aggregated total (D245).
@@ -284,7 +299,7 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+      within(sheetFor('LinkedIn')).getByRole('button', {
         name: /^Unsubscribe/,
       }),
     );
@@ -342,7 +357,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-checked', 'true');
 
-    const dialog = screen.getByRole('dialog', { name: unsubscribableRow.senderName });
+    const dialog = sheetFor(unsubscribableRow.senderName);
     fireEvent.click(within(dialog).getByRole('button', { name: /^Unsubscribe/ }));
 
     const expectedCount = syntheticInboxCount(unsubscribableRow);
@@ -372,7 +387,7 @@ describe('InboxSimulatorScreen', () => {
       screen.getByRole('button', { name: `Explore all ${TRIAGE_QUEUE.length} senders` }),
     );
     fireEvent.click(screen.getAllByRole('button', { name: /Later \(L\)/ })[0]!);
-    const dialog = screen.getByRole('dialog', { name: firstRow.senderName });
+    const dialog = sheetFor(firstRow.senderName);
     expect(within(dialog).getByRole('button', { name: /^Later/ })).toBeEnabled();
   });
 
@@ -382,13 +397,13 @@ describe('InboxSimulatorScreen', () => {
   function reachRuleStep() {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
+      within(sheetFor('amazon.com')).getByRole('button', {
         name: /^Archive all/,
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+      within(sheetFor('LinkedIn')).getByRole('button', {
         name: /^Unsubscribe/,
       }),
     );
@@ -398,10 +413,10 @@ describe('InboxSimulatorScreen', () => {
    *  then deletes Groupon (step 4) — landing on `DemoCompletion`. */
   function finishFromRuleStep() {
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
     fireEvent.click(screen.getByRole('button', { name: /Delete \(D\)/ }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'Groupon' })).getByRole('button', {
+      within(sheetFor('Groupon')).getByRole('button', {
         name: /^Delete/,
       }),
     );
@@ -424,11 +439,11 @@ describe('InboxSimulatorScreen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    // Real ActivateRuleModal copy — "Turn on and run" is the actual
-    // confirmLabel for an entitled enable (activate-rule-modal.tsx),
-    // not the brief's illustrative "Turn it on".
-    expect(screen.getByRole('button', { name: /Turn on and run/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Watch first/i })).toBeInTheDocument();
+    // Real ActivateRuleModal: the two ways to run are a choice on the
+    // sheet (Act now is the default), committed by one button.
+    expect(screen.getByRole('radio', { name: 'Act now' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'Watch first' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Turn on$/ })).toBeInTheDocument();
     expect(screen.getByText(/\bPlus\b/)).toBeInTheDocument();
   });
 
@@ -441,7 +456,7 @@ describe('InboxSimulatorScreen', () => {
     for (const row of amazonBatch.eligibleRows) {
       expect(screen.getByText(row.senderName)).toBeInTheDocument();
     }
-    expect(screen.getByText(/Protected.*(are|is) always skipped/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protected senders? (are|is) skipped/i)).toBeInTheDocument();
   });
 
   it('turning the rule on advances the guide to step 4', () => {
@@ -449,7 +464,7 @@ describe('InboxSimulatorScreen', () => {
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
@@ -463,7 +478,9 @@ describe('InboxSimulatorScreen', () => {
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Watch first/i }));
+    // The mode is a choice on the sheet; the one button commits it.
+    fireEvent.click(screen.getByRole('radio', { name: 'Watch first' }));
+    fireEvent.click(screen.getByRole('button', { name: /^Watch first$/ }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
@@ -476,7 +493,7 @@ describe('InboxSimulatorScreen', () => {
     const { unmount } = render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
-    fireEvent.click(screen.getByRole('button', { name: /Turn on and run/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
@@ -531,14 +548,14 @@ describe('InboxSimulatorScreen', () => {
       function completeGuideWithGap(gapMs: number) {
         fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
         fireEvent.click(
-          within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
+          within(sheetFor('amazon.com')).getByRole('button', {
             name: /^Archive all/,
           }),
         );
         vi.setSystemTime(Date.now() + gapMs);
         fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
         fireEvent.click(
-          within(screen.getByRole('dialog', { name: 'LinkedIn' })).getByRole('button', {
+          within(sheetFor('LinkedIn')).getByRole('button', {
             name: /^Unsubscribe/,
           }),
         );
@@ -656,7 +673,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 1: Scale' }));
     fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
     fireEvent.click(
-      within(screen.getByRole('dialog', { name: 'amazon.com' })).getByRole('button', {
+      within(sheetFor('amazon.com')).getByRole('button', {
         name: /^Archive all/,
       }),
     );

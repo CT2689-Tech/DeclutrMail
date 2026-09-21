@@ -19,8 +19,9 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useDismissFollowup } from './api/use-dismiss-followup';
 import { useFollowups } from './api/use-followups';
+import { flatRowCss } from '@/features/settings/flat-list';
 
-const { color, font, motion, text } = tokens;
+const { color, font, motion, radius, text } = tokens;
 
 /**
  * Followups screen (D90, D91).
@@ -85,7 +86,7 @@ export function FollowupsScreen() {
         padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 20,
+        gap: 32,
         width: '100%',
         boxSizing: 'border-box',
         maxWidth: 880,
@@ -97,8 +98,8 @@ export function FollowupsScreen() {
         style={{
           margin: 0,
           fontSize: text['2xl'],
-          fontWeight: 600,
-          letterSpacing: '-0.015em',
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
           color: color.fg,
         }}
       >
@@ -206,8 +207,9 @@ function PriorityGroup({
   return (
     <section
       aria-label={`${label} (${rows.length})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
+      <style>{flatRowCss('dm-followup-row')}</style>
       <GroupHeading label={label} count={rows.length} />
       <ul
         style={{
@@ -240,17 +242,18 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
         alignItems: 'baseline',
         gap: 6,
         margin: 0,
-        fontSize: text.sm,
-        fontWeight: 600,
-        color: color.fgSoft,
+        fontSize: text.lg,
+        fontWeight: 650,
+        letterSpacing: '-0.01em',
+        color: color.fg,
       }}
     >
       {label}
       <span
         style={{
           color: color.fgMuted,
+          fontSize: text.md,
           fontWeight: 500,
-          fontFamily: font.mono,
           fontVariantNumeric: 'tabular-nums',
         }}
       >
@@ -304,11 +307,14 @@ export function FollowupListItem({
             ? 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto auto'
             : 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto',
         alignItems: 'center',
-        gap: isMobile ? '8px 12px' : 14,
-        padding: '12px 0',
-        borderTop: `1px solid ${color.line}`,
+        gap: isMobile ? '8px 12px' : 16,
+        minHeight: 64,
+        boxSizing: 'border-box',
+        paddingTop: 12,
+        paddingBottom: 12,
         fontFamily: font.sans,
       }}
+      className="dm-followup-row"
     >
       <div style={{ minWidth: 0, ...(isMobile ? { gridColumn: '1 / -1' } : null) }}>
         <div
@@ -323,7 +329,7 @@ export function FollowupListItem({
         >
           {recipient.name}
         </div>
-        <div style={{ fontSize: text.sm, color: color.fgMuted, fontFamily: font.mono }}>
+        <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>
           {recipient.domain}
         </div>
       </div>
@@ -331,7 +337,7 @@ export function FollowupListItem({
         title={row.subject}
         style={{
           fontSize: text.md,
-          color: color.fgSoft,
+          color: color.fg,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -359,6 +365,7 @@ export function FollowupListItem({
           aria-label={`Open in Gmail — ${recipient.name}: ${subject}`}
           style={{
             fontSize: text.sm,
+            fontWeight: 500,
             color: color.primary,
             textDecoration: 'none',
             whiteSpace: 'nowrap',
@@ -377,15 +384,15 @@ export function FollowupListItem({
           aria-label={`Mark resolved in DeclutrMail — ${recipient.name}`}
           style={{
             // 44px touch target on phones; compact on desktop.
-            minHeight: isMobile ? 44 : 28,
+            minHeight: isMobile ? 44 : 30,
             display: 'inline-flex',
             alignItems: 'center',
-            background: 'transparent',
-            color: color.fgSoft,
-            border: `1px solid ${color.line}`,
-            borderRadius: 6,
+            background: color.fill,
+            color: color.fg,
+            border: 'none',
+            borderRadius: radius.pill,
             cursor: 'pointer',
-            padding: '0 10px',
+            padding: '0 14px',
             flexShrink: 0,
             fontFamily: font.sans,
             fontSize: text.sm,

@@ -13,7 +13,10 @@ import type { ActionVerb } from './types';
 import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
 import { focusFacts } from './why-line';
 
-const { color, font, motion, radius, text } = tokens;
+const { color, font, motion, radius, shadow, space, text } = tokens;
+
+/** The hero logo — the card is about one sender, so it leads at 72px. */
+const LOGO = 72;
 
 /**
  * Focus mode — ONE sender, one decision (D29/D36).
@@ -77,9 +80,6 @@ export function TriageFocusCard({
       aria-label="Current decision"
       aria-busy={busy}
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 20,
         opacity: busy ? 0.6 : 1,
         transition: `opacity ${motion.fast} ${motion.ease}`,
         fontFamily: font.sans,
@@ -94,24 +94,40 @@ export function TriageFocusCard({
           flexDirection: 'column',
           alignItems: 'center',
           textAlign: 'center',
-          padding: isNarrow ? '28px 20px' : '40px 32px 32px',
+          padding: isNarrow
+            ? `${space[8]}px ${space[5]}px ${space[6]}px`
+            : `${space[10]}px ${space[8]}px`,
           background: color.card,
-          border: `1px solid ${color.line}`,
-          borderRadius: radius.lg,
+          borderRadius: radius['2xl'],
+          boxShadow: shadow.lift,
           // pan-y: vertical drags stay with the browser; horizontal
           // swipes reach the pointer handlers (see `triage-row.tsx`).
           ...(isNarrow ? { touchAction: 'pan-y' as const } : null),
         }}
       >
-        <Avatar name={row.senderName} domain={row.senderDomain} size={56} hasMark={row.brandMark} />
+        <span
+          style={{
+            display: 'inline-flex',
+            borderRadius: Math.round(LOGO * 0.28),
+            boxShadow: shadow.card,
+          }}
+        >
+          <Avatar
+            name={row.senderName}
+            domain={row.senderDomain}
+            size={LOGO}
+            hasMark={row.brandMark}
+          />
+        </span>
         <h2
           title={row.senderName}
           style={{
-            margin: '16px 0 0',
+            margin: `${space[5]}px 0 0`,
             maxWidth: '100%',
             fontSize: text['2xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.014em',
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
+            lineHeight: 1.2,
             color: color.fg,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -123,9 +139,8 @@ export function TriageFocusCard({
         <span
           title={row.senderEmail}
           style={{
-            marginTop: 2,
+            marginTop: space[1],
             maxWidth: '100%',
-            fontFamily: font.mono,
             fontSize: text.sm,
             color: color.fgMuted,
             overflow: 'hidden',
@@ -136,7 +151,7 @@ export function TriageFocusCard({
           {row.senderEmail}
         </span>
         {row.protectionReason !== null && (
-          <span style={{ marginTop: 10 }}>
+          <span style={{ marginTop: space[3] }}>
             <ProtectedMark />
           </span>
         )}
@@ -144,27 +159,31 @@ export function TriageFocusCard({
         <span
           data-dm-focus-count
           style={{
-            marginTop: 24,
+            marginTop: space[8],
             fontFamily: font.display,
-            fontSize: text['4xl'],
+            fontSize: 'clamp(56px, 7vw, 80px)',
             fontWeight: 600,
             lineHeight: 1,
-            letterSpacing: '-0.02em',
+            letterSpacing: '-0.03em',
             color: color.fg,
             fontVariantNumeric: 'tabular-nums',
           }}
         >
           {facts.count.toLocaleString('en-US')}
         </span>
-        <span style={{ marginTop: 6, fontSize: text.sm, color: color.fgMuted }}>{facts.unit}</span>
+        <span style={{ marginTop: space[2], fontSize: text.md, color: color.fgMuted }}>
+          {facts.unit}
+        </span>
 
         {facts.why !== null && (
           <p
             style={{
-              margin: '16px 0 0',
+              margin: `${space[5]}px 0 0`,
+              maxWidth: '36ch',
               fontSize: text.md,
               color: color.fgSoft,
               lineHeight: 1.5,
+              textWrap: 'pretty',
             }}
           >
             {facts.why}
@@ -173,30 +192,65 @@ export function TriageFocusCard({
 
         <button
           type="button"
+          data-dm-button=""
           onClick={onToggleWhy}
           aria-expanded={whyOpen}
           aria-controls={`triage-focus-why-${row.id}`}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = color.fill;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+          }}
           style={{
             // Explicit resets, not `all: unset` — that also unsets the
             // global :focus-visible ring.
-            background: 'none',
-            border: 'none',
-            fontFamily: 'inherit',
-            cursor: 'pointer',
-            marginTop: 8,
-            minHeight: isNarrow ? 44 : 28,
-            padding: '0 8px',
+            marginTop: space[3],
+            height: isNarrow ? 44 : 30,
+            padding: `0 ${space[4]}px`,
             display: 'inline-flex',
             alignItems: 'center',
+            gap: 6,
+            background: 'transparent',
+            border: 'none',
+            borderRadius: radius.pill,
+            fontFamily: 'inherit',
             fontSize: text.sm,
             fontWeight: 600,
-            color: color.primary,
+            color: color.fgSoft,
+            cursor: 'pointer',
+            transition: `background ${motion.fast} ${motion.ease}`,
           }}
         >
           {whyOpen ? 'Hide why' : 'Why?'}
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+            style={{
+              transform: whyOpen ? 'rotate(180deg)' : 'none',
+              transition: `transform ${motion.fast} ${motion.ease}`,
+            }}
+          >
+            <path d="m6 9 6 6 6-6" />
+          </svg>
         </button>
         {whyOpen && (
-          <div id={`triage-focus-why-${row.id}`} style={{ width: '100%' }}>
+          <div
+            id={`triage-focus-why-${row.id}`}
+            style={{
+              width: '100%',
+              marginTop: space[2],
+              paddingTop: space[2],
+              borderTop: `1px solid ${color.lineSoft}`,
+            }}
+          >
             <TriageRowExpanded row={row} />
           </div>
         )}
@@ -204,7 +258,7 @@ export function TriageFocusCard({
         {/* Mandatory while an action is pending — never behind the
             "Why?" disclosure (see `InlinePreviewBlock`). */}
         {inlinePreview != null && (
-          <div style={{ width: '100%', marginTop: 16 }}>
+          <div style={{ width: '100%', marginTop: space[5] }}>
             <InlinePreviewBlock
               row={row}
               preview={inlinePreview}
@@ -216,16 +270,21 @@ export function TriageFocusCard({
             />
           </div>
         )}
+
+        <div style={{ width: '100%', marginTop: space[8] }}>
+          <ActionToolbar
+            row={row}
+            onAction={onAction}
+            keyboardEnabled={!actionsDisabled}
+            disabled={actionsDisabled}
+            layout={isNarrow ? 'bar' : 'row'}
+            // One row on desktop: five 44px capsules with key hints wrap
+            // 3 + 2 inside the card. Phones use the 44px two-column bar.
+            size="md"
+          />
+        </div>
         {drag?.wouldResolve != null && <SwipeOverlay verb={drag.wouldResolve} />}
       </div>
-
-      <ActionToolbar
-        row={row}
-        onAction={onAction}
-        keyboardEnabled={!actionsDisabled}
-        disabled={actionsDisabled}
-        layout={isNarrow ? 'bar' : 'row'}
-      />
 
       {/* SR announcement while the decision confirms server-side. */}
       {busy && (

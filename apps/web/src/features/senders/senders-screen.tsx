@@ -2446,10 +2446,10 @@ function SendersScreenContent({
           >
             <h1
               style={{
-                fontFamily: font.display,
+                fontFamily: font.sans,
                 fontSize: text['2xl'],
-                fontWeight: 600,
-                letterSpacing: '-0.018em',
+                fontWeight: 650,
+                letterSpacing: '-0.02em',
                 margin: 0,
               }}
             >
@@ -2535,7 +2535,7 @@ function SendersScreenContent({
                   style={{
                     fontFamily: font.display,
                     fontWeight: 400,
-                    fontSize: 56,
+                    fontSize: text['4xl'],
                     lineHeight: 1,
                     letterSpacing: '-0.03em',
                     color: color.fg,
@@ -2549,10 +2549,10 @@ function SendersScreenContent({
                 </span>
                 <span
                   style={{
-                    fontFamily: font.display,
-                    fontSize: text['2xl'],
-                    color: color.fgSoft,
-                    marginLeft: 12,
+                    fontFamily: font.sans,
+                    fontSize: text.lg,
+                    color: color.fgMuted,
+                    marginLeft: 10,
                   }}
                 >
                   {isDefaultCompose(compose) && !hasQuery ? 'active senders' : 'senders'}
@@ -2770,7 +2770,9 @@ function SendersScreenContent({
               position: 'sticky',
               top: 0,
               height: 'calc(100dvh - 56px)',
-              borderLeft: `1px solid ${color.line}`,
+              // Inset so the raised pane floats clear of the edges.
+              padding: 12,
+              boxSizing: 'border-box',
               minWidth: 0,
             }}
           >
@@ -2912,8 +2914,9 @@ function BulkSelectButton({
   if (senders.length === 0) return null;
   const allSelected = senders.every((s) => selected.has(s.id));
   return (
-    <button
-      type="button"
+    <Button
+      tone="ghost"
+      size="sm"
       onClick={() =>
         setSelected((prev) => {
           const next = new Set(prev);
@@ -2924,19 +2927,10 @@ function BulkSelectButton({
           return next;
         })
       }
-      aria-pressed={allSelected}
-      style={{
-        fontFamily: font.sans,
-        fontSize: text.sm,
-        color: color.fgMuted,
-        background: 'transparent',
-        border: 'none',
-        padding: 0,
-        cursor: 'pointer',
-      }}
+      ariaPressed={allSelected}
     >
       {allSelected ? `Deselect all ${senders.length}` : `Select all ${senders.length}`}
-    </button>
+    </Button>
   );
 }
 

@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect } from 'react';
-import { tokens, useIsAtMost } from '@declutrmail/shared';
+import { tokens } from '@declutrmail/shared';
 import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import { useMarkVerbTourSeen, useVerbTourState } from './use-verb-tour';
 import { VerbTourPanel } from './verb-tour-panel';
 
-const { color } = tokens;
+const { color, shadow } = tokens;
 
 /**
  * The onboarding host for the D38 tour (step 5).
@@ -43,7 +43,6 @@ export function OnboardingVerbTour() {
 export function VerbTourDialog({ onClose }: { onClose: () => void }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
   const markSeen = useMarkVerbTourSeen();
-  const isPhone = useIsAtMost('xs');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -62,52 +61,38 @@ export function VerbTourDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 200,
-        }}
-      />
+    // The shared sheet shell: a centred dialog on desktop, a bottom sheet
+    // on phones — pure CSS (tokens.css), so no post-hydration jump.
+    <div
+      className="dm-scrim dm-sheet-layer"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        justifyContent: 'center',
+        padding: 16,
+        overflowY: 'auto',
+      }}
+    >
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-verb-tour-replay-title"
-        style={
-          isPhone
-            ? {
-                position: 'fixed',
-                left: 0,
-                right: 0,
-                bottom: 0,
-                width: '100%',
-                maxHeight: '88vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: '16px 16px 0 0',
-                boxShadow: '0 -12px 40px rgba(14,20,19,0.30)',
-                zIndex: 201,
-                paddingBottom: 'env(safe-area-inset-bottom)',
-              }
-            : {
-                position: 'fixed',
-                top: '12vh',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: 'min(620px, calc(100vw - 32px))',
-                maxHeight: '76vh',
-                overflow: 'auto',
-                background: color.card,
-                borderRadius: 14,
-                boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-                zIndex: 201,
-              }
-        }
+        className="dm-sheet dm-sheet-panel"
+        style={{
+          width: '100%',
+          maxWidth: 620,
+          maxHeight: '88vh',
+          overflow: 'auto',
+          background: color.card,
+          boxShadow: shadow.modal,
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        }}
       >
         <VerbTourPanel
           headingId="dm-verb-tour-replay-title"
@@ -117,6 +102,6 @@ export function VerbTourDialog({ onClose }: { onClose: () => void }) {
           saveFailed={markSeen.isError}
         />
       </div>
-    </>
+    </div>
   );
 }

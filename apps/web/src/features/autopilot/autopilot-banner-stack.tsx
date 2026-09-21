@@ -7,9 +7,9 @@ const { color, font, radius, text } = tokens;
 
 /** The one surface every Autopilot banner shares — a wash, no border. */
 export const bannerSurface: CSSProperties = {
-  padding: '12px 14px',
-  background: color.paper,
-  borderRadius: radius.md,
+  padding: '14px 16px',
+  background: color.fill,
+  borderRadius: radius.lg,
   fontFamily: font.sans,
 };
 

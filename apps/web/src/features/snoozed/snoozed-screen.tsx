@@ -19,6 +19,7 @@ import type { SnoozedSenderRow } from '@/lib/api/snoozed';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 
+import { flatRowCss } from '@/features/settings/flat-list';
 import { useSetSnooze, useSnoozed, useWakeNow } from './api/use-snoozed';
 import {
   formatWakeTime,
@@ -29,7 +30,7 @@ import {
   type WakeBucket,
 } from './snooze-times';
 
-const { color, font, text } = tokens;
+const { color, font, radius, text } = tokens;
 
 /** The D82 preset id recorded on `snooze_set` (D159). */
 type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
@@ -111,7 +112,7 @@ export function SnoozedScreen() {
         padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 20,
+        gap: 32,
         width: '100%',
         boxSizing: 'border-box',
         maxWidth: 880,
@@ -123,8 +124,8 @@ export function SnoozedScreen() {
         style={{
           margin: 0,
           fontSize: text['2xl'],
-          fontWeight: 600,
-          letterSpacing: '-0.015em',
+          fontWeight: 650,
+          letterSpacing: '-0.02em',
           color: color.fg,
         }}
       >
@@ -188,25 +189,27 @@ function BucketGroup({
   return (
     <section
       aria-label={`${label} (${rows.length})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
+      <style>{flatRowCss('dm-later-row')}</style>
       <h2
         style={{
           display: 'flex',
           alignItems: 'baseline',
           gap: 6,
           margin: 0,
-          fontSize: text.sm,
-          fontWeight: 600,
-          color: color.fgSoft,
+          fontSize: text.lg,
+          fontWeight: 650,
+          letterSpacing: '-0.01em',
+          color: color.fg,
         }}
       >
         {label}
         <span
           style={{
             color: color.fgMuted,
+            fontSize: text.md,
             fontWeight: 500,
-            fontFamily: font.mono,
             fontVariantNumeric: 'tabular-nums',
           }}
         >
@@ -278,11 +281,11 @@ export function SnoozedRow({
 
   return (
     <li
+      className="dm-later-row"
       style={{
         display: 'flex',
         flexDirection: 'column',
         gap: 0,
-        borderTop: `1px solid ${color.line}`,
         fontFamily: font.sans,
       }}
     >
@@ -295,7 +298,9 @@ export function SnoozedRow({
             ? '1fr'
             : 'minmax(180px, 1.4fr) auto minmax(140px, 1fr) auto',
           alignItems: isMobile ? 'start' : 'center',
-          gap: isMobile ? 10 : 14,
+          gap: isMobile ? 10 : 16,
+          minHeight: 64,
+          boxSizing: 'border-box',
           padding: '12px 0',
         }}
       >
@@ -312,15 +317,14 @@ export function SnoozedRow({
           >
             {name}
           </div>
-          <div style={{ fontSize: text.sm, color: color.fgMuted, fontFamily: font.mono }}>
-            {row.domain}
-          </div>
+          <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>{row.domain}</div>
         </div>
 
         <span
           style={{
             fontSize: text.sm,
-            color: color.fgMuted,
+            fontWeight: 600,
+            color: color.fgSoft,
             fontVariantNumeric: 'tabular-nums',
             whiteSpace: 'nowrap',
           }}
@@ -329,7 +333,14 @@ export function SnoozedRow({
         </span>
 
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: text.sm, color: color.fg, whiteSpace: 'nowrap' }}>
+          <div
+            style={{
+              fontSize: text.sm,
+              color: color.fg,
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
             {waking
               ? 'Bringing back…'
               : row.returnStatus === 'retrying'
@@ -341,10 +352,16 @@ export function SnoozedRow({
                     : `Returns ${formatWakeTime(row.snoozedUntil, new Date(), timeZone)}`}
           </div>
           {returnIssue ? (
-            <div style={{ fontSize: text.xs, color: color.danger }}>{returnIssue}</div>
+            <div style={{ fontSize: text.sm, color: color.danger }}>{returnIssue}</div>
           ) : null}
           {row.returnStatus === 'retrying' && row.lastReturnAttemptAt ? (
-            <div style={{ fontSize: text.xs, color: color.fgMuted }}>
+            <div
+              style={{
+                fontSize: text.xs,
+                color: color.fgMuted,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
               Last tried {formatLastAttempt(row.lastReturnAttemptAt, timeZone)}
             </div>
           ) : null}
@@ -367,6 +384,7 @@ export function SnoozedRow({
         <div style={{ display: 'flex', gap: 8, whiteSpace: 'nowrap' }}>
           <Button
             tone="default"
+            size="sm"
             disabled={waking || wake.isPending}
             onClick={() => setPanel(panel === 'snooze-menu' ? 'closed' : 'snooze-menu')}
           >
@@ -374,6 +392,7 @@ export function SnoozedRow({
           </Button>
           <Button
             tone="default"
+            size="sm"
             disabled={waking || wake.isPending}
             onClick={() => setPanel(panel === 'confirm-wake' ? 'closed' : 'confirm-wake')}
           >
@@ -451,8 +470,7 @@ function WakeConfirm({
   return (
     <div
       style={{
-        borderTop: `1px solid ${color.lineSoft}`,
-        padding: '10px 0',
+        padding: '4px 0 14px',
         display: 'flex',
         alignItems: 'center',
         gap: 12,
@@ -462,7 +480,9 @@ function WakeConfirm({
       <div style={{ width: '100%' }}>
         <MailboxActionContext />
       </div>
-      <span style={{ fontSize: text.sm, color: color.fg }}>{what}.</span>
+      <span style={{ fontSize: text.md, color: color.fg, fontVariantNumeric: 'tabular-nums' }}>
+        {what}.
+      </span>
       <span style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
         <Button tone="default" onClick={onCancel} disabled={pending}>
           Cancel
@@ -517,8 +537,7 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
   return (
     <div
       style={{
-        borderTop: `1px solid ${color.lineSoft}`,
-        padding: '10px 0 12px',
+        padding: '4px 0 14px',
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
@@ -529,6 +548,7 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
           <Button
             key={preset.id}
             tone="default"
+            size="sm"
             disabled={setSnooze.isPending}
             onClick={() => submit(preset.at.toISOString(), preset.id)}
           >
@@ -555,10 +575,12 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
             style={{
               fontSize: text.sm,
               fontFamily: font.sans,
-              padding: '5px 8px',
-              border: `1px solid ${color.lineSoft}`,
-              borderRadius: 7,
-              background: 'transparent',
+              height: 36,
+              boxSizing: 'border-box',
+              padding: '0 12px',
+              border: 'none',
+              borderRadius: radius.md,
+              background: color.fill,
               color: color.fg,
             }}
           />
@@ -581,10 +603,12 @@ function SnoozeMenu({ row, onClose }: { row: SnoozedSenderRow; onClose: () => vo
             minWidth: 160,
             fontSize: text.sm,
             fontFamily: font.sans,
-            padding: '5px 8px',
-            border: `1px solid ${color.lineSoft}`,
-            borderRadius: 7,
-            background: 'transparent',
+            height: 36,
+            boxSizing: 'border-box',
+            padding: '0 12px',
+            border: 'none',
+            borderRadius: radius.md,
+            background: color.fill,
             color: color.fg,
           }}
         />

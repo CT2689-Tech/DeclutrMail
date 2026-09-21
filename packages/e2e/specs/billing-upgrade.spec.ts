@@ -212,13 +212,11 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   await card.getByRole('button', { name: 'More actions' }).click();
   await card.getByRole('menuitem', { name: /Archive/ }).click();
 
-  const preview = page.getByRole('dialog');
+  // The preview sheet is named by its title — the verb and the live
+  // count as a question ("Archive 3 emails?", ADR-0042), or "Nothing …"
+  // when the seeded sender has no inbox mail left.
+  const preview = page.getByRole('dialog', { name: /^(Archive .+\?|Nothing .+)$/ });
   await expect(preview).toBeVisible();
-  // QA-archive-20260901-01: the eyebrow used to be a fully generic
-  // "Preview · before anything changes" — unified across every D226
-  // preview surface to name the verb (`previewEyebrowLabel`), a bare
-  // "Preview · Archive" at n=1 with no count suffix.
-  await expect(preview).toContainText('Preview · Archive');
   // A3 client pre-refusal (#401): with the monthly allowance spent, the
   // confirm CTA is REPLACED by the upgrade CTA — the shortfall is
   // stated in the modal and no request is ever sent (the server 402

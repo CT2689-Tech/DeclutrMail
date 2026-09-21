@@ -289,7 +289,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       within(dialog).getByText('Everything you see is scoped to the active account.'),
     ).toBeInTheDocument();
     expect(useMailboxesHealthSpy).toHaveBeenLastCalledWith(me.mailboxes, { enabled: true });
-    expect(dialog.getAttribute('style')).toContain('width: 300px');
+    expect(dialog.getAttribute('style')).toContain('width: 320px');
     expect(dialog.getAttribute('style')).toContain('max-width: calc(100vw - 24px)');
     expect(dialog.getAttribute('style')).toContain('max-height: calc(100vh - 72px)');
     expect(dialog.getAttribute('style')).toContain('overflow-y: auto');

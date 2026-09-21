@@ -1450,8 +1450,9 @@ export function TriageScreen({
       style={{
         boxSizing: 'border-box',
         width: '100%',
-        // Content column + gutters: a 560 card in focus mode, an 880 list.
-        maxWidth: (mode === 'focus' ? 560 : 880) + 2 * (isNarrow ? 16 : 24),
+        // Content column + gutters: a 640 card in focus mode (the five verbs fit
+        // one row), an 880 list.
+        maxWidth: (mode === 'focus' ? 640 : 880) + 2 * (isNarrow ? 16 : 24),
         margin: '0 auto',
         // Bottom room clears the fixed undo pill.
         padding: isNarrow ? '16px 16px 96px' : '20px 24px 96px',
@@ -1468,14 +1469,14 @@ export function TriageScreen({
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 16,
-            minHeight: 32,
+            minHeight: 44,
           }}
         >
           <h1
             style={{
               fontSize: text['2xl'],
-              fontWeight: 600,
-              letterSpacing: '-0.014em',
+              fontWeight: 650,
+              letterSpacing: '-0.02em',
               margin: 0,
             }}
           >
@@ -1500,9 +1501,8 @@ export function TriageScreen({
               />
               <Button
                 tone="ghost"
-                size="md"
+                size={isNarrow ? 'lg' : 'md'}
                 onClick={() => setStoredMode(mode === 'focus' ? 'list' : 'focus')}
-                {...(isNarrow ? { style: { height: 44 } } : {})}
               >
                 {mode === 'focus' ? 'See all' : 'One at a time'}
               </Button>
@@ -1698,7 +1698,7 @@ function TriageErrorState({ error, onRetry }: { error: unknown; onRetry: () => v
 
 /** Skeleton — one card in focus mode, a stack of rows in the list. */
 export function TriageLoadingState({ variant = 'list' }: { variant?: 'focus' | 'list' }) {
-  const blocks = variant === 'focus' ? [320] : [64, 64, 64, 64, 64];
+  const blocks = variant === 'focus' ? [440] : [72, 72, 72, 72, 72];
   return (
     <div
       role="status"
@@ -1710,7 +1710,11 @@ export function TriageLoadingState({ variant = 'list' }: { variant?: 'focus' | '
           key={i}
           aria-hidden="true"
           className="dm-skeleton"
-          style={{ height, background: color.lineSoft, borderRadius: radius.lg }}
+          style={{
+            height,
+            background: color.fill,
+            borderRadius: variant === 'focus' ? radius['2xl'] : radius.lg,
+          }}
         />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading triage queue</span>

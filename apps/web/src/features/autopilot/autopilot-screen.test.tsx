@@ -431,7 +431,11 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(rulesList).getByText(/future matches run automatically/i)).toBeInTheDocument();
     expect(within(rulesList).getByText(/does nothing until you resume/i)).toBeInTheDocument();
     // Off needs no sentence and no status word — the switch says it, once.
-    expect(within(rulesList).getAllByText(/^Off$/)).toHaveLength(1);
+    const offSwitches = within(rulesList)
+      .getAllByRole('switch')
+      .filter((sw) => sw.getAttribute('aria-checked') === 'false');
+    expect(offSwitches).toHaveLength(1);
+    expect(within(rulesList).queryAllByText(/^Off$/)).toHaveLength(0);
   });
 
   it('renders the observe digest on enabled observe-mode cards, verb-honest (D10/D101)', () => {
@@ -518,12 +522,14 @@ describe('AutopilotScreen — rules management (D101)', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/Turn on "Long-dormant unsubscribe"/i)).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole('heading', { name: /Turn on Long-dormant unsubscribe\?/i }),
+    ).toBeInTheDocument();
     // The whole point: mail state is untouched until the user confirms.
     expect(observed).toHaveLength(0);
   });
 
-  it('“Turn on and run” patches enabled + mode=active in ONE request', async () => {
+  it('“Act now” (the default choice) patches enabled + mode=active in ONE request', async () => {
     const observed: Array<{ path: string; body: unknown }> = [];
     installFetchStub([
       {
@@ -546,7 +552,8 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
-    const confirm = await screen.findByRole('button', { name: /turn on and run/i });
+    const confirm = await screen.findByRole('button', { name: /^turn on$/i });
+    expect(screen.getByRole('radio', { name: /act now/i })).toHaveAttribute('aria-checked', 'true');
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
 
@@ -580,7 +587,8 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
-    const watch = await screen.findByRole('button', { name: /watch first/i });
+    await userEvent.click(await screen.findByRole('radio', { name: /watch first/i }));
+    const watch = screen.getByRole('button', { name: /^watch first$/i });
     await waitFor(() => expect(watch).toBeEnabled());
     await userEvent.click(watch);
 
@@ -612,14 +620,19 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // "Watch first" moves no mail, but it still commits a mode, so it
     // waits for the same dry-run. A second button that skipped the gate
     // would be a hole straight through the mandatory preview.
-    const confirm = await screen.findByRole('button', { name: /turn on and run/i });
-    const watch = screen.getByRole('button', { name: /watch first/i });
+    // One primary carries whichever commit is chosen, so both choices are
+    // checked against the same gate.
+    const confirm = await screen.findByRole('button', { name: /^turn on$/i });
     expect(confirm).toBeDisabled();
-    expect(watch).toBeDisabled();
+    await userEvent.click(screen.getByRole('radio', { name: /watch first/i }));
+    expect(screen.getByRole('button', { name: /^watch first$/i })).toBeDisabled();
 
     releasePreview();
-    await waitFor(() => expect(confirm).toBeEnabled());
-    expect(watch).toBeEnabled();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /^watch first$/i })).toBeEnabled(),
+    );
+    await userEvent.click(screen.getByRole('radio', { name: /act now/i }));
+    expect(screen.getByRole('button', { name: /^turn on$/i })).toBeEnabled();
   });
 
   it('an under-tier workspace is never offered the acting commit on enable', async () => {
@@ -653,10 +666,14 @@ describe('AutopilotScreen — rules management (D101)', () => {
     );
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).queryByRole('button', { name: /turn on and run/i })).toBeNull();
-    expect(within(dialog).queryByRole('button', { name: /watch first/i })).toBeNull();
+    // No choice at all — the acting commit is not offered.
+    expect(within(dialog).queryByRole('radiogroup')).toBeNull();
+    expect(within(dialog).queryByRole('radio', { name: /act now/i })).toBeNull();
+    expect(
+      within(dialog).getByText(/Nothing moves until you approve each match/i),
+    ).toBeInTheDocument();
 
-    const confirm = within(dialog).getByRole('button', { name: /turn on and watch/i });
+    const confirm = within(dialog).getByRole('button', { name: /^turn on$/i });
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
 
@@ -664,7 +681,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
   });
 
-  it('shows the busy label on the button that was clicked, not the other one', async () => {
+  it('shows the busy label for the commit that was chosen, not the other one', async () => {
     let releasePatch!: () => void;
     const patchGate = new Promise<void>((resolve) => {
       releasePatch = resolve;
@@ -690,27 +707,29 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
-    const watch = await screen.findByRole('button', { name: /watch first/i });
+    await userEvent.click(await screen.findByRole('radio', { name: /watch first/i }));
+    const watch = screen.getByRole('button', { name: /^watch first$/i });
     await waitFor(() => expect(watch).toBeEnabled());
     await userEvent.click(watch);
 
-    // The acting button must NOT claim to be running. One shared
+    // The busy label must NOT claim the acting commit. One shared
     // `isPending` made it read "Turning on…" while the user had
     // deliberately chosen the cautious path.
     await waitFor(() =>
       expect(screen.getByRole('button', { name: /starting to watch/i })).toBeInTheDocument(),
     );
     expect(screen.queryByRole('button', { name: /^turning on…$/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /turn on and run/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /watch first/i })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
     releasePatch();
   });
 
-  it('⌘⏎ does not fire the acting commit while focus is on Watch first', async () => {
-    // Smoke found this, not a test: the first version marked the
-    // buttons with a `data-` prop on the shared `Button`, which takes
-    // an explicit prop allowlist and dropped it silently. The guard
-    // read an attribute that never existed, so the chord committed
-    // `mode='active'` from the cautious button's own focus.
+  it('⌘⏎ commits the chosen path — never the acting commit when Watch first is chosen', async () => {
+    // Smoke found this, not a test: an earlier two-button version let the
+    // chord commit `mode='active'` while the user was on the cautious
+    // button. The chord and the one primary now share the chosen commit.
     const observed: unknown[] = [];
     installFetchStub([
       {
@@ -733,19 +752,13 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
-    const watch = await screen.findByRole('button', { name: /watch first/i });
+    await userEvent.click(await screen.findByRole('radio', { name: /watch first/i }));
+    const watch = screen.getByRole('button', { name: /^watch first$/i });
     await waitFor(() => expect(watch).toBeEnabled());
 
-    watch.focus();
-    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
-    await waitFor(() => expect(observed).toHaveLength(0));
-
-    // With focus on the primary the chord still works — the guard must
-    // suppress the shortcut, not break it.
-    screen.getByRole('button', { name: /turn on and run/i }).focus();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]).toEqual({ enabled: true, mode: 'active' });
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
   });
 
   it('keeps the modal open and the toggle Off when the commit fails', async () => {
@@ -767,7 +780,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(
       screen.getByRole('switch', { name: /enable rule long-dormant unsubscribe/i }),
     );
-    const confirm = await screen.findByRole('button', { name: /turn on and run/i });
+    const confirm = await screen.findByRole('button', { name: /^turn on$/i });
     await waitFor(() => expect(confirm).toBeEnabled());
     await userEvent.click(confirm);
 
@@ -862,6 +875,8 @@ describe('AutopilotScreen — rules management (D101)', () => {
     ]);
 
     renderScreen({ kind: 'ready', rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT], suggestions: [] });
+    // The dry-run is still an explicit per-rule request, inside Details.
+    openAllRuleDetails();
     await userEvent.click(
       screen.getByRole('button', {
         name: /preview matches for rule auto-archive low-engagement/i,
@@ -870,11 +885,14 @@ describe('AutopilotScreen — rules management (D101)', () => {
 
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toBe(`/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}/preview`);
-    await waitFor(() =>
-      expect(screen.getByText(/senders would match if this rule were active now/i)).toBeVisible(),
-    );
-    expect(screen.getByText('12')).toBeInTheDocument();
-    expect(screen.getByText(/observe preview — this check is read-only/i)).toBeInTheDocument();
+    const panel = await screen.findByRole('region', {
+      name: /current match preview for rule auto-archive low-engagement/i,
+    });
+    // The would-match count, out of the senders checked…
+    expect(within(panel).getByText(/12 of 148 senders checked match/i)).toBeInTheDocument();
+    // …and the one number the rule would act on now.
+    expect(within(panel).getByText('10')).toBeInTheDocument();
+    expect(within(panel).getByText('senders actionable now')).toBeInTheDocument();
   });
 });
 
@@ -1121,24 +1139,22 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // Modal renders — the preview MUST be visible before the mutation,
     // and Confirm stays DISABLED until the dry-run resolves.
     const dialog = screen.getByRole('dialog', { name: /switch .* to active/i });
-    expect(within(dialog).getByText(/before anything changes/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Checking current sender data/i)).toBeInTheDocument();
     const confirm = within(dialog).getByRole('button', { name: /switch to active/i });
     expect(confirm).toBeDisabled();
     expect(observed).toHaveLength(0);
 
     releasePreview();
     await waitFor(() => expect(confirm).toBeEnabled());
-    // The first-sweep dry-run rendered inside the sheet.
-    expect(
-      within(dialog).getByText(/senders would match if this rule were active now/i),
-    ).toBeInTheDocument();
-    expect(within(dialog).getByRole('heading', { name: /activation report/i })).toBeInTheDocument();
+    // The first-sweep dry-run rendered inside the sheet: the one number
+    // up front, the activation report (no longer under its own heading)
+    // in Details.
+    expect(within(dialog).getByText('senders actionable now')).toBeInTheDocument();
     expect(
       within(dialog).getByText(/10 senders and 74 inbox messages actionable now/i),
     ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(/3 additional matching senders are Protected/i),
-    ).toBeInTheDocument();
+    // Said once per surface — in the note; the Details totals omit it.
+    expect(within(dialog).getAllByText(/3 Protected senders are skipped/i)).toHaveLength(1);
     expect(within(dialog).getByText(/7-day observed volume: 34 matches/i)).toBeInTheDocument();
     expect(within(dialog).getByText(/daily safety cap: 100 actions/i)).toBeInTheDocument();
     expect(
@@ -1258,11 +1274,15 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     expect(
       within(dialog).getByText(/3 suggestions already collected are covered by this/i),
     ).toBeInTheDocument();
-    // The secondary path leads somewhere different, and the user is
-    // choosing between them right here.
-    expect(within(dialog).getByText(/stay pending for your approval/i)).toBeInTheDocument();
     // The old promise must be gone, not merely joined by the new one.
     expect(within(dialog).queryByText(/Approve or skip them separately/i)).not.toBeInTheDocument();
+    // The other path leads somewhere different, and the user is choosing
+    // between them right here: picking Watch first says so.
+    fireEvent.click(within(dialog).getByRole('radio', { name: /watch first/i }));
+    expect(
+      within(dialog).getByText(/3 suggestions already collected stay pending/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/covered by this/i)).not.toBeInTheDocument();
   });
 
   it('turning on into Observe, says the backlog stays pending', () => {
@@ -1285,7 +1305,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(
-      within(dialog).getByText(/3 suggestions already collected stay pending below/i),
+      within(dialog).getByText(/3 suggestions already collected stay pending/i),
     ).toBeInTheDocument();
     expect(within(dialog).queryByText(/covered by this/i)).not.toBeInTheDocument();
   });
@@ -1389,11 +1409,15 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
 
     // Mandatory preview — names the senders, no mutation yet.
     const dialog = screen.getByRole('dialog', { name: /approve 2 suggestions/i });
-    expect(within(dialog).getByText(/before anything changes/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/bargain bulletin/i)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByText('Details'));
+    expect(
+      within(within(dialog).getByRole('list', { name: /senders in these suggestions/i })).getByText(
+        /bargain bulletin/i,
+      ),
+    ).toBeInTheDocument();
     expect(observed).toHaveLength(0);
 
-    await userEvent.click(within(dialog).getByRole('button', { name: /approve 2 suggestions/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /^approve 2$/i }));
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toBe(`/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}/approve-all`);
   });
@@ -1429,13 +1453,11 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
       }),
     );
 
-    const dialog = screen.getByRole('dialog', { name: /approve ALL ~214 pending suggestions/i });
+    const dialog = screen.getByRole('dialog', { name: /approve all ~214 suggestions/i });
     expect(within(dialog).getByText(/showing 50 of ~214/i)).toBeInTheDocument();
-    expect(
-      within(dialog).getByRole('button', { name: /approve all ~214 suggestions/i }),
-    ).toBeInTheDocument();
-    // Never a bare "Approve 50 suggestions" — that would be the page count.
-    expect(within(dialog).queryByRole('button', { name: /^approve 50 suggestions$/i })).toBeNull();
+    expect(within(dialog).getByRole('button', { name: /^approve all ~214$/i })).toBeInTheDocument();
+    // Never a bare "Approve 50" — that would be the page count.
+    expect(within(dialog).queryByRole('button', { name: /^approve 50$/i })).toBeNull();
   });
 
   it('Approve selected sends exactly the checked matchIds', async () => {
@@ -1468,7 +1490,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
 
     const dialog = screen.getByRole('dialog', { name: /approve 1 suggestion/i });
     expect(observed).toHaveLength(0);
-    await userEvent.click(within(dialog).getByRole('button', { name: /approve suggestion/i }));
+    await userEvent.click(within(dialog).getByRole('button', { name: /^approve 1$/i }));
 
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toEqual({ matchIds: ['00000000-0000-0000-0000-0000000000a1'] });
@@ -1567,8 +1589,11 @@ describe('AutopilotScreen — pause-all (D105 + D226)', () => {
     await userEvent.click(screen.getByRole('button', { name: /pause every autopilot rule/i }));
 
     // Modal renders — the preview MUST be visible before the mutation.
-    expect(screen.getByRole('dialog', { name: /pause/i })).toBeInTheDocument();
-    expect(screen.getByText(/before anything changes/i)).toBeInTheDocument();
+    const dialog = screen.getByRole('dialog', { name: /pause \d+ autopilot rules?\?/i });
+    await userEvent.click(within(dialog).getByText('Details'));
+    expect(
+      within(dialog).getByRole('list', { name: /rules that will pause/i }).children.length,
+    ).toBeGreaterThan(0);
 
     // No network call yet.
     expect(observed).toHaveLength(0);

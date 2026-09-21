@@ -10,7 +10,7 @@ import { isTypingTarget } from '@/features/senders/keyboard';
 
 import { VERB_ORDER, VERB_SHORTCUT } from './types';
 
-const { color, font, text } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /**
  * Triage keyboard-hint overlay — press `?` to reveal, Escape (or the
@@ -77,36 +77,36 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
   const trapRef = useFocusTrap<HTMLDivElement>(true);
 
   return (
-    <>
-      <div
-        onClick={onClose}
-        style={{
-          position: 'fixed',
-          inset: 0,
-          background: 'rgba(14,20,19,0.45)',
-          backdropFilter: 'blur(3px)',
-          zIndex: 200,
-        }}
-      />
+    <div
+      className="dm-scrim dm-sheet-layer"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        justifyContent: 'center',
+        padding: 16,
+        overflowY: 'auto',
+      }}
+    >
       <div
         ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dm-triage-help-title"
+        className="dm-sheet dm-sheet-panel"
         style={{
-          position: 'fixed',
-          top: '14vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          width: 'min(440px, calc(100vw - 32px))',
-          maxHeight: '72vh',
-          overflow: 'auto',
+          width: '100%',
+          maxWidth: 460,
+          boxSizing: 'border-box',
+          padding: '28px 28px 20px',
           background: color.card,
-          borderRadius: 14,
-          border: `1px solid ${color.border}`,
-          boxShadow: '0 24px 60px rgba(14,20,19,0.30)',
-          zIndex: 201,
+          boxShadow: shadow.modal,
           fontFamily: font.sans,
+          color: color.fg,
         }}
       >
         <div
@@ -114,13 +114,13 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: '16px 20px 12px',
-            borderBottom: `1px solid ${color.line}`,
+            gap: 12,
+            marginBottom: 4,
           }}
         >
           <h2
             id="dm-triage-help-title"
-            style={{ fontSize: text.lg, fontWeight: 600, letterSpacing: '-0.012em', margin: 0 }}
+            style={{ fontSize: text.xl, fontWeight: 650, letterSpacing: '-0.02em', margin: 0 }}
           >
             Keyboard shortcuts
           </h2>
@@ -128,21 +128,42 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
             type="button"
             aria-label="Close shortcuts"
             onClick={onClose}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = color.fill;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'transparent';
+            }}
             style={{
-              background: 'none',
+              width: 36,
+              height: 36,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              background: 'transparent',
               border: 'none',
-              cursor: 'pointer',
+              borderRadius: radius.pill,
               color: color.fgMuted,
-              fontSize: text.lg,
-              lineHeight: 1,
-              padding: 2,
+              cursor: 'pointer',
             }}
           >
-            ✕
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
           </button>
         </div>
 
-        <div style={{ padding: '8px 20px 16px' }}>
+        <div>
           <SectionLabel>Decide</SectionLabel>
           {VERB_ORDER.map((verb) => (
             <ShortcutRow key={verb} keys={VERB_SHORTCUT[verb]} label={VERB_HELP[verb]} />
@@ -166,7 +187,7 @@ export function TriageKeyboardHelpPanel({ onClose }: { onClose: () => void }) {
           <ShortcutRow keys="Swipe ↑" label="Later" />
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -174,10 +195,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
       style={{
-        fontSize: text.xs,
+        fontSize: text.sm,
         fontWeight: 600,
         color: color.fgMuted,
-        margin: '14px 0 6px',
+        margin: '20px 0 4px',
       }}
     >
       {children}
@@ -192,11 +213,11 @@ function ShortcutRow({ keys, label }: { keys: string; label: string }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '7px 0',
-        borderBottom: `1px solid ${color.lineSoft}`,
+        gap: 16,
+        minHeight: 40,
       }}
     >
-      <span style={{ fontSize: text.base, color: color.fg }}>{label}</span>
+      <span style={{ fontSize: text.md, color: color.fg }}>{label}</span>
       <Kbd>{keys}</Kbd>
     </div>
   );

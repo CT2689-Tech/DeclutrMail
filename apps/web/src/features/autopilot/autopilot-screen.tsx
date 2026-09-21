@@ -61,7 +61,7 @@ import type {
  */
 const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
-const { color, font, text } = tokens;
+const { color, font, radius, shadow, text } = tokens;
 
 /**
  * BE page cap on GET /api/autopilot/pending-suggestions (D104) —
@@ -698,7 +698,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 20,
+        gap: 32,
         width: '100%',
         boxSizing: 'border-box',
         maxWidth: 880,
@@ -718,8 +718,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         <h1
           style={{
             fontSize: text['2xl'],
-            fontWeight: 600,
-            letterSpacing: '-0.015em',
+            fontWeight: 650,
+            letterSpacing: '-0.02em',
             margin: 0,
             color: color.fg,
           }}
@@ -769,11 +769,17 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
           {/* Rules management (D101) */}
           <section
             aria-labelledby="rules-heading"
-            style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
           >
             <h2
               id="rules-heading"
-              style={{ fontSize: text.sm, fontWeight: 600, margin: 0, color: color.fgSoft }}
+              style={{
+                fontSize: text.sm,
+                fontWeight: 600,
+                margin: 0,
+                paddingLeft: 16,
+                color: color.fgMuted,
+              }}
             >
               Rules
             </h2>
@@ -793,7 +799,11 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                   margin: 0,
                   display: 'flex',
                   flexDirection: 'column',
-                  borderBottom: `1px solid ${color.line}`,
+                  // One raised group; rows divide with inset hairlines.
+                  background: color.card,
+                  boxShadow: shadow.card,
+                  borderRadius: radius.xl,
+                  overflow: 'hidden',
                 }}
               >
                 {rules.map((rule) => (
@@ -838,13 +848,13 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
               >
                 <h2
                   id="pending-heading"
-                  style={{ fontSize: text.sm, fontWeight: 600, margin: 0, color: color.fgSoft }}
+                  style={{ fontSize: text.lg, fontWeight: 650, margin: 0, color: color.fg }}
                 >
                   Pending suggestions
                 </h2>
                 {state.kind === 'ready' && suggestions.length > 0 && (
                   <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                    <span style={{ fontFamily: font.mono, fontVariantNumeric: 'tabular-nums' }}>
+                    <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                       {suggestions.length}
                       {pendingBufferTruncated ? '+' : ''}
                     </span>{' '}
@@ -988,7 +998,7 @@ function RulesSkeleton() {
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       {[0, 1, 2].map((i) => (
-        <Skeleton key={i} variant="rect" height={64} borderRadius={8} />
+        <Skeleton key={i} variant="rect" height={72} borderRadius={20} />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading Autopilot rules</span>
     </div>
@@ -1004,7 +1014,7 @@ function SuggestionsSkeleton() {
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       {[0, 1, 2].map((i) => (
-        <Skeleton key={i} variant="rect" height={60} borderRadius={10} />
+        <Skeleton key={i} variant="rect" height={72} borderRadius={14} />
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading Autopilot suggestions</span>
     </div>
