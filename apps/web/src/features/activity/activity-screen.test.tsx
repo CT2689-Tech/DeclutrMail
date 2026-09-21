@@ -1018,7 +1018,7 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
-    const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
     expect(within(dialog).getByText('active+mailbox@example.com')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Manual' })).toHaveAttribute(
       'aria-pressed',
@@ -1070,7 +1070,7 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
 
     await userEvent.click(await screen.findByRole('button', { name: 'Export support bundle' }));
-    const dialog = screen.getByRole('dialog', { name: 'Export Activity support bundle' });
+    const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
     expect(within(dialog).getByText(/review outcome: failed/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archived' }));
