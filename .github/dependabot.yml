@@ -1,9 +1,11 @@
 # Dependabot configuration (D178).
 #
-# Weekly batched updates across three ecosystems. Groups minor + patch
-# bumps into one PR per ecosystem per week so the founder sees ONE
-# review queue, not thirty. Majors stay split (one PR per major) so the
-# breaking-change review is explicit.
+# Weekly batched updates across three ecosystems. npm minor + patch
+# bumps split into production vs development groups so Dependabot's
+# lockfile update stays small enough to succeed (a single workspace-wide
+# group has been failing Mondays with `unknown_error` × ~31 deps — see
+# Dependabot Updates run 35567473603). Majors stay ungrouped (one PR
+# per major) so the breaking-change review is explicit.
 #
 # Schedule: Monday 06:00 UTC — early enough for a same-day morning
 # review across most timezones; clear of the weekend code-freeze.
@@ -30,7 +32,8 @@ updates:
       day: monday
       time: '06:00'
       timezone: Etc/UTC
-    open-pull-requests-limit: 5
+    # Room for 2 weekly groups plus a handful of ungrouped majors.
+    open-pull-requests-limit: 8
     versioning-strategy: increase-if-necessary
     commit-message:
       # Matches commitlint type-enum (CLAUDE.md §6). `chore` keeps the
@@ -38,9 +41,14 @@ updates:
       prefix: chore
       include: scope
     groups:
-      # One PR per week for everything minor/patch — keeps reviewer
-      # load to a single grouped diff.
-      minor-and-patch:
+      production-minor-and-patch:
+        dependency-type: production
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+      development-minor-and-patch:
+        dependency-type: development
         applies-to: version-updates
         update-types:
           - minor

@@ -30,6 +30,7 @@ on:
 
 permissions:
   pull-requests: read
+  contents: read
 
 jobs:
   branch-name:
@@ -66,13 +67,15 @@ jobs:
           # `codex/` sanctioned 2026-07-15 (founder call, FOUNDER-FOLLOWUPS):
           # the Codex companion ships real PRs from codex/<slug> branches
           # (#333 merged, #334). D-traceability is preserved by the still-
-          # enforced commit `(D###)` trailers and the pr-body `Closes D###`
+          # enforced commit `(D###)` trailers and the pr-body D-citation
           # check below — same reasoning as the dependabot exemption.
           # `claude/` sanctioned 2026-08-11 (founder call, FOUNDER-FOLLOWUPS):
           # Claude Code on the web assigns `claude/<slug>` and the session is
           # forbidden from renaming it — identical position to codex/, so it
           # gets the identical exemption and the identical obligations.
-          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude)/[a-z0-9][a-z0-9-]*$)'; then
+          # `cursor/` is the same harness constraint for Cursor cloud agents
+          # (`cursor/<slug>-<id>`; the session cannot rename it).
+          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude|cursor)/[a-z0-9][a-z0-9-]*$)'; then
             echo "::error::Branch '${HEAD_REF}' does not match the CLAUDE.md §6 naming convention."
             echo "Expected: <type>/d<NNN>-<kebab>  OR  chore/bootstrap-<topic>  OR  chore/distill-<topic>"
             echo "Allowed types: feat, fix, chore, docs, refactor, test, perf, security"
@@ -121,6 +124,8 @@ jobs:
       - name: Nothing to check in a merge queue
         if: github.event_name == 'merge_group'
         run: echo "✓ No pull request in a merge group — enforced before queueing."
+      - uses: actions/checkout@v7
+        if: github.event_name != 'merge_group'
       - name: Check body
         if: github.event_name != 'merge_group'
         env:
@@ -128,59 +133,8 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           set -euo pipefail
-          # Bootstrap + distill PRs are exempt from `Closes D###` per
-          # CLAUDE.md §6 + §11 (distill PRs promote learnings into
-          # CLAUDE.md and never ship a D-decision themselves).
-          if echo "$HEAD_REF" | grep -qE '^chore/(bootstrap|distill)-'; then
-            echo "✓ Bootstrap/distill branch — exempt from Closes D### requirement."
-            exit 0
-          fi
-          # `claude/` branches may DECLARE no D-tie instead of citing one
-          # (founder call 2026-08-28). Claude Code on the web assigns the
-          # branch name and the session is forbidden from renaming it, so
-          # the previous advice in this job's own error message — "rename
-          # the branch to chore/bootstrap-*" — was unreachable from a web
-          # session. D-less web work (QA tooling, docs rescues, process
-          # changes) therefore could not go green by any route it could
-          # actually take. #661 and #662 hit this and were rebranched by
-          # hand; #666 could not be.
-          #
-          # Deliberately NOT a blanket exemption. Most `claude/` PRs DO
-          # ship D-decisions, and a branch-name-only exemption would let
-          # every one of them omit `Closes D###` in silence — leaving the
-          # IMPLEMENTATION-LOG row unflipped with no signal, which is the
-          # traceability §6 exists to provide. Requiring the declaration
-          # keeps the choice conscious and greppable; both #661 and #662
-          # already wrote exactly this sentence in prose.
-          #
-          # Matched in-process for the same SIGPIPE reason as the
-          # `Closes D###` check below — see the comment there.
-          if [[ "$HEAD_REF" == claude/* ]] && [[ "$PR_BODY" =~ [Nn]o[[:blank:]]+D-(tie|number) ]]; then
-            echo "✓ claude/ branch explicitly declares no D-tie — exempt."
-            exit 0
-          fi
-          # Non-bootstrap/distill: must have at least one `Closes D###`.
-          #
-          # Matched in-process, NOT via `printf "$PR_BODY" | grep -q`.
-          # `grep -q` exits the moment it matches; printf is then still
-          # writing the rest of the body, takes SIGPIPE, and `pipefail`
-          # promotes that to a pipeline failure — so a body that DOES
-          # carry the reference gets reported as missing one. PR #477
-          # hit exactly that: `Closes D112` on line 1 of a 3.5 KB body,
-          # passing on one run and failing the next with
-          # `printf: write error: Broken pipe`. The race is only
-          # reachable when the match is early AND the payload is large,
-          # which is why the two `$HEAD_REF` greps above are left alone
-          # — a branch name is one short write that always completes.
-          # `[[:blank:]]` (space/tab), not `[[:space:]]`: grep matched per
-          # LINE, so `Closes` and `D112` on separate lines never counted.
-          # `[[:space:]]` includes newline and would silently loosen that.
-          if [[ "$PR_BODY" =~ Closes[[:blank:]]+D[0-9]{1,3} ]]; then
-            echo "✓ PR body contains Closes D### reference."
-            exit 0
-          fi
-          echo "::error::PR body must contain at least one 'Closes D###' reference (CLAUDE.md §6)."
-          echo "If this PR genuinely has no D-tie: on a claude/ branch, say so in the body"
-          echo "(e.g. 'No D-tie — Tier 2 tooling'); otherwise rename the branch to"
-          echo "chore/bootstrap-<topic> or chore/distill-<topic>."
-          exit 1
+          # Logic lives in scripts/check-pr-body-d-ref.sh so the matcher
+          # can be starved in tests. `Closes D###` still flips the log;
+          # `Relates to D###` cites without flipping (MISTAKES.md).
+          node --test scripts/check-pr-body-d-ref.test.mjs
+          ./scripts/check-pr-body-d-ref.sh

@@ -56,9 +56,12 @@ vi.mock('@/features/billing/checkout', () => ({
   launchCheckout: vi.fn(() => Promise.resolve()),
 }));
 
+vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
+
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
+import { track } from '@/lib/posthog';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
@@ -210,6 +213,7 @@ beforeEach(() => {
   mockTier = 'free';
   mockCleanupRemaining = 3;
   vi.mocked(launchCheckout).mockClear();
+  vi.mocked(track).mockClear();
   // The pending-payment lock persists in localStorage by design — a
   // leaked record from one test must not lock the next one's picker.
   window.localStorage.clear();
@@ -1748,6 +1752,144 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+  });
+});
+
+function paddleSessionOk(): Response {
+  return jsonOk({
+    data: {
+      provider: 'paddle',
+      kind: 'overlay',
+      priceId: 'pri_test_123',
+      clientToken: 'test_token',
+      environment: 'sandbox',
+      customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
+    },
+  });
+}
+
+function tracked(name: string) {
+  return vi.mocked(track).mock.calls.filter(([event]) => event === name);
+}
+
+describe('BillingScreen — checkout funnel events', () => {
+  it('Confirm success emits intent then session_created; overlay complete/close emit their own events', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      { method: 'POST', path: '/api/billing/checkout', respond: paddleSessionOk },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+
+    expect(tracked('checkout_started')).toEqual([
+      [
+        'checkout_started',
+        { tier: 'plus', cycle: 'annual', provider: 'paddle', founding_pro: false },
+      ],
+    ]);
+    expect(tracked('checkout_session_created')).toEqual([
+      [
+        'checkout_session_created',
+        { tier: 'plus', cycle: 'annual', provider: 'paddle', founding_pro: false },
+      ],
+    ]);
+    expect(tracked('checkout_failed')).toHaveLength(0);
+
+    act(() => capturedCheckoutEvents().onCompleted?.());
+    expect(tracked('checkout_overlay_completed')).toHaveLength(1);
+    expect(tracked('checkout_overlay_closed')).toHaveLength(0);
+  });
+
+  it('overlay dismiss without completed emits checkout_overlay_closed', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      { method: 'POST', path: '/api/billing/checkout', respond: paddleSessionOk },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    act(() => capturedCheckoutEvents().onClosed?.());
+
+    expect(tracked('checkout_overlay_closed')).toHaveLength(1);
+    expect(tracked('checkout_overlay_completed')).toHaveLength(0);
+  });
+
+  it('pre-claim POST failure emits checkout_failed and never session_created', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      { method: 'POST', path: '/api/billing/checkout', respond: billingDisabled503 },
+    ]);
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+    expect(
+      await screen.findByText(
+        'Billing isn’t switched on yet — checkout opens here once it goes live.',
+      ),
+    ).toBeInTheDocument();
+
+    expect(tracked('checkout_started')).toHaveLength(1);
+    expect(tracked('checkout_session_created')).toHaveLength(0);
+    expect(tracked('checkout_failed')).toEqual([
+      [
+        'checkout_failed',
+        {
+          tier: 'plus',
+          cycle: 'annual',
+          provider: 'paddle',
+          founding_pro: false,
+          code: 'BILLING_DISABLED',
+        },
+      ],
+    ]);
+    expect(launchCheckout).not.toHaveBeenCalled();
+  });
+
+  it('blocked overlay after a session exists emits checkout_overlay_blocked', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      { method: 'POST', path: '/api/billing/checkout', respond: paddleSessionOk },
+    ]);
+    vi.mocked(launchCheckout).mockRejectedValueOnce(new Error('script blocked'));
+    renderScreen();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Confirm — continue to secure checkout →' }),
+    );
+
+    expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(tracked('checkout_session_created')).toHaveLength(1);
+    await waitFor(() => expect(tracked('checkout_overlay_blocked')).toHaveLength(1));
+    expect(tracked('checkout_overlay_completed')).toHaveLength(0);
   });
 });
 

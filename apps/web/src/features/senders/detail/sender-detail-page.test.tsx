@@ -1466,6 +1466,10 @@ describe('SenderDetailRoute', () => {
       accept();
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
       await screen.findByText('Archiving…');
+      expect(trackMock).toHaveBeenCalledWith('action_confirmed', {
+        journey: 'daily',
+        verb: 'archive',
+      });
     });
 
     it('lets no second action start while the first is still confirming', async () => {

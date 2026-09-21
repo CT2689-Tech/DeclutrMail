@@ -81,6 +81,9 @@ vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
   useUserTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
 }));
 
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/posthog', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
+
 import { ToastHost } from '@declutrmail/shared';
 import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import {
@@ -159,6 +162,7 @@ beforeEach(() => {
   mockAuth.cleanupRemaining = null;
   mockAuth.readiness = 'ready';
   mockAuth.activeMailboxId = 'mb-1';
+  trackMock.mockClear();
 });
 
 /**
@@ -2853,6 +2857,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await selectBothAndPress('k');
       await waitFor(() => expect(patched.sort()).toEqual(['a', 'b']));
       await screen.findByText('Kept 2 senders');
+      expect(trackMock).toHaveBeenCalledWith('action_confirmed', {
+        journey: 'daily',
+        verb: 'keep',
+      });
+      expect(trackMock.mock.calls.filter(([name]) => name === 'action_confirmed')).toHaveLength(1);
     });
 
     it('names how many keeps failed', async () => {
@@ -2916,6 +2925,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await selectBothAndPress('k');
       // (The toast store outlives a test, so absence of an earlier "Kept…" is not assertable here.)
       await screen.findByText(/Couldn't keep 2 senders/);
+      expect(trackMock.mock.calls.filter(([name]) => name === 'action_confirmed')).toHaveLength(0);
     });
 
     it('claims no per-row OUTCOME when a bulk partly fails — it points each row at Activity', async () => {
@@ -3695,10 +3705,10 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
 
     renderScreen();
     fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
-    expect(screen.getByTestId('sender-detail-pane')).toHaveTextContent(ROW.id);
+    expect(await screen.findByTestId('sender-detail-pane')).toHaveTextContent(ROW.id);
 
     fireEvent.keyDown(window, { key: 'j' });
-    expect(screen.getByTestId('sender-detail-pane')).toHaveTextContent('s2');
+    expect(await screen.findByTestId('sender-detail-pane')).toHaveTextContent('s2');
     expect(screen.getByRole('link', { name: 'Sender B' })).toHaveAttribute('aria-current', 'true');
 
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -3714,7 +3724,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     renderScreen();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.click(screen.getByRole('link', { name: 'Sender B' }));
-    expect(screen.getByTestId('sender-detail-pane')).toHaveTextContent('s2');
+    expect(await screen.findByTestId('sender-detail-pane')).toHaveTextContent('s2');
 
     fireEvent.keyDown(document.body, { key: 'a' });
     expect(screen.queryByText(/archive email from 1 sender/i)).not.toBeInTheDocument();
@@ -3734,7 +3744,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
 
     const view = renderScreen();
     fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
-    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+    expect(await screen.findByTestId('sender-detail-pane')).toBeInTheDocument();
 
     // Control: a re-render in the SAME mailbox leaves the pane alone.
     view.rerender(
@@ -3742,7 +3752,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
         <SendersScreen />
       </QueryWrapper>,
     );
-    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+    expect(await screen.findByTestId('sender-detail-pane')).toBeInTheDocument();
 
     mockAuth.activeMailboxId = 'mb-2';
     view.rerender(
@@ -3759,7 +3769,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
 
     renderScreen();
     fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
-    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+    expect(await screen.findByTestId('sender-detail-pane')).toBeInTheDocument();
 
     act(() => {
       window.dispatchEvent(new Event(MAILBOX_SCOPE_RESET_EVENT));
@@ -3782,7 +3792,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     onTestFinished(() => popover.remove());
 
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+    expect(await screen.findByTestId('sender-detail-pane')).toBeInTheDocument();
 
     popover.remove();
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -3806,7 +3816,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     onTestFinished(() => document.removeEventListener('keydown', consume));
 
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(screen.getByTestId('sender-detail-pane')).toBeInTheDocument();
+    expect(await screen.findByTestId('sender-detail-pane')).toBeInTheDocument();
 
     document.removeEventListener('keydown', consume);
     fireEvent.keyDown(document.body, { key: 'Escape' });

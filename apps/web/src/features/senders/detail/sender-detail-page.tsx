@@ -55,6 +55,7 @@ import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-pro
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import { formatReadRatePct } from '../fact-language';
 import { relTime } from './data';
+import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import { useNow } from '@/lib/use-now';
@@ -596,6 +597,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
               // supersedes a pending "Unsub queued" pill (latest
               // decision wins on `policy_type`).
               setDetail((d) => ({ ...d, policyType: 'keep' }));
+              trackActionConfirmed('keep');
               toast(`Kept ${sender.name}`, 'success');
             },
             onError: (err) => {
@@ -667,6 +669,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           {
             onSuccess: (res) => {
               closeSubmitted();
+              trackActionConfirmed(primaryType);
               setActiveAction({
                 mailboxId: actionMailboxId,
                 actionId: res.actionId,
@@ -744,6 +747,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           {
             onSuccess: (res) => {
               closeSubmitted();
+              trackActionConfirmed('unsubscribe');
               void qc.invalidateQueries({ queryKey: sendersKeys.all });
               void qc.invalidateQueries({ queryKey: activityKeys.all });
               if (res.method === 'one_click' && res.executionActionId) {

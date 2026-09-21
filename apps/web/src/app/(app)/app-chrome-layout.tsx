@@ -21,6 +21,8 @@ import { useMailboxSyncToasts } from '@/features/mailboxes/use-mailbox-sync-toas
 import { useConnectResultToast } from '@/features/mailboxes/use-connect-result-toast';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { useOnboardingGate } from '@/features/onboarding/use-onboarding-gate';
+import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { useSyncGateFunnel } from '@/features/sync/use-sync-funnel';
 import { useScreenerCount } from '@/features/screener/api/use-screener';
 import { LaterReturnAlert } from '@/features/snoozed/later-return-alert';
 import { useSendersSummary } from '@/features/senders/api/use-senders-summary';
@@ -163,6 +165,14 @@ function AppChrome({ children }: { children: ReactNode }) {
 
   // In-app "B is ready" toast when a background sync finishes (D116).
   useMailboxSyncToasts();
+  // D159 — observe last_synced_at on the ACTIVE mailbox so incremental
+  // / Sync-now completions count as `sync_completed`. Initial-sync
+  // readiness for every mailbox is already observed by the toast hook
+  // (shared session pairing, no double-count).
+  const sync = useSyncStatus(me.activeMailboxId ?? undefined, {
+    enabled: hasActiveMailbox,
+  });
+  useSyncGateFunnel(sync.data, me.activeMailboxId);
   // Connect-mailbox result toast (QA-onboarding-20260828-05). Mounted
   // above the branch ladder so it fires whichever branch renders — a
   // connect FAILURE leaves `activeMailboxId` null, so it is the

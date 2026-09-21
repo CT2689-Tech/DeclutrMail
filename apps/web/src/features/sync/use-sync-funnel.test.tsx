@@ -15,18 +15,24 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import type { SyncStatus, SyncReadiness } from '@declutrmail/shared/contracts';
 
+import { resetSyncLifecycleForTests } from './sync-lifecycle';
 import { useSyncGateFunnel } from './use-sync-funnel';
 
 const h = vi.hoisted(() => ({ track: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/lib/posthog', () => ({ track: h.track }));
 
 /** Build a SyncStatus for a readiness — fresh object each call, like a poll. */
-function status(readiness: SyncReadiness, progressPct = 0): SyncStatus {
+function status(
+  readiness: SyncReadiness,
+  progressPct = 0,
+  lastSyncedAt?: string | null,
+): SyncStatus {
   return {
     readiness_status: readiness,
     current_stage: readiness === 'ready' ? 'ready' : readiness === 'failed' ? 'failed' : 'queued',
     progress_pct: progressPct,
     is_ready_for_triage: readiness === 'ready',
+    ...(lastSyncedAt !== undefined ? { last_synced_at: lastSyncedAt } : {}),
   };
 }
 
@@ -44,6 +50,7 @@ const completedCalls = () => h.track.mock.calls.filter(([name]) => name === 'syn
 describe('useSyncGateFunnel (D159)', () => {
   beforeEach(() => {
     h.track.mockClear();
+    resetSyncLifecycleForTests();
   });
 
   it('fires sync_started ONCE across queued → poll re-fire → syncing, then sync_completed ONCE on ready', () => {
@@ -175,5 +182,34 @@ describe('useSyncGateFunnel (D159)', () => {
     rerender({ status: status('ready', 100), mailboxId: 'mb-1' });
     expect(startedCalls()).toHaveLength(1);
     expect(completedCalls()).toHaveLength(1);
+  });
+
+  it('a remount after in-progress still fires sync_completed (refresh mid-scan)', () => {
+    const first = renderFunnel(status('syncing', 10));
+    expect(startedCalls()).toHaveLength(1);
+    first.unmount();
+
+    const second = renderFunnel(status('ready', 100));
+    expect(completedCalls()).toHaveLength(1);
+    expect(h.track).toHaveBeenCalledWith(
+      'sync_completed',
+      expect.objectContaining({ outcome: 'success', mailbox_id: 'mb-1' }),
+    );
+    second.unmount();
+  });
+
+  it('a later last_synced_at on an already-ready mailbox fires a success completion', () => {
+    const { rerender } = renderFunnel(status('ready', 100, '2026-09-01T00:00:00.000Z'));
+    expect(h.track).not.toHaveBeenCalled();
+
+    rerender({
+      status: status('ready', 100, '2026-09-01T00:10:00.000Z'),
+      mailboxId: 'mb-1',
+    });
+    expect(completedCalls()).toHaveLength(1);
+    expect(h.track).toHaveBeenCalledWith(
+      'sync_completed',
+      expect.objectContaining({ outcome: 'success', mailbox_id: 'mb-1' }),
+    );
   });
 });

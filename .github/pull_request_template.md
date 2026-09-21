@@ -7,9 +7,11 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 
 ## Closes
 
-<!-- One or more D-numbers from the plan. Required (bootstrap branches exempt). -->
+<!-- One or more D-numbers from the plan. Required (bootstrap branches exempt).
+     Shipping: `Closes D###` (flips IMPLEMENTATION-LOG).
+     Follow-up that must not flip a row: `Relates to D###`. -->
 - Closes D###
-<!-- - Closes D### (relates partially) -->
+<!-- - Relates to D### -->
 
 ## What changed
 

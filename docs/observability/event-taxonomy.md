@@ -110,7 +110,10 @@ onboarding funnel insight. No per-user breakdown beyond `user_id`.
 `activation_goal_selected` fires after the goal preference is durably saved.
 `first_relief_session_started` fires once when the bounded real-sender session
 renders. `action_preview_viewed` fires once per sender/verb preview, and
-`action_confirmed` fires only after the corresponding intent is accepted.
+`action_confirmed` fires only after the corresponding intent is accepted
+— from every real confirmation path (Triage including domain-batch,
+Senders, Sender Detail, Screener, Brief noise-archive), not only the
+first-relief Triage session.
 `first_relief_session_completed` fires once for a completed, voluntarily
 stopped, or empty session.
 
@@ -149,12 +152,19 @@ contain a rule condition blob, sender identity, or email-derived text.
 
 ### `sync_started`
 
-**When fired.** Client-side today: the FE sync gate (`useSyncGateFunnel`)
-fires it on its FIRST in-progress observation (`queued`/`syncing`) of
-the D224 status poll — once per gate view, ref-guarded against the 3s
-poll re-fires; a mailbox already `ready` on mount fires nothing. A
-server-side emitter is NOT planned and is currently not permitted — see
-the privacy contract above. `sync_id` is therefore `null` on every fire.
+**When fired.** Client-side today: the FE fires it on the FIRST
+in-progress observation (`queued`/`syncing`) of a mailbox's initial
+sync, from the onboarding/secondary-connect gate _or_ the in-app
+mailbox observer (D116 ready-toast sibling). Session-scoped pairing
+survives a refresh mid-scan so the gate and the app shell cannot each
+emit a start for the same pair. A mailbox already `ready` on first
+observation in this tab fires nothing unless an open pair was stored
+earlier. Incremental/manual completions (a later `last_synced_at`
+advance while already `ready`) also emit a start, with `trigger`
+`'manual'` after Sync-now or `'pubsub'` for a background stamp we
+cannot attribute more specifically. A server-side emitter is NOT
+permitted — see the privacy contract above. `sync_id` is `null` on
+every fire.
 
 **`sync_id` is `null` on every event emitted today, and it is not a
 `syncs.id` UUID.** No `syncs` table exists: `provider_sync_state` is
@@ -171,27 +181,34 @@ event with a cleverer key.
 
 **Payload.**
 
-| Field        | Type                                          | Notes                                                       |
-| ------------ | --------------------------------------------- | ----------------------------------------------------------- |
-| `sync_id`    | `null`                                        | Always — only the FE emits, and the D224 poll carries no id |
-| `mailbox_id` | `string`                                      | UUID                                                        |
-| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`      |
+| Field        | Type                                          | Notes                                                                                                                                                 |
+| ------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync_id`    | `null`                                        | Always — only the FE emits, and the D224 poll carries no id                                                                                           |
+| `mailbox_id` | `string`                                      | UUID                                                                                                                                                  |
+| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | Readiness (queued/syncing) fires are `initial`; stamp advances are `manual` or `pubsub`. FE never emits `cron` — it cannot tell cron from Gmail push. |
 
 **Retention / aggregation.** 90 days for raw, rolled up into the
 "syncs per mailbox per day" cohort weekly.
 
 ### `sync_completed`
 
-**When fired.** Client-side today: the FE sync gate fires it on an
-observed transition into `ready` (`success`) or `failed` — only AFTER
-an observed start (never an unpaired completion), once per transition
-(ref-guarded). A transient `failed` that recovers to `ready` emits a
-second completion with `outcome: 'success'` — analysis takes the
-mailbox's last outcome. Per D224 the readiness is real worker state —
-not a fake-progress trigger. `partial` and real counts would require a
-server-side emitter, which is not permitted (privacy contract above); the
-metrics live in the `worker.succeeded` log line and, if the `sync_runs`
-D-candidate lands, in that table.
+**When fired.** Client-side today: the FE fires it on an observed
+transition into `ready` (`success`) or `failed` — only AFTER an
+observed start (never an unpaired readiness completion), once per
+pair. The same pairing is shared across the onboarding gate and the
+in-app observer, so leaving the gate mid-scan still counts when the
+mailbox becomes ready. A transient `failed` that recovers to `ready`
+emits a second completion with `outcome: 'success'` — analysis takes
+the mailbox's last outcome.
+
+A later `last_synced_at` advance on an already-ready mailbox (Sync-now
+or background incremental) also fires `sync_completed` with
+`outcome: 'success'`. The first stamp observed in the tab is recorded
+silently; `null → timestamp` is the initial-sync stamp and is owned by
+the readiness pair. Per D224 the readiness is real worker state — not
+a fake-progress trigger. `partial` and real counts would require a
+server-side emitter, which is not permitted (privacy contract above);
+those metrics live in `sync_runs` / `worker.succeeded`.
 
 **Payload.**
 
@@ -305,9 +322,14 @@ metric — affected_messages aggregated per user per week.
 
 ### `billing_event`
 
-**When fired.** On every billing-provider webhook (Stripe, etc.) the API
-processes. Fires from the verified webhook handler only — never from
-client-side billing UI (clients can't see real subscription state).
+**When fired.** Never as a PostHog capture. The API writes a structured
+log line (`billing_event kind=… provider=paddle|razorpay`) from the
+verified Paddle / Razorpay webhook handler. Server-side PostHog is
+banned (consent lives in the browser; see Privacy contract above), so
+this name exists in the TypeScript union for the log shape only. A
+PostHog funnel that joins `checkout_started` to `billing_event` will
+read zero completions even when payments land — the grant evidence is
+the `subscriptions` row (and the Cloud Run log), not this event.
 
 **Payload.**
 
@@ -316,8 +338,10 @@ client-side billing UI (clients can't see real subscription state).
 | `kind` | `'subscription_created' \| 'subscription_updated' \| 'subscription_canceled' \| 'payment_succeeded' \| 'payment_failed'` | Webhook event |
 | `tier` | `'free' \| 'plus' \| 'pro'`                                                                                              | Per D19       |
 
-**Retention / aggregation.** 2y raw (overlaps with billing audit
-retention). Drives MRR cohort, churn cohort, free-to-paid funnel.
+**Retention / aggregation.** Cloud Run logs, not PostHog. Paid-conversion
+is `checkout_overlay_completed` (overlay reported payment) vs a
+`subscriptions` row (webhook grant). Do not treat a missing PostHog
+`billing_event` as proof the webhook never ran.
 
 ### `page_viewed`
 
@@ -511,8 +535,9 @@ navigation. This is paid/free intent, not checkout or revenue.
 `promo` (`foundingPro|null`). No identity or email fields are attached.
 
 **Retention / aggregation.** 2y raw. Joins consented pricing page views to
-plan interest, then to `checkout_started` and terminal `billing_event` once
-the server-side outcome sink is live.
+plan interest, then to `checkout_started` and the overlay/session events
+below. Paid conversion is a `subscriptions` row, not a PostHog
+`billing_event` (that name is a server log line only).
 
 ### `waitlist_joined`
 
@@ -757,11 +782,11 @@ prompt-shown → pricing-visit → checkout free-to-paid funnel alongside
 
 ### `checkout_started`
 
-**When fired.** On the "Continue to checkout" click in the plan-change
-modal (D120, U13), immediately before `POST /api/billing/checkout` —
-i.e. checkout INTENT. Payment completion is never inferred client-side;
-the paid-conversion signal is the BE's webhook-driven `billing_event`
-(`kind: 'subscription_created'`).
+**When fired.** On the billing plan-picker Confirm click, immediately
+before `POST /api/billing/checkout` — checkout INTENT, not proof the
+server wrote `pending_checkouts` or that an overlay opened. A later
+`checkout_failed` or a missing `checkout_session_created` means the
+POST never claimed the row.
 
 **Payload.**
 
@@ -772,9 +797,66 @@ the paid-conversion signal is the BE's webhook-driven `billing_event`
 | `provider`     | `'paddle' \| 'razorpay'` | User's explicit provider choice (D117) |
 | `founding_pro` | `boolean`                | Founding Pro promo claimed (D126)      |
 
-**Retention / aggregation.** 2y raw (funnel pairs with
-`billing_event`). `checkout_started` vs webhook `subscription_created`
-is the checkout abandonment rate, per provider.
+**Retention / aggregation.** 2y raw. Pair with
+`checkout_session_created` (API wrote the claim) and
+`checkout_overlay_completed` / `checkout_overlay_closed` (overlay
+outcome). Empty `pending_checkouts` is not evidence the write never
+happened: display TTL is 30 minutes and expired rows are deleted 7 days
+later.
+
+### `checkout_session_created`
+
+**When fired.** After `POST /api/billing/checkout` returns a session.
+The server inserts `pending_checkouts` before that response, so this
+event is the client-visible proof the claim existed.
+
+**Payload.** Same fields as `checkout_started`.
+
+**Retention / aggregation.** 2y raw. `checkout_started` without this
+event is a refused or failed POST.
+
+### `checkout_failed`
+
+**When fired.** After `POST /api/billing/checkout` errors. Pre-claim
+refusals (`BILLING_DISABLED`, `BILLING_NOT_PROVISIONED`,
+`SUBSCRIPTION_EXISTS`, …) never wrote a row. Post-claim errors
+(`BILLING_PROVIDER_ERROR`, `CHECKOUT_IN_FLIGHT`) leave the claim held.
+
+**Payload.** `checkout_started` fields plus `code` (envelope error code,
+or `'unknown'`).
+
+**Retention / aggregation.** 2y raw. Distinguishes API failure from
+overlay abandonment.
+
+### `checkout_overlay_completed`
+
+**When fired.** Paddle `checkout.completed` or Razorpay Checkout.js
+`handler`. Overlay-reported payment only — the tier still flips solely
+via the webhook.
+
+**Payload.** Same fields as `checkout_started`.
+
+**Retention / aggregation.** 2y raw. This event without a later
+`subscriptions` row is a webhook/grant gap, not user abandonment.
+
+### `checkout_overlay_closed`
+
+**When fired.** Overlay dismissed without a completed event. Not proof
+of no payment (popup / 3DS edges); the screen keeps the reservation.
+
+**Payload.** Same fields as `checkout_started`.
+
+**Retention / aggregation.** 2y raw. The usual overlay-abandonment
+signal.
+
+### `checkout_overlay_blocked`
+
+**When fired.** Provider script failed to load after a session already
+existed. The server claim is held.
+
+**Payload.** Same fields as `checkout_started`.
+
+**Retention / aggregation.** 2y raw. CSP / CDN / extension failures.
 
 ---
 

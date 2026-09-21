@@ -35,6 +35,11 @@ export type EventName =
   | 'upgrade_prompt_shown'
   // — Billing surface (D119/D120, U13) —
   | 'checkout_started'
+  | 'checkout_session_created'
+  | 'checkout_failed'
+  | 'checkout_overlay_completed'
+  | 'checkout_overlay_closed'
+  | 'checkout_overlay_blocked'
   | 'plan_change_started'
   // — Page-view + navigation funnel (FOUNDER-FOLLOWUPS 2026-06-06) —
   | 'page_viewed'
@@ -209,17 +214,18 @@ export interface EventPayloads {
     reason: 'user_defined' | 'replied' | 'starred' | 'gmail_important' | null;
   };
   /**
-   * Both sync events are emitted ONLY by the FE sync gate
-   * (`useSyncGateFunnel`). There is no server-side emitter and one is not
-   * permitted: analytics consent (D147) is per-browser localStorage that a
-   * worker cannot read, and we publish that PostHog runs only after the
-   * user accepts. Anonymising a server payload does not change that — the
-   * promise is that PostHog does not run. See the privacy contract in
-   * `docs/observability/event-taxonomy.md` and F004 in FINDINGS.md.
+   * Both sync events are emitted ONLY from the browser. Call sites:
+   * the onboarding/secondary-connect gate (`useSyncGateFunnel`), the
+   * in-app mailbox-readiness observer (same transitions as the D116
+   * ready toast), and `last_synced_at` advances on an already-ready
+   * mailbox (incremental / Sync-now). Session pairing dedupes overlapping
+   * observers. There is no server-side emitter and one is not permitted:
+   * analytics consent (D147) is per-browser localStorage that a worker
+   * cannot read, and we publish that PostHog runs only after the user
+   * accepts. See `docs/observability/event-taxonomy.md` and F004.
    *
-   * Real sync numbers therefore live in the `worker.succeeded` log line
-   * (`messagesSynced`, `unreadable`, `gmailApiCalls`, `durationMs`,
-   * `stageTimings`) and in `provider_sync_state`, not here.
+   * Per-run counts (`messagesSynced`, stage timings) still live in
+   * `sync_runs` / `worker.succeeded`, not here — the poll has none.
    */
   sync_started: {
     /**
@@ -304,6 +310,64 @@ export interface EventPayloads {
     /** D117 — user's explicit provider choice. */
     provider: 'paddle' | 'razorpay';
     /** True when the Founding Pro promo price was claimed (D126). */
+    founding_pro: boolean;
+  };
+
+  /**
+   * POST /api/billing/checkout returned a session. The server claim
+   * (`pending_checkouts`) is written before this response, so this event
+   * is the client-visible proof the row existed — not that the overlay
+   * opened or that a payment completed.
+   */
+  checkout_session_created: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+  };
+
+  /**
+   * POST /api/billing/checkout failed. `code` is the envelope error code
+   * when present, else `unknown`. Does not mean a charge happened.
+   */
+  checkout_failed: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+    code: string;
+  };
+
+  /**
+   * Provider overlay reported payment complete. The tier still flips
+   * only via the webhook — this is overlay truth, not a grant.
+   */
+  checkout_overlay_completed: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+  };
+
+  /**
+   * Overlay dismissed without a completed event. Not proof of no
+   * payment (popup / 3DS edges).
+   */
+  checkout_overlay_closed: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
+    founding_pro: boolean;
+  };
+
+  /**
+   * Provider script failed to load after a session already existed.
+   * The server claim is held.
+   */
+  checkout_overlay_blocked: {
+    tier: 'plus' | 'pro';
+    cycle: 'monthly' | 'annual';
+    provider: 'paddle' | 'razorpay';
     founding_pro: boolean;
   };
 

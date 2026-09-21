@@ -2,6 +2,7 @@
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Button,
   EmptyState,
@@ -71,8 +72,16 @@ import {
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderList } from './sender-list';
-import { SenderDetailPane } from './detail/sender-detail-pane';
 import { useSenderPane } from './use-sender-pane';
+
+// The pane mounts only after a row click at ≥ 1100px, and it carries the
+// whole Sender Detail surface. Loading it on demand keeps the list route
+// inside its first-load bundle budget; the pane renders its own skeleton,
+// so there is no separate loading placeholder here.
+const SenderDetailPane = dynamic(
+  () => import('./detail/sender-detail-pane').then((m) => m.SenderDetailPane),
+  { ssr: false },
+);
 import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
 import { useSendersStore } from './store';
@@ -87,6 +96,7 @@ import { SendersLoadingState } from './senders-loading-state';
 import type { SenderListDirection, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
+import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import type { Verb } from '@declutrmail/shared/observability';
@@ -1202,6 +1212,7 @@ function SendersScreenContent({
           {
             onSuccess: (res) => {
               closeSubmitted();
+              trackActionConfirmed(primaryType);
               setActiveAction({
                 mailboxId: actionMailboxId,
                 actionId: res.actionId,
@@ -1293,6 +1304,7 @@ function SendersScreenContent({
             {
               onSuccess: (res) => {
                 closeSubmitted();
+                trackActionConfirmed('unsubscribe');
                 void qc.invalidateQueries({ queryKey: sendersKeys.all });
                 void qc.invalidateQueries({ queryKey: activityKeys.all });
                 if (res.method === 'one_click' && res.executionActionId) {
@@ -1410,6 +1422,7 @@ function SendersScreenContent({
           {
             onSuccess: (res) => {
               closeSubmitted();
+              if (res.senderCount > 0) trackActionConfirmed('unsubscribe');
               const nameById = new Map(senderRefs.map((sref) => [sref.id, sref.name] as const));
               setBulkMailtoFollowups(
                 res.skipped.flatMap((skip) =>
@@ -1555,6 +1568,7 @@ function SendersScreenContent({
             }
             const failed = failures.length;
             const succeeded = results.length - failed;
+            if (succeeded > 0) trackActionConfirmed('keep');
             if (!isBulk) {
               toast(
                 failed ? `Couldn't keep ${senderRefs[0]!.name}` : `Kept ${senderRefs[0]!.name}`,
@@ -1618,6 +1632,7 @@ function SendersScreenContent({
           {
             onSuccess: (res) => {
               closeSubmitted();
+              if (res.senderCount > 0) trackActionConfirmed(primaryType);
               // The server accepted the batch — NOW the selection clears.
               setSelected(new Set());
               if (res.skipped.length > 0) {

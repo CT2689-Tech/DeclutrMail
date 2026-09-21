@@ -22,6 +22,7 @@ import { isUnsubSendDisabled, UNSUB_SEND_DISABLED_MESSAGE } from './unsub-send-d
 import { getActionFailureCopy } from '@/lib/action-error-copy';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
+import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 // Cross-feature component import per ADR-0007's second-consumer rule —
@@ -942,7 +943,7 @@ export function TriageScreen({
                 requested_messages: 0,
                 source,
               });
-              void track('action_confirmed', { journey, verb: 'keep' });
+              trackActionConfirmed('keep', journey);
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
@@ -986,7 +987,7 @@ export function TriageScreen({
                 requested_messages: 0,
                 source,
               });
-              void track('action_confirmed', { journey, verb: 'unsubscribe' });
+              trackActionConfirmed('unsubscribe', journey);
               invalidateAfterDecision(qc);
               if (currentMailboxRef.current === actionMailboxId) incrementSessionDecided();
               setExpandedRow(null);
@@ -1104,7 +1105,7 @@ export function TriageScreen({
               requested_messages: res.primaryCount,
               source,
             });
-            void track('action_confirmed', { journey, verb: primaryType });
+            trackActionConfirmed(primaryType, journey);
             setActiveAction({
               mailboxId: actionMailboxId,
               actionId: res.actionId,
@@ -1348,6 +1349,7 @@ export function TriageScreen({
             requested_messages: res.requestedTotal,
             source: 'triage_domain_batch',
           });
+          trackActionConfirmed(verb === 'Archive' ? 'archive' : 'later', journey);
           setBatchAction({
             mailboxId: actionMailboxId,
             batchId: res.batchId,
@@ -1371,7 +1373,7 @@ export function TriageScreen({
         },
       },
     );
-  }, [pendingBatch, enqueueBulk, bulkPreview.data, actionMailboxId]);
+  }, [pendingBatch, enqueueBulk, bulkPreview.data, actionMailboxId, journey]);
 
   /**
    * Escape clears an INLINE pending preview — the contract the comment

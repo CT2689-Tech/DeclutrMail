@@ -62,6 +62,7 @@ import {
   useEnqueueBulkAction,
   useEnqueueComposite,
 } from '@/lib/api/use-action';
+import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 
@@ -522,6 +523,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
         { senderId: senderIds[0]!, primary },
         {
           onSuccess: (res) => {
+            trackActionConfirmed('archive');
             setInFlight({
               kind: 'single',
               actionId: res.actionId,
@@ -539,6 +541,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       { senderIds, primary },
       {
         onSuccess: (res) => {
+          if (res.senderCount > 0) trackActionConfirmed('archive');
           // Only senders the server actually enqueued may ever be marked
           // Done. `skipped` carries the ones it refused — protection can
           // flip between the read that built this list and this confirm.
