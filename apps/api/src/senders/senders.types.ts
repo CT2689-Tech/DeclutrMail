@@ -509,6 +509,15 @@ export interface SenderSummary {
   };
   /** ISO-8601 — server time at compute (observability). */
   asOf: string;
+  /**
+   * True when this mailbox has at least one `action_jobs` row with
+   * `status='done'`. The Senders first-cleanup nudge keys off this —
+   * a synced mailbox with senders but no completed cleanup still
+   * needs a next step. Independent of `users.onboarded_at` (D113),
+   * which stamps when the onboarding flow is finished or skipped,
+   * not when the first Gmail-changing action lands.
+   */
+  hasCompletedCleanup: boolean;
 }
 
 /**

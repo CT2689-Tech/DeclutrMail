@@ -88,6 +88,7 @@ import {
   type SenderRowActivity,
 } from './row-activity';
 import { SendersLoadingState } from './senders-loading-state';
+import { FirstCleanupNudge, shouldShowFirstCleanupNudge } from './first-cleanup-nudge';
 import type { SenderListDirection, SenderListRow, SenderListSort } from '@/lib/api/senders';
 import { useSaveSenderViews, useSenderViews } from './api/use-sender-views';
 import { SENDER_VIEWS_CAP, type SavedSenderView } from '@declutrmail/shared/contracts';
@@ -466,6 +467,7 @@ export function SendersScreen() {
       query={query}
       onQueryChange={setQuery}
       summaryFailed={summaryFailed}
+      hasCompletedCleanup={summaryQuery.data?.data.hasCompletedCleanup}
       totalMatching={totalMatching}
       asOf={asOf}
       showingStaleRows={showingStaleRows}
@@ -534,6 +536,7 @@ function SendersScreenContent({
   query,
   onQueryChange: setQuery,
   summaryFailed,
+  hasCompletedCleanup,
   totalMatching,
   asOf,
   showingStaleRows,
@@ -586,6 +589,12 @@ function SendersScreenContent({
    * mailbox is bigger.
    */
   summaryFailed: boolean;
+  /**
+   * Mailbox-wide: at least one `action_jobs` row is `done`. `undefined`
+   * while the summary is loading, failed, or from an older API that
+   * omitted the field — the nudge stays off in all three cases.
+   */
+  hasCompletedCleanup: boolean | undefined;
   /** D38 — BE-honest count for the active compose (page-1 snapshot). */
   totalMatching: number | undefined;
   /** D245 — server time for the count + row snapshot currently rendered. */
@@ -701,6 +710,11 @@ function SendersScreenContent({
   // currency claim `mailboxStillSyncing` exists to prevent, for the one
   // readiness value it didn't enumerate.
   const mailboxSyncFailed = activeMailbox?.readiness === 'failed';
+  const showFirstCleanupNudge = shouldShowFirstCleanupNudge({
+    mailboxReady: activeMailbox?.readiness === 'ready',
+    hasCompletedCleanup,
+    visibleSenderCount: senders.length,
+  });
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [pendingAction, setPendingAction] = useState<ActionRequest | null>(null);
   const [receipt, setReceipt] = useState<
@@ -2565,6 +2579,10 @@ function SendersScreenContent({
             label: 'Manual decisions vs automatic rules',
           }}
         />
+
+        {showFirstCleanupNudge && senders[0] !== undefined && (
+          <FirstCleanupNudge href={`/senders/${senders[0].id}`} />
+        )}
 
         {/* D248 — multi-sender unsubscribe result. Its own surface: three
           terminal outcomes, no Undo (a delivered request is one-way). */}

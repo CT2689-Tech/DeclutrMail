@@ -9,10 +9,12 @@
 //
 // PRAGMATIC EXCEPTION (ADR-0008 §3): this service ALSO reads
 // `triage_decisions` directly to populate the decision-history
-// endpoint. Documented as a launch-pragmatic compromise; the
-// alternative — emit-and-project — adds operational complexity before
-// we know the access pattern. Flagged for ratification when the
-// triage feature grows past its current single-table footprint.
+// endpoint, `activity_log` for the same history, and `action_jobs`
+// for the first-cleanup nudge (`hasCompletedCleanup` on summary).
+// Documented as a launch-pragmatic compromise; the alternative —
+// emit-and-project — adds operational complexity before we know the
+// access pattern. Flagged for ratification when those features grow
+// past their current footprint.
 //
 // PRIVACY (D7, D228): every column read here is on the storage
 // allowlist. The service NEVER fetches from Gmail, NEVER returns body
@@ -42,6 +44,7 @@ import {
   type SQL,
 } from 'drizzle-orm';
 import {
+  actionJobs,
   activityLog,
   mailMessages,
   readStateNotSweeperMarked,
@@ -1180,6 +1183,10 @@ export class SendersReadService {
   }): Promise<SenderSummary> {
     const { mailboxAccountId } = args;
     const includeOneTime = args.includeOneTime ?? true;
+    // Kick the first-cleanup EXISTS off before the heavy summary SQL so
+    // the two round-trips overlap. Hits
+    // `action_jobs_account_status_created_idx`.
+    const completedCleanup = this.mailboxHasCompletedCleanup(mailboxAccountId);
     // Search predicate against the outer `s` alias (raw SQL — see the
     // alias-scope note above `buildSenderSearchPattern`).
     const pattern = buildSenderSearchPattern(args.q);
@@ -1446,18 +1453,29 @@ export class SendersReadService {
         other: otherCount,
       },
       asOf: (args.now ?? new Date()).toISOString(),
+      hasCompletedCleanup: await completedCleanup,
     };
   }
 
   /**
-   * Fetch one sender by id, scoped to the caller's mailbox.
+   * Has this mailbox completed at least one Gmail-changing action?
    *
-   * Returns `null` if the sender doesn't exist OR belongs to a
-   * different mailbox — the controller maps `null` to HTTP 404 so we
-   * don't leak existence across tenants. Per the architecture-
-   * guardian rule, mailbox isolation is enforced by the WHERE clause
-   * here, not by a guard above us.
+   * `status='done'` on `action_jobs` is the durable proof (the same
+   * fact the acquisition audit counted). Keep/Protect never write an
+   * `action_jobs` row, so they do not count — matching "finish first
+   * cleanup". A queued or failed job is not a completion. Tenant
+   * isolation is the mailbox id in the WHERE (the existing
+   * account+status index).
    */
+  private async mailboxHasCompletedCleanup(mailboxAccountId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: actionJobs.id })
+      .from(actionJobs)
+      .where(and(eq(actionJobs.mailboxAccountId, mailboxAccountId), eq(actionJobs.status, 'done')))
+      .limit(1);
+    return row !== undefined;
+  }
+
   /**
    * Does this mailbox have ANY outbound mail indexed?
    *
@@ -1478,6 +1496,15 @@ export class SendersReadService {
     return row !== undefined;
   }
 
+  /**
+   * Fetch one sender by id, scoped to the caller's mailbox.
+   *
+   * Returns `null` if the sender doesn't exist OR belongs to a
+   * different mailbox — the controller maps `null` to HTTP 404 so we
+   * don't leak existence across tenants. Per the architecture-
+   * guardian rule, mailbox isolation is enforced by the WHERE clause
+   * here, not by a guard above us.
+   */
   async getSenderDetail(
     mailboxAccountId: string,
     senderId: string,

@@ -394,6 +394,13 @@ export interface SenderSummaryDto {
   };
   /** ISO-8601 — server time at compute. */
   asOf: string;
+  /**
+   * True when this mailbox has at least one completed `action_jobs`
+   * row. Optional during a rolling API/web deploy: absent reads as
+   * unknown, so the first-cleanup nudge stays off rather than
+   * false-alarming on a stale API.
+   */
+  hasCompletedCleanup?: boolean;
 }
 
 /**
