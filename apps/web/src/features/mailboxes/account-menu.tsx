@@ -102,6 +102,20 @@ export function AccountMenu() {
         @media (max-width: 900px) {
           .dm-account-trigger { max-width: 44vw; }
         }
+        /* Small phones: the avatar alone. The top bar has no room for the
+           address at 320px, and the menu it opens states it. Clipped, not
+           display:none, so the address stays the button's accessible name. */
+        @media (max-width: 480px) {
+          .dm-account-label {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+          }
+        }
       `}</style>
       <button
         ref={triggerRef}
@@ -147,7 +161,10 @@ export function AccountMenu() {
         >
           {activeLabel.slice(0, 1).toUpperCase()}
         </span>
-        <span style={{ fontFamily: font.mono, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        <span
+          className="dm-account-label"
+          style={{ fontFamily: font.mono, overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
           {activeLabel}
         </span>
       </button>
