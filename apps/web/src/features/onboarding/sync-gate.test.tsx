@@ -120,7 +120,10 @@ describe('SyncGate render', () => {
   it('failed: shows the error copy + retry, still shows the trust badge', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
     expect(html).toContain('snag');
-    expect(html).toContain('Try again');
+    // FAILED is RateLimitError + progress 32 → rate_limit partlyReady.
+    expect(html).toContain('Finish sync');
+    expect(html).toContain('data-reason-code="rate_limit"');
+    expect(html).toContain('data-partly-ready="true"');
     // D228 trust artifact present on the failed state too — banned copy absent.
     expect(html).toContain('We never fetch or store full email contents.');
     expect(html).toContain('Sender name and email address');
@@ -137,7 +140,7 @@ describe('SyncGate render', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
     expect(html).not.toContain('retry automatically');
     expect(html).not.toContain('check back shortly');
-    expect(html).toContain('Try again');
+    expect(html).toContain('Finish sync');
 
     const quota = renderToStaticMarkup(
       withClient(<SyncGate status={{ ...FAILED, error_code: 'RateLimitError' }} />),
@@ -238,27 +241,80 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
 
   it('still offers a real retry for a non-auth failure (e.g. RateLimitError)', () => {
     render(withClient(<SyncGate status={FAILED} mailboxId="mb-1" />));
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Finish sync' })).toBeInTheDocument();
+    expect(screen.getByText(/rate-limited/i)).toHaveAttribute('data-reason-code', 'rate_limit');
+    expect(screen.getByText(/rate-limited/i)).toHaveAttribute('data-partly-ready', 'true');
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
+    // Continue is a hook — omitted callback means no silent no-op.
+    expect(screen.queryByRole('button', { name: 'Continue ready' })).not.toBeInTheDocument();
   });
 
-  it('offers Reconnect Gmail for ProviderPermissionError (insufficient scopes alias)', () => {
+  it('offers Reconnect Gmail for ProviderPermissionError (insufficient_scopes, never Retry)', () => {
     render(
       withClient(
         <SyncGate status={{ ...FAILED, error_code: 'ProviderPermissionError' }} mailboxId="mb-1" />,
       ),
     );
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
+    expect(screen.getByText(/did not grant the Gmail access/i)).toHaveAttribute(
+      'data-reason-code',
+      'insufficient_scopes',
+    );
     expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Finish sync' })).not.toBeInTheDocument();
   });
 
-  it('offers Try again for GmailQuotaError (quota-resume, not reconnect)', () => {
+  it('stamps invalid_grant / reconnect_required on the matching reconnect codes', () => {
+    const { rerender } = render(
+      withClient(
+        <SyncGate status={{ ...FAILED, error_code: 'InvalidGrantError' }} mailboxId="mb-1" />,
+      ),
+    );
+    expect(screen.getByText(/not granting the access/i)).toHaveAttribute(
+      'data-reason-code',
+      'invalid_grant',
+    );
+    rerender(
+      withClient(
+        <SyncGate status={{ ...FAILED, error_code: 'AuthExpiredError' }} mailboxId="mb-1" />,
+      ),
+    );
+    expect(screen.getByText(/stopped accepting our access/i)).toHaveAttribute(
+      'data-reason-code',
+      'reconnect_required',
+    );
+  });
+
+  it('offers Try again for GmailQuotaError with no progress (quota-resume, not reconnect)', () => {
     render(
       withClient(
-        <SyncGate status={{ ...FAILED, error_code: 'GmailQuotaError' }} mailboxId="mb-1" />,
+        <SyncGate
+          status={{ ...FAILED, error_code: 'GmailQuotaError', progress_pct: 0 }}
+          mailboxId="mb-1"
+        />,
       ),
     );
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByText(/quota limit/i)).toHaveAttribute('data-reason-code', 'rate_limit');
+    expect(screen.getByText(/quota limit/i)).toHaveAttribute('data-partly-ready', 'false');
+    expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue ready' })).not.toBeInTheDocument();
+  });
+
+  it('rate_limit + progress + onContinuePartial: Finish sync | Continue ready', () => {
+    const onContinuePartial = vi.fn();
+    render(
+      withClient(
+        <SyncGate
+          status={{ ...FAILED, error_code: 'GmailQuotaError', progress_pct: 32 }}
+          mailboxId="mb-1"
+          onContinuePartial={onContinuePartial}
+        />,
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Finish sync' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue ready' }));
+    expect(onContinuePartial).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
   });
 });
@@ -279,6 +335,7 @@ describe('SyncGate — stuck queued/syncing (stale heartbeat)', () => {
     render(withClient(<SyncGate status={STUCK_SYNCING} mailboxId="mb-1" nowMs={NOW} />));
     expect(screen.getByText('This scan has not moved.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByText(/Gmail is untouched/)).toHaveAttribute('data-reason-code', 'stuck');
     expect(screen.queryByText(/Reading your inbox/)).not.toBeInTheDocument();
     expect(screen.getByText(/Gmail is untouched/)).toBeInTheDocument();
   });

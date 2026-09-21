@@ -76,12 +76,15 @@ export {
   INITIAL_SYNC_RECONNECT_ERROR_CODES,
   INITIAL_SYNC_RETRY_ERROR_CODES,
   STALE_INITIAL_SYNC_MS,
+  initialSyncRecovery,
   initialSyncRecoveryAction,
   isStaleInitialSync,
 } from './initial-sync-recovery';
 export type {
   InitialSyncReconnectErrorCode,
+  InitialSyncRecovery,
   InitialSyncRecoveryAction,
+  InitialSyncReasonCode,
   InitialSyncRetryErrorCode,
 } from './initial-sync-recovery';
 

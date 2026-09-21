@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
 import {
-  initialSyncRecoveryAction,
+  initialSyncRecovery,
   isStaleInitialSync,
   type SyncStatus,
   type SyncStage,
@@ -84,29 +84,12 @@ function activeStageIndex(status: SyncStatus): number {
 }
 
 /**
- * Friendly copy for the known terminal error codes.
- *
- * These describe a TERMINAL state — the worker has spent its attempts
- * and nothing re-queues the mailbox on its own. The old copy promised
- * "we'll retry automatically", which was simply untrue and left users
- * waiting for a retry that never came (first-run flow audit,
- * 2026-07-28). Every string here now points at the button instead.
- */
-/**
- * Error codes whose `ERROR_COPY` above already diagnoses a revoked/
- * expired Gmail grant. QA-sync-20260831-07: the gate used to offer only
- * "Try again" for these — re-queuing a full scan against the SAME dead
- * token, which fails again at `getClient` and burns one of the retry
- * route's rate-limited attempts, with no reconnect action anywhere on
- * screen. Display-only: this does NOT touch `syncStatusNeedsReconnect`
- * or the backend's `INVALID_GRANT_ERROR`/`notNeedingReconnect` sweep
- * contract (packages/workers/src/mailbox-reconnect.ts), which govern
- * periodic-sweep eligibility and are a separate, wider change.
- *
- * Shared with `SyncNowButton`'s failed-indicator (Codex adversarial
- * review of this QA round) — both surfaces read the one set exported
- * from mailbox-health.ts so this classification can't drift between
- * them again.
+ * Onboarding-owned copy keyed on worker `error.name` (what the worker
+ * writes to `provider_sync_state.error_code`). Button branching is
+ * NOT this map — it is `initialSyncRecovery` reason codes
+ * (`data-reason-code`). Copy here is a placeholder until Onboarding
+ * owns the strings; keep each line pointing at the button, never at
+ * an automatic retry the worker will not deliver.
  */
 
 const ERROR_COPY: Record<string, string> = {
@@ -154,6 +137,7 @@ export function SyncGate({
   eyebrow = DEFAULT_EYEBROW,
   mailboxId,
   nowMs,
+  onContinuePartial,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
@@ -173,12 +157,26 @@ export function SyncGate({
    * recovery without a reload.
    */
   nowMs?: number | undefined;
+  /**
+   * Hook for the rate_limit + partlyReady branch ("Continue ready").
+   * Onboarding owns the destination; this gate only exposes the control.
+   * Omitted → the Continue control is not rendered (no silent no-op).
+   */
+  onContinuePartial?: (() => void) | undefined;
 }) {
   const clock = useNow(30_000);
   const now = nowMs ?? clock ?? undefined;
   const stuck = now !== undefined && isStaleInitialSync(status, now);
   if (status.readiness_status === 'failed' || stuck) {
-    return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} stuck={stuck} />;
+    return (
+      <SyncFailed
+        status={status}
+        escape={escape}
+        mailboxId={mailboxId}
+        stuck={stuck}
+        onContinuePartial={onContinuePartial}
+      />
+    );
   }
   return <SyncProgress status={status} escape={escape} eyebrow={eyebrow} />;
 }
@@ -328,11 +326,13 @@ function SyncFailed({
   escape,
   mailboxId,
   stuck,
+  onContinuePartial,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
   mailboxId?: string | null | undefined;
   stuck: boolean;
+  onContinuePartial?: (() => void) | undefined;
 }) {
   const retry = useRetryInitialSync(mailboxId);
   const logout = useLogout();
@@ -341,12 +341,18 @@ function SyncFailed({
   // server considers active, which is exactly the mailbox this screen
   // cannot vouch for.
   const canRetry = mailboxId != null && mailboxId !== '';
-  const recovery = initialSyncRecoveryAction(status.error_code);
-  const needsReconnect = recovery === 'reconnect';
+  const recovery = initialSyncRecovery({
+    errorCode: status.error_code,
+    stuck,
+    progressPct: status.progress_pct,
+  });
+  const needsReconnect = recovery.action === 'reconnect';
   const copy = stuck
     ? STUCK_COPY
     : ((status.error_code && ERROR_COPY[status.error_code]) ??
       'Something interrupted the scan. Your Gmail is untouched — try again.');
+  const retryLabel =
+    recovery.reason === 'rate_limit' && recovery.partlyReady ? 'Finish sync' : 'Try again';
   return (
     <Shell>
       <Eyebrow tone="amber">{stuck ? 'Scan stalled' : 'Scan interrupted'}</Eyebrow>
@@ -363,18 +369,18 @@ function SyncFailed({
       </h1>
       <p
         style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 20px', maxWidth: 460 }}
-        data-recovery-action={recovery}
+        data-recovery-action={recovery.action}
+        data-reason-code={recovery.reason}
+        data-partly-ready={recovery.partlyReady ? 'true' : 'false'}
         data-sync-surface={stuck ? 'stuck' : 'failed'}
       >
         {copy}
       </p>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
         {needsReconnect ? (
-          // QA-sync-20260831-07: "Try again" here would re-queue a full
-          // scan against the SAME revoked/expired token, fail again at
-          // `getClient`, and burn a rate-limited retry attempt for
-          // nothing — the copy above already tells the user the real
-          // fix is reconnecting.
+          // insufficient_scopes / invalid_grant / reconnect_required:
+          // Retry would re-queue a scan against a grant that cannot
+          // authorize it. Reconnect only — no Try again on this branch.
           <Button
             tone="primary"
             onClick={() => canRetry && startMailboxConnect(mailboxId ?? undefined)}
@@ -383,17 +389,17 @@ function SyncFailed({
             Reconnect Gmail
           </Button>
         ) : (
-          // A REAL retry: re-queues a failed sync, or nudges a stuck
-          // one whose BullMQ job vanished. This was
-          // `window.location.reload()`, which re-rendered the same
-          // dead screen — the reconciler sweeps `queued` rows only, so
-          // nothing re-queued a `failed` one.
           <Button
             tone="primary"
             onClick={() => canRetry && retry.mutate()}
             disabled={!canRetry || retry.isPending}
           >
-            {retry.isPending ? 'Starting…' : 'Try again'}
+            {retry.isPending ? 'Starting…' : retryLabel}
+          </Button>
+        )}
+        {recovery.reason === 'rate_limit' && recovery.partlyReady && onContinuePartial && (
+          <Button tone="ghost" onClick={onContinuePartial}>
+            Continue ready
           </Button>
         )}
         {/* Don't strand a secondary connect on a failed gate — let them
