@@ -36,8 +36,10 @@ fi
 # Harness-assigned branches may DECLARE no D-tie instead of citing one
 # (claude/ 2026-08-28; same constraint for codex/ and cursor/). Deliberately
 # not a blanket exemption — most of these PRs DO ship D-decisions.
+# Line-leading only: prose that mentions the phrase (this PR's CI notes
+# said "declare No D-tie") must not trip the exemption.
 if [[ "$HEAD_REF" == claude/* || "$HEAD_REF" == codex/* || "$HEAD_REF" == cursor/* ]] &&
-  [[ "$PR_BODY" =~ [Nn]o[[:blank:]]+D-(tie|number) ]]; then
+  [[ "$PR_BODY" =~ (^|$'\n')[-*[:blank:]]*[Nn]o[[:blank:]]+D-(tie|number) ]]; then
   echo "✓ Harness branch explicitly declares no D-tie — exempt."
   exit 0
 fi

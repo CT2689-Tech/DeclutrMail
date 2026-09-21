@@ -98,3 +98,24 @@ test('claude/ codex/ cursor/ may declare no D-tie; feat/ may not', () => {
   assert.equal(check('cursor/analytics-wiring-faae', declaration).status, 0);
   assert.equal(check('feat/d011-drizzle-orm-setup', declaration).status, 1);
 });
+
+test('Relates to D159 wins over a mid-sentence No D-tie mention', () => {
+  const body = `## Closes
+
+- Relates to D159 (does **not** close it)
+
+harness branches: cite a D, or declare \`No D-tie\`
+`;
+  const result = check('cursor/posthog-sync-action-funnel-faae', body);
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout, /cites a D-decision/);
+  assert.doesNotMatch(result.stdout, /no D-tie — exempt/i);
+});
+
+test('starved: mid-sentence No D-tie is not an exemption', () => {
+  const result = check(
+    'cursor/analytics-wiring-faae',
+    'cite a D, or declare `No D-tie` in the body\n',
+  );
+  assert.equal(result.status, 1, result.stdout);
+});
