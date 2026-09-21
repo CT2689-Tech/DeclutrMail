@@ -10,10 +10,15 @@
 //   • Syncing  — mid-scan, progress bar + active stage
 //   • Ready    — all stages complete (the route auto-advances here)
 //   • Failed   — terminal error with a known error_code
+//   • FailedReconnect / FailedInsufficientScopes — Reconnect only
+//   • FailedQuota / FailedQuotaPartlyReady — rate_limit Try again /
+//     Finish sync | Continue ready
+//   • Stuck    — stale heartbeat while still queued/syncing
 
 import type { ComponentProps } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { STALE_INITIAL_SYNC_MS, type SyncStatus } from '@declutrmail/shared/contracts';
 import { SyncGate } from './sync-gate';
 
 const { color } = tokens;
@@ -51,7 +56,17 @@ export default meta;
 type GateArgs = ComponentProps<typeof SyncGate>;
 
 function frame(children: React.ReactNode) {
-  return <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>;
+  // Failed / stuck variants mount TanStack hooks (retry, logout,
+  // disconnect). A fresh QueryClient per story keeps those mutations
+  // off the network; progress-only variants don't need it but sharing
+  // one wrapper is cheaper than a second frame helper.
+  return (
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>
+    </QueryClientProvider>
+  );
 }
 
 const QUEUED: SyncStatus = {
@@ -107,6 +122,65 @@ export const Failed: Story<typeof SyncGate> = {
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 
+/** Failed — invalid_grant: Reconnect only, never Retry. */
+export const FailedReconnect: Story<typeof SyncGate> = {
+  args: {
+    status: { ...FAILED, error_code: 'InvalidGrantError' },
+    mailboxId: 'mb-1',
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/** Failed — insufficient_scopes (ProviderPermissionError alias): Reconnect only. */
+export const FailedInsufficientScopes: Story<typeof SyncGate> = {
+  args: {
+    status: { ...FAILED, error_code: 'ProviderPermissionError' },
+    mailboxId: 'mb-1',
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/** Failed — rate_limit with no progress: Try again (quota-resume). */
+export const FailedQuota: Story<typeof SyncGate> = {
+  args: {
+    status: { ...FAILED, error_code: 'GmailQuotaError', progress_pct: 0 },
+    mailboxId: 'mb-1',
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/**
+ * Failed — rate_limit with progress already moved: Finish sync | Continue
+ * ready. Continue is a wiring hook; production first-run does not pass
+ * it (D6 still requires a completed initial scan).
+ */
+export const FailedQuotaPartlyReady: Story<typeof SyncGate> = {
+  args: {
+    status: { ...FAILED, error_code: 'GmailQuotaError', progress_pct: 32 },
+    mailboxId: 'mb-1',
+    onContinuePartial: () => {},
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+const STUCK_NOW = Date.parse('2026-09-21T12:00:00.000Z');
+
+/**
+ * Stuck — still `syncing` but the worker heartbeat is older than the
+ * shared age gate. Same recovery chrome as failed, with Retry.
+ */
+export const Stuck: Story<typeof SyncGate> = {
+  args: {
+    status: {
+      ...SYNCING,
+      updated_at: new Date(STUCK_NOW - STALE_INITIAL_SYNC_MS - 1_000).toISOString(),
+    },
+    mailboxId: 'mb-1',
+    nowMs: STUCK_NOW,
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
 /**
  * Syncing (secondary connect, D116) — same gate, plus the escape hatch:
  * "Stay here" keeps waiting; "Go back to <primary>" switches the active
@@ -123,8 +197,8 @@ export const SyncingSecondary: Story<typeof SyncGate> = {
 
 /**
  * Failed (secondary connect, D116) — a failed scan on a second mailbox
- * offers "Go back to <primary>" alongside "Try again" so the user is
- * never stranded on a failed gate with a working primary inbox.
+ * offers "Go back to <primary>" alongside the recovery button so the
+ * user is never stranded on a failed gate with a working primary inbox.
  */
 export const FailedSecondary: Story<typeof SyncGate> = {
   args: {

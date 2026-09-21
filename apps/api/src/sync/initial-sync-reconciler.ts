@@ -45,12 +45,13 @@
 
 import { mailboxAccounts, providerSyncState } from '@declutrmail/db';
 import { deletionPendingSql } from '@declutrmail/workers';
+import { STALE_INITIAL_SYNC_MS } from '@declutrmail/shared/contracts';
 import { and, eq, lt, sql } from 'drizzle-orm';
 
 import type { DrizzleDb } from '../db/db.module.js';
 
 /** How long a `syncing` row may go without a heartbeat before it is swept. */
-export const STALE_SYNCING_AFTER_MS = 15 * 60 * 1000;
+export const STALE_SYNCING_AFTER_MS = STALE_INITIAL_SYNC_MS;
 
 /** Max rows read per status per tick — the sweep is bounded, not exhaustive. */
 export const RECONCILE_BATCH = 100;

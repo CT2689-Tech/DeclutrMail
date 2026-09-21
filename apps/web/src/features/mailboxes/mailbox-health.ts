@@ -1,4 +1,4 @@
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { INITIAL_SYNC_RECONNECT_ERROR_CODES, type SyncStatus } from '@declutrmail/shared/contracts';
 
 /** Worker classification for a revoked/expired Gmail OAuth grant. */
 export const INVALID_GRANT_CODE = 'InvalidGrantError';
@@ -14,14 +14,11 @@ export const AUTH_EXPIRED_CODE = 'AuthExpiredError';
  * sweep contract — widening THAT is a separate, worker-policy-adjacent
  * change, deliberately not made here).
  *
- * QA-sync-20260831-07 added `AuthExpiredError` display-only to the
- * onboarding gate's own local set; a later Codex adversarial review of
- * the same QA round found `SyncNowButton`'s failed-indicator still used
- * only `InvalidGrantError`, offering a doomed "Scan again" retry against
- * the same dead token the onboarding gate correctly reconnects for. Both
- * surfaces now read this one set instead of keeping their own copies.
+ * Sourced from `INITIAL_SYNC_RECONNECT_ERROR_CODES` so the onboarding
+ * gate and `SyncNowButton`'s failed-indicator cannot drift on which
+ * names mean Reconnect vs Retry.
  */
-export const AUTH_RECOVERY_ERROR_CODES = new Set([INVALID_GRANT_CODE, AUTH_EXPIRED_CODE]);
+export const AUTH_RECOVERY_ERROR_CODES = new Set<string>(INITIAL_SYNC_RECONNECT_ERROR_CODES);
 
 /**
  * True only while the scoped mailbox's Gmail grant currently needs

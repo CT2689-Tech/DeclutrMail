@@ -101,6 +101,20 @@ describe('useRetryInitialSync', () => {
     },
   );
 
+  it('toasts that the scan is still running when a stuck nudge finds a live job', async () => {
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/v1/sync/initial/retry',
+        respond: () => jsonOk({ data: { outcome: 'already_running' } }),
+      },
+    ]);
+    const { result } = renderRetry();
+    act(() => result.current.mutate());
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(vi.mocked(toast)).toHaveBeenCalledWith("Still scanning — we'll keep going.", 'success');
+  });
+
   it('toasts a real message on failure, instead of silently doing nothing (QA-sync-20260831-10 item 4)', async () => {
     // The negative control: reverting the `onError` handler makes this
     // assertion fail — a 429 or 5xx on the user's only recovery control

@@ -172,6 +172,21 @@ describe('SyncStatusSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts updated_at as an ISO datetime and omits it when absent', () => {
+    const parsed = SyncStatusSchema.parse({
+      ...VALID_SYNCING,
+      updated_at: '2026-09-21T12:00:00.000Z',
+    });
+    expect(parsed.updated_at).toBe('2026-09-21T12:00:00.000Z');
+    expect(SyncStatusSchema.parse(VALID_SYNCING).updated_at).toBeUndefined();
+  });
+
+  it('rejects a non-datetime updated_at', () => {
+    expect(
+      SyncStatusSchema.safeParse({ ...VALID_SYNCING, updated_at: 'a-while-ago' }).success,
+    ).toBe(false);
+  });
+
   it('rejects an empty error_code (must be omitted when absent, not empty)', () => {
     const result = SyncStatusSchema.safeParse({
       ...VALID_FAILED,
