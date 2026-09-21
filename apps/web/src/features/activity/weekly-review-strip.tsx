@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import type { ActivityReviewOutcomeWire, ActivityWeeklyReviewWire } from '@/lib/api/activity';
 
-const { color, font, motion, radius, text } = tokens;
+const { color, font, motion, radius, shadow, text } = tokens;
 
 /**
  * The five factual outcomes, in the Filter popover's order and words — a
@@ -41,13 +41,16 @@ export function outcomeHref(
 }
 
 /**
- * D246 seven-day review: the label, then one compact tile per outcome
- * that happened. Zero outcomes are left out, and a week with none renders
- * nothing. Each tile opens exactly the records it counts (Failed says
- * "Review"); the active one links back out (`clearHref`).
+ * D246 seven-day review: one raised panel, the label, then all five
+ * outcome tiles — a zero stays, muted, so the row never reflows. It shows
+ * once the mailbox has any activity (this week or ever); a mailbox with
+ * none leaves it to the list's empty state. Each tile opens exactly the
+ * records it counts (Failed says "Review"); the active one links back out
+ * (`clearHref`).
  */
 export function WeeklyReviewStrip({
   review,
+  hasAnyActivity = false,
   error,
   onRetry,
   activeOutcome,
@@ -55,6 +58,8 @@ export function WeeklyReviewStrip({
   senderQuery = '',
 }: {
   review: ActivityWeeklyReviewWire | null;
+  /** The mailbox has activity outside this week — show the zeros too. */
+  hasAnyActivity?: boolean;
   error: boolean;
   onRetry: () => void;
   activeOutcome: ActivityReviewOutcomeWire | null;
@@ -87,50 +92,65 @@ export function WeeklyReviewStrip({
     );
   }
   if (!review) return null;
-  const shown = WEEKLY_OUTCOMES.filter(({ key }) => review[key] > 0);
-  if (shown.length === 0) return null;
+  const weekHasAny = WEEKLY_OUTCOMES.some(({ key }) => review[key] > 0);
+  if (!weekHasAny && !hasAnyActivity) return null;
   return (
     <section
       aria-labelledby="weekly-review-heading"
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        padding: '14px 8px 8px',
+        background: color.card,
+        borderRadius: radius.lg,
+        boxShadow: shadow.card,
+      }}
     >
       <h2
         id="weekly-review-heading"
-        style={{ margin: 0, fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}
+        style={{
+          margin: 0,
+          padding: '0 12px',
+          fontSize: text.sm,
+          fontWeight: 600,
+          color: color.fg,
+        }}
       >
         Last 7 days{senderQuery ? ' for this sender' : ''}
       </h2>
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-          gap: 8,
+          gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
+          gap: 2,
         }}
       >
-        {shown.map(({ key, label }) => {
+        {WEEKLY_OUTCOMES.map(({ key, label }) => {
           const isActive = activeOutcome === key;
-          const isFailed = key === 'failed';
+          const count = review[key];
+          const isFailed = key === 'failed' && count > 0;
           return (
             <Link
               key={key}
               href={isActive ? clearHref : outcomeHref(key, review, senderQuery)}
               aria-current={isActive ? 'page' : undefined}
-              aria-label={`${review[key]} ${label}${isActive ? ', showing — select to clear' : isFailed ? ', Review' : ''}`}
+              aria-label={`${count} ${label}${isActive ? ', showing — select to clear' : isFailed ? ', Review' : ''}`}
               data-outcome-tile={key}
               onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.background = color.fillHover;
+                if (!isActive) e.currentTarget.style.background = color.fill;
               }}
               onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.background = color.fill;
+                if (!isActive) e.currentTarget.style.background = 'transparent';
               }}
               style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 2,
                 minHeight: 64,
-                padding: '10px 14px',
-                borderRadius: radius.lg,
-                background: isActive ? color.primarySoft : color.fill,
+                padding: '8px 12px 10px',
+                borderRadius: radius.md,
+                background: isActive ? color.primarySoft : 'transparent',
                 fontFamily: font.sans,
                 textDecoration: 'none',
                 transition: `background ${motion.fast} ${motion.ease}`,
@@ -144,10 +164,10 @@ export function WeeklyReviewStrip({
                   letterSpacing: '-0.02em',
                   lineHeight: 1.15,
                   fontVariantNumeric: 'tabular-nums',
-                  color: isFailed ? color.danger : color.fg,
+                  color: isFailed ? color.danger : count === 0 ? color.fgMuted : color.fg,
                 }}
               >
-                {review[key].toLocaleString('en-US')}
+                {count.toLocaleString('en-US')}
               </span>
               <span
                 style={{

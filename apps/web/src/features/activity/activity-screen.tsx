@@ -94,15 +94,15 @@ export const activityUndoRecoveryHelp =
  * Layout (top → bottom):
  *   1. Header — h1 + sender search (B9) + Filter + support bundle export
  *   2. Active filters — removable chips + Clear (only when any is set)
- *   3. Summary — D59 window counts (each with its all-time total) + the
- *      failed-actions link; one line when the window counted nothing
- *   4. Last 7 days — D246 outcome chips (hidden when all zero)
- *   5. Bulk action bar (B7 — only visible when ≥1 row selected)
- *   6. Timeline — rows under sticky day headers (D57) OR sender-grouped (B11)
+ *   3. Summary — D59 window counts in a raised panel (each with its
+ *      all-time total) + the failed-actions link; zeros stay, muted
+ *   4. Action chips — the B8 verb filter, on the page
+ *   5. Last 7 days — D246 outcome tiles in a raised panel
+ *   6. Bulk action bar (B7 — only visible when ≥1 row selected)
+ *   7. Timeline — row cards under day labels (D57) OR sender-grouped (B11)
  *
  * The Filter popover (bottom sheet below `sm`, D60) holds source (D56),
- * action (B8), outcome (D246), window (D55), date range (B10) and
- * group-by-sender (B11).
+ * outcome (D246), window (D55), date range (B10) and group-by-sender (B11).
  *
  * D58 undo affordance is fully wired (B7 + B13):
  *   - per-row Undo button POSTs `/api/undo/:token` and the row's
@@ -345,10 +345,12 @@ export function ActivityScreen() {
   // to a filter they've already navigated away from. Restores the
   // interaction guard the full-screen <LoadingState/> used to provide.
   const showingStaleRows = query.isPlaceholderData;
+  const hasAnyActivity = rows.length > 0 || hasAnyCount(stats) || hasAnyCount(allTimeStats);
 
   const weeklyStrip = (
     <WeeklyReviewStrip
       review={weeklyQuery.data ?? null}
+      hasAnyActivity={hasAnyActivity}
       error={weeklyQuery.isError}
       onRetry={() => void weeklyQuery.refetch()}
       activeOutcome={filters.outcomes?.[0] ?? null}
@@ -422,6 +424,10 @@ export function ActivityScreen() {
         </>
       ) : (
         <>
+          {/* Same order as before the redesign: the week's outcomes, then
+              the window's totals, then the chips and the list they filter. */}
+          {weeklyStrip}
+
           <SummaryRow
             windowLabel={windowToLabel(
               filters.window ?? '30d',
@@ -439,7 +445,8 @@ export function ActivityScreen() {
             failedHref={failedOutcomeHref(filters)}
           />
 
-          {weeklyStrip}
+          {/* Chips filter the list, so they sit directly above it. */}
+          <ActionChips verbs={filters.verbs ?? []} onVerbs={setVerbs} />
 
           <BulkActionBar
             rows={rows}
@@ -608,7 +615,7 @@ function Timeline({
   const now = useNow();
   const days = useMemo(() => groupByDay(rows, timeZone), [rows, timeZone]);
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
       {days.map((day, index) => {
         const label = activityDayLabel(day.rows[0]!.occurredAt, now, timeZone);
         return (
@@ -617,15 +624,8 @@ function Timeline({
           <section key={`${day.key}:${index}`} aria-label={label}>
             <h2
               style={{
-                position: 'sticky',
-                top: 0,
-                zIndex: 2,
-                margin: '0 -12px',
-                padding: '10px 12px 8px',
-                // Translucent + blurred so rows scroll softly beneath it.
-                background: `color-mix(in srgb, ${color.bg} 80%, transparent)`,
-                WebkitBackdropFilter: 'blur(14px) saturate(1.3)',
-                backdropFilter: 'blur(14px) saturate(1.3)',
+                margin: '0 0 10px',
+                padding: '0 4px',
                 fontSize: text.sm,
                 fontWeight: 600,
                 color: color.fgMuted,
@@ -633,7 +633,16 @@ function Timeline({
             >
               {label}
             </h2>
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            <ul
+              style={{
+                listStyle: 'none',
+                margin: 0,
+                padding: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
               {day.rows.map((row) => (
                 <ActivityRow
                   key={row.id}
@@ -801,12 +810,29 @@ function formatCount(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+/** Any counted action in these stats. */
+function hasAnyCount(stats: ActivityStatsWire | null | undefined): boolean {
+  return Boolean(
+    stats && (SUMMARY_VERBS.some(({ key }) => stats[key] > 0) || stats.needsAttention > 0),
+  );
+}
+
 /**
- * The window's counts, once, on one line. Each count toggles its verb
- * filter — the same URL state the Filter popover writes — and carries its
+ * A raised surface — `shadow.card` is a soft drop in light and carries a
+ * hairline ring in dark, so one token holds both themes.
+ */
+const panelStyle: CSSProperties = {
+  background: color.card,
+  borderRadius: radius.lg,
+  boxShadow: shadow.card,
+};
+
+/**
+ * The window's counts in one raised panel. Each column toggles its verb
+ * filter — the same URL state the action chips write — and carries its
  * all-time total underneath (both from `aggregateStats`, same filters
- * minus the window). A window with no counted actions collapses to one
- * line instead of five zeros.
+ * minus the window). A zero stays on screen, muted, so the five columns
+ * never reflow.
  */
 function SummaryRow({
   windowLabel,
@@ -830,19 +856,15 @@ function SummaryRow({
   /** The same window, narrowed to the failed records this count names. */
   failedHref: string;
 }) {
-  if (!stats) return null;
-  const windowIsEmpty = SUMMARY_VERBS.every(({ key }) => stats[key] === 0);
+  // A mailbox with nothing counted, ever, gets the list's empty state
+  // alone — a panel of zeros would say nothing it doesn't.
+  if (!stats || (!hasAnyCount(stats) && !hasAnyCount(allTimeStats))) return null;
   const showAllTime = !isWindowAllTime && allTimeStats !== null;
-  const allTimeParts = allTimeStats
-    ? SUMMARY_VERBS.filter(({ key }) => allTimeStats[key] > 0).map(
-        ({ key, allTimeWord }) => `${formatCount(allTimeStats[key])} ${allTimeWord}`,
-      )
-    : [];
   // `aggregateStats` counts activity_log ROWS, drops reverted ones, and
   // ignores the source chips — none of which the numbers can say for
   // themselves (QA-activity-20260918-05).
   const caption = [
-    windowIsEmpty && allTimeParts.length === 0 ? null : 'Actions, not emails, from every source.',
+    'Actions, not emails, from every source.',
     hasUndoneRows ? 'Undone actions aren’t counted.' : null,
   ]
     .filter(Boolean)
@@ -851,50 +873,49 @@ function SummaryRow({
     <section
       aria-live="polite"
       aria-label="Activity summary"
-      style={{ display: 'flex', flexDirection: 'column', gap: 6 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <div
         style={{
+          ...panelStyle,
           display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 12,
-          flexWrap: 'wrap',
+          flexDirection: 'column',
+          gap: 6,
+          padding: '14px 8px 8px',
         }}
       >
-        <span style={{ fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}>
-          {windowIsEmpty ? `Nothing in ${lowerFirst(windowLabel)}` : windowLabel}
-        </span>
-        {/* The one number naming a problem has to reach those records
-            (QA-activity-20260918-08). */}
-        {stats.needsAttention > 0 && (
-          <Link
-            href={failedHref}
-            style={{
-              fontSize: text.sm,
-              fontWeight: 600,
-              color: color.amber,
-              textDecoration: 'none',
-            }}
-          >
-            {stats.needsAttention} failed · Review
-          </Link>
-        )}
-      </div>
-      {windowIsEmpty ? (
-        showAllTime &&
-        allTimeParts.length > 0 && (
-          <p style={{ ...numeralStyle, margin: 0, fontSize: text.xs, color: color.fgMuted }}>
-            {allTimeParts.join(', ')} all time
-          </p>
-        )
-      ) : (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'baseline',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            padding: '0 12px',
+          }}
+        >
+          <span style={{ fontSize: text.sm, fontWeight: 600, color: color.fg }}>{windowLabel}</span>
+          {/* The one number naming a problem has to reach those records
+              (QA-activity-20260918-08). */}
+          {stats.needsAttention > 0 && (
+            <Link
+              href={failedHref}
+              style={{
+                fontSize: text.sm,
+                fontWeight: 600,
+                color: color.amber,
+                textDecoration: 'none',
+              }}
+            >
+              {stats.needsAttention} failed · Review
+            </Link>
+          )}
+        </div>
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
-            gap: 4,
-            margin: '0 -12px',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+            gap: 2,
           }}
         >
           {SUMMARY_VERBS.map(({ key, verb, label, tone }) => {
@@ -917,10 +938,10 @@ function SummaryRow({
                   alignItems: 'flex-start',
                   gap: 4,
                   minHeight: 56,
-                  padding: '10px 12px',
+                  padding: '8px 12px 10px',
                   background: isActive ? color.primarySoft : 'transparent',
                   border: 'none',
-                  borderRadius: radius.lg,
+                  borderRadius: radius.md,
                   fontFamily: font.sans,
                   textAlign: 'left',
                   cursor: 'pointer',
@@ -945,7 +966,7 @@ function SummaryRow({
                     fontWeight: 500,
                     letterSpacing: '-0.02em',
                     lineHeight: 1.05,
-                    color: tone,
+                    color: stats[key] === 0 ? color.fgMuted : tone,
                   }}
                 >
                   {formatCount(stats[key])}
@@ -959,16 +980,101 @@ function SummaryRow({
             );
           })}
         </div>
-      )}
-      {caption && <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{caption}</p>}
+      </div>
+      <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{caption}</p>
     </section>
   );
 }
 
-function lowerFirst(label: string): string {
-  // "Last 30 days" → "the last 30 days"; a date range reads as-is after "in".
-  if (label === 'All time') return 'all time';
-  return label.startsWith('Last ') ? `the last ${label.slice(5)}` : label;
+/** A chip's dot — the colour the verb's rows carry on their rail. */
+function verbChipDot(verb: ActivityVerbFilterWire): string {
+  return verb === 'unsubscribe' ? color.primary : activityActionDot(verb).color;
+}
+
+/**
+ * The action filter, on the page: All plus one chip per action. The same
+ * `verb` URL state the summary columns toggle — the Filter popover keeps
+ * source, outcome, time and view.
+ */
+function ActionChips({
+  verbs,
+  onVerbs,
+}: {
+  verbs: readonly ActivityVerbFilterWire[];
+  onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Action"
+      style={{
+        display: 'flex',
+        gap: 6,
+        overflowX: 'auto',
+        margin: '0 calc(-1 * clamp(16px, 4vw, 24px))',
+        padding: '2px clamp(16px, 4vw, 24px)',
+        scrollbarWidth: 'none',
+      }}
+    >
+      <ActionChip label="All" isActive={verbs.length === 0} onClick={() => onVerbs([])} />
+      {VERB_CHIPS.map((chip) => (
+        <ActionChip
+          key={chip.value}
+          label={chip.label}
+          dot={verbChipDot(chip.value)}
+          isActive={verbs.includes(chip.value)}
+          onClick={() => onVerbs(toggled(verbs, chip.value))}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ActionChip({
+  label,
+  dot,
+  isActive,
+  onClick,
+}: {
+  label: string;
+  dot?: string;
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={isActive}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+        flexShrink: 0,
+        minHeight: 44,
+        padding: '0 16px',
+        fontFamily: font.sans,
+        fontSize: text.sm,
+        fontWeight: isActive ? 600 : 500,
+        whiteSpace: 'nowrap',
+        border: 'none',
+        borderRadius: radius.pill,
+        background: isActive ? color.primarySoft : color.fill,
+        color: isActive ? color.primary : color.fg,
+        cursor: 'pointer',
+        transition: `background ${motion.fast} ${motion.ease}`,
+      }}
+    >
+      {dot && (
+        <span
+          aria-hidden="true"
+          data-chip-dot
+          style={{ width: 8, height: 8, borderRadius: radius.pill, background: dot }}
+        />
+      )}
+      {label}
+    </button>
+  );
 }
 
 function toggled<T>(list: readonly T[], value: T): T[] {
@@ -1039,6 +1145,8 @@ interface FilterFieldsProps {
   senderSearchDebounceMs?: number;
   /** 44px targets for the bottom sheet. */
   touch?: boolean;
+  /** False where the action chips already sit on the page. */
+  showVerbs?: boolean;
 }
 
 /** Filters set away from their defaults — the count on the Filter button
@@ -1071,6 +1179,7 @@ function FilterFields({
   onSenderQuery,
   senderSearchDebounceMs,
   touch = false,
+  showVerbs = true,
 }: FilterFieldsProps) {
   const isCustomRange = dateFrom !== null || dateTo !== null;
   return (
@@ -1086,17 +1195,19 @@ function FilterFields({
           />
         ))}
       </FilterGroup>
-      <FilterGroup label="Action">
-        {VERB_CHIPS.map((chip) => (
-          <Chip
-            key={chip.value}
-            label={chip.label}
-            isActive={verbs.includes(chip.value)}
-            onClick={() => onVerbs(toggled(verbs, chip.value))}
-            touch={touch}
-          />
-        ))}
-      </FilterGroup>
+      {showVerbs && (
+        <FilterGroup label="Action">
+          {VERB_CHIPS.map((chip) => (
+            <Chip
+              key={chip.value}
+              label={chip.label}
+              isActive={verbs.includes(chip.value)}
+              onClick={() => onVerbs(toggled(verbs, chip.value))}
+              touch={touch}
+            />
+          ))}
+        </FilterGroup>
+      )}
       {outcomes && onOutcomes && (
         <FilterGroup label="Outcome">
           {OUTCOME_CHIPS.map((chip) => (
@@ -1273,7 +1384,7 @@ function FilterButton({ isMobile, ...fields }: FilterFieldsProps & { isMobile: b
           }}
         >
           <style>{`@keyframes dm-activity-pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }`}</style>
-          <FilterFields {...fields} />
+          <FilterFields {...fields} showVerbs={false} />
         </div>
       )}
       {open && isMobile && <FilterSheet onClose={close} {...fields} />}
@@ -1358,7 +1469,7 @@ function FilterSheet({ onClose, ...fields }: FilterFieldsProps & { onClose: () =
             <CloseGlyph />
           </button>
         </div>
-        <FilterFields {...fields} touch />
+        <FilterFields {...fields} touch showVerbs={false} />
         <Button tone="primary" size="lg" onClick={onClose}>
           View results
         </Button>
@@ -2148,12 +2259,21 @@ function GroupedList({
     });
   };
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+    <ul
+      style={{
+        listStyle: 'none',
+        margin: 0,
+        padding: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
       {groups.map((group) => {
         const isOpen = expanded.has(group.key);
         const totalAffected = group.rows.reduce((sum, r) => sum + r.affectedCount, 0);
         return (
-          <li key={group.key} style={{ borderBottom: `1px solid ${color.lineSoft}` }}>
+          <li key={group.key} style={{ ...panelStyle, padding: '0 12px' }}>
             <button
               type="button"
               onClick={() => toggleGroup(group.key)}
@@ -2168,9 +2288,9 @@ function GroupedList({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 14,
-                minHeight: 64,
-                margin: '4px -12px',
-                padding: '10px 12px',
+                minHeight: 68,
+                margin: '0 -12px',
+                padding: '12px 16px',
                 width: 'calc(100% + 24px)',
                 background: 'transparent',
                 border: 'none',
@@ -2258,8 +2378,14 @@ function GroupedList({
               </svg>
             </button>
             {isOpen && (
-              // The last row's hairline would double the group's own.
-              <ul style={{ listStyle: 'none', margin: '0 0 -1px', padding: 0 }}>
+              <ul
+                style={{
+                  listStyle: 'none',
+                  margin: 0,
+                  padding: '0 0 8px',
+                  borderTop: `1px solid ${color.lineSoft}`,
+                }}
+              >
                 {group.rows.map((row) => (
                   <ActivityRow
                     key={row.id}
@@ -2503,10 +2629,12 @@ function ActivityRow({
     </div>
   );
 
+  const tinted = (hovered && !isMobile) || isSelected;
   return (
     <li
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      data-activity-card={variant === 'flat' ? '' : undefined}
       style={{
         position: 'relative',
         display: 'flex',
@@ -2515,27 +2643,39 @@ function ActivityRow({
         gap: 8,
         minHeight: 68,
         boxSizing: 'border-box',
-        // Bled past the column so the logo keeps the page's left edge
-        // while the hover fill has room.
-        margin: '0 -12px',
-        padding: '10px 12px',
-        borderRadius: radius.lg,
-        background: (hovered && !isMobile) || isSelected ? color.fill : 'transparent',
-        transition: `background ${motion.fast} ${motion.ease}`,
         fontFamily: font.sans,
+        transition: `background ${motion.fast} ${motion.ease}, box-shadow ${motion.fast} ${motion.ease}`,
+        ...(variant === 'flat'
+          ? {
+              // Each action is its own raised card; the fill layers over
+              // the card colour so hover and selection read on both themes.
+              padding: '14px 16px 14px 22px',
+              borderRadius: radius.lg,
+              background: tinted
+                ? `linear-gradient(${color.fill}, ${color.fill}), ${color.card}`
+                : color.card,
+              boxShadow: hovered && !isMobile ? shadow.lift : shadow.card,
+            }
+          : {
+              // Inside a sender card: flat, bled to the card's edges.
+              margin: '0 -12px',
+              padding: '10px 16px 10px 22px',
+              borderRadius: radius.lg,
+              background: tinted ? color.fill : 'transparent',
+            }),
       }}
     >
-      {/* The action's colour as a rail in the bleed gutter — scans down
-          the list without competing with the sender name. */}
+      {/* The action's colour as a rail inside the card's left edge — scans
+          down the list without competing with the sender name. */}
       <span
         aria-hidden="true"
         data-action-rail={row.action}
         style={{
           position: 'absolute',
-          left: 3,
+          left: 8,
           top: 14,
           bottom: 14,
-          width: 3,
+          width: 4,
           borderRadius: radius.pill,
           background: resultColor,
         }}
@@ -2693,13 +2833,13 @@ function RowActions({
     >
       <div
         data-row-actions-frame
-        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minHeight: touch ? 44 : 0 }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: touch ? 44 : 0 }}
       >
         {row.executionState && (
           <RecoveryCell row={row} execution={row.executionState} mailboxId={mailboxId} />
         )}
         <UndoCell row={row} bulkFailedTokens={failedTokens} />
-        <OpenInGmailLink row={row} href={gmailHref} />
+        <OpenInGmailLink row={row} href={gmailHref} touch={touch} />
       </div>
       {/* The reason a retry is unsafe used to live only in a `title`,
           which does not exist on touch — on the one row a worried user is
@@ -3345,10 +3485,12 @@ function recoveryConfirmNeedsRecheck(error: Error): boolean {
 function OpenInGmailLink({
   row,
   href,
+  touch = false,
 }: {
   row: ActivityRowWire;
   /** Built by the caller; null when there is no sender or no mailbox to link into. */
   href: string | null;
+  touch?: boolean;
 }) {
   if (!href || !row.sender) return null;
   const name = `Open ${row.sender.displayName} in Gmail`;
@@ -3362,28 +3504,30 @@ function OpenInGmailLink({
           aria-label={name}
           aria-describedby={describedBy}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = color.fill;
+            e.currentTarget.style.background = color.fillHover;
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.background = color.fill;
           }}
-          style={{ ...iconButtonStyle, textDecoration: 'none' }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 3,
+            height: touch ? 36 : 26,
+            padding: '0 10px',
+            fontFamily: font.sans,
+            fontSize: text.xs,
+            fontWeight: 600,
+            color: color.fgSoft,
+            background: color.fill,
+            borderRadius: radius.pill,
+            textDecoration: 'none',
+            whiteSpace: 'nowrap',
+            transition: `background ${motion.fast} ${motion.ease}`,
+          }}
         >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M14 4h6v6" />
-            <path d="M20 4 11 13" />
-            <path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" />
-          </svg>
+          Gmail
+          <span aria-hidden="true">↗</span>
         </a>
       )}
     </Tooltip>
@@ -3443,19 +3587,21 @@ function UndoCell({
               : 'Revert this action.'
           }
           onMouseEnter={(e) => {
-            if (!isPendingHere) e.currentTarget.style.background = color.fill;
+            if (!isPendingHere) e.currentTarget.style.background = color.primarySoft;
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
           }}
           data-dm-button=""
+          data-undo-capsule=""
           style={{
             ...rowControlStyle,
-            // Outlined, not filled: a fill vanishes into the row's own
-            // hover fill.
+            gap: 6,
+            // Outlined in the action colour, not filled: a fill vanishes
+            // into the card's own hover tint.
             background: 'transparent',
-            boxShadow: `inset 0 0 0 1px ${color.line}`,
-            color: failed ? color.amber : color.fg,
+            boxShadow: `inset 0 0 0 1px ${failed ? color.amber : color.primary}`,
+            color: failed ? color.amber : color.primary,
             cursor: isPendingHere ? 'wait' : 'pointer',
             fontWeight: 600,
             opacity: isPendingHere ? 0.6 : 1,
@@ -3463,6 +3609,7 @@ function UndoCell({
           }}
         >
           {isPendingHere ? 'Undoing…' : failed ? 'Try again' : 'Undo'}
+          <span aria-hidden="true">↺</span>
         </button>
         {failed && (
           <span role="status" style={{ color: color.amber, fontSize: text.xs, maxWidth: 260 }}>

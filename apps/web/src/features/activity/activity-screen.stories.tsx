@@ -358,8 +358,8 @@ export const GroupedBySender: Story<typeof ActivityScreen> = {
 };
 
 /**
- * A window whose only rows were undone: the five zeros collapse to
- * "Nothing in the last 30 days" + the all-time totals, and the caption
+ * A window whose only rows were undone: the five columns stay as muted
+ * zeros over their all-time totals, and the caption
  * says why the undone rows aren't counted.
  */
 export const QuietWindow: Story<typeof ActivityScreen> = {

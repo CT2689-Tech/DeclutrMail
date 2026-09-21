@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
 import {
@@ -607,7 +607,13 @@ describe('ActivityScreen — timeline (D57)', () => {
 
     // No `me` in the cache → the user zone falls back to UTC.
     await screen.findByRole('heading', { level: 2, name: 'Today' });
-    expect(screen.getAllByRole('heading', { level: 2 }).map((el) => el.textContent)).toEqual([
+    // The weekly panel's own heading sits above the day labels.
+    expect(
+      screen
+        .getAllByRole('heading', { level: 2 })
+        .map((el) => el.textContent)
+        .filter((t) => t !== 'Last 7 days'),
+    ).toEqual([
       'Today',
       expect.stringMatching(/^Mon, May 25/),
       expect.stringMatching(/^Sun, May 24/),
@@ -701,7 +707,7 @@ describe('ActivityScreen — Filter popover', () => {
       within(dialog)
         .getAllByRole('group')
         .map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Source', 'Action', 'Outcome', 'Time', 'View']);
+    ).toEqual(['Source', 'Outcome', 'Time', 'View']);
   });
 
   it('closes on Escape, returning focus to the button, and on an outside click', async () => {
@@ -831,7 +837,7 @@ describe('ActivityScreen — weekly review (D246)', () => {
     );
   });
 
-  it('hides zero outcomes, and the whole strip for an empty week', async () => {
+  it('keeps zero outcomes as muted tiles, and shows an empty week when the mailbox has activity', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -846,10 +852,17 @@ describe('ActivityScreen — weekly review (D246)', () => {
     ]);
     const view = renderScreen();
     const strip = await screen.findByRole('region', { name: /last 7 days/i });
-    expect(within(strip).getAllByRole('link')).toHaveLength(1);
+    expect(within(strip).getAllByRole('link')).toHaveLength(5);
     expect(within(strip).getByRole('link', { name: /2 completed/i })).toBeInTheDocument();
+    const failedZero = within(strip).getByRole('link', { name: /^0 failed/i });
+    // A zero Failed is not an alarm: muted, and no "Review".
+    expect(failedZero).not.toHaveAccessibleName(/Review/);
+    expect(strip.querySelector<HTMLElement>('[data-outcome-count="failed"]')?.style.color).toBe(
+      'var(--dm-fg-muted)',
+    );
     view.unmount();
 
+    // An all-zero week still shows while the mailbox has any activity.
     installFetchStub([
       {
         method: 'GET',
@@ -857,12 +870,27 @@ describe('ActivityScreen — weekly review (D246)', () => {
         respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
       },
     ]);
+    const second = renderScreen();
+    const empty = await screen.findByRole('region', { name: /last 7 days/i });
+    expect(within(empty).getAllByRole('link')).toHaveLength(5);
+    second.unmount();
+
+    // A mailbox with no activity at all leaves it to the empty state.
+    const zero = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [], meta: { ...META_BASE, stats: zero, allTimeStats: zero } }),
+      },
+    ]);
     renderScreen();
-    await screen.findByRole('region', { name: 'Activity summary' });
     await waitFor(() =>
       expect(trackMock.mock.calls.some(([name]) => name === 'weekly_review_viewed')).toBe(true),
     );
     expect(screen.queryByRole('region', { name: /last 7 days/i })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Activity summary' })).toBeNull();
   });
 
   /**
@@ -1166,7 +1194,7 @@ describe('ActivityScreen — populated', () => {
     expect(screen.queryByText(/all time$/)).toBeNull();
   });
 
-  it('collapses an all-zero window to one line plus the all-time totals', async () => {
+  it('keeps the five columns for an all-zero window, zeros muted, with the all-time totals', async () => {
     const zero = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
     installFetchStub([
       {
@@ -1187,9 +1215,14 @@ describe('ActivityScreen — populated', () => {
     ]);
     renderScreen();
     const summary = await screen.findByRole('region', { name: 'Activity summary' });
-    expect(within(summary).getByText('Nothing in the last 30 days')).toBeInTheDocument();
-    expect(within(summary).queryAllByRole('button')).toHaveLength(0);
-    expect(within(summary).getByText(/1,335 archived, 40 deleted all time/)).toBeInTheDocument();
+    expect(within(summary).getByText('Last 30 days')).toBeInTheDocument();
+    expect(within(summary).queryByText(/Nothing in/)).toBeNull();
+    expect(within(summary).getAllByRole('button')).toHaveLength(5);
+    const archived = within(summary).getByRole('button', { name: /Archived/ });
+    expect(within(archived).getByText('1,335 all time')).toBeInTheDocument();
+    expect(summary.querySelector<HTMLElement>('[data-summary-count="archived"]')?.style.color).toBe(
+      'var(--dm-fg-muted)',
+    );
     // The window's rows are all undone — say why they aren't counted.
     expect(within(summary).getByText(/Undone actions aren’t counted/)).toBeInTheDocument();
   });
@@ -2121,8 +2154,19 @@ describe('ActivityScreen — B8 verb filter', () => {
       },
     ]);
     renderScreen();
-    const filters = await openFilters();
-    await userEvent.click(within(filters).getByRole('button', { name: /^Archived$/ }));
+    const chips = await screen.findByRole('group', { name: 'Action' });
+    expect(
+      within(chips)
+        .getAllByRole('button')
+        .map((el) => el.textContent),
+    ).toEqual(['All', 'Archived', 'Deleted', 'Unsubscribes', 'Later', 'Kept', 'Follow-ups']);
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // Each verb carries its rows' colour as a dot; All has none.
+    expect(chips.querySelectorAll('[data-chip-dot]')).toHaveLength(6);
+    await userEvent.click(within(chips).getByRole('button', { name: /^Archived$/ }));
     expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('verb=archive'));
   });
 
@@ -2136,11 +2180,30 @@ describe('ActivityScreen — B8 verb filter', () => {
       },
     ]);
     renderScreen();
-    const filters = await openFilters();
-    const archivedChip = within(filters).getByRole('button', { name: /^Archived$/ });
+    const chips = await screen.findByRole('group', { name: 'Action' });
+    const archivedChip = within(chips).getByRole('button', { name: /^Archived$/ });
     expect(archivedChip).toHaveAttribute('aria-pressed', 'true');
+    expect(within(chips).getByRole('button', { name: 'All' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
     await userEvent.click(archivedChip);
     expect(replaceMock).toHaveBeenCalledWith(expect.not.stringContaining('verb='));
+  });
+
+  it('All clears every verb', async () => {
+    currentSearch = 'verb=archive,delete';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: { ...META_BASE, verbs: ['archive', 'delete'] } }),
+      },
+    ]);
+    renderScreen();
+    const chips = await screen.findByRole('group', { name: 'Action' });
+    await userEvent.click(within(chips).getByRole('button', { name: 'All' }));
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity');
   });
 });
 
@@ -2649,7 +2712,13 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
     expect(within(dialog).getByRole('button', { name: 'Autopilot' })).toHaveStyle({
       minHeight: '44px',
     });
-    expect(within(dialog).getByRole('button', { name: 'Archived' })).toBeInTheDocument();
+    // The action filter lives on the page as 44px chips, not in the sheet.
+    expect(within(dialog).queryByRole('button', { name: 'Archived' })).toBeNull();
+    expect(
+      within(screen.getByRole('group', { name: 'Action' })).getByRole('button', {
+        name: 'Archived',
+      }),
+    ).toHaveStyle({ minHeight: '44px' });
     expect(within(dialog).getByRole('button', { name: /view results/i })).toBeInTheDocument();
   });
 
@@ -2687,6 +2756,41 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
 });
 
 describe('ActivityScreen — sender-first rows and coloured numbers', () => {
+  it('raises each row as a card, with a teal Undo capsule and a labelled Gmail pill', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'a-card',
+                undoState: {
+                  kind: 'available',
+                  token: 'tok-card',
+                  expiresAt: new Date(NOW + 86_400_000).toISOString(),
+                },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await screen.findByText('Sender One');
+    const card = container.querySelector<HTMLElement>('[data-activity-card]');
+    expect(card?.style.background).toBe('var(--dm-card)');
+    expect(card?.style.boxShadow).toBe('var(--dm-shadow-card)');
+    const undo = screen.getByRole('button', { name: /^Undo/ });
+    expect(undo).toHaveAttribute('data-undo-capsule');
+    expect(undo.textContent).toContain('↺');
+    expect(undo.style.color).toBe('var(--dm-primary)');
+    // The link says where it goes; its name still names the sender.
+    const gmail = screen.getByRole('link', { name: 'Open Sender One in Gmail' });
+    expect(gmail.textContent).toBe('Gmail↗');
+  });
+
   it('leads each row with the sender name, the domain under it', async () => {
     installFetchStub([
       {
@@ -2759,8 +2863,23 @@ describe('ActivityScreen — sender-first rows and coloured numbers', () => {
     ]);
     const { container } = renderScreen();
     await screen.findByRole('region', { name: 'Activity summary' });
+    // STATS_BASE has no deletes: a zero is muted, not red.
+    expect(
+      container.querySelector<HTMLElement>('[data-summary-count="deleted"]')?.style.color,
+    ).toBe('var(--dm-fg-muted)');
+    cleanup();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [row({})], meta: { ...META_BASE, stats: { ...STATS_BASE, deleted: 2 } } }),
+      },
+    ]);
+    const second = renderScreen();
+    await screen.findByRole('region', { name: 'Activity summary' });
     const tone = (key: string) =>
-      container.querySelector<HTMLElement>(`[data-summary-count="${key}"]`)?.style.color;
+      second.container.querySelector<HTMLElement>(`[data-summary-count="${key}"]`)?.style.color;
     expect(tone('archived')).toBe('var(--dm-fg)');
     expect(tone('deleted')).toBe('var(--dm-danger)');
     expect(tone('unsubscribed')).toBe('var(--dm-primary)');
