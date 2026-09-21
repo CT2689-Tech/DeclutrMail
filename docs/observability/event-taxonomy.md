@@ -110,7 +110,10 @@ onboarding funnel insight. No per-user breakdown beyond `user_id`.
 `activation_goal_selected` fires after the goal preference is durably saved.
 `first_relief_session_started` fires once when the bounded real-sender session
 renders. `action_preview_viewed` fires once per sender/verb preview, and
-`action_confirmed` fires only after the corresponding intent is accepted.
+`action_confirmed` fires only after the corresponding intent is accepted
+— from every real confirmation path (Triage including domain-batch,
+Senders, Sender Detail, Screener, Brief noise-archive), not only the
+first-relief Triage session.
 `first_relief_session_completed` fires once for a completed, voluntarily
 stopped, or empty session.
 
@@ -156,12 +159,19 @@ contain a rule condition blob, sender identity, or email-derived text.
 
 ### `sync_started`
 
-**When fired.** Client-side today: the FE sync gate (`useSyncGateFunnel`)
-fires it on its FIRST in-progress observation (`queued`/`syncing`) of
-the D224 status poll — once per gate view, ref-guarded against the 3s
-poll re-fires; a mailbox already `ready` on mount fires nothing. A
-server-side emitter is NOT planned and is currently not permitted — see
-the privacy contract above. `sync_id` is therefore `null` on every fire.
+**When fired.** Client-side today: the FE fires it on the FIRST
+in-progress observation (`queued`/`syncing`) of a mailbox's initial
+sync, from the onboarding/secondary-connect gate _or_ the in-app
+mailbox observer (D116 ready-toast sibling). Session-scoped pairing
+survives a refresh mid-scan so the gate and the app shell cannot each
+emit a start for the same pair. A mailbox already `ready` on first
+observation in this tab fires nothing unless an open pair was stored
+earlier. Incremental/manual completions (a later `last_synced_at`
+advance while already `ready`) also emit a start, with `trigger`
+`'manual'` after Sync-now or `'pubsub'` for a background stamp we
+cannot attribute more specifically. A server-side emitter is NOT
+permitted — see the privacy contract above. `sync_id` is `null` on
+every fire.
 
 **`sync_id` is `null` on every event emitted today, and it is not a
 `syncs.id` UUID.** No `syncs` table exists: `provider_sync_state` is
@@ -178,27 +188,34 @@ event with a cleverer key.
 
 **Payload.**
 
-| Field        | Type                                          | Notes                                                       |
-| ------------ | --------------------------------------------- | ----------------------------------------------------------- |
-| `sync_id`    | `null`                                        | Always — only the FE emits, and the D224 poll carries no id |
-| `mailbox_id` | `string`                                      | UUID                                                        |
-| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | What kicked it off; FE gate fires are always `initial`      |
+| Field        | Type                                          | Notes                                                                                                                                                 |
+| ------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sync_id`    | `null`                                        | Always — only the FE emits, and the D224 poll carries no id                                                                                           |
+| `mailbox_id` | `string`                                      | UUID                                                                                                                                                  |
+| `trigger`    | `'initial' \| 'manual' \| 'pubsub' \| 'cron'` | Readiness (queued/syncing) fires are `initial`; stamp advances are `manual` or `pubsub`. FE never emits `cron` — it cannot tell cron from Gmail push. |
 
 **Retention / aggregation.** 90 days for raw, rolled up into the
 "syncs per mailbox per day" cohort weekly.
 
 ### `sync_completed`
 
-**When fired.** Client-side today: the FE sync gate fires it on an
-observed transition into `ready` (`success`) or `failed` — only AFTER
-an observed start (never an unpaired completion), once per transition
-(ref-guarded). A transient `failed` that recovers to `ready` emits a
-second completion with `outcome: 'success'` — analysis takes the
-mailbox's last outcome. Per D224 the readiness is real worker state —
-not a fake-progress trigger. `partial` and real counts would require a
-server-side emitter, which is not permitted (privacy contract above); the
-metrics live in the `worker.succeeded` log line and, if the `sync_runs`
-D-candidate lands, in that table.
+**When fired.** Client-side today: the FE fires it on an observed
+transition into `ready` (`success`) or `failed` — only AFTER an
+observed start (never an unpaired readiness completion), once per
+pair. The same pairing is shared across the onboarding gate and the
+in-app observer, so leaving the gate mid-scan still counts when the
+mailbox becomes ready. A transient `failed` that recovers to `ready`
+emits a second completion with `outcome: 'success'` — analysis takes
+the mailbox's last outcome.
+
+A later `last_synced_at` advance on an already-ready mailbox (Sync-now
+or background incremental) also fires `sync_completed` with
+`outcome: 'success'`. The first stamp observed in the tab is recorded
+silently; `null → timestamp` is the initial-sync stamp and is owned by
+the readiness pair. Per D224 the readiness is real worker state — not
+a fake-progress trigger. `partial` and real counts would require a
+server-side emitter, which is not permitted (privacy contract above);
+those metrics live in `sync_runs` / `worker.succeeded`.
 
 **Payload.**
 

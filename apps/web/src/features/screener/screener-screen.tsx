@@ -20,6 +20,7 @@ import { useCompositePreview } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE, type ActionReach } from '@/lib/api/actions';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
+import { trackActionConfirmed } from '@/lib/action-analytics';
 import { track } from '@/lib/posthog';
 import { captureFeatureException } from '@/lib/sentry';
 
@@ -485,6 +486,7 @@ export function ScreenerScreen({
         {
           onSuccess: (res) => {
             void track('screener_decision_taken', { verb, sender_id: row.senderId });
+            trackActionConfirmed(verb);
             if (res.execution.kind === 'enqueued') {
               // Worker confirms in the background; row stays busy.
               setActiveAction({

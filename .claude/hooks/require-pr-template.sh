@@ -55,11 +55,11 @@ fi
 # this hook alone even though the PR itself would have passed CI (caught
 # 2026-09-01 while creating a PR from a claude/ branch).
 # Pattern: <type>/d<NNN>-<kebab>, chore/bootstrap-<topic>,
-# chore/distill-<topic>, or (codex|claude)/<kebab>.
-if ! echo "$branch" | grep -qE "^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude)/[a-z0-9][a-z0-9-]*$)"; then
+# chore/distill-<topic>, or (codex|claude|cursor)/<kebab>.
+if ! echo "$branch" | grep -qE "^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude|cursor)/[a-z0-9][a-z0-9-]*$)"; then
   echo "❌ require-pr-template: branch '$branch' does not match naming convention." >&2
   echo "   Expected: <type>/d<NNN>-<kebab-description>, chore/bootstrap-<topic>," >&2
-  echo "   chore/distill-<topic>, or (codex|claude)/<kebab>" >&2
+  echo "   chore/distill-<topic>, or (codex|claude|cursor)/<kebab>" >&2
   echo "   Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2
   echo "   See CLAUDE.md §6 for the full pattern." >&2
   exit 1

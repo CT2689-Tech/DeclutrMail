@@ -21,6 +21,15 @@ later, or an approach turns out wrong.
 
 <!-- Entries go below. Newest at the top. -->
 
+## 2026-09-21 — PR-body gate required `Closes D###`, so `Relates to D159` failed a required check
+
+**PR:** #758 (https://github.com/CT2689-Tech/DeclutrMail/pull/758)
+**Caught by:** required check "PR body references D-decisions or is bootstrap-exempt" (Actions run 35571093721)
+**What happened:** The body already cited D159 with the documented non-flipping form `Relates to D159` (MISTAKES.md 2026-07-17). The gate only accepted `Closes[[:blank:]]+D[0-9]{1,3}`. Writing `Closes D159` would have been a lie — D159 already shipped — and the impl-log flipper still treats only `Closes` as shipping.
+**Correct approach:** Accept `Relates to D###` / `Related to D###` / `D-159` / `docs/adr|docs/decisions` as citations. Keep `Closes D###` as the only form that flips IMPLEMENTATION-LOG. Do not accept a bare `D159` — the unfilled PR template cites D202.
+**Rule:** A D-citation gate must accept the non-flipping form it documents; `Closes` is for shipping, `Relates` is for follow-ups.
+**Enforcement update:** `scripts/check-pr-body-d-ref.sh` + tests; `.github/workflows/branch-name.yml` job `pr-body` runs the script.
+
 ## 2026-09-19 — A brevity sweep cut three disclosures narrower than the data, and left one duplicate behind
 
 **PR:** copy-brevity sweep (branch `claude/product-verbosity-audit-dde978`)

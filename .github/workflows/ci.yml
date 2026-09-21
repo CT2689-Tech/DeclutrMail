@@ -253,6 +253,8 @@ jobs:
         run: node --test scripts/sentry-private-triage.test.mjs
       - name: Build selection and artifact retention contracts
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs
+      - name: PR-body D-citation matcher
+        run: node --test scripts/check-pr-body-d-ref.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
       # fails when a committed file disagrees. Nothing else covers these:
       # a stale favicon or app icon passes typecheck, the suite and every

@@ -7,6 +7,7 @@ import { apiPost } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
 import { useAuth } from '@/features/auth/auth-provider';
+import { markManualSyncRequested } from '@/features/sync/sync-lifecycle';
 import type { EventPayloads } from '@declutrmail/shared/observability';
 
 /**
@@ -131,6 +132,9 @@ export function useSyncNow(source: Source, mailboxId?: string) {
         message: `sync-now: ${data.outcome} cursor=${data.cursor_history_id}`,
         level: 'info',
       });
+      if (activeMailboxId !== null && (data.outcome === 'enqueued' || data.outcome === 'noop')) {
+        markManualSyncRequested(activeMailboxId);
+      }
       // Invalidate the per-feature roots — keep this list explicit
       // rather than `invalidateQueries()` (the global no-arg form
       // triggers a refetch storm we don't want on a tab that's not

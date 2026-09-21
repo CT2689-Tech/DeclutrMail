@@ -27,7 +27,8 @@ import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
 import { ACTION_OVERDUE_MS, ScreenerScreen } from './screener-screen';
 
-vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
+const analytics = vi.hoisted(() => ({ track: vi.fn() }));
+vi.mock('@/lib/posthog', () => ({ track: analytics.track }));
 vi.mock('@/lib/sentry', () => ({ captureFeatureException: vi.fn() }));
 // Toast is the only user-visible failure surface here. Partial mock —
 // everything else from the shared package stays real.
@@ -42,6 +43,7 @@ const plainRow = SCREENER_QUEUE.find((r) => !r.isProtected)!;
 
 afterEach(() => {
   resetFetchStub();
+  analytics.track.mockClear();
 });
 
 describe('DecidePreview — Protected acknowledgement', () => {
@@ -217,6 +219,10 @@ describe('ScreenerScreen — the acknowledgement reaches the wire', () => {
 
   it('posts override:true for a Protected sender', async () => {
     expect(await confirmDeleteFor(protectedRow)).toMatchObject({ override: true });
+    expect(analytics.track).toHaveBeenCalledWith('action_confirmed', {
+      journey: 'daily',
+      verb: 'delete',
+    });
   });
 
   it('omits override entirely for an unprotected sender', async () => {

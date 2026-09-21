@@ -3,32 +3,33 @@
 import { useEffect, useRef } from 'react';
 import type { SyncReadiness, SyncStatus } from '@declutrmail/shared/contracts';
 
-import { track } from '@/lib/posthog';
+import { observeLastSyncedAt, observeSyncReadiness } from './sync-lifecycle';
 
 /**
- * D159 sync-gate funnel emitter — fires `sync_started` /
- * `sync_completed` from the FE's observation of the D224 status poll
- * (`useSyncStatus`). Both call sites are initial-sync gates (the
- * onboarding gate + the D116 secondary-connect gate), so `trigger` is
- * always `'initial'`.
+ * D159 sync-lifecycle emitter — fires `sync_started` / `sync_completed`
+ * from the FE's observation of the D224 status poll (`useSyncStatus`).
  *
- * Transition semantics (each fires ONCE per started/completed pair — a
- * ref guards against the 3s poll re-observing the same state, per the
- * `useMailboxSyncToasts` precedent):
+ * Call sites: the onboarding / secondary-connect gates, and the authed
+ * app shell (so a scan that finishes after the user leaves the gate is
+ * still counted). `trigger` is `'initial'` for readiness transitions;
+ * a later `last_synced_at` advance on an already-ready mailbox is an
+ * incremental/manual completion (see `observeLastSyncedAt`).
+ *
+ * Transition semantics (each fires ONCE per started/completed pair —
+ * sessionStorage plus an in-memory map guard the 3s poll and remounts):
  *
  *   - `sync_started`: the FIRST in-progress observation
- *     (`queued`/`syncing`) since mount or since the last completion. A
+ *     (`queued`/`syncing`) since this tab last closed a pair. A
  *     mailbox already `ready` on mount fires nothing — no sync was
- *     observed.
+ *     observed in this tab, unless an earlier mount in the same tab
+ *     stored an open pair (refresh mid-scan).
  *   - `sync_completed`: a transition INTO `ready` or `failed` AFTER an
- *     observed start — never an unpaired completion (a mailbox first
- *     seen already terminal stays silent). Each completion CLOSES its
- *     pair, so a transient `failed` that recovers (see
- *     `syncRefetchInterval`) emits a fresh pair once `queued`/`syncing`
- *     is re-observed, with `duration_ms` clocked from the SECOND start
- *     — not inflated across the failed period + retry gap. A `failed` →
- *     `ready` flip with no in-progress observation in between stays
- *     silent: there is no new start to pair the recovery with.
+ *     observed start — never an unpaired completion from readiness
+ *     alone. Each completion CLOSES its pair, so a transient `failed`
+ *     that recovers emits a fresh pair once `queued`/`syncing` is
+ *     re-observed, with `duration_ms` clocked from the SECOND start.
+ *     A `failed` → `ready` flip with no in-progress observation in
+ *     between stays silent.
  *
  * Payload honesty (CLAUDE.md §10 — no fake events): the status poll
  * carries no sync id or message counts, so `sync_id` is `null` and
@@ -38,34 +39,21 @@ import { track } from '@/lib/posthog';
  */
 export function useSyncGateFunnel(status: SyncStatus | undefined, mailboxId: string | null): void {
   const lastReadiness = useRef<SyncReadiness | null>(null);
-  const observedStartAt = useRef<number | null>(null);
+  const lastStamp = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     if (!status || mailboxId == null) return;
     const readiness = status.readiness_status;
-    const prev = lastReadiness.current;
-    if (readiness === prev) return; // poll re-fire — same state, no event
+    const stamp = status.last_synced_at ?? null;
+    const readinessChanged = readiness !== lastReadiness.current;
+    const stampChanged = stamp !== lastStamp.current;
+    if (!readinessChanged && !stampChanged) return;
     lastReadiness.current = readiness;
+    lastStamp.current = stamp;
 
-    const inProgress = readiness === 'queued' || readiness === 'syncing';
-    if (inProgress && observedStartAt.current == null) {
-      observedStartAt.current = Date.now();
-      void track('sync_started', { sync_id: null, mailbox_id: mailboxId, trigger: 'initial' });
-      return;
+    if (readinessChanged) {
+      observeSyncReadiness(mailboxId, readiness, 'initial');
     }
-
-    if (observedStartAt.current != null && (readiness === 'ready' || readiness === 'failed')) {
-      void track('sync_completed', {
-        sync_id: null,
-        mailbox_id: mailboxId,
-        messages_indexed: -1,
-        duration_ms: Date.now() - observedStartAt.current,
-        outcome: readiness === 'ready' ? 'success' : 'failed',
-      });
-      // Close the pair. Without this, a failed → syncing → ready
-      // recovery within one mount drops its second sync_started and
-      // clocks the second completion from the ORIGINAL start.
-      observedStartAt.current = null;
-    }
+    observeLastSyncedAt(mailboxId, stamp, readiness);
   }, [status, mailboxId]);
 }

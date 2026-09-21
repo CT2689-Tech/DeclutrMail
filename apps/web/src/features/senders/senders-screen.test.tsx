@@ -66,6 +66,9 @@ vi.mock('@/features/auth/api/use-me', async (importOriginal) => ({
   useUserTimeZone: () => Intl.DateTimeFormat().resolvedOptions().timeZone,
 }));
 
+const trackMock = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/posthog', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
+
 import { ToastHost } from '@declutrmail/shared';
 import { ACTION_OVERDUE_MS, SendersScreen } from './senders-screen';
 import {
@@ -143,6 +146,7 @@ beforeEach(() => {
   mockAuth.tier = 'plus';
   mockAuth.cleanupRemaining = null;
   mockAuth.readiness = 'ready';
+  trackMock.mockClear();
 });
 
 /**
@@ -2953,6 +2957,11 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await selectBothAndPress('k');
       await waitFor(() => expect(patched.sort()).toEqual(['a', 'b']));
       await screen.findByText('Kept 2 senders');
+      expect(trackMock).toHaveBeenCalledWith('action_confirmed', {
+        journey: 'daily',
+        verb: 'keep',
+      });
+      expect(trackMock.mock.calls.filter(([name]) => name === 'action_confirmed')).toHaveLength(1);
     });
 
     it('names how many keeps failed', async () => {
@@ -3016,6 +3025,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await selectBothAndPress('k');
       // (The toast store outlives a test, so absence of an earlier "Kept…" is not assertable here.)
       await screen.findByText(/Couldn't keep 2 senders/);
+      expect(trackMock.mock.calls.filter(([name]) => name === 'action_confirmed')).toHaveLength(0);
     });
 
     it('claims no per-row OUTCOME when a bulk partly fails — it points each row at Activity', async () => {

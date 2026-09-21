@@ -5,6 +5,7 @@ import { toast } from '@declutrmail/shared';
 import type { SyncReadiness } from '@declutrmail/shared/contracts';
 
 import { useAuth } from '@/features/auth/auth-provider';
+import { observeSyncReadiness } from '@/features/sync/sync-lifecycle';
 
 /**
  * Fires a one-time toast when a mailbox finishes its initial sync
@@ -37,6 +38,16 @@ export function useMailboxSyncToasts(): void {
         toast(`${mailbox.email} is ready.`, 'success');
       } else if (becameFailed) {
         toast(`${mailbox.email}'s scan didn't finish — see Settings to try again.`, 'danger');
+      }
+      // D159 — same transition the toast already observed. Shared
+      // session pairing means the onboarding gate cannot also emit
+      // this completion if it already did (or vice versa).
+      if (
+        mailbox.status === 'active' &&
+        mailbox.readiness != null &&
+        before !== mailbox.readiness
+      ) {
+        observeSyncReadiness(mailbox.id, mailbox.readiness, 'initial');
       }
       seen.current.set(mailbox.id, mailbox.readiness);
     }

@@ -209,17 +209,18 @@ export interface EventPayloads {
     reason: 'user_defined' | 'replied' | 'starred' | 'gmail_important' | null;
   };
   /**
-   * Both sync events are emitted ONLY by the FE sync gate
-   * (`useSyncGateFunnel`). There is no server-side emitter and one is not
-   * permitted: analytics consent (D147) is per-browser localStorage that a
-   * worker cannot read, and we publish that PostHog runs only after the
-   * user accepts. Anonymising a server payload does not change that — the
-   * promise is that PostHog does not run. See the privacy contract in
-   * `docs/observability/event-taxonomy.md` and F004 in FINDINGS.md.
+   * Both sync events are emitted ONLY from the browser. Call sites:
+   * the onboarding/secondary-connect gate (`useSyncGateFunnel`), the
+   * in-app mailbox-readiness observer (same transitions as the D116
+   * ready toast), and `last_synced_at` advances on an already-ready
+   * mailbox (incremental / Sync-now). Session pairing dedupes overlapping
+   * observers. There is no server-side emitter and one is not permitted:
+   * analytics consent (D147) is per-browser localStorage that a worker
+   * cannot read, and we publish that PostHog runs only after the user
+   * accepts. See `docs/observability/event-taxonomy.md` and F004.
    *
-   * Real sync numbers therefore live in the `worker.succeeded` log line
-   * (`messagesSynced`, `unreadable`, `gmailApiCalls`, `durationMs`,
-   * `stageTimings`) and in `provider_sync_state`, not here.
+   * Per-run counts (`messagesSynced`, stage timings) still live in
+   * `sync_runs` / `worker.succeeded`, not here — the poll has none.
    */
   sync_started: {
     /**
