@@ -13,11 +13,14 @@ import type { SyncReadiness } from '@declutrmail/shared/contracts';
 const h = vi.hoisted(() => ({
   me: null as unknown,
   toast: vi.fn(),
+  track: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@declutrmail/shared', () => ({ toast: h.toast }));
 vi.mock('@/features/auth/auth-provider', () => ({ useAuth: () => ({ me: h.me }) }));
+vi.mock('@/lib/posthog', () => ({ track: h.track }));
 
+import { resetSyncLifecycleForTests } from '@/features/sync/sync-lifecycle';
 import { useMailboxSyncToasts } from './use-mailbox-sync-toasts';
 
 function meWith(readiness: SyncReadiness | null) {
@@ -31,7 +34,11 @@ function meWith(readiness: SyncReadiness | null) {
 }
 
 describe('useMailboxSyncToasts', () => {
-  beforeEach(() => h.toast.mockClear());
+  beforeEach(() => {
+    h.toast.mockClear();
+    h.track.mockClear();
+    resetSyncLifecycleForTests();
+  });
 
   it('toasts when a mailbox transitions syncing → ready', () => {
     h.me = meWith('syncing');
@@ -82,5 +89,21 @@ describe('useMailboxSyncToasts', () => {
     h.me = meWith('failed');
     rerender();
     expect(h.toast).toHaveBeenCalledTimes(1);
+  });
+
+  it('emits sync_completed when a mailbox transitions syncing → ready', () => {
+    h.me = meWith('syncing');
+    const { rerender } = renderHook(() => useMailboxSyncToasts());
+    expect(h.track).toHaveBeenCalledWith(
+      'sync_started',
+      expect.objectContaining({ mailbox_id: 'b', trigger: 'initial' }),
+    );
+
+    h.me = meWith('ready');
+    rerender();
+    expect(h.track).toHaveBeenCalledWith(
+      'sync_completed',
+      expect.objectContaining({ mailbox_id: 'b', outcome: 'success' }),
+    );
   });
 });
