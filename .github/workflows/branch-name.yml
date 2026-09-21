@@ -72,7 +72,9 @@ jobs:
           # Claude Code on the web assigns `claude/<slug>` and the session is
           # forbidden from renaming it — identical position to codex/, so it
           # gets the identical exemption and the identical obligations.
-          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude)/[a-z0-9][a-z0-9-]*$)'; then
+          # `cursor/` is the same harness constraint for Cursor cloud agents
+          # (`cursor/<slug>-<id>`; the session cannot rename it).
+          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude|cursor)/[a-z0-9][a-z0-9-]*$)'; then
             echo "::error::Branch '${HEAD_REF}' does not match the CLAUDE.md §6 naming convention."
             echo "Expected: <type>/d<NNN>-<kebab>  OR  chore/bootstrap-<topic>  OR  chore/distill-<topic>"
             echo "Allowed types: feat, fix, chore, docs, refactor, test, perf, security"
