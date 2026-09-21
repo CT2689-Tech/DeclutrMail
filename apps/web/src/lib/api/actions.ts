@@ -741,6 +741,34 @@ function withRequiredLaterWakeAt(primary: {
 }
 
 /** Poll a batch's aggregate status. Mailbox-scoped → 404 if not owned. */
+/** One user decision still running — `GET /api/actions/active`. */
+export interface InFlightActionGroup {
+  /** Pollable at `GET /api/actions/batch/:id` for the outcome. */
+  groupId: string;
+  verb: 'archive' | 'later' | 'delete' | 'unsubscribe';
+  mixedVerbs: boolean;
+  /** False once every job has ended; listed ~60s more so the ending can be reported. */
+  running: boolean;
+  total: number;
+  done: number;
+  failed: number;
+  senderCount: number;
+  leadSenderName: string | null;
+  startedAt: string;
+}
+
+export async function getInFlightActions(
+  options: ActionRequestOptions & { signal?: AbortSignal } = {},
+): Promise<InFlightActionGroup[]> {
+  const env = await apiGet<InFlightActionGroup[]>('/api/actions/active', {
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+  });
+  // The pill lives in the app chrome: a malformed body here must cost the
+  // progress line, never the page (deploy skew, a proxy error page).
+  return Array.isArray(env.data) ? env.data : [];
+}
+
 export async function getBatchStatus(
   batchId: string,
   options: ActionRequestOptions = {},

@@ -71,13 +71,49 @@ describe('SenderActionRow — a busy sender takes no second action', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  it('re-enables once the job is done', () => {
-    render(
-      <Wrap activity={done}>
+  it('turns the pressed verb INTO the status — same element, so focus stays', () => {
+    const { rerender } = render(
+      <Wrap activity={new Map()}>
         <SenderActionRow sender={sender} onAction={() => {}} />
       </Wrap>,
     );
-    for (const b of screen.getAllByRole('button')) expect(b).not.toHaveAttribute('aria-disabled');
+    const verb = screen.getAllByRole('button')[0]!;
+    verb.focus();
+    rerender(
+      <Wrap activity={working}>
+        <SenderActionRow sender={sender} onAction={() => {}} />
+      </Wrap>,
+    );
+    expect(verb).toHaveFocus();
+    expect(verb).toHaveTextContent('Deleting…');
+  });
+
+  it('ended badly: says so BESIDE a verb that still works — retrying is the next step', () => {
+    const onAction = vi.fn();
+    render(
+      <Wrap activity={new Map([['sender-1', { phase: 'failed', verb: 'delete' }]])}>
+        <SenderActionRow sender={sender} onAction={onAction} />
+      </Wrap>,
+    );
+    expect(screen.getByText('Delete failed')).toHaveAttribute('data-dm-row-activity', 'failed');
+    const verb = screen.getAllByRole('button')[0]!;
+    expect(verb).not.toHaveAttribute('aria-disabled');
+    fireEvent.click(verb);
+    expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('once done: the slot says so, and the ⋯ menu is how to act again', () => {
+    const onAction = vi.fn();
+    render(
+      <Wrap activity={done}>
+        <SenderActionRow sender={sender} onAction={onAction} />
+      </Wrap>,
+    );
+    const [slot, more] = screen.getAllByRole('button');
+    expect(slot).toHaveTextContent('Deleted 251');
+    fireEvent.click(slot!);
+    expect(onAction).not.toHaveBeenCalled();
+    expect(more).not.toHaveAttribute('aria-disabled');
   });
 });
 
@@ -99,7 +135,7 @@ describe('grid card', () => {
     card(working);
     const root = screen.getByTestId('sender-card-sender-1');
     expect(root).toHaveAttribute('aria-busy', 'true');
-    expect(within(root).getByText('Moving to Trash…')).toBeInTheDocument();
+    expect(within(root).getByText('Deleting…')).toBeInTheDocument();
     expectInertCheckbox(within(root).getByRole('checkbox'));
   });
 
@@ -107,7 +143,7 @@ describe('grid card', () => {
     card(done);
     const root = screen.getByTestId('sender-card-sender-1');
     expect(root).not.toHaveAttribute('aria-busy', 'true');
-    expect(within(root).getByText('Deleted · 251 emails')).toBeInTheDocument();
+    expect(within(root).getByText('Deleted 251')).toBeInTheDocument();
   });
 });
 
@@ -132,7 +168,7 @@ describe('table row', () => {
 
   it('reads as busy in the TABLE layout — the one the report was made in', () => {
     table(working);
-    const pill = screen.getByText('Moving to Trash…');
+    const pill = screen.getByText('Deleting…');
     const tr = pill.closest('tr')!;
     expect(tr).toHaveAttribute('aria-busy', 'true');
     expectInertCheckbox(within(tr).getByRole('checkbox'));
@@ -140,7 +176,7 @@ describe('table row', () => {
 
   it('stays, marked done', () => {
     table(done);
-    expect(screen.getByText('Deleted · 251 emails')).toBeInTheDocument();
+    expect(screen.getByText('Deleted 251')).toBeInTheDocument();
   });
 });
 
@@ -158,7 +194,7 @@ describe('phone row', () => {
         />
       </Wrap>,
     );
-    expect(screen.getByText('Moving to Trash…')).toBeInTheDocument();
+    expect(screen.getByText('Deleting…')).toBeInTheDocument();
     expectInertCheckbox(screen.getByRole('checkbox'));
   });
 });

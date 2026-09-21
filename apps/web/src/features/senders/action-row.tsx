@@ -22,7 +22,15 @@
 import { useState } from 'react';
 import { ActionPopover, ActionPopoverTrigger, Button } from '@declutrmail/shared';
 import { deriveDefaultPrimary, type VerbId } from '@declutrmail/shared/actions';
-import { isRowBusy, useRowActivity } from './row-activity';
+import {
+  isRowBusy,
+  RowActivityPill,
+  RowActivityStatus,
+  rowStatusColor,
+  STATUS_BUTTON_STYLE,
+  takesButtonSlot,
+  useRowActivity,
+} from './row-activity';
 import {
   canArchive,
   canDelete,
@@ -89,17 +97,26 @@ export function SenderActionRow({
   sender,
   onAction,
   stretch = false,
+  onMenuOpenChange,
 }: {
   sender: Sender;
   onAction: (req: ActionRequest) => void;
+  /** Lets a host that pins this row (sticky table cell) lift it above its neighbours while the ⋯ menu is open. */
+  onMenuOpenChange?: (open: boolean) => void;
   /** `true` (card) stretches the primary button; `false` (table row) keeps it inline. */
   stretch?: boolean;
 }) {
-  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [popoverOpen, setPopoverOpenState] = useState(false);
+  const setPopoverOpen = (open: boolean) => {
+    setPopoverOpenState(open);
+    onMenuOpenChange?.(open);
+  };
   // One in-flight action per sender: a second would mint a fresh
   // idempotency key (double cleanup unit, two undo tokens). The screen
   // refuses it too; disabling here is what makes that refusal visible.
-  const busy = isRowBusy(useRowActivity(sender.id));
+  const activity = useRowActivity(sender.id);
+  const busy = isRowBusy(activity);
+  const status = takesButtonSlot(activity) ? activity : undefined;
 
   const primaryVerbId: VerbId = derivePrimaryVerbId(sender);
 
@@ -128,19 +145,28 @@ export function SenderActionRow({
         position: 'relative',
       }}
     >
+      {/* Ended badly: say so, and leave the verb live — retrying is the next step. */}
+      {activity && !status && <RowActivityPill activity={activity} />}
+      {/* ONE button element for both states: while an action's result is on
+          the row, the verb the user reached for BECOMES that result. Kept
+          mounted (never swapped for a span) so focus stays put. Once the job
+          has ENDED the ⋯ menu is the way to act again; while it is running
+          or unconfirmed the whole row stays locked — a second job for the
+          same sender is the thing being prevented. */}
       <Button
-        tone={leadButtonTone(primaryLegacy)}
+        tone={status ? 'ghost' : leadButtonTone(primaryLegacy)}
         size="sm"
-        inert={busy}
+        inert={status != null}
         onClick={() => onAction({ verb: primaryLegacy, senders: [sender] })}
-        iconRight={ARROW}
-        style={
-          stretch
-            ? { flex: 1, justifyContent: 'space-between', minWidth: 0 }
-            : { whiteSpace: 'nowrap' }
-        }
+        {...(status ? {} : { iconRight: ARROW })}
+        style={{
+          ...(stretch
+            ? { flex: 1, justifyContent: status ? 'flex-start' : 'space-between', minWidth: 0 }
+            : { whiteSpace: 'nowrap' }),
+          ...(status ? { ...STATUS_BUTTON_STYLE, color: rowStatusColor(status) } : {}),
+        }}
       >
-        {primaryLegacy}
+        {status ? <RowActivityStatus activity={status} /> : primaryLegacy}
       </Button>
       {/* Trigger opens the popover only — never toggles. Toggle pattern
           races against the popover's click-outside listener (which sees

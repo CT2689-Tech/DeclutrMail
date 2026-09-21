@@ -41,6 +41,7 @@ export function Button({
   title,
   ariaLabel,
   ariaPressed,
+  ariaExpanded,
   ariaDescribedBy,
   id,
   style,
@@ -63,6 +64,8 @@ export function Button({
   ariaLabel?: string;
   /** Toggle state; forwarded as aria-pressed (AT + selector contract). */
   ariaPressed?: boolean;
+  /** Disclosure state; forwarded as aria-expanded. */
+  ariaExpanded?: boolean;
   /** Id of a describing element — e.g. a `Tooltip`'s bubble (D38). */
   ariaDescribedBy?: string;
   /** Plain passthrough — e.g. an `initialFocusSelector` target for `useFocusTrap`. */
@@ -81,6 +84,7 @@ export function Button({
       title={title}
       aria-label={ariaLabel}
       aria-pressed={ariaPressed}
+      aria-expanded={ariaExpanded}
       aria-describedby={ariaDescribedBy}
       onMouseEnter={(e) => {
         if (!disabled && !inert) e.currentTarget.style.background = t.hover;

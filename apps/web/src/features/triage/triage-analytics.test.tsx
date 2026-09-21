@@ -424,6 +424,8 @@ describe('undo_clicked (D159)', () => {
     await act(async () => {
       await client.invalidateQueries({ queryKey: undoKeys.all });
     });
+    // One pill; the older decision's Undo is in the opened list.
+    fireEvent.click(await screen.findByRole('button', { name: 'Show all recent actions' }));
     await waitFor(() => expect(screen.getAllByText('Undo')).toHaveLength(2));
     return view;
   }

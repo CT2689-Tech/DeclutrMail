@@ -217,6 +217,11 @@ describe('<SenderListRow /> — D54 phone dialect', () => {
       return screen.getByRole('button', { name: /expand detail/ });
     };
 
+    it('says its status on the collapsed phone row — there is no button there to say it', () => {
+      phoneRow(new Map([[sender.id, { phase: 'working', verb: 'archive' }]]), noop);
+      expect(screen.getByText('Archiving…')).toHaveAttribute('data-dm-row-activity', 'working');
+    });
+
     it('fires on an idle row', () => {
       const onAction = vi.fn();
       swipeRight(phoneRow(new Map(), onAction));

@@ -26,6 +26,7 @@ import {
 } from '@declutrmail/db';
 import type { LabelActionSelector, SenderActionReach } from '@declutrmail/db';
 import {
+  AUTOPILOT_CLAIM_KEY_PREFIXES,
   LABEL_ACTION_JOB,
   labelActionJobOptions,
   OutboxPublisher,
@@ -66,12 +67,32 @@ import type {
   CompositeActionEnqueueResult,
   CompositeActionPreviewResult,
   CompositeSecondaryVerb,
+  InFlightActionGroup,
   LabelCompositePrimaryVerb,
   KeepIntentResult,
   UnsubscribeBatchOutcomes,
   UnsubscribeIntentResult,
   UnsubscribeManualStatusResult,
 } from './actions.types.js';
+
+/** `listInFlight` bounds — see its doc. */
+export const IN_FLIGHT_MAX_AGE_HOURS = 24;
+/** How long a group that has just ended stays listed (as `running: false`). */
+export const IN_FLIGHT_SETTLED_GRACE_SECONDS = 60;
+export const IN_FLIGHT_GROUPS_MAX = 20;
+
+/** Raw row of the `listInFlight` statement (snake_case, driver-shaped). */
+interface InFlightRow {
+  group_id: string;
+  total: number;
+  done: number;
+  failed: number;
+  sender_count: number;
+  verb_count: number;
+  started_at: string;
+  verb: InFlightActionGroup['verb'];
+  lead_sender_name: string | null;
+}
 
 /** NestJS DI token for the label-action BullMQ queue (D226). */
 export const ACTION_QUEUE_TOKEN = 'ACTION_QUEUE';
@@ -1282,6 +1303,125 @@ export class ActionsService {
       undoToken,
       unsubscribeOutcomes: summarizeUnsubscribeOutcomes(rows),
     };
+  }
+
+  /**
+   * The user's decisions still running in this mailbox — the live line in
+   * the bottom panel, and what a reloaded page resumes from.
+   *
+   * A group is `running` while ANY of its forward jobs is `queued` or
+   * `executing`, and stays listed — `running: false` — for
+   * {@link IN_FLIGHT_SETTLED_GRACE_SECONDS}s after its last job ends, so a
+   * client that never saw it run can still report how it ended; its counts cover every job of the group, so a bulk reads
+   * "2 of 3" rather than shrinking as members finish.
+   *
+   *   - Autopilot runs are excluded by their claim-key prefix: they are not
+   *     something the user just did, and each would be its own one-sender
+   *     line. Autopilot reports on its own screen.
+   *   - Only groups with a job started in the last
+   *     {@link IN_FLIGHT_MAX_AGE_HOURS}h that is still running, newest
+   *     {@link IN_FLIGHT_GROUPS_MAX}: a job wedged for a day belongs to
+   *     Activity and recovery, not a panel that says "Archiving…". (A
+   *     listed group's `startedAt` is its OLDEST job, so it may be earlier.)
+   *
+   * ONE statement (one snapshot): counting in a second query let a job
+   * finish between the two and print "3 of 2".
+   *
+   * Raw `sql` interpolates strings and integers only — never a JS
+   * `Date`/`BigInt` (CLAUDE.md §2.6).
+   */
+  async listInFlight(mailboxAccountId: string): Promise<InFlightActionGroup[]> {
+    // Every claim prefix, not just the first: a new one must not leak
+    // Autopilot runs into the panel (same map `autopilot.read-service` uses).
+    const notAutopilot = sql.join(
+      AUTOPILOT_CLAIM_KEY_PREFIXES.map((prefix) => sql`idempotency_key not like ${`${prefix}%`}`),
+      sql` and `,
+    );
+    const result = await this.db.execute(sql`
+      with live as (
+        select coalesce(composite_id, id) as group_id
+        from action_jobs
+        where mailbox_account_id = ${mailboxAccountId}
+          and direction = 'forward'
+          and created_at > now() - make_interval(hours => ${IN_FLIGHT_MAX_AGE_HOURS}::int)
+          and (
+            status in ('queued', 'executing')
+            -- …or ended moments ago: a job quicker than one poll, or one whose
+            -- screen has gone, would otherwise end without anyone being told.
+            or updated_at > now() - make_interval(secs => ${IN_FLIGHT_SETTLED_GRACE_SECONDS}::int)
+          )
+          and ${notAutopilot}
+        group by 1
+      ),
+      members as (
+        select
+          l.group_id,
+          aj.id,
+          aj.verb,
+          aj.status,
+          aj.requested_count,
+          aj.created_at,
+          aj.selector->>'senderId' as sender_id
+        from live l
+        join lateral (
+          -- Two indexed probes (pkey; composite_id idx) — an OR across the
+          -- two columns tends to plan as a scan.
+          select * from action_jobs a where a.id = l.group_id
+          union all
+          select * from action_jobs c where c.composite_id = l.group_id
+        ) aj on true
+        where aj.mailbox_account_id = ${mailboxAccountId}
+          and aj.direction = 'forward'
+      ),
+      grouped as (
+        select
+          group_id,
+          count(*)::int as total,
+          count(*) filter (where status = 'done')::int as done,
+          count(*) filter (where status = 'failed')::int as failed,
+          count(distinct sender_id)::int as sender_count,
+          count(distinct verb)::int as verb_count,
+          min(created_at) as started_at
+        from members
+        group by group_id
+        order by min(created_at) desc, group_id
+        limit ${IN_FLIGHT_GROUPS_MAX}
+      ),
+      lead as (
+        select distinct on (group_id)
+          group_id, verb, sender_id
+        from members
+        -- The anchor is the job the user pressed; a recovered anchor may be
+        -- absent, then the largest member speaks for the group.
+        order by group_id, (id = group_id) desc, requested_count desc, id
+      )
+      select
+        g.group_id, g.total, g.done, g.failed, g.sender_count, g.verb_count,
+        to_char(g.started_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as started_at,
+        l.verb,
+        coalesce(nullif(s.display_name, ''), s.email::text) as lead_sender_name
+      from grouped g
+      join lead l using (group_id)
+      left join senders s
+        on s.id = l.sender_id::uuid
+       and s.mailbox_account_id = ${mailboxAccountId}
+      order by g.started_at desc, g.group_id
+    `);
+    // PGlite returns `{ rows }`, postgres.js an array-like.
+    const rows =
+      ((result as { rows?: InFlightRow[] }).rows ?? (result as unknown as InFlightRow[])) || [];
+    return rows.map((row) => ({
+      groupId: row.group_id,
+      verb: row.verb,
+      mixedVerbs: row.verb_count > 1,
+      running: row.done + row.failed < row.total,
+      total: row.total,
+      done: row.done,
+      failed: row.failed,
+      senderCount: row.sender_count,
+      leadSenderName: row.lead_sender_name,
+      startedAt: row.started_at,
+    }));
   }
 
   /**

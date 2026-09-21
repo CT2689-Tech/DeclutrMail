@@ -1,11 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useRef, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 
 import { Button } from '../button';
+import { InlineProgress } from '../inline-progress/inline-progress';
 import { color, font, radius, shadow } from '../../tokens/tokens';
 import { getActionSemantics } from '../../actions/action-semantics';
-import type { UndoActionKind, UndoTrayDataSource, UndoTrayEntry } from './undo-tray.types';
+import type {
+  UndoActionKind,
+  UndoTrayDataSource,
+  UndoTrayEntry,
+  UndoTrayNotice,
+} from './undo-tray.types';
 
 /**
  * Live height of the mounted tray, in px, published on the document
@@ -115,10 +121,66 @@ function useTrayInset(): (node: HTMLElement | null) => void {
  * `verbLabel()` function below is the single mapping point — adding
  * a new verb requires touching this AND the API action-kind enum.
  */
-export function UndoTray({
+/** Visually hidden, still read aloud. */
+const SR_ONLY: CSSProperties = {
+  position: 'absolute',
+  width: 1,
+  height: 1,
+  padding: 0,
+  margin: -1,
+  overflow: 'hidden',
+  clip: 'rect(0, 0, 0, 0)',
+  whiteSpace: 'nowrap',
+  border: 0,
+};
+
+/** What a screen reader hears — the headline, without the ticking fraction. */
+function headlineSpeech(headline: TrayHeadline | null): string {
+  if (headline === null) return '';
+  if (headline.kind === 'notice') {
+    const { label, who } = headline.notice;
+    return who ? `${label} ${who}` : label;
+  }
+  const { entry } = headline;
+  const total =
+    typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
+      ? ` ${emailCount(entry.affectedCount)}`
+      : '';
+  return `${doneLabel(entry.actionKind)}${total}. Undo available.`;
+}
+
+/**
+ * The tray plus its ALWAYS-mounted live region.
+ *
+ * The pill is the only voice for an action's outcome (no toasts, no
+ * strip), and it mounts together with its first message — a live region
+ * inserted along with its content is not reliably announced, so the first
+ * action after a page load was silent (design gate 2026-09-20). This
+ * region exists before anything happens and is only ever filled. Problems
+ * are `role="alert"` in the pill itself: alerts ARE announced on insertion.
+ */
+export function UndoTray(props: Parameters<typeof UndoTrayBody>[0]) {
+  const headline = pickHeadline(props.dataSource.notices ?? [], props.dataSource.entries);
+  const speech =
+    headline?.kind === 'notice' && headline.notice.tone === 'attention'
+      ? ''
+      : headlineSpeech(headline);
+  return (
+    <>
+      <div role="status" aria-live="polite" data-dm-undo-tray-speech style={SR_ONLY}>
+        {speech}
+      </div>
+      <UndoTrayBody {...props} />
+    </>
+  );
+}
+
+function UndoTrayBody({
   dataSource,
   onViewActivity,
   defaultOpenDecisions = false,
+  defaultOpen = false,
+  defaultCompact = false,
   style,
 }: {
   /** Entries + revert callback, built on the host app's API client. */
@@ -127,10 +189,32 @@ export function UndoTray({
   onViewActivity?: () => void;
   /** Render bulk decisions expanded — for stories and visual snapshots. */
   defaultOpenDecisions?: boolean;
+  /** Start as the full list rather than the pill — stories and list tests. */
+  defaultOpen?: boolean;
+  /** Start as the shrunk chip — the state a timer otherwise gates. Stories. */
+  defaultCompact?: boolean;
   style?: CSSProperties;
 }) {
   const source = dataSource;
+  const notices = source.notices ?? [];
   const trayRef = useTrayInset();
+  const [open, setOpen] = useState(defaultOpen);
+  // Hover / focus holds the pill at full size.
+  const [held, setHeld] = useState(false);
+  const [compact, setCompact] = useState(defaultCompact);
+  const key = headlineKey(pickHeadline(notices, source.entries));
+  const settled = key.startsWith('d:');
+  // A finished action says its piece, then gets out of the way. Anything
+  // running or wrong stays put; so does a pill being read or reached for.
+  const firstRun = useRef(true);
+  useEffect(() => {
+    // `defaultCompact` holds until something actually changes.
+    if (!(firstRun.current && defaultCompact)) setCompact(false);
+    firstRun.current = false;
+    if (!settled || held || open) return;
+    const timer = setTimeout(() => setCompact(true), TRAY_COMPACT_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [key, settled, held, open, defaultCompact]);
 
   // Render-order guards — order matters to avoid flicker between
   // an in-progress refetch and a transient error.
@@ -142,10 +226,12 @@ export function UndoTray({
   // 2. Error → render the error chip (D211 — the tray must NOT
   //    silently empty on network failure). Stays mounted until the
   //    next successful refetch.
-  if (!source.isLoading && !source.isError && source.entries.length === 0) {
+  if (!source.isLoading && !source.isError && source.entries.length === 0 && notices.length === 0) {
     return null;
   }
-  if (source.isError && source.entries.length === 0) {
+  // A running action outranks a failed undo-list read: the chip below has
+  // no room for it, and the list is not what the user is waiting on.
+  if (source.isError && source.entries.length === 0 && notices.length === 0) {
     return (
       <aside
         ref={trayRef}
@@ -205,53 +291,107 @@ export function UndoTray({
     );
   }
 
+  const headline = pickHeadline(notices, source.entries);
+  const hasMore =
+    notices.length + source.entries.length > 1 ||
+    (headline?.kind === 'decision' && isBulkDecision(headline.entry));
+
+  const shell: CSSProperties = {
+    // Centred by auto margins against the FULL viewport, not by
+    // `left: 50%` + `translateX(-50%)`: a fixed box with only `left` set
+    // is shrink-to-fit against `viewport - left`, so at `left: 50%` it can
+    // never exceed half the screen (browser smoke, 2026-07-29).
+    position: 'fixed',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    marginInline: 'auto',
+    minWidth: 0,
+    background: color.card,
+    border: `1px solid ${color.line}`,
+    boxShadow: shadow.card,
+    fontFamily: font.sans,
+    fontSize: 13,
+    color: color.fg,
+    zIndex: 50,
+  };
+
+  if (!open) {
+    return (
+      <aside
+        ref={trayRef}
+        data-dm-undo-tray={compact ? 'compact' : 'pill'}
+        role="region"
+        aria-label="Recent actions"
+        // Reading or reaching for it keeps it from shrinking underneath you.
+        onMouseEnter={() => setHeld(true)}
+        onMouseLeave={() => setHeld(false)}
+        onFocus={() => setHeld(true)}
+        onBlur={() => setHeld(false)}
+        style={{
+          ...shell,
+          width: 'fit-content',
+          maxWidth: 'min(640px, calc(100vw - 32px))',
+          borderRadius: 999,
+          padding: compact ? '4px 6px' : '6px 8px 6px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          ...style,
+        }}
+      >
+        {compact ? (
+          <Button
+            size="sm"
+            tone="ghost"
+            onClick={() => setOpen(true)}
+            ariaLabel={`Show ${source.entries.length} recent ${source.entries.length === 1 ? 'action' : 'actions'} — undo available`}
+          >
+            Undo · {source.entries.length}
+          </Button>
+        ) : (
+          <>
+            {headline ? (
+              <Headline
+                headline={headline}
+                onUndo={(token) => void source.revert(token)}
+                onViewActivity={onViewActivity}
+              />
+            ) : (
+              <span style={{ color: color.fgMuted }}>Loading…</span>
+            )}
+            {hasMore ? (
+              <Button
+                size="sm"
+                tone="ghost"
+                onClick={() => setOpen(true)}
+                ariaLabel="Show all recent actions"
+                ariaExpanded={false}
+              >
+                ▴
+              </Button>
+            ) : null}
+          </>
+        )}
+      </aside>
+    );
+  }
+
   return (
     <aside
       ref={trayRef}
-      data-dm-undo-tray
+      data-dm-undo-tray="open"
       role="region"
-      aria-label="Recent actions — undo available"
+      aria-label="Recent actions"
       style={{
-        // Centred by auto margins against the FULL viewport, not by
-        // `left: 50%` + `translateX(-50%)`.
-        //
-        // That pattern centres correctly but silently halves the layout
-        // width: a fixed box with only `left` set is shrink-to-fit against
-        // `viewport - left`, so at `left: 50%` it can never exceed half the
-        // screen — 351px on a 702px viewport, far under this maxWidth of 640.
-        // The transform then moves the already-too-narrow box into place. It
-        // hid because at 1280px half the viewport IS 640, so the tray looked
-        // correct at desktop width and progressively strangled itself below
-        // it, wrapping the message to roughly one word per line by ~700px
-        // (found by browser smoke, 2026-07-29).
-        //
-        // `left/right: 16` gives a full-width containing block with gutters,
-        // `width: fit-content` still shrink-wraps to the content, and
-        // `marginInline: auto` does the centring.
-        position: 'fixed',
-        bottom: 16,
-        left: 16,
-        right: 16,
-        marginInline: 'auto',
+        ...shell,
         width: 'min(640px, calc(100vw - 32px))',
-        minWidth: 0,
         maxWidth: 640,
-        background: color.card,
-        border: `1px solid ${color.line}`,
         borderRadius: radius.lg,
-        boxShadow: shadow.card,
         padding: '10px 14px',
-        fontFamily: font.sans,
-        fontSize: 13,
-        color: color.fg,
-        // A header row over a full-width list. The summary and the
-        // Activity link used to sit BESIDE the list, which was fine for
-        // one-line rows and squeezed named, countable decisions into a
-        // ~330px column that wrapped mid-sender-name.
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
-        zIndex: 50,
         // A long session (or an opened 25-sender decision) must never
         // grow the tray past the viewport it floats over.
         maxHeight: 'min(50vh, 420px)',
@@ -262,13 +402,26 @@ export function UndoTray({
       <div
         style={{
           display: 'flex',
-          alignItems: 'baseline',
+          alignItems: 'center',
           justifyContent: 'space-between',
           gap: 12,
         }}
       >
-        <Summary count={source.entries.length} isLoading={source.isLoading} />
-        {onViewActivity ? <ActivityLink onClick={onViewActivity} /> : null}
+        <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}>
+          Recent actions
+        </span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+          {onViewActivity ? <ActivityLink onClick={onViewActivity} /> : null}
+          <Button
+            size="sm"
+            tone="ghost"
+            onClick={() => setOpen(false)}
+            ariaLabel="Collapse recent actions"
+            ariaExpanded
+          >
+            ▾
+          </Button>
+        </span>
       </div>
       <ul
         style={{
@@ -280,6 +433,9 @@ export function UndoTray({
           gap: 8,
         }}
       >
+        {notices.map((notice) => (
+          <NoticeRow key={notice.id} notice={notice} />
+        ))}
         {source.entries.map((entry) => (
           <DecisionRow
             key={entry.groupId ?? entry.token}
@@ -293,6 +449,125 @@ export function UndoTray({
         ))}
       </ul>
     </aside>
+  );
+}
+
+/** How long a finished action keeps the full pill before it shrinks. */
+export const TRAY_COMPACT_AFTER_MS = 8000;
+
+type TrayHeadline =
+  | { kind: 'notice'; notice: UndoTrayNotice; running: number }
+  | { kind: 'decision'; entry: UndoTrayEntry };
+
+/**
+ * The ONE thing the pill says. Something still running outranks
+ * something that went wrong, which outranks the newest thing to undo —
+ * the order in which the user is waiting on them.
+ */
+function pickHeadline(notices: UndoTrayNotice[], entries: UndoTrayEntry[]): TrayHeadline | null {
+  const running = notices.filter((n) => n.tone === 'working');
+  const notice =
+    running[0] ?? notices.find((n) => n.tone === 'attention') ?? notices.find(() => true);
+  if (notice) return { kind: 'notice', notice, running: running.length };
+  const entry = entries[0];
+  return entry ? { kind: 'decision', entry } : null;
+}
+
+const headlineKey = (h: TrayHeadline | null): string =>
+  h === null
+    ? ''
+    : h.kind === 'notice'
+      ? `n:${h.notice.id}`
+      : `d:${h.entry.groupId ?? h.entry.token}`;
+
+function decisionSenderCount(entry: UndoTrayEntry): number {
+  const members = entry.members ?? [];
+  // Never below what the member list itself proves (see `DecisionRow`).
+  return Math.max(
+    entry.senderCount ?? 0,
+    entry.mixedKinds === true ? 0 : members.length,
+    members.length > 0 ? 1 : 0,
+  );
+}
+
+const isBulkDecision = (entry: UndoTrayEntry): boolean =>
+  decisionSenderCount(entry) > 1 || (entry.members ?? []).length > 1;
+
+function Headline({
+  headline,
+  onUndo,
+  onViewActivity,
+}: {
+  headline: TrayHeadline;
+  onUndo: (token: string) => void;
+  onViewActivity: (() => void) | undefined;
+}) {
+  if (headline.kind === 'notice') {
+    const { notice, running } = headline;
+    const working = notice.tone === 'working';
+    const attention = notice.tone === 'attention';
+    return (
+      <>
+        <span
+          data-dm-tray-notice={notice.tone}
+          {...(attention ? { role: 'alert' as const } : {})}
+          style={{ minWidth: 0, color: attention ? color.red : color.fg }}
+        >
+          <InlineProgress pending={working} mode="trailing" pendingLabel="Working">
+            <span>
+              {notice.label}
+              {notice.detail ? (
+                // Ticks every poll; announcing each tick would bury a screen reader.
+                <span aria-live="off">{` · ${notice.detail}`}</span>
+              ) : notice.who ? (
+                ` · ${notice.who}`
+              ) : null}
+              {running > 1 ? ` · +${running - 1} more` : ''}
+            </span>
+          </InlineProgress>
+        </span>
+        {attention && onViewActivity ? (
+          <Button size="sm" tone="ghost" onClick={onViewActivity}>
+            See Activity
+          </Button>
+        ) : null}
+        {notice.onDismiss ? (
+          <Button
+            size="sm"
+            tone="ghost"
+            onClick={notice.onDismiss}
+            ariaLabel={`Dismiss: ${notice.label}`}
+          >
+            Dismiss
+          </Button>
+        ) : null}
+      </>
+    );
+  }
+  const { entry } = headline;
+  const senderCount = decisionSenderCount(entry);
+  const who = whoLabel(entry, senderCount);
+  const total =
+    typeof entry.affectedCount === 'number' && entry.mixedKinds !== true
+      ? emailCount(entry.affectedCount)
+      : null;
+  const whose = senderCount > 1 ? `${senderCount.toLocaleString('en-US')} senders` : who;
+  return (
+    <>
+      <span style={{ minWidth: 0 }}>
+        {doneLabel(entry.actionKind)}
+        {total !== null ? ` ${total}` : ''}
+        {whose ? <span style={{ color: color.fgSoft }}>{` · ${whose}`}</span> : null}
+      </span>
+      <Button
+        size="sm"
+        tone="ghost"
+        onClick={() => onUndo(entry.token)}
+        ariaLabel={`Undo ${verbLabel(entry.actionKind)}${who !== null ? ` for ${who}` : ''}`}
+      >
+        {isBulkDecision(entry) ? 'Undo all' : 'Undo'}
+      </Button>
+    </>
   );
 }
 
@@ -412,8 +687,7 @@ function DecisionRow({
               fontSize: 10,
             }}
           >
-            Activity Undo until {formatExpiry(entry.expiresAt)}
-            {entry.actionKind === 'delete' ? ' · Gmail Trash recovery is separate' : ''}
+            Undo until {formatExpiry(entry.expiresAt)}
           </span>
         </span>
         <Button
@@ -507,6 +781,89 @@ function DecisionRow({
   );
 }
 
+/**
+ * A running or ended-without-undo action. Same two-line shape as a
+ * decision so the panel reads as one list; no Undo, because there is
+ * nothing to undo yet (or at all).
+ */
+function NoticeRow({ notice }: { notice: UndoTrayNotice }) {
+  const attention = notice.tone === 'attention';
+  return (
+    <li
+      data-dm-tray-notice={notice.tone}
+      // A failure interrupts; progress and no-ops wait their turn.
+      role={attention ? 'alert' : 'status'}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 12,
+        ...(attention
+          ? {
+              background: color.redBg,
+              border: `1px solid ${color.redBorder}`,
+              borderRadius: radius.md,
+              padding: '6px 8px',
+            }
+          : null),
+      }}
+    >
+      <span style={{ color: attention ? color.red : color.fgSoft, minWidth: 0 }}>
+        {notice.label}
+        {notice.who ? <span style={{ color: color.fg }}>{` · ${notice.who}`}</span> : null}
+        {notice.detail ? (
+          <span
+            // Ticks every poll; announcing each tick would bury the screen reader.
+            aria-live="off"
+            style={{
+              display: 'block',
+              color: color.fgMuted,
+              fontFamily: font.mono,
+              fontSize: 10,
+            }}
+          >
+            {notice.detail}
+          </span>
+        ) : null}
+      </span>
+      {notice.onDismiss ? (
+        <Button
+          size="sm"
+          tone="ghost"
+          onClick={notice.onDismiss}
+          ariaLabel={`Dismiss: ${notice.label}`}
+        >
+          Dismiss
+        </Button>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * The pill's past-tense verb — the short form; the expanded list keeps the
+ * registry's full result label. Unsubscribe states the request, never the
+ * outcome (D58: nothing here knows the sender honoured it).
+ */
+function doneLabel(kind: UndoActionKind): string {
+  switch (kind) {
+    case 'archive':
+      return 'Archived';
+    case 'later':
+      return 'Moved to Later';
+    case 'delete':
+      return 'Deleted';
+    case 'unsubscribe':
+      return 'Unsubscribe requested';
+    case 'apply-rule':
+      return 'Rule applied';
+    default: {
+      const _exhaustive: never = kind;
+      return _exhaustive;
+    }
+  }
+}
+
 function resultLabel(kind: UndoActionKind): string {
   switch (kind) {
     case 'archive':
@@ -542,20 +899,6 @@ function formatExpiry(value: string): string {
     minute: '2-digit',
     timeZoneName: 'short',
   }).format(new Date(value));
-}
-
-/** "3 decisions applied" — the D35 leading-edge label. */
-function Summary({ count, isLoading }: { count: number; isLoading: boolean }) {
-  if (isLoading && count === 0) {
-    return (
-      <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}>Loading…</span>
-    );
-  }
-  return (
-    <span style={{ color: color.fgMuted, fontFamily: font.mono, fontSize: 11 }}>
-      {count} {count === 1 ? 'decision' : 'decisions'} applied
-    </span>
-  );
 }
 
 /**

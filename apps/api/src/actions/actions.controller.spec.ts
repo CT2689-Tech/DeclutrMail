@@ -32,3 +32,14 @@ describe('ActionsController.unsubscribeIntent', () => {
     });
   });
 });
+
+describe('ActionsController route order', () => {
+  it('declares the literal `active` and `batch/:id` routes before `:id`', () => {
+    // Nest registers handlers in prototype order; `:id` first would read
+    // "active" as an action id and answer 400 INVALID_ID.
+    const handlers = Object.getOwnPropertyNames(ActionsController.prototype);
+    expect(handlers.indexOf('active')).toBeGreaterThan(-1);
+    expect(handlers.indexOf('active')).toBeLessThan(handlers.indexOf('status'));
+    expect(handlers.indexOf('batchStatus')).toBeLessThan(handlers.indexOf('status'));
+  });
+});

@@ -394,7 +394,9 @@ export function SenderListRow({
             >
               {s.name}
             </span>
-            {activity && <RowActivityPill activity={activity} />}
+            {/* Only where no button is on screen to carry the status: the
+                collapsed phone row. Everywhere else the pressed verb says it. */}
+            {activity && isPhone && !expanded && <RowActivityPill activity={activity} />}
             {isStandingProtected(s) && (
               <span
                 title="Protected — automatic and bulk actions stay off unless you choose otherwise"

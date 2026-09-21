@@ -12,7 +12,16 @@ import {
   type Sender,
 } from '../data';
 import { derivePrimaryVerbId } from '../action-row';
-import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
+import {
+  isRowBusy,
+  RowActivityPill,
+  RowActivityStatus,
+  rowStatusColor,
+  rowStatusLabel,
+  STATUS_BUTTON_STYLE,
+  takesButtonSlot,
+  useRowActivity,
+} from '../row-activity';
 import type { Verdict } from './types';
 
 /**
@@ -154,47 +163,76 @@ export function ActionToolbar({
             : isHighlighted
               ? primaryVerbReason(sender, verdict)
               : null;
+        // The verb that was pressed BECOMES its own status — same grammar as
+        // a Senders row. Same element, so focus stays on it.
+        // Not when it ended badly — then the verb stays live for a retry.
+        const status =
+          activity && takesButtonSlot(activity) && activity.verb === verb.toLowerCase()
+            ? activity
+            : null;
+        // This page has no ⋯ menu, so a verb that reads "done" must still work.
+        const again = status?.phase === 'done';
         return (
           <Button
             key={verb}
             tone={
-              isHighlighted
-                ? verb === 'Unsubscribe'
-                  ? 'warn'
-                  : verb === 'Keep'
-                    ? 'primary'
-                    : 'dark'
-                : 'default'
+              status
+                ? 'ghost'
+                : isHighlighted
+                  ? verb === 'Unsubscribe'
+                    ? 'warn'
+                    : verb === 'Keep'
+                      ? 'primary'
+                      : 'dark'
+                  : 'default'
             }
             size="md"
             disabled={disabled}
             // Inert, not disabled: the verb just pressed may hold focus.
             inert={busy && !disabled}
-            {...(deleteAccentStyle ? { style: deleteAccentStyle } : {})}
+            {...(status
+              ? {
+                  style: {
+                    ...STATUS_BUTTON_STYLE,
+                    color: rowStatusColor(status),
+                    ...(again ? { cursor: 'pointer' } : {}),
+                  },
+                }
+              : deleteAccentStyle
+                ? { style: deleteAccentStyle }
+                : {})}
             {...(buttonTitle ? { title: buttonTitle } : {})}
             onClick={() => onAction({ verb, senders: [sender] })}
-            iconRight={
-              isHighlighted ? (
-                <Kbd
-                  style={{
-                    background: color.lineInverse,
-                    border: 'none',
-                    color: color.fgInverse,
-                  }}
-                >
-                  {shortcut}
-                </Kbd>
-              ) : (
-                <Kbd>{shortcut}</Kbd>
-              )
+            {...(status
+              ? {}
+              : {
+                  iconRight: isHighlighted ? (
+                    <Kbd
+                      style={{
+                        background: color.lineInverse,
+                        border: 'none',
+                        color: color.fgInverse,
+                      }}
+                    >
+                      {shortcut}
+                    </Kbd>
+                  ) : (
+                    <Kbd>{shortcut}</Kbd>
+                  ),
+                })}
+            ariaLabel={
+              status
+                ? again
+                  ? `${rowStatusLabel(status)} — ${verb} again (${shortcut})`
+                  : rowStatusLabel(status)
+                : `${verb} (${shortcut})`
             }
-            ariaLabel={`${verb} (${shortcut})`}
           >
-            {verb}
+            {status ? <RowActivityStatus activity={status} /> : verb}
           </Button>
         );
       })}
-      {activity && <RowActivityPill activity={activity} />}
+      {activity && !takesButtonSlot(activity) && <RowActivityPill activity={activity} />}
       <span style={{ flex: 1 }} />
       <span
         style={{

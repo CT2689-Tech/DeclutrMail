@@ -61,7 +61,7 @@ import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
-import { isRowBusy, RowActivityPill, useRowActivity } from '../row-activity';
+import { isRowBusy, useRowActivity } from '../row-activity';
 import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected, senderAddressLine } from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
@@ -143,6 +143,8 @@ const COLUMNS: ReadonlyArray<{
   label: string;
   alignRight?: boolean;
   aria?: string;
+  /** Sticks to the scroller's right edge (the action column). */
+  pinRight?: boolean;
 }> = [
   { key: null, label: '' }, // checkbox
   { key: 'name', label: 'Sender' },
@@ -165,7 +167,7 @@ const COLUMNS: ReadonlyArray<{
   { key: null, label: 'You wrote', alignRight: true },
   { key: 'last_seen', label: 'Last seen', alignRight: true },
   { key: null, label: 'Unsubscribe' },
-  { key: null, label: '' }, // verbs
+  { key: null, label: '', pinRight: true }, // verbs — pinned with its cells
   { key: null, label: '' }, // expand chevron
 ];
 
@@ -288,6 +290,7 @@ function SortHeader({
     textTransform: 'uppercase',
     color: color.fgMuted,
     borderBottom: `1px solid ${color.line}`,
+    ...(col.pinRight ? { position: 'sticky', right: 0, zIndex: 1, background: color.bg } : {}),
   };
 
   if (col.key === null) {
@@ -402,6 +405,7 @@ function SenderRow({
   const adapted = useMemo(() => enrichSenderRow(sender), [sender]);
   const toneAccent = primaryToneAccent(adapted);
 
+  const [menuOpen, setMenuOpen] = useState(false);
   const cellStyle: CSSProperties = {
     padding: pad,
     borderBottom: `1px solid ${color.lineSoft}`,
@@ -536,7 +540,6 @@ function SenderRow({
                       </span>
                     );
                   })()}
-                {activity && <RowActivityPill activity={activity} />}
               </span>
               <span
                 // Full address, not the domain — one brand can own
@@ -630,7 +633,21 @@ function SenderRow({
           <UnsubGlyph method={sender.unsubscribeMethod} />
         </td>
 
-        <td style={{ ...cellStyle, width: 170 }}>
+        <td
+          style={{
+            ...cellStyle,
+            width: 170,
+            // Pinned to the right edge: below ~1300px the table scrolls
+            // sideways, and the verb — which BECOMES the status once pressed —
+            // was off-screen (live smoke 2026-09-20). Sticky makes a stacking
+            // context, so the open ⋯ menu lifts its cell above the rows below.
+            position: 'sticky',
+            right: 0,
+            zIndex: menuOpen ? 3 : 1,
+            background: busy ? color.paper : color.card,
+            boxShadow: `-1px 0 0 ${color.lineSoft}`,
+          }}
+        >
           {/* Shared action grammar (ADR-0016 A5 + ADR-0019): derived
               primary verb + ⋯ ActionPopover — the same `SenderActionRow`
               the grid card renders, replacing the three hardcoded inline
@@ -638,6 +655,7 @@ function SenderRow({
               reads; verbs bridge back to the table's lowercase union. */}
           <SenderActionRow
             sender={adapted}
+            onMenuOpenChange={setMenuOpen}
             onAction={(req) => {
               const mapped = ROW_VERB_TO_TABLE[req.verb];
               if (mapped === null) return;

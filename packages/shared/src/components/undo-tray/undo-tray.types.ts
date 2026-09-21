@@ -56,7 +56,28 @@ export interface UndoTrayEntry {
  * both so the tray can render a distinct error state — network failure
  * must NOT silently collapse the tray into the empty state (D211).
  */
+/**
+ * A line about an action that is NOT (yet) an undoable decision: still
+ * running, or ended with nothing to undo (failed, partly failed, nothing
+ * matched). The host composes the words; the tray owns the look.
+ */
+export interface UndoTrayNotice {
+  id: string;
+  /** `working` still running · `attention` ended badly · `info` ended, nothing changed. */
+  tone: 'working' | 'attention' | 'info';
+  /** "Archiving…" · "Archive failed" · "Nothing to archive". */
+  label: string;
+  /** "Yankee Candle + 2 others". */
+  who?: string | null;
+  /** Second line: "1 of 3 senders done". */
+  detail?: string | null;
+  /** Ended notices only — a line for a running job cannot be dismissed. */
+  onDismiss?: () => void;
+}
+
 export interface UndoTrayDataSource {
+  /** Running / ended-without-undo lines, shown above the decisions. */
+  notices?: UndoTrayNotice[];
   /** Active tokens for the current mailbox, newest first (D35). */
   entries: UndoTrayEntry[];
   /** True while the initial / refresh fetch is in flight. */
