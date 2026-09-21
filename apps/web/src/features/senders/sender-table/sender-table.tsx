@@ -60,9 +60,17 @@
 import type { CSSProperties } from 'react';
 import { useMemo, useState } from 'react';
 import { Avatar, NumericDisplay, tokens } from '@declutrmail/shared';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
+import { useNow } from '@/lib/use-now';
 import { derivePrimaryVerbId, SenderActionRow } from '../action-row';
 import { isRowBusy, useRowActivity } from '../row-activity';
-import { enrichSenderRow, EPOCH_GUARD_DAYS, isStandingProtected, senderAddressLine } from '../data';
+import {
+  daysSince,
+  enrichSenderRow,
+  EPOCH_GUARD_DAYS,
+  isStandingProtected,
+  senderAddressLine,
+} from '../data';
 import type { ActionVerb, Sender } from '../data';
 import { ReadBucketText, TrendChip } from '../fact-language';
 import { unsubscribeStatusCopy } from '../grid/sender-card';
@@ -135,6 +143,14 @@ export interface SenderTableProps {
   onRetry?: (() => void) | undefined;
   /** Density preference — `compact` halves the row padding. */
   density?: 'comfortable' | 'compact' | undefined;
+  /**
+   * Snapshot clock + IANA zone for last-seen labels. Parent passes the
+   * dehydrated list `asOf` + `useUserTimeZone()` so SSR and the first
+   * client paint agree (DECLUTRMAIL-WEB-2C). Omitted in tests/stories
+   * — the table then reads `useNow()` / `useUserTimeZone()` itself.
+   */
+  now?: number | undefined;
+  timeZone?: string | undefined;
 }
 
 /** Sortable header column descriptors — keeps column count stable. */
@@ -177,6 +193,10 @@ const ROW_PAD_COMPACT = '6px 12px';
 export function SenderTable(props: SenderTableProps) {
   const { rows, loading, error } = props;
   const pad = props.density === 'compact' ? ROW_PAD_COMPACT : ROW_PAD_COMFORTABLE;
+  const hookNow = useNow();
+  const hookTimeZone = useUserTimeZone();
+  const now = props.now ?? hookNow;
+  const timeZone = props.timeZone ?? hookTimeZone;
 
   return (
     <div
@@ -245,6 +265,8 @@ export function SenderTable(props: SenderTableProps) {
                 }
                 onAction={props.onAction}
                 pad={pad}
+                now={now}
+                timeZone={timeZone}
               />
             ))
           )}
@@ -387,6 +409,8 @@ function SenderRow({
   onSelectionChange,
   onAction,
   pad,
+  now,
+  timeZone,
 }: {
   sender: SenderListRow;
   globalMaxTotal: number;
@@ -394,6 +418,8 @@ function SenderRow({
   onSelectionChange(checked: boolean, shiftKey: boolean): void;
   onAction: SenderTableProps['onAction'];
   pad: string;
+  now: number | null;
+  timeZone: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const activity = useRowActivity(sender.id);
@@ -402,7 +428,10 @@ function SenderRow({
   // Fact-derived primary tone — drives the left-edge stripe and
   // magnitude-bar accent. The same derivation feeds SenderActionRow,
   // so presentation and the primary CTA cannot disagree (D245).
-  const adapted = useMemo(() => enrichSenderRow(sender), [sender]);
+  const adapted = useMemo(
+    () => enrichSenderRow(sender, now ?? Date.now(), timeZone),
+    [sender, now, timeZone],
+  );
   const toneAccent = primaryToneAccent(adapted);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -626,7 +655,7 @@ function SenderRow({
             fontSize: text.sm,
           }}
         >
-          {relativeDate(sender.lastSeenAt)}
+          {now === null ? '' : relativeDate(sender.lastSeenAt, now, timeZone)}
         </td>
 
         <td style={{ ...cellStyle, width: 70 }}>
@@ -688,7 +717,9 @@ function SenderRow({
           </button>
         </td>
       </tr>
-      {expanded ? <ExpandedRow sender={sender} onAction={onAction} /> : null}
+      {expanded ? (
+        <ExpandedRow sender={sender} onAction={onAction} now={now} timeZone={timeZone} />
+      ) : null}
     </>
   );
 }
@@ -849,13 +880,20 @@ function ProtectIndicator({ flags }: { flags: SenderListRow['protectionFlags'] }
 function ExpandedRow({
   sender,
   onAction,
+  now,
+  timeZone,
 }: {
   sender: SenderListRow;
   onAction: SenderTableProps['onAction'];
+  now: number | null;
+  timeZone: string;
 }) {
   // Adapt the wire row to the FE `Sender` shape SenderRowDetail expects.
-  // Memoised on the row id since adaptation is identity-stable per row.
-  const adapted = useMemo(() => enrichSenderRow(sender), [sender]);
+  // Memoised on the row + clock/zone since lastDays is derived from both.
+  const adapted = useMemo(
+    () => enrichSenderRow(sender, now ?? Date.now(), timeZone),
+    [sender, now, timeZone],
+  );
   // Bridge — SenderRowDetail emits canonical-cased verbs; the parent's
   // `onAction` expects lowercase `SenderTableVerb`. Shared module-scope
   // map (also used by the row's SenderActionRow) — Keep now routes
@@ -975,14 +1013,11 @@ function displayLabel(sender: SenderListRow): string {
   return sender.displayName.trim() === '' ? sender.email : sender.displayName;
 }
 
-/** ISO-8601 → relative-date short string. Future BE-side helper candidate. */
-function relativeDate(iso: string): string {
-  const now = Date.now();
+/** ISO-8601 → relative-date short string. Calendar days in `timeZone`. */
+function relativeDate(iso: string, now: number, timeZone: string): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return '—';
-  const diff = Math.max(0, now - then);
-  const day = 24 * 60 * 60 * 1000;
-  const days = Math.floor(diff / day);
+  const days = daysSince(iso, now, timeZone);
   // Epoch guard — Gmail reports internalDate=0 for some spam, which
   // otherwise renders as "56y ago". Same threshold as data.ts relTime.
   if (days > EPOCH_GUARD_DAYS) return '—';

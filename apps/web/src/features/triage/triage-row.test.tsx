@@ -68,8 +68,11 @@ const NARROW_TEMPLATE = '32px minmax(0, 1fr) 18px';
 const WIDE_TEMPLATE = '32px minmax(0, 1fr) auto 18px';
 
 function renderRow(row: TriageDecisionRow, { expanded = false } = {}) {
+  const client = createTestQueryClient();
   return render(
-    <TriageRow row={row} expanded={expanded} onToggleExpand={() => {}} onAction={() => {}} />,
+    <QueryWrapper client={client}>
+      <TriageRow row={row} expanded={expanded} onToggleExpand={() => {}} onAction={() => {}} />
+    </QueryWrapper>,
   );
 }
 
@@ -86,6 +89,7 @@ function header(row: TriageDecisionRow): HTMLElement {
  * cross a day boundary depending on the clock.
  */
 const NOW_FIXED = new Date(2026, 4, 20, 15, 0, 0).getTime();
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 function daysAgoIso(days: number): string {
   const d = new Date(NOW_FIXED);
   d.setDate(d.getDate() - days);
@@ -101,20 +105,26 @@ describe('lastSeenLabel — "today" is a calendar day, not 24 hours', () => {
     // and nobody reads "today" as "since this time yesterday".
     const readAt = new Date(2026, 7, 28, 1, 21).getTime();
     const arrived = new Date(2026, 7, 27, 14, 14).toISOString();
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('1d');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt, LOCAL_TZ)).toBe(
+      '1d',
+    );
   });
 
   it('still says "today" for earlier the same day', () => {
     const readAt = new Date(2026, 7, 28, 23, 59).getTime();
     const arrived = new Date(2026, 7, 28, 0, 1).toISOString();
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('today');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt, LOCAL_TZ)).toBe(
+      'today',
+    );
   });
 
   it('counts whole calendar days across a span longer than the elapsed hours', () => {
     // 25 hours apart but two calendar days.
     const readAt = new Date(2026, 7, 28, 0, 30).getTime();
     const arrived = new Date(2026, 7, 26, 23, 30).toISOString();
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('2d');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt, LOCAL_TZ)).toBe(
+      '2d',
+    );
   });
 });
 
@@ -213,24 +223,24 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
   it('renders "90d+" when the 90d window is empty but lastDays disagrees', () => {
     // The live bug shape: quiet 90d with a collapsed lastDays of 0
     // ("LAST SEEN today" beside "Quiet 90d · 555 received").
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(0) }, NOW_FIXED)).toBe(
-      '90d+',
-    );
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(45) }, NOW_FIXED)).toBe(
-      '90d+',
-    );
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(89) }, NOW_FIXED)).toBe(
-      '90d+',
-    );
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(0) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d+');
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(45) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d+');
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(89) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d+');
   });
 
   it('trusts lastDays when it agrees with the empty window (≥90)', () => {
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(90) }, NOW_FIXED)).toBe(
-      '90d',
-    );
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(200) }, NOW_FIXED)).toBe(
-      '200d',
-    );
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(90) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d');
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(200) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('200d');
   });
 
   it('keeps the plain display when the window has messages', () => {
@@ -238,13 +248,15 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
     // the BE collapsed an unreadable date to 0 — so this assertion was true
     // for the wrong reason half the time. The BE now sends `null` for unknown,
     // which is what the next test pins.
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(0) }, NOW_FIXED)).toBe(
-      'today',
-    );
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(1) }, NOW_FIXED)).toBe('1d');
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(12) }, NOW_FIXED)).toBe(
-      '12d',
-    );
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(0) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('today');
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(1) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('1d');
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(12) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('12d');
   });
 
   it('renders unknown as unknown, never as a recency', () => {
@@ -252,9 +264,40 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
     // the tile read "LAST SEEN today" for a sender who last wrote 45 days ago.
     // Every branch must refuse to invent a recency, including the ones where
     // the 90-day window would otherwise look self-consistent.
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: null }, NOW_FIXED)).toBe('unknown');
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: null }, NOW_FIXED)).toBe('unknown');
-    expect(lastSeenLabel({ last90dMessages: 1, lastSeenAt: null }, NOW_FIXED)).not.toBe('today');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: null }, NOW_FIXED, LOCAL_TZ)).toBe(
+      'unknown',
+    );
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: null }, NOW_FIXED, LOCAL_TZ)).toBe(
+      'unknown',
+    );
+    expect(lastSeenLabel({ last90dMessages: 1, lastSeenAt: null }, NOW_FIXED, LOCAL_TZ)).not.toBe(
+      'today',
+    );
+  });
+});
+
+describe('lastSeenLabel — zone-explicit calendar days (DECLUTRMAIL-WEB-2C)', () => {
+  const now = Date.parse('2026-07-01T08:00:00.000Z');
+  const yesterdayInLa = '2026-07-01T02:00:00.000Z';
+
+  it('UTC and America/Los_Angeles can disagree on the same instant', () => {
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'UTC')).toBe(
+      'today',
+    );
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'America/Los_Angeles'),
+    ).toBe('1d');
+  });
+
+  it('the same named zone agrees with itself', () => {
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'UTC')).toBe(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'UTC'),
+    );
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'America/Los_Angeles'),
+    ).toBe(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'America/Los_Angeles'),
+    );
   });
 });
 

@@ -8,6 +8,7 @@ import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { useNow } from '@/lib/use-now';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 
 const { color, font, radius } = tokens;
 
@@ -145,8 +146,9 @@ function MessageRow({
   // as an ordinary post-mount state update — the same contract the
   // Activity feed's timestamps already use.
   const now = useNow();
-  const relative = now === null ? '' : relTimeFromIso(message.receivedAt, new Date(now));
-  const absolute = now === null ? '' : absoluteFromIso(message.receivedAt);
+  const timeZone = useUserTimeZone();
+  const relative = now === null ? '' : relTimeFromIso(message.receivedAt, new Date(now), timeZone);
+  const absolute = now === null ? '' : absoluteFromIso(message.receivedAt, timeZone);
 
   const gmailHref = mailboxEmail
     ? GmailOpenLinkService.buildOpenLink({

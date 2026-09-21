@@ -3,6 +3,7 @@
 import { tokens } from '@declutrmail/shared';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { fmtCompact, lastSeenLabel, type TriageDecisionRow } from './data';
 
 const { color, font } = tokens;
@@ -29,6 +30,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
   // mismatch on every expanded row. `null` until mount; the label is
   // decoration and can wait one tick.
   const now = useNow();
+  const timeZone = useUserTimeZone();
   const ageLabel =
     row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
   // `null` means the sender sent nothing in the 90-day window, so there
@@ -87,7 +89,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
         />
         {/* Derived via `lastSeenLabel` so this card can never
             contradict the collapsed row's quiet-90d copy (audit W3). */}
-        <Stat label="last seen" value={lastSeenLabel(row)} />
+        <Stat label="last seen" value={now === null ? '' : lastSeenLabel(row, now, timeZone)} />
         {/* `totalAllTime` is a lifetime count sitting beside two 90d
             figures — label it so it doesn't read as sharing their window
             (QA-triage-20260827-10). */}

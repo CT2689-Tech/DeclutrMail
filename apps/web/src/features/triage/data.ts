@@ -170,8 +170,8 @@ export interface TriageDecisionRow {
   /**
    * ISO timestamp of the sender's newest inbound message, or `null` when the
    * back end could not read one. The DAY COUNT is derived here, not sent —
-   * "today" is a calendar claim and only this process knows the reader's
-   * calendar. See `lastSeenLabel`.
+   * "today" is a calendar claim in a named IANA zone (`useUserTimeZone()`),
+   * never the process's ambient zone. See `lastSeenLabel`.
    */
   lastSeenAt: string | null;
   /** Inbound messages currently present in DeclutrMail's mailbox index. */
@@ -1111,16 +1111,19 @@ export function canUnsubscribe(row: TriageDecisionRow): boolean {
  */
 export function lastSeenLabel(
   row: Pick<TriageDecisionRow, 'lastSeenAt' | 'last90dMessages'>,
-  now: number = Date.now(),
+  now: number,
+  timeZone: string,
 ): string {
   // Unknown renders as unknown — the word, not a glyph the reader has to
   // infer. Anything else here invents a recency for mail whose date we could
   // not read.
   if (row.lastSeenAt === null) return 'unknown';
-  // CALENDAR days in the reader's timezone, derived here rather than sent.
-  // The back end used to send elapsed 24-hour blocks, so a message from
-  // 14:00 yesterday floored to 0 and rendered "today" all night.
-  const lastDays = daysSince(row.lastSeenAt, now);
+  // CALENDAR days in `timeZone`, derived here rather than sent. The back
+  // end used to send elapsed 24-hour blocks, so a message from 14:00
+  // yesterday floored to 0 and rendered "today" all night. The zone is
+  // required: ambient local midnights made SSR (UTC) and a US browser
+  // hydrate two different labels (DECLUTRMAIL-WEB-2C).
+  const lastDays = daysSince(row.lastSeenAt, now, timeZone);
   if (row.last90dMessages === 0) {
     return lastDays >= 90 ? `${lastDays}d` : '90d+';
   }

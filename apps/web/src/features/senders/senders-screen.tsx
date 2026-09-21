@@ -329,10 +329,6 @@ export function SendersScreen() {
     query.trim() === debouncedQuery &&
     widenedCount > 0;
 
-  const allSenders = useMemo<Sender[]>(() => {
-    const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
-    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row)));
-  }, [sendersQuery.data, widenProbe.data, showingWidened]);
   // Carry the wire rows through verbatim for the flat-table view — the
   // SenderTable consumes the wire `SenderListRow` directly. Grid mode
   // reads the enriched `senders` (same rows + derived fields).
@@ -351,6 +347,17 @@ export function SendersScreen() {
   // defect this fixes one line lower down — the screen said "0 senders
   // match" above a sender card.
   const queryMeta = (showingWidened ? widenProbe.data : sendersQuery.data)?.pages[0]?.meta.query;
+  const timeZone = useUserTimeZone();
+  // Snapshot clock from the dehydrated list payload — identical on the
+  // UTC server render and the first client paint, unlike `Date.now()`.
+  // Paired with `timeZone` so `lastDays` cannot hydrate as "today" in
+  // UTC and "1d" in America/Los_Angeles (DECLUTRMAIL-WEB-2C).
+  const snapshotNow = Date.parse(queryMeta?.asOf ?? '');
+  const allSenders = useMemo<Sender[]>(() => {
+    const pages = (showingWidened ? widenProbe.data?.pages : sendersQuery.data?.pages) ?? [];
+    const now = Number.isFinite(snapshotNow) ? snapshotNow : 0;
+    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row, now, timeZone)));
+  }, [sendersQuery.data, widenProbe.data, showingWidened, snapshotNow, timeZone]);
   const globalMaxTotal = queryMeta?.globalMaxTotal ?? 0;
   // D38 — mailbox-wide absolute counts per compose axis. Page-1 wins
   // and is preserved across the scroll (subsequent pages recompute on
@@ -3074,8 +3081,14 @@ function SendersScreenContent({
                 if (!showingStaleRows) setSelected(new Set(next));
               }}
               onRowToggle={({ id, shiftKey }) => toggleWithRange(tableOrderedIds, id, shiftKey)}
+              now={Number.isFinite(snapshotNow) ? snapshotNow : undefined}
+              timeZone={timeZone}
               onAction={({ verb, sender }) => {
-                const adapted = enrichSenderRow(sender);
+                const adapted = enrichSenderRow(
+                  sender,
+                  Number.isFinite(snapshotNow) ? snapshotNow : 0,
+                  timeZone,
+                );
                 requestAction({ verb: TABLE_VERB_TO_ACTION[verb], senders: [adapted] });
               }}
             />

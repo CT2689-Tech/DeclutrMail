@@ -34,6 +34,7 @@ import {
 import { normalizeProtectionReason, protectionReasonLabel } from '@declutrmail/shared/copy';
 import { useSenders } from '@/features/senders/api/use-senders';
 import { useSetSenderPolicy } from '@/features/senders/api/use-sender-policy';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { captureFeatureException } from '@/lib/sentry';
 
 import { enrichSenderRow, type Sender } from '@/features/senders/data';
@@ -56,6 +57,8 @@ export function SendersPoliciesScreen() {
   const sendersQuery = useSenders({ isProtected: true, limit: 50 });
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError, data } =
     sendersQuery;
+  const timeZone = useUserTimeZone();
+  const snapshotNow = Date.parse(data?.pages[0]?.meta.query.asOf ?? '');
 
   // Every row the server returns is already a Protected sender — we
   // just adapt + sort for display. No client-side filter (the previous
@@ -71,8 +74,11 @@ export function SendersPoliciesScreen() {
   // rather than implying a global ranking.
   const protectedSenders = useMemo<Sender[]>(() => {
     const pages = data?.pages ?? [];
-    return pages.flatMap((p) => p.data.map((row) => enrichSenderRow(row))).sort(byShieldedMail);
-  }, [data]);
+    const now = Number.isFinite(snapshotNow) ? snapshotNow : 0;
+    return pages
+      .flatMap((p) => p.data.map((row) => enrichSenderRow(row, now, timeZone)))
+      .sort(byShieldedMail);
+  }, [data, snapshotNow, timeZone]);
 
   // Whether the ordering claim below is actually TRUE of this list.
   //

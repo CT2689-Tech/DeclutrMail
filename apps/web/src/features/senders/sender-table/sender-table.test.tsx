@@ -437,12 +437,18 @@ describe('SenderTable / __internals', () => {
   it('relativeDate — epoch-zero dates render "—", not "56y ago"', () => {
     // Gmail reports internalDate=0 for some spam messages; the sender
     // row must not present the Unix epoch as a real last-seen fact.
-    expect(__internals.relativeDate('1970-01-01T00:00:00.000Z')).toBe('—');
-    expect(__internals.relativeDate('not-a-date')).toBe('—');
-    // Sanity: a real recent date still renders a relative label.
-    expect(__internals.relativeDate(new Date(Date.now() - 86400000).toISOString())).toBe(
-      'Yesterday',
-    );
+    const now = Date.parse('2026-07-01T00:00:00.000Z');
+    expect(__internals.relativeDate('1970-01-01T00:00:00.000Z', now, 'UTC')).toBe('—');
+    expect(__internals.relativeDate('not-a-date', now, 'UTC')).toBe('—');
+    // Calendar yesterday in UTC — not an elapsed-24h floor.
+    expect(__internals.relativeDate('2026-06-30T12:00:00.000Z', now, 'UTC')).toBe('Yesterday');
+  });
+
+  it('relativeDate — UTC and America/Los_Angeles can disagree (DECLUTRMAIL-WEB-2C)', () => {
+    const now = Date.parse('2026-07-01T08:00:00.000Z');
+    const iso = '2026-07-01T02:00:00.000Z';
+    expect(__internals.relativeDate(iso, now, 'UTC')).toBe('Today');
+    expect(__internals.relativeDate(iso, now, 'America/Los_Angeles')).toBe('Yesterday');
   });
 
   it('nextSortFor — flips direction when the same column is clicked', () => {

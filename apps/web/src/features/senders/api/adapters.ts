@@ -83,16 +83,17 @@ export function adaptSenderDetail(args: {
   messages: MailMessageRow[];
   timeseries: TimeseriesPointDto[];
   history: DecisionHistoryRowDto[];
-  now?: number;
+  now: number;
+  timeZone: string;
 }): SenderDetail {
-  const sender = enrichSenderRow(args.detail, args.now);
+  const sender = enrichSenderRow(args.detail, args.now, args.timeZone);
   const isProtected = args.detail.protectionFlags.isProtected;
   const protectionReason: ProtectionReason | null = adaptProtectionReason(
     isProtected,
     args.detail.protectionFlags.protectionReason,
   );
 
-  const now = args.now ?? Date.now();
+  const now = args.now;
   const stats: SenderStats = {
     // `monthlyVolume` is nullable when the sender has no
     // `sender_timeseries` rows yet; the chart + KPI cells key their
@@ -109,7 +110,7 @@ export function adaptSenderDetail(args: {
       ? {}
       : { readRateSweeperMarked: args.detail.readRateSweeperMarked }),
     relationshipMonths: monthsSince(args.detail.firstSeenAt, now),
-    lastSeenDays: daysSince(args.detail.lastSeenAt, now),
+    lastSeenDays: daysSince(args.detail.lastSeenAt, now, args.timeZone),
     volumeTrend: args.detail.volumeTrend,
   };
 
