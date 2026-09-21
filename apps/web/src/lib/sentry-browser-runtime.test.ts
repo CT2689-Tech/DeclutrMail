@@ -20,14 +20,36 @@ vi.mock('@sentry/nextjs', () => ({
     callback({ setTag: sdk.setTag }),
 }));
 
+type InitOptions = NonNullable<(typeof sdk.init)['mock']['calls'][number]>[0];
+
+// Vitest 5 clears mock call history before every test (`clearMocks: true`).
+// `initSentryBrowserRuntime` is a singleton, so only the first boot records
+// `Sentry.init`. Capture that options object once and reuse it.
+let cachedInitOptions: InitOptions | undefined;
+
+function boot(dsn = 'https://stub@sentry.io/123') {
+  const runtime = initSentryBrowserRuntime(dsn);
+  cachedInitOptions ??= sdk.init.mock.calls[0]?.[0];
+  return runtime;
+}
+
+function initOptions(): InitOptions {
+  boot();
+  if (cachedInitOptions === undefined) {
+    throw new Error('Sentry.init options were not captured');
+  }
+  return cachedInitOptions;
+}
+
 describe('heavy Sentry browser runtime', () => {
   beforeAll(() => {
     sdk.init.mockClear();
+    cachedInitOptions = undefined;
   });
 
   it('initialises once with explicit deny-by-default collection and integrations', () => {
-    const first = initSentryBrowserRuntime('https://stub@sentry.io/123');
-    const second = initSentryBrowserRuntime('https://ignored@sentry.io/456');
+    const first = boot('https://stub@sentry.io/123');
+    const second = boot('https://ignored@sentry.io/456');
 
     expect(second).toBe(first);
     expect(sdk.init).toHaveBeenCalledTimes(1);
@@ -143,8 +165,7 @@ describe('heavy Sentry browser runtime', () => {
   // transported, and impossible to find. A production #418 on the public
   // site (2026-09-19) had `__sentry_captured__: true` and zero search hits.
   it('labels React invariant errors with a closed-set reason that survives the scrub', () => {
-    initSentryBrowserRuntime('https://stub@sentry.io/123');
-    const options = sdk.init.mock.calls[0]?.[0];
+    const options = initOptions();
     const send = (value: string, tags?: Record<string, string>) =>
       options?.beforeSend?.(
         { exception: { values: [{ type: 'Error', value }] }, ...(tags ? { tags } : {}) },
@@ -220,7 +241,7 @@ describe('heavy Sentry browser runtime', () => {
     sdk.captureException.mockClear();
     sdk.captureRouterTransitionStart.mockClear();
     sdk.setTag.mockClear();
-    const runtime = initSentryBrowserRuntime('https://stub@sentry.io/123');
+    const runtime = boot();
     const error = new Error('boom');
 
     runtime.addBreadcrumb({
