@@ -3,7 +3,6 @@
 import { tokens } from '@declutrmail/shared';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
-import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { fmtCompact, lastSeenLabel, type TriageDecisionRow } from './data';
 
 const { color, font } = tokens;
@@ -22,7 +21,19 @@ const { color, font } = tokens;
  * aggregates the engine already produces (read rate, volume, recency,
  * unsubscribe-method capability).
  */
-export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
+export function TriageRowExpanded({
+  row,
+  timeZone = 'UTC',
+}: {
+  row: TriageDecisionRow;
+  /**
+   * Named IANA zone for last-seen calendar days. Defaults to UTC so the
+   * public inbox simulator (no QueryClient, no `me` cache) can expand a
+   * row without importing auth. Authenticated triage passes
+   * `useUserTimeZone()`.
+   */
+  timeZone?: string;
+}) {
   // `useNow`, not an ambient `new Date()`: this queue is server-rendered
   // and hydrated (`server-triage-boundary.tsx`), so a clock read during
   // render gives the server and the client two different answers across
@@ -30,7 +41,6 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
   // mismatch on every expanded row. `null` until mount; the label is
   // decoration and can wait one tick.
   const now = useNow();
-  const timeZone = useUserTimeZone();
   const ageLabel =
     row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
   // `null` means the sender sent nothing in the 90-day window, so there

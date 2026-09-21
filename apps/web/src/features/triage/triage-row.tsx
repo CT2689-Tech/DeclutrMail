@@ -146,6 +146,7 @@ export function TriageRow({
   hero = false,
   offerUnprotect = false,
   unprotectSlot,
+  timeZone,
   onToggleExpand,
   onAction,
   inlinePreview,
@@ -190,6 +191,12 @@ export function TriageRow({
    * edge from the public route-specific chunk.
    */
   unprotectSlot?: ReactNode;
+  /**
+   * IANA zone for expanded last-seen labels. Omitted on the public
+   * simulator (UTC default). Authenticated triage passes
+   * `useUserTimeZone()` so this module never imports auth/query hooks.
+   */
+  timeZone?: string;
   onToggleExpand: () => void;
   onAction: (verb: ActionVerb) => void;
   /**
@@ -576,7 +583,7 @@ export function TriageRow({
               />
             </div>
           )}
-          <TriageRowExpanded row={row} />
+          <TriageRowExpanded row={row} timeZone={timeZone} />
         </div>
       )}
 
