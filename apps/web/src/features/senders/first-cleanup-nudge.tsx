@@ -16,6 +16,13 @@ const { color, font, radius } = tokens;
  * Independent of `users.onboarded_at`. That stamp is the onboarding
  * flow finishing (D113), including skip / "Finish for today" / an
  * empty first-triage pin — not "a Gmail-changing action completed".
+ *
+ * Dismiss path: Archive / Later / Delete / Unsubscribe enqueue an
+ * `action_jobs` row; `useActionStatus` / `useBatchStatus` invalidate
+ * `sendersKeys.all` on terminal status, so the summary refetch can
+ * flip `hasCompletedCleanup` and hide the banner. Keep and Protect
+ * never write `action_jobs`, so they do not dismiss the nudge
+ * (product call — leave unless asked).
  */
 export function shouldShowFirstCleanupNudge(args: {
   mailboxReady: boolean;
