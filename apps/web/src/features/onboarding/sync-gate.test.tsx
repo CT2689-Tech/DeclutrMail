@@ -119,8 +119,8 @@ describe('SyncGate render', () => {
 
   it('failed: shows the error copy + retry, still shows the trust badge', () => {
     const html = renderToStaticMarkup(withClient(<SyncGate status={FAILED} />));
-    expect(html).toContain('snag');
     // FAILED is RateLimitError + progress 32 → rate_limit partlyReady.
+    expect(html).toContain('Your inbox is partly ready');
     expect(html).toContain('Finish sync');
     expect(html).toContain('data-reason-code="rate_limit"');
     expect(html).toContain('data-partly-ready="true"');
@@ -149,37 +149,29 @@ describe('SyncGate render', () => {
   });
 
   /**
-   * The map is keyed on `error.name` of the thrown worker error, because
-   * that is literally what `initial-sync.worker.ts` writes to
-   * `provider_sync_state.error_code` (`errorCode: error.name`).
-   *
-   * It used to be keyed on `GMAIL_QUOTA_EXCEEDED`, a code NO code path has
-   * ever emitted — so every real failure fell through to the generic copy,
-   * and every test "passed" because the fixtures invented the same
-   * fictional code. Production 2026-08-06 surfaced it: a PermanentError
-   * rendered as "Something interrupted the scan". Keep this list in step
-   * with `packages/workers/src/worker-errors.ts`.
+   * Copy is keyed on the Onboarding reason code derived from the worker
+   * `error.name` stored on `provider_sync_state.error_code`. Transient /
+   * Permanent / Validation share the `unknown` body on purpose — they
+   * are Retry, not Reconnect, and Onboarding did not give them distinct
+   * sentences. Quota / grant / scopes / expired-auth must not fall
+   * through to that unknown tone.
    */
-  it('keys its copy on the error names the worker actually stores', () => {
-    const WORKER_ERROR_NAMES = [
-      'TransientError',
-      'RateLimitError',
-      'GmailQuotaError',
-      'AuthExpiredError',
-      'InvalidGrantError',
-      'ProviderPermissionError',
-      'ValidationError',
-      'PermanentError',
-    ];
-
-    for (const name of WORKER_ERROR_NAMES) {
-      const html = renderToStaticMarkup(
-        withClient(<SyncGate status={{ ...FAILED, error_code: name }} />),
+  it('keys reconnect and quota copy on worker names via reason codes', () => {
+    const html = (code: string, progress = 32) =>
+      renderToStaticMarkup(
+        withClient(<SyncGate status={{ ...FAILED, error_code: code, progress_pct: progress }} />),
       );
-      expect(
-        html,
-        `${name} has no specific copy — it falls back to the generic line`,
-      ).not.toContain('Something interrupted the scan');
+
+    expect(html('ProviderPermissionError')).toContain('fuller permission grant');
+    expect(html('InvalidGrantError')).toContain('expired or was revoked');
+    expect(html('AuthExpiredError')).toContain('stopped accepting our access');
+    expect(html('RateLimitError', 0)).toContain('paused your sync');
+    expect(html('GmailQuotaError', 32)).toContain('partly ready');
+
+    for (const name of ['TransientError', 'PermanentError', 'ValidationError'] as const) {
+      const markup = html(name);
+      expect(markup).toContain('We hit a snag reading your inbox');
+      expect(markup).toContain('data-reason-code="unknown"');
     }
   });
 
@@ -241,9 +233,16 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
 
   it('still offers a real retry for a non-auth failure (e.g. RateLimitError)', () => {
     render(withClient(<SyncGate status={FAILED} mailboxId="mb-1" />));
+    expect(screen.getByRole('heading', { name: 'Your inbox is partly ready' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Finish sync' })).toBeInTheDocument();
-    expect(screen.getByText(/rate-limited/i)).toHaveAttribute('data-reason-code', 'rate_limit');
-    expect(screen.getByText(/rate-limited/i)).toHaveAttribute('data-partly-ready', 'true');
+    expect(screen.getByText(/already pulled a lot of your mail/i)).toHaveAttribute(
+      'data-reason-code',
+      'rate_limit',
+    );
+    expect(screen.getByText(/already pulled a lot of your mail/i)).toHaveAttribute(
+      'data-partly-ready',
+      'true',
+    );
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
     // Continue is a hook — omitted callback means no silent no-op.
     expect(screen.queryByRole('button', { name: 'Continue ready' })).not.toBeInTheDocument();
@@ -255,8 +254,11 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
         <SyncGate status={{ ...FAILED, error_code: 'ProviderPermissionError' }} mailboxId="mb-1" />,
       ),
     );
+    expect(
+      screen.getByRole('heading', { name: 'Gmail needs a fuller permission grant' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
-    expect(screen.getByText(/did not grant the Gmail access/i)).toHaveAttribute(
+    expect(screen.getByText(/get all the permissions/i)).toHaveAttribute(
       'data-reason-code',
       'insufficient_scopes',
     );
@@ -270,7 +272,10 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
         <SyncGate status={{ ...FAILED, error_code: 'InvalidGrantError' }} mailboxId="mb-1" />,
       ),
     );
-    expect(screen.getByText(/not granting the access/i)).toHaveAttribute(
+    expect(
+      screen.getByRole('heading', { name: 'Reconnect Gmail to keep going' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/expired or was revoked/i)).toHaveAttribute(
       'data-reason-code',
       'invalid_grant',
     );
@@ -279,6 +284,9 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
         <SyncGate status={{ ...FAILED, error_code: 'AuthExpiredError' }} mailboxId="mb-1" />,
       ),
     );
+    expect(
+      screen.getByRole('heading', { name: 'Reconnect Gmail to keep going' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/stopped accepting our access/i)).toHaveAttribute(
       'data-reason-code',
       'reconnect_required',
@@ -294,9 +302,18 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
         />,
       ),
     );
+    expect(
+      screen.getByRole('heading', { name: 'Gmail paused your sync for a bit' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(screen.getByText(/quota limit/i)).toHaveAttribute('data-reason-code', 'rate_limit');
-    expect(screen.getByText(/quota limit/i)).toHaveAttribute('data-partly-ready', 'false');
+    expect(screen.getByText(/temporarily limited how fast we can read/i)).toHaveAttribute(
+      'data-reason-code',
+      'rate_limit',
+    );
+    expect(screen.getByText(/temporarily limited how fast we can read/i)).toHaveAttribute(
+      'data-partly-ready',
+      'false',
+    );
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Continue ready' })).not.toBeInTheDocument();
   });
@@ -313,6 +330,7 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
       ),
     );
     expect(screen.getByRole('button', { name: 'Finish sync' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your inbox is partly ready' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Continue ready' }));
     expect(onContinuePartial).toHaveBeenCalledOnce();
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();

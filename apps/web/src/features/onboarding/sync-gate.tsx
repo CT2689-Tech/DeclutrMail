@@ -5,6 +5,7 @@ import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
 import {
   initialSyncRecovery,
   isStaleInitialSync,
+  type InitialSyncRecovery,
   type SyncStatus,
   type SyncStage,
 } from '@declutrmail/shared/contracts';
@@ -84,30 +85,68 @@ function activeStageIndex(status: SyncStatus): number {
 }
 
 /**
- * Onboarding-owned copy keyed on worker `error.name` (what the worker
- * writes to `provider_sync_state.error_code`). Button branching is
- * NOT this map — it is `initialSyncRecovery` reason codes
- * (`data-reason-code`). Copy here is a placeholder until Onboarding
- * owns the strings; keep each line pointing at the button, never at
- * an automatic retry the worker will not deliver.
+ * Onboarding-owned recovery copy, keyed on `InitialSyncReasonCode`
+ * (`data-reason-code`). Button branching stays on `recovery.action` /
+ * `partlyReady`. Worker `error.name` is only an input to
+ * `initialSyncRecovery` — so a future taxonomy that writes
+ * `ProviderPermissionError` for insufficientPermissions picks up the
+ * scopes body, not the grant-revoked tone.
  */
-
-const ERROR_COPY: Record<string, string> = {
-  RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
-  GmailQuotaError: 'Gmail paused the scan on a quota limit. Try again to resume.',
-  AuthExpiredError:
-    'Google stopped accepting our access partway through. Reconnecting the account restores it.',
-  InvalidGrantError:
-    'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
-  ProviderPermissionError:
-    'Google did not grant the Gmail access this scan needs. Reconnect and allow access.',
-  TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
-  PermanentError: 'Gmail refused part of the scan. Try again — if it fails twice, contact support.',
-  ValidationError:
-    'The scan stopped on something we could not process. Try again — if it fails twice, contact support.',
-};
-
-const STUCK_COPY = 'The scan has not moved in a while. Try again — Gmail is untouched.';
+function recoverySurface(recovery: InitialSyncRecovery): {
+  eyebrow: string;
+  title: string;
+  body: string;
+} {
+  const interrupted = 'Scan interrupted';
+  switch (recovery.reason) {
+    case 'insufficient_scopes':
+      return {
+        eyebrow: interrupted,
+        title: 'Gmail needs a fuller permission grant',
+        body: 'DeclutrMail couldn’t finish setup because Google didn’t get all the permissions we asked for. Reconnect and approve every permission on the Google screen — we need them to find senders and clean up mail.',
+      };
+    case 'invalid_grant':
+      return {
+        eyebrow: interrupted,
+        title: 'Reconnect Gmail to keep going',
+        body: 'Your Google connection expired or was revoked. Reconnect to finish setup — nothing was deleted on our side.',
+      };
+    case 'reconnect_required':
+      return {
+        eyebrow: interrupted,
+        title: 'Reconnect Gmail to keep going',
+        body: 'Google stopped accepting our access partway through. Reconnect to finish setup — nothing was deleted on our side.',
+      };
+    case 'rate_limit':
+      return recovery.partlyReady
+        ? {
+            eyebrow: interrupted,
+            title: 'Your inbox is partly ready',
+            body: 'We already pulled a lot of your mail, then Gmail slowed us down. Finish sync to complete, or continue with what’s ready if that control is shown.',
+          }
+        : {
+            eyebrow: interrupted,
+            title: 'Gmail paused your sync for a bit',
+            body: 'Google temporarily limited how fast we can read your inbox. Your progress is saved — tap Try again when you’re ready.',
+          };
+    case 'stuck':
+      return {
+        eyebrow: 'Scan stalled',
+        title: 'This scan has not moved.',
+        body: 'The scan has not moved in a while. Try again — Gmail is untouched.',
+      };
+    case 'unknown':
+      return {
+        eyebrow: interrupted,
+        title: 'We hit a snag reading your inbox',
+        body: 'Something interrupted the scan. Your Gmail is untouched — try again.',
+      };
+    default: {
+      const _exhaustive: never = recovery.reason;
+      return _exhaustive;
+    }
+  }
+}
 
 /**
  * Escape-hatch wiring for a SECONDARY-mailbox sync (D116). The route
@@ -347,15 +386,12 @@ function SyncFailed({
     progressPct: status.progress_pct,
   });
   const needsReconnect = recovery.action === 'reconnect';
-  const copy = stuck
-    ? STUCK_COPY
-    : ((status.error_code && ERROR_COPY[status.error_code]) ??
-      'Something interrupted the scan. Your Gmail is untouched — try again.');
+  const copy = recoverySurface(recovery);
   const retryLabel =
     recovery.reason === 'rate_limit' && recovery.partlyReady ? 'Finish sync' : 'Try again';
   return (
     <Shell>
-      <Eyebrow tone="amber">{stuck ? 'Scan stalled' : 'Scan interrupted'}</Eyebrow>
+      <Eyebrow tone="amber">{copy.eyebrow}</Eyebrow>
       <h1
         style={{
           fontFamily: font.display,
@@ -365,7 +401,7 @@ function SyncFailed({
           margin: '6px 0 4px',
         }}
       >
-        {stuck ? 'This scan has not moved.' : 'We hit a snag reading your inbox.'}
+        {copy.title}
       </h1>
       <p
         style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 20px', maxWidth: 460 }}
@@ -374,7 +410,7 @@ function SyncFailed({
         data-partly-ready={recovery.partlyReady ? 'true' : 'false'}
         data-sync-surface={stuck ? 'stuck' : 'failed'}
       >
-        {copy}
+        {copy.body}
       </p>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
         {needsReconnect ? (
