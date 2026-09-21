@@ -15,8 +15,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
  *    the renderer is opt-in, not coupled to the test env.
  *  - `setupFiles` wires in `@testing-library/jest-dom` matchers and
  *    installs the `fetch` stub helpers used by the API + hook tests.
- *  - `esbuild.jsx: 'automatic'` so test files can write JSX without
+ *  - `oxc.jsx.runtime: 'automatic'` so test files can write JSX without
  *    importing React explicitly — matches the Next.js runtime config.
+ *    Vite 8 ignores the old `esbuild.jsx` key when Oxc options are set.
  *  - `resolve.alias` mirrors `tsconfig.json` so `@/foo` resolves inside
  *    test files exactly as it does at runtime.
  */
@@ -31,8 +32,8 @@ export default defineConfig({
     // backoff — ~3s — so the default 5s timeout is too tight).
     testTimeout: 15_000,
   },
-  esbuild: {
-    jsx: 'automatic',
+  oxc: {
+    jsx: { runtime: 'automatic' },
   },
   resolve: {
     alias: {
