@@ -21,7 +21,19 @@ const { color, font } = tokens;
  * aggregates the engine already produces (read rate, volume, recency,
  * unsubscribe-method capability).
  */
-export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
+export function TriageRowExpanded({
+  row,
+  timeZone = 'UTC',
+}: {
+  row: TriageDecisionRow;
+  /**
+   * Named IANA zone for last-seen calendar days. Defaults to UTC so the
+   * public inbox simulator (no QueryClient, no `me` cache) can expand a
+   * row without importing auth. Authenticated triage passes
+   * `useUserTimeZone()`.
+   */
+  timeZone?: string;
+}) {
   // `useNow`, not an ambient `new Date()`: this queue is server-rendered
   // and hydrated (`server-triage-boundary.tsx`), so a clock read during
   // render gives the server and the client two different answers across
@@ -87,7 +99,7 @@ export function TriageRowExpanded({ row }: { row: TriageDecisionRow }) {
         />
         {/* Derived via `lastSeenLabel` so this card can never
             contradict the collapsed row's quiet-90d copy (audit W3). */}
-        <Stat label="last seen" value={lastSeenLabel(row)} />
+        <Stat label="last seen" value={now === null ? '' : lastSeenLabel(row, now, timeZone)} />
         {/* `totalAllTime` is a lifetime count sitting beside two 90d
             figures — label it so it doesn't read as sharing their window
             (QA-triage-20260827-10). */}

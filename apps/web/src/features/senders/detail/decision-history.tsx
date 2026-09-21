@@ -2,6 +2,7 @@
 
 import { Eyebrow, EmptyState, Pill, tokens } from '@declutrmail/shared';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
+import { useNow } from '@/lib/use-now';
 import { relTimeFromIso } from './data';
 import type { DecisionAction, DecisionHistoryRow } from './types';
 
@@ -40,7 +41,7 @@ function toneFor(
 export function dateLabel(iso: string, now: Date, timeZone: string): string {
   const then = new Date(iso);
   const ageDays = (now.getTime() - then.getTime()) / (1000 * 60 * 60 * 24);
-  if (ageDays <= 7) return relTimeFromIso(iso, now);
+  if (ageDays <= 7) return relTimeFromIso(iso, now, timeZone);
   return then.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone });
 }
 
@@ -66,7 +67,8 @@ export function DecisionHistory({
   senderId: string;
   onUndo?: (row: DecisionHistoryRow) => void;
 }) {
-  const now = new Date();
+  const nowMs = useNow();
+  const now = nowMs === null ? null : new Date(nowMs);
   const timeZone = useUserTimeZone();
   return (
     <section
@@ -121,7 +123,9 @@ export function DecisionHistory({
         <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
           {history.map((row, idx) => {
             const undoActive =
-              row.undoExpiresAt != null && new Date(row.undoExpiresAt).getTime() > now.getTime();
+              now != null &&
+              row.undoExpiresAt != null &&
+              new Date(row.undoExpiresAt).getTime() > now.getTime();
             return (
               <li
                 key={row.id}
@@ -144,7 +148,7 @@ export function DecisionHistory({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {dateLabel(row.at, now, timeZone)}
+                  {now === null ? '' : dateLabel(row.at, now, timeZone)}
                 </span>
                 <span
                   style={{

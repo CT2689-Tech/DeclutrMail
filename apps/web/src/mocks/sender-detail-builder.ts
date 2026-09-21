@@ -321,7 +321,7 @@ export function buildSenderDetail(
   // The one model every senders surface consumes — built through the
   // same fixture → wire row → enrich seam live data flows through.
   const row = fixtureToSenderListRow(fixture);
-  const sender = enrichSenderRow(row);
+  const sender = enrichSenderRow(row, Date.parse('2026-07-01T00:00:00.000Z'), 'UTC');
 
   return {
     sender,

@@ -20,6 +20,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { lastSeenLabel, TRIAGE_QUEUE, type TriageDecisionRow } from './data';
 import { TriageRow } from './triage-row';
@@ -67,9 +68,17 @@ afterEach(() => {
 const NARROW_TEMPLATE = '32px minmax(0, 1fr) 18px';
 const WIDE_TEMPLATE = '32px minmax(0, 1fr) auto 18px';
 
+function withQuery(ui: ReactElement, client = createTestQueryClient()) {
+  return <QueryWrapper client={client}>{ui}</QueryWrapper>;
+}
+
 function renderRow(row: TriageDecisionRow, { expanded = false } = {}) {
+  const client = createTestQueryClient();
   return render(
-    <TriageRow row={row} expanded={expanded} onToggleExpand={() => {}} onAction={() => {}} />,
+    withQuery(
+      <TriageRow row={row} expanded={expanded} onToggleExpand={() => {}} onAction={() => {}} />,
+      client,
+    ),
   );
 }
 
@@ -86,6 +95,7 @@ function header(row: TriageDecisionRow): HTMLElement {
  * cross a day boundary depending on the clock.
  */
 const NOW_FIXED = new Date(2026, 4, 20, 15, 0, 0).getTime();
+const LOCAL_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 function daysAgoIso(days: number): string {
   const d = new Date(NOW_FIXED);
   d.setDate(d.getDate() - days);
@@ -101,20 +111,26 @@ describe('lastSeenLabel — "today" is a calendar day, not 24 hours', () => {
     // and nobody reads "today" as "since this time yesterday".
     const readAt = new Date(2026, 7, 28, 1, 21).getTime();
     const arrived = new Date(2026, 7, 27, 14, 14).toISOString();
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('1d');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt, LOCAL_TZ)).toBe(
+      '1d',
+    );
   });
 
   it('still says "today" for earlier the same day', () => {
     const readAt = new Date(2026, 7, 28, 23, 59).getTime();
     const arrived = new Date(2026, 7, 28, 0, 1).toISOString();
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('today');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt, LOCAL_TZ)).toBe(
+      'today',
+    );
   });
 
   it('counts whole calendar days across a span longer than the elapsed hours', () => {
     // 25 hours apart but two calendar days.
     const readAt = new Date(2026, 7, 28, 0, 30).getTime();
     const arrived = new Date(2026, 7, 26, 23, 30).toISOString();
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt)).toBe('2d');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: arrived }, readAt, LOCAL_TZ)).toBe(
+      '2d',
+    );
   });
 });
 
@@ -141,7 +157,11 @@ describe('TriageRow — narrow-viewport identity (W1)', () => {
   it('keeps the identity block when the row is EXPANDED at 375px (the audit repro)', () => {
     setViewportWidth(375);
     const row = rowById('t-shipping');
-    render(<TriageRow row={row} expanded={true} onToggleExpand={() => {}} onAction={() => {}} />);
+    render(
+      withQuery(
+        <TriageRow row={row} expanded={true} onToggleExpand={() => {}} onAction={() => {}} />,
+      ),
+    );
     // The audit's W1: expanded row at 375px rendered avatar + chip
     // only. Name + domain must be in the tree alongside the toolbar.
     expect(screen.getByText(row.senderName)).toBeInTheDocument();
@@ -213,24 +233,24 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
   it('renders "90d+" when the 90d window is empty but lastDays disagrees', () => {
     // The live bug shape: quiet 90d with a collapsed lastDays of 0
     // ("LAST SEEN today" beside "Quiet 90d · 555 received").
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(0) }, NOW_FIXED)).toBe(
-      '90d+',
-    );
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(45) }, NOW_FIXED)).toBe(
-      '90d+',
-    );
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(89) }, NOW_FIXED)).toBe(
-      '90d+',
-    );
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(0) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d+');
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(45) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d+');
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(89) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d+');
   });
 
   it('trusts lastDays when it agrees with the empty window (≥90)', () => {
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(90) }, NOW_FIXED)).toBe(
-      '90d',
-    );
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(200) }, NOW_FIXED)).toBe(
-      '200d',
-    );
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(90) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('90d');
+    expect(
+      lastSeenLabel({ last90dMessages: 0, lastSeenAt: daysAgoIso(200) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('200d');
   });
 
   it('keeps the plain display when the window has messages', () => {
@@ -238,13 +258,15 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
     // the BE collapsed an unreadable date to 0 — so this assertion was true
     // for the wrong reason half the time. The BE now sends `null` for unknown,
     // which is what the next test pins.
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(0) }, NOW_FIXED)).toBe(
-      'today',
-    );
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(1) }, NOW_FIXED)).toBe('1d');
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(12) }, NOW_FIXED)).toBe(
-      '12d',
-    );
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(0) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('today');
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(1) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('1d');
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: daysAgoIso(12) }, NOW_FIXED, LOCAL_TZ),
+    ).toBe('12d');
   });
 
   it('renders unknown as unknown, never as a recency', () => {
@@ -252,9 +274,40 @@ describe('lastSeenLabel — the W3 consistency guard', () => {
     // the tile read "LAST SEEN today" for a sender who last wrote 45 days ago.
     // Every branch must refuse to invent a recency, including the ones where
     // the 90-day window would otherwise look self-consistent.
-    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: null }, NOW_FIXED)).toBe('unknown');
-    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: null }, NOW_FIXED)).toBe('unknown');
-    expect(lastSeenLabel({ last90dMessages: 1, lastSeenAt: null }, NOW_FIXED)).not.toBe('today');
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: null }, NOW_FIXED, LOCAL_TZ)).toBe(
+      'unknown',
+    );
+    expect(lastSeenLabel({ last90dMessages: 0, lastSeenAt: null }, NOW_FIXED, LOCAL_TZ)).toBe(
+      'unknown',
+    );
+    expect(lastSeenLabel({ last90dMessages: 1, lastSeenAt: null }, NOW_FIXED, LOCAL_TZ)).not.toBe(
+      'today',
+    );
+  });
+});
+
+describe('lastSeenLabel — zone-explicit calendar days (DECLUTRMAIL-WEB-2C)', () => {
+  const now = Date.parse('2026-07-01T08:00:00.000Z');
+  const yesterdayInLa = '2026-07-01T02:00:00.000Z';
+
+  it('UTC and America/Los_Angeles can disagree on the same instant', () => {
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'UTC')).toBe(
+      'today',
+    );
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'America/Los_Angeles'),
+    ).toBe('1d');
+  });
+
+  it('the same named zone agrees with itself', () => {
+    expect(lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'UTC')).toBe(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'UTC'),
+    );
+    expect(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'America/Los_Angeles'),
+    ).toBe(
+      lastSeenLabel({ last90dMessages: 13, lastSeenAt: yesterdayInLa }, now, 'America/Los_Angeles'),
+    );
   });
 });
 
@@ -447,18 +500,20 @@ describe('TriageRow — inline preview composition', () => {
     const row = rowById('t-groupon');
 
     render(
-      <TriageRow
-        row={row}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
-        inlinePreviewAccountContext={
-          <div role="note" aria-label="Gmail account: active@gmail.com">
-            active@gmail.com
-          </div>
-        }
-      />,
+      withQuery(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 2 }}
+          inlinePreviewAccountContext={
+            <div role="note" aria-label="Gmail account: active@gmail.com">
+              active@gmail.com
+            </div>
+          }
+        />,
+      ),
     );
 
     const preview = screen.getByRole('region', {
@@ -617,21 +672,25 @@ describe('TriageRow — the D226 inline preview survives collapse (mobile bypass
   it('renders no preview when no action is pending, collapsed or expanded', () => {
     // Two-sided: a surface only ever observed present is not verified.
     const { rerender } = render(
-      <TriageRow
-        row={rowById('t-sarah')}
-        expanded={false}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-sarah')}
+          expanded={false}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+        />,
+      ),
     );
     expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
     rerender(
-      <TriageRow
-        row={rowById('t-sarah')}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-sarah')}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+        />,
+      ),
     );
     expect(screen.queryByRole('region', { name: /^Preview · / })).toBeNull();
   });
@@ -642,13 +701,15 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
 
   function renderPreview(expanded: boolean) {
     return render(
-      <TriageRow
-        row={rowById('t-groupon')}
-        expanded={expanded}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={PENDING}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-groupon')}
+          expanded={expanded}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={PENDING}
+        />,
+      ),
     );
   }
 
@@ -666,13 +727,15 @@ describe('TriageRow — the inline preview only advertises live shortcuts', () =
     // otherwise D226's mandatory preview can be confirmed before it has
     // produced a number.
     const { container } = render(
-      <TriageRow
-        row={rowById('t-groupon')}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
-      />,
+      withQuery(
+        <TriageRow
+          row={rowById('t-groupon')}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={{ verb: 'Archive', archiveHistoric: false, inboxCount: 'loading' }}
+        />,
+      ),
     );
     expect(container.textContent).not.toMatch(/press A again/);
     expect(container.textContent).toMatch(/Esc cancels/);
@@ -712,14 +775,18 @@ describe('TriageRow — inline zero-count no-op gate', () => {
     'disables Confirm %s and says why at a resolved count of zero',
     (verb) => {
       const row = rowById('t-groupon');
+      const client = createTestQueryClient();
       const { rerender } = render(
-        <TriageRow
-          row={row}
-          expanded={true}
-          onToggleExpand={() => {}}
-          onAction={() => {}}
-          inlinePreview={inline(verb, 0)}
-        />,
+        withQuery(
+          <TriageRow
+            row={row}
+            expanded={true}
+            onToggleExpand={() => {}}
+            onAction={() => {}}
+            inlinePreview={inline(verb, 0)}
+          />,
+          client,
+        ),
       );
 
       expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeDisabled();
@@ -728,13 +795,16 @@ describe('TriageRow — inline zero-count no-op gate', () => {
       expect(screen.queryByText(/press .* again/i)).toBeNull();
 
       rerender(
-        <TriageRow
-          row={row}
-          expanded={true}
-          onToggleExpand={() => {}}
-          onAction={() => {}}
-          inlinePreview={inline(verb, 1)}
-        />,
+        withQuery(
+          <TriageRow
+            row={row}
+            expanded={true}
+            onToggleExpand={() => {}}
+            onAction={() => {}}
+            inlinePreview={inline(verb, 1)}
+          />,
+          client,
+        ),
       );
       expect(screen.getByRole('button', { name: new RegExp(`^Confirm ${verb}$`) })).toBeEnabled();
       expect(screen.queryByText(/Nothing to act on/i)).toBeNull();
@@ -744,13 +814,15 @@ describe('TriageRow — inline zero-count no-op gate', () => {
   it('leaves Confirm Unsubscribe armed at zero — it cuts future mail', () => {
     const row = rowById('t-groupon');
     render(
-      <TriageRow
-        row={row}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={() => {}}
-        inlinePreview={inline('Unsubscribe', 0)}
-      />,
+      withQuery(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={() => {}}
+          inlinePreview={inline('Unsubscribe', 0)}
+        />,
+      ),
     );
 
     expect(screen.getByRole('button', { name: /^Confirm Unsubscribe$/ })).toBeEnabled();
@@ -764,13 +836,15 @@ describe('TriageRow — inline zero-count no-op gate', () => {
     const row = rowById('t-groupon');
     const clicked: string[] = [];
     render(
-      <TriageRow
-        row={row}
-        expanded={true}
-        onToggleExpand={() => {}}
-        onAction={(verb) => clicked.push(verb)}
-        inlinePreview={inline('Archive', 0)}
-      />,
+      withQuery(
+        <TriageRow
+          row={row}
+          expanded={true}
+          onToggleExpand={() => {}}
+          onAction={(verb) => clicked.push(verb)}
+          inlinePreview={inline('Archive', 0)}
+        />,
+      ),
     );
 
     const later = screen.getByRole('button', { name: /^Later \(L\)/ });

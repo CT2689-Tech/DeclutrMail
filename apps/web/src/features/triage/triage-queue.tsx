@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
 import type { PreviewCount } from './action-preview';
 import {
@@ -80,6 +81,7 @@ export function TriageQueue({
   /** Domain whose batch decision is confirming server-side. */
   batchBusyDomain?: string | null;
 }) {
+  const timeZone = useUserTimeZone();
   const expandedRowId = useTriageStore((s) => s.expandedRowId);
   // The verb keys are bound by the expanded row's action toolbar, so they do
   // nothing until a row is open. The legend has to know that.
@@ -211,6 +213,7 @@ export function TriageQueue({
                 onToggleExpand={() => toggleExpandedRow(row.id)}
                 onAction={(verb) => onAction(verb, row)}
                 inlinePreview={inlinePreview}
+                timeZone={timeZone}
                 inlinePreviewAccountContext={
                   inlinePreview == null ? undefined : <MailboxActionContext />
                 }
