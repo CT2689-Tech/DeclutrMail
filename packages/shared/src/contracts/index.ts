@@ -72,6 +72,18 @@ export { ERROR_CODES, isErrorCode } from './error-codes';
 // D224 sync status transport — Zod schema + types for /api/v1/sync/status.
 export { SyncStatusSchema, SyncReadinessSchema, SyncStageSchema } from './sync-status';
 export type { SyncStatus, SyncReadiness, SyncStage } from './sync-status';
+export {
+  INITIAL_SYNC_RECONNECT_ERROR_CODES,
+  INITIAL_SYNC_RETRY_ERROR_CODES,
+  STALE_INITIAL_SYNC_MS,
+  initialSyncRecoveryAction,
+  isStaleInitialSync,
+} from './initial-sync-recovery';
+export type {
+  InitialSyncReconnectErrorCode,
+  InitialSyncRecoveryAction,
+  InitialSyncRetryErrorCode,
+} from './initial-sync-recovery';
 
 // D106-D113 onboarding transport — Zod schemas + types for /api/onboarding/*.
 export {

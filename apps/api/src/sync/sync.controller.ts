@@ -108,10 +108,11 @@ export class SyncController {
    * `gmail-action` at 3/min: one real click needs one, and a full
    * re-sync is the most Gmail-expensive thing a user can trigger.
    *
-   * 202 for a real re-queue; `not_failed` / `no_state` come back 200
-   * with the outcome so the FE renders the current state rather than
-   * an error (guard-4xx-as-designed-state, §8) — a user whose sync
-   * recovered between render and click must not see a failure.
+   * 202 for every designed outcome. `requeued` started a scan;
+   * `already_running` / `not_failed` / `no_state` tell the FE to
+   * render current state rather than an error (guard-4xx-as-designed-
+   * state, §8) — a user whose sync recovered between render and click
+   * must not see a failure.
    */
   // Security sweep 2026-08-04: the only two mutating routes in the app
   // without CsrfGuard. SameSite=Lax already blocks cross-site POST

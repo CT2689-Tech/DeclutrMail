@@ -7,7 +7,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { fireEvent, render, screen } from '@testing-library/react';
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { STALE_INITIAL_SYNC_MS, type SyncStatus } from '@declutrmail/shared/contracts';
 
 import { SyncGate, activeStageIndex, UI_STAGES } from './sync-gate';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -161,8 +161,10 @@ describe('SyncGate render', () => {
     const WORKER_ERROR_NAMES = [
       'TransientError',
       'RateLimitError',
+      'GmailQuotaError',
       'AuthExpiredError',
       'InvalidGrantError',
+      'ProviderPermissionError',
       'ValidationError',
       'PermanentError',
     ];
@@ -238,6 +240,72 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
     render(withClient(<SyncGate status={FAILED} mailboxId="mb-1" />));
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
+  });
+
+  it('offers Reconnect Gmail for ProviderPermissionError (insufficient scopes alias)', () => {
+    render(
+      withClient(
+        <SyncGate status={{ ...FAILED, error_code: 'ProviderPermissionError' }} mailboxId="mb-1" />,
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('offers Try again for GmailQuotaError (quota-resume, not reconnect)', () => {
+    render(
+      withClient(
+        <SyncGate status={{ ...FAILED, error_code: 'GmailQuotaError' }} mailboxId="mb-1" />,
+      ),
+    );
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reconnect Gmail' })).not.toBeInTheDocument();
+  });
+});
+
+describe('SyncGate — stuck queued/syncing (stale heartbeat)', () => {
+  const NOW = Date.parse('2026-09-21T12:00:00.000Z');
+  const STUCK_SYNCING: SyncStatus = {
+    readiness_status: 'syncing',
+    current_stage: 'fetching_metadata',
+    progress_pct: 12,
+    is_ready_for_triage: false,
+    updated_at: new Date(NOW - STALE_INITIAL_SYNC_MS - 1_000).toISOString(),
+  };
+
+  it('surfaces a stalled first-run with Try again, not a frozen progress bar', () => {
+    // The negative control: ignoring `updated_at` leaves this assertion
+    // on "Reading your inbox…" — the silent dead first-run.
+    render(withClient(<SyncGate status={STUCK_SYNCING} mailboxId="mb-1" nowMs={NOW} />));
+    expect(screen.getByText('This scan has not moved.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByText(/Reading your inbox/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Gmail is untouched/)).toBeInTheDocument();
+  });
+
+  it('keeps the progress bar while the heartbeat is still fresh', () => {
+    render(
+      withClient(
+        <SyncGate
+          status={{
+            ...STUCK_SYNCING,
+            updated_at: new Date(NOW - 60_000).toISOString(),
+          }}
+          mailboxId="mb-1"
+          nowMs={NOW}
+        />,
+      ),
+    );
+    expect(screen.getByText(/Reading your inbox/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  });
+
+  it('does not invent stuck when updated_at is omitted', () => {
+    const html = renderToStaticMarkup(
+      withClient(<SyncGate status={SYNCING} mailboxId="mb-1" nowMs={NOW} />),
+    );
+    expect(html).toContain('Reading your inbox');
+    expect(html).not.toContain('has not moved');
   });
 });
 

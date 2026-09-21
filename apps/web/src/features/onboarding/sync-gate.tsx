@@ -2,13 +2,18 @@
 
 import { useState } from 'react';
 import { Button, Eyebrow, PrivacyBadge, tokens } from '@declutrmail/shared';
-import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
+import {
+  initialSyncRecoveryAction,
+  isStaleInitialSync,
+  type SyncStatus,
+  type SyncStage,
+} from '@declutrmail/shared/contracts';
 
 import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync';
 import { useLogout } from '@/features/auth/api/use-logout';
 import { useDisconnectMailbox } from '@/features/mailboxes/api/use-disconnect-mailbox';
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
-import { AUTH_RECOVERY_ERROR_CODES } from '@/features/mailboxes/mailbox-health';
+import { useNow } from '@/lib/use-now';
 
 const { color, font } = tokens;
 
@@ -106,15 +111,20 @@ function activeStageIndex(status: SyncStatus): number {
 
 const ERROR_COPY: Record<string, string> = {
   RateLimitError: 'Gmail rate-limited the scan, so it stopped. Wait a minute, then try again.',
+  GmailQuotaError: 'Gmail paused the scan on a quota limit. Try again to resume.',
   AuthExpiredError:
     'Google stopped accepting our access partway through. Reconnecting the account restores it.',
   InvalidGrantError:
     'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
+  ProviderPermissionError:
+    'Google did not grant the Gmail access this scan needs. Reconnect and allow access.',
   TransientError: 'The scan kept losing its connection to Gmail and stopped. Try again.',
   PermanentError: 'Gmail refused part of the scan. Try again — if it fails twice, contact support.',
   ValidationError:
     'The scan stopped on something we could not process. Try again — if it fails twice, contact support.',
 };
+
+const STUCK_COPY = 'The scan has not moved in a while. Try again — Gmail is untouched.';
 
 /**
  * Escape-hatch wiring for a SECONDARY-mailbox sync (D116). The route
@@ -143,6 +153,7 @@ export function SyncGate({
   escape,
   eyebrow = DEFAULT_EYEBROW,
   mailboxId,
+  nowMs,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
@@ -156,9 +167,18 @@ export function SyncGate({
    * rather than aimed at whatever happens to be active.
    */
   mailboxId?: string | null | undefined;
+  /**
+   * Test/Storybook clock for the stuck-sync age gate. Production reads
+   * `useNow` so a tab that sits on a frozen progress bar can flip to
+   * recovery without a reload.
+   */
+  nowMs?: number | undefined;
 }) {
-  if (status.readiness_status === 'failed') {
-    return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} />;
+  const clock = useNow(30_000);
+  const now = nowMs ?? clock ?? undefined;
+  const stuck = now !== undefined && isStaleInitialSync(status, now);
+  if (status.readiness_status === 'failed' || stuck) {
+    return <SyncFailed status={status} escape={escape} mailboxId={mailboxId} stuck={stuck} />;
   }
   return <SyncProgress status={status} escape={escape} eyebrow={eyebrow} />;
 }
@@ -307,10 +327,12 @@ function SyncFailed({
   status,
   escape,
   mailboxId,
+  stuck,
 }: {
   status: SyncStatus;
   escape?: SyncGateEscape | undefined;
   mailboxId?: string | null | undefined;
+  stuck: boolean;
 }) {
   const retry = useRetryInitialSync(mailboxId);
   const logout = useLogout();
@@ -319,14 +341,15 @@ function SyncFailed({
   // server considers active, which is exactly the mailbox this screen
   // cannot vouch for.
   const canRetry = mailboxId != null && mailboxId !== '';
-  const needsReconnect =
-    status.error_code != null && AUTH_RECOVERY_ERROR_CODES.has(status.error_code);
-  const copy =
-    (status.error_code && ERROR_COPY[status.error_code]) ??
-    'Something interrupted the scan. Your Gmail is untouched — try again.';
+  const recovery = initialSyncRecoveryAction(status.error_code);
+  const needsReconnect = recovery === 'reconnect';
+  const copy = stuck
+    ? STUCK_COPY
+    : ((status.error_code && ERROR_COPY[status.error_code]) ??
+      'Something interrupted the scan. Your Gmail is untouched — try again.');
   return (
     <Shell>
-      <Eyebrow tone="amber">Scan interrupted</Eyebrow>
+      <Eyebrow tone="amber">{stuck ? 'Scan stalled' : 'Scan interrupted'}</Eyebrow>
       <h1
         style={{
           fontFamily: font.display,
@@ -336,9 +359,13 @@ function SyncFailed({
           margin: '6px 0 4px',
         }}
       >
-        We hit a snag reading your inbox.
+        {stuck ? 'This scan has not moved.' : 'We hit a snag reading your inbox.'}
       </h1>
-      <p style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 20px', maxWidth: 460 }}>
+      <p
+        style={{ color: color.fgMuted, fontSize: 14, margin: '0 0 20px', maxWidth: 460 }}
+        data-recovery-action={recovery}
+        data-sync-surface={stuck ? 'stuck' : 'failed'}
+      >
         {copy}
       </p>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -356,8 +383,9 @@ function SyncFailed({
             Reconnect Gmail
           </Button>
         ) : (
-          // A REAL retry: re-queues the failed sync server-side. This
-          // was `window.location.reload()`, which re-rendered the same
+          // A REAL retry: re-queues a failed sync, or nudges a stuck
+          // one whose BullMQ job vanished. This was
+          // `window.location.reload()`, which re-rendered the same
           // dead screen — the reconciler sweeps `queued` rows only, so
           // nothing re-queued a `failed` one.
           <Button

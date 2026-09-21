@@ -10,10 +10,12 @@
 //   • Syncing  — mid-scan, progress bar + active stage
 //   • Ready    — all stages complete (the route auto-advances here)
 //   • Failed   — terminal error with a known error_code
+//   • FailedReconnect / FailedQuota — Retry vs Reconnect branches
+//   • Stuck    — stale heartbeat while still queued/syncing
 
 import type { ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
-import type { SyncStatus } from '@declutrmail/shared/contracts';
+import { STALE_INITIAL_SYNC_MS, type SyncStatus } from '@declutrmail/shared/contracts';
 import { SyncGate } from './sync-gate';
 
 const { color } = tokens;
@@ -104,6 +106,42 @@ export const Ready: Story<typeof SyncGate> = {
 /** Failed — terminal error with retry affordance. */
 export const Failed: Story<typeof SyncGate> = {
   args: { status: FAILED },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/** Failed — invalid grant / insufficient scopes: Reconnect, not Retry. */
+export const FailedReconnect: Story<typeof SyncGate> = {
+  args: {
+    status: { ...FAILED, error_code: 'InvalidGrantError' },
+    mailboxId: 'mb-1',
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+/** Failed — quota mid-sync: Retry (quota-resume), not Reconnect. */
+export const FailedQuota: Story<typeof SyncGate> = {
+  args: {
+    status: { ...FAILED, error_code: 'GmailQuotaError' },
+    mailboxId: 'mb-1',
+  },
+  render: (args: GateArgs) => frame(<SyncGate {...args} />),
+};
+
+const STUCK_NOW = Date.parse('2026-09-21T12:00:00.000Z');
+
+/**
+ * Stuck — still `syncing` but the worker heartbeat is older than the
+ * shared age gate. Same recovery chrome as failed, with Retry.
+ */
+export const Stuck: Story<typeof SyncGate> = {
+  args: {
+    status: {
+      ...SYNCING,
+      updated_at: new Date(STUCK_NOW - STALE_INITIAL_SYNC_MS - 1_000).toISOString(),
+    },
+    mailboxId: 'mb-1',
+    nowMs: STUCK_NOW,
+  },
   render: (args: GateArgs) => frame(<SyncGate {...args} />),
 };
 

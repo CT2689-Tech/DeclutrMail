@@ -9,7 +9,11 @@ import {
 } from '@declutrmail/workers';
 import { INVALID_GRANT_ERROR } from '@declutrmail/workers';
 import type { InitialSyncJobData } from '@declutrmail/workers';
-import type { SyncReadiness, SyncStatus } from '@declutrmail/shared/contracts';
+import {
+  STALE_INITIAL_SYNC_MS,
+  type SyncReadiness,
+  type SyncStatus,
+} from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 
@@ -171,9 +175,12 @@ export class SyncService {
    * NOT propagate: the durable intent row is the safety net, and the
    * reconciler will materialize the missing job on its next tick.
    */
-  async schedule(mailboxAccountId: string, opts: { force?: boolean } = {}): Promise<void> {
+  async schedule(
+    mailboxAccountId: string,
+    opts: { force?: boolean } = {},
+  ): Promise<'added' | 'replaced' | 'noop'> {
     try {
-      await ensureInitialSyncJob(this.queue, mailboxAccountId, opts);
+      return await ensureInitialSyncJob(this.queue, mailboxAccountId, opts);
     } catch (err) {
       console.error(
         JSON.stringify({
@@ -183,6 +190,7 @@ export class SyncService {
           message: err instanceof Error ? err.message : String(err),
         }),
       );
+      return 'noop';
     }
   }
 
@@ -198,11 +206,16 @@ export class SyncService {
   }
 
   /**
-   * Retry a terminally-failed INITIAL sync. See
-   * {@link InitialSyncRetryOutcome} for why this is gated to `failed`.
+   * Retry a terminally-failed INITIAL sync, or nudge a stuck
+   * `queued`/`syncing` row whose heartbeat has gone stale. See
+   * {@link InitialSyncRetryOutcome}.
    *
-   * Compare and update in one statement: concurrent retries must not
-   * overwrite a newly queued/running scan or clear its captured cursor.
+   * Compare and update in one statement for the `failed` path:
+   * concurrent retries must not overwrite a newly queued/running scan
+   * or clear its captured cursor. The stuck path never resets progress
+   * — it only asks BullMQ to materialize a missing job, the same move
+   * the reconciler makes, so a live worker or a delayed quota-backoff
+   * job is left alone (`already_running`).
    */
   async retryFailedInitialSync(mailboxAccountId: string): Promise<InitialSyncRetryOutcome> {
     const claimed = await this.db
@@ -230,12 +243,26 @@ export class SyncService {
     }
 
     const rows = await this.db
-      .select({ readinessStatus: providerSyncState.readinessStatus })
+      .select({
+        readinessStatus: providerSyncState.readinessStatus,
+        updatedAt: providerSyncState.updatedAt,
+      })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
       .limit(1);
 
-    return rows.length === 0 ? 'no_state' : 'not_failed';
+    if (rows.length === 0) return 'no_state';
+    const row = rows[0]!;
+    if (row.readinessStatus !== 'queued' && row.readinessStatus !== 'syncing') {
+      return 'not_failed';
+    }
+    if (Date.now() - row.updatedAt.getTime() < STALE_INITIAL_SYNC_MS) {
+      // Fresh heartbeat: a live worker, or the other tab of a retry
+      // race that already flipped `failed` → `queued`/`syncing`.
+      return 'not_failed';
+    }
+    const scheduled = await this.schedule(mailboxAccountId);
+    return scheduled === 'noop' ? 'already_running' : 'requeued';
   }
 
   /**
@@ -295,6 +322,7 @@ export class SyncService {
         lastSyncedAt: providerSyncState.lastSyncedAt,
         lastIncrementalErrorAt: providerSyncState.lastIncrementalErrorAt,
         lastIncrementalErrorCode: providerSyncState.lastIncrementalErrorCode,
+        updatedAt: providerSyncState.updatedAt,
       })
       .from(providerSyncState)
       .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId))
@@ -316,6 +344,9 @@ export class SyncService {
       last_sync_error_at:
         row.lastIncrementalErrorAt === null ? null : row.lastIncrementalErrorAt.toISOString(),
       last_sync_error_code: row.lastIncrementalErrorCode,
+      // Heartbeat for the onboarding stuck-sync surface. Always present
+      // on the row (`NOT NULL` + trigger-maintained).
+      updated_at: row.updatedAt.toISOString(),
     } as const;
 
     // `exactOptionalPropertyTypes`: include `error_code` ONLY when set,
@@ -496,14 +527,18 @@ export class SyncService {
  * included) back to that same screen. Clearing cookies was the only
  * exit (first-run flow audit, 2026-07-28).
  *
- * Gated to `failed` on purpose. Re-queuing a `syncing` mailbox would
- * race the live worker, and re-queuing a `ready` one would wipe the
- * applied cursor (`markQueued` clears `last_history_id` by design) and
- * force a needless full re-sync. Both non-failed cases return
- * `not_failed`, which the controller renders as a designed state, not
- * an error.
+ * The `failed` path still resets the durable intent (`markQueued`)
+ * because a terminal row has nothing in-flight to race. A `ready` row
+ * still returns `not_failed` — re-queuing would wipe the applied
+ * cursor. A `queued`/`syncing` row is nudged only when its heartbeat
+ * is older than {@link STALE_INITIAL_SYNC_MS}: that is the stuck-sync
+ * shape (evicted BullMQ hash) the reconciler already sweeps, and the
+ * nudge is `schedule()` without `force`, so a live worker or a delayed
+ * quota-backoff job is reported as `already_running` instead of being
+ * reset. A fresh `syncing` heartbeat (the other tab of a retry race)
+ * stays `not_failed`.
  */
-export type InitialSyncRetryOutcome = 'requeued' | 'not_failed' | 'no_state';
+export type InitialSyncRetryOutcome = 'requeued' | 'already_running' | 'not_failed' | 'no_state';
 
 export function syncNotReady(): ConflictException {
   // QA-sync-20260831-10 item 1: `enqueueManualIncrementalSync`'s

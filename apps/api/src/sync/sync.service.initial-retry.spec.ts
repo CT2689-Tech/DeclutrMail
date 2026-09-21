@@ -1,13 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { Queue } from 'bullmq';
-
-import { SyncService } from './sync.service.js';
-import type { DrizzleDb } from '../db/db.module.js';
-import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
-
 /**
  * `SyncService.retryFailedInitialSync` — the exit from the first-run
- * trap (flow audit 2026-07-28).
+ * trap (flow audit 2026-07-28) plus a stuck-`syncing` nudge.
  *
  * The trap: after `maxAttempts` the worker writes
  * `readiness_status = 'failed'`, the continuous reconciler sweeps
@@ -16,13 +9,25 @@ import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/wo
  * other route — including /settings and /billing — back to that same
  * screen, so clearing cookies was the only way out.
  *
- * The gating is the load-bearing part: re-queuing a `syncing` mailbox
- * races the live worker, and re-queuing a `ready` one wipes the applied
- * cursor (`markQueued` clears `last_history_id` by design) and forces a
- * needless full re-sync.
+ * The gating is the load-bearing part: re-queuing a FRESH `syncing`
+ * mailbox races the live worker, and re-queuing a `ready` one wipes the
+ * applied cursor (`markQueued` clears `last_history_id` by design) and
+ * forces a needless full re-sync. A STALE `queued`/`syncing` row is
+ * the Redis-eviction shape: `schedule()` without `force` materializes
+ * a missing job and leaves a live/delayed one alone.
  */
+
+import { describe, expect, it, vi } from 'vitest';
+import type { Queue } from 'bullmq';
+
+import { STALE_INITIAL_SYNC_MS } from '@declutrmail/shared/contracts';
+import type { IncrementalSyncJobData, InitialSyncJobData } from '@declutrmail/workers';
+
+import { SyncService } from './sync.service.js';
+import type { DrizzleDb } from '../db/db.module.js';
+
 describe('SyncService.retryFailedInitialSync', () => {
-  function service(rows: Array<{ readinessStatus: string }>) {
+  function service(rows: Array<{ readinessStatus: string; updatedAt?: Date }>, jobState?: string) {
     const db = {
       select: vi.fn(() => ({
         from: () => ({ where: () => ({ limit: () => Promise.resolve(rows) }) }),
@@ -38,9 +43,11 @@ describe('SyncService.retryFailedInitialSync', () => {
         }),
       })),
     };
+    const existing =
+      jobState === undefined ? undefined : { getState: vi.fn().mockResolvedValue(jobState) };
     const initialQueue = {
       add: vi.fn().mockResolvedValue(undefined),
-      getJob: vi.fn().mockResolvedValue(undefined),
+      getJob: vi.fn().mockResolvedValue(existing),
     };
     const svc = new SyncService(
       initialQueue as unknown as Queue<InitialSyncJobData>,
@@ -69,9 +76,37 @@ describe('SyncService.retryFailedInitialSync', () => {
     expect(db.update).toHaveBeenCalled();
   });
 
-  it('refuses a SYNCING mailbox — re-queuing would race the live worker', async () => {
-    const { svc, initialQueue } = service([{ readinessStatus: 'syncing' }]);
+  it('refuses a FRESH SYNCING mailbox — re-queuing would race the live worker', async () => {
+    const { svc, initialQueue } = service([{ readinessStatus: 'syncing', updatedAt: new Date() }]);
     await expect(svc.retryFailedInitialSync('mb-1')).resolves.toBe('not_failed');
+    expect(initialQueue.add).not.toHaveBeenCalled();
+  });
+
+  it('nudges a STALE SYNCING mailbox without resetting progress', async () => {
+    const { svc, db, initialQueue } = service([
+      {
+        readinessStatus: 'syncing',
+        updatedAt: new Date(Date.now() - STALE_INITIAL_SYNC_MS - 1_000),
+      },
+    ]);
+    await expect(svc.retryFailedInitialSync('mb-1')).resolves.toBe('requeued');
+    expect(db.update).toHaveBeenCalled();
+    // The failed-claim update returns [] so we must not have treated
+    // this as a terminal re-queue — schedule() is the only enqueue.
+    expect(initialQueue.add).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports already_running when a stale row still has a live job', async () => {
+    const { svc, initialQueue } = service(
+      [
+        {
+          readinessStatus: 'syncing',
+          updatedAt: new Date(Date.now() - STALE_INITIAL_SYNC_MS - 1_000),
+        },
+      ],
+      'active',
+    );
+    await expect(svc.retryFailedInitialSync('mb-1')).resolves.toBe('already_running');
     expect(initialQueue.add).not.toHaveBeenCalled();
   });
 

@@ -18,6 +18,10 @@
  *                          timestamp of the last completed sync run, so
  *                          the shell can render "synced Xm ago" and the
  *                          Sync-now button can confirm completion.
+ *   - `updated_at`       — wall-clock of the last worker heartbeat on
+ *                          this row. The onboarding gate uses it to
+ *                          surface a stuck `queued`/`syncing` scan
+ *                          (same age gate as the initial-sync reconciler).
  *
  * No body data, no headers, no message content of any kind — stage
  * enum + numeric progress + an allowlisted boolean. Safe by construction
@@ -79,6 +83,13 @@ export const SyncStatusSchema = z
      */
     last_sync_error_at: z.string().datetime().nullable().optional(),
     last_sync_error_code: z.string().min(1).nullable().optional(),
+    /**
+     * ISO-8601 wall-clock of the last `provider_sync_state` heartbeat
+     * (`updated_at`). Optional so pre-field responses and existing
+     * fixtures stay valid. Operational timestamp only — no
+     * message-derived data.
+     */
+    updated_at: z.string().datetime().optional(),
   })
   .strict();
 
