@@ -1,9 +1,10 @@
 /* ─────────────────────────────────────────────────────────────
    DeclutrMail marketing landing (D134, D223).
 
-   One idea per viewport: Fraunces display headlines, big type, few
-   words, lots of air, deep-teal accent. Nothing under 13px; mono only
-   for numerals and keys. Scoped to `.dm-mkt` so none of this leaks
+   One idea per viewport: Fraunces display headlines in one ink colour,
+   Geist for everything else, lots of air, deep teal as the only accent.
+   Nothing under 13px; mono only inside a <kbd>. Raised surfaces are
+   reserved for product visuals and pricing; everything else sits flat. Scoped to `.dm-mkt` so none of this leaks
    into the app shell. The comparison pages share the primitives
    (shell, eyebrow, h1/h2, lede, CTA); the landing-only scale lives
    under `.dm-mkt-landing`.
@@ -125,7 +126,7 @@
 /* Longhand on purpose: sections also carry `.dm-mkt-shell`, and a padding
    shorthand here would zero the shell's side gutter. */
 .dm-mkt-section {
-  padding-top: clamp(96px, 13vw, 160px);
+  padding-top: clamp(80px, 12vw, 160px);
 }
 
 .dm-mkt-center {
@@ -162,10 +163,15 @@
 .dm-mkt-cta-primary {
   background: var(--mkt-cta-bg);
   color: var(--mkt-cta-fg);
+  box-shadow: var(--dm-shadow-button);
 }
 
 .dm-mkt-cta-primary:hover {
   transform: translateY(-1px);
+}
+
+.dm-mkt-cta-primary:active {
+  transform: scale(0.98);
 }
 
 .dm-mkt-cta-ghost {
@@ -196,15 +202,12 @@
   text-underline-offset: 4px;
 }
 
-/* ── Hero ───────────────────────────────────────────────────── */
-
-.dm-mkt-hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  padding-top: clamp(72px, 10vw, 136px);
+/* The landing aligns its content edge with the header's (1180px). */
+.dm-mkt-landing .dm-mkt-shell {
+  max-width: 1228px;
 }
+
+/* ── Shared hero primitives (comparison + landing) ──────────── */
 
 /* A small sans label above the h1 (comparison pages). */
 .dm-mkt-hero-kicker {
@@ -229,20 +232,11 @@
   text-wrap: balance;
 }
 
-.dm-mkt-landing .dm-mkt-h1 {
-  font-size: clamp(44px, 7vw, 84px);
-  line-height: 1;
-  letter-spacing: -0.03em;
-}
-
-/* Two sentences, two lines. */
-.dm-mkt-landing .dm-mkt-h1 em {
-  display: block;
-}
-
+/* Display headlines are one ink colour. An <em> inside one keeps its
+   semantics but no longer becomes a teal italic accent phrase. */
 .dm-mkt-h1 em {
-  font-style: italic;
-  color: var(--mkt-accent);
+  font-style: inherit;
+  color: inherit;
 }
 
 .dm-mkt-hero-sub {
@@ -253,22 +247,12 @@
   margin: 22px 0 0;
 }
 
-.dm-mkt-hero .dm-mkt-hero-sub {
-  max-width: 44ch;
-  margin-top: 28px;
-}
-
 .dm-mkt-hero-ctas {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 14px 28px;
   margin-top: 36px;
-}
-
-.dm-mkt-hero .dm-mkt-hero-ctas,
-.dm-mkt-final .dm-mkt-hero-ctas {
-  justify-content: center;
 }
 
 .dm-mkt-hero-note {
@@ -289,290 +273,389 @@
   color: var(--mkt-ink);
 }
 
-.dm-mkt-hero-demo {
-  width: min(560px, 100%);
-  margin-top: clamp(56px, 7vw, 96px);
+/* ── Landing hero ───────────────────────────────────────────── */
+
+.dm-mkt-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+  align-items: center;
+  gap: clamp(48px, 6vw, 96px);
+  padding-top: clamp(48px, 7vw, 104px);
 }
 
-/* Staggered load reveal — opacity/transform only (zero layout shift). */
-.dm-mkt-reveal {
-  animation: dm-mkt-reveal 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+.dm-mkt-hero-copy {
+  max-width: 560px;
 }
 
-.dm-mkt-reveal-2 {
-  animation-delay: 0.08s;
-}
-.dm-mkt-reveal-3 {
-  animation-delay: 0.16s;
-}
-.dm-mkt-reveal-4 {
-  animation-delay: 0.24s;
+.dm-mkt-landing .dm-mkt-h1 {
+  font-size: clamp(44px, 5.4vw, 78px);
+  font-weight: 560;
+  line-height: 1.02;
+  letter-spacing: -0.032em;
 }
 
-@keyframes dm-mkt-reveal {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
+.dm-mkt-hero .dm-mkt-hero-sub {
+  font-size: clamp(18px, 1.5vw, 20px);
+  line-height: 1.6;
+  max-width: 40ch;
+  margin-top: 28px;
+}
+
+.dm-mkt-hero .dm-mkt-hero-ctas {
+  margin-top: 40px;
+}
+
+.dm-mkt-hero .dm-mkt-hero-note {
+  margin-top: 20px;
+}
+
+.dm-mkt-hero .dm-mkt-hero-note + .dm-mkt-hero-note {
+  margin-top: 2px;
+}
+
+@media (max-width: 960px) {
+  .dm-mkt-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 56px;
   }
-  to {
+
+  .dm-mkt-hero-copy {
+    max-width: 620px;
+  }
+}
+
+/* ── Signature: the inbox collapses into senders ──────────────
+   BASE styles are the final frame; keyframes describe only where each
+   piece comes from. One shared timeline, played once:
+
+     0–28%   ten emails, as an inbox shows them
+     28–60%  each email slides onto its sender's row and fades
+     44–62%  the three sender rows settle in with their counts
+     64–84%  LinkedIn is chosen; its confirm card rises
+
+   delay + duration stays under 5s (WCAG 2.2.2; landing-motion.test.ts). */
+
+.dm-mkt-inbox-figure {
+  margin: 0;
+}
+
+.dm-mkt-inbox {
+  background: var(--mkt-card);
+  border-radius: 28px;
+  box-shadow: var(--dm-shadow-modal);
+  overflow: hidden;
+}
+
+.dm-mkt-inbox-bar {
+  display: flex;
+  align-items: center;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--mkt-line-soft);
+}
+
+.dm-mkt-inbox-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.dm-mkt-inbox-stage {
+  position: relative;
+  height: 476px; /* 10 × 46px mail rows + 16px */
+}
+
+.dm-mkt-inbox-mails,
+.dm-mkt-inbox-senders {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  left: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dm-mkt-inbox-mail {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--mkt-line-soft);
+  font-size: 14px;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(var(--dm-dy)) scale(0.97);
+  animation: dm-mkt-mail 2.4s 0.4s 1 both;
+}
+
+.dm-mkt-inbox-mail b {
+  flex: none;
+  width: 9.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
+.dm-mkt-inbox-mail span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--mkt-ink-soft);
+}
+
+.dm-mkt-inbox-sender {
+  position: relative;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 14px;
+  animation: dm-mkt-sender 2.4s 0.4s 1 both;
+}
+
+.dm-mkt-inbox-sender > * {
+  position: relative;
+}
+
+.dm-mkt-inbox-sender b {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dm-mkt-inbox-count {
+  font-size: 15px;
+  color: var(--mkt-ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The chosen sender: a soft fill that arrives with the confirm card. */
+.dm-mkt-inbox-sender-on::before {
+  content: '';
+  position: absolute;
+  inset: 4px 0;
+  border-radius: 14px;
+  background: var(--mkt-accent-soft);
+  animation: dm-mkt-focus 2.4s 0.4s 1 both;
+}
+
+.dm-mkt-inbox-avatar {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--mkt-paper);
+  box-shadow: inset 0 0 0 1px var(--mkt-line-soft);
+  color: var(--mkt-ink-soft);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.dm-mkt-inbox-confirm {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  padding: 22px 24px 20px;
+  border-radius: 22px;
+  background: var(--mkt-card);
+  box-shadow: var(--dm-shadow-modal);
+  animation: dm-mkt-confirm 2.4s 0.4s 1 both;
+}
+
+.dm-mkt-inbox-confirm p {
+  margin: 0;
+}
+
+.dm-mkt-inbox-confirm-title {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-mkt-inbox-confirm .dm-mkt-inbox-confirm-body {
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--mkt-ink-soft);
+}
+
+.dm-mkt-inbox-confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.dm-mkt-inbox-cancel {
+  font-size: 15px;
+  font-weight: 550;
+  color: var(--mkt-ink-soft);
+}
+
+.dm-mkt-inbox-go {
+  padding: 11px 20px;
+  border-radius: 9999px;
+  background: var(--mkt-accent);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: var(--dm-shadow-button);
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-mkt-inbox-caption {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--mkt-ink-muted);
+  text-align: center;
+}
+
+@keyframes dm-mkt-mail {
+  0%,
+  28% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  60%,
+  100% {
+    opacity: 0;
+    transform: translateY(var(--dm-dy)) scale(0.97);
+  }
+}
+
+@keyframes dm-mkt-sender {
+  0%,
+  44% {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  62%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes dm-mkt-focus {
+  0%,
+  64% {
+    opacity: 0;
+  }
+  76%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes dm-mkt-confirm {
+  0%,
+  64% {
+    opacity: 0;
+    transform: translateY(32px);
+    animation-timing-function: cubic-bezier(0.2, 0.7, 0.3, 1);
+  }
+  84%,
+  100% {
     opacity: 1;
     transform: translateY(0);
   }
 }
 
-/* ── Hero demo ──────────────────────────────────────────────────
-   One sender, one slot, three frames: the five decisions → the preview
-   → the result. Plays ONCE and settles on the result.
-
-   The whole timeline (delay + duration) stays at or under 5s. That
-   ceiling is what lets the demo ship without Pause/Replay controls —
-   WCAG 2.2.2 requires a pause mechanism only for motion that auto-plays
-   longer than five seconds. `landing-motion.test.ts` pins it; raise it
-   and the pause control has to come back. The global reduced-motion
-   override collapses it straight to the result frame. */
-
-.dm-mkt-ledger-demo {
-  margin: 0;
+/* Reduced motion: no sequence at all — the base styles ARE the final
+   frame. Beats the global 0.01ms override, which would still hold the
+   first frame through the delay. */
+@media (prefers-reduced-motion: reduce) {
+  .dm-mkt-inbox *,
+  .dm-mkt-inbox *::before {
+    animation: none !important;
+  }
 }
 
-.dm-mkt-ledger {
-  background: var(--mkt-card);
-  border: 1px solid var(--mkt-line);
-  border-radius: 20px;
-  padding: clamp(20px, 4vw, 32px);
-  text-align: left;
+@media (max-width: 560px) {
+  .dm-mkt-inbox {
+    border-radius: 22px;
+  }
+
+  .dm-mkt-inbox-mails,
+  .dm-mkt-inbox-senders {
+    right: 6px;
+    left: 6px;
+  }
+
+  .dm-mkt-inbox-mail b {
+    width: 6.5em;
+  }
+
+  .dm-mkt-inbox-confirm {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    padding: 18px 18px 16px;
+  }
+
+  .dm-mkt-inbox-confirm-title {
+    font-size: 19px;
+  }
 }
 
-.dm-mkt-ledger-sender {
+/* ── How it works: one number moment, then three steps ─────── */
+
+.dm-mkt-scale {
+  text-align: center;
+}
+
+.dm-mkt-scale .dm-mkt-lede {
+  margin-inline: auto;
+}
+
+.dm-mkt-scale-figures {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 40px clamp(40px, 9vw, 136px);
+  margin: clamp(48px, 7vw, 88px) 0 0;
+}
+
+.dm-mkt-scale-figure {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 14px;
 }
 
-.dm-mkt-ledger-avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: var(--mkt-accent-soft);
-  color: var(--mkt-accent);
-  display: grid;
-  place-items: center;
+.dm-mkt-scale-figure b {
   font-family: var(--dm-font-display);
-  font-weight: 620;
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.dm-mkt-ledger-name {
-  display: block;
-  font-weight: 600;
-  font-size: 17px;
-}
-
-.dm-mkt-ledger-meta {
-  display: block;
-  font-size: 14px;
-  color: var(--mkt-ink-muted);
-  margin-top: 2px;
-}
-
-/* The three frames stack in one grid cell, so the card never resizes. */
-.dm-mkt-ledger-stage {
-  display: grid;
-  align-items: center;
-  margin-top: 24px;
-}
-
-.dm-mkt-ledger-stage > * {
-  grid-area: 1 / 1;
-}
-
-.dm-mkt-ledger-verbs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  animation: dm-mkt-verbs 4.6s 0.4s 1 both;
-}
-
-.dm-mkt-ledger-verb {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 12px;
-  border: 1px solid var(--mkt-line);
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 550;
-  color: var(--mkt-ink-soft);
-}
-
-.dm-mkt-ledger-verb kbd {
-  font-family: var(--dm-font-mono);
-  font-size: 13px;
+  font-weight: 500;
+  font-size: clamp(76px, 13vw, 188px);
+  line-height: 0.86;
+  letter-spacing: -0.05em;
+  font-variant-numeric: lining-nums tabular-nums;
   color: var(--mkt-ink-muted);
 }
 
-.dm-mkt-ledger-verb-archive {
-  animation: dm-mkt-press 4.6s 0.4s 1 both;
-}
-
-.dm-mkt-ledger-verb-archive kbd {
-  color: inherit;
-}
-
-.dm-mkt-ledger-preview {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--mkt-ink-soft);
-  opacity: 0;
-  animation: dm-mkt-preview 4.6s 0.4s 1 both;
-}
-
-.dm-mkt-ledger-preview b {
-  color: var(--mkt-accent);
-  font-weight: 600;
-}
-
-/* Same shape as the product's one bottom pill: what happened · Undo. */
-.dm-mkt-ledger-result {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 13px 18px;
-  border-radius: 9999px;
-  background: var(--mkt-desk);
-  color: var(--mkt-desk-ink);
-  font-size: 15px;
-  font-weight: 550;
-  font-variant-numeric: tabular-nums;
-  opacity: 0;
-  animation: dm-mkt-result 4.6s 0.4s 1 both;
-}
-
-.dm-mkt-ledger-result .dm-mkt-undo {
-  color: var(--mkt-mint);
-  font-weight: 600;
-}
-
-.dm-mkt-ledger-caption {
-  font-size: 13px;
-  color: var(--mkt-ink-muted);
-  text-align: center;
-  margin-top: 14px;
-}
-
-/* 4.6s timeline:
-   0–40%    the five decisions; Archive presses at 22–38%
-   44–68%   the preview
-   74–100%  the result (final frame) */
-
-@keyframes dm-mkt-verbs {
-  0%,
-  38% {
-    opacity: 1;
-  }
-  42%,
-  100% {
-    opacity: 0;
-  }
-}
-
-@keyframes dm-mkt-press {
-  0%,
-  18% {
-    background: transparent;
-    color: var(--mkt-ink-soft);
-    border-color: var(--mkt-line);
-    transform: scale(1);
-  }
-  24%,
-  32% {
-    background: var(--mkt-cta-bg);
-    color: var(--mkt-cta-fg);
-    border-color: var(--mkt-cta-bg);
-    transform: scale(1);
-  }
-  35% {
-    transform: scale(0.95);
-  }
-  38%,
-  100% {
-    background: var(--mkt-cta-bg);
-    color: var(--mkt-cta-fg);
-    border-color: var(--mkt-cta-bg);
-    transform: scale(1);
-  }
-}
-
-@keyframes dm-mkt-preview {
-  0%,
-  42% {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  47%,
-  66% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  70%,
-  100% {
-    opacity: 0;
-    transform: translateY(0);
-  }
-}
-
-@keyframes dm-mkt-result {
-  0%,
-  72% {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  78%,
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ── How it works ───────────────────────────────────────────── */
-
-.dm-mkt-sum {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  justify-content: center;
-  gap: 8px clamp(16px, 3vw, 32px);
-  margin: clamp(40px, 6vw, 64px) 0 0;
-  font-size: clamp(17px, 1.8vw, 19px);
-  color: var(--mkt-ink-soft);
-}
-
-.dm-mkt-sum b {
-  font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: clamp(40px, 6vw, 72px);
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
+/* The work that is left, in full ink; the pile it replaces, set back. */
+.dm-mkt-scale-figure-to b {
   color: var(--mkt-ink);
 }
 
-.dm-mkt-sum b.dm-mkt-sum-accent {
-  color: var(--mkt-accent);
+.dm-mkt-scale-figure > span {
+  font-size: 18px;
+  color: var(--mkt-ink-soft);
 }
 
-.dm-mkt-sum-arrow {
-  color: var(--mkt-ink-muted);
-  font-size: clamp(24px, 3vw, 36px);
-}
-
-.dm-mkt-sum-note {
-  margin: 10px 0 0;
+.dm-mkt-scale-note {
+  margin: 28px 0 0;
   font-size: 13px;
   color: var(--mkt-ink-muted);
 }
@@ -581,35 +664,37 @@
   list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(32px, 5vw, 64px);
-  margin: clamp(56px, 8vw, 96px) 0 40px;
+  gap: 56px clamp(32px, 4vw, 64px);
+  margin: clamp(96px, 12vw, 152px) 0 48px;
   padding: 0;
-  text-align: left;
   counter-reset: dm-mkt-step;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 860px) {
   .dm-mkt-steps {
     grid-template-columns: minmax(0, 1fr);
+    max-width: 480px;
+  }
+
+  .dm-mkt-vignette {
+    height: auto;
   }
 }
 
 .dm-mkt-step {
-  border-top: 1px solid var(--mkt-line);
-  padding-top: 24px;
   counter-increment: dm-mkt-step;
 }
 
 .dm-mkt-step-title {
-  font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: 24px;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
 .dm-mkt-step-title::before {
-  content: counter(dm-mkt-step);
-  margin-right: 12px;
+  content: counter(dm-mkt-step) '.';
+  margin-right: 8px;
   color: var(--mkt-accent);
   font-variant-numeric: tabular-nums;
 }
@@ -618,107 +703,270 @@
   font-size: 17px;
   line-height: 1.6;
   color: var(--mkt-ink-soft);
-  margin: 12px 0 0;
+  max-width: 34ch;
+  margin: 10px 0 0;
 }
 
-/* ── Privacy desk (full-bleed ink) ──────────────────────────── */
+/* Vignettes: a single piece of product UI on the open page — no box
+   around it. Same height in each step so the titles line up. */
+.dm-mkt-vignette {
+  height: 152px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
 
-.dm-mkt-desk-section {
+.dm-mkt-vig-mail {
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: var(--mkt-card);
+  box-shadow: var(--dm-shadow-lift);
+  font-size: 14px;
+}
+
+.dm-mkt-vig-mark {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  margin-left: -6px;
+  border-radius: 6px;
+  background: var(--mkt-accent-soft);
+  color: var(--mkt-ink);
+}
+
+.dm-mkt-vig-mark:first-child {
+  font-weight: 600;
+}
+
+.dm-mkt-vig-snippet {
+  color: var(--mkt-ink-soft);
+}
+
+.dm-mkt-vig-sender {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 10px 10px;
+  border-radius: 18px;
+  background: var(--mkt-card);
+  box-shadow: var(--dm-shadow-lift);
+  font-size: 15px;
+}
+
+.dm-mkt-vig-sender b {
+  flex: 1;
+  font-weight: 600;
+}
+
+.dm-mkt-vig-sender > span:last-child {
+  color: var(--mkt-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.dm-mkt-vig-verbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dm-mkt-vig-verb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9999px;
+  background: var(--dm-fill);
+  color: var(--mkt-ink-soft);
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.dm-mkt-vig-verb kbd {
+  font-family: var(--dm-font-mono);
+  font-size: 12px;
+  color: var(--mkt-ink-muted);
+}
+
+.dm-mkt-vig-verb-on {
+  background: var(--mkt-cta-bg);
+  color: var(--mkt-cta-fg);
+}
+
+.dm-mkt-vig-verb-on kbd {
+  color: inherit;
+  opacity: 0.7;
+}
+
+/* Same shape as the product's one bottom pill: what happened · Undo. */
+.dm-mkt-vig-pill {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 13px 16px 13px 20px;
+  border-radius: 9999px;
   background: var(--mkt-desk);
   color: var(--mkt-desk-ink);
-  margin-top: clamp(96px, 13vw, 160px);
-  padding: clamp(80px, 11vw, 144px) 0;
+  box-shadow: var(--dm-shadow-lift);
+  font-size: 15px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
 }
 
-.dm-mkt-desk-grid {
+.dm-mkt-vig-undo {
+  padding: 5px 12px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--mkt-mint);
+  font-weight: 600;
+}
+
+/* ── Privacy: flat, calm, two columns ───────────────────────── */
+
+.dm-mkt-privacy {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: clamp(40px, 6vw, 88px);
-  align-items: center;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: 48px clamp(48px, 7vw, 112px);
+  align-items: start;
 }
 
 @media (max-width: 900px) {
-  .dm-mkt-desk-grid {
+  .dm-mkt-privacy {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.dm-mkt-desk-section .dm-mkt-h2 {
-  color: var(--mkt-desk-ink);
-  font-size: clamp(30px, 4vw, 48px);
+.dm-mkt-privacy .dm-mkt-h2 {
+  font-size: clamp(30px, 3.6vw, 44px);
 }
 
-.dm-mkt-desk-section .dm-mkt-lede {
-  color: var(--mkt-desk-ink-soft);
-}
-
-.dm-mkt-desk-links {
+.dm-mkt-privacy-links {
   display: grid;
   justify-items: start;
-  gap: 12px;
-  margin-top: 32px;
+  gap: 10px;
+  margin-top: 28px;
   font-size: 15px;
+  line-height: 1.5;
 }
 
-.dm-mkt-desk-links a {
-  color: var(--mkt-mint);
+.dm-mkt-privacy-links a {
+  color: var(--mkt-accent);
   text-decoration: underline;
-  text-decoration-color: var(--mkt-desk-line);
+  text-decoration-color: var(--mkt-accent-border);
   text-underline-offset: 4px;
 }
 
-.dm-mkt-desk-links a:hover,
-.dm-mkt-desk-links a:focus-visible {
-  text-decoration-color: var(--mkt-mint);
+.dm-mkt-privacy-links a:hover,
+.dm-mkt-privacy-links a:focus-visible {
+  text-decoration-color: currentColor;
 }
 
-/* ── Pricing teaser ─────────────────────────────────────────── */
+/* The shared PrivacyBadge, re-laid out flat: the trust line across the
+   top, then the storage list and the never-fetched list side by side.
+   Its box (fill, border, shadow, padding) is reset through its `style`
+   prop; the few inline typographic values that fight this layout are
+   overridden here, scoped to the landing. */
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px 48px;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header {
+  grid-column: 1 / -1;
+  margin: 0 !important;
+  padding-bottom: 28px;
+  border-bottom: 1px solid var(--mkt-line);
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header h3 {
+  font-size: clamp(22px, 2.2vw, 28px) !important;
+  line-height: 1.25;
+  color: var(--mkt-ink) !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > header p {
+  margin-top: 10px !important;
+  font-size: 17px !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > div {
+  margin-top: 0 !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] > div > div {
+  margin-bottom: 14px !important;
+  font-size: 15px !important;
+  color: var(--mkt-ink) !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] ul {
+  gap: 10px !important;
+}
+
+.dm-mkt-privacy-badge [data-dm-privacy-badge='card'] li {
+  font-size: 16px !important;
+  color: var(--mkt-ink-soft);
+}
+
+@media (max-width: 560px) {
+  .dm-mkt-privacy-badge [data-dm-privacy-badge='card'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Pricing teaser: one raised slab, three tiers ───────────── */
 
 .dm-mkt-tiers {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: clamp(48px, 7vw, 80px);
+  margin-top: clamp(48px, 7vw, 72px);
+  border-radius: 28px;
+  background: var(--mkt-card);
+  box-shadow: var(--dm-shadow-lift);
+  text-align: left;
 }
 
 .dm-mkt-tier {
-  padding: 8px clamp(16px, 3vw, 40px);
-  border-left: 1px solid var(--mkt-line);
+  padding: clamp(28px, 3vw, 40px);
 }
 
-.dm-mkt-tier:first-child {
-  border-left: 0;
+.dm-mkt-tier + .dm-mkt-tier {
+  border-left: 1px solid var(--mkt-line-soft);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 760px) {
   .dm-mkt-tiers {
     grid-template-columns: minmax(0, 1fr);
+    border-radius: 22px;
   }
 
-  .dm-mkt-tier {
-    padding: 28px 0;
+  .dm-mkt-tier + .dm-mkt-tier {
     border-left: 0;
-    border-top: 1px solid var(--mkt-line);
-  }
-
-  .dm-mkt-tier:first-child {
-    border-top: 0;
-    padding-top: 0;
+    border-top: 1px solid var(--mkt-line-soft);
   }
 }
 
 .dm-mkt-tier-name {
   font-size: 16px;
   font-weight: 600;
-  color: var(--mkt-ink-soft);
 }
 
 .dm-mkt-tier-price {
   font-family: var(--dm-font-display);
-  font-weight: 600;
-  font-size: clamp(40px, 5vw, 56px);
-  letter-spacing: -0.02em;
-  margin-top: 8px;
-  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  font-size: clamp(40px, 4.4vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.03em;
+  margin-top: 16px;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 .dm-mkt-tier-price small {
@@ -730,15 +978,15 @@
 }
 
 .dm-mkt-tier-line {
-  margin: 12px auto 0;
-  max-width: 28ch;
+  margin: 16px 0 0;
+  max-width: 30ch;
   font-size: 16px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--mkt-ink-soft);
 }
 
 .dm-mkt-pricing-foot {
-  margin: clamp(40px, 6vw, 64px) auto 12px;
+  margin: 32px auto 8px;
   max-width: 64ch;
   font-size: 14px;
   line-height: 1.6;
@@ -782,20 +1030,28 @@
 }
 
 .dm-mkt-scope p {
-  margin: 6px auto 0;
+  margin: 6px 0 0;
   max-width: 62ch;
+}
+
+.dm-mkt-final .dm-mkt-scope p {
+  margin-inline: auto;
 }
 
 /* ── Final CTA ──────────────────────────────────────────────── */
 
 .dm-mkt-final {
   text-align: center;
-  padding-top: clamp(112px, 15vw, 192px);
+  padding-top: clamp(112px, 15vw, 200px);
   padding-bottom: clamp(96px, 13vw, 160px);
 }
 
+.dm-mkt-final .dm-mkt-hero-ctas {
+  justify-content: center;
+}
+
 .dm-mkt-landing .dm-mkt-final .dm-mkt-h2 {
-  font-size: clamp(40px, 6.5vw, 72px);
+  font-size: clamp(40px, 6.5vw, 80px);
 }
 
 @media (max-width: 560px) {

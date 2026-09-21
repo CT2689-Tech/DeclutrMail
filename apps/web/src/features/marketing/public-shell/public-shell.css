@@ -16,13 +16,37 @@
   transform: translateY(0);
 }
 
+/* Sticky, and quiet until the page moves: transparent over the hero,
+   then translucent blurred paper with a hairline once scrolled. Where
+   scroll-driven animations are unsupported it is simply always in the
+   scrolled state — zero JS either way. */
 .dm-public-header {
   position: sticky;
   top: 0;
   z-index: 60;
-  border-bottom: 1px solid var(--dm-line-soft);
-  background: color-mix(in srgb, var(--dm-bg) 92%, transparent);
-  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--dm-line);
+  background: color-mix(in srgb, var(--dm-bg) 80%, transparent);
+  -webkit-backdrop-filter: saturate(1.4) blur(18px);
+  backdrop-filter: saturate(1.4) blur(18px);
+}
+
+@supports (animation-timeline: scroll()) {
+  .dm-public-header {
+    animation: dm-public-header-settle linear both;
+    animation-timeline: scroll(root block);
+    animation-range: 0 64px;
+  }
+
+  @keyframes dm-public-header-settle {
+    from {
+      border-bottom-color: transparent;
+      background: color-mix(in srgb, var(--dm-bg) 0%, transparent);
+    }
+    to {
+      border-bottom-color: var(--dm-line);
+      background: color-mix(in srgb, var(--dm-bg) 80%, transparent);
+    }
+  }
 }
 
 .dm-public-header-inner,
@@ -33,7 +57,7 @@
 }
 
 .dm-public-header-inner {
-  min-height: 66px;
+  min-height: 68px;
   display: flex;
   align-items: center;
   gap: 28px;
@@ -95,7 +119,7 @@
 }
 
 .dm-public-start {
-  min-height: 38px;
+  min-height: 40px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -104,8 +128,18 @@
   border-radius: 9999px;
   background: var(--dm-fg);
   color: var(--dm-fg-inverse);
+  box-shadow: var(--dm-shadow-button);
   font: 600 14px/1 var(--dm-font-sans);
   text-decoration: none;
+  transition: transform 0.15s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.dm-public-start:hover {
+  transform: translateY(-1px);
+}
+
+.dm-public-start:active {
+  transform: scale(0.98);
 }
 
 .dm-public-menu {
@@ -120,8 +154,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--dm-line);
-  border-radius: 8px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  background: var(--dm-fill);
   color: var(--dm-fg);
   font: 600 14px/1 var(--dm-font-sans);
   cursor: pointer;
@@ -132,56 +167,79 @@
   display: none;
 }
 
-.dm-public-menu nav {
-  position: absolute;
-  top: calc(100% + 9px);
-  right: 0;
-  width: min(280px, calc(100vw - 32px));
-  display: grid;
-  padding: 10px;
-  border: 1px solid var(--dm-line);
-  border-radius: 12px;
-  background: var(--dm-card);
-  box-shadow: var(--dm-shadow-pop);
-}
-
-.dm-public-menu nav a {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  padding: 0 11px;
-  border-radius: 7px;
-  color: var(--dm-fg);
-  font: 550 14px/1 var(--dm-font-sans);
-  text-decoration: none;
-}
-
-.dm-public-menu nav a:hover {
-  background: var(--dm-primary-soft);
-  color: var(--dm-primary);
-}
-
-.dm-public-menu nav a[aria-current='page'] {
-  background: var(--dm-primary-soft);
-  color: var(--dm-primary);
-  font-weight: 650;
-}
-
-.dm-public-menu nav .dm-public-menu-start {
-  margin-top: 6px;
+.dm-public-menu[open] summary {
   background: var(--dm-fg);
   color: var(--dm-fg-inverse);
 }
 
+/* A full-height sheet under the header bar; the page behind it stops
+   scrolling while it is open. The header's backdrop-filter makes the
+   HEADER this fixed element's containing block, so it is placed from the
+   header's bottom edge and sized to the rest of the viewport. */
+.dm-public-menu nav {
+  position: fixed;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: calc(100dvh - 68px);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 20px calc(28px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background: var(--dm-bg);
+}
+
+body:has(.dm-public-menu[open]) {
+  overflow: hidden;
+}
+
+.dm-public-menu nav a {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--dm-line-soft);
+  color: var(--dm-fg);
+  font: 550 22px/1.2 var(--dm-font-sans);
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.dm-public-menu nav a:hover,
+.dm-public-menu nav a[aria-current='page'] {
+  color: var(--dm-primary);
+}
+
+/* Sign in + Start free sit together at the foot of the sheet. */
+.dm-public-menu nav .dm-public-menu-sign-in {
+  margin-top: auto;
+  justify-content: center;
+  border-bottom: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.dm-public-menu nav .dm-public-menu-start {
+  min-height: 52px;
+  justify-content: center;
+  border-bottom: 0;
+  border-radius: 9999px;
+  background: var(--dm-fg);
+  color: var(--dm-fg-inverse);
+  box-shadow: var(--dm-shadow-button);
+  font-size: 16px;
+  font-weight: 600;
+}
+
 .dm-public-footer {
   border-top: 1px solid var(--dm-line-soft);
+  font-size: 14px;
 }
 
 .dm-public-footer-inner {
   display: grid;
   grid-template-columns: minmax(220px, 1.3fr) minmax(420px, 2fr);
   gap: clamp(40px, 8vw, 110px);
-  padding: 58px 0 46px;
+  padding: 64px 0 56px;
 }
 
 .dm-public-footer-intro {
@@ -194,7 +252,7 @@
 .dm-public-footer-intro > p {
   max-width: 340px;
   margin: 0;
-  color: var(--dm-fg-soft);
+  color: var(--dm-fg-muted);
   font: 400 14px/1.65 var(--dm-font-sans);
 }
 
@@ -212,12 +270,12 @@
 
 .dm-public-footer-groups nav > p {
   margin: 0 0 5px;
-  color: var(--dm-fg-muted);
+  color: var(--dm-fg);
   font: 500 13px/1 var(--dm-font-sans);
 }
 
 .dm-public-footer-groups a {
-  color: var(--dm-fg-soft);
+  color: var(--dm-fg-muted);
   font: 400 14px/1.3 var(--dm-font-sans);
   text-decoration: none;
 }
@@ -256,7 +314,7 @@
   .dm-public-header-inner,
   .dm-public-footer-inner,
   .dm-public-footer-fine {
-    width: min(100% - 28px, 1180px);
+    width: min(100% - 32px, 1180px);
   }
 
   .dm-public-footer-groups {

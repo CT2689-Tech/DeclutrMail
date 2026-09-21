@@ -28,7 +28,8 @@ import {
 } from '@declutrmail/shared';
 import { MAX_UNDO_WINDOW_DAYS, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
-import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
+import '@/features/marketing/product-story/product-story.css';
+import { DocPage, DocSection } from '@/features/marketing/product-story';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
@@ -41,10 +42,10 @@ export const metadata: Metadata = marketingPageMetadata({
 const LAST_UPDATED = '2026-08-07';
 
 const TOC = [
-  { id: 'the-boundary', label: 'The boundary: what we store, what we never store' },
+  { id: 'the-boundary', label: 'What we store' },
   { id: 'oauth-scopes', label: 'OAuth scopes, and why' },
   { id: 'encryption', label: 'Encryption' },
-  { id: 'verification', label: 'Independent assessment (CASA Tier 2)' },
+  { id: 'verification', label: 'Independent assessment' },
   { id: 'no-prediction', label: 'No ML category prediction' },
   { id: 'deletion', label: 'Leaving cleanly' },
   { id: 'report', label: 'Report a vulnerability' },
@@ -52,38 +53,38 @@ const TOC = [
 
 export default function SecurityPage() {
   return (
-    <LegalPageLayout title="Security" label="Security" lastUpdated={LAST_UPDATED} toc={TOC}>
+    <DocPage
+      title="Security"
+      lede="The strongest security control is not holding the data at all."
+      lastUpdated={LAST_UPDATED}
+      toc={TOC}
+    >
       <PageViewTracker page="security" />
-      <LegalSection id="the-boundary" title="The boundary: what we store, what we never store">
+      <DocSection id="the-boundary" title="What we store, and what we never store">
         <p>
-          The strongest security control is not holding the data at all. DeclutrMail&rsquo;s promise
-          is literal: <strong>{PRIVACY_BADGE_HEADLINE}</strong> DeclutrMail requests only the Gmail
-          details listed below.
+          DeclutrMail&rsquo;s promise is literal: <strong>{PRIVACY_BADGE_HEADLINE}</strong>{' '}
+          DeclutrMail requests only the Gmail details listed below.
         </p>
-        <p>
-          <strong>{PRIVACY_STORAGE_LABEL}</strong>
-        </p>
+        <h3>{PRIVACY_STORAGE_LABEL}</h3>
         <ul>
           {PRIVACY_STORAGE_ITEMS.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
-        <p>
-          <strong>{PRIVACY_NEVER_LABEL}</strong>
-        </p>
+        <h3>{PRIVACY_NEVER_LABEL}</h3>
         <ul>
           {PRIVACY_NEVER_ITEMS.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
-        <p>
+        <p className="dm-story-callout">
           Because full email contents and attachments are never in our systems, they cannot leak
           from DeclutrMail. Subject lines and Gmail preview snippets can still contain sensitive
           information, so we list and protect them explicitly.
         </p>
-      </LegalSection>
+      </DocSection>
 
-      <LegalSection id="oauth-scopes" title="OAuth scopes, and why">
+      <DocSection id="oauth-scopes" title="OAuth scopes, and why">
         <p>
           DeclutrMail requests one Gmail scope, <code>gmail.modify</code>, plus <code>openid</code>{' '}
           and your email address to identify the connected account. The product&rsquo;s job is to
@@ -99,9 +100,9 @@ export default function SecurityPage() {
           </a>
           .
         </p>
-      </LegalSection>
+      </DocSection>
 
-      <LegalSection id="encryption" title="Encryption">
+      <DocSection id="encryption" title="Encryption">
         <p>
           All data is encrypted in transit (TLS) and at rest. Your Gmail OAuth tokens get an extra
           layer: each token is envelope-encrypted with its own fresh 256-bit data key (AES-256-GCM),
@@ -109,9 +110,9 @@ export default function SecurityPage() {
           application process. Tokens are never sent to your browser and never included in data
           exports.
         </p>
-      </LegalSection>
+      </DocSection>
 
-      <LegalSection id="verification" title="Independent assessment (CASA Tier 2)">
+      <DocSection id="verification" title="Independent assessment (CASA Tier 2)">
         <p>
           Apps using restricted Gmail scopes are subject to Google&rsquo;s independent CASA (Cloud
           Application Security Assessment) process. Google{' '}
@@ -122,9 +123,9 @@ export default function SecurityPage() {
           recertified annually, and any new scope or change to our consent screen requires a fresh
           review.
         </p>
-      </LegalSection>
+      </DocSection>
 
-      <LegalSection id="no-prediction" title="No ML category prediction">
+      <DocSection id="no-prediction" title="No ML category prediction">
         <p>
           DeclutrMail does not use machine learning to predict email categories or route senders. It
           can automatically protect a sender using fixed product rules when strong engagement
@@ -133,9 +134,9 @@ export default function SecurityPage() {
           enable — never a model&rsquo;s guess. We also do not use Gmail data to train generalized
           AI or machine-learning models.
         </p>
-      </LegalSection>
+      </DocSection>
 
-      <LegalSection id="deletion" title="Leaving cleanly">
+      <DocSection id="deletion" title="Leaving cleanly">
         <p>
           You can disconnect an inbox (which revokes our Google access, stops syncing, and preserves
           its historical DeclutrMail record for reconnection), delete one inbox&rsquo;s saved data,
@@ -146,16 +147,16 @@ export default function SecurityPage() {
           typed confirmation to delete immediately. Details are in the{' '}
           <a href="/privacy">Privacy Policy</a>.
         </p>
-      </LegalSection>
+      </DocSection>
 
-      <LegalSection id="report" title="Report a vulnerability">
+      <DocSection id="report" title="Report a vulnerability">
         <p>
           If you believe you have found a security vulnerability in DeclutrMail, email{' '}
           <a href="mailto:privacy@declutrmail.com">privacy@declutrmail.com</a> with the details. We
           read every report and will respond, and we ask that you give us reasonable time to fix an
           issue before disclosing it publicly.
         </p>
-      </LegalSection>
-    </LegalPageLayout>
+      </DocSection>
+    </DocPage>
   );
 }

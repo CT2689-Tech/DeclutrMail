@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import '@/features/marketing/landing/landing.css';
+import '@/features/marketing/product-story/product-story.css';
 import '@/features/marketing/comparison/comparison.css';
 
 import { ComparisonIndexScreen } from '@/features/marketing/comparison/comparison-screen';

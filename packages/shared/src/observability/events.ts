@@ -74,8 +74,9 @@ export type EventName =
   | 'autopilot_preset_changed'
   | 'autopilot_pattern_suggestion_shown'
   | 'autopilot_pattern_suggestion_decided'
-  // — Calibrated feedback (D246) —
+  // — Calibrated feedback + review (D246) —
   | 'product_feedback_submitted'
+  | 'weekly_review_viewed'
   // — Quiet hours (U18 — D92/D95) —
   | 'quiet_hours_updated'
   // — Marketing surface (D19 pricing) —
@@ -560,11 +561,18 @@ export interface EventPayloads {
     evidence_count: number;
   };
 
-  // — Calibrated feedback (D246) —
+  // — Calibrated feedback + review (D246) —
   product_feedback_submitted:
     | { surface: 'activity'; rating: 'expected' | 'surprising' }
     | { surface: 'brief'; rating: 'useful' | 'not_useful' | 'wrong_reason' }
     | { surface: 'followups'; rating: 'useful' | 'not_followup' };
+  weekly_review_viewed: {
+    completed: number;
+    skipped: number;
+    failed: number;
+    recovered: number;
+    protected: number;
+  };
 
   // — Quiet hours (U18 — D92/D95) —
   quiet_hours_updated: {

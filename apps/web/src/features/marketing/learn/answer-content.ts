@@ -21,7 +21,6 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-28',
     kind: 'Direct answer',
-    eyebrow: 'Gmail access · risk checklist',
     title: 'Is it safe to connect a Gmail cleanup app?',
     description:
       'A practical checklist for evaluating Gmail cleanup apps: Gmail permissions, fetched data, access-token handling, action previews, recovery, and deletion.',
@@ -127,7 +126,6 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-28',
     kind: 'Direct answer',
-    eyebrow: 'Privacy boundary · published fields',
     title: 'What is metadata-only email analysis?',
     description:
       'Metadata-only email analysis explained precisely, including Gmail snippets, subject lines, sender totals, external processing, and what is never fetched.',
@@ -223,7 +221,6 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Direct answer',
-    eyebrow: 'Recovery · action by action',
     title: 'How does undo work for Gmail cleanup?',
     description:
       'How recovery differs for Archive, Later, Delete, Keep, and sent Unsubscribe requests.',
@@ -321,7 +318,6 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Direct answer',
-    eyebrow: '2026 field guide · choose by job',
     title: 'What is the best way to clean Gmail in 2026?',
     description:
       'A practical 2026 comparison of Gmail search, filters, unsubscribe, sender-first cleanup, and automation based on the job you need done.',
@@ -435,7 +431,6 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Direct answer',
-    eyebrow: 'Mental model · unit of decision',
     title: 'Sender review vs email-by-email cleanup',
     description:
       'Compare reviewing Gmail by sender with reviewing it email by email, including where each approach is strong and how to combine them.',

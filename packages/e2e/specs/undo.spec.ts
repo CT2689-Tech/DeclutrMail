@@ -119,7 +119,7 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // The sender's domain and the counting note sit in the sheet's
   // Details disclosure — present in the DOM, one click away.
   await expect(modal).toContainText(senderDomain);
-  await expect(modal).toContainText(/emails? currently match/);
+  await expect(modal).toContainText(/rechecked when it runs/);
   // The confirm button is the verb + the same live count.
   const confirm = modal.getByRole('button', { name: `Archive ${count}` });
   await expect(confirm).toBeEnabled();

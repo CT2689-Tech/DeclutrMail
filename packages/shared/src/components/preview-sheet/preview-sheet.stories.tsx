@@ -12,7 +12,8 @@
 
 import { useState } from 'react';
 import { Avatar } from '../avatar';
-import { PreviewSheet, SheetFact, SheetSegmented } from './preview-sheet';
+import { PreviewSheet } from './preview-sheet';
+import { SheetFactList, SheetLinks, SheetSegmented, SheetTextAction } from './sheet-parts';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -32,10 +33,42 @@ export default meta;
 
 const noop = () => undefined;
 
+// Details is a fact list: short label left, short value right, links on
+// a row of their own. Never a stack of full sentences.
 const details = (
   <>
-    <SheetFact label="Gmail account">you@example.com</SheetFact>
-    <SheetFact label="Count">Counted now, rechecked when it runs.</SheetFact>
+    <SheetFactList
+      facts={[
+        { label: 'Gmail account', value: 'you@example.com' },
+        { label: 'Count', value: 'Inbox now, rechecked when it runs' },
+      ]}
+    />
+    <SheetLinks>
+      <SheetTextAction href="https://mail.google.com/">
+        Check in Gmail <span aria-hidden="true">↗</span>
+      </SheetTextAction>
+      <SheetTextAction onClick={() => undefined}>Show 5 of 174</SheetTextAction>
+    </SheetLinks>
+  </>
+);
+
+const deleteDetails = (
+  <>
+    <SheetFactList
+      facts={[
+        { label: 'Gmail account', value: 'you@example.com' },
+        { label: 'Where it is now', value: '0 in your inbox · 6,728 elsewhere in Gmail' },
+        { label: 'Count', value: 'Inbox + archived now, rechecked when it runs' },
+        { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
+        { label: 'Undo', value: 'Puts each email back where it was' },
+        { label: 'Gmail Trash', value: 'Kept up to 30 days, then deleted for good' },
+      ]}
+    />
+    <SheetLinks>
+      <SheetTextAction href="https://mail.google.com/">
+        Check in Gmail <span aria-hidden="true">↗</span>
+      </SheetTextAction>
+    </SheetLinks>
   </>
 );
 
@@ -69,7 +102,7 @@ function DeleteWithReach() {
       }
       subtitle={count === 0 ? undefined : 'From Bank of America. They move to Gmail Trash.'}
       note={count === 0 ? undefined : 'Undo from Activity for 30 days. Future email is unchanged.'}
-      details={details}
+      details={deleteDetails}
       primary={{
         label: count === 0 ? 'Delete' : `Delete ${count.toLocaleString('en-US')}`,
         onClick: noop,

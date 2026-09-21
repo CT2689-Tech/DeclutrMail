@@ -338,7 +338,7 @@ function Row({
           e.currentTarget.style.background = 'transparent';
         }}
       >
-        <Icon glyph={verb.icon} />
+        <VerbDot verb={verb} />
         <span>{verb.label}</span>
         <Kbd shortcut={verb.shortcut} />
       </button>
@@ -346,14 +346,34 @@ function Row({
   );
 }
 
-function Icon({ glyph }: { glyph: string | undefined }) {
-  if (glyph === undefined) {
-    return <span style={{ width: 20 }} />;
-  }
+/**
+ * The verb's mark: an 8px dot in its tone — the same mark Activity puts
+ * on each row, so an action looks the same wherever it appears. Emoji
+ * glyphs rendered differently on every OS and read as clip-art. Later has
+ * no tone of its own (`neutral`, same as Keep), so it takes primary to
+ * stay distinguishable — matching Activity.
+ */
+function VerbDot({ verb }: { verb: { id: string; tone: string } }) {
+  const tone: Record<string, string> = {
+    dark: color.fg,
+    amber: color.amber,
+    danger: color.danger,
+    primary: color.primary,
+    neutral: color.fgMuted,
+  };
+  const fill = verb.id === 'later' ? color.primary : (tone[verb.tone] ?? color.fgMuted);
   return (
-    <span aria-hidden="true" style={{ fontSize: tokens.text.md, lineHeight: 1 }}>
-      {glyph}
-    </span>
+    <span
+      aria-hidden="true"
+      data-verb-dot={verb.id}
+      style={{
+        justifySelf: 'center',
+        width: 8,
+        height: 8,
+        borderRadius: tokens.radius.pill,
+        background: fill,
+      }}
+    />
   );
 }
 

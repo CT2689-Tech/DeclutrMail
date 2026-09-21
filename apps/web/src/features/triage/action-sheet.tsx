@@ -1,14 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import {
-  Avatar,
-  Button,
-  PreviewSheet,
-  SheetFact,
-  SheetSegmented,
-  tokens,
-} from '@declutrmail/shared';
+import { Avatar, Button, PreviewSheet, SheetSegmented, tokens } from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import type { PreviewCount } from './action-preview';
 import {
@@ -240,10 +233,39 @@ export function ActionSheet({
       : null;
 
   const costLine = cleanupCostLine(facts.unitsNeeded, quotaRemaining);
-  const detailBlock =
-    detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? (
-      <ActionPreviewDetailBlock detail={detail} />
-    ) : null;
+  const detailBlock = (
+    <ActionPreviewDetailBlock
+      detail={
+        detail !== undefined && actionMovesMail(verb, effectiveArchiveHistoric) ? detail : undefined
+      }
+      leadFacts={[
+        ...(mailboxEmail
+          ? [
+              {
+                label: 'Gmail account',
+                value: (
+                  <span role="note" aria-label={`Gmail account: ${mailboxEmail}`}>
+                    {mailboxEmail}
+                  </span>
+                ),
+              },
+            ]
+          : []),
+        ...facts.disclosures,
+      ]}
+      trailingFacts={[
+        { label: 'Why suggested', value: <PreviewReasoning row={row} /> },
+        ...(verb === 'Delete'
+          ? []
+          : [
+              {
+                label: 'Don’t ask again',
+                value: 'Shows this preview in the row. Change in Settings',
+              },
+            ]),
+      ]}
+    />
+  );
 
   // Why confirm is unavailable — and the way out, where one exists. A zero
   // count needs no line: the title already says nothing is there.
@@ -294,25 +316,7 @@ export function ActionSheet({
           disabled: confirmDisabled,
         }}
         status={status ?? undefined}
-        details={
-          <>
-            {mailboxEmail ? (
-              <div role="note" aria-label={`Gmail account: ${mailboxEmail}`}>
-                <SheetFact label="Gmail account">{mailboxEmail}</SheetFact>
-              </div>
-            ) : null}
-            {facts.disclosures.map((line) => (
-              <span key={line}>{line}</span>
-            ))}
-            {detailBlock}
-            <PreviewReasoning row={row} />
-            {verb !== 'Delete' && (
-              <span>
-                “Don’t ask again” shows this preview in the row instead. Change it in Settings.
-              </span>
-            )}
-          </>
-        }
+        details={detailBlock}
         footer={
           costLine === null && verb === 'Delete' ? undefined : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>

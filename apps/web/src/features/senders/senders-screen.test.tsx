@@ -1259,7 +1259,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
     // Wait for the REAL inbox count to load so confirm is no longer gated.
-    await screen.findByText(/currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // The real endpoint was hit, and the REAL receipt appears only after the
@@ -1343,7 +1343,7 @@ describe('SendersScreen — edge states', () => {
     renderScreen();
     fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
     fireEvent.keyDown(document.body, { key: 'd' });
-    await screen.findByText(/currently match.*Trash/i);
+    await screen.findByText(/rechecked when it runs/i);
     fireEvent.change(
       within(screen.getByRole('dialog')).getByRole('combobox', { name: /How far back/i }),
       {
@@ -1436,7 +1436,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await findRowStatus();
@@ -1532,7 +1532,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
 
     // Pick the narrowest window — the chip states 12 of the 250.
     const dialog = screen.getByRole('dialog');
@@ -1597,7 +1597,7 @@ describe('SendersScreen — edge states', () => {
     fireEvent.click(checkbox);
     fireEvent.keyDown(document.body, { key: 'a' });
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
-    await screen.findByText(/currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(statusPolled).toBe(true));
@@ -1641,7 +1641,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // Preview resolves to 0 current matches and the confirm is disabled.
-    await screen.findByText(/emails currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('button', { name: /archive/i })).toBeDisabled();
 
@@ -1841,7 +1841,7 @@ describe('SendersScreen — edge states', () => {
 
   it('never advertises more sample subjects than the real total in "Show what currently matches" (live smoke 2026-06-09)', async () => {
     // The disclosure used to hardcode "(5 of N)" — a sender with 3 mails
-    // rendered "Show what currently matches (5 of 3)". The label must read the
+    // rendered "Show 5 of 3". The label must read the
     // ACTUAL sample length, trimmed to the bucket total, even when the
     // wire returns more subjects than the count (drift defense).
     installFetchStub([
@@ -1895,7 +1895,7 @@ describe('SendersScreen — edge states', () => {
     await screen.findByRole('heading', { name: /^(Archive .+\?|Nothing .+)$/ });
 
     // X = sample rows actually shown, Y = the real total; X <= Y always.
-    const disclosure = await screen.findByText(/show what currently matches \(3 of 3\)/i);
+    const disclosure = await screen.findByRole('button', { name: /^show 3 of 3$/i });
     fireEvent.click(disclosure);
     expect(screen.getByText('Subject one')).toBeInTheDocument();
     expect(screen.getByText('Subject three')).toBeInTheDocument();
@@ -2148,7 +2148,7 @@ describe('SendersScreen — edge states', () => {
       fireEvent.click(screen.getByRole('checkbox', { name: /select overdue alpha/i }));
       fireEvent.keyDown(document.body, { key: 'a' });
       await tick(200);
-      screen.getByText(/currently match.*Archive/i);
+      screen.getByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await tick(200);
       expect(actionPosts).toBe(1);
@@ -2557,7 +2557,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(donePills()).toEqual(['Archived', 'Archived']), { timeout: 4000 });
 
@@ -2594,7 +2594,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
 
@@ -2613,7 +2613,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       bulkStub(() => state);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
@@ -2679,7 +2679,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       const dialog = screen.getByRole('dialog');
@@ -2718,7 +2718,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       ]);
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(screen.getAllByText('Archive not confirmed')).toHaveLength(2), {
@@ -2765,7 +2765,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(screen.getAllByText('Archiving…')).toHaveLength(2));
 
@@ -2960,7 +2960,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       }));
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       // No outcome claimed per row — but never left looking untouched.
       await waitFor(
@@ -3004,7 +3004,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       );
       renderScreen();
       await selectBothAndPress('a');
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       acted = true;
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       // The batch poll ticks every 1s — the default 1s waitFor races it.
@@ -3104,7 +3104,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     await selectBothAndPress('a');
     // Mandatory D226 preview with the AGGREGATED real count (never the
     // fabricated tracer numbers).
-    await screen.findByText(/currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
     // The aggregated total (12 + 18) is the title's count.
     expect(
       within(screen.getByRole('dialog')).getByRole('heading', {
@@ -3257,7 +3257,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
         name: new RegExp(`Unsubscribe.*${displayVerb}`, 'i'),
       });
       await waitFor(() => expect(confirm).toBeEnabled());
-      expect(within(dialog).getByText(/emails currently match/i)).toBeInTheDocument();
+      expect(within(dialog).getByText(/rechecked when it runs/i)).toBeInTheDocument();
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       await waitFor(() => expect(bulkBodies).toHaveLength(2));
@@ -3368,7 +3368,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     await waitFor(() => expect(enqueueAttempted).toBe(true));
@@ -3417,7 +3417,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
 
     renderScreen();
     await selectBothAndPress('a');
-    await screen.findByText(/currently match.*Archive/i);
+    await screen.findByText(/rechecked when it runs/i);
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
     // This screen claims no per-row outcome it cannot know (the batch

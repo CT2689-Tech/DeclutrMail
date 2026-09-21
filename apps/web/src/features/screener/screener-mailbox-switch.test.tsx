@@ -54,7 +54,7 @@ function harness() {
 async function openArchive() {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(`${row.senderName} — expand`) }));
   fireEvent.keyDown(window, { key: 'a' });
-  await screen.findByText(/emails in Inbox now/);
+  await screen.findByText(/Inbox now.*rechecked/i);
 }
 
 beforeEach(() => {

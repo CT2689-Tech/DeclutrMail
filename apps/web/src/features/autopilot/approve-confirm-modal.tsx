@@ -1,9 +1,9 @@
 'use client';
 
-import { tokens } from '@declutrmail/shared';
+import { tokens, type SheetFactItem } from '@declutrmail/shared';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
-import { ConfirmModalFrame } from './confirm-modal-frame';
+import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
 import { resolveSenderIdentity } from './sender-label';
 
@@ -95,51 +95,37 @@ export function ApproveConfirmModal({
       onCancel={onCancel}
       onConfirm={onConfirm}
       details={
-        <>
-          <span>{approveLead(rule, shown, approxTotal, coversMoreThanShown)}</span>
-          {primary.providerRecovery.kind === 'none' ? null : (
-            <span>{primary.providerRecovery.summary}</span>
-          )}
-          {coversMoreThanShown && (
-            <span>
-              {approxTotal != null
-                ? `Showing ${shown} of ~${approxTotal}.`
-                : `Showing ${shown} — approving covers all pending.`}
-            </span>
-          )}
-          <ul
-            aria-label="Senders in these suggestions"
-            style={{ listStyle: 'none', margin: 0, padding: 0 }}
-          >
-            {matches.map((m, i) => {
-              const identity = resolveSenderIdentity(m);
-              return (
-                <li
-                  key={m.id}
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    padding: `${space[2]}px 0`,
-                    borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
-                    minWidth: 0,
-                  }}
+        <ul
+          aria-label="Senders in these suggestions"
+          style={{
+            listStyle: 'none',
+            margin: 0,
+            padding: `${space[3]}px 0 0`,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: space[2],
+          }}
+        >
+          {matches.map((m) => {
+            const identity = resolveSenderIdentity(m);
+            return (
+              <li key={m.id} style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <span
+                  style={{ ...ellipsis, fontSize: text.base, fontWeight: 600, color: color.fg }}
                 >
-                  <span
-                    style={{ ...ellipsis, fontSize: text.base, fontWeight: 600, color: color.fg }}
-                  >
-                    {identity.label}
+                  {identity.label}
+                </span>
+                {identity.source === 'name' && m.senderEmail != null && (
+                  <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
+                    {m.senderEmail}
                   </span>
-                  {identity.source === 'name' && m.senderEmail != null && (
-                    <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
-                      {m.senderEmail}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
       }
+      facts={approveFacts(rule, shown, approxTotal, coversMoreThanShown)}
     />
   );
 }
@@ -150,30 +136,43 @@ const ellipsis = {
   whiteSpace: 'nowrap',
 } as const;
 
-/** Verb-true "what happens on approve" lead (D227 canonical verbs). */
-function approveLead(
+/**
+ * What approving does beyond the title (the scope) and the subtitle (the
+ * effect), as Details facts (D227 canonical verbs).
+ */
+function approveFacts(
   rule: AutopilotRuleDto,
   shown: number,
   approxTotal: number | null,
   coversMoreThanShown: boolean,
-): string {
-  const scope = coversMoreThanShown
-    ? approxTotal != null
-      ? `All ~${approxTotal} pending suggestions`
-      : 'All pending suggestions'
-    : shown === 1
-      ? 'This suggestion'
-      : `These ${shown} suggestions`;
-  const presentation = autopilotPresentation(rule);
-  // The sheet's note owns the primary action's undo fact, so the lead
-  // takes `effectCopy` — `previewCopy` carries those same sentences and
-  // printed "cannot be undone" twice. A secondary action has no note
-  // slot, so it keeps its full `previewCopy`.
-  const { primary, secondary } = presentation;
-  const effect = secondary
-    ? `${primary.effectCopy} Also: ${secondary.previewCopy}`
-    : primary.effectCopy;
-  return `${scope}: ${effect}`;
+): SheetFactItem[] {
+  const { primary, secondary } = autopilotPresentation(rule);
+  return [
+    // "Approve all" covers rows beyond the capped page: the list above
+    // is only the latest page, never presented as the total.
+    ...(coversMoreThanShown
+      ? [
+          {
+            label: 'Showing',
+            value:
+              approxTotal != null
+                ? `${shown} of ~${approxTotal}`
+                : `${shown}, approving covers all pending`,
+          },
+        ]
+      : []),
+    ...ruleEffectFacts(primary),
+    // A secondary action has no note slot, so it keeps its full copy.
+    ...(secondary ? [{ label: 'Also', value: secondary.previewCopy }] : []),
+    ...(primary.providerRecovery.kind === 'gmail-trash'
+      ? [
+          {
+            label: 'Gmail Trash',
+            value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+          },
+        ]
+      : []),
+  ];
 }
 
 function autopilotPresentation(rule: AutopilotRuleDto) {

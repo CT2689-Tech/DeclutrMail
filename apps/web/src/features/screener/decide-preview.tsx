@@ -1,6 +1,12 @@
 'use client';
 
-import { Button, tokens } from '@declutrmail/shared';
+import {
+  Button,
+  SheetFactList,
+  SheetSegmented,
+  tokens,
+  type SheetFactItem,
+} from '@declutrmail/shared';
 import {
   buildActionPresentation,
   describeInboxScope,
@@ -8,8 +14,8 @@ import {
   WINDOW_PRESET_LABELS,
 } from '@declutrmail/shared/actions';
 import { scoredAgeLabel } from '@declutrmail/shared/copy';
-import { previewEyebrowLabel } from '@declutrmail/shared/copy/preview-eyebrow';
-import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
+import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { afterLead } from '@/lib/copy/after-lead';
 import { useNow } from '@/lib/use-now';
 import type { ActionReach } from '@/lib/api/actions';
 
@@ -21,7 +27,7 @@ import {
 } from './data';
 import { VERB_LABEL } from './verbs';
 
-const { color, font, motion, radius, shadow, text } = tokens;
+const { color, font, radius, space, text } = tokens;
 
 /**
  * Live impact figure — the sender's current-inbox count from
@@ -32,9 +38,11 @@ export type DecidePreviewCount = number | 'loading' | 'unavailable';
 /**
  * The mandatory pre-mutation preview for a Screener decision (D226).
  *
- * Mounts inline inside the expanded row when a verb is pending —
- * mirroring the Triage inline-preview branch (the sheet MAY be
- * skipped; the preview cannot). Confirm dispatches the decision;
+ * Mounts inline inside the expanded row when a verb is pending, in the
+ * compact grammar of Triage's `InlinePreviewBlock` (ADR-0042): one bold
+ * line with the count and where the email goes, one muted line for how to
+ * undo it, only the controls that change the count, everything else
+ * behind "Details", then the confirm. Confirm dispatches the decision;
  * Cancel clears it. Copy per verb is literal and true to the pipeline
  * the verb rides:
  *
@@ -148,7 +156,7 @@ export function DecidePreview({
   // Codex review 2026-09-03: unlike Triage's identical branch, Delete's
   // `liveCount` here can be WINDOWED (`windowDays` set, default delete
   // window) while the TRUE un-windowed count for the active reach is > 0.
-  // "Nothing to move" would then contradict the ImpactFigure notice just
+  // "Nothing to move" would then contradict the scope notice just
   // below it, which already says N emails sit outside the window. Only
   // claim a true zero when no window narrowed the count, or the
   // un-windowed total for the SELECTED reach confirms it really is zero —
@@ -158,29 +166,51 @@ export function DecidePreview({
   // be zero while the other is not.
   const relevantTrueTotal = activeReach === 'all_mail' ? allMailTotal : inboxTotal;
   const confidentZeroMatch = liveCount === 0 && (windowDays === null || relevantTrueTotal === 0);
-  const title =
-    moves && confidentZeroMatch
-      ? `Nothing to move from ${name} right now`
-      : verb === 'keep'
-        ? `Keep ${name}`
-        : verb === 'archive'
-          ? `Archive all inbox email from ${name}`
-          : verb === 'later'
-            ? `Move ${name} to Later`
-            : verb === 'unsubscribe'
-              ? `Unsubscribe from ${name}`
-              : activeReach === 'all_mail'
-                ? `Delete ${name}'s inbox + archived email`
-                : `Delete ${name}'s inbox email`;
+  const allMailReach = activeReach === 'all_mail';
+  const zero = moves && confidentZeroMatch;
+  const { primary } = presentation;
 
+  // ── One bold line: the count and where the email goes ───────────────
+  const destination =
+    verb === 'archive'
+      ? 'They leave your inbox and stay in Gmail.'
+      : verb === 'later'
+        ? 'They wait in Gmail’s DeclutrMail/Later label, then return to your inbox.'
+        : verb === 'delete'
+          ? allMailReach
+            ? 'Inbox and archived email both move to Gmail Trash.'
+            : 'They move to Gmail Trash.'
+          : null;
+  const headline = zero
+    ? `Nothing to move from ${name} right now`
+    : verb === 'keep'
+      ? `Keep ${name}. No email moves.`
+      : verb === 'unsubscribe'
+        ? `Unsubscribe from ${name}. ${
+            primary.unsubscribeChannel.kind === 'not-applicable' ||
+            primary.unsubscribeChannel.kind === 'varies'
+              ? primary.futureMail.summary
+              : primary.unsubscribeChannel.summary
+          }`
+        : `${liveCount === null ? 'Email' : emailsLabel(liveCount)} from ${name}. ${destination ?? ''}`.trim();
+
+  // ── One muted line: how to undo it ──────────────────────────────────
   // Zero matches: nothing moves, but Confirm is still live — it resolves
   // the quarantine row (`ScreenerService.decide` sets `decided_at` even on
   // a 0-message enqueue), so the sender leaves this queue. Say that; a
   // live button over "Nothing to move" otherwise reads as a no-op.
-  const lead =
-    moves && confidentZeroMatch
-      ? `Confirming records your decision and removes ${name} from the Screener.`
-      : presentation.previewCopy;
+  const note = zero
+    ? `Confirming records your decision and removes ${name} from the Screener.`
+    : [
+        primary.activityUndo.summary,
+        // Delete is the one verb where the reader plausibly fears the
+        // opposite (CLAUDE.md §2.3).
+        ...(verb === 'delete' && primary.futureMail.inPreview ? [primary.futureMail.summary] : []),
+        ...(primary.bulkReturnNotice === null ? [] : [primary.bulkReturnNotice]),
+      ].join(' ');
+
+  const auth = useOptionalAuth();
+  const activeMailboxEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
 
   const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
   const confirmDisabled = confirming || previewBlocked;
@@ -197,199 +227,190 @@ export function DecidePreview({
       ? `Confirm ${VERB_LABEL[verb]} anyway`
       : `Confirm ${VERB_LABEL[verb]}`;
 
+  // A bare "0" beside the row's "Messages received" count reads as lost
+  // mail. Same reconciliation the senders confirm modal does, from the
+  // same helper. QA-delete-20260829-01: the screener carries Delete's
+  // default window (`windowDays`) and the TRUE un-windowed total
+  // (`inboxTotal`), so an all-older-than-the-window sender gets the same
+  // "0 email now, but N are outside the window" notice instead of a
+  // silent zero. `recentArrivals` stays null — the screener has no 30-day
+  // arrival figure to name. At all-mail reach the notice stays silent —
+  // archived mail IS in scope. With the chips on screen,
+  // `verbActsBeyondInbox` swaps "only acts on" for "acts on inbox mail by
+  // default" (ADR-0028).
+  const scopeCopy =
+    moves && typeof effectiveCount === 'number' && !allMailReach
+      ? inboxScopeNoticeCopy(
+          describeInboxScope({
+            inboxTotal: inboxTotal ?? effectiveCount,
+            windowCount: effectiveCount,
+            olderThanDays: windowDays,
+            recentArrivals: null,
+          }),
+          VERB_LABEL[verb],
+          'this sender',
+          { verbActsBeyondInbox: reachAvailable },
+        )
+      : null;
+  // Same "(older than N)" qualifier the senders confirm modal renders
+  // beside its own live count when a window is active.
+  const windowQualifier =
+    !allMailReach && windowDays !== null
+      ? ` (older than ${WINDOW_PRESET_LABELS[windowDays] ?? `${windowDays} days`})`
+      : '';
+
+  // ── Details ─────────────────────────────────────────────────────────
+  const facts: SheetFactItem[] = [];
+  if (activeMailboxEmail) {
+    facts.push({
+      label: 'Gmail account',
+      value: (
+        <span role="note" aria-label={`Gmail account: ${activeMailboxEmail}`}>
+          {activeMailboxEmail}
+        </span>
+      ),
+    });
+  }
+  if (moves && liveCount !== null) {
+    facts.push({
+      label: 'Count',
+      value: `${allMailReach ? 'Inbox + archived' : 'Inbox'} now${windowQualifier}, rechecked when it runs`,
+    });
+  }
+  if (allMailReach) {
+    facts.push(
+      { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
+      { label: 'Undo', value: 'Puts each email back where it was' },
+    );
+  }
+  if (verb === 'keep') {
+    facts.push(
+      { label: 'Gmail', value: primary.currentMail.summary.replace(/\.$/, '') },
+      ...(primary.futureMail.inPreview
+        ? [{ label: 'Triage', value: primary.futureMail.summary.replace(/\.$/, '') }]
+        : []),
+      ...primary.unchanged.map((fact) => ({
+        label: 'Autopilot',
+        value: fact.replace(/\.$/, ''),
+      })),
+    );
+  }
+  if (verb === 'unsubscribe') {
+    facts.push({ label: 'Past email', value: 'Stays where it is' });
+  }
+  if (primary.schedule.kind === 'scheduled') {
+    facts.push({
+      label: 'Returns',
+      value: afterLead(primary.schedule.summary, 'Returns to Inbox '),
+    });
+  } else if (primary.schedule.kind === 'required') {
+    facts.push({ label: 'Returns', value: primary.schedule.summary.replace(/\.$/, '') });
+  }
+  if (primary.providerRecovery.kind === 'gmail-trash') {
+    facts.push({
+      label: 'Gmail Trash',
+      value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+    });
+  }
+  // Engine recap — why the engine queued this sender, and how old that
+  // read is (QA-archive-20260903-01).
+  if (row.recommendation != null) {
+    facts.push({
+      label: 'Why suggested',
+      value: (
+        <>
+          {row.recommendation.reasoning}
+          {ageLabel !== null && (
+            <>
+              {' '}
+              <span style={{ color: color.fgMuted, whiteSpace: 'nowrap' }}>{ageLabel}</span>
+            </>
+          )}
+        </>
+      ),
+    });
+  }
+
+  const mutedLine = { margin: `${space[1]}px 0 0`, fontSize: text.sm, color: color.fgMuted };
+
   return (
     <div
       role="region"
       aria-label={`Preview · ${VERB_LABEL[verb]} ${name}`}
+      data-dm-preview-mode="inline"
       style={{
-        background: color.card,
-        boxShadow: shadow.lift,
-        borderRadius: radius.xl,
-        padding: 'clamp(16px, 3vw, 22px)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
+        textAlign: 'left',
+        padding: space[4],
+        borderRadius: radius.lg,
+        background: color.fill,
         fontFamily: font.sans,
       }}
     >
-      <span
-        style={{
-          fontSize: text.sm,
-          fontWeight: 600,
-          color: verb === 'delete' ? color.danger : color.primary,
-        }}
-      >
-        {previewEyebrowLabel(VERB_LABEL[verb])}
-      </span>
+      <p style={{ margin: 0, fontSize: text.md, fontWeight: 600, color: color.fg }}>{headline}</p>
 
-      <MailboxActionContext mailboxEmail={mailboxEmail} />
-
-      <div>
-        <h3 style={{ fontSize: text.lg, fontWeight: 650, letterSpacing: '-0.015em', margin: 0 }}>
-          {title}
-        </h3>
-        <p style={{ fontSize: text.md, color: color.fgMuted, margin: '4px 0 0', lineHeight: 1.5 }}>
-          {lead}
-        </p>
-      </div>
-
-      {/* ADR-0028 reach chip pair — Delete only, adapted from the
-          senders confirm modal's presentation. The chips carry the live
-          counts so "Inbox + archived" is discoverable exactly when the
-          inbox count reads low. */}
-      {reachAvailable && (
-        <div
-          role="radiogroup"
-          aria-label="Where it applies"
-          style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-        >
-          <div style={{ fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}>
-            Where it applies
-          </div>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignSelf: 'flex-start',
-              flexWrap: 'wrap',
-              gap: 2,
-              padding: 3,
-              background: color.fill,
-              borderRadius: radius.pill,
-            }}
-          >
-            {(
-              [
-                { value: 'inbox_only', label: 'Inbox only', count: liveInboxNumber(inboxCount) },
-                { value: 'all_mail', label: 'Inbox + archived', count: allMailCount },
-              ] as const satisfies ReadonlyArray<{
-                value: ActionReach;
-                label: string;
-                count: number | null;
-              }>
-            ).map((opt) => {
-              const active = activeReach === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onClick={() => onReachChange?.(opt.value)}
-                  style={{
-                    fontFamily: font.sans,
-                    fontSize: text.sm,
-                    fontWeight: 600,
-                    height: 32,
-                    padding: '0 14px',
-                    borderRadius: radius.pill,
-                    background: active ? color.card : 'transparent',
-                    color: active ? color.fg : color.fgMuted,
-                    boxShadow: active ? shadow.card : 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
-                  }}
-                >
-                  {opt.label}
-                  {opt.count !== null && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        fontVariantNumeric: 'tabular-nums',
-                        opacity: active ? 1 : 0.8,
-                      }}
-                    >
-                      {opt.count.toLocaleString('en-US')}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-          {activeReach === 'all_mail' && (
-            <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.45 }}>
-              Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo puts each
-              email back where it was.
-            </span>
-          )}
-        </div>
+      {/* Why confirm is disabled while the live count is not a number (D211). */}
+      {moves && effectiveCount === 'loading' && <p style={mutedLine}>Counting the inbox…</p>}
+      {moves && effectiveCount === 'unavailable' && (
+        <p style={mutedLine}>Couldn’t load the preview. Nothing can move until it loads.</p>
       )}
 
-      {/* Current match count, fetched server-side (D226). */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          // Wraps so the scope notice can take its own line under the
-          // figure instead of squeezing the count.
-          flexWrap: 'wrap',
-          gap: 8,
-          padding: '12px 14px',
-          background: color.fill,
-          borderRadius: radius.lg,
-        }}
-      >
-        <ImpactFigure
-          moves={moves}
-          count={effectiveCount}
-          inboxTotal={inboxTotal}
-          windowDays={windowDays}
-          verbLabel={VERB_LABEL[verb]}
-          allMailReach={activeReach === 'all_mail'}
-          reachAvailable={reachAvailable}
-        />
-      </div>
+      {scopeCopy && (
+        <p role="status" style={mutedLine}>
+          {scopeCopy}
+        </p>
+      )}
+
+      <p style={mutedLine}>{note}</p>
+
+      {/* ADR-0028 reach — Delete only. The options carry the live counts
+          so "Inbox + archived" is discoverable exactly when the inbox
+          count reads low. */}
+      {reachAvailable && (
+        <div style={{ marginTop: space[3] }}>
+          <SheetSegmented
+            label="Where it applies"
+            value={activeReach}
+            onChange={(next) => onReachChange?.(next)}
+            options={[
+              {
+                value: 'inbox_only',
+                label: 'Inbox only',
+                count: liveInboxNumber(inboxCount) ?? undefined,
+              },
+              { value: 'all_mail', label: 'Inbox + archived', count: allMailCount ?? undefined },
+            ]}
+          />
+        </div>
+      )}
 
       {/* Protected acknowledgement (D42/D245) — stated before the
           confirm, never after the fact. `role="status"` so a screen
           reader hears it when the preview opens. */}
       {overriding && (
-        <div
-          role="status"
-          style={{
-            fontSize: text.sm,
-            lineHeight: 1.5,
-            color: color.danger,
-            background: color.dangerBg,
-            borderRadius: radius.lg,
-            padding: '12px 14px',
-          }}
-        >
-          <strong style={{ fontWeight: 600 }}>This sender is Protected</strong> — {name} is kept
-          safe because {screenerProtectionClause(row.protectionReason)}. Confirming acts on it
-          anyway; it stays Protected afterwards.
-        </div>
+        <p role="status" style={{ ...mutedLine, marginTop: space[3], color: color.fgSoft }}>
+          <strong style={{ fontWeight: 600, color: color.danger }}>This sender is Protected</strong>{' '}
+          because {screenerProtectionClause(row.protectionReason)}. Confirming acts on it anyway; it
+          stays Protected.
+        </p>
       )}
 
-      {/* Engine recap — why the engine queued this sender. */}
-      {row.recommendation != null && (
-        <div style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              justifyContent: 'space-between',
-              gap: 8,
-            }}
+      {facts.length > 0 && (
+        <details style={{ marginTop: space[2] }}>
+          <summary
+            style={{ cursor: 'pointer', fontSize: text.sm, fontWeight: 550, color: color.fgSoft }}
           >
-            <span style={{ fontWeight: 600, color: color.fgSoft }}>Why we suggested this:</span>
-            {ageLabel !== null && (
-              <span style={{ fontSize: text.xs, color: color.fgMuted, whiteSpace: 'nowrap' }}>
-                {ageLabel}
-              </span>
-            )}
+            Details
+          </summary>
+          <div style={{ marginTop: space[2], fontSize: text.sm, color: color.fg }}>
+            <SheetFactList facts={facts} />
           </div>
-          {row.recommendation.reasoning}
-        </div>
+        </details>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        <Button size="sm" tone="ghost" onClick={onCancel} disabled={confirming}>
-          Cancel
-        </Button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: space[2], marginTop: space[3] }}>
         <Button
-          size="sm"
-          tone={verb === 'delete' ? 'danger' : 'primary'}
+          size="md"
+          tone={verb === 'delete' ? 'danger' : verb === 'unsubscribe' ? 'warn' : 'primary'}
           onClick={onConfirm}
           disabled={confirmDisabled}
           // Stable across the in-flight transition — a button that
@@ -398,116 +419,18 @@ export function DecidePreview({
         >
           {confirmLabel}
         </Button>
+        <Button size="md" tone="ghost" onClick={onCancel} disabled={confirming}>
+          Cancel
+        </Button>
       </div>
     </div>
   );
 }
 
+const emailsLabel = (count: number) =>
+  `${count.toLocaleString('en-US')} email${count === 1 ? '' : 's'}`;
+
 /** Chip-count coercion — a not-yet-resolved live count renders no figure. */
 function liveInboxNumber(count: DecidePreviewCount): number | null {
   return typeof count === 'number' ? count : null;
-}
-
-/** The "N emails move" strip — all four edge states rendered (D211). */
-function ImpactFigure({
-  moves,
-  count,
-  inboxTotal,
-  windowDays,
-  verbLabel,
-  allMailReach,
-  reachAvailable,
-}: {
-  moves: boolean;
-  /** Live count under the SELECTED reach (ADR-0028). */
-  count: DecidePreviewCount;
-  /** QA-delete-20260829-01 — the TRUE un-windowed inbox count. */
-  inboxTotal: number | null;
-  /** QA-delete-20260829-01 — the day-window active on `count`, if any. */
-  windowDays: number | null;
-  verbLabel: string;
-  /** True when the widened `all_mail` reach is active. */
-  allMailReach: boolean;
-  /** True when the reach chips are on screen (softens the scope notice). */
-  reachAvailable: boolean;
-}) {
-  const strongStyle: React.CSSProperties = {
-    fontFamily: font.display,
-    fontSize: text.xl,
-    fontWeight: 600,
-    letterSpacing: '-0.02em',
-    color: color.fg,
-    fontVariantNumeric: 'tabular-nums',
-  };
-  const captionStyle: React.CSSProperties = { fontSize: text.sm, color: color.fgSoft };
-
-  if (!moves) {
-    return (
-      <>
-        <strong style={strongStyle}>0</strong>
-        <span style={captionStyle}>emails move — everything in the inbox stays where it is.</span>
-      </>
-    );
-  }
-  if (count === 'loading') {
-    return <span style={captionStyle}>Counting the inbox…</span>;
-  }
-  if (count === 'unavailable') {
-    return (
-      <span style={captionStyle}>
-        Couldn&apos;t load the preview. Nothing can move until it loads.
-      </span>
-    );
-  }
-  // A bare "0" beside the row's "Messages received" count reads as lost
-  // mail. Same reconciliation the senders confirm modal does, from the
-  // same helper. QA-delete-20260829-01 (2026-08-30): the screener now
-  // carries Delete's default window (`windowDays`) and the TRUE
-  // un-windowed total (`inboxTotal`) exactly like the modal does, so an
-  // all-older-than-the-window sender gets the same "0 email now, but N
-  // are outside the window" notice instead of a silent, unexplained
-  // zero. Every other verb still passes `windowDays: null` — no window,
-  // no notice beyond the plain empty-inbox case, unchanged from before.
-  // `recentArrivals` stays null — the screener has no 30-day arrival
-  // figure on its row to name. At all-mail reach the notice stays
-  // silent — archived mail IS in scope, so an inbox reconciliation would
-  // narrate a scope the action no longer has (same suppression as the
-  // senders modal). With the chips on screen, `verbActsBeyondInbox`
-  // swaps "only acts on" for "acts on inbox mail by default" (ADR-0028).
-  const scopeCopy = allMailReach
-    ? null
-    : inboxScopeNoticeCopy(
-        describeInboxScope({
-          inboxTotal: inboxTotal ?? count,
-          windowCount: count,
-          olderThanDays: windowDays,
-          recentArrivals: null,
-        }),
-        verbLabel,
-        'this sender',
-        { verbActsBeyondInbox: reachAvailable },
-      );
-  // Same "(older than N days)" qualifier the senders confirm modal
-  // renders beside its own live count when a window is active
-  // (confirm-action-modal.tsx) — Delete's default window here is
-  // otherwise invisible next to a plain "N emails … now."
-  const windowQualifier =
-    !allMailReach && windowDays !== null
-      ? ` (older than ${WINDOW_PRESET_LABELS[windowDays] ?? `${windowDays} days`})`
-      : '';
-
-  return (
-    <>
-      <strong style={strongStyle}>{count.toLocaleString('en-US')}</strong>
-      <span style={captionStyle}>
-        email{count === 1 ? '' : 's'} {allMailReach ? 'across inbox + archived' : 'in Inbox'} now
-        {windowQualifier}. Rechecked when it runs.
-      </span>
-      {scopeCopy && (
-        <span role="status" style={{ ...captionStyle, flexBasis: '100%' }}>
-          {scopeCopy}
-        </span>
-      )}
-    </>
-  );
 }

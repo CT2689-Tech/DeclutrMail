@@ -209,13 +209,15 @@ export function PreviewSheet({
             <div
               style={{
                 marginTop: space[2],
-                padding: space[4],
+                padding: `${space[1]}px ${space[4]}px ${space[3]}px`,
                 borderRadius: radius.lg,
                 background: color.fill,
                 textAlign: 'left',
                 fontSize: text.sm,
                 lineHeight: 1.5,
-                color: color.fgSoft,
+                // Values read in full contrast; `SheetFactList` mutes only
+                // its labels. Grey-on-grey was unreadable in dark mode.
+                color: color.fg,
                 display: 'flex',
                 flexDirection: 'column',
                 gap: space[3],
@@ -280,101 +282,6 @@ export function PreviewSheet({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-/**
- * A two-or-three way choice that changes the sheet's count ("Inbox only /
- * Inbox + archived"). Render it only when the options give DIFFERENT
- * counts — a chooser whose options agree is noise.
- */
-export function SheetSegmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: readonly { value: T; label: string; count?: number | undefined; disabled?: boolean }[];
-  onChange: (next: T) => void;
-}) {
-  const labelId = useId();
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
-      {/* Visible: a choice whose options say "them" needs to name what
-        "them" is. It also names the group for assistive tech. */}
-      <span id={labelId} style={{ fontSize: text.sm, color: color.fgMuted }}>
-        {label}
-      </span>
-      <div
-        role="radiogroup"
-        aria-labelledby={labelId}
-        style={{
-          display: 'grid',
-          gridAutoFlow: 'column',
-          gridAutoColumns: '1fr',
-          gap: 2,
-          padding: 3,
-          borderRadius: radius.pill,
-          background: color.fill,
-        }}
-      >
-        {options.map((opt) => {
-          const selected = opt.value === value;
-          return (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={selected}
-              disabled={opt.disabled}
-              onClick={() => onChange(opt.value)}
-              style={{
-                minHeight: 38,
-                padding: `0 ${space[3]}px`,
-                border: 'none',
-                borderRadius: radius.pill,
-                background: selected ? color.card : 'transparent',
-                boxShadow: selected ? shadow.card : 'none',
-                color: selected ? color.fg : color.fgSoft,
-                fontFamily: font.sans,
-                fontSize: text.sm,
-                fontWeight: selected ? 600 : 500,
-                cursor: opt.disabled ? 'not-allowed' : 'pointer',
-                opacity: opt.disabled ? 0.45 : 1,
-                whiteSpace: 'nowrap',
-                transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
-              }}
-            >
-              {opt.label}
-              {opt.count != null && (
-                <span
-                  style={{
-                    marginLeft: 6,
-                    color: color.fgMuted,
-                    fontWeight: 500,
-                    fontVariantNumeric: 'tabular-nums',
-                  }}
-                >
-                  {opt.count.toLocaleString('en-US')}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-/** A labelled fact inside the Details well: `Gmail account — a@b.com`. */
-export function SheetFact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-      <span style={{ fontSize: text.xs, color: color.fgMuted }}>{label}</span>
-      <span style={{ color: color.fg, overflowWrap: 'anywhere' }}>{children}</span>
     </div>
   );
 }

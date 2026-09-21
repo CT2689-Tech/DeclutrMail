@@ -806,25 +806,11 @@ export function InboxSimulatorScreen() {
   return (
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
-        <Eyebrow tone="primary">Interactive demo · No sign-in</Eyebrow>
         <h1>Make four inbox decisions before you connect Gmail.</h1>
-        <p>
-          Follow four made-up examples, then explore freely. Nothing is uploaded or touches Gmail,
-          and the sample suggestions are not an analysis of your mail.
+        <p>Follow four made-up examples, then explore freely.</p>
+        <p className="dm-simulator-hero-note">
+          No signup. The demo stays local to this browser and never touches Gmail.
         </p>
-        <div className="dm-simulator-trust">
-          <span>No signup</span>
-          <span>Local to this browser</span>
-          <span>No email data is used</span>
-        </div>
-        <aside className="dm-simulator-tier-note" aria-label="Plan availability">
-          <strong>Triage is included on every plan.</strong>
-          <span>
-            Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
-            paid plans are unlimited.
-          </span>
-          <a href="/pricing">Compare plans</a>
-        </aside>
       </section>
 
       <section className="dm-simulator-workspace" aria-label="Inbox simulator">
@@ -954,7 +940,6 @@ export function InboxSimulatorScreen() {
 
       <section className="dm-simulator-next">
         <div>
-          <Eyebrow tone="primary">Before anything changes</Eyebrow>
           <h2>The preview you saw here is always part of the product.</h2>
           <p>{ACTION_SAFETY_SUMMARY}</p>
         </div>
@@ -965,11 +950,19 @@ export function InboxSimulatorScreen() {
             cta="connect_gmail"
             placement="demo"
           >
-            Start free →
+            Start free
           </TrackedCta>
           <a href="/methodology">See privacy and control details</a>
         </div>
-        <p>{OAUTH_SCOPE_DISCLOSURE}</p>
+        <p className="dm-simulator-next-oauth">{OAUTH_SCOPE_DISCLOSURE}</p>
+        <aside className="dm-simulator-tier-note" aria-label="Plan availability">
+          <strong>Triage is included on every plan.</strong>{' '}
+          <span>
+            Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
+            paid plans are unlimited.
+          </span>{' '}
+          <a href="/pricing">Compare plans</a>
+        </aside>
       </section>
 
       {/* D226 mandatory preview — the product's own sheet, not a copy.

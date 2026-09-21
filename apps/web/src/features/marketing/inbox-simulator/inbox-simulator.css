@@ -1,13 +1,15 @@
 .dm-simulator {
   width: min(1180px, calc(100% - 40px));
   margin: 0 auto;
-  padding: 76px 0 96px;
+  padding: 104px 0 152px;
   color: var(--dm-fg);
   font-family: var(--dm-font-sans);
 }
 
 .dm-simulator-hero {
   max-width: 760px;
+  margin: 0 auto;
+  text-align: center;
 }
 
 .dm-simulator-hero h1,
@@ -19,85 +21,45 @@
 }
 
 .dm-simulator-hero h1 {
-  max-width: 700px;
-  font-size: clamp(42px, 6vw, 72px);
-  line-height: 0.98;
-  font-weight: 560;
+  margin: 0;
+  font-size: clamp(40px, 5.4vw, 64px);
+  line-height: 1.02;
+  font-weight: 600;
+  letter-spacing: -0.028em;
+  text-wrap: balance;
 }
 
 .dm-simulator-hero > p {
-  max-width: 690px;
-  margin: 0;
+  max-width: 56ch;
+  margin: 20px auto 0;
   color: var(--dm-fg-soft);
-  font-size: 16px;
-  line-height: 1.7;
+  font-size: 19px;
+  line-height: 1.6;
+  text-wrap: balance;
 }
 
-.dm-simulator-trust {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  margin-top: 22px;
-}
-
-.dm-simulator-trust span {
-  padding: 6px 9px;
-  border: 1px solid var(--dm-line);
-  border-radius: 999px;
-  background: var(--dm-card);
+.dm-simulator-hero > .dm-simulator-hero-note {
+  margin-top: 8px;
   color: var(--dm-fg-muted);
-  font: 550 10px/1 var(--dm-font-mono);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font-size: 15px;
 }
 
-.dm-simulator-tier-note {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px 14px;
-  margin-top: 18px;
-  padding: 13px 14px;
-  border: 1px solid var(--dm-primary-border);
-  border-left-width: 3px;
-  border-radius: 9px;
-  background: var(--dm-primary-soft);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.dm-simulator-tier-note strong {
-  color: var(--dm-fg);
-}
-
-.dm-simulator-tier-note span {
-  color: var(--dm-fg-soft);
-}
-
-.dm-simulator-tier-note a {
-  color: var(--dm-primary);
-  font-weight: 650;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.dm-simulator-tier-note a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
+/* The simulator is the product, so it sits in one raised frame. */
 .dm-simulator-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1.65fr) minmax(290px, 0.75fr);
-  gap: 18px;
-  margin-top: 52px;
+  gap: 14px;
+  margin-top: 56px;
+  padding: 14px;
   align-items: start;
+  border-radius: 28px;
+  background: var(--dm-paper);
+  box-shadow: var(--dm-shadow-modal);
 }
 
 .dm-simulator-queue,
 .dm-simulator-activity {
-  border: 1px solid var(--dm-line);
-  border-radius: 14px;
+  border-radius: 18px;
   background: var(--dm-card);
   box-shadow: var(--dm-shadow-card);
   overflow: hidden;
@@ -155,9 +117,8 @@
   gap: 6px;
   min-width: 66px;
   color: var(--dm-fg-muted);
-  font: 550 9px/1 var(--dm-font-mono);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  font: 550 11.5px/1.2 var(--dm-font-sans);
+  text-align: center;
 }
 
 .dm-simulator-guide-progress li button {
@@ -228,9 +189,7 @@
 .dm-simulator-queue-head span,
 .dm-simulator-activity-head span {
   color: var(--dm-fg-muted);
-  font: 550 9.5px/1 var(--dm-font-mono);
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
+  font: 500 12.5px/1.2 var(--dm-font-sans);
 }
 
 .dm-simulator-queue-head strong,
@@ -371,9 +330,7 @@
 
 .dm-simulator-outcome dt {
   color: var(--dm-fg-muted);
-  font: 550 9px/1.2 var(--dm-font-mono);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  font: 550 12px/1.3 var(--dm-font-sans);
 }
 
 .dm-simulator-outcome dd {
@@ -430,42 +387,82 @@
 }
 
 .dm-simulator-next {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 38px;
-  margin-top: 48px;
-  padding: 34px;
-  border: 1px solid var(--dm-primary-border);
-  border-radius: 14px;
-  background: var(--dm-primary-soft);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 24px 56px;
+  max-width: 1000px;
+  margin: 136px auto 0;
 }
 
 .dm-simulator-next > div:first-child {
-  max-width: 670px;
+  max-width: 640px;
 }
 
 .dm-simulator-next h2 {
-  font-size: clamp(28px, 4vw, 42px);
+  margin: 0 0 16px;
+  font-size: clamp(28px, 3.6vw, 40px);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 
 .dm-simulator-next p {
   margin: 0;
   color: var(--dm-fg-soft);
+  font-size: 16px;
   line-height: 1.65;
 }
 
 .dm-simulator-next-actions {
   display: grid;
-  gap: 11px;
-  flex-shrink: 0;
-  text-align: center;
+  gap: 14px;
+  justify-items: center;
+}
+
+.dm-simulator-next .dm-simulator-primary {
+  min-height: 48px;
+  padding: 0 28px;
+  border-radius: 999px;
+  box-shadow: var(--dm-shadow-button);
+  font-size: 15px;
 }
 
 .dm-simulator-next-actions > a:not(.dm-simulator-primary) {
+  color: var(--dm-fg-soft);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--dm-border);
+  text-underline-offset: 3px;
+}
+
+.dm-simulator-next > .dm-simulator-next-oauth,
+.dm-simulator-tier-note {
+  grid-column: 1 / -1;
+  max-width: 720px;
+  color: var(--dm-fg-muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.dm-simulator-tier-note {
+  padding-top: 20px;
+  border-top: 1px solid var(--dm-line-soft);
+  max-width: none;
+}
+
+.dm-simulator-tier-note strong {
+  color: var(--dm-fg-soft);
+  font-weight: 600;
+}
+
+.dm-simulator-tier-note a {
   color: var(--dm-primary);
   font-weight: 600;
-  text-decoration: none;
+  text-underline-offset: 3px;
+  white-space: nowrap;
 }
 
 .dm-simulator-dialog-layer {
@@ -530,8 +527,12 @@
   }
 
   .dm-simulator-next {
-    align-items: flex-start;
-    flex-direction: column;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 88px;
+  }
+
+  .dm-simulator-next-actions {
+    justify-items: start;
   }
 
   .dm-simulator-guide {
@@ -545,24 +546,22 @@
 
 @media (max-width: 560px) {
   .dm-simulator {
-    width: calc(100% - 28px);
-    padding-top: 50px;
+    width: calc(100% - 32px);
+    padding: 64px 0 96px;
   }
 
   .dm-simulator-hero h1 {
-    font-size: 42px;
+    font-size: 38px;
   }
 
-  .dm-simulator-tier-note {
-    grid-template-columns: 1fr;
+  .dm-simulator-hero > p {
+    font-size: 17px;
   }
 
-  .dm-simulator-tier-note a {
-    justify-self: start;
-  }
-
-  .dm-simulator-next {
-    padding: 24px;
+  .dm-simulator-workspace {
+    margin-top: 40px;
+    padding: 8px;
+    border-radius: 22px;
   }
 
   .dm-simulator-dialog {

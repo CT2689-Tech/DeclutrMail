@@ -5,9 +5,12 @@ import {
   Avatar,
   Button,
   PreviewSheet,
-  SheetFact,
+  SheetFactList,
+  SheetLinks,
   SheetSegmented,
+  SheetTextAction,
   tokens,
+  type SheetFactItem,
 } from '@declutrmail/shared';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import {
@@ -19,11 +22,12 @@ import {
   inboxScopeNoticeCopy,
   mailLocationCopy,
   tiedWindowNoticeCopy,
-  unsubscribeCapabilityBreakdown,
   UNSUBSCRIBE_CAPABILITIES,
   type UnsubscribeChannel,
 } from '@declutrmail/shared/actions';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { mailLocationValue } from '@/features/triage/action-preview-detail';
+import { afterLead } from '@/lib/copy/after-lead';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
@@ -367,7 +371,6 @@ export function ConfirmActionModal({
   const unsubCapabilities = isUnsubVerb
     ? countUnsubscribeCapabilities((request?.senders ?? []).map((s) => s.unsubscribeMethod))
     : null;
-  const unsubBreakdown = unsubCapabilities ? unsubscribeCapabilityBreakdown(unsubCapabilities) : [];
   // "If a selection contains zero one_click senders, the BATCH control
   // does not offer itself" — there is no request the fan-out can send.
   //
@@ -771,7 +774,6 @@ export function ConfirmActionModal({
   const n = bulkActionableSenderCount ?? request.actionableCount ?? eligibleCount;
   const single = senders.length === 1;
   const leadSender = senders[0]!;
-  const subject = n === 1 ? 'this sender' : 'these senders';
   const activeMailboxEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
   const allMailScope = activeReach === 'all_mail';
 
@@ -1114,122 +1116,172 @@ export function ConfirmActionModal({
             : null;
 
   // ── Details ──────────────────────────────────────────────────────────
-  const countLine = (() => {
-    if (!countsMail || !livePreviewReady) return null;
-    if (compositeCount === undefined) {
-      return `${fmt(historic)} email${historic === 1 ? '' : 's'} received from ${subject} in total.`;
+  // Short label/value facts (`SheetFactList`). Each value says the same
+  // fact as the sentence it replaced — cut, never widened or narrowed.
+  // The count itself is the title; the undo is the note.
+  const facts: SheetFactItem[] = [];
+  if (activeMailboxEmail) {
+    facts.push({
+      label: 'Gmail account',
+      value: (
+        <span role="note" aria-label={`Gmail account: ${activeMailboxEmail}`}>
+          {activeMailboxEmail}
+        </span>
+      ),
+    });
+  }
+  // The senders card's own arrival facts, from the same row and in the
+  // same words — "N in last 90d · N received" (ADR-0037). INBOX-now is
+  // deliberately NOT repeated: the title is that number, live. Unknown
+  // volume renders "—", never a factual 0 (finding 5.15).
+  if (single) {
+    facts.push(
+      { label: 'Domain', value: compositePreview?.sender?.domain ?? leadSender.domain },
+      {
+        label: 'Sender',
+        value: `${leadSender.monthlyVolume == null ? '—' : fmt(leadSender.monthlyVolume)} in last 90d · ${fmt(leadSender.totalReceived)} received`,
+      },
+    );
+    const days = compositePreview?.sender?.lastSeenDays ?? leadSender.lastDays;
+    facts.push({
+      label: 'Last seen',
+      value: days === 0 ? 'Today' : `${fmt(days)} day${days === 1 ? '' : 's'} ago`,
+    });
+    const wrote = compositePreview?.sender?.wroteToCount ?? leadSender.wroteToCount;
+    if (wrote !== undefined && wrote !== null && wrote > 0) {
+      facts.push({ label: 'You wrote', value: `${fmt(wrote)} time${wrote === 1 ? '' : 's'}` });
     }
-    const dest = primaryActsOnInbox
-      ? isDeleteVerb
-        ? 'Trash'
-        : isLaterVerb
-          ? 'Later'
-          : 'Archive'
-      : secondaryVerb === 'delete'
-        ? 'Trash'
-        : 'Archive';
-    return `${fmt(compositeCount)} email${compositeCount === 1 ? '' : 's'} currently ${
-      compositeCount === 1 ? 'matches' : 'match'
-    }${allMailScope ? ' across inbox + archived' : ''}${
-      showWindowQualifier
+  }
+  if (countsMail && livePreviewReady) {
+    if (compositeCount === undefined) {
+      if (!single) facts.push({ label: 'Received', value: `${fmt(historic)} in total` });
+    } else {
+      const windowPart = showWindowQualifier
         ? ` (older than ${olderThanDays} day${olderThanDays === 1 ? '' : 's'})`
-        : ''
-    } for ${dest}.`;
-  })();
+        : '';
+      facts.push({
+        label: 'Count',
+        value: `${allMailScope ? 'Inbox + archived' : 'Inbox'} now${windowPart}, rechecked when it runs`,
+      });
+    }
+  }
   // Why a true count can still read as a contradiction — see
   // `describeInboxScope`. Skipped here when it already is the subtitle.
-  const scopeLine = inboxScopeCopy !== null && subtitle !== inboxScopeCopy ? inboxScopeCopy : null;
+  if (inboxScopeCopy !== null && subtitle !== inboxScopeCopy) {
+    facts.push({ label: 'Why none', value: inboxScopeCopy });
+  }
+  // Where the sender's mail actually is — both counts from the one
+  // composite preview, so the split cannot drift.
+  if (mailLocationLine) {
+    facts.push({
+      label: 'Where it is now',
+      value: <span data-testid="mail-location-line">{mailLocationValue(mailLocationLine)}</span>,
+    });
+  }
+  if (tiedWindowCopy) facts.push({ label: 'Windows', value: tiedWindowCopy });
+  if (showReach && allMailScope) {
+    facts.push(
+      { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
+      { label: 'Undo', value: 'Puts each email back where it was' },
+    );
+  }
+  if (primary.schedule.kind === 'scheduled') {
+    facts.push({
+      label: 'Returns',
+      value: afterLead(primary.schedule.summary, 'Returns to Inbox '),
+    });
+  }
+  if (isUnsubVerb) {
+    facts.push({
+      label: 'Past email',
+      value:
+        secondary === null ? 'Stays where it is' : secondary.currentMail.summary.replace(/\.$/, ''),
+    });
+  }
+  const trash =
+    primary.providerRecovery.kind === 'gmail-trash'
+      ? primary.providerRecovery
+      : secondary?.providerRecovery.kind === 'gmail-trash'
+        ? secondary.providerRecovery
+        : null;
+  if (trash !== null) {
+    facts.push({
+      label: 'Gmail Trash',
+      value: `Kept up to ${trash.approximateDays} days, then deleted for good`,
+    });
+  }
+  if (isUnsubVerb) {
+    facts.push({ label: 'Cleanup actions', value: 'Acting on past email uses a second one' });
+  }
+  // D226 honesty — when the eligibility gate narrowed the selection
+  // before this sheet opened, say by how much and why.
+  if (request.selectedCount !== undefined && (selectedCount > 1 || skippedCount > 0)) {
+    facts.push({
+      label: 'Senders',
+      value: (
+        <span aria-label="Senders included in this bulk action">
+          {/* The quota segment is what reconciles "eligible" with the
+              title once a cap is in play. */}
+          {selectedCount} selected, {eligibleCount} eligible, {skippedCount} skipped
+          {quotaCappedFrom ? `, ${requestedSenderCount} within this month's actions` : ''}
+        </span>
+      ),
+    });
+  }
+  if (protectedSkipped > 0) {
+    facts.push({ label: 'Protected', value: 'Unprotect a sender to include it' });
+  }
+  if (peopleSkipped > 0) {
+    facts.push({ label: 'People', value: 'Unsubscribe doesn’t apply to people' });
+  }
+
+  // D248 — the per-state split, never one aggregate number. A delivered
+  // unsubscribe cannot be recalled (D58), so what will and will not be
+  // sent has to be legible before confirm. `mailto` senders stay
+  // user-sent (D230): the one-click fan-out skips them.
+  const unsubFacts: SheetFactItem[] =
+    unsubCapabilities === null || single
+      ? []
+      : [
+          ...(unsubCapabilities.one_click > 0
+            ? [
+                {
+                  label: 'One-click',
+                  value: `${sendersLabel(unsubCapabilities.one_click)}, we unsubscribe for you`,
+                },
+              ]
+            : []),
+          ...(unsubCapabilities.mailto > 0
+            ? [
+                {
+                  label: 'By email',
+                  value: `${sendersLabel(unsubCapabilities.mailto)}, you send the email yourself`,
+                },
+              ]
+            : []),
+          ...(unsubCapabilities.none > 0
+            ? [{ label: 'No unsubscribe', value: sendersLabel(unsubCapabilities.none) }]
+            : []),
+          ...(unsubCapabilities.unknown > 0
+            ? [{ label: 'Not checked yet', value: sendersLabel(unsubCapabilities.unknown) }]
+            : []),
+        ];
+
   const breakdownById = new Map(
     (bulkPreview?.data?.senders ?? []).map((s) => [s.senderId, s] as const),
   );
   const visibleSenders = showAllSenders ? senders : senders.slice(0, 6);
+  const showMatchesToggle = single && !unsubscribeMovesNothing && (compositeCount ?? 0) > 0;
+  const showGmailLink = verifyInGmailUrl !== null && !unsubscribeMovesNothing;
 
   const details = (
     <>
-      {activeMailboxEmail ? (
-        <div role="note" aria-label={`Gmail account: ${activeMailboxEmail}`}>
-          <SheetFact label="Gmail account">{activeMailboxEmail}</SheetFact>
-        </div>
-      ) : null}
-
-      {/* The senders card's own arrival facts, from the same row and in
-          the same words — "N in last 90d · N received" (ADR-0037). INBOX-
-          now is deliberately NOT repeated: the title is that number, live.
-          Unknown volume renders "—", never a factual 0 (finding 5.15). */}
-      {single && (
-        <div style={factGridStyle}>
-          <span>{compositePreview?.sender?.domain ?? leadSender.domain}</span>
-          <span>
-            <strong style={factNumberStyle}>
-              {leadSender.monthlyVolume?.toLocaleString('en-US') ?? '—'}
-            </strong>{' '}
-            in last 90d
-          </span>
-          <span>
-            <strong style={factNumberStyle}>{fmt(leadSender.totalReceived)}</strong> received
-          </span>
-          <span>
-            Last seen{' '}
-            <strong style={factNumberStyle}>
-              {(() => {
-                const days = compositePreview?.sender?.lastSeenDays ?? leadSender.lastDays;
-                return days === 0 ? 'today' : `${days}d`;
-              })()}
-            </strong>
-          </span>
-          {(() => {
-            const r = compositePreview?.sender?.wroteToCount ?? leadSender.wroteToCount;
-            if (r === undefined || r === null || r === 0) return null;
-            return (
-              <span>
-                You wrote <strong style={factNumberStyle}>{r}×</strong>
-              </span>
-            );
-          })()}
-        </div>
-      )}
-
-      {countLine && <span>{countLine}</span>}
-      {countsMail && livePreviewReady && (
-        <span>Rechecked when it runs, so the final count can differ from this preview.</span>
-      )}
-      {scopeLine && <span>{scopeLine}</span>}
-      {/* Where the sender's mail actually is — both counts from the one
-          composite preview, so the split cannot drift. */}
-      {mailLocationLine && <span data-testid="mail-location-line">{mailLocationLine}</span>}
-      {tiedWindowCopy && <span>{tiedWindowCopy}</span>}
-      {showReach && allMailScope && (
-        <span>
-          Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo puts each
-          email back where it was.
-        </span>
-      )}
-      {primary.schedule.kind === 'scheduled' && <span>{primary.schedule.summary}</span>}
-      {isUnsubVerb && <span>{primary.currentMail.summary}</span>}
-      {secondary !== null && <span>{secondary.currentMail.summary}</span>}
-      {primary.providerRecovery.kind !== 'none' && <span>{primary.providerRecovery.summary}</span>}
-      {secondary !== null && secondary.providerRecovery.kind !== 'none' && (
-        <span>{secondary.providerRecovery.summary}</span>
-      )}
-      {isUnsubVerb && <span>Archiving or deleting past email uses a second cleanup action.</span>}
-
-      {/* D248 — the per-state split, never one aggregate number. A
-          delivered unsubscribe cannot be recalled (D58), so what will and
-          will not be sent has to be legible before confirm. `mailto`
-          senders stay user-sent (D230): the one-click fan-out skips them. */}
-      {unsubBreakdown.length > 0 && (
-        <div aria-label="Unsubscribe breakdown" style={listStyle}>
-          {unsubBreakdown.map((line) => (
-            <span key={line}>{line}</span>
-          ))}
-        </div>
-      )}
-
-      {/* Per-sender breakdown (D52) — each row carries the REAL count for
-          the active window and reach from the aggregated preview;
-          Protected senders are flagged (the server skips them). */}
+      {/* Per-sender breakdown (D52) — FIRST for a bulk sheet: each row
+          carries the REAL count for the active window and reach from the
+          aggregated preview; Protected senders are flagged (the server
+          skips them). */}
       {!single && (
-        <div aria-label="Senders in this action" style={listStyle}>
+        <div aria-label="Senders in this action" style={senderListStyle}>
           {visibleSenders.map((s) => {
             const row = breakdownById.get(s.id);
             const rowCount = pickBucketCount(
@@ -1238,7 +1290,7 @@ export function ConfirmActionModal({
             );
             return (
               <div key={s.id} style={senderRowStyle}>
-                <span style={{ color: color.fg, minWidth: 0, overflowWrap: 'anywhere' }}>
+                <span style={{ fontWeight: 500, minWidth: 0, overflowWrap: 'anywhere' }}>
                   {s.name}
                 </span>
                 {row?.protected ? (
@@ -1250,61 +1302,24 @@ export function ConfirmActionModal({
             );
           })}
           {senders.length > 6 && (
-            <button
-              type="button"
-              onClick={() => setShowAllSenders((v) => !v)}
-              aria-expanded={showAllSenders}
-              style={textButtonStyle}
-            >
-              {showAllSenders ? 'Show fewer' : `Show all ${senders.length}`}
-            </button>
+            <SheetLinks>
+              <SheetTextAction
+                onClick={() => setShowAllSenders((v) => !v)}
+                expanded={showAllSenders}
+              >
+                {showAllSenders ? 'Show fewer' : `Show all ${senders.length}`}
+              </SheetTextAction>
+            </SheetLinks>
           )}
         </div>
       )}
 
-      {/* D226 honesty — when the eligibility gate narrowed the selection
-          before this sheet opened, say by how much and why. */}
-      {request.selectedCount !== undefined && (selectedCount > 1 || skippedCount > 0) && (
-        <span aria-label="Senders included in this bulk action">
-          {/* The quota segment is what reconciles "eligible" with the
-              title once a cap is in play. */}
-          {selectedCount} selected, {eligibleCount} eligible, {skippedCount} skipped
-          {quotaCappedFrom ? `, ${requestedSenderCount} within this month's actions` : ''}
-        </span>
-      )}
-      {protectedSkipped > 0 && <span>Unprotect a sender to include it.</span>}
-      {peopleSkipped > 0 && <span>Unsubscribe doesn&apos;t apply to people.</span>}
-
-      {/* D — let the reader verify the real set in Gmail BEFORE confirming.
-          "Approximate" on purpose: Gmail's `older_than:` is day-granular
-          and live, so its count can differ from the preview's. */}
-      {verifyInGmailUrl && !unsubscribeMovesNothing && (
-        <a
-          href={verifyInGmailUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Approximate — Gmail filters by whole days."
-          style={{ ...textButtonStyle, textDecoration: 'none' }}
-        >
-          Check these in Gmail first <span aria-hidden="true">↗</span>
-        </a>
-      )}
+      <SheetFactList facts={unsubFacts} aria-label="Unsubscribe breakdown" />
+      <SheetFactList facts={facts} />
 
       {/* Current matches — privacy-safe subjects, single sender only, and
           never for an Unsubscribe that moves no mail (founder screenshot
           2026-08-27: a sample of mail nothing is going to touch). */}
-      {single && !unsubscribeMovesNothing && (compositeCount ?? 0) > 0 && (
-        <button
-          type="button"
-          onClick={() => setShowSubjects((v) => !v)}
-          aria-expanded={showSubjects}
-          style={textButtonStyle}
-        >
-          {showSubjects
-            ? 'Hide current matches'
-            : `Show what currently matches (${fmt(subjectsPreview.length)} of ${fmt(compositeCount ?? 0)})`}
-        </button>
-      )}
       {showSubjects && !unsubscribeMovesNothing && subjectsPreview.length > 0 && (
         <div style={listStyle}>
           {/* Date first: on a windowed action this sample is the 5 most
@@ -1327,10 +1342,33 @@ export function ConfirmActionModal({
               <span style={{ color: color.fg, minWidth: 0 }}>{s.subject}</span>
             </div>
           ))}
-          <span style={{ color: color.fgMuted }}>
+          <span style={{ fontSize: text.xs, color: color.fgMuted }}>
             Subjects only. We never fetch or store full email contents.
           </span>
         </div>
+      )}
+
+      {(showGmailLink || showMatchesToggle) && (
+        <SheetLinks>
+          {/* D — let the reader verify the real set in Gmail BEFORE
+              confirming. "Approximate" on purpose: Gmail's `older_than:`
+              is day-granular and live, so its count can differ. */}
+          {showGmailLink && (
+            <SheetTextAction
+              href={verifyInGmailUrl ?? undefined}
+              title="Approximate — Gmail filters by whole days."
+            >
+              Check in Gmail <span aria-hidden="true">↗</span>
+            </SheetTextAction>
+          )}
+          {showMatchesToggle && (
+            <SheetTextAction onClick={() => setShowSubjects((v) => !v)} expanded={showSubjects}>
+              {showSubjects
+                ? 'Hide matches'
+                : `Show ${fmt(subjectsPreview.length)} of ${fmt(compositeCount ?? 0)}`}
+            </SheetTextAction>
+          )}
+        </SheetLinks>
       )}
     </>
   );
@@ -1427,12 +1465,6 @@ const wellInputStyle: CSSProperties = {
   cursor: 'pointer',
 };
 
-const factGridStyle: CSSProperties = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-  gap: `${space[1]}px ${space[3]}px`,
-};
-
 const factNumberStyle: CSSProperties = {
   color: color.fg,
   fontWeight: 600,
@@ -1441,23 +1473,19 @@ const factNumberStyle: CSSProperties = {
 
 const listStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: space[1] };
 
+// Name left, count right, no per-row separators — the rhythm is the gap.
+const senderListStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: space[2],
+  paddingTop: space[3],
+};
+
 const senderRowStyle: CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'baseline',
   gap: space[3],
-};
-
-const textButtonStyle: CSSProperties = {
-  alignSelf: 'flex-start',
-  background: 'transparent',
-  border: 'none',
-  padding: 0,
-  cursor: 'pointer',
-  fontFamily: font.sans,
-  fontSize: text.sm,
-  fontWeight: 550,
-  color: color.fg,
 };
 
 /** Up to three overlapping sender logos — the icon of a bulk sheet. */

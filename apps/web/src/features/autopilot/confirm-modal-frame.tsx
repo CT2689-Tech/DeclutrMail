@@ -1,7 +1,14 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
-import { PreviewSheet, SheetFact, tokens, type ButtonTone } from '@declutrmail/shared';
+import { afterLead } from '@/lib/copy/after-lead';
+import {
+  PreviewSheet,
+  SheetFactList,
+  tokens,
+  type ButtonTone,
+  type SheetFactItem,
+} from '@declutrmail/shared';
 
 const { color } = tokens;
 
@@ -12,7 +19,9 @@ const { color } = tokens;
  *
  *   - ⌘/Ctrl+Enter commits the primary action, under the same guard as
  *     the visible button (never while busy, never before `canConfirm`);
- *   - the Gmail account moves into Details as a plain fact;
+ *   - Details reads list → facts → sample: the caller's list (senders,
+ *     rules) first, then its short facts with the Gmail account last,
+ *     then any trailing block;
  *   - a failed commit renders in the sheet's live status line.
  *
  * What the mutation will do (verb copy, counts, affected senders) is the
@@ -24,6 +33,8 @@ export function ConfirmModalFrame({
   children,
   note,
   details,
+  facts = [],
+  trailing,
   confirmLabel,
   confirmBusyLabel,
   confirmTone,
@@ -42,8 +53,12 @@ export function ConfirmModalFrame({
   children?: ReactNode;
   /** One line: how to stop or undo it. */
   note?: ReactNode;
-  /** Everything else — collapsed. The Gmail account is appended here. */
+  /** Collapsed, first: the list the commit acts on (senders, rules). */
   details?: ReactNode;
+  /** Collapsed, after `details`: short label/value facts. The Gmail account is appended. */
+  facts?: readonly SheetFactItem[];
+  /** Collapsed, last: e.g. the sample of matching senders. */
+  trailing?: ReactNode;
   confirmLabel: string;
   confirmBusyLabel: string;
   confirmTone?: ButtonTone;
@@ -69,7 +84,10 @@ export function ConfirmModalFrame({
     return () => window.removeEventListener('keydown', onKey);
   }, [onConfirm, confirmEnabled]);
 
-  const hasDetails = details != null || Boolean(mailboxEmail);
+  const allFacts: readonly SheetFactItem[] = mailboxEmail
+    ? [...facts, { label: 'Gmail account', value: mailboxEmail }]
+    : facts;
+  const hasDetails = details != null || trailing != null || allFacts.length > 0;
 
   return (
     <PreviewSheet
@@ -81,7 +99,8 @@ export function ConfirmModalFrame({
         hasDetails ? (
           <>
             {details}
-            {mailboxEmail ? <SheetFact label="Gmail account">{mailboxEmail}</SheetFact> : null}
+            <SheetFactList facts={allFacts} />
+            {trailing}
           </>
         ) : undefined
       }
@@ -104,4 +123,22 @@ export function ConfirmModalFrame({
       {children}
     </PreviewSheet>
   );
+}
+
+/**
+ * What one match gets beyond the sheet's subtitle, as facts. Archive has
+ * nothing more to say (its effect IS the subtitle); Later adds when mail
+ * returns; Unsubscribe adds that existing email stays put.
+ */
+export function ruleEffectFacts(primary: {
+  verb: string;
+  schedule: { kind: string; summary?: string };
+}): SheetFactItem[] {
+  if (primary.schedule.kind === 'scheduled' && primary.schedule.summary !== undefined) {
+    return [{ label: 'Returns', value: afterLead(primary.schedule.summary, 'Returns to Inbox ') }];
+  }
+  if (primary.verb === 'unsubscribe') {
+    return [{ label: 'Existing email', value: 'Stays where it is' }];
+  }
+  return [];
 }

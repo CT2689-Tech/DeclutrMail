@@ -1150,16 +1150,12 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // up front, the activation report (no longer under its own heading)
     // in Details.
     expect(within(dialog).getByText('senders actionable now')).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(/10 senders and 74 inbox messages actionable now/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText('10 senders · 74 inbox emails')).toBeInTheDocument();
     // Said once per surface — in the note; the Details totals omit it.
     expect(within(dialog).getAllByText(/3 Protected senders are skipped/i)).toHaveLength(1);
-    expect(within(dialog).getByText(/7-day observed volume: 34 matches/i)).toBeInTheDocument();
-    expect(within(dialog).getByText(/daily safety cap: 100 actions/i)).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(/archive results can be undone from Activity for 30 days/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText('34 matches')).toBeInTheDocument();
+    expect(within(dialog).getByText(/^100 actions, the rest wait/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Undo from Activity for 30 days/)).toBeInTheDocument();
 
     await userEvent.click(confirm);
     await waitFor(() => expect(observed).toHaveLength(1));
@@ -1229,19 +1225,14 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     );
 
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText(/2 unsubscribe requests actionable now/i)).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(/unsubscribing does not remove existing email/i),
-    ).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(/early weekly estimate: about 11 matches/i),
-    ).toBeInTheDocument();
-    expect(within(dialog).getByText(/unsubscribe requests cannot be undone/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/^2 requests · /)).toBeInTheDocument();
+    // Existing email stays put — the Details fact, beside its label.
+    expect(dialog.textContent).toContain('Existing emailStays where it is');
+    expect(within(dialog).getByText(/^About 11 matches/)).toBeInTheDocument();
     expect(within(dialog).queryByText(/unsubscribe.*can be undone/i)).not.toBeInTheDocument();
-    // The Recovery line owns the one-way fact; the "For each new match"
-    // line above it must not state it a second time.
+    // The note owns the one-way fact; Details must not state it again.
     const text = dialog.textContent ?? '';
-    expect(text.match(/cannot be (undone|recalled)/gi)).toHaveLength(1);
+    expect(text.match(/(cannot|can’t) be (undone|recalled)/gi)).toHaveLength(1);
   });
 
   // The backlog clause had NO test until 2026-08-24, which is how it
@@ -1271,17 +1262,13 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     );
 
     const dialog = screen.getByRole('dialog');
-    expect(
-      within(dialog).getByText(/3 suggestions already collected are covered by this/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/^3 suggestions covered by this/)).toBeInTheDocument();
     // The old promise must be gone, not merely joined by the new one.
     expect(within(dialog).queryByText(/Approve or skip them separately/i)).not.toBeInTheDocument();
     // The other path leads somewhere different, and the user is choosing
     // between them right here: picking Watch first says so.
     fireEvent.click(within(dialog).getByRole('radio', { name: /watch first/i }));
-    expect(
-      within(dialog).getByText(/3 suggestions already collected stay pending/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/^3 suggestions stay pending/)).toBeInTheDocument();
     expect(within(dialog).queryByText(/covered by this/i)).not.toBeInTheDocument();
   });
 
@@ -1304,9 +1291,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     );
 
     const dialog = screen.getByRole('dialog');
-    expect(
-      within(dialog).getByText(/3 suggestions already collected stay pending/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/^3 suggestions stay pending/)).toBeInTheDocument();
     expect(within(dialog).queryByText(/covered by this/i)).not.toBeInTheDocument();
   });
 
@@ -1334,9 +1319,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     );
 
     const dialog = screen.getByRole('dialog');
-    expect(
-      within(dialog).getByText(/archive results can be undone from Activity for 12 days/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/Undo from Activity for 12 days/)).toBeInTheDocument();
   });
 });
 
@@ -1454,7 +1437,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     );
 
     const dialog = screen.getByRole('dialog', { name: /approve all ~214 suggestions/i });
-    expect(within(dialog).getByText(/showing 50 of ~214/i)).toBeInTheDocument();
+    expect(within(dialog).getByText('50 of ~214')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /^approve all ~214$/i })).toBeInTheDocument();
     // Never a bare "Approve 50" — that would be the page count.
     expect(within(dialog).queryByRole('button', { name: /^approve 50$/i })).toBeNull();

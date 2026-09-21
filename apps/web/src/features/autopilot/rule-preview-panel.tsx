@@ -16,7 +16,7 @@ type Align = 'start' | 'center';
  * Three pieces, because two surfaces lay the same result out
  * differently: the RuleCard shows all of it inline (`RulePreviewPanel`),
  * while the turn-on sheet leads with the one number (`RulePreviewHero`)
- * and keeps the totals and the sample behind Details.
+ * and keeps its own facts and the sample behind Details.
  *
  * Read-only: the dry-run endpoint mutates nothing, so there is no
  * confirm step here — this is information, not an action preview.
@@ -136,29 +136,14 @@ export function RulePreviewHero({
   );
 }
 
-/**
- * The other two counts from the same dry-run, in one line. `withProtected`
- * is off where the surface already states the Protected skip (the turn-on
- * sheet's note) — a fact is said once per surface.
- */
-export function RulePreviewTotals({
-  result,
-  withProtected = true,
-}: {
-  result: AutopilotRulePreviewResultDto;
-  withProtected?: boolean;
-}) {
+/** The other two counts from the same dry-run, in one line. */
+export function RulePreviewTotals({ result }: { result: AutopilotRulePreviewResultDto }) {
   return (
     <span style={{ fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
       {result.wouldMatchCount.toLocaleString('en-US')} of{' '}
-      {result.evaluatedSenders.toLocaleString('en-US')} senders checked match.
-      {withProtected && (
-        <>
-          {' '}
-          {result.protectedWouldMatchCount.toLocaleString('en-US')} Protected sender
-          {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} skipped.
-        </>
-      )}
+      {result.evaluatedSenders.toLocaleString('en-US')} senders checked match.{' '}
+      {result.protectedWouldMatchCount.toLocaleString('en-US')} Protected sender
+      {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} skipped.
     </span>
   );
 }
@@ -179,9 +164,18 @@ export function RulePreviewSample({
   return (
     <ul
       aria-label={`Sample matches for rule ${ruleName}`}
-      style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column' }}
+      style={{
+        listStyle: 'none',
+        margin: 0,
+        padding: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: space[2],
+      }}
     >
-      {result.sample.map((s, i) => {
+      {/* No per-row separators: the gap is the rhythm, so a sample reads
+          as one list rather than a stack of boxes. */}
+      {result.sample.map((s) => {
         const identity = resolveSenderIdentity(s);
         return (
           <li
@@ -190,8 +184,6 @@ export function RulePreviewSample({
               display: 'flex',
               alignItems: 'center',
               gap: space[3],
-              padding: `${space[2]}px 0`,
-              borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
               minWidth: 0,
             }}
           >

@@ -1,12 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { SheetSegmented, tokens } from '@declutrmail/shared';
+import { SheetSegmented, tokens, type SheetFactItem } from '@declutrmail/shared';
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
-import type { AutopilotRuleDto } from '@/lib/api/autopilot';
-import { ConfirmModalFrame } from './confirm-modal-frame';
+import type { AutopilotRuleDto, AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
+import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
 import { presetDisplayName } from './preset-labels';
-import { RulePreviewHero, RulePreviewSample, RulePreviewTotals } from './rule-preview-panel';
+import { RulePreviewHero, RulePreviewSample } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
 const { color, space, text } = tokens;
@@ -176,37 +176,40 @@ function ActivateRuleSheet({
       // ⌘⏎ and the button share this, so the shortcut can only ever run
       // the commit the user has selected and can see on the button.
       onConfirm={watching && onWatchFirst != null ? onWatchFirst : onConfirm}
-      details={
-        <>
-          <span>For each new match: {presentation.primary.effectCopy}</span>
-          {/* The backlog sentence is gated on the COUNT, not on the intent.
-              A RE-enabled rule keeps its pending matches in the buffer
-              (`listPendingSuggestions` filters on mode + resolution, never
-              on `enabled`), and they render on this same screen.
-
-              Two different truths, and saying the wrong one is not a
-              wording slip. Going ACTIVE, the server clears this rule's
-              pending suggestions (`dismiss_reason='superseded'`) in the
-              same transaction as the mode change, because the sweep
-              re-matches those senders and acts on them. Going to OBSERVE,
-              nothing is superseded and they really do stay pending. */}
-          {pendingApproximate || pendingCount > 0 ? (
-            <span>{backlogCopy(commitsActive, pendingCount, pendingApproximate)}</span>
-          ) : null}
-          {/* Turning a paused rule on resumes it. `{enabled:true, mode}`
-              overwrites `paused`, so without this line the commit
-              silently undoes a "Pause all" the user had set. */}
-          {enabling && rule.mode === 'paused' ? (
-            <span>This rule is paused. Turning it on resumes it.</span>
-          ) : null}
-          <ActivationReport
-            rule={rule}
-            ruleName={name}
-            preview={preview}
-            undoWindowDays={undoWindowDays}
-          />
-          <span>Pause any time from the rule’s toggle or Pause all.</span>
-        </>
+      facts={[
+        ...(preview.status === 'ready' ? activationFacts(rule, preview.result) : []),
+        ...ruleEffectFacts(presentation.primary),
+        // Gated on the COUNT, not on the intent. A RE-enabled rule keeps
+        // its pending matches in the buffer (`listPendingSuggestions`
+        // filters on mode + resolution, never on `enabled`), and they
+        // render on this same screen.
+        //
+        // Two different truths, and saying the wrong one is not a wording
+        // slip. Going ACTIVE, the server clears this rule's pending
+        // suggestions (`dismiss_reason='superseded'`) in the same
+        // transaction as the mode change, because the sweep re-matches
+        // those senders and acts on them. Going to OBSERVE, nothing is
+        // superseded and they really do stay pending.
+        ...(pendingApproximate || pendingCount > 0
+          ? [
+              {
+                label: 'Already collected',
+                value: backlogCopy(commitsActive, pendingCount, pendingApproximate),
+              },
+            ]
+          : []),
+        // Turning a paused rule on resumes it. `{enabled:true, mode}`
+        // overwrites `paused`, so without this the commit silently undoes
+        // a "Pause all" the user had set.
+        ...(enabling && rule.mode === 'paused'
+          ? [{ label: 'Paused', value: 'Turning it on resumes it' }]
+          : []),
+        { label: 'Pause', value: 'Any time, from the rule’s toggle or Pause all' },
+      ]}
+      trailing={
+        preview.status === 'ready' ? (
+          <RulePreviewSample ruleName={name} result={preview.result} />
+        ) : undefined
       }
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: space[4] }}>
@@ -244,92 +247,66 @@ function ActivateRuleSheet({
 
 function backlogCopy(commitsActive: boolean, pendingCount: number, approximate: boolean): string {
   const one = pendingCount === 1;
+  const n = `${pendingCount} suggestion${one ? '' : 's'}`;
   if (commitsActive) {
     return approximate
-      ? 'Already-collected suggestions are covered and clear from the pending list.'
-      : `The ${pendingCount} suggestion${one ? '' : 's'} already collected ${
-          one ? 'is' : 'are'
-        } covered by this and ${one ? 'clears' : 'clear'} from the pending list.`;
+      ? 'Covered by this; they clear from pending'
+      : `${n} covered by this; ${one ? 'it clears' : 'they clear'} from pending`;
   }
   return approximate
-    ? 'Already-collected suggestions stay pending. Approve or skip them separately.'
-    : `The ${pendingCount} suggestion${one ? '' : 's'} already collected ${
-        one ? 'stays' : 'stay'
-      } pending. Approve or skip ${one ? 'it' : 'them'} separately.`;
+    ? 'Stay pending; approve or skip them separately'
+    : `${n} ${one ? 'stays' : 'stay'} pending; approve or skip ${one ? 'it' : 'them'} separately`;
 }
 
-/** Decision-grade report, in Details, shown only after the dry-run resolves. */
-function ActivationReport({
-  rule,
-  ruleName,
-  preview,
-  undoWindowDays,
-}: {
-  rule: AutopilotRuleDto;
-  ruleName: string;
-  preview: RulePreviewState;
-  /** The caller's own undo window — see the prop note on the modal. */
-  undoWindowDays: number;
-}) {
-  if (preview.status !== 'ready') return null;
-  const { result } = preview;
-  const weeklyCopy =
-    result.weeklyVolume.basis === 'observed_7d'
-      ? `7-day observed volume: ${result.weeklyVolume.observedMatches.toLocaleString('en-US')} match${
-          result.weeklyVolume.observedMatches === 1 ? '' : 'es'
-        }.`
-      : `Early weekly estimate: about ${result.weeklyVolume.estimatedMatches.toLocaleString('en-US')} match${
-          result.weeklyVolume.estimatedMatches === 1 ? '' : 'es'
-        }, extrapolated from ${result.weeklyVolume.observedMatches.toLocaleString('en-US')} over ${
-          result.weeklyVolume.observedDays
-        } day${result.weeklyVolume.observedDays === 1 ? '' : 's'}.`;
+const fmt = (value: number) => value.toLocaleString('en-US');
+const plural = (count: number, word: string, suffix = 's') =>
+  `${fmt(count)} ${word}${count === 1 ? '' : suffix}`;
 
-  return (
-    <>
-      <RulePreviewTotals result={result} withProtected={false} />
-      <span>
-        {actionableNowCopy(rule, result.actionableSenderCount, result.actionableMessageCount)}{' '}
-        Actionable means the rule has something to do for that sender right now.
-      </span>
-      <span>{weeklyCopy}</span>
-      <span>
-        Daily safety cap: {result.dailyActionCap.toLocaleString('en-US')} action
-        {result.dailyActionCap === 1 ? '' : 's'}. The rest wait for the next check.
-      </span>
-      <span>{recoveryCopy(rule, undoWindowDays)}</span>
-      <RulePreviewSample ruleName={ruleName} result={result} />
-    </>
-  );
-}
-
-function actionableNowCopy(
+/** Decision-grade report as Details facts, only after the dry-run resolves. */
+function activationFacts(
   rule: AutopilotRuleDto,
-  senderCount: number,
-  messageCount: number,
-): string {
-  if (rule.actionKind === 'unsubscribe') {
-    return `${senderCount.toLocaleString('en-US')} unsubscribe request${
-      senderCount === 1 ? '' : 's'
-    } actionable now. Those senders currently account for ${messageCount.toLocaleString('en-US')} inbox message${
-      messageCount === 1 ? '' : 's'
-    }; unsubscribing does not remove existing email.`;
-  }
-  return `${senderCount.toLocaleString('en-US')} sender${senderCount === 1 ? '' : 's'} and ${messageCount.toLocaleString('en-US')} inbox message${messageCount === 1 ? '' : 's'} actionable now.`;
+  result: AutopilotRulePreviewResultDto,
+): SheetFactItem[] {
+  const weekly =
+    result.weeklyVolume.basis === 'observed_7d'
+      ? { label: 'Last 7 days', value: plural(result.weeklyVolume.observedMatches, 'match', 'es') }
+      : {
+          label: 'Weekly estimate',
+          value: `About ${plural(result.weeklyVolume.estimatedMatches, 'match', 'es')}, from ${fmt(
+            result.weeklyVolume.observedMatches,
+          )} over ${plural(result.weeklyVolume.observedDays, 'day')}`,
+        };
+  return [
+    {
+      label: 'Matches',
+      value: `${fmt(result.wouldMatchCount)} of ${plural(result.evaluatedSenders, 'sender')}`,
+    },
+    {
+      // "Actionable" = the rule has something to do for that sender now.
+      label: 'Actionable now',
+      value:
+        rule.actionKind === 'unsubscribe'
+          ? `${plural(result.actionableSenderCount, 'request')} · ${plural(
+              result.actionableMessageCount,
+              'inbox email',
+            )}`
+          : `${plural(result.actionableSenderCount, 'sender')} · ${plural(
+              result.actionableMessageCount,
+              'inbox email',
+            )}`,
+    },
+    weekly,
+    {
+      label: 'Daily cap',
+      value: `${plural(result.dailyActionCap, 'action')}, the rest wait for the next check`,
+    },
+  ];
 }
 
-function recoveryCopy(rule: AutopilotRuleDto, undoWindowDays: number): string {
-  if (rule.actionKind === 'archive') {
-    return `Recovery: archive results can be undone from Activity for ${undoWindowDays} days.`;
-  }
-  if (rule.actionKind === 'later') {
-    return `Recovery: Later results return automatically at their scheduled time and can be undone from Activity for ${undoWindowDays} days.`;
-  }
-  // Existing email staying put is already said twice above (the "For each
-  // new match" line and the activation report).
-  return 'Recovery: unsubscribe requests cannot be undone.';
-}
-
-/** The sheet's one-line undo posture; `recoveryCopy` in Details has the rest. */
+/**
+ * The sheet's one-line undo posture — the whole recovery story: Details
+ * adds only Later's scheduled return (`ruleEffectFacts`).
+ */
 function undoNote(rule: AutopilotRuleDto, undoWindowDays: number): string {
   return rule.actionKind === 'unsubscribe'
     ? 'Unsubscribe requests can’t be undone.'

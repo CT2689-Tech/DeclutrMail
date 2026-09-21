@@ -102,9 +102,14 @@ export class AuthController {
   @Get('me')
   @UseGuards(JwtGuard)
   async me(@CurrentUser() principal: SessionPrincipal): Promise<Envelope<MeEnvelope>> {
-    const [user, mailboxes] = await Promise.all([
+    // Every read that needs only the principal starts at once. The tier +
+    // free-cap position (D19/D77) is two serial statements for a finite
+    // tier, so starting it here instead of behind the mailbox list takes
+    // those round trips off every page's `me` (2026-09-21).
+    const [user, mailboxes, quota] = await Promise.all([
       this.users.findById(principal.userId),
       this.mailboxes.listByWorkspace(principal.workspaceId),
+      this.entitlements.cleanupSummary(principal.workspaceId),
     ]);
     if (!user) {
       throw new UnauthorizedException('User no longer exists.');
@@ -116,12 +121,9 @@ export class AuthController {
         ? stored
         : (mailboxes.find((m) => m.status === 'active')?.id ?? null);
     // Compose per-mailbox sync readiness via the sync facade (D116, D204).
-    // The tier + free-cap position ride the same response (D19/D77) —
-    // `cleanupSummary` skips the count scan entirely for paid tiers.
-    const [readiness, needsReconnect, quota] = await Promise.all([
+    const [readiness, needsReconnect] = await Promise.all([
       this.sync.getReadinessByMailbox(mailboxes.map((m) => m.id)),
       this.sync.getNeedsReconnectByMailbox(mailboxes.map((m) => m.id)),
-      this.entitlements.cleanupSummary(principal.workspaceId),
     ]);
     const mailboxViews: MailboxView[] = mailboxes.map((m) => ({
       ...m,

@@ -181,7 +181,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     );
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.
-    expect(html.toLowerCase()).toContain('shows this preview in the row instead');
+    expect(html.toLowerCase()).toContain('shows this preview in the row');
   });
 
   it('keeps Delete in the full confirmation sheet and states both recovery paths', () => {
@@ -334,8 +334,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
 
     // The count lives in the title, once; "current" in the Details line.
     expect(screen.getByRole('heading', { name: 'Archive 2 emails?' })).toBeInTheDocument();
-    expect(screen.getByText(/Counted in Inbox now/i)).toBeInTheDocument();
-    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Inbox now, rechecked when it runs$/)).toBeInTheDocument();
     expect(screen.queryByText(/will move out of the inbox/i)).not.toBeInTheDocument();
   });
 });

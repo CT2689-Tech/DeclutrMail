@@ -61,7 +61,7 @@ describe('PricingScreen (D19)', () => {
     expect(screen.getAllByText('No card required')).toHaveLength(1);
     // Annual price lines carry a "/mo effective" note instead of the
     // monthly billing line, so that string is absent on the default view.
-    expect(screen.queryAllByText('Billed monthly · cancel anytime')).toHaveLength(0);
+    expect(screen.queryAllByText('Billed monthly, cancel anytime')).toHaveLength(0);
     expect(screen.getByRole('region', { name: 'Scrollable plan comparison' })).toHaveAttribute(
       'tabindex',
       '0',
@@ -164,5 +164,19 @@ describe('PricingScreen (D19)', () => {
   it('explains what happens when the Free monthly cap is reached', () => {
     render(<PricingScreen />);
     expect(screen.getByText(/until the next month or an upgrade/i)).toBeInTheDocument();
+  });
+
+  it('keeps the preview, undo, Trash and refund facts on the page', () => {
+    render(<PricingScreen />);
+    // Facts, not whole sentences: the shared summary's own words.
+    expect(screen.getByText(/you see the count and what changes in Gmail/)).toBeInTheDocument();
+    expect(screen.getByText(/Gmail Trash for up to 30 days/)).toBeInTheDocument();
+    expect(screen.getByText(/unsubscribe request cannot be taken back/)).toBeInTheDocument();
+    expect(screen.getByText(/30-day money-back guarantee/)).toBeInTheDocument();
+    expect(screen.getByText(/gmail\.modify/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review Gmail permissions' })).toHaveAttribute(
+      'href',
+      '/sign-in',
+    );
   });
 });

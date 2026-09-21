@@ -42,7 +42,9 @@ describe('landing page — D134', () => {
   it('renders the launch headline as the page h1', async () => {
     await renderLanding();
     const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.textContent).toBe('Clear years of clutter. One sender at a time.');
+    expect(h1.textContent).toBe('Clear years of clutter, one sender at a time.');
+    // One ink colour: no accented phrase inside the headline.
+    expect(h1.querySelector('em, i, b, strong, span')).toBeNull();
   });
 
   it('states the D228 trust copy once: the badge, plus the collapsed scope disclosures', async () => {
@@ -93,8 +95,8 @@ describe('landing page — D134', () => {
     const { container } = await renderLanding();
     const workflow = container.querySelector('#how-it-works');
     expect(workflow?.textContent).toContain('Keep, Archive, Unsubscribe, Later, or Delete');
-    // The hero demo card carries the same five, from the same registry.
-    const demoVerbs = Array.from(container.querySelectorAll('.dm-mkt-ledger-verb')).map(
+    // The Review step's vignette carries the same five, from the same registry.
+    const demoVerbs = Array.from(container.querySelectorAll('.dm-mkt-vig-verb')).map(
       (el) => el.textContent,
     );
     expect(demoVerbs).toEqual(['KKeep', 'AArchive', 'UUnsubscribe', 'LLater', 'DDelete']);
@@ -122,20 +124,20 @@ describe('landing page — D134', () => {
     expect(text).toMatch(/unsubscribe requests cannot be taken back/i);
   });
 
-  it('plays the hero demo with no controls and settles on an informative result', async () => {
+  it('settles the hero inbox on a confirm card that states the count and where email goes', async () => {
     const { container } = await renderLanding();
-    const result = container.querySelector('.dm-mkt-ledger-result');
-    expect(result?.textContent).toContain('412');
-    expect(result?.textContent).toContain('archived');
-    expect(result?.textContent).toContain('Undo');
-    // The preview frame states the count and where the email goes (D226).
-    const preview = container.querySelector('.dm-mkt-ledger-preview');
-    expect(preview?.textContent).toContain('412');
-    expect(preview?.textContent).toContain('All Mail');
+    const figure = container.querySelector('.dm-mkt-inbox-figure') as HTMLElement;
+    // Labelled as an illustration, visibly and to assistive tech.
+    expect(figure.querySelector('figcaption')?.textContent).toMatch(/illustrative/i);
+    const confirm = figure.querySelector('.dm-mkt-inbox-confirm');
+    // The preview owes the count and where the email goes (D226).
+    expect(confirm?.textContent).toContain('Archive 412 emails?');
+    expect(confirm?.textContent).toContain('stay in Gmail');
     expect(
-      screen.getByRole('img', { name: /412 emails are archived and Undo/i }),
+      screen.getByRole('img', { name: /Illustrative inbox.*Archive 412 emails from LinkedIn/i }),
     ).toBeInTheDocument();
-    expect(container.querySelector('.dm-mkt-ledger-demo button')).toBeNull();
+    // Decorative UI, not controls: nothing in the figure is focusable.
+    expect(figure.querySelector('button, a, [tabindex]')).toBeNull();
   });
 
   it('offers exactly one primary button and one quiet demo link in the hero', async () => {

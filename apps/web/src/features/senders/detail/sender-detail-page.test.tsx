@@ -1363,7 +1363,7 @@ describe('SenderDetailRoute', () => {
         await tick(200);
         fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
         await tick(200);
-        screen.getByText(/currently match.*Archive/i);
+        screen.getByText(/rechecked when it runs/i);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
         await tick(200);
         expect(actionPosts).toBe(1);
@@ -1458,7 +1458,7 @@ describe('SenderDetailRoute', () => {
       ]);
       renderDetail();
       fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
 
       // It used to close before the request was even sent.
@@ -1504,7 +1504,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       // The latch is armed once its status poll starts.
@@ -1552,7 +1552,7 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
-        await screen.findByText(/currently match.*Archive/i);
+        await screen.findByText(/rechecked when it runs/i);
         fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       }
 
@@ -1693,7 +1693,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
 
@@ -1758,7 +1758,7 @@ describe('SenderDetailRoute', () => {
 
       const archiveButton = await screen.findByRole('button', { name: 'Archive (A)' });
       fireEvent.click(archiveButton);
-      await screen.findByText(/currently match.*Archive/i);
+      await screen.findByText(/rechecked when it runs/i);
       fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
       await waitFor(() => expect(actionPosts).toBe(1));
       await waitFor(() => expect(doneMark()).not.toBeNull());

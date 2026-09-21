@@ -1,3 +1,4 @@
+import { afterLead } from '@/lib/copy/after-lead';
 import { tokens } from '@declutrmail/shared';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -7,7 +8,7 @@ import { useNow } from '@/lib/use-now';
 import type { TriageDecisionRow } from './data';
 import type { ActionVerb } from './types';
 
-const { color, text } = tokens;
+const { color } = tokens;
 
 /**
  * The live "what moves" figure for the preview — the sender's
@@ -67,10 +68,21 @@ export interface PreviewFacts {
   compactLine: string;
   /** Confirm label — verb + count when the count is known. */
   primaryLabel: string;
-  /** Collapsed facts, in reading order. */
-  disclosures: readonly string[];
+  /**
+   * Collapsed facts, in reading order, as short label/value pairs for
+   * the Details well's `SheetFactList`. Each value states the same fact
+   * as the shared semantics sentence it is cut from — shorter, never
+   * wider or narrower.
+   */
+  disclosures: readonly PreviewDisclosure[];
   /** Cleanup actions this confirm spends (metered tiers). */
   unitsNeeded: number;
+}
+
+/** One Details row. `value` is plain text so the inline path can render it anywhere. */
+export interface PreviewDisclosure {
+  label: string;
+  value: string;
 }
 
 const n = (value: number) => value.toLocaleString('en-US');
@@ -176,22 +188,38 @@ export function buildPreviewFacts({
       ? (subtitle ?? title)
       : `${liveCount === null ? 'Email' : emails(liveCount)} from ${subject}. ${destination ?? ''}`.trim();
 
-  const disclosures: string[] = [];
+  const disclosures: PreviewDisclosure[] = [];
   if (counts && liveCount !== null) {
-    disclosures.push(
-      `Counted ${allMail ? 'across inbox + archived' : 'in Inbox'} now. Rechecked when it runs.`,
-    );
+    disclosures.push({
+      label: 'Count',
+      value: `${allMail ? 'Inbox + archived' : 'Inbox'} now, rechecked when it runs`,
+    });
   }
   // "from", a floor rather than a delivery time — see `presentationSchedule`.
-  if (primary.schedule.kind === 'scheduled') disclosures.push(primary.schedule.summary);
+  if (primary.schedule.kind === 'scheduled') {
+    disclosures.push({
+      label: 'Returns',
+      value: afterLead(primary.schedule.summary, 'Returns to Inbox '),
+    });
+  }
   if (verb === 'Unsubscribe') {
-    disclosures.push(primary.currentMail.summary);
+    disclosures.push({
+      label: 'Past email',
+      value:
+        secondary === null ? 'Stays where it is' : secondary.currentMail.summary.replace(/\.$/, ''),
+    });
     if (secondary !== null) {
-      disclosures.push(secondary.currentMail.summary, secondary.activityUndo.summary);
+      disclosures.push({
+        label: 'Undo archive',
+        value: afterLead(secondary.activityUndo.summary, 'Undo '),
+      });
     }
   }
-  if (primary.providerRecovery.kind !== 'none') {
-    disclosures.push(primary.providerRecovery.summary);
+  if (primary.providerRecovery.kind === 'gmail-trash') {
+    disclosures.push({
+      label: 'Gmail Trash',
+      value: `Kept up to ${primary.providerRecovery.approximateDays} days, then deleted for good`,
+    });
   }
 
   return {
@@ -227,7 +255,8 @@ export function cleanupCostLine(
 }
 
 /**
- * The engine's "why this verdict" copy, with how old that read is.
+ * The engine's "why this verdict" copy, with how old that read is — the
+ * value of the Details "Why suggested" row.
  *
  * `useNow`, not an ambient `new Date()` — same hydration reasoning as
  * `TriageRowExpanded` (D25, founder 2026-08-19): the reasoning sentence
@@ -239,20 +268,11 @@ export function PreviewReasoning({ row }: { row: TriageDecisionRow }) {
   const ageLabel =
     row.scoredAt !== undefined && now !== null ? scoredAgeLabel(row.scoredAt, new Date(now)) : null;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-      <span
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 8,
-          fontSize: text.xs,
-          color: color.fgMuted,
-        }}
-      >
-        <span>Why we suggested this</span>
-        {ageLabel !== null && <span style={{ whiteSpace: 'nowrap' }}>{ageLabel}</span>}
-      </span>
-      <span style={{ color: color.fg }}>{row.reasoning}</span>
-    </div>
+    <>
+      {row.reasoning}
+      {ageLabel !== null && (
+        <span style={{ display: 'block', color: color.fgMuted, fontWeight: 400 }}>{ageLabel}</span>
+      )}
+    </>
   );
 }

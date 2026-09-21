@@ -1,7 +1,12 @@
-import { infiniteQueryOptions } from '@tanstack/react-query';
+import { infiniteQueryOptions, queryOptions } from '@tanstack/react-query';
 import type { Envelope } from '@declutrmail/shared/contracts';
 
-import type { ActivityFilters, ActivityListMetaWire, ActivityRowWire } from '@/lib/api/activity';
+import type {
+  ActivityFilters,
+  ActivityListMetaWire,
+  ActivityRowWire,
+  ActivityWeeklyReviewWire,
+} from '@/lib/api/activity';
 import { activityKeys } from './query-keys';
 
 export type ActivityPage = Envelope<ActivityRowWire[], ActivityListMetaWire>;
@@ -17,5 +22,14 @@ export function activityInfiniteQueryOptions(filters: ActivityFilters, reader: A
     queryFn: ({ pageParam, signal }) => reader(filters, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.meta?.pagination.nextCursor ?? undefined,
+  });
+}
+
+type WeeklyReviewReader = (signal: AbortSignal) => Promise<ActivityWeeklyReviewWire>;
+
+export function activityWeeklyReviewQueryOptions(reader: WeeklyReviewReader, senderQuery = '') {
+  return queryOptions({
+    queryKey: activityKeys.weeklyReview(senderQuery),
+    queryFn: ({ signal }) => reader(signal),
   });
 }

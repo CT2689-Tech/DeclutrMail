@@ -40,8 +40,15 @@ export { useLongPress, LONG_PRESS_MS, LONG_PRESS_DRIFT_PX } from './hooks/use-lo
 
 export { Kbd } from './components/kbd';
 export { BottomSheet } from './components/bottom-sheet';
-export { PreviewSheet, SheetFact, SheetSegmented } from './components/preview-sheet/preview-sheet';
+export { PreviewSheet } from './components/preview-sheet/preview-sheet';
+export {
+  SheetFactList,
+  SheetLinks,
+  SheetSegmented,
+  SheetTextAction,
+} from './components/preview-sheet/sheet-parts';
 export type { PreviewSheetProps } from './components/preview-sheet/preview-sheet';
+export type { SheetFactItem } from './components/preview-sheet/sheet-parts';
 export { Tooltip } from './components/tooltip';
 export { Eyebrow } from './components/eyebrow';
 export type { EyebrowTone } from './components/eyebrow';

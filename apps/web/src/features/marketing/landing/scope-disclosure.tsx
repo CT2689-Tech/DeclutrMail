@@ -20,7 +20,7 @@ export function ScopeDisclosure() {
       <summary>What Google will ask you to allow</summary>
       <p>
         {OAUTH_SCOPE_DISCLOSURE}{' '}
-        <a href="/sign-in">See what DeclutrMail can and can&rsquo;t access →</a>
+        <a href="/sign-in">See what DeclutrMail can and can&rsquo;t access</a>
       </p>
     </details>
   );

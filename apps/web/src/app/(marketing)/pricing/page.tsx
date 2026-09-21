@@ -11,6 +11,7 @@ import { headers } from 'next/headers';
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
 import { defaultProviderForCountry } from '@/features/billing/billing-region';
 import { PricingScreen } from '@/features/marketing/pricing/pricing-screen';
+import '@/features/marketing/pricing/pricing.css';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { COUNTRY_HEADER } from '@/middleware';
 

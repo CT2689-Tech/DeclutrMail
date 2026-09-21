@@ -16,7 +16,6 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Launch essay',
-    eyebrow: 'Product thesis · attention over volume',
     title: 'Why email cleanup should start with senders',
     description:
       'The product thesis behind sender-first Gmail cleanup: compress recurrence, preserve message context, and separate current cleanup from future delivery.',
@@ -132,7 +131,6 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Launch essay',
-    eyebrow: 'Privacy engineering · capability follows data',
     title: 'Metadata-only should be a design constraint',
     description:
       'Why a metadata-only email product must name stored snippets, constrain its features, disclose external processing, and make the missing body visible.',
@@ -224,7 +222,6 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-14',
     kind: 'Launch essay',
-    eyebrow: 'Trust design · previews before recovery',
     title: 'Reversible does not mean risk-free',
     description:
       'Why each Gmail cleanup action needs its own recovery explanation, visible previews, small batches, and honest one-way warnings even when Undo exists.',

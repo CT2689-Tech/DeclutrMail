@@ -19,6 +19,7 @@ import {
   Button,
   EmptyState,
   ErrorState as RecoverableErrorState,
+  Pill,
   ScreenIntro,
   TechnicalDetails,
   Tooltip,
@@ -30,6 +31,9 @@ import { useFocusTrap } from '@declutrmail/shared/hooks/use-focus-trap';
 import {
   ACTIVITY_REVIEW_OUTCOME_ROW_LABELS,
   activityActionLabel as sharedActivityActionLabel,
+  verbById,
+  type VerbId,
+  type VerbTone,
 } from '@declutrmail/shared/actions';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
@@ -57,8 +61,10 @@ import {
   useActivity,
   useConfirmActionRecovery,
   useCreateActionRecoveryPreview,
+  useActivityWeeklyReview,
   useRevertActivity,
 } from './api/use-activity';
+import { WeeklyReviewStrip } from './weekly-review-strip';
 import { useActivitySupportBundle } from './api/use-activity-support-bundle';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb } from '@/lib/sentry';
@@ -88,9 +94,11 @@ export const activityUndoRecoveryHelp =
  * Layout (top → bottom):
  *   1. Header — h1 + sender search (B9) + Filter + support bundle export
  *   2. Active filters — removable chips + Clear (only when any is set)
- *   3. Summary — D59 window counts on one line + the failed-actions link
- *   4. Bulk action bar (B7 — only visible when ≥1 row selected)
- *   5. Timeline — rows under sticky day headers (D57) OR sender-grouped (B11)
+ *   3. Summary — D59 window counts (each with its all-time total) + the
+ *      failed-actions link; one line when the window counted nothing
+ *   4. Last 7 days — D246 outcome chips (hidden when all zero)
+ *   5. Bulk action bar (B7 — only visible when ≥1 row selected)
+ *   6. Timeline — rows under sticky day headers (D57) OR sender-grouped (B11)
  *
  * The Filter popover (bottom sheet below `sm`, D60) holds source (D56),
  * action (B8), outcome (D246), window (D55), date range (B10) and
@@ -140,6 +148,24 @@ export function ActivityScreen() {
     hasInFlightAction: inFlightActionPolls > 0,
     enabled: !dateFilters.isInvalid && !outcomeFilters.isInvalid,
   });
+  const weeklyQuery = useActivityWeeklyReview(filters.senderQuery ?? '');
+  const weeklyTrackedKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    const review = weeklyQuery.data;
+    if (!review) return;
+    const trackingKey = `${activeMailboxId ?? 'unknown'}:${review.from}:${review.to}`;
+    if (weeklyTrackedKey.current === trackingKey) return;
+    weeklyTrackedKey.current = trackingKey;
+    void track('weekly_review_viewed', {
+      completed: review.completed,
+      skipped: review.skipped,
+      failed: review.failed,
+      recovered: review.recovered,
+      protected: review.protected,
+    });
+  }, [activeMailboxId, weeklyQuery.data]);
+
   // `mailbox_id: null` — the screen deliberately avoids `useAuth()` so
   // its Storybook stories mount without an auth shim; PostHog
   // `identify` ties the event to the user regardless.
@@ -310,6 +336,7 @@ export function ActivityScreen() {
   const rows = pages.flatMap((page) => page.data);
   const meta = pages[0]?.meta;
   const stats = meta?.stats;
+  const allTimeStats = meta?.allTimeStats;
 
   // `keepPreviousData` keeps the PRIOR filter's rows on screen while the
   // next filter loads. Those rows don't match the active URL filter, so
@@ -318,6 +345,17 @@ export function ActivityScreen() {
   // to a filter they've already navigated away from. Restores the
   // interaction guard the full-screen <LoadingState/> used to provide.
   const showingStaleRows = query.isPlaceholderData;
+
+  const weeklyStrip = (
+    <WeeklyReviewStrip
+      review={weeklyQuery.data ?? null}
+      error={weeklyQuery.isError}
+      onRetry={() => void weeklyQuery.refetch()}
+      activeOutcome={filters.outcomes?.[0] ?? null}
+      clearHref={clearOutcomeHref(filters, weeklyQuery.data ?? null)}
+      senderQuery={filters.senderQuery ?? ''}
+    />
+  );
 
   const filterProps: FilterFieldsProps = {
     source: filters.source ?? 'all',
@@ -372,13 +410,16 @@ export function ActivityScreen() {
       <ActiveFilterChips {...filterProps} onClear={clearFilters} />
 
       {invalidActiveFilters ? (
-        <ActivityErrorState
-          error={query.error}
-          onRecover={() => writeUrl({ date_from: null, date_to: null, outcome: null })}
-          recoveryLabel="Reset filters"
-          isFilterError
-          embedded
-        />
+        <>
+          {weeklyStrip}
+          <ActivityErrorState
+            error={query.error}
+            onRecover={() => writeUrl({ date_from: null, date_to: null, outcome: null })}
+            recoveryLabel="Reset filters"
+            isFilterError
+            embedded
+          />
+        </>
       ) : (
         <>
           <SummaryRow
@@ -388,10 +429,17 @@ export function ActivityScreen() {
               filters.dateTo ?? null,
             )}
             stats={stats ?? null}
+            allTimeStats={allTimeStats ?? null}
+            isWindowAllTime={
+              (filters.window ?? '30d') === 'all' && !filters.dateFrom && !filters.dateTo
+            }
+            hasUndoneRows={rows.some((r) => r.undoState.kind === 'executed')}
             verbs={filters.verbs ?? []}
             onVerbs={setVerbs}
             failedHref={failedOutcomeHref(filters)}
           />
+
+          {weeklyStrip}
 
           <BulkActionBar
             rows={rows}
@@ -722,9 +770,11 @@ const SUMMARY_VERBS: ReadonlyArray<{
   key: 'archived' | 'deleted' | 'unsubscribed' | 'later' | 'kept';
   verb: ActivityVerbFilterWire;
   label: string;
+  /** Lower-case form for the one-line all-time total. */
+  allTimeWord: string;
 }> = [
-  { key: 'archived', verb: 'archive', label: 'Archived' },
-  { key: 'deleted', verb: 'delete', label: 'Deleted' },
+  { key: 'archived', verb: 'archive', label: 'Archived', allTimeWord: 'archived' },
+  { key: 'deleted', verb: 'delete', label: 'Deleted', allTimeWord: 'deleted' },
   // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
   // intent rows), which for one-click include attempts that may fail
   // and mailto that we never confirm. "Unsubscribes" (a count of the
@@ -733,30 +783,62 @@ const SUMMARY_VERBS: ReadonlyArray<{
   // "Request accepted" (never aggregated as verified compliance —
   // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
   // metric-definition options if an exact confirmed count is wanted.
-  { key: 'unsubscribed', verb: 'unsubscribe', label: 'Unsubscribes' },
-  { key: 'later', verb: 'later', label: 'Later' },
-  { key: 'kept', verb: 'keep', label: 'Kept' },
+  { key: 'unsubscribed', verb: 'unsubscribe', label: 'Unsubscribes', allTimeWord: 'unsubscribes' },
+  { key: 'later', verb: 'later', label: 'Later', allTimeWord: 'later' },
+  { key: 'kept', verb: 'keep', label: 'Kept', allTimeWord: 'kept' },
 ];
+
+/** Thousands separators pinned to one locale — server-rendered (React #418). */
+function formatCount(n: number): string {
+  return n.toLocaleString('en-US');
+}
 
 /**
  * The window's counts, once, on one line. Each count toggles its verb
- * filter — the same URL state the Filter popover writes.
+ * filter — the same URL state the Filter popover writes — and carries its
+ * all-time total underneath (both from `aggregateStats`, same filters
+ * minus the window). A window with no counted actions collapses to one
+ * line instead of five zeros.
  */
 function SummaryRow({
   windowLabel,
   stats,
+  allTimeStats,
+  isWindowAllTime,
+  hasUndoneRows,
   verbs,
   onVerbs,
   failedHref,
 }: {
   windowLabel: string;
   stats: ActivityStatsWire | null;
+  allTimeStats: ActivityStatsWire | null;
+  /** The window IS all time — the second number would repeat the first. */
+  isWindowAllTime: boolean;
+  /** A loaded row in this window was undone — the counts leave it out. */
+  hasUndoneRows: boolean;
   verbs: readonly ActivityVerbFilterWire[];
   onVerbs: (next: readonly ActivityVerbFilterWire[]) => void;
   /** The same window, narrowed to the failed records this count names. */
   failedHref: string;
 }) {
   if (!stats) return null;
+  const windowIsEmpty = SUMMARY_VERBS.every(({ key }) => stats[key] === 0);
+  const showAllTime = !isWindowAllTime && allTimeStats !== null;
+  const allTimeParts = allTimeStats
+    ? SUMMARY_VERBS.filter(({ key }) => allTimeStats[key] > 0).map(
+        ({ key, allTimeWord }) => `${formatCount(allTimeStats[key])} ${allTimeWord}`,
+      )
+    : [];
+  // `aggregateStats` counts activity_log ROWS, drops reverted ones, and
+  // ignores the source chips — none of which the numbers can say for
+  // themselves (QA-activity-20260918-05).
+  const caption = [
+    windowIsEmpty && allTimeParts.length === 0 ? null : 'Actions, not emails, from every source.',
+    hasUndoneRows ? 'Undone actions aren’t counted.' : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <section
       aria-live="polite"
@@ -773,7 +855,7 @@ function SummaryRow({
         }}
       >
         <span style={{ fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}>
-          {windowLabel}
+          {windowIsEmpty ? `Nothing in ${lowerFirst(windowLabel)}` : windowLabel}
         </span>
         {/* The one number naming a problem has to reach those records
             (QA-activity-20260918-08). */}
@@ -791,71 +873,88 @@ function SummaryRow({
           </Link>
         )}
       </div>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
-          gap: 4,
-          margin: '0 -12px',
-        }}
-      >
-        {SUMMARY_VERBS.map(({ key, verb, label }) => {
-          const isActive = verbs.includes(verb);
-          return (
-            <button
-              key={key}
-              type="button"
-              aria-pressed={isActive}
-              onClick={() => onVerbs(toggled(verbs, verb))}
-              onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.background = color.fill;
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.background = 'transparent';
-              }}
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'flex-start',
-                gap: 2,
-                minHeight: 56,
-                padding: '8px 12px',
-                background: isActive ? color.primarySoft : 'transparent',
-                border: 'none',
-                borderRadius: radius.lg,
-                fontFamily: font.sans,
-                textAlign: 'left',
-                cursor: 'pointer',
-                transition: `background ${motion.fast} ${motion.ease}`,
-              }}
-            >
-              <span
+      {windowIsEmpty ? (
+        showAllTime &&
+        allTimeParts.length > 0 && (
+          <p style={{ ...numeralStyle, margin: 0, fontSize: text.xs, color: color.fgMuted }}>
+            {allTimeParts.join(', ')} all time
+          </p>
+        )
+      ) : (
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+            gap: 4,
+            margin: '0 -12px',
+          }}
+        >
+          {SUMMARY_VERBS.map(({ key, verb, label }) => {
+            const isActive = verbs.includes(verb);
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={isActive}
+                onClick={() => onVerbs(toggled(verbs, verb))}
+                onMouseEnter={(e) => {
+                  if (!isActive) e.currentTarget.style.background = color.fill;
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) e.currentTarget.style.background = 'transparent';
+                }}
                 style={{
-                  ...numeralStyle,
-                  fontSize: text.xl,
-                  fontWeight: 600,
-                  letterSpacing: '-0.01em',
-                  lineHeight: 1.2,
-                  color: isActive ? color.primary : color.fg,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-start',
+                  gap: 2,
+                  minHeight: 56,
+                  padding: '8px 12px',
+                  background: isActive ? color.primarySoft : 'transparent',
+                  border: 'none',
+                  borderRadius: radius.lg,
+                  fontFamily: font.sans,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  transition: `background ${motion.fast} ${motion.ease}`,
                 }}
               >
-                {stats[key]}
-              </span>
-              <span style={{ fontSize: text.xs, color: isActive ? color.primary : color.fgMuted }}>
-                {label}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {/* `aggregateStats` counts activity_log ROWS and ignores the source
-          chips — neither of which the numbers can say for themselves
-          (QA-activity-20260918-05). */}
-      <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>
-        Actions, not emails, from every source.
-      </p>
+                <span
+                  style={{
+                    ...numeralStyle,
+                    fontSize: text.xl,
+                    fontWeight: 600,
+                    letterSpacing: '-0.01em',
+                    lineHeight: 1.2,
+                    color: isActive ? color.primary : color.fg,
+                  }}
+                >
+                  {formatCount(stats[key])}
+                </span>
+                <span
+                  style={{ fontSize: text.xs, color: isActive ? color.primary : color.fgMuted }}
+                >
+                  {label}
+                </span>
+                {showAllTime && allTimeStats && (
+                  <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
+                    {formatCount(allTimeStats[key])} all time
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {caption && <p style={{ margin: 0, fontSize: text.xs, color: color.fgMuted }}>{caption}</p>}
     </section>
   );
+}
+
+function lowerFirst(label: string): string {
+  // "Last 30 days" → "the last 30 days"; a date range reads as-is after "in".
+  if (label === 'All time') return 'all time';
+  return label.startsWith('Last ') ? `the last ${label.slice(5)}` : label;
 }
 
 function toggled<T>(list: readonly T[], value: T): T[] {
@@ -2177,6 +2276,59 @@ function GroupedList({
  * an error, an unsettled unsubscribe as a warning. A completed action is
  * the record's normal state and stays neutral.
  */
+const VERB_TONE_COLOR: Record<VerbTone, string> = {
+  dark: color.fg,
+  amber: color.amber,
+  danger: color.danger,
+  primary: color.primary,
+  neutral: color.fgMuted,
+};
+
+/**
+ * The verb's colour for a row's 8px dot. Canonical verbs read their tone
+ * from the verb registry (ADR-0019); every unsubscribe outcome row is an
+ * unsubscribe. Later has no registry colour of its own (`neutral`, same as
+ * Keep), so it takes primary to stay distinguishable; protection toggles
+ * are an outlined primary dot — a standing setting, not a mail move.
+ */
+export function activityActionDot(action: ActivityRowWire['action']): {
+  color: string;
+  outline: boolean;
+} {
+  if (action === 'marked_protected' || action === 'unmarked_protected') {
+    return { color: color.primary, outline: true };
+  }
+  if (action === 'later') return { color: color.primary, outline: false };
+  const verb: string = action.startsWith('unsubscribe') ? 'unsubscribe' : action;
+  if (verb === 'keep' || verb === 'archive' || verb === 'unsubscribe' || verb === 'delete') {
+    return { color: VERB_TONE_COLOR[verbById(verb as VerbId).tone], outline: false };
+  }
+  return { color: color.fgMuted, outline: false };
+}
+
+function ActionDot({ action }: { action: ActivityRowWire['action'] }) {
+  const dot = activityActionDot(action);
+  return (
+    <span
+      aria-hidden="true"
+      data-action-dot={action}
+      style={{
+        display: 'inline-block',
+        boxSizing: 'border-box',
+        width: 8,
+        height: 8,
+        marginRight: 8,
+        verticalAlign: 'middle',
+        position: 'relative',
+        top: -1,
+        borderRadius: radius.pill,
+        background: dot.outline ? 'transparent' : dot.color,
+        border: dot.outline ? `1.5px solid ${dot.color}` : 'none',
+      }}
+    />
+  );
+}
+
 function rowLabelColor(row: ActivityRowWire): string {
   if (row.executionState?.kind === 'failed' || row.action === 'unsubscribe_failed') {
     return color.danger;
@@ -2367,6 +2519,7 @@ function ActivityRow({
               whiteSpace: 'nowrap',
             }}
           >
+            <ActionDot action={row.action} />
             <span>{verbLabel}</span>
             {row.affectedCount > 0 && (
               <>
@@ -3252,8 +3405,8 @@ function UndoCell({
   }
   if (undo.kind === 'executed') {
     return (
-      <span role="status" style={{ ...rowControlStyle, color: color.fgMuted }}>
-        Undone
+      <span role="status" style={{ display: 'inline-flex', alignItems: 'center', height: 30 }}>
+        <Pill>Undone</Pill>
       </span>
     );
   }
@@ -3497,6 +3650,36 @@ function unsafeRetryReason(row: ActivityRowWire): string | null {
   return row.executionState.resolution === 'support'
     ? 'This action can’t be retried safely from Activity.'
     : null;
+}
+
+/**
+ * Where the active weekly chip goes: the current window, minus the
+ * outcome. Dates the strip stamped travel out with it; a range the user
+ * picked stays.
+ */
+function clearOutcomeHref(
+  filters: {
+    window?: ActivityWindowWire;
+    dateFrom?: string | null;
+    dateTo?: string | null;
+    senderQuery?: string;
+  },
+  cardRange: { from: string; to: string } | null,
+): string {
+  const params = new URLSearchParams({ window: filters.window ?? '30d' });
+  // The 7-day strip stamps its own from/to onto its links. Dates that ARE
+  // the strip's go with the outcome; a range the user picked stays. Checked,
+  // not inferred from the window — a custom range can sit under `7d` too.
+  const datesAreTheCards =
+    cardRange !== null && filters.dateFrom === cardRange.from && filters.dateTo === cardRange.to;
+  if (datesAreTheCards) {
+    if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
+    return `/activity?${params.toString()}`;
+  }
+  if (filters.dateFrom) params.set('date_from', filters.dateFrom);
+  if (filters.dateTo) params.set('date_to', filters.dateTo);
+  if (filters.senderQuery) params.set('sender_q', filters.senderQuery);
+  return `/activity?${params.toString()}`;
 }
 
 function failedOutcomeHref(filters: {

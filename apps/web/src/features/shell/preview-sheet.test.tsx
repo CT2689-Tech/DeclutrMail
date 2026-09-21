@@ -3,7 +3,13 @@
 // by house style, and this one needs a DOM (focus, Esc, scrim press).
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { PreviewSheet, SheetSegmented } from '@declutrmail/shared';
+import {
+  PreviewSheet,
+  SheetFactList,
+  SheetLinks,
+  SheetSegmented,
+  SheetTextAction,
+} from '@declutrmail/shared';
 
 function renderSheet(overrides: Partial<Parameters<typeof PreviewSheet>[0]> = {}) {
   const onClose = vi.fn();
@@ -118,5 +124,47 @@ describe('<SheetSegmented />', () => {
     expect(within(group).getByRole('radio', { name: /Inbox only/ })).toBeChecked();
     fireEvent.click(within(group).getByRole('radio', { name: /Inbox \+ archived\s*6,728/ }));
     expect(onChange).toHaveBeenCalledWith('all');
+  });
+});
+
+describe('<SheetFactList /> and the Details links row', () => {
+  it('pairs each short label with its value as a description list', () => {
+    render(
+      <SheetFactList
+        facts={[
+          { label: 'Gmail account', value: 'you@example.com' },
+          { label: 'Gmail Trash', value: 'Kept up to 30 days, then deleted for good' },
+        ]}
+      />,
+    );
+    const terms = screen.getAllByRole('term').map((t) => t.textContent);
+    const values = screen.getAllByRole('definition').map((d) => d.textContent);
+    expect(terms).toEqual(['Gmail account', 'Gmail Trash']);
+    expect(values[1]).toMatch(/30 days/);
+  });
+
+  it('renders nothing for no facts — never an empty well row', () => {
+    const { container } = render(<SheetFactList facts={[]} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders a link for an href and a toggle button otherwise', () => {
+    const onClick = vi.fn();
+    render(
+      <SheetLinks>
+        <SheetTextAction href="https://mail.google.com/">Check in Gmail</SheetTextAction>
+        <SheetTextAction onClick={onClick} expanded={false}>
+          Show 5 of 6,728
+        </SheetTextAction>
+      </SheetLinks>,
+    );
+    expect(screen.getByRole('link', { name: 'Check in Gmail' })).toHaveAttribute(
+      'target',
+      '_blank',
+    );
+    const toggle = screen.getByRole('button', { name: 'Show 5 of 6,728' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(toggle);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

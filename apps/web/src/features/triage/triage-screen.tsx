@@ -2,6 +2,7 @@
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button, ErrorState, ScreenIntro, tokens, toast, useIsAtMost } from '@declutrmail/shared';
 import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
@@ -48,10 +49,8 @@ import { useKeepIntent } from './api/use-triage-actions';
 import { invalidateAfterDecision } from './api/invalidate';
 import { TRIAGE_BOOTSTRAP_KEY } from './api/query-options';
 import { useRefreshStaleRead } from '@/features/senders/api/use-refresh-stale-read';
-import { ActionSheet, type ConfirmDetails } from './action-sheet';
 import { UnprotectButton } from './unprotect-button';
 import type { PreviewCount } from './action-preview';
-import { BatchActionSheet } from './batch-action-sheet';
 import {
   TRIAGE_QUEUE,
   TRIAGE_SESSION_STATS,
@@ -76,6 +75,18 @@ import { useTriageStore, type RememberableVerb, type SheetableVerb } from './sto
 import { TodayHandledLine } from './today-handled-line';
 import { TriageQueue } from './triage-queue';
 import type { ActionVerb } from './types';
+import type { ConfirmDetails } from './action-sheet';
+
+// The two confirm sheets open only after a verb is chosen, and they carry
+// the shared modal — loading them after first paint keeps /triage inside
+// its first-load bundle budget. Both render nothing while closed.
+const ActionSheet = dynamic(() => import('./action-sheet').then((m) => m.ActionSheet), {
+  ssr: false,
+});
+const BatchActionSheet = dynamic(
+  () => import('./batch-action-sheet').then((m) => m.BatchActionSheet),
+  { ssr: false },
+);
 
 const { color, font, radius, text } = tokens;
 

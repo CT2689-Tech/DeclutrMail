@@ -10,14 +10,18 @@ import {
   readActivityFilters,
   readActivityOutcomeFilters,
 } from '@/features/activity/activity-route-filters';
-import { activityInfiniteQueryOptions } from '@/features/activity/api/query-options';
+import {
+  activityInfiniteQueryOptions,
+  activityWeeklyReviewQueryOptions,
+} from '@/features/activity/api/query-options';
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import {
   activityListPath,
   parseActivityListEnvelope,
   type ActivityRowWire,
+  type ActivityWeeklyReviewWire,
 } from '@/lib/api/activity';
-import { serverGetEnvelope } from '@/lib/api/server';
+import { serverGet, serverGetEnvelope } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
 
 export const metadata = {
@@ -52,20 +56,41 @@ export default async function ActivityPage({
       surface="activity"
       prefetch={(queryClient) => {
         if (!eligible) return [];
-        if (dates.isInvalid || outcomes.isInvalid) return [];
-        return [
-          queryClient.fetchInfiniteQuery(
-            activityInfiniteQueryOptions(filters, async (queryFilters, cursor, signal) =>
-              parseActivityListEnvelope(
-                await serverGetEnvelope<ActivityRowWire[]>(
-                  activityListPath({ ...queryFilters, cursor }),
+        const queries: Array<Promise<unknown>> = [
+          // The sender filter has to be threaded here as well as into the
+          // fetch: the client's query key is partitioned by it, so a
+          // prefetch under the bare key hydrates nothing and the strip
+          // pops in after hydration on every filtered load.
+          queryClient.fetchQuery(
+            activityWeeklyReviewQueryOptions(
+              (signal) =>
+                serverGet<ActivityWeeklyReviewWire>(
+                  filters.senderQuery
+                    ? `/api/activity/weekly-review?sender_q=${encodeURIComponent(filters.senderQuery)}`
+                    : '/api/activity/weekly-review',
                   cookieHeader,
                   signal,
                 ),
-              ),
+              filters.senderQuery,
             ),
           ),
         ];
+        if (!dates.isInvalid && !outcomes.isInvalid) {
+          queries.push(
+            queryClient.fetchInfiniteQuery(
+              activityInfiniteQueryOptions(filters, async (queryFilters, cursor, signal) =>
+                parseActivityListEnvelope(
+                  await serverGetEnvelope<ActivityRowWire[]>(
+                    activityListPath({ ...queryFilters, cursor }),
+                    cookieHeader,
+                    signal,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+        return queries;
       }}
     >
       <Suspense fallback={null}>

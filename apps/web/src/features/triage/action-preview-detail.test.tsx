@@ -4,8 +4,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import {
   ActionPreviewDetailBlock,
   actionMovesMail,
+  mailLocationValue,
   type ActionPreviewDetail,
 } from './action-preview-detail';
+import { afterLead } from '@/lib/copy/after-lead';
 import { buildPreviewFacts } from './action-preview-presentation';
 import { ActionSheet } from './action-sheet';
 import { TRIAGE_QUEUE } from './data';
@@ -100,13 +102,13 @@ describe('Triage preview — verification detail (D226 parity)', () => {
   it('states where the sender mail actually is', () => {
     renderPreview();
     const line = screen.getByTestId('mail-location-line').textContent;
-    expect(line).toContain('17 emails in your inbox');
-    expect(line).toContain('885 emails elsewhere in Gmail');
+    expect(line).toContain('17 in your inbox');
+    expect(line).toContain('885 elsewhere in Gmail');
   });
 
   it('offers the Gmail cross-check before confirming', () => {
     renderPreview();
-    expect(screen.getByRole('link', { name: /Check these in Gmail/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Check in Gmail/ })).toHaveAttribute(
       'href',
       detail.verifyInGmailUrl,
     );
@@ -140,7 +142,7 @@ describe('Triage preview — verification detail (D226 parity)', () => {
   it('renders the mandatory facts with no detail supplied (the public simulator)', () => {
     renderPreview({ detail: undefined, quotaRemaining: null, mode: 'inline' });
     expect(screen.queryByTestId('mail-location-line')).toBeNull();
-    expect(screen.queryByRole('link', { name: /Check these in Gmail/ })).toBeNull();
+    expect(screen.queryByRole('link', { name: /Check in Gmail/ })).toBeNull();
     expect(screen.queryByText(/cleanup action/)).toBeNull();
     // The mandatory D226 content is untouched: count + destination.
     expect(screen.getByText(/17 emails from .*leave your inbox/)).toBeInTheDocument();
@@ -178,7 +180,7 @@ describe('Triage preview — reasoning age label (D25, QA-archive-20260828-02)',
     renderPreview();
     expect(screen.queryByText(/^Last checked /)).toBeNull();
     // The reasoning itself still renders — only the age label is gated.
-    expect(screen.getByText('Why we suggested this')).toBeInTheDocument();
+    expect(screen.getByText('Why suggested')).toBeInTheDocument();
   });
 });
 
@@ -240,5 +242,71 @@ describe('buildPreviewFacts', () => {
     });
     expect(facts.title).toBe('Delete 6,728 emails?');
     expect(facts.subtitle).toMatch(/archived email both move to Gmail Trash/);
+  });
+
+  // The Details values are cuts of the shared semantics sentences. Each
+  // must keep the caveat that changes what a reader would do.
+  it('keeps the recheck caveat, the reach and Gmail Trash permanence as short facts', () => {
+    const facts = buildPreviewFacts({
+      verb: 'Delete',
+      row,
+      archiveHistoric: false,
+      inboxCount: 6728,
+      reach: 'all_mail',
+    });
+    const byLabel = new Map(facts.disclosures.map((f) => [f.label, f.value]));
+    expect(byLabel.get('Count')).toBe('Inbox + archived now, rechecked when it runs');
+    expect(byLabel.get('Gmail Trash')).toMatch(/up to 30 days, then deleted for good/);
+  });
+
+  it('keeps Later’s return as a floor ("from"), not an exact time', () => {
+    const facts = buildPreviewFacts({
+      verb: 'Later',
+      row,
+      archiveHistoric: false,
+      inboxCount: 3,
+      wakeAt: '2030-01-02T09:00:00.000Z',
+    });
+    expect(facts.disclosures.find((f) => f.label === 'Returns')?.value).toMatch(/^From /);
+  });
+
+  it('says what the Unsubscribe chooser selected for past email', () => {
+    const alone = buildPreviewFacts({
+      verb: 'Unsubscribe',
+      row,
+      archiveHistoric: false,
+      inboxCount: 4,
+    });
+    expect(alone.disclosures.find((f) => f.label === 'Past email')?.value).toBe(
+      'Stays where it is',
+    );
+    const withArchive = buildPreviewFacts({
+      verb: 'Unsubscribe',
+      row,
+      archiveHistoric: true,
+      inboxCount: 4,
+    });
+    expect(withArchive.disclosures.find((f) => f.label === 'Past email')?.value).toMatch(
+      /out of your inbox/,
+    );
+  });
+});
+
+describe('afterLead / mailLocationValue', () => {
+  it('cuts only a known lead-in, and passes an unknown sentence through whole', () => {
+    expect(afterLead('Returns to Inbox from Jan 2, 9:00 AM.', 'Returns to Inbox ')).toBe(
+      'From Jan 2, 9:00 AM',
+    );
+    expect(afterLead('Something else entirely.', 'Returns to Inbox ')).toBe(
+      'Something else entirely',
+    );
+  });
+
+  it('keeps "elsewhere in Gmail" — never "archived" — and every segment', () => {
+    expect(
+      mailLocationValue(
+        'Where it is now: 0 emails in your inbox · 6,275 emails elsewhere in Gmail · 1 email in Trash or Spam.',
+      ),
+    ).toBe('0 in your inbox · 6,275 elsewhere in Gmail · 1 in Trash or Spam');
   });
 });

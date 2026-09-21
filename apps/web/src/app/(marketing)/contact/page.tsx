@@ -32,7 +32,7 @@ const TOC = [
 
 export default function ContactPage() {
   return (
-    <LegalPageLayout title="Contact" label="Support" lastUpdated={LAST_UPDATED} toc={TOC}>
+    <LegalPageLayout title="Contact" lastUpdated={LAST_UPDATED} toc={TOC} centred>
       <PageViewTracker page="contact" />
       <LegalSection id="support" title="General questions and support">
         <p>

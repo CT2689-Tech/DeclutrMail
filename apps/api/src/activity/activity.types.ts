@@ -32,7 +32,7 @@ export type ActivityWindow = '7d' | '30d' | '90d' | 'all';
  */
 export type ActivitySourceFilter = 'all' | ActivityLogEntry['source'];
 
-/** Factual review-outcome classification; null means still in progress/nonterminal. */
+/** Factual weekly-review classification; null means still in progress/nonterminal. */
 export type ActivityReviewOutcome = 'completed' | 'skipped' | 'failed' | 'recovered' | 'protected';
 
 /**
@@ -74,6 +74,18 @@ export interface ActivityRow {
   executionState: ActivityExecutionState | null;
   /** D246 review bucket, also used by exact evidence links. */
   reviewOutcome: ActivityReviewOutcome | null;
+}
+
+/** Exact seven-day counts shown by the in-app weekly review. */
+export interface ActivityWeeklyReview {
+  window: '7d';
+  from: string;
+  to: string;
+  completed: number;
+  skipped: number;
+  failed: number;
+  recovered: number;
+  protected: number;
 }
 
 /**

@@ -37,6 +37,7 @@ import {
   or,
   sql,
   type SQL,
+  type SQLWrapper,
   sum,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -63,6 +64,7 @@ import type {
   ActivitySummary,
   ActivityVerbFilter,
   ActivityWindow,
+  ActivityWeeklyReview,
   UndoState,
 } from './activity.types.js';
 import type { ActivityLogEntry } from '@declutrmail/db';
@@ -748,6 +750,111 @@ export class ActivityReadService {
   }
 
   /**
+   * Exact factual counts for the seven-day in-app review.
+   *
+   * Honours the sender filter (D246 + the 2026-08-19 founder decision):
+   * every other number on the Activity screen narrows to the filtered
+   * sender, and the card's own count links carry the filter through, so
+   * a mailbox-wide card would report other senders' outcomes above a
+   * one-sender feed and then drop the filter when clicked.
+   *
+   * The three sources carry the sender differently — `activity_log` and
+   * `rule_match_log` have a `sender_key` column; `action_jobs` keeps it
+   * inside the resolved JSON selector.
+   */
+  async getWeeklyReview(
+    mailboxAccountId: string,
+    nowMs: number,
+    senderQuery = '',
+  ): Promise<ActivityWeeklyReview> {
+    const cutoff = new Date(nowMs - 7 * 86_400_000);
+    const upperBound = new Date(nowMs);
+    const reviewOutcome = persistedReviewOutcomeExpression();
+    const failedCurrent = alias(actionJobs, 'weekly_failed_current');
+    const failedLater = alias(actionJobs, 'weekly_failed_later');
+    const activityScope = this.senderScopeFilter(mailboxAccountId, senderQuery);
+    const ruleScope = this.senderScopeFilter(mailboxAccountId, senderQuery, ruleMatchLog.senderKey);
+    const jobScope = this.senderScopeFilter(
+      mailboxAccountId,
+      senderQuery,
+      sql`${failedCurrent.selector}->>'senderKey'`,
+    );
+    const [persisted, dismissed, unresolved] = await Promise.all([
+      this.db
+        .select({
+          completed: sql<number>`count(*) filter (where ${reviewOutcome} = 'completed')::int`,
+          failed: sql<number>`count(*) filter (where ${reviewOutcome} = 'failed')::int`,
+          recovered: sql<number>`count(*) filter (where ${reviewOutcome} = 'recovered')::int`,
+        })
+        .from(activityLog)
+        .where(
+          and(
+            eq(activityLog.mailboxAccountId, mailboxAccountId),
+            gte(activityLog.occurredAt, cutoff),
+            lt(activityLog.occurredAt, upperBound),
+            ...(activityScope ? [activityScope] : []),
+          ),
+        ),
+      this.db
+        .select({ reason: ruleMatchLog.dismissReason, n: count(ruleMatchLog.id) })
+        .from(ruleMatchLog)
+        .where(
+          and(
+            eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+            eq(ruleMatchLog.resolution, 'dismissed'),
+            inArray(ruleMatchLog.dismissReason, ['user', 'protected'] as const),
+            isNotNull(ruleMatchLog.resolvedAt),
+            gte(ruleMatchLog.resolvedAt, cutoff),
+            lt(ruleMatchLog.resolvedAt, upperBound),
+            ...(ruleScope ? [ruleScope] : []),
+          ),
+        )
+        .groupBy(ruleMatchLog.dismissReason),
+      this.db
+        .select({ n: count(failedCurrent.id) })
+        .from(failedCurrent)
+        .where(
+          and(
+            eq(failedCurrent.mailboxAccountId, mailboxAccountId),
+            eq(failedCurrent.direction, 'forward'),
+            inArray(failedCurrent.verb, EXECUTION_VERBS),
+            eq(failedCurrent.status, 'failed'),
+            gte(failedCurrent.updatedAt, cutoff),
+            lt(failedCurrent.updatedAt, upperBound),
+            ...(jobScope ? [jobScope] : []),
+            notExists(
+              this.db
+                .select({ id: failedLater.id })
+                .from(failedLater)
+                .where(
+                  and(
+                    eq(failedLater.mailboxAccountId, mailboxAccountId),
+                    eq(failedLater.direction, 'forward'),
+                    sql`coalesce(${failedLater.rootActionId}, ${failedLater.id}) = coalesce(${failedCurrent.rootActionId}, ${failedCurrent.id})`,
+                    gt(failedLater.recoveryAttempt, failedCurrent.recoveryAttempt),
+                    lt(failedLater.createdAt, upperBound),
+                  ),
+                ),
+            ),
+          ),
+        ),
+    ]);
+    const persistedCounts = persisted[0];
+    const dismissCounts = new Map(dismissed.map((row) => [row.reason, Number(row.n)]));
+    const unresolvedFailures = Number(unresolved[0]?.n ?? 0);
+    return {
+      window: '7d',
+      from: cutoff.toISOString(),
+      to: upperBound.toISOString(),
+      completed: Number(persistedCounts?.completed ?? 0),
+      skipped: dismissCounts.get('user') ?? 0,
+      failed: Number(persistedCounts?.failed ?? 0) + unresolvedFailures,
+      recovered: Number(persistedCounts?.recovered ?? 0),
+      protected: dismissCounts.get('protected') ?? 0,
+    };
+  }
+
+  /**
    * Load each unresolved forward label-action lineage once. Root rows own
    * the original intent; recovery rows point back through `root_action_id`.
    * A successful recovery resolves the lineage and removes it from Activity,
@@ -865,12 +972,21 @@ export class ActivityReadService {
    * name/email substring match the rows query applies, expressed as a
    * scope predicate the aggregate queries can carry without a join.
    * Returns `null` when no sender filter is active.
+   *
+   * `senderKeyColumn` defaults to `activity_log`'s, and is passed
+   * explicitly for the other two tables the weekly review counts:
+   * `rule_match_log.sender_key`, and `action_jobs`' key inside its JSON
+   * selector (that table stores no sender column — ids/keys only, D7).
    */
-  private senderScopeFilter(mailboxAccountId: string, senderQuery: string): SQL | null {
+  private senderScopeFilter(
+    mailboxAccountId: string,
+    senderQuery: string,
+    senderKeyColumn: SQLWrapper = activityLog.senderKey,
+  ): SQL | null {
     if (senderQuery.length === 0) return null;
     const pattern = `%${escapeIlikeWildcards(senderQuery)}%`;
     return inArray(
-      activityLog.senderKey,
+      senderKeyColumn,
       this.db
         .select({ senderKey: senders.senderKey })
         .from(senders)

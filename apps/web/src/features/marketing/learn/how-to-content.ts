@@ -19,7 +19,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-28',
     kind: 'How-to guide',
-    eyebrow: 'Inbox method · sender first',
     title: 'How to clean Gmail by sender',
     description:
       'A precise sender-first Gmail cleanup workflow, with native Gmail steps and an honest explanation of what DeclutrMail changes.',
@@ -176,7 +175,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-08-13',
     kind: 'How-to guide',
-    eyebrow: 'Gmail cleanup · exact affected email',
     title: 'How to delete all emails from one sender in Gmail',
     description:
       'Delete all emails from one sender in Gmail using a verified search, with clear Trash and future-mail boundaries.',
@@ -310,7 +308,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-08-13',
     updatedAt: '2026-08-13',
     kind: 'How-to guide',
-    eyebrow: 'Storage quota · what actually frees space',
     title: 'Gmail storage full? How to free up space',
     description:
       'Free space when Gmail says storage is full: empty Trash and Spam first, find large attachments with Gmail’s size operators, and see why archiving frees nothing.',
@@ -491,7 +488,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-08-13',
     kind: 'How-to guide',
-    eyebrow: 'Automation · with a review phase',
     title: 'How to auto archive emails in Gmail',
     description:
       'Archive Gmail automatically with a Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
@@ -634,7 +630,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-07-28',
     kind: 'How-to guide',
-    eyebrow: 'Future delivery · sender by sender',
     title: 'How to stop promotional emails in Gmail',
     description:
       'Use unsubscribe, filters, or spam reporting for the right kind of promotional email, with guidance organized by sender.',
@@ -771,7 +766,6 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     publishedAt: '2026-07-14',
     updatedAt: '2026-08-04',
     kind: 'How-to guide',
-    eyebrow: 'List email · delivery control',
     title: 'How to unsubscribe from emails in Gmail',
     description:
       'Unsubscribe safely in Gmail or DeclutrMail, with the difference between one-click, mailto, old-mail cleanup, and undo made explicit.',

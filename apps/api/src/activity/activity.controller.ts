@@ -39,6 +39,7 @@ import type {
   ActivitySummary,
   ActivityVerbFilter,
   ActivityWindow,
+  ActivityWeeklyReview,
 } from './activity.types.js';
 
 /** D55 — accepted window values; everything else collapses to default. */
@@ -303,6 +304,21 @@ export class ActivityController {
       );
       return new Set();
     }
+  }
+
+  @Get('weekly-review')
+  @RateLimit('triage-load')
+  async weeklyReview(
+    @CurrentMailbox() mailbox: { id: string },
+    @Query('sender_q') rawSenderQuery: string | undefined,
+  ): Promise<Envelope<ActivityWeeklyReview>> {
+    return {
+      data: await this.reads.getWeeklyReview(
+        mailbox.id,
+        Date.now(),
+        resolveSenderQuery(rawSenderQuery),
+      ),
+    };
   }
 
   /**

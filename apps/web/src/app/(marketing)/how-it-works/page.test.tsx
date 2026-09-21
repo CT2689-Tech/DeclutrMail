@@ -60,6 +60,24 @@ describe('/how-it-works', () => {
       expect(figure).toHaveAttribute('aria-labelledby');
     }
     expect(container.querySelector('header header')).toBeNull();
+    expect(screen.getByText(/Illustrative inbox/i)).toBeInTheDocument();
+  });
+
+  it('states each decision once, in one table, with a start-free CTA and the scope disclosure', () => {
+    const { container } = render(<HowItWorksPage />);
+
+    expect(screen.getAllByRole('table')).toHaveLength(1);
+    const rows = within(
+      screen.getByRole('table', { name: 'How each DeclutrMail decision maps to Gmail' }),
+    ).getAllByRole('row');
+    expect(rows).toHaveLength(6);
+    expect(screen.getAllByRole('link', { name: 'Start free' })).toHaveLength(2);
+    expect(screen.getByRole('link', { name: 'Try the demo' })).toHaveAttribute(
+      'href',
+      '/inbox-simulator',
+    );
+    expect(container.querySelectorAll('details.dm-story-scope')).toHaveLength(2);
+    expect(container.textContent).not.toMatch(/№/);
   });
 
   it('does not make a blanket reversibility promise', () => {

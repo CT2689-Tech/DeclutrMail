@@ -42,7 +42,7 @@ export function PricingTeaser() {
     formatMoney(point, currencyForPricePoint(point, provider));
 
   return (
-    <section className="dm-mkt-section dm-mkt-shell dm-mkt-center">
+    <section className="dm-mkt-section dm-mkt-shell dm-mkt-center dm-mkt-pricing">
       <h2 className="dm-mkt-h2">Start free. Pay when it earns it.</h2>
 
       {/* A teaser: name, price, the one line that separates the tier from
@@ -92,7 +92,7 @@ export function PricingTeaser() {
         placement="pricing_teaser"
         className="dm-mkt-cta-link"
       >
-        See full pricing <span aria-hidden="true">→</span>
+        See full pricing
       </TrackedCta>
     </section>
   );

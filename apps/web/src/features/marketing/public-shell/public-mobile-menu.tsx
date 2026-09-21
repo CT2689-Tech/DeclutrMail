@@ -37,7 +37,13 @@ export function PublicMobileMenu({
       <summary aria-label="Open navigation">Menu</summary>
       <nav aria-label="Mobile navigation">
         <PublicNavLinks links={links} onNavigate={close} />
-        <TrackedCta href={startUrl} cta="connect_gmail" placement="nav_sign_in" onClick={close}>
+        <TrackedCta
+          className="dm-public-menu-sign-in"
+          href={startUrl}
+          cta="connect_gmail"
+          placement="nav_sign_in"
+          onClick={close}
+        >
           Sign in
         </TrackedCta>
         <TrackedCta

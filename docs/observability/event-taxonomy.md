@@ -142,6 +142,13 @@ succeeds. Its payload is a surface/rating discriminated union:
 The event contains no feedback prose or subject identifier. First-party storage
 is authoritative; PostHog remains optional and consent-gated.
 
+### D246 weekly review
+
+`weekly_review_viewed` fires once when the factual seven-day review first
+renders. Payload: numeric `completed`, `skipped`, `failed`, `recovered`, and
+`protected` counts. Counts come from canonical Activity outcomes; no time-saved
+or prevented-email estimate is permitted.
+
 ### D246 Autopilot pattern suggestion
 
 `autopilot_pattern_suggestion_shown` fires once per rendered suggestion with a

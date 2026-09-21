@@ -15,7 +15,7 @@
 // Variants cover the four D211 preview states + both verbs:
 //   • ArchiveLoaded  — aggregated Archive preview, per-sender rows
 //   • LaterLoaded    — the Later verb copy
-//   • WithProtected  — a protected sender shown "protected — skipped"
+//   • WithProtected  — a protected sender flagged "Protected" and skipped
 //   • Loading        — "Counting the inbox…" while the preview resolves
 //   • Unavailable    — preview failed; "nothing changes until you confirm"
 //   • NothingToMove  — zero real count ("nothing to move")
@@ -49,7 +49,7 @@ const meta: StoryMeta<typeof BatchActionSheet> = {
     docs: {
       description: {
         component:
-          'The D226-mandatory preview for a domain-batch decision. Mirrors `<ActionSheet>`’s chrome + keyboard contract (Escape cancels, ⌘⏎ confirms) over the AGGREGATED bulk preview: the real total that moves, the per-sender breakdown, and the protected senders the enqueue skips. Confirm fires ONE composite POST (ADR-0020) — one batch, one cascade undo. No remember-preference toggle: a multi-sender batch always shows its sheet.',
+          'The D226-mandatory preview for a domain-batch decision, on the shared `PreviewSheet` (Escape cancels, ⌘⏎ confirms) over the AGGREGATED bulk preview: the real total in the title, where it goes in the subtitle, undo + Protected skips in the note, and the per-sender breakdown behind Details. Confirm fires ONE composite POST (ADR-0020) — one batch, one cascade undo. No remember-preference toggle: a multi-sender batch always shows its sheet.',
       },
     },
   },
@@ -151,7 +151,7 @@ export const LaterLoaded: Story<typeof BatchActionSheet> = {
   render: (args: Args) => frame(<BatchActionSheet {...args} />),
 };
 
-/** With a protected member — shown "protected — skipped", excluded from totals. */
+/** With a protected member — flagged "Protected", skipped once in the note, excluded from totals. */
 export const WithProtected: Story<typeof BatchActionSheet> = {
   args: {
     open: true,

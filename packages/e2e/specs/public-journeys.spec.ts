@@ -43,7 +43,7 @@ test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then 
   await page.getByRole('button', { name: /^Archive all \d+ senders/ }).click();
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
-  await preview.getByRole('button', { name: /^Archive all/ }).click();
+  await preview.getByRole('button', { name: /^Archive [\d,]+$/ }).click();
   await expect(preview).toHaveCount(0);
   const undoButtons = page.getByRole('button', { name: 'Undo demo action', exact: true });
   const undo = undoButtons.first();

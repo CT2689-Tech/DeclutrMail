@@ -22,7 +22,12 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 
-import { fetchActivity, revertActivityUndo, type ActivityFilters } from '@/lib/api/activity';
+import {
+  fetchActivity,
+  fetchActivityWeeklyReview,
+  revertActivityUndo,
+  type ActivityFilters,
+} from '@/lib/api/activity';
 import {
   confirmActionRecovery,
   createActionRecoveryPreview,
@@ -36,7 +41,7 @@ import { undoKeys } from '@/features/undo/query-keys';
 import { sendersKeys } from '@/features/senders/api/query-keys';
 
 import { activityKeys } from './query-keys';
-import { activityInfiniteQueryOptions } from './query-options';
+import { activityInfiniteQueryOptions, activityWeeklyReviewQueryOptions } from './query-options';
 
 export function useActivity(
   filters: ActivityFilters,
@@ -72,6 +77,16 @@ export function useActivity(
     // raw-date validation disables this query before any request starts.
     placeholderData: keepPreviousData,
   });
+}
+
+/** Independent so a review failure never blocks the Activity feed. */
+export function useActivityWeeklyReview(senderQuery = '') {
+  return useQuery(
+    activityWeeklyReviewQueryOptions(
+      (signal) => fetchActivityWeeklyReview(senderQuery, signal).then((env) => env.data),
+      senderQuery,
+    ),
+  );
 }
 
 /** Activity Undo stays pending until the reverse job confirms completion. */

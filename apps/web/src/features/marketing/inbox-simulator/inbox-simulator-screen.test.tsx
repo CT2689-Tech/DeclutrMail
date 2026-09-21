@@ -21,7 +21,7 @@ import { syntheticInboxCount } from './synthetic-preview';
 /**
  * The confirm sheet for one sender. A single-sender sheet is named by its
  * question ("Archive 212 emails?", ADR-0042) and sits inside a region
- * named for the sender; the domain batch sheet is still named by domain.
+ * named for the sender — or, for the domain batch sheet, for the domain.
  */
 function sheetFor(name: string): HTMLElement {
   const byName = screen.queryByRole('dialog', { name });
@@ -82,7 +82,7 @@ describe('InboxSimulatorScreen', () => {
   it('identifies the sample as made up and local-only', () => {
     render(<InboxSimulatorScreen />);
     expect(screen.getByText(/Follow four made-up examples/i)).toBeInTheDocument();
-    expect(screen.getByText('Local to this browser')).toBeInTheDocument();
+    expect(screen.getByText(/local to this browser/i)).toBeInTheDocument();
   });
 
   it('sets the Triage demo in explicit plan context', () => {
@@ -284,12 +284,14 @@ describe('InboxSimulatorScreen', () => {
     // overruling all of it with one verb (D226-mandatory preview first).
     fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
     const sheet = sheetFor('amazon.com');
-    expect(within(sheet).getByText(/Archive all inbox email from 5 senders/i)).toBeInTheDocument();
+    expect(
+      within(sheet).getByRole('heading', { name: /^Archive [\d,]+ emails from 5 senders\?$/ }),
+    ).toBeInTheDocument();
     // Protection shown, not claimed: the sixth sender is named as skipped,
     // never silently folded into the aggregated total (D245).
-    expect(within(sheet).getByText(/1 protected sender will be skipped/i)).toBeInTheDocument();
+    expect(within(sheet).getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
 
-    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive all/ }));
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();
 
@@ -398,7 +400,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
-        name: /^Archive all/,
+        name: /^Archive( [\d,]+)?$/,
       }),
     );
     fireEvent.click(screen.getByRole('button', { name: /Unsubscribe \(U\)/ }));
@@ -549,7 +551,7 @@ describe('InboxSimulatorScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
         fireEvent.click(
           within(sheetFor('amazon.com')).getByRole('button', {
-            name: /^Archive all/,
+            name: /^Archive( [\d,]+)?$/,
           }),
         );
         vi.setSystemTime(Date.now() + gapMs);
@@ -674,7 +676,7 @@ describe('InboxSimulatorScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
-        name: /^Archive all/,
+        name: /^Archive( [\d,]+)?$/,
       }),
     );
     expect(screen.getByText('1 of 4 decisions complete')).toBeInTheDocument();

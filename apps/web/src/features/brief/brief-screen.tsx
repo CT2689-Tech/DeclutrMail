@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
 import {
@@ -34,12 +35,18 @@ import {
   type NoiseArchiveOutcome,
   type NoiseTarget,
 } from './api/use-noise-archive';
-import { NoiseArchiveSheet } from './noise-archive-sheet';
 import { flatRowCss } from '@/features/settings/flat-list';
 import { SelectWell } from '@/features/settings/settings-list';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+
+// Opens only from "Archive the noise"; loading it on demand keeps /brief
+// inside its first-load bundle budget. It renders nothing while closed.
+const NoiseArchiveSheet = dynamic(
+  () => import('./noise-archive-sheet').then((m) => m.NoiseArchiveSheet),
+  { ssr: false },
+);
 
 const { color, font, text } = tokens;
 

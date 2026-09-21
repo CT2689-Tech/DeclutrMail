@@ -206,6 +206,25 @@ const ROWS: ActivityRowWire[] = [
   },
 ];
 
+/** Lifetime totals — the muted "N all time" line under each window count. */
+const ALL_TIME_STATS: ActivityStatsWire = {
+  ...STATS,
+  archived: 1335,
+  unsubscribed: 86,
+  kept: 41,
+  later: 19,
+  deleted: 212,
+};
+
+const ZERO_STATS: ActivityStatsWire = {
+  ...STATS,
+  archived: 0,
+  unsubscribed: 0,
+  kept: 0,
+  later: 0,
+  deleted: 0,
+};
+
 function makeClient(
   rows: ActivityRowWire[] | undefined,
   window: ActivityWindowWire,
@@ -215,6 +234,7 @@ function makeClient(
     hasMore: false,
     limit: 25,
   },
+  stats: ActivityStatsWire = STATS,
 ): QueryClient {
   const client = new QueryClient({
     // `retryOnMount: false` keeps the NextPageError story stable — an
@@ -225,6 +245,18 @@ function makeClient(
     },
   });
   client.setQueryData(ME_QUERY_KEY, STORY_ME);
+  // D246 — the seven-day strip; zero outcomes are hidden, so this shows
+  // three chips.
+  client.setQueryData(activityKeys.weeklyReview(), {
+    window: '7d',
+    from: isoHoursAgo(168),
+    to: isoHoursAgo(0),
+    completed: 23,
+    skipped: 0,
+    failed: 1,
+    recovered: 2,
+    protected: 0,
+  });
   if (rows) {
     // U27 — `useActivity` is an infinite query; the cache entry is
     // InfiniteData ({ pages, pageParams }), one page per envelope.
@@ -234,8 +266,8 @@ function makeClient(
           data: rows,
           meta: {
             pagination,
-            stats: STATS,
-            allTimeStats: STATS,
+            stats,
+            allTimeStats: ALL_TIME_STATS,
             window,
             source,
             verbs: [],
@@ -323,6 +355,24 @@ export const GroupedBySender: Story<typeof ActivityScreen> = {
     },
   },
   render: (_args: ComponentProps<typeof ActivityScreen>) => frame(makeClient(ROWS, '30d', 'all')),
+};
+
+/**
+ * A window whose only rows were undone: the five zeros collapse to
+ * "Nothing in the last 30 days" + the all-time totals, and the caption
+ * says why the undone rows aren't counted.
+ */
+export const QuietWindow: Story<typeof ActivityScreen> = {
+  render: (_args: ComponentProps<typeof ActivityScreen>) =>
+    frame(
+      makeClient(
+        ROWS.filter((r) => r.undoState.kind === 'executed'),
+        '30d',
+        'all',
+        undefined,
+        ZERO_STATS,
+      ),
+    ),
 };
 
 /** Source-filtered (Autopilot only). */

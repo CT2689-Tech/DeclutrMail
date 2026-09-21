@@ -1,14 +1,14 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
-import { Button, PreviewSheet, SheetFact, tokens } from '@declutrmail/shared';
+import { Button, PreviewSheet, SheetFactList, tokens } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 
 import type { NoiseArchivePreview, NoiseTarget } from './api/use-noise-archive';
 
-const { color, radius } = tokens;
+const { color, radius, space } = tokens;
 
 /**
  * The D226-mandatory preview for the Brief's Noise bulk archive (D65).
@@ -153,18 +153,18 @@ export function NoiseArchiveSheet({
       status={status ?? undefined}
       details={
         <>
-          {accountEmail ? (
-            <div role="note" aria-label={`Gmail account: ${accountEmail}`}>
-              <SheetFact label="Gmail account">{accountEmail}</SheetFact>
-            </div>
-          ) : null}
-          {ready && !nothingToActOn && <span>Counted now, rechecked when it runs.</span>}
-          {/* Per-sender breakdown — the live figure beside the sender the
-              user checked, so the total is verifiable row by row. */}
+          {/* Per-sender breakdown — FIRST, the live figure beside the
+              sender the user checked, so the total is verifiable row by
+              row. No per-row separators: the gap is the rhythm. */}
           <div
             role="list"
             aria-label="Current per-sender matches"
-            style={{ display: 'flex', flexDirection: 'column' }}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space[2],
+              paddingTop: space[3],
+            }}
           >
             {targets.map((target) => {
               const live =
@@ -181,14 +181,12 @@ export function NoiseArchiveSheet({
                     display: 'flex',
                     alignItems: 'baseline',
                     justifyContent: 'space-between',
-                    gap: 12,
-                    padding: '6px 0',
-                    borderBottom: `1px solid ${color.lineSoft}`,
+                    gap: space[3],
                   }}
                 >
                   <span
                     style={{
-                      color: color.fg,
+                      fontWeight: 500,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
@@ -198,13 +196,12 @@ export function NoiseArchiveSheet({
                     {target.senderName}
                   </span>
                   {skipped ? (
-                    <span style={{ flexShrink: 0 }}>Protected — skipped</span>
+                    <span style={{ flexShrink: 0, color: color.fgMuted }}>Protected — skipped</span>
                   ) : (
                     <span
                       style={{
                         flexShrink: 0,
                         fontWeight: 600,
-                        color: color.fg,
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
@@ -215,6 +212,25 @@ export function NoiseArchiveSheet({
               );
             })}
           </div>
+          <SheetFactList
+            facts={[
+              ...(ready && !nothingToActOn
+                ? [{ label: 'Count', value: 'Inbox now, rechecked when it runs' }]
+                : []),
+              ...(accountEmail
+                ? [
+                    {
+                      label: 'Gmail account',
+                      value: (
+                        <span role="note" aria-label={`Gmail account: ${accountEmail}`}>
+                          {accountEmail}
+                        </span>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </>
       }
     />

@@ -4,6 +4,8 @@ import { SCREENER_QUEUE } from './data';
 import { DecidePreview } from './decide-preview';
 
 const row = SCREENER_QUEUE[0]!;
+/** Escape a content string before it builds a matcher (CLAUDE.md §8). */
+const esc = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 describe('DecidePreview — live-preview confirm gate', () => {
   it.each(['archive', 'later', 'delete'] as const)(
@@ -87,10 +89,14 @@ describe('DecidePreview — live-preview confirm gate', () => {
 
     const confirm = screen.getByRole('button', { name: /Confirm Archive/i });
     expect(confirm).toBeEnabled();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText(/emails in Inbox now/i)).toBeInTheDocument();
-    expect(screen.getByText(/Rechecked when it runs/i)).toBeInTheDocument();
-    expect(screen.getByRole('note', { name: 'Gmail account: active@gmail.com' })).toBeVisible();
+    // One bold line: the count and where it goes. Its scope sits in Details.
+    expect(
+      screen.getByText(new RegExp(`^2 emails from ${esc(row.senderName)}\\.`)),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Inbox now, rechecked when it runs/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('note', { name: 'Gmail account: active@gmail.com' }),
+    ).toBeInTheDocument();
     fireEvent.click(confirm);
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
@@ -119,9 +125,9 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(allMailChip).toHaveAttribute('aria-checked', 'false');
     expect(inboxChip).toHaveTextContent('2');
     expect(allMailChip).toHaveTextContent('9');
-    // Default reach keeps the inbox-scoped title + caption.
-    expect(screen.getByText(`Delete ${row.senderName}'s inbox email`)).toBeInTheDocument();
-    expect(screen.getByText(/in Inbox now/i)).toBeInTheDocument();
+    // Default reach keeps the inbox-scoped headline + count scope.
+    expect(screen.getByText(/They move to Gmail Trash\./)).toBeInTheDocument();
+    expect(screen.getByText(/^Inbox now/)).toBeInTheDocument();
   });
 
   it('hides the chips on a non-Delete verb and when the all-mail block is absent', () => {
@@ -154,7 +160,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(screen.queryByRole('radiogroup')).toBeNull();
   });
 
-  it('reports a chip click and, at the widened reach, restates title, figure, caption, exclusions', () => {
+  it('reports a chip click and, at the widened reach, restates the headline, count scope, exclusions', () => {
     const onReachChange = vi.fn();
     const props = {
       verb: 'delete' as const,
@@ -172,19 +178,18 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     expect(onReachChange).toHaveBeenCalledWith('all_mail');
 
     rerender(<DecidePreview {...props} reach="all_mail" />);
+    // The armed headline figure IS the all-mail count, and the headline
+    // follows the chip — it must not keep claiming the inbox alone.
     expect(
-      screen.getByText(`Delete ${row.senderName}'s inbox + archived email`),
+      screen.getByText(
+        new RegExp(`^9 emails from ${esc(row.senderName)}\\. Inbox and archived email both move`),
+      ),
     ).toBeInTheDocument();
-    // The armed headline figure IS the all-mail count — '9' appears on
-    // the chip and the headline, while '2' remains only on the inbox chip.
-    expect(screen.getAllByText('9')).toHaveLength(2);
-    expect(screen.getAllByText('2')).toHaveLength(1);
-    expect(screen.getByText(/across inbox \+ archived/i)).toBeInTheDocument();
-    expect(screen.getByText(/Undo puts each email back where it was/i)).toBeInTheDocument();
-    expect(screen.getByText(/Trash, Spam, Drafts and Chat are never touched/i)).toBeInTheDocument();
-    // The lead follows the chip — it must not keep claiming "in Inbox".
-    expect(screen.queryByText(/Email in Inbox moves to Gmail Trash/)).toBeNull();
-    expect(screen.getByText(/in Inbox or archived moves to Gmail Trash/)).toBeInTheDocument();
+    expect(screen.queryByText(/^2 emails from/)).toBeNull();
+    expect(screen.getByText(/^Inbox \+ archived now/)).toBeInTheDocument();
+    expect(screen.getByText('Puts each email back where it was')).toBeInTheDocument();
+    expect(screen.getByText('Trash, Spam, Drafts, Chat')).toBeInTheDocument();
+    expect(screen.queryByText(/They move to Gmail Trash/)).toBeNull();
   });
 
   it('softens the empty-inbox notice when the reach control is on screen (ADR-0028 wording)', () => {
@@ -237,7 +242,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByText(/in Inbox now \(older than 6 months\+\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Inbox now \(older than 6 months\+\)/i)).toBeInTheDocument();
   });
 
   it('stays silent when no window is active (every non-Delete verb)', () => {
@@ -283,7 +288,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
     // header must not contradict this exact notice — "Nothing to move"
     // would sit directly above "9 emails ... are in your inbox."
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
-    expect(screen.getByText(`Delete ${row.senderName}'s inbox email`)).toBeInTheDocument();
+    expect(screen.getByText(/They move to Gmail Trash\./)).toBeInTheDocument();
   });
 
   it('applies no window qualifier or empty-window notice at all-mail reach', () => {
@@ -341,7 +346,7 @@ describe('DecidePreview — reasoning age label (QA-archive-20260903-01)', () =>
     );
     expect(screen.queryByText(/^Last checked /)).toBeNull();
     // The reasoning itself still renders — only the age label is gated.
-    expect(screen.getByText('Why we suggested this:')).toBeInTheDocument();
+    expect(screen.getByText('Why suggested')).toBeInTheDocument();
   });
 });
 
@@ -432,7 +437,7 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
     );
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
     expect(
-      screen.getByText(`Delete ${row.senderName}'s inbox + archived email`),
+      screen.getByText(/Inbox and archived email both move to Gmail Trash/),
     ).toBeInTheDocument();
   });
 
@@ -469,7 +474,7 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByText(`Keep ${row.senderName}`)).toBeInTheDocument();
+    expect(screen.getByText(`Keep ${row.senderName}. No email moves.`)).toBeInTheDocument();
     expect(screen.queryByText(/Nothing to move/)).toBeNull();
   });
 
@@ -484,6 +489,8 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.getByText(`Delete ${row.senderName}'s inbox email`)).toBeInTheDocument();
+    expect(
+      screen.getByText(new RegExp(`^1 email from ${esc(row.senderName)}\\.`)),
+    ).toBeInTheDocument();
   });
 });

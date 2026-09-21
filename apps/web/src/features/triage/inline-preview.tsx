@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, tokens } from '@declutrmail/shared';
+import { Button, SheetFactList, tokens } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
 
 import {
@@ -167,13 +167,11 @@ export function InlinePreviewBlock({
               flexDirection: 'column',
               gap: space[2],
               fontSize: text.sm,
-              color: color.fgSoft,
+              color: color.fg,
             }}
           >
             {accountContext}
-            {facts.disclosures.map((line) => (
-              <span key={line}>{line}</span>
-            ))}
+            <SheetFactList facts={facts.disclosures} />
             {preview.detailSlot}
           </div>
         </details>

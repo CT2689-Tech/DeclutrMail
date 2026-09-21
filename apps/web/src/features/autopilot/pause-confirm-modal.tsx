@@ -62,14 +62,19 @@ export function PauseConfirmModal({
         n === 0 ? undefined : (
           <ul
             aria-label="Rules that will pause"
-            style={{ listStyle: 'none', margin: 0, padding: 0 }}
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: `${space[3]}px 0 ${space[1]}px`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: space[2],
+            }}
           >
-            {affected.map((r, i) => (
+            {affected.map((r) => (
               <li
                 key={r.id}
                 style={{
-                  padding: `${space[2]}px 0`,
-                  borderTop: i === 0 ? 'none' : `1px solid ${color.lineSoft}`,
                   fontSize: text.base,
                   fontWeight: 600,
                   color: color.fg,

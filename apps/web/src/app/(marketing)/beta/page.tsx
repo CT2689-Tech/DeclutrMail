@@ -14,8 +14,8 @@
 //   2. Organic navigation — same page, no event.
 //
 // Copy is calm and never apologetic (D209) and uses no banned verbs
-// (D227). Visual language mirrors `not-found.tsx`: token-only styling,
-// soft-teal label disc, the same CTA-link shape.
+// (D227). Token-only styling; the headline carries the beta state, and
+// the CTAs are the public site's capsules.
 
 import type { Metadata } from 'next';
 import { OAUTH_SCOPE_DISCLOSURE, tokens } from '@declutrmail/shared';
@@ -26,7 +26,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 import { oauthStartUrl } from '@/features/marketing/landing/urls';
 import { BetaDeniedTracker } from './beta-denied-tracker';
 
-const { color, font, text } = tokens;
+const { color, font, radius, shadow } = tokens;
 
 // Open beta is the live signup funnel, so /beta is indexable — routed
 // through marketingPageMetadata for the same canonical + OG/Twitter block
@@ -66,16 +66,17 @@ function CtaLink({
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        height: 32,
-        padding: '0 14px',
-        background: isPrimary ? color.primary : color.card,
-        // fgInverse, not a literal: primary is a deep teal on light and a
-        // bright teal on dark, so the readable lettering flips with it.
+        minHeight: 46,
+        padding: '0 24px',
+        background: isPrimary ? color.fg : color.fill,
+        // fgInverse, not a literal: fg is ink on light and paper on dark,
+        // so the readable lettering flips with it.
         color: isPrimary ? color.fgInverse : color.fg,
-        border: `1px solid ${isPrimary ? color.primary : color.line}`,
-        borderRadius: 7,
+        border: 'none',
+        borderRadius: radius.pill,
+        boxShadow: isPrimary ? shadow.button : 'none',
         fontFamily: font.sans,
-        fontSize: 13,
+        fontSize: 15,
         fontWeight: 600,
         textDecoration: 'none',
         whiteSpace: 'nowrap',
@@ -97,18 +98,18 @@ export default async function BetaPage({
   return (
     <div
       style={{
-        minHeight: 'calc(100vh - 120px)',
+        minHeight: 'calc(100vh - 160px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 24,
+        padding: '104px 16px',
       }}
     >
       <PageViewTracker page="beta" />
       {denied ? <BetaDeniedTracker /> : null}
       <div
         style={{
-          maxWidth: 480,
+          maxWidth: 600,
           width: '100%',
           textAlign: 'center',
           display: 'flex',
@@ -117,27 +118,14 @@ export default async function BetaPage({
           gap: 18,
         }}
       >
-        <span
-          style={{
-            fontFamily: font.mono,
-            fontSize: text.xs,
-            letterSpacing: '0.14em',
-            textTransform: 'uppercase',
-            color: color.primary,
-            background: color.primarySoft,
-            border: `1px solid ${color.primaryBorder}`,
-            borderRadius: 9999,
-            padding: '4px 10px',
-          }}
-        >
-          {denied ? 'Private beta' : 'Open beta'}
-        </span>
         <h1
           style={{
             fontFamily: font.display,
-            fontSize: text['3xl'],
+            fontSize: 'clamp(36px, 6vw, 52px)',
+            lineHeight: 1.06,
             fontWeight: 600,
-            letterSpacing: '-0.018em',
+            letterSpacing: '-0.028em',
+            textWrap: 'balance',
             margin: 0,
           }}
         >
@@ -145,10 +133,11 @@ export default async function BetaPage({
         </h1>
         <p
           style={{
-            fontSize: text.md,
+            fontSize: 18,
             color: color.fgSoft,
             lineHeight: 1.6,
             margin: 0,
+            maxWidth: '56ch',
           }}
         >
           {denied
@@ -159,8 +148,8 @@ export default async function BetaPage({
         <div
           style={{
             display: 'flex',
-            gap: 10,
-            marginTop: 6,
+            gap: 12,
+            marginTop: 12,
             flexWrap: 'wrap',
             justifyContent: 'center',
           }}
@@ -184,11 +173,12 @@ export default async function BetaPage({
         {denied ? null : (
           <p
             style={{
-              fontFamily: tokens.font.mono,
-              fontSize: 11,
-              letterSpacing: '0.04em',
-              color: tokens.color.fgMuted,
-              margin: 0,
+              fontFamily: font.sans,
+              fontSize: 13.5,
+              lineHeight: 1.6,
+              color: color.fgMuted,
+              margin: '8px 0 0',
+              maxWidth: '60ch',
             }}
           >
             {OAUTH_SCOPE_DISCLOSURE}

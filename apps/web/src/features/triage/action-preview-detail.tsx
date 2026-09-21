@@ -1,10 +1,16 @@
 'use client';
 
-import { tokens } from '@declutrmail/shared';
+import {
+  SheetFactList,
+  SheetLinks,
+  SheetTextAction,
+  tokens,
+  type SheetFactItem,
+} from '@declutrmail/shared';
 import type { ActionReach } from '@declutrmail/shared/contracts';
 import type { ActionVerb } from './types';
 
-const { color, text } = tokens;
+const { color, space, text } = tokens;
 
 /**
  * The verification detail the senders confirm modal has always shown and
@@ -78,47 +84,82 @@ export function actionMovesMail(verb: ActionVerb, archiveHistoric: boolean): boo
 }
 
 /**
- * "Where it is now", the Gmail cross-check, and the current-match
- * sample — omitted individually when the caller has no data for them.
+ * `mailLocationCopy`'s sentence as a Details value:
+ * `Where it is now: 0 emails in your inbox · 6,275 emails elsewhere in Gmail.`
+ * → `0 in your inbox · 6,275 elsewhere in Gmail`.
+ *
+ * Only the lead-in, the period and the repeated unit are cut. "elsewhere
+ * in Gmail" stays — never "archived": `mail_messages` has no label
+ * history, so all that is provable is that these do not carry INBOX now
+ * (see `mailLocationCopy`). A sentence this does not recognise passes
+ * through whole.
+ */
+export function mailLocationValue(line: string): string {
+  return line
+    .replace(/^Where it is now: /, '')
+    .replace(/\.$/, '')
+    .replace(/ emails? (in your inbox|elsewhere in Gmail|in Trash or Spam)/g, ' $1');
+}
+
+/**
+ * The facts of the Details well — `leadFacts` first (the caller's account
+ * and count lines), then "Where it is now" and the widened-reach facts —
+ * followed by the current-match sample and the Gmail cross-check link.
+ * Parts are omitted individually when there is no data for them.
  *
  * Renders FLAT, for the inside of a "Details" well (ADR-0042): no boxes,
  * no nested disclosure. The reach CHOICE is not here — it changes the
- * count, so the sheet renders it as its one control (`SheetSegmented`);
- * what stays here is the sentence explaining the widened reach.
+ * count, so the sheet renders it as its one control (`SheetSegmented`).
  */
-export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDetail | undefined }) {
-  if (detail === undefined) return null;
-  const location = detail.mailLocationLine ?? null;
-  const sample = detail.matchSample;
-  const allMail = detail.reachControl?.reach === 'all_mail';
-  if (
-    location === null &&
-    sample === undefined &&
-    detail.verifyInGmailUrl === undefined &&
-    !allMail
-  ) {
-    return null;
-  }
+export function ActionPreviewDetailBlock({
+  detail,
+  leadFacts = [],
+  trailingFacts = [],
+}: {
+  detail: ActionPreviewDetail | undefined;
+  leadFacts?: readonly SheetFactItem[];
+  trailingFacts?: readonly SheetFactItem[];
+}) {
+  const location = detail?.mailLocationLine ?? null;
+  const sample = detail?.matchSample;
+  const allMail = detail?.reachControl?.reach === 'all_mail';
+  const facts: SheetFactItem[] = [
+    ...leadFacts,
+    ...(location === null
+      ? []
+      : [
+          {
+            label: 'Where it is now',
+            value: <span data-testid="mail-location-line">{mailLocationValue(location)}</span>,
+          },
+        ]),
+    ...(allMail
+      ? [
+          { label: 'Never touched', value: 'Trash, Spam, Drafts, Chat' },
+          { label: 'Undo', value: 'Puts each email back where it was' },
+        ]
+      : []),
+    ...trailingFacts,
+  ];
+  const hasSample = sample !== undefined && sample.rows.length > 0;
+  const verifyUrl = detail?.verifyInGmailUrl;
+  if (facts.length === 0 && !hasSample && verifyUrl === undefined) return null;
   return (
     <>
-      {allMail && (
-        <span>
-          Includes archived mail. Trash, Spam, Drafts and Chat are never touched. Undo restores
-          every email — inbox email to the inbox, archived email to the archive.
-        </span>
-      )}
-
-      {location !== null && (
+      {facts.length > 0 && (
         // Static text, not a live region: the sheet owns the one
         // `role="status"`, and two of them make screen readers race.
-        <span data-testid="mail-location-line">{location}</span>
+        <SheetFactList facts={facts} />
       )}
 
-      {sample !== undefined && sample.rows.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-          <span style={{ fontSize: text.xs, color: color.fgMuted }}>Latest matching email</span>
+      {hasSample && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: space[2], minWidth: 0 }}>
+          <span style={{ fontSize: text.sm, color: color.fgMuted }}>Latest matching email</span>
           {sample.rows.map((row, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
+            <div
+              key={i}
+              style={{ display: 'flex', gap: space[3], alignItems: 'baseline', minWidth: 0 }}
+            >
               {row.date !== null && (
                 <span
                   style={{
@@ -145,15 +186,12 @@ export function ActionPreviewDetailBlock({ detail }: { detail: ActionPreviewDeta
       {/* Approximate by construction: Gmail's `older_than:` is day-granular
           and resolves live, so its result count can differ from the
           preview's exact filter. Never claim the two match. */}
-      {detail.verifyInGmailUrl !== undefined && (
-        <a
-          href={detail.verifyInGmailUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ alignSelf: 'flex-start', color: color.fg, fontWeight: 550 }}
-        >
-          Check these in Gmail
-        </a>
+      {verifyUrl !== undefined && (
+        <SheetLinks>
+          <SheetTextAction href={verifyUrl} title="Approximate — Gmail filters by whole days.">
+            Check in Gmail <span aria-hidden="true">↗</span>
+          </SheetTextAction>
+        </SheetLinks>
       )}
     </>
   );

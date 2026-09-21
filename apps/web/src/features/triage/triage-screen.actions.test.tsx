@@ -531,13 +531,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
         'aria-checked',
         'true',
       );
-      expect(within(dialog).getByText(/in Inbox now/)).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox now, rechecked/)).toBeDefined();
 
       fireEvent.click(archived);
       expect(
         within(dialog).getByText(/Inbox and archived email both move to Gmail Trash/),
       ).toBeDefined();
-      expect(within(dialog).getByText(/across inbox \+ archived now/)).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox \+ archived now, rechecked/)).toBeDefined();
       // '412' = the chip AND the armed headline figure.
       expect(within(dialog).getByRole('heading', { name: 'Delete 412 emails?' })).toBeDefined();
       expect(within(dialog).getByRole('radio', { name: /Inbox \+ archived 412/ })).toHaveAttribute(
@@ -1452,7 +1452,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'a' });
 
-    await screen.findByText(/Counted in Inbox now/i);
+    await screen.findByText(/Inbox now, rechecked when it runs/i);
     expect(screen.getByRole('button', { name: /Archive \(A\)/i })).toBeEnabled();
     fireEvent.keyDown(window, { key: 'a' });
 
@@ -1944,7 +1944,7 @@ describe('TriageScreen — dispatch latch integrity (D226, 2026-08-12)', () => {
       // Confirm the verdict batch through its D226 sheet.
       fireEvent.click(screen.getByRole('button', { name: /Archive all 3 recommended senders/ }));
       const batchSheet = await screen.findByRole('dialog');
-      const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive all/ });
+      const batchConfirm = within(batchSheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ });
       await waitFor(() => expect(batchConfirm).not.toBeDisabled());
       fireEvent.click(batchConfirm);
       await waitFor(() => expect(bulkEnqueues).toHaveLength(1));

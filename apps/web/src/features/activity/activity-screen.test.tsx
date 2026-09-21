@@ -15,13 +15,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 
-import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
+import {
+  addFetchHandlers,
+  installFetchStub,
+  jsonOk,
+  jsonServerError,
+  resetFetchStub,
+} from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useUiStore } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
   absoluteTime,
+  activityActionDot,
   activityDayLabel,
   activityRowTime,
   activityUndoRecoveryHelp,
@@ -114,7 +121,26 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
   };
 }
 
+const WEEKLY_ZERO = {
+  window: '7d',
+  from: '2026-05-18T08:00:00.000Z',
+  to: '2026-05-25T08:00:00.000Z',
+  completed: 0,
+  skipped: 0,
+  failed: 0,
+  recovered: 0,
+  protected: 0,
+};
+
 function renderScreen() {
+  // Appended, so a test's own weekly handler (registered first) wins.
+  addFetchHandlers([
+    {
+      method: 'GET',
+      path: '/api/activity/weekly-review',
+      respond: () => jsonOk({ data: WEEKLY_ZERO }),
+    },
+  ]);
   const client = createTestQueryClient();
   const utils = render(
     <QueryWrapper client={client}>
@@ -759,6 +785,189 @@ describe('ActivityScreen — active filters', () => {
   });
 });
 
+describe('ActivityScreen — weekly review (D246)', () => {
+  const WEEK = { ...WEEKLY_ZERO, completed: 9, skipped: 2, failed: 1, recovered: 3, protected: 4 };
+
+  it('shows one link per outcome and tracks factual counts once', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({ reviewOutcome: 'completed' })], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonOk({ data: WEEK }),
+      },
+    ]);
+    renderScreen();
+
+    const strip = await screen.findByRole('region', { name: /last 7 days/i });
+    expect(within(strip).getAllByRole('link')).toHaveLength(5);
+    const failed = within(strip).getByRole('link', { name: /1 failed/i });
+    expect(failed).toHaveAttribute('href', expect.stringContaining('outcome=failed'));
+    expect(failed).toHaveAttribute('href', expect.stringContaining('date_from='));
+    await waitFor(() =>
+      expect(trackMock).toHaveBeenCalledWith('weekly_review_viewed', {
+        completed: 9,
+        skipped: 2,
+        failed: 1,
+        recovered: 3,
+        protected: 4,
+      }),
+    );
+    expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+      1,
+    );
+  });
+
+  it('hides zero outcomes, and the whole strip for an empty week', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonOk({ data: { ...WEEKLY_ZERO, completed: 2 } }),
+      },
+    ]);
+    const view = renderScreen();
+    const strip = await screen.findByRole('region', { name: /last 7 days/i });
+    expect(within(strip).getAllByRole('link')).toHaveLength(1);
+    expect(within(strip).getByRole('link', { name: /2 completed/i })).toBeInTheDocument();
+    view.unmount();
+
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('region', { name: 'Activity summary' });
+    await waitFor(() =>
+      expect(trackMock.mock.calls.some(([name]) => name === 'weekly_review_viewed')).toBe(true),
+    );
+    expect(screen.queryByRole('region', { name: /last 7 days/i })).toBeNull();
+  });
+
+  /**
+   * Founder decision 2026-08-19: on a sender-filtered page every number
+   * narrows, including this strip. Before that its counts were
+   * mailbox-wide and its links dropped `sender_q` on click, so a count
+   * you saw for "one sender" opened the whole mailbox.
+   */
+  it('asks for, and links with, the active sender filter', async () => {
+    currentSearch = 'sender_q=news%40brand.com';
+    const weeklyUrls: string[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: { ...META_BASE, senderQuery: 'news@brand.com' } }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: (_req: Request, url: URL) => {
+          weeklyUrls.push(url.search);
+          return jsonOk({ data: { ...WEEKLY_ZERO, completed: 1 } });
+        },
+      },
+    ]);
+    renderScreen();
+
+    const strip = await screen.findByRole('region', { name: /for this sender/i });
+    expect(weeklyUrls[0]).toContain('sender_q=news%40brand.com');
+    const completed = within(strip).getByRole('link', { name: /1 completed/i });
+    expect(completed).toHaveAttribute('href', expect.stringContaining('sender_q=news%40brand.com'));
+    expect(completed).toHaveAttribute('href', expect.stringContaining('outcome=completed'));
+  });
+
+  it('the active outcome chip links back out of the outcome, dropping its own dates', async () => {
+    currentSearch = `window=7d&outcome=protected&date_from=${encodeURIComponent(
+      WEEKLY_ZERO.from,
+    )}&date_to=${encodeURIComponent(WEEKLY_ZERO.to)}`;
+    let requested = '';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: (_req, url) => {
+          requested = url.search;
+          return jsonOk({
+            data: [],
+            meta: { ...META_BASE, window: '7d', outcomes: ['protected'] },
+          });
+        },
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonOk({ data: WEEK }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(requested).toContain('outcome=protected'));
+    const strip = await screen.findByRole('region', { name: /last 7 days/i });
+    const active = within(strip).getByRole('link', { name: /4 skipped for protected/i });
+    expect(active).toHaveAttribute('aria-current', 'page');
+    expect(active).toHaveAttribute('href', '/activity?window=7d');
+  });
+
+  it('offers a retry when the week cannot load, without blocking the feed', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/activity/weekly-review',
+        respond: () => jsonServerError(),
+      },
+    ]);
+    renderScreen();
+    const alert = await screen.findByRole('alert');
+    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Activity summary' })).toBeInTheDocument();
+  });
+
+  it('tracks each mailbox review once when the active mailbox changes', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [], meta: META_BASE }),
+      },
+    ]);
+    const view = renderScreen();
+    await waitFor(() =>
+      expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+        1,
+      ),
+    );
+
+    authState.activeMailboxId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    view.rerender(
+      <QueryWrapper client={view.client}>
+        <ActivityScreen />
+      </QueryWrapper>,
+    );
+    await waitFor(() =>
+      expect(trackMock.mock.calls.filter(([name]) => name === 'weekly_review_viewed')).toHaveLength(
+        2,
+      ),
+    );
+  });
+});
+
 describe('ActivityScreen — populated', () => {
   it('opens a review dialog prefilled from the current Activity filters with privacy opt-ins off', async () => {
     currentSearch = 'window=90d&source=manual&verb=archive%2Cdelete&sender_q=private%40example.com';
@@ -905,10 +1114,86 @@ describe('ActivityScreen — populated', () => {
     expect(
       within(summary)
         .getAllByRole('button')
-        .map((el) => el.textContent),
+        .map((el) => el.textContent?.replace(/\d+ all time$/, '')),
     ).toEqual(['12Archived', '0Deleted', '4Unsubscribes', '1Later', '3Kept']);
-    // A count appears once: no all-time echo under the window's number.
-    expect(screen.queryByText(/all time/i)).toBeNull();
+  });
+
+  it('puts the all-time total under each window count, formatted', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [row({})],
+            meta: { ...META_BASE, allTimeStats: { ...STATS_BASE, archived: 1335 } },
+          }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    const archived = within(summary).getByRole('button', { name: /Archived/ });
+    expect(within(archived).getByText('1,335 all time')).toBeInTheDocument();
+    expect(within(archived).getByText('12')).toBeInTheDocument();
+    // Still the verb filter.
+    await userEvent.click(archived);
+    expect(replaceMock).toHaveBeenLastCalledWith('/activity?verb=archive');
+  });
+
+  it('drops the all-time echo when the window already is all time', async () => {
+    currentSearch = 'window=all';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: { ...META_BASE, window: 'all' } }),
+      },
+    ]);
+    renderScreen();
+    await screen.findByRole('region', { name: 'Activity summary' });
+    expect(screen.queryByText(/all time$/)).toBeNull();
+  });
+
+  it('collapses an all-zero window to one line plus the all-time totals', async () => {
+    const zero = { ...STATS_BASE, archived: 0, unsubscribed: 0, kept: 0, later: 0 };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ undoState: { kind: 'executed', executedAt: new Date(NOW).toISOString() } }),
+            ],
+            meta: {
+              ...META_BASE,
+              stats: zero,
+              allTimeStats: { ...zero, archived: 1335, deleted: 40 },
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    expect(within(summary).getByText('Nothing in the last 30 days')).toBeInTheDocument();
+    expect(within(summary).queryAllByRole('button')).toHaveLength(0);
+    expect(within(summary).getByText(/1,335 archived, 40 deleted all time/)).toBeInTheDocument();
+    // The window's rows are all undone — say why they aren't counted.
+    expect(within(summary).getByText(/Undone actions aren’t counted/)).toBeInTheDocument();
+  });
+
+  it('only mentions undone actions when the window has one', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    renderScreen();
+    const summary = await screen.findByRole('region', { name: 'Activity summary' });
+    expect(within(summary).getByText(/Actions, not emails/)).toBeInTheDocument();
+    expect(within(summary).queryByText(/Undone actions/)).toBeNull();
   });
 
   it('a summary count toggles its verb filter', async () => {
@@ -1080,6 +1365,30 @@ describe('ActivityScreen — D58 undo affordances', () => {
     ]);
     renderScreen();
     await waitFor(() => expect(screen.getByText(/^Undone$/)).toBeInTheDocument());
+    // A quiet status, not an Undo control.
+    expect(screen.getByText(/^Undone$/).closest('[role="status"]')).not.toBeNull();
+    expect(screen.queryByRole('button', { name: /^undo/i })).toBeNull();
+  });
+
+  it('marks each row with its verb’s dot', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ id: 'a-1', action: 'delete' }),
+              row({ id: 'a-2', action: 'marked_protected', affectedCount: 0 }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await waitFor(() => expect(container.querySelectorAll('[data-action-dot]')).toHaveLength(2));
+    expect(container.querySelector('[data-action-dot="delete"]')).not.toBeNull();
+    expect(container.querySelector('[data-action-dot="marked_protected"]')).not.toBeNull();
   });
 
   it('D56 — renders a distinct endpoint-accepted row for the outcome action', async () => {
@@ -1172,6 +1481,18 @@ describe('ActivityScreen — D58 undo affordances', () => {
 });
 
 describe('ActivityScreen — pure helpers', () => {
+  it('activityActionDot takes the verb registry tone, and outlines protection', () => {
+    expect(activityActionDot('delete')).toEqual({ color: 'var(--dm-danger)', outline: false });
+    expect(activityActionDot('archive')).toEqual({ color: 'var(--dm-fg)', outline: false });
+    expect(activityActionDot('unsubscribe_failed').color).toBe('var(--dm-amber)');
+    expect(activityActionDot('later').color).toBe('var(--dm-primary)');
+    expect(activityActionDot('keep').color).toBe('var(--dm-fg-muted)');
+    expect(activityActionDot('unmarked_protected')).toEqual({
+      color: 'var(--dm-primary)',
+      outline: true,
+    });
+  });
+
   it('activityDayLabel says Today / Yesterday in the user zone, then the date', () => {
     const tz = 'Asia/Kolkata';
     // 20:00 UTC on Aug 10 is already Aug 11 in IST — the user zone

@@ -218,7 +218,7 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
         `Uses 3 of your ${CLEANUP_REMAINING} cleanup actions left this month.`,
       ),
     );
-    expect(within(dialog).getByRole('button', { name: /^Archive all/ })).not.toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: /^Archive( [\d,]+)?$/ })).not.toBeDisabled();
 
     // Swap in a fresh response where every sender has since gone
     // Protected, held pending until released below, then invalidate the
@@ -266,13 +266,13 @@ describe('TriageScreen — batch sheet does not arm confirm on a stale cached pr
     // While the fresh (now-zero) result is still pending, the sheet must
     // NOT keep confirm enabled on the stale "3" — this is the regression.
     await waitFor(() =>
-      expect(within(dialog).getByRole('button', { name: /^Archive all/ })).toBeDisabled(),
+      expect(within(dialog).getByRole('button', { name: /^Archive( [\d,]+)?$/ })).toBeDisabled(),
     );
     expect(dialog.textContent).toContain('Counting the inbox');
 
     releaseRefetch();
     await waitFor(() => expect(within(dialog).getByText(/Protected or gone/i)).toBeInTheDocument());
-    expect(within(dialog).getByRole('button', { name: /^Archive all/ })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: /^Archive( [\d,]+)?$/ })).toBeDisabled();
     // The join: the screen must actually hand the sheet its route out.
     fireEvent.click(within(dialog).getByRole('button', { name: 'Refresh triage' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
