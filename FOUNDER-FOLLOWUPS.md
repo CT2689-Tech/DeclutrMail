@@ -23,6 +23,13 @@ section to the Done section. Do not delete entries — the trail matters.
 
 ## Open
 
+### 2026-09-21 — Confirm the five historical checkouts in Paddle / Razorpay dashboards
+**Source:** session 2026-09-21 (checkout funnel investigation)
+**Why:** PostHog has five `checkout_started` events (last 2026-08-15) and zero PostHog `billing_event`s. The API cannot emit to PostHog. Empty `pending_checkouts` is expected after the 7-day sweep. Only the provider dashboards can say whether an overlay/subscription was created or paid for those attempts.
+**How:** Paddle (live if `PADDLE_ENV=production`, else sandbox) → Customers / Transactions around 2026-06-12 (founding Pro annual), 2026-07-31, 2026-08-12, 2026-08-15. Razorpay → Subscriptions around 2026-07-31 07:15 UTC (plus monthly). Also grep Cloud Run for `billing.checkout_created` and `billing.checkout.create_failed` on those timestamps.
+**Verifies by:** A note in this entry (or a later Done move) stating whether any provider-side checkout/subscription existed for those windows, and whether any payment succeeded then failed to grant.
+**Status:** Open
+
 ### 2026-09-19 — Confirm Brandfetch's terms cover cached logo delivery, or pick a plan that does
 **Source:** QA-activity-20260918-01 · ADR-0034 tier 3
 **Why:** ADR-0034 records that Brandfetch's general terms make cached delivery subject to a specific written agreement, and that a developer key alone is not one. The tier has run in production since PR #562 (2026-08-19) and DeclutrMail caches what it fetches. Specifically: Brandfetch artwork stops being SERVED after the 30-day cache period (`icons.service.ts` skips stale provider bytes) but is never DELETED — there is no sweep against `domain_icons`, so bytes for a sender nobody views again stay in Postgres past that window. "We honour the 30-day cache term" is therefore not what the code guarantees. The disclosure gap is closed (`/privacy` §8, the data registry, a truth-gate); this licensing question is a separate one that only the founder can settle, and an agent cannot verify a vendor's current terms on the founder's behalf.
