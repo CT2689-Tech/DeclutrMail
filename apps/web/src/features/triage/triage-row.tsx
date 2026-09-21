@@ -146,7 +146,7 @@ export function TriageRow({
   hero = false,
   offerUnprotect = false,
   unprotectSlot,
-  timeZone,
+  timeZone = 'UTC',
   onToggleExpand,
   onAction,
   inlinePreview,
