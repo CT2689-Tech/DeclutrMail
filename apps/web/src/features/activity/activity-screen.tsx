@@ -772,9 +772,11 @@ const SUMMARY_VERBS: ReadonlyArray<{
   label: string;
   /** Lower-case form for the one-line all-time total. */
   allTimeWord: string;
+  /** The number's colour — the verb's, as on the rows' rails. */
+  tone: string;
 }> = [
-  { key: 'archived', verb: 'archive', label: 'Archived', allTimeWord: 'archived' },
-  { key: 'deleted', verb: 'delete', label: 'Deleted', allTimeWord: 'deleted' },
+  { key: 'archived', verb: 'archive', label: 'Archived', allTimeWord: 'archived', tone: color.fg },
+  { key: 'deleted', verb: 'delete', label: 'Deleted', allTimeWord: 'deleted', tone: color.danger },
   // D9 — this bucket counts unsubscribe REQUESTS (the `unsubscribe`
   // intent rows), which for one-click include attempts that may fail
   // and mailto that we never confirm. "Unsubscribes" (a count of the
@@ -783,9 +785,15 @@ const SUMMARY_VERBS: ReadonlyArray<{
   // "Request accepted" (never aggregated as verified compliance —
   // that would undercount mailto). See FOUNDER-FOLLOWUPS for the
   // metric-definition options if an exact confirmed count is wanted.
-  { key: 'unsubscribed', verb: 'unsubscribe', label: 'Unsubscribes', allTimeWord: 'unsubscribes' },
-  { key: 'later', verb: 'later', label: 'Later', allTimeWord: 'later' },
-  { key: 'kept', verb: 'keep', label: 'Kept', allTimeWord: 'kept' },
+  {
+    key: 'unsubscribed',
+    verb: 'unsubscribe',
+    label: 'Unsubscribes',
+    allTimeWord: 'unsubscribes',
+    tone: color.primary,
+  },
+  { key: 'later', verb: 'later', label: 'Later', allTimeWord: 'later', tone: color.primary },
+  { key: 'kept', verb: 'keep', label: 'Kept', allTimeWord: 'kept', tone: color.fgMuted },
 ];
 
 /** Thousands separators pinned to one locale — server-rendered (React #418). */
@@ -884,12 +892,12 @@ function SummaryRow({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(112px, 1fr))',
             gap: 4,
             margin: '0 -12px',
           }}
         >
-          {SUMMARY_VERBS.map(({ key, verb, label }) => {
+          {SUMMARY_VERBS.map(({ key, verb, label, tone }) => {
             const isActive = verbs.includes(verb);
             return (
               <button
@@ -907,9 +915,9 @@ function SummaryRow({
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'flex-start',
-                  gap: 2,
+                  gap: 4,
                   minHeight: 56,
-                  padding: '8px 12px',
+                  padding: '10px 12px',
                   background: isActive ? color.primarySoft : 'transparent',
                   border: 'none',
                   borderRadius: radius.lg,
@@ -921,20 +929,26 @@ function SummaryRow({
               >
                 <span
                   style={{
+                    fontSize: text.sm,
+                    fontWeight: isActive ? 600 : 500,
+                    color: isActive ? color.primary : color.fgMuted,
+                  }}
+                >
+                  {label}
+                </span>
+                <span
+                  data-summary-count={key}
+                  style={{
                     ...numeralStyle,
-                    fontSize: text.xl,
-                    fontWeight: 600,
-                    letterSpacing: '-0.01em',
-                    lineHeight: 1.2,
-                    color: isActive ? color.primary : color.fg,
+                    fontFamily: font.display,
+                    fontSize: text['3xl'],
+                    fontWeight: 500,
+                    letterSpacing: '-0.02em',
+                    lineHeight: 1.05,
+                    color: tone,
                   }}
                 >
                   {formatCount(stats[key])}
-                </span>
-                <span
-                  style={{ fontSize: text.xs, color: isActive ? color.primary : color.fgMuted }}
-                >
-                  {label}
                 </span>
                 {showAllTime && allTimeStats && (
                   <span style={{ ...numeralStyle, fontSize: text.xs, color: color.fgMuted }}>
@@ -2306,37 +2320,22 @@ export function activityActionDot(action: ActivityRowWire['action']): {
   return { color: color.fgMuted, outline: false };
 }
 
-function ActionDot({ action }: { action: ActivityRowWire['action'] }) {
-  const dot = activityActionDot(action);
-  return (
-    <span
-      aria-hidden="true"
-      data-action-dot={action}
-      style={{
-        display: 'inline-block',
-        boxSizing: 'border-box',
-        width: 8,
-        height: 8,
-        marginRight: 8,
-        verticalAlign: 'middle',
-        position: 'relative',
-        top: -1,
-        borderRadius: radius.pill,
-        background: dot.outline ? 'transparent' : dot.color,
-        border: dot.outline ? `1.5px solid ${dot.color}` : 'none',
-      }}
-    />
-  );
-}
-
-function rowLabelColor(row: ActivityRowWire): string {
+/**
+ * The colour of a row's result line and its left rail. A failure reads as
+ * an error and an unsettled unsubscribe as a warning; otherwise the verb's
+ * own colour (`activityActionDot`), except that a settled unsubscribe
+ * takes primary — the registry's amber would read as a warning on a row
+ * that needs none.
+ */
+export function activityResultColor(row: ActivityRowWire): string {
   if (row.executionState?.kind === 'failed' || row.action === 'unsubscribe_failed') {
     return color.danger;
   }
   if (row.action === 'unsubscribe_unconfirmed' || row.action === 'unsubscribe_action_required') {
     return color.amber;
   }
-  return color.fg;
+  if (row.action.startsWith('unsubscribe')) return color.primary;
+  return activityActionDot(row.action).color;
 }
 
 /**
@@ -2406,13 +2405,13 @@ function ActivityRow({
   // ("by Autopilot · Newsletter graveyard"); a deleted rule degrades to
   // plain "by Autopilot". Triage/Screener keep the "via <source>" form;
   // Manual reads as "by you" instead of the raw enum voice "via Manual"
-  // (QA-archive-20260828-06).
+  // (QA-archive-20260828-06). Sentence case — it is a line of its own.
   const sourceAttribution =
     row.source === 'autopilot'
-      ? `by Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
+      ? `By Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
       : row.source === 'manual'
-        ? 'by you'
-        : `via ${SOURCE_LABEL[row.source]}`;
+        ? 'By you'
+        : `Via ${SOURCE_LABEL[row.source]}`;
 
   const showFeedback =
     !isSyntheticReviewEvidence &&
@@ -2430,16 +2429,91 @@ function ActivityRow({
     />
   );
 
+  const resultColor = activityResultColor(row);
+  const senderSecondary = row.sender?.domain || senderEmail;
+  const ellipsis: CSSProperties = {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+
+  // Who, first — the row is scanned by sender, so the name leads.
+  const identity = (
+    <div style={{ minWidth: 0, flex: 1 }}>
+      <div
+        data-row-sender
+        title={senderEmail || undefined}
+        style={{ ...ellipsis, fontSize: text.md, fontWeight: 600, color: color.fg }}
+      >
+        {senderName}
+      </div>
+      {senderSecondary && (
+        <div style={{ ...ellipsis, marginTop: 2, fontSize: text.sm, color: color.fgMuted }}>
+          {senderSecondary}
+        </div>
+      )}
+    </div>
+  );
+
+  // What happened, in the action's colour, with how many and by whom.
+  const result = (align: 'left' | 'right') => (
+    <div
+      style={{
+        minWidth: 0,
+        flex: align === 'left' ? 1 : '0 1 auto',
+        maxWidth: align === 'right' ? 360 : undefined,
+        textAlign: align,
+      }}
+    >
+      <div
+        style={{
+          // A phone wraps the count under the result instead of cutting it.
+          ...(isMobile ? {} : ellipsis),
+          fontSize: text.sm,
+          fontWeight: 600,
+        }}
+      >
+        <span data-row-result style={{ color: resultColor }}>
+          {verbLabel}
+        </span>
+        {row.affectedCount > 0 && (
+          <span
+            style={{
+              ...numeralStyle,
+              marginLeft: 8,
+              whiteSpace: 'nowrap',
+              fontWeight: 500,
+              color: color.fgSoft,
+            }}
+          >
+            {formatCount(row.affectedCount)} email{row.affectedCount === 1 ? '' : 's'}
+          </span>
+        )}
+      </div>
+      <div
+        title={
+          row.source === 'autopilot' && row.rule
+            ? `By Autopilot rule “${row.rule.name}”`
+            : undefined
+        }
+        style={{ ...ellipsis, marginTop: 2, fontSize: text.sm, color: color.fgMuted }}
+      >
+        {sourceAttribution}
+      </div>
+    </div>
+  );
+
   return (
     <li
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
+        position: 'relative',
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
-        gap: 6,
-        minHeight: 64,
+        gap: 8,
+        minHeight: 68,
         boxSizing: 'border-box',
         // Bled past the column so the logo keeps the page's left edge
         // while the hover fill has room.
@@ -2451,6 +2525,21 @@ function ActivityRow({
         fontFamily: font.sans,
       }}
     >
+      {/* The action's colour as a rail in the bleed gutter — scans down
+          the list without competing with the sender name. */}
+      <span
+        aria-hidden="true"
+        data-action-rail={row.action}
+        style={{
+          position: 'absolute',
+          left: 3,
+          top: 14,
+          bottom: 14,
+          width: 3,
+          borderRadius: radius.pill,
+          background: resultColor,
+        }}
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
         <label
           style={{
@@ -2508,70 +2597,47 @@ function ActivityRow({
             />
           </span>
         </label>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div
-            style={{
-              fontSize: text.md,
-              fontWeight: 500,
-              color: rowLabelColor(row),
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <ActionDot action={row.action} />
-            <span>{verbLabel}</span>
-            {row.affectedCount > 0 && (
-              <>
-                {' · '}
-                <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  {row.affectedCount} email{row.affectedCount === 1 ? '' : 's'}
-                </span>
-              </>
-            )}
+        {variant === 'flat' ? identity : result('left')}
+        {variant === 'flat' && !isMobile && result('right')}
+        {!isMobile && (
+          // A fixed column, so result lines align whether or not a row
+          // has an Undo.
+          <div style={{ display: 'flex', justifyContent: 'flex-end', minWidth: 120 }}>
+            {actions}
           </div>
-          <div
-            title={
-              row.source === 'autopilot' && row.rule
-                ? `By Autopilot rule “${row.rule.name}”`
-                : undefined
-            }
-            style={{
-              marginTop: 2,
-              fontSize: text.sm,
-              color: color.fgMuted,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {variant === 'flat' && (
-              <>
-                <span title={senderEmail || undefined}>{senderName}</span>
-                {' · '}
-              </>
-            )}
-            <span>{sourceAttribution}</span>
-          </div>
-        </div>
-        {!isMobile && actions}
+        )}
         <time
           dateTime={row.occurredAt}
           title={absolute}
           style={{
             ...numeralStyle,
-            fontSize: text.xs,
+            fontSize: text.sm,
             color: color.fgMuted,
             whiteSpace: 'nowrap',
             flexShrink: 0,
-            minWidth: variant === 'flat' ? 60 : undefined,
+            minWidth: variant === 'flat' ? 64 : undefined,
             textAlign: 'right',
+            alignSelf: isMobile ? 'flex-start' : undefined,
           }}
         >
           {activityRowTime(row.occurredAt, timeZone, variant === 'grouped')}
         </time>
       </div>
-      {isMobile && <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{actions}</div>}
+      {isMobile && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: variant === 'flat' ? 'space-between' : 'flex-end',
+            gap: 12,
+            // Under the name, past the logo.
+            paddingLeft: variant === 'flat' ? 54 : 0,
+          }}
+        >
+          {variant === 'flat' && result('left')}
+          {actions}
+        </div>
+      )}
       {showFeedback && (
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <InlineFeedback
@@ -3377,15 +3443,18 @@ function UndoCell({
               : 'Revert this action.'
           }
           onMouseEnter={(e) => {
-            if (!isPendingHere) e.currentTarget.style.background = color.fillHover;
+            if (!isPendingHere) e.currentTarget.style.background = color.fill;
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = color.fill;
+            e.currentTarget.style.background = 'transparent';
           }}
           data-dm-button=""
           style={{
             ...rowControlStyle,
-            background: color.fill,
+            // Outlined, not filled: a fill vanishes into the row's own
+            // hover fill.
+            background: 'transparent',
+            boxShadow: `inset 0 0 0 1px ${color.line}`,
             color: failed ? color.amber : color.fg,
             cursor: isPendingHere ? 'wait' : 'pointer',
             fontWeight: 600,

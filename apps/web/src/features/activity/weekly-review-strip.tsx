@@ -41,10 +41,10 @@ export function outcomeHref(
 }
 
 /**
- * D246 seven-day review as one quiet line: the label, then one chip per
- * outcome that happened. Zero outcomes are left out, and a week with none
- * renders nothing. Each chip opens exactly the records it counts; the
- * active one links back out (`clearHref`).
+ * D246 seven-day review: the label, then one compact tile per outcome
+ * that happened. Zero outcomes are left out, and a week with none renders
+ * nothing. Each tile opens exactly the records it counts (Failed says
+ * "Review"); the active one links back out (`clearHref`).
  */
 export function WeeklyReviewStrip({
   review,
@@ -92,49 +92,83 @@ export function WeeklyReviewStrip({
   return (
     <section
       aria-labelledby="weekly-review-heading"
-      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
       <h2
         id="weekly-review-heading"
-        style={{
-          margin: '0 6px 0 0',
-          fontSize: text.sm,
-          fontWeight: 600,
-          color: color.fgMuted,
-        }}
+        style={{ margin: 0, fontSize: text.sm, fontWeight: 600, color: color.fgMuted }}
       >
         Last 7 days{senderQuery ? ' for this sender' : ''}
       </h2>
-      {shown.map(({ key, label }) => {
-        const isActive = activeOutcome === key;
-        return (
-          <Link
-            key={key}
-            href={isActive ? clearHref : outcomeHref(key, review, senderQuery)}
-            aria-current={isActive ? 'page' : undefined}
-            aria-label={`${review[key]} ${label}${isActive ? ', showing — select to clear' : ''}`}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              minHeight: 30,
-              padding: '0 12px',
-              borderRadius: radius.pill,
-              background: isActive ? color.primarySoft : color.fill,
-              color: isActive ? color.primary : key === 'failed' ? color.danger : color.fg,
-              fontSize: text.sm,
-              fontWeight: 500,
-              textDecoration: 'none',
-              transition: `background ${motion.fast} ${motion.ease}`,
-            }}
-          >
-            <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-              {review[key].toLocaleString('en-US')}
-            </span>
-            {label}
-          </Link>
-        );
-      })}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+          gap: 8,
+        }}
+      >
+        {shown.map(({ key, label }) => {
+          const isActive = activeOutcome === key;
+          const isFailed = key === 'failed';
+          return (
+            <Link
+              key={key}
+              href={isActive ? clearHref : outcomeHref(key, review, senderQuery)}
+              aria-current={isActive ? 'page' : undefined}
+              aria-label={`${review[key]} ${label}${isActive ? ', showing — select to clear' : isFailed ? ', Review' : ''}`}
+              data-outcome-tile={key}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.background = color.fillHover;
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) e.currentTarget.style.background = color.fill;
+              }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 2,
+                minHeight: 64,
+                padding: '10px 14px',
+                borderRadius: radius.lg,
+                background: isActive ? color.primarySoft : color.fill,
+                fontFamily: font.sans,
+                textDecoration: 'none',
+                transition: `background ${motion.fast} ${motion.ease}`,
+              }}
+            >
+              <span
+                data-outcome-count={key}
+                style={{
+                  fontSize: text['2xl'],
+                  fontWeight: 650,
+                  letterSpacing: '-0.02em',
+                  lineHeight: 1.15,
+                  fontVariantNumeric: 'tabular-nums',
+                  color: isFailed ? color.danger : color.fg,
+                }}
+              >
+                {review[key].toLocaleString('en-US')}
+              </span>
+              <span
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  fontSize: text.sm,
+                  color: isActive ? color.primary : color.fgMuted,
+                }}
+              >
+                {label}
+                {/* The tile already opens the failed records; the word says so. */}
+                {isFailed && !isActive && (
+                  <span style={{ fontWeight: 600, color: color.danger }}>Review</span>
+                )}
+              </span>
+            </Link>
+          );
+        })}
+      </div>
     </section>
   );
 }

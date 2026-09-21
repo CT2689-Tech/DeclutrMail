@@ -30,6 +30,7 @@ import {
   absoluteTime,
   activityActionDot,
   activityDayLabel,
+  activityResultColor,
   activityRowTime,
   activityUndoRecoveryHelp,
   ActivityScreen,
@@ -806,6 +807,14 @@ describe('ActivityScreen — weekly review (D246)', () => {
     const strip = await screen.findByRole('region', { name: /last 7 days/i });
     expect(within(strip).getAllByRole('link')).toHaveLength(5);
     const failed = within(strip).getByRole('link', { name: /1 failed/i });
+    // The Failed tile is the one number in danger, and says "Review".
+    expect(failed).toHaveAccessibleName(/Review/);
+    expect(strip.querySelector<HTMLElement>('[data-outcome-count="failed"]')?.style.color).toBe(
+      'var(--dm-danger)',
+    );
+    expect(strip.querySelector<HTMLElement>('[data-outcome-count="completed"]')?.style.color).toBe(
+      'var(--dm-fg)',
+    );
     expect(failed).toHaveAttribute('href', expect.stringContaining('outcome=failed'));
     expect(failed).toHaveAttribute('href', expect.stringContaining('date_from='));
     await waitFor(() =>
@@ -1114,8 +1123,11 @@ describe('ActivityScreen — populated', () => {
     expect(
       within(summary)
         .getAllByRole('button')
-        .map((el) => el.textContent?.replace(/\d+ all time$/, '')),
-    ).toEqual(['12Archived', '0Deleted', '4Unsubscribes', '1Later', '3Kept']);
+        .map(
+          (el) =>
+            `${el.firstChild?.textContent}${el.querySelector('[data-summary-count]')?.textContent}`,
+        ),
+    ).toEqual(['Archived12', 'Deleted0', 'Unsubscribes4', 'Later1', 'Kept3']);
   });
 
   it('puts the all-time total under each window count, formatted', async () => {
@@ -1370,7 +1382,7 @@ describe('ActivityScreen — D58 undo affordances', () => {
     expect(screen.queryByRole('button', { name: /^undo/i })).toBeNull();
   });
 
-  it('marks each row with its verb’s dot', async () => {
+  it('marks each row with a rail in its verb’s colour', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -1386,9 +1398,11 @@ describe('ActivityScreen — D58 undo affordances', () => {
       },
     ]);
     const { container } = renderScreen();
-    await waitFor(() => expect(container.querySelectorAll('[data-action-dot]')).toHaveLength(2));
-    expect(container.querySelector('[data-action-dot="delete"]')).not.toBeNull();
-    expect(container.querySelector('[data-action-dot="marked_protected"]')).not.toBeNull();
+    await waitFor(() => expect(container.querySelectorAll('[data-action-rail]')).toHaveLength(2));
+    const rail = (action: string) =>
+      container.querySelector<HTMLElement>(`[data-action-rail="${action}"]`);
+    expect(rail('delete')?.style.background).toBe('var(--dm-danger)');
+    expect(rail('marked_protected')?.style.background).toBe('var(--dm-primary)');
   });
 
   it('D56 — renders a distinct endpoint-accepted row for the outcome action', async () => {
@@ -2378,7 +2392,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
     ]);
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByText('by Autopilot · Newsletter graveyard')).toBeInTheDocument(),
+      expect(screen.getByText('By Autopilot · Newsletter graveyard')).toBeInTheDocument(),
     );
   });
 
@@ -2392,7 +2406,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('by Autopilot')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('By Autopilot')).toBeInTheDocument());
   });
 
   it('keeps the "via <source>" form for non-autopilot, non-manual rows', async () => {
@@ -2404,7 +2418,7 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('via Triage')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Via Triage')).toBeInTheDocument());
   });
 
   it('reads manual rows as "by you", not the raw source enum (QA-archive-20260828-06)', async () => {
@@ -2416,8 +2430,8 @@ describe('ActivityScreen — D57 rule attribution', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('by you')).toBeInTheDocument());
-    expect(screen.queryByText('via Manual')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('By you')).toBeInTheDocument());
+    expect(screen.queryByText(/via Manual/i)).not.toBeInTheDocument();
   });
 });
 
@@ -2651,8 +2665,8 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
       },
     ]);
     renderScreen();
-    await waitFor(() => expect(screen.getByText('by you')).toBeInTheDocument());
-    expect(screen.queryByText('via Manual')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('By you')).toBeInTheDocument());
+    expect(screen.queryByText(/via Manual/i)).not.toBeInTheDocument();
   });
 
   it('a source chip inside the drawer drives the filter URL', async () => {
@@ -2669,5 +2683,88 @@ describe('ActivityScreen — D60 mobile filter drawer', () => {
     await waitFor(() =>
       expect(replaceMock).toHaveBeenCalledWith(expect.stringContaining('source=autopilot')),
     );
+  });
+});
+
+describe('ActivityScreen — sender-first rows and coloured numbers', () => {
+  it('leads each row with the sender name, the domain under it', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({ data: [row({ action: 'delete', affectedCount: 80 })], meta: META_BASE }),
+      },
+    ]);
+    const { container } = renderScreen();
+    const name = await screen.findByText('Sender One');
+    expect(name).toHaveAttribute('data-row-sender');
+    expect(name.nextElementSibling?.textContent).toBe('example.com');
+    // The name leads; the action and its count come after it.
+    const result = container.querySelector('[data-row-result]');
+    expect(result).not.toBeNull();
+    expect(name.compareDocumentPosition(result!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(name.closest('li')?.textContent).toMatch(/Sender One.*Deleted.*80 emails/);
+  });
+
+  it('colours the result line by outcome', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ id: 'a-1', action: 'delete' }),
+              row({ id: 'a-2', action: 'unsubscribe_unconfirmed' }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await waitFor(() => expect(container.querySelectorAll('[data-row-result]')).toHaveLength(2));
+    const colours = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-row-result]'),
+      (el) => el.style.color,
+    );
+    expect(colours).toEqual(['var(--dm-danger)', 'var(--dm-amber)']);
+  });
+
+  it('activityResultColor: failure danger, unsettled amber, settled unsubscribe primary', () => {
+    expect(activityResultColor(row({ action: 'unsubscribe_failed' }))).toBe('var(--dm-danger)');
+    expect(
+      activityResultColor(
+        row({
+          action: 'archive',
+          executionState: { kind: 'failed' } as ActivityRowWire['executionState'],
+        }),
+      ),
+    ).toBe('var(--dm-danger)');
+    expect(activityResultColor(row({ action: 'unsubscribe_action_required' }))).toBe(
+      'var(--dm-amber)',
+    );
+    expect(activityResultColor(row({ action: 'unsubscribe' }))).toBe('var(--dm-primary)');
+    expect(activityResultColor(row({ action: 'archive' }))).toBe('var(--dm-fg)');
+    expect(activityResultColor(row({ action: 'keep' }))).toBe('var(--dm-fg-muted)');
+  });
+
+  it('draws each window count in its verb’s colour', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () => jsonOk({ data: [row({})], meta: META_BASE }),
+      },
+    ]);
+    const { container } = renderScreen();
+    await screen.findByRole('region', { name: 'Activity summary' });
+    const tone = (key: string) =>
+      container.querySelector<HTMLElement>(`[data-summary-count="${key}"]`)?.style.color;
+    expect(tone('archived')).toBe('var(--dm-fg)');
+    expect(tone('deleted')).toBe('var(--dm-danger)');
+    expect(tone('unsubscribed')).toBe('var(--dm-primary)');
+    expect(tone('later')).toBe('var(--dm-primary)');
+    expect(tone('kept')).toBe('var(--dm-fg-muted)');
   });
 });
