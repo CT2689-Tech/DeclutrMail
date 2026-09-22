@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 describe('PageLoadObservability', () => {
-  it('has bounded attribution for every App Router page', () => {
+  it('has bounded attribution for every production App Router page', () => {
     const appRoot = path.join(process.cwd(), 'src/app');
     const pagePaths: string[] = [];
     const visit = (directory: string) => {
@@ -49,7 +49,13 @@ describe('PageLoadObservability', () => {
     };
     visit(appRoot);
 
-    expect(pagePaths.filter((pathname) => pageLoadSurface(pathname) === 'other')).toEqual([]);
+    // This exact development-only route is gated by notFound() in production;
+    // app/design-prototype/page.test.tsx verifies that boundary. Keep the
+    // exception narrow so future production routes still require attribution.
+    const productionPagePaths = pagePaths.filter((pathname) => pathname !== '/design-prototype');
+    expect(productionPagePaths.filter((pathname) => pageLoadSurface(pathname) === 'other')).toEqual(
+      [],
+    );
   });
 
   it('is installed once by the root providers shared by every route', async () => {
