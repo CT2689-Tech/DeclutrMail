@@ -55,3 +55,11 @@ End-to-end Gmail mutations remain **unverified**. No real archive, delete, unsub
 [ADR-0043](../adr/0043-warm-editorial-product-system.md) records the accepted system, layout roles, explicit data scopes and extension rules. New screens can reuse the feature-local Editorial page framing and shared controls, with an inspector or reading layout when useful. Storybook now includes a light/dark toolbar that also themes portal content.
 
 Next review: inspect the actual app and public pages on this branch, then approve any final visual adjustments and the release separately.
+
+## Sender inspector parity correction
+
+The first integration retained the old >1100px detail-panel condition even though the approved prototype kept the inspector above 760px. This meant the founder’s 812px desktop window navigated to a standalone sender page. The original visual review did not exercise this row-click transition at the actual review-window width.
+
+The inspector now shares the desktop shell’s 760px boundary. Loading and loaded workspaces share column proportions; container-based compact rows preserve readable identities when expanded navigation narrows the list. Existing actions, detail data and the explicit full-page link retain their owners.
+
+A regression reproduced failure at 761, 812, 1024 and 1100px before the fix and passes afterward. Browser verification on the original populated 812px window confirms row click opens details beside the list, switching rows updates the panel, closing preserves the list, and the layout remains usable with expanded navigation. A 390px check retains dedicated-page navigation. Tests: 109 screen/pane/app-shell, 30 row/list and 14 shared shell/sidebar tests passed; web/shared typechecks and scoped lint passed. No Gmail action was executed.

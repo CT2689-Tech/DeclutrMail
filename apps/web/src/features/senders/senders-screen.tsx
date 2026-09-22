@@ -75,7 +75,7 @@ import { SenderList } from './sender-list';
 import workspaceStyles from './sender-workspace.module.css';
 import { useSenderPane } from './use-sender-pane';
 
-// The pane mounts only after a row click at ≥ 1100px, and it carries the
+// The pane mounts only after a row click above the mobile shell breakpoint, and it carries the
 // whole Sender Detail surface. Loading it on demand keeps the list route
 // inside its first-load bundle budget; the pane renders its own skeleton,
 // so there is no separate loading placeholder here.
@@ -959,11 +959,11 @@ function SendersScreenContent({
   // Phone (≤480px): rows drop the primary verb button for the `⋯` menu
   // (plus swipe-right), and the selection bar becomes the FAB.
   const isPhone = useIsAtMost('xs');
-  // The detail pane sits BESIDE the list only from 1100px up; below that
-  // opening a sender is a page navigation, as it always was.
-  const canSplit = !useIsAtMost('md');
+  // Match the approved preview and desktop shell: the sender inspector
+  // stays beside the list above 760px, including narrow desktop windows.
+  const canSplit = !useIsAtMost('shell');
   // Narrow split (≤1280px): the list column cannot hold the verb button
-  // AND the pane, so rows go compact while a sender is open.
+  // AND the persistent inspector, so split-workspace rows go compact.
   const tightSplit = useIsAtMost('lg');
   const {
     senderId: urlSenderId,

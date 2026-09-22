@@ -4,7 +4,7 @@
 
 Production Senders and Sender Detail now use the approved warm editorial direction: compact evidence rows on the left, persistent inspector space on the right, serif identity headings, restrained bordered working surfaces, and an explicit selected-row treatment. This is the existing production feature, not the design-prototype fixture path. Shared application tokens and navigation are owned by the coordinating change.
 
-The initial inspector invites selection without inventing a recommendation or auto-selecting a sender. Selecting a row mounts the existing live `SenderDetailRoute`. At the existing tablet breakpoint, navigation still opens the dedicated sender page. Full-page and pane modes use the same content and mutation logic. Loading geometry now follows the split workspace.
+The initial inspector invites selection without inventing a recommendation or auto-selecting a sender. Selecting a row mounts the existing live `SenderDetailRoute`. At the mobile-shell breakpoint of 760px and below, navigation opens the dedicated sender page. Narrow desktop windows retain the right inspector. Full-page and pane modes use the same content and mutation logic. Loading geometry now follows the split workspace.
 
 ## Data inventory
 
@@ -88,6 +88,6 @@ The Pane story explicitly includes 128 current inbox messages; `senders-senderde
 
 ## Final integration follow-ups
 
-Historical-email controls now remain available when preview counts happen to match, restoring production-main choice availability; existing empty-inbox and capability gates remain. Confirmation regression tests cover these choices. Mobile rows reserve readable space for identity, status and scoped evidence. Loading splits now use the same >1100px breakpoint and proportions as the live workspace. The timeline empty state is location-neutral because pane actions sit below it. The final screen/pane focused run passed 95 tests; scoped lint passed.
+Historical-email controls now remain available when preview counts happen to match, restoring production-main choice availability; existing empty-inbox and capability gates remain. Confirmation regression tests cover these choices. Mobile rows reserve readable space for identity, status and scoped evidence. Loading splits now use the same >760px breakpoint and proportions as the live workspace. The timeline empty state is location-neutral because pane actions sit below it. The final screen/pane focused run passed 95 tests; scoped lint passed.
 
 Completed browser coverage and the live-mailbox verification boundary are recorded in [the integration handoff](design-integration-status-2026-09-22.md).

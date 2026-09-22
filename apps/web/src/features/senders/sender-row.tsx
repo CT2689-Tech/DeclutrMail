@@ -125,6 +125,7 @@ function CountCell({
 }) {
   return (
     <div
+      className={styles.rowCount}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -212,7 +213,7 @@ export function SenderRow({
       data-selected={selected || undefined}
       data-active={active || undefined}
       aria-busy={busy || undefined}
-      className="dm-srow"
+      className={`dm-srow${compact ? ` ${styles.compactRow}` : ''}`}
       onClick={(e) => {
         // Pointer convenience only — never steal a click meant for the
         // checkbox, a verb, the ⋯ menu or the name link.
@@ -262,7 +263,10 @@ export function SenderRow({
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
+      <div
+        className={styles.rowIdentity}
+        style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <Link
             href={`/senders/${encodeURIComponent(s.id)}`}
@@ -329,7 +333,9 @@ export function SenderRow({
         compact={compact}
       />
 
-      <SenderActionRow sender={s} onAction={onAction} compact={compact} />
+      <div className={styles.rowActions}>
+        <SenderActionRow sender={s} onAction={onAction} compact={compact} />
+      </div>
       {compact && (unsub || activity || evidence) && (
         <div className={styles.compactRowContext}>
           {(unsub || activity) && (

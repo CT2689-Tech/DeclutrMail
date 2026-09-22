@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type ReactNode } from 'react';
-import { color, font, motion, radius, shadow, text } from '../tokens/tokens';
+import { breakpoint, color, font, motion, radius, shadow, text } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 import { useLocalState } from '../hooks/use-local-state';
@@ -85,7 +85,7 @@ export function AppShell({
 
   // Close it when the viewport crosses INTO desktop. Responsive
   // behaviour here is CSS-only by design, which means `drawerOpen` has
-  // no idea the breakpoint moved: open the drawer at 800px, then widen
+  // no idea the breakpoint moved: open the drawer on mobile, then widen
   // or rotate past 760px, and the hamburger disappears while the dialog
   // stays mounted — a second <Sidebar> in an aria-modal dialog pinned
   // over the now-visible desktop one, focus trap and duplicate nav
@@ -95,7 +95,7 @@ export function AppShell({
   // it only retires a state the layout can no longer host.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const desktop = window.matchMedia('(min-width: 761px)');
+    const desktop = window.matchMedia(`(min-width: ${breakpoint.shell + 1}px)`);
     const closeIfDesktop = () => {
       if (desktop.matches) setDrawerOpen(false);
     };

@@ -26,7 +26,7 @@ const meta: StoryMeta<typeof SenderList> = {
     docs: {
       description: {
         component:
-          'The single Senders layout. Row click opens the sender (side pane above the tablet breakpoint, else the full page); checkbox, verb and ⋯ never do. Every mutation routes through the host’s D226 preview.',
+          'The single Senders layout. Row click opens the sender (side pane above 760px, else the full page); checkbox, verb and ⋯ never do. Every mutation routes through the host’s D226 preview.',
       },
     },
   },

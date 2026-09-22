@@ -1266,7 +1266,7 @@ describe('SendersScreen — edge states', () => {
     // worker reports `done` (never optimistically).
     const slot = await findRowStatus();
     expect(archivePosted).toBe(true);
-    expect(slot).toHaveTextContent('Archived 12');
+    expect(slot).toHaveTextContent(/^Archived(?: ·)? 12(?: emails)?$/);
     // One voice: no strip on this screen, and no toast repeating the pill.
     expect(screen.queryByRole('status')).toBeNull();
 
@@ -1355,7 +1355,7 @@ describe('SendersScreen — edge states', () => {
     // Founder decision 2026-09-20: the row STAYS where it is, marked done,
     // even though the refetch that follows dropped this sender (nothing
     // left to clean) — the list must not jump under the cursor.
-    await screen.findByText('Deleted 313');
+    await screen.findByText(/^Deleted(?: ·)? 313(?: emails)?$/);
     expect(screen.getByRole('checkbox', { name: /select sender a/i })).toBeEnabled();
     expect(currentMailOnly).toBe('true');
     await undoFromThePill('tok-1');
@@ -2210,7 +2210,7 @@ describe('SendersScreen — edge states', () => {
       expect(listGets).toBeGreaterThan(listGetsBefore);
       // …and the row that was "not confirmed" now says what happened.
       expect(document.querySelector('[data-dm-row-activity="done"]')).toHaveTextContent(
-        'Archived 12',
+        /^Archived(?: ·)? 12(?: emails)?$/,
       );
     } finally {
       vi.useRealTimers();
@@ -3691,13 +3691,13 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     domain: 'b.example',
   };
 
-  /** The pane exists only from 1100px up; the test DOM defaults narrower. */
-  function wideViewport() {
+  /** Exercise real matchMedia boundaries instead of only a wide monitor. */
+  function mockViewport(width = 1440) {
     const originalMatchMedia = window.matchMedia;
     window.matchMedia = ((query: string) => {
       const limit = /\(max-width:\s*(\d+)px\)/.exec(query);
       return {
-        matches: limit != null && 1440 <= Number(limit[1]),
+        matches: limit != null && width <= Number(limit[1]),
         media: query,
         addEventListener: () => {},
         removeEventListener: () => {},
@@ -3724,7 +3724,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
   }
 
   it('opens a sender beside the list from a row click, follows j/k, and closes on Esc', async () => {
-    wideViewport();
+    mockViewport();
     installFetchStub([twoSendersHandler()]);
 
     renderScreen();
@@ -3739,10 +3739,44 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
   });
 
+  it.each([761, 812, 1024, 1100])(
+    'keeps row-click details beside the list at %ipx, matching the approved desktop layout',
+    async (width) => {
+      mockViewport(width);
+      installFetchStub([twoSendersHandler()]);
+
+      renderScreen();
+      fireEvent.click(await screen.findByRole('link', { name: 'Sender A' }));
+
+      expect(await screen.findByTestId('sender-detail-pane')).toHaveTextContent(ROW.id);
+      expect(screen.getByRole('list', { name: 'Senders' })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Sender A' })).toHaveAttribute(
+        'aria-current',
+        'true',
+      );
+      fireEvent.click(screen.getByRole('link', { name: 'Sender B' }));
+      expect(await screen.findByTestId('sender-detail-pane')).toHaveTextContent('s2');
+      fireEvent.click(screen.getByRole('button', { name: 'Close sender details' }));
+      expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
+      expect(screen.getByRole('list', { name: 'Senders' })).toBeInTheDocument();
+    },
+  );
+
+  it.each([390, 760])('keeps the full-page sender link on a %ipx mobile layout', async (width) => {
+    mockViewport(width);
+    installFetchStub([twoSendersHandler()]);
+
+    renderScreen();
+    const sender = await screen.findByRole('link', { name: 'Sender A' });
+    expect(sender).toHaveAttribute('href', `/senders/${ROW.id}`);
+    fireEvent.click(sender);
+    expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
+  });
+
   // The pane shows ONE sender; a verb key must not act on a checkbox
   // selection somewhere else in the list.
   it('ignores the bulk verb keys while the pane is open, and restores them once it closes', async () => {
-    wideViewport();
+    mockViewport();
     installFetchStub([twoSendersHandler()]);
 
     renderScreen();
@@ -3767,7 +3801,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
   // The open sender's id belongs to the mailbox it was opened in — after a
   // switch it would refetch against the new mailbox and 404.
   it('closes the pane when the active mailbox changes', async () => {
-    wideViewport();
+    mockViewport();
     installFetchStub([twoSendersHandler()]);
 
     const view = renderScreen();
@@ -3792,7 +3826,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
   });
 
   it('closes the pane on the mailbox scope-reset event', async () => {
-    wideViewport();
+    mockViewport();
     installFetchStub([twoSendersHandler()]);
 
     renderScreen();
@@ -3808,7 +3842,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
   // Esc belongs to whatever is on top: the top-bar help popover (a dialog)
   // closes first, the pane on the next press.
   it('leaves Esc to an open dialog, then closes the pane on the next press', async () => {
-    wideViewport();
+    mockViewport();
     installFetchStub([twoSendersHandler()]);
 
     renderScreen();
@@ -3831,7 +3865,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
   // unmounts it before the pane's `window` listener runs — so by then no
   // dialog is left in the DOM to defer to. The consumed press is the signal.
   it('does not close the pane on an Esc a layer above already consumed', async () => {
-    wideViewport();
+    mockViewport();
     installFetchStub([twoSendersHandler()]);
 
     renderScreen();

@@ -169,6 +169,8 @@ export const motion = {
 /** Responsive ceilings (px) — see useIsAtMost. */
 export const breakpoint = {
   xs: 480,
+  /** Desktop navigation and persistent workspace inspectors share this boundary. */
+  shell: 760,
   sm: 900,
   md: 1100,
   lg: 1280,

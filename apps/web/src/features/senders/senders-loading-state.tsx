@@ -33,7 +33,7 @@ export function SendersLoadingState() {
             <Skeleton variant="pill" width="100%" height={36} />
           </div>
         </div>
-        <Skeleton variant="rect" width={240} height={44} />
+        <Skeleton variant="rect" width="min(240px, 100%)" height={44} />
         {/* Same geometry as a row: logo, name over address, count, verb, ⋯. */}
         <div className={styles.results}>
           {Array.from({ length: ROWS }, (_, i) => (
