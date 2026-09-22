@@ -30,7 +30,7 @@ Detailed inventories: [Sender audit](design-sender-audit-2026-09-22.md), [app au
 
 ## Rendered browser verification
 
-The integration agent inspected the production-built app in an authenticated local browser and used populated Storybook fixtures where the local mailbox had no data. Both light and dark themes were reviewed, with desktop 1280px and phone 390px coverage; the revised Autopilot banner was also checked at 320px.
+The integration agent inspected the production-built app in an authenticated local browser and used populated Storybook fixtures where the billing-test account selected during that review had no data. Both light and dark themes were reviewed, with desktop 1280px and phone 390px coverage; the revised Autopilot banner was also checked at 320px.
 
 | Surface                   | Observed coverage                                                                                                                                                                                                                                                                                                                               |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,7 +46,9 @@ This is representative route-family and populated-state coverage, not a claim to
 
 ## Verification boundary
 
-The local mailbox is empty and requires Gmail reconnection. Therefore live populated-mailbox behavior and an end-to-end Gmail action were **not verified**. No real archive, delete, unsubscribe, protection, reconnection, checkout or subscription change was performed. Existing automated workflow tests and synthetic fixtures cover the visual integration; reconnecting a suitable mailbox and checking an explicitly chosen real action remains part of release acceptance.
+The initial browser review was signed into a billing-test account whose mailbox was empty and required reconnection. That was an account-selection mistake, not the state of the founder’s original workspace. A follow-up read-only local database check confirmed both original connected mailboxes and their indexed data remained intact. Restoring the existing workspace session through the already-enabled local dev-login route made the populated Home and Senders pages visible, and the account selector showed both mailboxes. No database or Gmail data restoration was necessary.
+
+End-to-end Gmail mutations remain **unverified**. No real archive, delete, unsubscribe, protection, reconnection, checkout or subscription change was performed. Existing automated workflow tests, synthetic fixtures and the subsequent populated-route read-only check cover the visual integration. An explicitly chosen real action remains part of release acceptance. Future local visual checks must verify the displayed account and mailbox selection before drawing conclusions about missing data or connection status.
 
 ## Future additions
 
