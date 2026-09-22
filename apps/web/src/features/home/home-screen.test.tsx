@@ -84,7 +84,13 @@ function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
         calls.triage += 1;
         return jsonOk({
           data: {
-            queue: Array.from({ length: queueLength }, (_, i) => ({ id: `row-${i}` })),
+            queue: Array.from({ length: queueLength }, (_, i) => ({
+              id: `row-${i}`,
+              senderId: `sender-${i}`,
+              senderName: `Journal ${i}`,
+              senderDomain: 'journal.example',
+              last90dMessages: 25 + i,
+            })),
             stats: {},
             todaySummary: {},
           },
@@ -125,15 +131,21 @@ describe('HomeScreen', () => {
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
     expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
     expect(calls.summary).toEqual(['?window=all']);
-    const link = screen.getByRole('link');
+    const link = screen.getByRole('link', { name: 'Review 2 today' });
     expect(link).toHaveAttribute('href', '/triage');
     expect(link).toHaveTextContent('Review 2 today');
+    expect(screen.getByRole('link', { name: /Journal 0/ })).toHaveAttribute(
+      'href',
+      '/senders?sender=sender-0',
+    );
+    expect(screen.getByText('Last 90 days')).toBeInTheDocument();
+    expect(calls.triage).toBe(1);
   });
 
   it('offers the Screener when Triage is clear', async () => {
     stub({ queueLength: 0, screenerPending: 4 });
     renderHome();
-    const link = await screen.findByRole('link');
+    const link = await screen.findByRole('link', { name: 'Review 4 new' });
     expect(link).toHaveAttribute('href', '/screener');
     expect(link).toHaveTextContent('Review 4 new');
   });
@@ -142,7 +154,10 @@ describe('HomeScreen', () => {
     authCell.me = meFor('free', 'ready');
     const calls = stub({ screenerPending: 4 });
     renderHome();
-    expect(await screen.findByRole('link')).toHaveAttribute('href', '/senders');
+    expect(await screen.findByRole('link', { name: 'Review senders' })).toHaveAttribute(
+      'href',
+      '/senders',
+    );
     expect(calls.triage).toBe(1);
     expect(calls.screener).toBe(0);
   });

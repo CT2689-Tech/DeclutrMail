@@ -1,17 +1,20 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { breakpoint, color, font, motion, radius, shadow, text } from '../tokens/tokens';
 import { useFocusTrap } from '../hooks/use-focus-trap';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
-import { useLocalState } from '../hooks/use-local-state';
 import { UNDO_TRAY_INSET_VAR } from '../components/undo-tray/undo-tray';
 import { HelpButton } from './help-button';
-import { NAV, NavIcon, Sidebar, SIDEBAR_WIDTH, type NavCount } from './sidebar';
-
-/** The mobile tab bar's destinations; everything else is behind "More". */
-const TAB_IDS: readonly LabelKey[] = ['home', 'senders', 'triage', 'activity'];
-const MORE_ICON = 'M5 12h.01M12 12h.01M19 12h.01';
+import {
+  WORKSPACE_NAV,
+  workspaceSection,
+  SectionNavigation,
+  NavIcon,
+  Sidebar,
+  SIDEBAR_WIDTH,
+  type NavCount,
+} from './sidebar';
 
 /**
  * App chrome: sidebar + a quiet top bar + a scrollable content area.
@@ -19,8 +22,8 @@ const MORE_ICON = 'M5 12h.01M12 12h.01M19 12h.01';
  * `dm-sidebar-desktop` / `dm-topbar-hamburger` / `dm-tabbar`) so the
  * layout is correct at first paint — a JS breakpoint hook would flash
  * the desktop shell on mobile before hydration. At 760px and below the sidebar
- * hides; a bottom tab bar carries the four daily destinations and its
- * "More" (like the hamburger) opens the full nav as a drawer.
+ * becomes a horizontal row carrying the same five workspace groups.
+ * Section navigation and the hamburger drawer expose every feature route.
  * Routing-agnostic — the host supplies `active`/`onNavigate`.
  */
 export function AppShell({
@@ -31,6 +34,7 @@ export function AppShell({
   locks,
   routeKey,
   topbarRight,
+  accountInitial,
   children,
 }: {
   active: string;
@@ -53,19 +57,26 @@ export function AppShell({
    * implementation.
    */
   topbarRight?: ReactNode;
+  accountInitial?: string | undefined;
   children: ReactNode;
 }) {
   const labels = useLabels();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerRef = useFocusTrap<HTMLDivElement>(drawerOpen);
 
-  // Per-device choice. `useLocalState` reads storage after mount, so the
-  // server and first client render agree on the compact default.
-  const [collapsed, setCollapsed] = useLocalState<boolean>('sidebar.collapsed', true);
-  const [animateWidth, setAnimateWidth] = useState(false);
   // The top bar is borderless at rest; a hairline appears only once
   // content has scrolled under it.
   const [scrolled, setScrolled] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // Next resets the document on navigation, but this shell owns a nested
+  // scroller. Preserve position for query-only sender changes; start a new
+  // screen at its heading instead of carrying over the previous page's scroll.
+  useEffect(() => {
+    if (routeKey === undefined) return;
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+    setScrolled(false);
+  }, [routeKey]);
 
   // Route fade. Flips between two identical keyframes on navigation
   // (see tokens.css) — adjusting state during render is React's
@@ -145,12 +156,8 @@ export function AppShell({
           onNavigateIntent={onNavigateIntent}
           counts={counts ?? {}}
           locks={locks ?? {}}
-          collapsed={collapsed}
-          animateWidth={animateWidth}
-          onToggleCollapsed={() => {
-            setAnimateWidth(true);
-            setCollapsed((v) => !v);
-          }}
+          collapsed
+          accountInitial={accountInitial}
         />
       </div>
 
@@ -204,6 +211,7 @@ export function AppShell({
               onNavigateIntent={onNavigateIntent}
               counts={counts ?? {}}
               locks={locks ?? {}}
+              accountInitial={accountInitial}
             />
           </div>
         </>
@@ -218,6 +226,41 @@ export function AppShell({
           overflow: 'hidden',
         }}
       >
+        {/* Mobile workspace groups — above the top bar in DOM and visual order,
+            matching the prototype. In flow, never over the content. */}
+        <nav
+          className="dm-tabbar"
+          aria-label="Primary"
+          style={{
+            flexShrink: 0,
+            alignItems: 'stretch',
+            order: -1,
+            gap: 2,
+            padding: '10px 8px',
+            background: 'var(--dm-nav-bg)',
+          }}
+        >
+          {WORKSPACE_NAV.map((item) => {
+            const { id } = item;
+            const on = workspaceSection(active)?.id === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onNavigate(id)}
+                onTouchStart={() => {
+                  if (!on) onNavigateIntent?.(id);
+                }}
+                aria-current={on ? 'page' : undefined}
+                style={tabStyle(on)}
+              >
+                <NavIcon d={item.icon} size={20} />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
         {/* Top bar — hamburger (mobile only), then help + the host's
             controls on the right. Deliberately quiet: no fill, and a
             hairline only while content is scrolled beneath it. */}
@@ -288,7 +331,9 @@ export function AppShell({
           </button>
           <div className="dm-shell-location" style={{ flex: 1 }}>
             <span>YOUR WORKSPACE /</span>
-            <strong>{labels[active as LabelKey] ?? active}</strong>
+            <strong>
+              {workspaceSection(active)?.label ?? labels[active as LabelKey] ?? active}
+            </strong>
           </div>
           <HelpButton />
           {topbarRight ? (
@@ -298,10 +343,19 @@ export function AppShell({
           ) : null}
         </div>
 
+        <SectionNavigation
+          active={active}
+          onNavigate={onNavigate}
+          onNavigateIntent={onNavigateIntent}
+          counts={counts ?? {}}
+          locks={locks ?? {}}
+        />
+
         <div
           // `dm-main-scroll` centres each screen's column and carries the
           // route fade (tokens.css). It must stay `display: block`.
           className="dm-main-scroll"
+          ref={contentRef}
           data-route-flip={routeFlip}
           onScroll={(event) => {
             const next = event.currentTarget.scrollTop > 0;
@@ -318,62 +372,12 @@ export function AppShell({
             // cannot scroll past it, because this container is already at
             // its end. See UNDO_TRAY_INSET_VAR; resolves to 0px whenever no
             // tray is mounted. The tray measures from the VIEWPORT bottom,
-            // and on mobile this scroller already ends above the in-flow
-            // tab bar — so that much of the reserve is already paid.
+            // with no bottom navigation inset in the editorial shell.
             paddingBottom: `max(0px, calc(var(${UNDO_TRAY_INSET_VAR}, 0px) - var(--dm-tabbar-inset, 0px)))`,
           }}
         >
           {children}
         </div>
-
-        {/* Mobile tab bar — CSS-hidden above 760px. In
-            flow (not fixed), so content can never sit underneath it. */}
-        <nav
-          className="dm-tabbar"
-          aria-label="Primary"
-          style={{
-            flexShrink: 0,
-            alignItems: 'stretch',
-            height: 56,
-            boxSizing: 'content-box',
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            borderTop: `1px solid ${color.lineSoft}`,
-            background: color.paper,
-          }}
-        >
-          {TAB_IDS.map((id) => {
-            const on = active === id;
-            const item = NAV.find((entry) => entry.id === id)!;
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onNavigate(id)}
-                onTouchStart={() => {
-                  if (!on) onNavigateIntent?.(id);
-                }}
-                aria-current={on ? 'page' : undefined}
-                style={tabStyle(on)}
-              >
-                <NavIcon d={item.icon} size={20} />
-                {labels[id]}
-              </button>
-            );
-          })}
-          <button
-            type="button"
-            onClick={(event) => {
-              event.currentTarget.focus();
-              setDrawerOpen(true);
-            }}
-            aria-haspopup="dialog"
-            aria-expanded={drawerOpen}
-            style={tabStyle(false)}
-          >
-            <NavIcon d={MORE_ICON} size={20} />
-            More
-          </button>
-        </nav>
       </main>
     </div>
   );
@@ -383,15 +387,18 @@ function tabStyle(on: boolean) {
   return {
     flex: 1,
     minWidth: 44,
+    height: 52,
     display: 'flex',
     flexDirection: 'column' as const,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 5,
     padding: 0,
     border: 'none',
-    background: 'transparent',
-    color: on ? color.primary : color.fgMuted,
+    borderRadius: 10,
+    background: on ? 'var(--dm-nav-active)' : 'transparent',
+    boxShadow: on ? 'inset 0 -3px var(--dm-nav-marker)' : undefined,
+    color: on ? 'var(--dm-nav-fg)' : 'var(--dm-nav-muted)',
     fontFamily: font.sans,
     fontSize: text.xs,
     fontWeight: on ? 600 : 500,

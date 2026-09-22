@@ -82,7 +82,7 @@ This change does not expand backend capability. Recommendations can be stale, re
 
 ## Inspector footer follow-up
 
-The populated inspector now has a separate scrolling evidence region and one persistent K/A/U/L/D action group at the bottom. No duplicated active toolbar or new action handler is introduced. The full-page action location and shortcuts remain unchanged. Pane height reserves 180px for shell/header/reconnection-banner space; the empty inspector follows the same bounds. Decision data and helper labels added by this change are at least 11px.
+The populated inspector now has a separate scrolling evidence region and one persistent K/A/U/L/D action group at the bottom. No duplicated active toolbar or new action handler is introduced. The full-page action location and shortcuts remain unchanged. Pane height reserves 300px for the full-width heading, shell and reconnection-banner space; the empty inspector follows the same bounds. Decision data and helper labels added by this change are at least 11px.
 
 The Pane story explicitly includes 128 current inbox messages; `senders-senderdetailpage--pane-unknown-inbox` preserves the unknown-count case. Detail/pane/action-toolbar regression run passed all 73 tests, including one-and-only-one instance of each canonical action in the persistent group. Parent browser QA remains the source for pixel/overflow verification.
 
@@ -91,3 +91,11 @@ The Pane story explicitly includes 128 current inbox messages; `senders-senderde
 Historical-email controls now remain available when preview counts happen to match, restoring production-main choice availability; existing empty-inbox and capability gates remain. Confirmation regression tests cover these choices. Mobile rows reserve readable space for identity, status and scoped evidence. Loading splits now use the same >760px breakpoint and proportions as the live workspace. The timeline empty state is location-neutral because pane actions sit below it. The final screen/pane focused run passed 95 tests; scoped lint passed.
 
 Completed browser coverage and the live-mailbox verification boundary are recorded in [the integration handoff](design-integration-status-2026-09-22.md).
+
+## Approved editorial composition parity
+
+Compared the active `EditorialPrototype` sender JSX and final cleanup CSS overrides (rather than its obsolete sidebar styles). The page heading now precedes both columns and carries the terracotta italic “/ Make room.” accent. Search, saved views, filters, sort, bulk controls and the existing sender rows share one ruled list panel. Loading uses the same full-width heading and >760px split. Container-responsive row behavior is retained.
+
+The inspector restores horizontal avatar/identity (44px avatar in pane), compact 30px sans-serif scope counts and thin-rule evidence sections. Current inbox, 90-day received, lifetime received, marked-read rate, history, protection and all five actions remain. No preview, mutation, undo, keyboard or polling handlers changed. The single action footer remains outside the scrolling evidence region.
+
+Verification: five targeted screen/detail/pane/row/list suites passed all 181 tests; scoped ESLint passed. Browser comparison and overflow validation are owned by the coordinating agent.

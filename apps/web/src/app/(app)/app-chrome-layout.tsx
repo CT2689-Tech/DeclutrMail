@@ -283,6 +283,7 @@ function AppChrome({ children }: { children: ReactNode }) {
         <div style={{ flex: 1, minHeight: 0 }}>
           <AppShell
             active={active}
+            accountInitial={me.user.email.charAt(0).toUpperCase()}
             onNavigate={(id) => router.push(shellRoute(id))}
             onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
             routeKey={pathname}

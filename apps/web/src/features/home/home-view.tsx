@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
-import { EditorialKicker, editorialColumnStyle } from '@/features/editorial/page';
+import { EditorialKicker } from '@/features/editorial/page';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
 import styles from './home-view.module.css';
@@ -10,15 +10,33 @@ import styles from './home-view.module.css';
 /** Real cleanup history and the next available task, with no inferred savings or inbox score. */
 export function HomeView({ state }: { state: HomeState }) {
   return (
-    <div style={editorialColumnStyle} className={styles.page}>
+    <div className={styles.page}>
       <ScreenIntro id="home" title="How Home works" body="Undone actions are not counted." />
       <header className={styles.header}>
         <div>
-          <EditorialKicker>Your personal space</EditorialKicker>
-          <h1>Home</h1>
+          <EditorialKicker>Your personal space / Home</EditorialKicker>
+          <h1>
+            A little room
+            <br />
+            for a <em>clearer day.</em>
+          </h1>
           <p className={styles.subtitle}>A clearer view. A little more room for what matters.</p>
         </div>
-        <span className={styles.headerNote}>One thoughtful decision at a time.</span>
+        {state.kind === 'ready' && (
+          <section className={styles.stamp} aria-label="Your cleanup so far">
+            <span className={styles.eyebrow}>
+              The space
+              <br />
+              you’ve made
+            </span>
+            <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>
+            <span>
+              {state.hero.label}
+              {state.since ? ` since ${formatSince(state.since)}` : ''}
+            </span>
+            <small>Undone actions excluded</small>
+          </section>
+        )}
       </header>
       <HomeBody state={state} />
     </div>
@@ -65,43 +83,141 @@ function HomeBody({ state }: { state: HomeState }) {
     case 'ready':
       return (
         <>
-          <div className={styles.summaryGrid}>
-            <section className={styles.progress} aria-label="Your cleanup so far">
-              <span className={styles.eyebrow}>The space you’ve made</span>
-              <span className={styles.number} data-testid="home-hero">
-                {state.hero.value.toLocaleString('en-US')}
-              </span>
-              <p className={styles.numberLabel}>
-                {state.hero.label}
-                {state.since ? ` since ${formatSince(state.since)}` : ''}
-              </p>
-              <span className={styles.progressNote}>
-                From your recorded decisions. Undone actions are excluded.
-              </span>
-            </section>
-            <section className={styles.nextStep} aria-label="Your next step">
-              <span className={styles.eyebrow}>A good place to continue</span>
+          <section className={styles.summaryGrid} aria-label="Your next step">
+            <div className={styles.nextStep}>
+              <span className={styles.eyebrow}>A good place to start</span>
               <h2>
-                Make room
-                <br />
-                for what’s next.
+                A few decisions.
+                <br />A little more space.
               </h2>
               <p>
                 {state.action.href === '/triage'
-                  ? 'Your daily review is ready. Work through one sender at a time, with the detail you need to decide.'
+                  ? 'Your daily review is ready. Take a look at these senders and decide what still belongs.'
                   : state.action.href === '/screener'
                     ? 'New senders are ready for your attention. Their email keeps arriving until you choose what to do.'
                     : 'Explore your senders, look at their activity, and decide what still belongs in your inbox.'}
               </p>
               <PrimaryLink action={state.action} />
-              <span className={styles.footnote}>Preview every change. Keep the final say.</span>
-            </section>
-          </div>
-          {state.secondary.length > 0 && <SecondaryRow stats={state.secondary} />}
-          <p className={styles.closing}>Small decisions. A more considered inbox.</p>
+              <span className={styles.footnote}>Nothing changes until you confirm.</span>
+            </div>
+            <div className={styles.opportunityList}>
+              {state.senders && state.senders.length > 0 ? (
+                <>
+                  <div className={styles.listLabel}>
+                    <span>Sender</span>
+                    <span>Last 90 days</span>
+                  </div>
+                  {state.senders.map((sender) => (
+                    <Link
+                      className={styles.senderRow}
+                      key={sender.id}
+                      href={`/senders?sender=${encodeURIComponent(sender.id)}`}
+                    >
+                      <span className={styles.avatar} aria-hidden="true">
+                        {sender.name.slice(0, 1)}
+                      </span>
+                      <span className={styles.senderIdentity}>
+                        <strong>{sender.name}</strong>
+                        <small>{sender.domain}</small>
+                      </span>
+                      <span className={styles.senderCount}>
+                        {sender.recentCount.toLocaleString('en-US')}
+                        <small>emails</small>
+                      </span>
+                      <span aria-hidden="true">↗</span>
+                    </Link>
+                  ))}
+                  <p className={styles.footnote}>
+                    From your daily review queue. Counts cover the last 90 days.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <span className={styles.eyebrow}>Your recorded progress</span>
+                  {state.secondary.length > 0 ? (
+                    <SecondaryRow stats={state.secondary} />
+                  ) : (
+                    <p className={styles.quietCopy}>
+                      Every considered decision makes room for what matters. Explore your senders to
+                      find your next step.
+                    </p>
+                  )}
+                  <p className={styles.footnote}>
+                    From your cleanup history. Undone actions are excluded.
+                  </p>
+                </>
+              )}
+            </div>
+          </section>
+          <section className={styles.overviewLower}>
+            <div className={styles.attention}>
+              <h2>A little attention.</h2>
+              {state.pending?.triagePending != null && state.pending.triagePending > 0 && (
+                <AttentionLink
+                  href="/triage"
+                  title={`${state.pending.triagePending.toLocaleString('en-US')} to review today`}
+                  description="One sender at a time, with the detail to decide."
+                />
+              )}
+              {state.pending?.screenerPending != null && state.pending.screenerPending > 0 && (
+                <AttentionLink
+                  href="/screener"
+                  title={`${state.pending.screenerPending.toLocaleString('en-US')} new senders`}
+                  description="Review unfamiliar senders on your terms."
+                />
+              )}
+              <AttentionLink
+                href="/senders"
+                title="See your senders"
+                description="Revisit the senders that have a place in your inbox."
+              />
+            </div>
+            <div className={styles.activity}>
+              <span className={styles.eyebrow}>Small decisions add up</span>
+              <h2>
+                More space.
+                <br />
+                Less second-guessing.
+              </h2>
+              <p>
+                Your cleanup history keeps every outcome in view, with Undo available for supported
+                actions.
+              </p>
+              <Link href="/activity">
+                See your activity <span aria-hidden="true">↗</span>
+              </Link>
+            </div>
+          </section>
+          {state.senders && state.senders.length > 0 && state.secondary.length > 0 && (
+            <SecondaryRow stats={state.secondary} />
+          )}
+          <p className={styles.closing}>A considered inbox, one decision at a time.</p>
         </>
       );
   }
+}
+
+function AttentionLink({
+  href,
+  title,
+  description,
+}: {
+  href: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link href={href} className={styles.attentionLink}>
+      <span className={styles.attentionIcon} aria-hidden="true">
+        ↗
+      </span>
+      <span>
+        <strong>{title}</strong>
+        <small>{description}</small>
+      </span>
+      <span aria-hidden="true">→</span>
+    </Link>
+  );
 }
 
 function SecondaryRow({ stats }: { stats: HomeStat[] }) {

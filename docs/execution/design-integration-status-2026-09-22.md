@@ -4,7 +4,7 @@ Date: 2026-09-22. Branch: `claude/product-simplification-ideas-5a8515`.
 
 ## Result
 
-The approved Warm Editorial direction now runs through the real product and public website. The compact Precision-inspired sidebar, warm paper/forest themes, restrained display headings, readable controls and persistent Sender inspector share one token system. All ten product destinations remain available; account controls retain Settings and Billing.
+The Warm Editorial integration runs through the real product and public website, but the initial completion report overstated its fidelity to the approved prototype. Follow-up review exposed a wrong account selection, a missing narrow-desktop inspector, and navigation/composition differences. The corrections below supersede those parts of the initial report. Shared tokens and passing tests do not, by themselves, establish design parity.
 
 This is a local branch implementation for review. Main and production have not been changed. The development-only design prototype remains available for comparison.
 
@@ -63,3 +63,24 @@ The first integration retained the old >1100px detail-panel condition even thoug
 The inspector now shares the desktop shell’s 760px boundary. Loading and loaded workspaces share column proportions; container-based compact rows preserve readable identities when expanded navigation narrows the list. Existing actions, detail data and the explicit full-page link retain their owners.
 
 A regression reproduced failure at 761, 812, 1024 and 1100px before the fix and passes afterward. Browser verification on the original populated 812px window confirms row click opens details beside the list, switching rows updates the panel, closing preserves the list, and the layout remains usable with expanded navigation. A 390px check retains dedicated-page navigation. Tests: 109 screen/pane/app-shell, 30 row/list and 14 shared shell/sidebar tests passed; web/shared typechecks and scoped lint passed. No Gmail action was executed.
+
+## Sidebar and composition parity correction
+
+The founder correctly challenged the sidebar after the initial handoff. The previous review verified functional behavior and representative layouts, but did not adequately compare the active final prototype with the real implementation. The prototype's active `.iconRail` has five groups; the implemented rail had ten feature icons. The earlier expanded-sidebar preference was also an implementation carryover, not an approved design requirement.
+
+| Area                    | Drift found                                                 | Correction                                                                                                                             |
+| ----------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Desktop navigation      | Ten feature icons, expansion toggle, different spacing      | Fixed 72px forest rail, five approved groups, centered 44px buttons, 12px gaps, warm active marker and bottom Settings shortcut        |
+| Existing feature access | Prototype grouping had not been translated into real routes | Section navigation for Senders/Triage/Screener, Autopilot/Quiet, and Brief/Follow-ups/Later; counts, tier labels and prefetch retained |
+| Mobile navigation       | Four bottom destinations plus More                          | Same five groups across the top; complete ten-route drawer and account controls retained                                               |
+| Home                    | Generic page heading and progress/CTA card                  | Editorial greeting, factual angled progress stamp, sender opportunity module, attention links and activity block                       |
+| Sender composition      | Heading only above the list, oversized vertical identity    | Heading above both columns, horizontal identity, compact counts and ruled evidence; existing panel/actions retained                    |
+| Home sender links       | New preview links initially targeted full detail pages      | Links use the existing `?sender=` inspector route; phone layouts retain dedicated detail pages                                         |
+
+Browser comparison used the active Warm Editorial prototype and the real original workspace. Checked the desktop rail and Home/Sender composition, 44×44 rail geometry, parent selection on Quiet and Later, Brief's three child routes, the complete mobile drawer, and the 390px light-theme Sender layout. Both original mailboxes remain available. No real Gmail action was performed.
+
+The final Home-to-Sender walkthrough caught inherited scroll position in the shell's nested scroller, which clipped the destination heading. Route changes now reset that scroller; query-only selection changes preserve position. A new regression failed before the fix and passed afterward; the 51-test shell/chrome rerun passed. Browser readback at the original 812px window confirms the full heading and the inspector are visible together when entering from Home, and the bottom Settings shortcut opens Settings.
+
+The implementation deliberately retains real account switching, connection state, plan gates, exact data scopes, production filter controls and the full detail/action pipeline. These are absent or simplified in the fictional prototype. This correction is a targeted parity check of navigation, Home and Sender framing; it does not certify every public page or every product state as visually identical.
+
+Current automated checks: **2,882 web tests** and **667 shared tests** passed; web/shared typechecks passed. Navigation tests cover all ten underlying routes, active groups, child counts and gates, prefetch, Settings/brand actions, drawer focus/Escape, route fade and Undo overlap reservation. The production build, all **45 public prerender requirements** and all **52 route bundle budgets** passed without changing the existing budgets.

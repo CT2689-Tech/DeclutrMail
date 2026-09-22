@@ -48,6 +48,12 @@ export const Cleared: Story<typeof HomeView> = {
         { label: 'Senders decided', value: 86 },
       ],
       action: { label: 'Review 8 today', href: '/triage' },
+      pending: { triagePending: 8, screenerPending: 3 },
+      senders: [
+        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', recentCount: 28 },
+        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', recentCount: 16 },
+        { id: 'dispatch', name: 'Design Dispatch', domain: 'dispatch.example', recentCount: 42 },
+      ],
     },
   },
 };

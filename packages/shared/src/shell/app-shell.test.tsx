@@ -59,15 +59,17 @@ describe('<AppShell /> — top bar and tab bar', () => {
     expect(html).not.toContain('Stored Gmail data');
   });
 
-  it('renders the mobile tab bar: four destinations plus More', () => {
+  it('renders the five workspace groups in a top mobile row', () => {
     const html = markup();
-    const tabbar = html.slice(html.indexOf('<nav class="dm-tabbar"'));
+    const start = html.indexOf('<nav class="dm-tabbar"');
+    const tabbar = html.slice(start, html.indexOf('</nav>', start) + '</nav>'.length);
     expect(tabbar.startsWith('<nav class="dm-tabbar" aria-label="Primary"')).toBe(true);
-    for (const label of ['Home', 'Senders', 'Triage', 'Activity', 'More']) {
+    for (const label of ['Overview', 'Clean up', 'Automations', 'Catch up', 'Activity']) {
       expect(tabbar, `tab bar must offer "${label}"`).toContain(`${label}</button>`);
     }
     expect(tabbar.match(/<button/g)).toHaveLength(5);
-    expect(tabbar).toContain('height:56px');
-    expect(tabbar).toContain('safe-area-inset-bottom');
+    expect(tabbar).toContain('order:-1');
+    expect(tabbar).not.toContain('safe-area-inset-bottom');
+    expect(tabbar).not.toContain('More</button>');
   });
 });

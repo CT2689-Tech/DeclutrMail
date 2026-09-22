@@ -61,6 +61,13 @@ export function HomeScreen() {
       if (readiness === 'failed') return { kind: 'sync-failed' };
       return { kind: 'empty', syncing, action };
     }
-    return { kind: 'ready', ...numbers, since: summary.data.since, action };
+    return {
+      kind: 'ready',
+      ...numbers,
+      since: summary.data.since,
+      action,
+      pending,
+      senders: pending.senders,
+    };
   }
 }

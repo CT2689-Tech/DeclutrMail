@@ -17,10 +17,8 @@ interface NavItem {
  */
 export type NavCount = string | number | { text: string | number; label: string };
 
-// Honest nav (U-NAV, D207): the sidebar lists ONLY surfaces that are
-// real on main. One flat list in journey order — decide, automate,
-// review. Billing and Settings live in the account menu: they are
-// account chores, not places the daily ritual passes through.
+// Every real destination remains available in section navigation and the
+// complete mobile menu. The desktop rail uses the approved five groups.
 export const NAV: readonly NavItem[] = [
   { id: 'home', icon: 'M3 11l9-8 9 8M5 10v10h5v-6h4v6h5V10' },
   {
@@ -37,10 +35,42 @@ export const NAV: readonly NavItem[] = [
   { id: 'activity', icon: 'M3 12h4l3-9 4 18 3-9h4' },
 ];
 
+export const WORKSPACE_NAV = [
+  { id: 'home', label: 'Overview', icon: 'm3 10 9-7 9 7v10H3V10Zm6 10v-7h6v7', members: ['home'] },
+  {
+    id: 'senders',
+    label: 'Clean up',
+    icon: 'M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M16 3a4 4 0 0 1 0 8m5 10v-2a4 4 0 0 0-3-3.87M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
+    members: ['senders', 'triage', 'screener'],
+  },
+  {
+    id: 'autopilot',
+    label: 'Automations',
+    icon: 'm13 2-9 12h7l-1 8 10-12h-7l1-8Z',
+    members: ['autopilot', 'quiet'],
+  },
+  {
+    id: 'brief',
+    label: 'Catch up',
+    icon: 'M3 4h7l2 2 2-2h7v15h-7l-2 2-2-2H3V4Zm9 2v15',
+    members: ['brief', 'followups', 'snoozed'],
+  },
+  { id: 'activity', label: 'Activity', icon: 'M3 12h4l3-8 4 16 3-8h4', members: ['activity'] },
+] as const satisfies readonly {
+  id: LabelKey;
+  label: string;
+  icon: string;
+  members: readonly LabelKey[];
+}[];
+
+export function workspaceSection(active: string) {
+  return WORKSPACE_NAV.find((section) => (section.members as readonly string[]).includes(active));
+}
+
 export const SIDEBAR_WIDTH = 220;
 export const SIDEBAR_RAIL_WIDTH = 72;
 
-export function NavIcon({ d, size = 18 }: { d: string; size?: number }) {
+export function NavIcon({ d, size = 20 }: { d: string; size?: number }) {
   return (
     <svg
       width={size}
@@ -48,7 +78,7 @@ export function NavIcon({ d, size = 18 }: { d: string; size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.75"
+      strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
@@ -66,36 +96,16 @@ export function Sidebar({
   counts = {},
   locks = {},
   collapsed = false,
-  onToggleCollapsed,
-  animateWidth = false,
+  accountInitial,
 }: {
   active: string;
   onNavigate: (id: string) => void;
-  /**
-   * Optional early navigation signal for framework hosts to prefetch a
-   * destination before the click. Fired on pointer hover, keyboard focus,
-   * and touch start; active destinations are ignored.
-   */
   onNavigateIntent?: ((id: string) => void) | undefined;
-  /** Per-item count, rendered as quiet numerals (a dot on the rail). */
   counts?: Partial<Record<string, NavCount>>;
-  /**
-   * Per-item lock: the name of the plan that unlocks the row ("Plus").
-   * The shell stays entitlement-agnostic — the host decides what is
-   * locked. Hidden at rest and revealed on row hover / keyboard focus
-   * (tokens.css `.dm-nav-lock`); it stays in the accessibility tree
-   * throughout, so a screen reader hears the gate without hovering.
-   */
   locks?: Partial<Record<string, string>>;
-  /** Icon-only rail. The mobile drawer never collapses. */
+  /** Compact five-section rail; false renders the complete mobile menu. */
   collapsed?: boolean;
-  /** Omit to render no collapse toggle (the mobile drawer). */
-  onToggleCollapsed?: (() => void) | undefined;
-  /**
-   * Animate the width change. Off until the user toggles, so a persisted
-   * rail does not visibly slide shut on every page load.
-   */
-  animateWidth?: boolean;
+  accountInitial?: string | undefined;
 }) {
   const labels = useLabels();
   const [hint, setHint] = useState<{ label: string; top: number; left: number } | null>(null);
@@ -112,9 +122,11 @@ export function Sidebar({
     const bounds = element.getBoundingClientRect();
     setHint({ label, left: bounds.right + 12, top: bounds.top });
   };
+  const items = collapsed ? WORKSPACE_NAV : NAV;
   return (
     <aside
       className="dm-editorial-sidebar"
+      aria-label="Workspace navigation"
       onScroll={() => setHint(null)}
       data-collapsed={collapsed ? 'true' : 'false'}
       style={{
@@ -124,54 +136,74 @@ export function Sidebar({
         boxSizing: 'border-box',
         overflowX: 'hidden',
         overflowY: 'auto',
-        // A quiet forest rail anchors the warm paper workspace.
-        borderRight: '1px solid #ffffff0b',
         background: 'var(--dm-nav-bg)',
-        padding: '24px 14px 16px',
+        padding: '22px 12px',
         display: 'flex',
         flexDirection: 'column',
-        gap: 24,
+        gap: 32,
         fontFamily: font.sans,
-        ...(animateWidth ? { transition: `width ${motion.base} ${motion.ease}` } : {}),
       }}
     >
-      {/* Hover is the neutral fill, not a line tone. The selector outranks
-          tokens.css `.dm-nav-row:hover`; the active row's inline
-          background outranks both. */}
-
-      {/* Brand. ADR-0036 is the whole specification: the mark, the
-          wordmark, the ratio between them and the tone belong to the
-          component, not to this consumer. `size` is the only lever, and
-          24 selects the compact cut (ADR-0036 §Two cuts) — the correct
-          geometry at this size, and narrow enough that the lockup fits
-          the 220px rail. The icon rail has room for the mark alone. */}
-      <div
+      <button
+        type="button"
+        className="dm-rail-brand"
+        aria-label="DeclutrMail overview"
+        onClick={() => onNavigate('home')}
         style={{
+          width: collapsed ? 44 : '100%',
+          alignSelf: 'center',
+          height: 44,
+          minHeight: 44,
+          border: 0,
+          background: 'transparent',
           display: 'flex',
           alignItems: 'center',
           justifyContent: collapsed ? 'center' : 'flex-start',
-          height: 28,
           padding: collapsed ? 0 : '0 8px',
+          cursor: 'pointer',
         }}
       >
-        <Logo size={24} tone="reversed" variant={collapsed ? 'mark' : 'horizontal'} />
-      </div>
-
+        <Logo size={28} tone="reversed" variant={collapsed ? 'mark' : 'horizontal'} />
+      </button>
       <nav
         aria-label="Product navigation"
-        style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1 }}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: collapsed ? 12 : 5,
+          alignSelf: 'center',
+          width: collapsed ? 44 : '100%',
+          flex: 1,
+        }}
       >
-        {NAV.map((item) => {
-          const on = active === item.id;
-          const label = labels[item.id];
+        {items.map((item) => {
+          const members: readonly LabelKey[] = 'members' in item ? item.members : [item.id];
+          const on = members.some((id) => id === active);
+          const label = 'label' in item ? item.label : labels[item.id];
           const count = counts[item.id];
-          const lock = locks[item.id];
-          const lockLabel = lock == null ? undefined : `${lock} feature`;
           const countText = typeof count === 'object' ? count.text : count;
           const countLabel = typeof count === 'object' ? count.label : undefined;
-          const railLabel = [label, lockLabel, countLabel ?? countText]
-            .filter((value) => value != null)
-            .join(', ');
+          const lock = locks[item.id];
+          const context = members
+            .flatMap((id) => {
+              const value = counts[id];
+              const description =
+                typeof value === 'object'
+                  ? value.label
+                  : value != null
+                    ? `${labels[id]}: ${value}`
+                    : null;
+              return [description, locks[id] ? `${labels[id]}: ${locks[id]} feature` : null].filter(
+                (part): part is string => part !== null,
+              );
+            })
+            .join(' · ');
+          const hintLabel = context ? `${label} · ${context}` : label;
+          const hasCount = members.some((id) => {
+            const value = counts[id];
+            const number = typeof value === 'object' ? value.text : value;
+            return number != null && number !== 0 && number !== '0';
+          });
           const signalNavigationIntent = () => {
             if (!on) onNavigateIntent?.(item.id);
           };
@@ -180,37 +212,36 @@ export function Sidebar({
               key={item.id}
               type="button"
               className="dm-nav-row"
-              onClick={() => onNavigate(item.id)}
+              onClick={() => {
+                setHint(null);
+                onNavigate(item.id);
+              }}
               onFocus={(event) => {
                 signalNavigationIntent();
-                showHint(event.currentTarget, railLabel);
+                showHint(event.currentTarget, hintLabel);
               }}
               onBlur={() => setHint(null)}
               onTouchStart={signalNavigationIntent}
               onMouseEnter={(event) => {
                 signalNavigationIntent();
-                showHint(event.currentTarget, railLabel);
+                showHint(event.currentTarget, hintLabel);
               }}
               onMouseLeave={() => setHint(null)}
               aria-current={on ? 'page' : undefined}
-              // The rail hides the label, so the row needs its name back;
-              // visible hints also retain counts and plan-gate context.
-              aria-label={collapsed ? railLabel : undefined}
-              title={collapsed ? railLabel : undefined}
+              aria-label={collapsed ? label : undefined}
+              aria-description={collapsed && context ? context : undefined}
+              title={collapsed ? hintLabel : undefined}
               style={{
                 position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: collapsed ? 'center' : 'flex-start',
                 gap: 10,
-                height: 42,
+                height: 44,
                 flexShrink: 0,
                 padding: collapsed ? 0 : '0 10px',
-                borderRadius: radius.md,
+                borderRadius: 10,
                 border: 'none',
-                // Resting + hover backgrounds are CSS (`.dm-nav-row`) so
-                // hover needs no JS and works in both themes. The active
-                // item has a soft fill and a warm edge marker.
                 ...(on
                   ? {
                       background: 'var(--dm-nav-active)',
@@ -221,110 +252,147 @@ export function Sidebar({
                 fontFamily: font.sans,
                 fontSize: text.md,
                 fontWeight: on ? 600 : 500,
-                letterSpacing: '-0.006em',
                 cursor: 'pointer',
                 textAlign: 'left',
                 transition: `background ${motion.fast} ${motion.ease}`,
               }}
             >
-              <span
-                style={{
-                  display: 'inline-flex',
-                  color: on ? 'var(--dm-nav-fg)' : 'var(--dm-nav-muted)',
-                }}
-              >
-                <NavIcon d={item.icon} />
-              </span>
-              {!collapsed && (
-                <span
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {label}
-                </span>
-              )}
-              {!collapsed && lock != null && (
+              <NavIcon d={item.icon} />
+              {!collapsed && <span style={{ flex: 1, minWidth: 0 }}>{label}</span>}
+              {!collapsed && lock && (
                 <span
                   className="dm-nav-lock"
-                  aria-label={lockLabel}
-                  style={{ fontSize: text.xs, color: 'var(--dm-nav-muted)' }}
+                  aria-label={`${lock} feature`}
+                  style={{ fontSize: text.xs }}
                 >
                   {lock}
                 </span>
               )}
-              {countText != null &&
-                (collapsed ? (
-                  countText !== 0 &&
-                  countText !== '0' && (
-                    <span
-                      aria-hidden="true"
-                      data-testid={`nav-dot-${item.id}`}
-                      style={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 12,
-                        width: 6,
-                        height: 6,
-                        borderRadius: radius.pill,
-                        background: 'var(--dm-nav-marker)',
-                      }}
-                    />
-                  )
-                ) : (
-                  <span
-                    aria-label={countLabel}
-                    style={{
-                      fontSize: text.sm,
-                      fontWeight: 500,
-                      fontVariantNumeric: 'tabular-nums',
-                      color: 'var(--dm-nav-muted)',
-                    }}
-                  >
-                    {countText}
-                  </span>
-                ))}
+              {!collapsed && countText != null && (
+                <span
+                  aria-label={countLabel}
+                  style={{ fontSize: text.sm, fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {countText}
+                </span>
+              )}
+              {collapsed && hasCount && (
+                <span
+                  aria-hidden="true"
+                  data-testid={`nav-dot-${item.id}`}
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    width: 5,
+                    height: 5,
+                    borderRadius: radius.pill,
+                    background: 'var(--dm-nav-marker)',
+                  }}
+                />
+              )}
             </button>
           );
         })}
       </nav>
-
+      <button
+        type="button"
+        className="dm-rail-account"
+        aria-label="Workspace settings"
+        aria-current={active === 'settings' ? 'page' : undefined}
+        title="Workspace settings"
+        onClick={() => {
+          setHint(null);
+          onNavigate('settings');
+        }}
+        onMouseEnter={(event) => showHint(event.currentTarget, 'Workspace settings')}
+        onMouseLeave={() => setHint(null)}
+        onFocus={(event) => showHint(event.currentTarget, 'Workspace settings')}
+        onBlur={() => setHint(null)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 10,
+          width: collapsed ? 44 : '100%',
+          height: 44,
+          alignSelf: 'center',
+          minHeight: 44,
+          marginTop: 'auto',
+          background: '#ffffff10',
+          border: 0,
+          borderRadius: 10,
+          color: 'var(--dm-nav-fg)',
+          fontSize: 12,
+          cursor: 'pointer',
+        }}
+      >
+        {accountInitial ?? (
+          <NavIcon d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2" />
+        )}
+        {!collapsed && <span>Settings</span>}
+      </button>
       {hint && collapsed && (
         <span aria-hidden="true" className="dm-nav-hint" style={{ top: hint.top, left: hint.left }}>
           {hint.label}
         </span>
       )}
-      {onToggleCollapsed && (
-        <button
-          type="button"
-          className="dm-nav-row"
-          onClick={onToggleCollapsed}
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          aria-expanded={!collapsed}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            alignSelf: collapsed ? 'center' : 'flex-start',
-            width: 32,
-            height: 32,
-            flexShrink: 0,
-            padding: 0,
-            borderRadius: radius.pill,
-            border: 'none',
-            color: 'var(--dm-nav-muted)',
-            cursor: 'pointer',
-            transition: `background ${motion.fast} ${motion.ease}`,
-          }}
-        >
-          <NavIcon d={collapsed ? 'M9 6l6 6-6 6M4 4v16' : 'M15 6l-6 6 6 6M20 4v16'} size={16} />
-        </button>
-      )}
     </aside>
+  );
+}
+
+/** Real feature routes inside the five approved workspace groups. */
+export function SectionNavigation({
+  active,
+  onNavigate,
+  onNavigateIntent,
+  counts = {},
+  locks = {},
+}: {
+  active: string;
+  onNavigate: (id: string) => void;
+  onNavigateIntent?: ((id: string) => void) | undefined;
+  counts?: Partial<Record<string, NavCount>>;
+  locks?: Partial<Record<string, string>>;
+}) {
+  const labels = useLabels();
+  const section = workspaceSection(active);
+  if (!section || section.members.length < 2) return null;
+  return (
+    <nav className="dm-section-navigation" aria-label={`${section.label} views`}>
+      {section.members.map((id) => {
+        const count = counts[id];
+        const countText = typeof count === 'object' ? count.text : count;
+        const countLabel = typeof count === 'object' ? count.label : undefined;
+        const lock = locks[id];
+        const on = active === id;
+        const intent = () => {
+          if (!on) onNavigateIntent?.(id);
+        };
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onNavigate(id)}
+            aria-current={on ? 'page' : undefined}
+            onMouseEnter={intent}
+            onFocus={intent}
+            onTouchStart={intent}
+          >
+            {labels[id]}
+            {lock && (
+              <span className="dm-section-lock" aria-label={`${lock} feature`}>
+                {lock}
+              </span>
+            )}
+            {countText != null && (
+              <span className="dm-section-count" aria-label={countLabel}>
+                {countText}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </nav>
   );
 }

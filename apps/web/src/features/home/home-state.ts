@@ -1,5 +1,5 @@
 /**
- * Pure state composition for Home — one big number, one label, one button.
+ * Pure state composition for Home — recorded progress and available review tasks.
  *
  * Every number here names the field that backs it:
  *
@@ -16,6 +16,7 @@
  * decided, and no decisions at all is the `empty` state.
  */
 
+import type { HomeSenderPreview } from './api/use-home-pending';
 import type { HomeSummary } from './api/use-home-summary';
 
 export interface HomeAction {
@@ -36,6 +37,8 @@ export type HomeState =
   | { kind: 'sync-failed' }
   | {
       kind: 'ready';
+      pending?: HomeActionInput;
+      senders?: HomeSenderPreview[];
       hero: HomeStat;
       /** ISO instant of the earliest counted action. */
       since: string | null;

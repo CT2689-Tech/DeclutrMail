@@ -1,8 +1,8 @@
 // packages/shared/src/shell/app-shell.stories.tsx
 //
-// Visual reference for the app chrome: the flat sidebar and its icon
-// rail, the quiet top bar with the `?` help button, and (at ≤760px
-// viewports) the bottom tab bar. Per D210, shared components ship with
+// Visual reference for the five-group rail, contextual feature navigation,
+// the quiet top bar with the `?` help button, and (at ≤760px
+// viewports) the horizontal workspace groups. Per D210, shared components ship with
 // Storybook coverage.
 //
 // Uses the same locally-declared CSF shims as the sibling primitive
@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof AppShell> = {
     docs: {
       description: {
         component:
-          'App chrome. One flat nav (Home first; Billing and Settings live in the account menu), collapsible to a 72px icon rail whose state persists per device. Locks show on row hover/focus only; counts are quiet numerals (a dot on the rail). The top bar holds the `?` help button, which appears only while a mounted `<ScreenIntro>` has registered help. At 760px and below the sidebar becomes a drawer and a bottom tab bar appears.',
+          'App chrome. The fixed 72px rail groups the workspace into Overview, Clean up, Automations, Catch up and Activity, with Settings below. Section navigation exposes child screens, counts and plan gates. The top bar holds account controls and contextual help. At 760px and below, the same five groups form a horizontal row above the workspace; the hamburger opens the complete feature menu.',
       },
     },
   },
@@ -96,7 +96,6 @@ export const IconRail: Story = {
         counts={COUNTS}
         locks={LOCKS}
         collapsed
-        onToggleCollapsed={() => undefined}
       />
     </div>
   ),

@@ -2415,42 +2415,45 @@ function SendersScreenContent({
   return (
     <RowActivityProvider value={rowActivity}>
       <div className={workspaceStyles.workspace} data-split={canSplit || undefined}>
+        <header className={workspaceStyles.heading}>
+          <div>
+            <div className={workspaceStyles.eyebrow}>Your inbox, by sender</div>
+            <h1 className={workspaceStyles.title}>
+              Senders<span className={workspaceStyles.headingAccent}> / Make room.</span>
+            </h1>
+            <p className={workspaceStyles.subtitle}>
+              See the pattern. Decide what deserves a place.
+            </p>
+          </div>
+        </header>
         <div className={workspaceStyles.listColumn}>
-          <header className={workspaceStyles.heading}>
-            <div>
-              <div className={workspaceStyles.eyebrow}>Your inbox, by sender</div>
-              <h1 className={workspaceStyles.title}>Senders</h1>
-              <p className={workspaceStyles.subtitle}>
-                See the pattern. Decide what deserves a place.
-              </p>
-            </div>
-            <div className={workspaceStyles.tools}>
-              <SenderSearch
-                value={query}
-                onChange={setQuery}
-                senders={senders}
-                onPick={onSearchPick}
-              />
-              <FilterButton
-                state={compose}
-                updating={countsMayBeStale}
-                counts={filterCounts}
-                onChange={setCompose}
-                onClear={clearCompose}
-                domainSuggestions={topDomains(senders)}
-                views={{
-                  names: savedViews.map((v) => v.name),
-                  onApply: applySavedView,
-                  onSave: saveCurrentView,
-                  onDelete: deleteSavedView,
-                  canSaveCurrent: hasAnyFilter(compose),
-                  capReached: savedViews.length >= SENDER_VIEWS_CAP,
-                  mutating: saveViews.isPending,
-                }}
-              />
-              <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
-            </div>
-          </header>
+          <div className={workspaceStyles.eyebrow}>Your senders</div>
+          <div className={workspaceStyles.tools}>
+            <SenderSearch
+              value={query}
+              onChange={setQuery}
+              senders={senders}
+              onPick={onSearchPick}
+            />
+            <FilterButton
+              state={compose}
+              updating={countsMayBeStale}
+              counts={filterCounts}
+              onChange={setCompose}
+              onClear={clearCompose}
+              domainSuggestions={topDomains(senders)}
+              views={{
+                names: savedViews.map((v) => v.name),
+                onApply: applySavedView,
+                onSave: saveCurrentView,
+                onDelete: deleteSavedView,
+                canSaveCurrent: hasAnyFilter(compose),
+                capReached: savedViews.length >= SENDER_VIEWS_CAP,
+                mutating: saveViews.isPending,
+              }}
+            />
+            <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
+          </div>
 
           <ScreenIntro
             id="senders"

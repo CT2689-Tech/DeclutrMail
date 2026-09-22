@@ -3680,7 +3680,9 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
     expect(
       screen.queryByRole('button', { name: /^(grid|table|compact|comfortable)$/i }),
     ).toBeNull();
-    expect(screen.getByRole('heading', { level: 1, name: 'Senders' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Senders / Make room.' }),
+    ).toBeInTheDocument();
   });
 
   const ROW_B = {

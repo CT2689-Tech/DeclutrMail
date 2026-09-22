@@ -90,3 +90,9 @@ Exact populated Storybook IDs (standard IDs derived from the existing CSF titles
 Use `/iframe.html?id=<id>&viewMode=story` on the local Storybook server. These are source-derived IDs, not a claim that this subagent opened them.
 
 No commit or deployment was performed by this slice.
+
+### Home fidelity correction against the final approved render
+
+Compared the active `editorial.tsx` Overview render (not obsolete sidebar CSS). Restored the large two-line greeting with terracotta emphasis, angled progress stamp, asymmetric opportunity panel, attention rows, and activity module in `features/home`. The stamp uses the existing all-time summary, keeps the earliest-action month, and excludes undone outcomes. All secondary metrics remain visible. Sender previews project up to three valid identities from the already-fetched Triage bootstrap; counts are explicitly **last 90 days**, not the prototype’s fictional inbox counts. Sender names link to existing detail routes. No new requests or mutations. When that queue is unavailable/empty, the right panel presents existing recorded progress, without invented senders. Attention rows use the two existing capability-gated pending counts; unknown/zero counts do not claim waiting work. Activity links to the real outcome history. Loading, error/retry, empty, syncing, failed-scan, and unresolved-mailbox handling remain intact.
+
+Validation: focused Home suite 3 files / 29 tests passed; Home ESLint passed. Whole-web typecheck encountered only the concurrently edited shared `app-shell.tsx` Sidebar `animateWidth` prop mismatch, reported to the shared-shell owner. Browser fidelity handoff: `home-homeview--cleared` now has three synthetic story-only sender projections and both pending counts; the production container always uses live projections. Browser visual verification remains with parent.

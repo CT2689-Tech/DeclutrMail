@@ -81,8 +81,7 @@ vi.mock('@/features/triage/triage-undo-tray', () => ({
 import { AppChromeLayout as AppLayout } from './app-chrome-layout';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 
-// These integration assertions inspect expanded navigation counts and plan chips.
-// The shell interaction suite separately verifies the default compact rail.
+// A stale expanded preference must not change the approved five-group rail.
 beforeEach(() => {
   window.localStorage.setItem('dm.sidebar.collapsed', 'false');
 });
@@ -107,6 +106,12 @@ function renderLayout() {
       </AppLayout>
     </QueryWrapper>,
   );
+}
+
+async function openFullNavigation() {
+  await userEvent.click(await screen.findByRole('button', { name: 'Open navigation menu' }));
+  const dialog = screen.getByRole('dialog', { name: 'Navigation menu' });
+  return within(dialog).getByRole('navigation', { name: 'Product navigation' });
 }
 
 function ok(payload: unknown): Response {
@@ -330,10 +335,13 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(await screen.findByText('hydrated senders route')).toBeInTheDocument();
     expect(sendersSpy).not.toHaveBeenCalled();
     await vi.waitFor(() => {
-      const sendersNav = screen
-        .getAllByRole('button')
-        .find((button) => button.textContent?.includes('Senders'));
-      expect(sendersNav).toHaveTextContent('1');
+      const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
+      expect(nav.getByRole('button', { name: 'Clean up' })).toHaveAttribute(
+        'aria-description',
+        expect.stringContaining('Senders: 1'),
+      );
+      const section = within(screen.getByRole('navigation', { name: 'Clean up views' }));
+      expect(section.getByRole('button', { name: /Senders/ })).toHaveTextContent('1');
     });
   });
 
@@ -428,7 +436,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(refreshSpy).toHaveBeenCalledOnce();
   });
 
-  it('renders children + the flat nav (Home first; Billing/Settings in the account menu) on the happy path, with no banner', async () => {
+  it('renders five fixed workspace groups, section routes and the settings shortcut without a banner', async () => {
     installFetchStub([
       ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
       {
@@ -444,14 +452,32 @@ describe('(app) layout integration mounts — U-NAV', () => {
     // jsdom applies no CSS, so the mobile tab bar renders alongside the
     // sidebar — scope to the sidebar's landmark.
     const nav = within(screen.getByRole('navigation', { name: 'Product navigation' }));
-    const rows = nav.getAllByRole('button').map((row) => row.textContent);
-    expect(rows[0]).toBe('Home');
-    expect(rows).toEqual(expect.arrayContaining(['Triage', 'Screener', 'Autopilot', 'Activity']));
-    // One flat list: no group headings, and the account chores moved to
-    // the account menu (asserted in account-menu.test.tsx).
-    expect(nav.queryByRole('heading')).not.toBeInTheDocument();
-    expect(nav.queryByText('Billing')).not.toBeInTheDocument();
-    expect(nav.queryByText('Settings')).not.toBeInTheDocument();
+    expect(nav.getAllByRole('button').map((row) => row.getAttribute('aria-label'))).toEqual([
+      'Overview',
+      'Clean up',
+      'Automations',
+      'Catch up',
+      'Activity',
+    ]);
+    expect(nav.getByRole('button', { name: 'Clean up' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByRole('button', { name: /expand sidebar|collapse sidebar/i })).toBeNull();
+    const section = within(screen.getByRole('navigation', { name: 'Clean up views' }));
+    expect(section.getByRole('button', { name: /Senders/ })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(section.getByRole('button', { name: 'Triage' })).toBeInTheDocument();
+    expect(section.getByRole('button', { name: 'Screener' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Workspace settings' })).toBeInTheDocument();
+    const primary = within(screen.getByRole('navigation', { name: 'Primary' }));
+    expect(primary.getAllByRole('button').map((row) => row.textContent)).toEqual([
+      'Overview',
+      'Clean up',
+      'Automations',
+      'Catch up',
+      'Activity',
+    ]);
+    expect(primary.queryByRole('button', { name: 'More' })).toBeNull();
     // The trust strip is gone from the top bar.
     expect(screen.queryByRole('button', { name: 'Undo windows' })).not.toBeInTheDocument();
     // Recovery follows the active mailbox across the whole app shell,
@@ -463,6 +489,34 @@ describe('(app) layout integration mounts — U-NAV', () => {
     });
     // No deletion pending → no banner.
     expect(screen.queryByTestId('deletion-grace-banner')).not.toBeInTheDocument();
+  });
+
+  it('keeps every feature reachable through the full mobile menu', async () => {
+    installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }));
+    renderLayout();
+    await screen.findByText('authed app body');
+    const destinations = [
+      ['Home', '/home'],
+      ['Senders', '/senders'],
+      ['Triage', '/triage'],
+      ['Screener', '/screener'],
+      ['Autopilot', '/autopilot'],
+      ['Quiet', '/quiet'],
+      ['Brief', '/brief'],
+      ['Follow-ups', '/followups'],
+      ['Later', '/later'],
+      ['Activity', '/activity'],
+    ];
+    for (const [label, route] of destinations) {
+      const nav = await openFullNavigation();
+      const button = within(nav)
+        .getAllByRole('button')
+        .find((item) => item.textContent?.startsWith(label!));
+      expect(button, `${label} remains reachable`).toBeDefined();
+      await userEvent.click(button!);
+      expect(pushSpy).toHaveBeenLastCalledWith(route);
+      expect(screen.queryByRole('dialog', { name: 'Navigation menu' })).toBeNull();
+    }
   });
 
   it('maps the internal snoozed nav key to canonical /later and keeps it active', async () => {
@@ -485,7 +539,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     expect(pushSpy).toHaveBeenCalledWith('/later');
   });
 
-  it('prefetches a sidebar destination on intent before navigation', async () => {
+  it('prefetches a section destination on intent before navigation', async () => {
     installFetchStub([
       ...authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z' }),
       {
@@ -498,7 +552,7 @@ describe('(app) layout integration mounts — U-NAV', () => {
     const user = userEvent.setup();
     renderLayout();
 
-    const nav = await screen.findByRole('navigation', { name: 'Product navigation' });
+    const nav = await screen.findByRole('navigation', { name: 'Clean up views' });
     const triageNav = within(nav).getByRole('button', { name: 'Triage' });
     await user.hover(triageNav);
 
@@ -1115,7 +1169,7 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'plus' }));
     renderLayout();
 
-    const nav = await screen.findByRole('navigation', { name: 'Product navigation' });
+    const nav = await openFullNavigation();
     const chips = within(nav).queryAllByLabelText(/^(Plus|Pro) feature$/);
     // Sidebar nav items render as <button>, not links (sidebar.tsx) —
     // the chip sits inside the button next to the label span.
@@ -1134,7 +1188,7 @@ describe('nav plan chips after D251 (design-gate B1)', () => {
     installFetchStub(authedHandlers({ onboardedAt: '2026-01-02T00:00:00.000Z', tier: 'free' }));
     renderLayout();
 
-    const nav = await screen.findByRole('navigation', { name: 'Product navigation' });
+    const nav = await openFullNavigation();
     const autopilotItem = within(nav)
       .getAllByRole('button')
       .find((b) => b.textContent?.includes('Autopilot'));

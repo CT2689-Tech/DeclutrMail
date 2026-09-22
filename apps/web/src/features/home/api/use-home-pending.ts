@@ -1,5 +1,5 @@
 /**
- * What is waiting for the user — feeds Home's single button.
+ * What is waiting for the user — Home's review action, attention list and sender preview.
  *
  * Both reads reuse the owning feature's query options, so they share a
  * cache entry with `/triage` and the sidebar Screener badge: the count on
@@ -21,7 +21,15 @@ import {
 } from '@/features/triage/api/query-options';
 import { apiGet } from '@/lib/api/client';
 
+export interface HomeSenderPreview {
+  id: string;
+  name: string;
+  domain: string;
+  recentCount: number;
+}
+
 export interface HomePending {
+  senders: HomeSenderPreview[];
   triagePending: number | null;
   screenerPending: number | null;
   /** True while an ENABLED read has not answered yet. */
@@ -34,7 +42,7 @@ export function useHomePending(options: { tier: TierId; enabled: boolean }): Hom
       const envelope = await apiGet<TriageBootstrap>('/api/triage/bootstrap', { signal });
       return envelope.data;
     }),
-    select: (data: TriageBootstrap) => data.queue.length,
+    select: (data: TriageBootstrap) => data.queue,
     enabled: options.enabled && hasCapability(options.tier, 'triage'),
   });
   const screener = useScreenerCount({
@@ -42,7 +50,16 @@ export function useHomePending(options: { tier: TierId; enabled: boolean }): Hom
   });
 
   return {
-    triagePending: triage.data ?? null,
+    triagePending: triage.data?.length ?? null,
+    senders: (triage.data ?? [])
+      .filter((row) => row.senderId && row.senderName && Number.isFinite(row.last90dMessages))
+      .slice(0, 3)
+      .map((row) => ({
+        id: row.senderId,
+        name: row.senderName,
+        domain: row.senderDomain,
+        recentCount: row.last90dMessages,
+      })),
     screenerPending: screener.data?.pending ?? null,
     isLoading: triage.isLoading || screener.isLoading,
   };

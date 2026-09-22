@@ -55,7 +55,10 @@ describe('AppShell interactions', () => {
       </AppShell>,
     );
 
-    const triage = within(sidebar()).getByRole('button', { name: 'Triage' });
+    const triage = within(screen.getByRole('navigation', { name: 'Clean up views' })).getByRole(
+      'button',
+      { name: 'Triage' },
+    );
     fireEvent.mouseEnter(triage);
     fireEvent.focus(triage);
     fireEvent.touchStart(triage);
@@ -63,87 +66,151 @@ describe('AppShell interactions', () => {
     expect(onNavigateIntent.mock.calls).toEqual([['triage'], ['triage'], ['triage']]);
     expect(onNavigate).not.toHaveBeenCalled();
 
-    fireEvent.mouseEnter(within(sidebar()).getByRole('button', { name: 'Senders' }));
+    fireEvent.mouseEnter(within(sidebar()).getByRole('button', { name: 'Clean up' }));
     expect(onNavigateIntent).toHaveBeenCalledTimes(3);
   });
 });
 
-describe('AppShell — collapsible icon rail', () => {
-  it('starts as an icon rail, expands labels, and remembers the choice on this device', () => {
-    const first = render(
-      <AppShell active="senders" onNavigate={vi.fn()}>
-        <div>Page content</div>
-      </AppShell>,
-    );
-
-    expect(within(sidebar()).queryByText('Triage')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
-    expect(within(sidebar()).getByText('Triage')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
-
-    // Labels leave the DOM; each row keeps its name and gains a tooltip.
-    expect(within(sidebar()).queryByText('Triage')).not.toBeInTheDocument();
-    expect(within(sidebar()).getByRole('button', { name: 'Triage' })).toHaveAttribute(
-      'title',
-      'Triage',
-    );
-    expect(window.localStorage.getItem('dm.sidebar.collapsed')).toBe('true');
-
-    first.unmount();
+describe('AppShell — fixed workspace rail', () => {
+  it('ignores old expansion preference and always renders five icon groups', () => {
+    window.localStorage.setItem('dm.sidebar.collapsed', 'false');
     render(
-      <AppShell active="senders" onNavigate={vi.fn()}>
+      <AppShell active="quiet" onNavigate={vi.fn()}>
         <div>Page content</div>
       </AppShell>,
     );
-    expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeInTheDocument();
-  });
-
-  it('never collapses the mobile drawer, and gives it no collapse toggle', () => {
-    window.localStorage.setItem('dm.sidebar.collapsed', 'true');
-    render(
-      <AppShell active="senders" onNavigate={vi.fn()}>
-        <div>Page content</div>
-      </AppShell>,
+    expect(within(sidebar()).getAllByRole('button')).toHaveLength(5);
+    expect(within(sidebar()).getByRole('button', { name: 'Automations' })).toHaveAttribute(
+      'aria-current',
+      'page',
     );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }));
-    const drawer = screen.getByRole('dialog', { name: 'Navigation menu' });
-    expect(within(drawer).getByText('Triage')).toBeInTheDocument();
-    expect(within(drawer).queryByRole('button', { name: /sidebar$/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Expand sidebar|Collapse sidebar/ })).toBeNull();
+    expect(window.localStorage.getItem('dm.sidebar.collapsed')).toBe('false');
   });
-});
-
-describe('AppShell — mobile tab bar', () => {
-  it('navigates from a tab and marks the active one', () => {
+  it('routes brand and workspace settings controls', () => {
     const onNavigate = vi.fn();
     render(
       <AppShell active="senders" onNavigate={onNavigate}>
         <div>Page content</div>
       </AppShell>,
     );
-
-    expect(within(tabBar()).getByRole('button', { name: 'Senders' })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    fireEvent.click(within(tabBar()).getByRole('button', { name: 'Home' }));
-    expect(onNavigate).toHaveBeenCalledWith('home');
+    fireEvent.click(screen.getByRole('button', { name: 'DeclutrMail overview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Workspace settings' }));
+    expect(onNavigate.mock.calls).toEqual([['home'], ['settings']]);
   });
-
-  it('opens the full navigation drawer from More', () => {
+  it('keeps all ten features in the hamburger drawer and closes after navigation', () => {
+    const onNavigate = vi.fn();
     render(
-      <AppShell active="senders" onNavigate={vi.fn()}>
+      <AppShell active="senders" onNavigate={onNavigate}>
         <div>Page content</div>
       </AppShell>,
     );
-
-    fireEvent.click(within(tabBar()).getByRole('button', { name: 'More' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }));
     const drawer = screen.getByRole('dialog', { name: 'Navigation menu' });
-    expect(within(drawer).getByRole('button', { name: 'Autopilot' })).toBeInTheDocument();
+    for (const label of [
+      'Home',
+      'Senders',
+      'Triage',
+      'Screener',
+      'Autopilot',
+      'Quiet',
+      'Brief',
+      'Follow-ups',
+      'Later',
+      'Activity',
+    ]) {
+      expect(within(drawer).getByRole('button', { name: label })).toBeInTheDocument();
+    }
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Later' }));
+    expect(onNavigate).toHaveBeenCalledWith('snoozed');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+  it('prefetches inactive group entry points on rail intent and mobile touch', () => {
+    const onNavigate = vi.fn();
+    const onNavigateIntent = vi.fn();
+    render(
+      <AppShell active="quiet" onNavigate={onNavigate} onNavigateIntent={onNavigateIntent}>
+        <div>Page content</div>
+      </AppShell>,
+    );
+    const cleanup = within(sidebar()).getByRole('button', { name: 'Clean up' });
+    fireEvent.mouseEnter(cleanup);
+    fireEvent.focus(cleanup);
+    fireEvent.touchStart(cleanup);
+    fireEvent.touchStart(within(tabBar()).getByRole('button', { name: 'Catch up' }));
+    fireEvent.mouseEnter(within(sidebar()).getByRole('button', { name: 'Automations' }));
+    fireEvent.touchStart(within(tabBar()).getByRole('button', { name: 'Automations' }));
+    expect(onNavigateIntent.mock.calls).toEqual([['senders'], ['senders'], ['senders'], ['brief']]);
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+  it('exposes child count/gate context and routes child clicks', () => {
+    const onNavigate = vi.fn();
+    render(
+      <AppShell
+        active="senders"
+        onNavigate={onNavigate}
+        counts={{ screener: { text: 3, label: '3 new senders' } }}
+        locks={{ screener: 'Pro' }}
+      >
+        <div>Page content</div>
+      </AppShell>,
+    );
+    const child = within(screen.getByRole('navigation', { name: 'Clean up views' })).getByRole(
+      'button',
+      { name: /Screener/ },
+    );
+    expect(within(child).getByLabelText('3 new senders')).toBeInTheDocument();
+    expect(within(child).getByLabelText('Pro feature')).toBeInTheDocument();
+    fireEvent.click(child);
+    expect(onNavigate).toHaveBeenCalledWith('screener');
+  });
+});
+
+describe('AppShell — mobile workspace navigation', () => {
+  it.each([
+    ['triage', 'Clean up'],
+    ['quiet', 'Automations'],
+    ['followups', 'Catch up'],
+    ['snoozed', 'Catch up'],
+    ['home', 'Overview'],
+    ['activity', 'Activity'],
+  ])('marks the group for %s', (active, label) => {
+    const onNavigate = vi.fn();
+    render(
+      <AppShell active={active} onNavigate={onNavigate}>
+        <div>Page content</div>
+      </AppShell>,
+    );
+    expect(within(tabBar()).getAllByRole('button')).toHaveLength(5);
+    expect(within(tabBar()).getByRole('button', { name: label })).toHaveAttribute(
+      'aria-current',
+      'page',
+    );
+    expect(within(tabBar()).queryByRole('button', { name: 'More' })).toBeNull();
+    fireEvent.click(within(tabBar()).getByRole('button', { name: 'Overview' }));
+    expect(onNavigate).toHaveBeenCalledWith('home');
   });
 });
 
 describe('AppShell — route fade', () => {
+  it('starts a new screen at the top while preserving scroll within the same route', () => {
+    const content = (routeKey: string, text: string) => (
+      <AppShell active="senders" routeKey={routeKey} onNavigate={vi.fn()}>
+        <div>{text}</div>
+      </AppShell>
+    );
+    const view = render(content('/home', 'Home'));
+    const scroller = view.container.querySelector<HTMLElement>('.dm-main-scroll')!;
+    scroller.scrollTop = 180;
+    fireEvent.scroll(scroller);
+    view.rerender(content('/senders', 'Senders'));
+    expect(scroller.scrollTop).toBe(0);
+
+    scroller.scrollTop = 240;
+    view.rerender(content('/senders', 'Another sender selected'));
+    expect(scroller.scrollTop).toBe(240);
+  });
+
   it('does not fade the first load, then restarts the fade on every route change', () => {
     const view = render(
       <AppShell active="senders" routeKey="/senders" onNavigate={vi.fn()}>

@@ -1187,7 +1187,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
             <Avatar
               name={sender.name}
               domain={sender.domain}
-              size={64}
+              size={layout === 'pane' ? 44 : 56}
               hasMark={sender.brandMark}
             />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>

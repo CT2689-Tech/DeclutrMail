@@ -23,10 +23,14 @@ export function SendersLoadingState() {
       aria-label="Loading senders"
       className={`${styles.workspace} ${styles.loadingWorkspace}`}
     >
-      <div className={styles.listColumn}>
+      <div className={styles.heading}>
         <Skeleton variant="text" width={160} height={12} />
+        <Skeleton variant="rect" width="min(350px, 100%)" height={38} />
+        <Skeleton variant="text" width="min(340px, 100%)" height={18} />
+      </div>
+      <div className={styles.listColumn}>
+        <Skeleton variant="text" width={120} height={12} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <Skeleton variant="rect" width={120} height={28} />
           <div className={styles.loadingTools}>
             <Skeleton variant="pill" width="100%" height={40} />
             <Skeleton variant="pill" width={76} height={36} />

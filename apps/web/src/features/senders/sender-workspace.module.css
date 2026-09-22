@@ -14,10 +14,16 @@
 .listColumn {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   min-width: 0;
+  background: var(--dm-card);
+  border: 1px solid var(--dm-line-soft);
+  border-radius: 12px;
+  padding: 18px;
 }
 .heading {
+  grid-column: 1 / -1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -31,12 +37,21 @@
 }
 .title {
   font-family: var(--dm-font-display);
-  font-size: clamp(32px, 3.3vw, 43px);
+  font-size: clamp(30px, 3vw, 38px);
   line-height: 1.1;
   font-weight: 400;
   letter-spacing: -0.035em;
   margin: 8px 0 0;
   color: var(--dm-fg);
+}
+.headingAccent {
+  color: #a35237;
+  font-style: italic;
+  font-size: 0.8em;
+  letter-spacing: -0.025em;
+}
+:global([data-theme='dark']) .headingAccent {
+  color: #e1a085;
 }
 .subtitle {
   font-size: 13px;
@@ -63,15 +78,16 @@
 .results {
   container: sender-list / inline-size;
   background: var(--dm-card);
-  border: 1px solid var(--dm-line-soft);
-  border-radius: 10px;
-  padding: 3px 12px;
+  border: 0;
+  border-top: 1px solid var(--dm-line-soft);
+  border-radius: 0;
+  padding: 0;
   min-width: 0;
 }
 .inspectorColumn {
   position: sticky;
   top: 16px;
-  height: max(300px, calc(100dvh - 180px));
+  height: max(300px, calc(100dvh - 300px));
   min-width: 0;
 }
 .emptyInspector {
@@ -211,15 +227,18 @@
 }
 .identityMain {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  align-items: flex-start;
+  flex-direction: row;
+  gap: 12px;
+  align-items: center;
   min-width: 0;
+}
+.identityMain > :first-child {
+  flex-shrink: 0;
 }
 .detailName {
   font-family: var(--dm-font-display);
   font-weight: 400;
-  font-size: 35px;
+  font-size: 29px;
   line-height: 1.15;
   letter-spacing: -0.035em;
   margin: 0;
@@ -227,7 +246,7 @@
   color: var(--dm-fg);
 }
 .volumeSummary {
-  padding: 20px 0;
+  padding: 12px 0;
   border-block: 1px solid var(--dm-line-soft);
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -238,9 +257,13 @@
   flex-direction: column;
   gap: 7px;
 }
+.volumeSummary > div + div {
+  border-left: 1px solid var(--dm-line-soft);
+  padding-left: 15px;
+}
 .volumeSummary .volumeNumber {
-  font-family: var(--dm-font-display);
-  font-size: 40px;
+  font-family: var(--dm-font-sans);
+  font-size: 30px;
   line-height: 1;
   font-weight: 400;
   color: var(--dm-fg);
@@ -266,10 +289,8 @@
   padding: 0;
 }
 .statsSection {
-  background: var(--dm-fill);
-  border: 1px solid var(--dm-line-soft);
-  border-radius: 8px;
-  padding: 18px;
+  border-top: 1px solid var(--dm-line-soft);
+  padding: 16px 0 0;
 }
 .statsSection .eyebrow {
   margin: 0 0 16px;
@@ -309,8 +330,8 @@
   .workspace {
     padding: 20px 12px 32px;
   }
-  .results {
-    padding: 0 8px;
+  .listColumn {
+    padding: 12px;
   }
   .title {
     font-size: 34px;
@@ -324,7 +345,7 @@
     padding: 20px 16px;
   }
   .detailName {
-    font-size: 32px;
+    font-size: 29px;
   }
   .rowEvidence {
     font-size: 11px;
@@ -346,7 +367,7 @@
   border-radius: 12px;
   background: var(--dm-card);
   padding: 32px;
-  height: max(300px, calc(100dvh - 180px));
+  height: max(300px, calc(100dvh - 300px));
   min-height: 0;
   position: sticky;
   top: 16px;
@@ -391,11 +412,11 @@
 .detailFrame[data-scrollable] .detailContent {
   display: flex;
   flex-direction: column;
-  gap: 27px;
+  gap: 18px;
   overflow-y: auto;
   min-height: 0;
   flex: 1;
-  padding: 26px;
+  padding: 18px 22px;
   scrollbar-gutter: stable;
 }
 .paneActions {
@@ -438,7 +459,7 @@
   margin-top: 0;
 }
 
-/* An expanded sidebar can narrow the list even in a desktop window. Give
+/* A narrow desktop window can leave little room for the list. Give
    identity a full line before taking space away from the inspector. */
 @container sender-list (max-width: 280px) {
   .compactRow {

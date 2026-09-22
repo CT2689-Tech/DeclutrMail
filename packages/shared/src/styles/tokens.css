@@ -32,7 +32,7 @@
   --dm-nav-bg: #173e32;
   --dm-nav-fg: #e9eedf;
   --dm-nav-muted: #bbcec0;
-  --dm-nav-active: #ffffff18;
+  --dm-nav-active: #ffffff20;
   --dm-nav-marker: #d9b591;
 
   /* Warm-newsprint surface stack */
@@ -140,7 +140,7 @@
   --dm-nav-bg: #10271f;
   --dm-nav-fg: #e9eedf;
   --dm-nav-muted: #bbcec0;
-  --dm-nav-active: #ffffff18;
+  --dm-nav-active: #ffffff20;
   --dm-nav-marker: #d9b591;
 
   --dm-bg: #192620;
@@ -433,9 +433,8 @@ button {
   display: none;
 }
 :root {
-  /* Height the mobile tab bar takes from the viewport bottom. 0 on
-     desktop. Bottom-anchored floating surfaces add it to their offset;
-     the shell's scroller subtracts it from the undo-tray reserve. */
+  /* Workspace groups now sit at the top on mobile. Bottom-anchored
+     floating surfaces do not need a navigation offset. */
   --dm-tabbar-inset: 0px;
 }
 @media (max-width: 760px) {
@@ -447,14 +446,6 @@ button {
   }
   .dm-tabbar {
     display: flex;
-  }
-  :root {
-    --dm-tabbar-inset: calc(56px + env(safe-area-inset-bottom, 0px));
-  }
-  /* The undo tray is fixed to the viewport with a numeric inline
-     `bottom`; the margin lifts it clear of the tab bar. */
-  [data-dm-undo-tray] {
-    margin-bottom: var(--dm-tabbar-inset);
   }
 }
 
@@ -625,9 +616,64 @@ button {
 .dm-editorial-sidebar .dm-nav-row:hover {
   background: #ffffff0f;
 }
-.dm-editorial-sidebar .dm-nav-row:focus-visible {
+.dm-editorial-sidebar .dm-nav-row:focus-visible,
+.dm-rail-brand:focus-visible,
+.dm-rail-account:focus-visible {
   outline: 2px solid var(--dm-nav-marker);
   outline-offset: -2px;
+}
+.dm-rail-brand:hover,
+.dm-rail-account:hover {
+  color: #fffef1;
+}
+.dm-section-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  gap: 0 20px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.dm-section-navigation > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 1px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dm-fg-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dm-section-navigation > button:hover,
+.dm-section-navigation > button[aria-current='page'] {
+  color: var(--dm-fg);
+}
+.dm-section-navigation > button[aria-current='page'] {
+  border-bottom-color: var(--dm-primary);
+}
+.dm-section-navigation > button:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: -2px;
+}
+.dm-section-count,
+.dm-section-lock {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dm-fg-muted);
+}
+.dm-section-count {
+  padding: 2px 6px;
+  border-radius: 5px;
+  background: var(--dm-line-soft);
+}
+@media (max-width: 760px) {
+  .dm-section-navigation {
+    padding-inline: 16px;
+  }
 }
 .dm-shell-location {
   display: flex;
