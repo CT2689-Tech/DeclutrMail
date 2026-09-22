@@ -89,3 +89,17 @@ export const Loading: Story<typeof HomeView> = {
 export const LoadError: Story<typeof HomeView> = {
   args: { state: { kind: 'error', error: new Error('offline'), retry: () => {} } },
 };
+
+export const FirstReviewReady: Story<typeof HomeView> = {
+  args: {
+    state: {
+      kind: 'empty',
+      syncing: false,
+      action: { label: 'Review 2 today', href: '/triage' },
+      senders: [
+        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', recentCount: 28 },
+        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', recentCount: 16 },
+      ],
+    },
+  },
+};

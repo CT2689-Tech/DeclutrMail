@@ -10,7 +10,7 @@ vi.mock('@/lib/posthog', () => ({ track }));
 
 import { PublicHeader } from './public-shell';
 
-const OAUTH_START = 'https://api.example.test/api/auth/google/start';
+const PERMISSION_ENTRY = '/sign-in';
 
 describe('PublicHeader auth entry', () => {
   beforeEach(() => {
@@ -22,22 +22,17 @@ describe('PublicHeader auth entry', () => {
     vi.unstubAllEnvs();
   });
 
-  /**
-   * The header's auth affordances link straight to Google's consent screen
-   * rather than routing through `/sign-in`. `/sign-in` still renders — it is
-   * the OAuth error surface the API redirects to — so this asserts the header
-   * no longer points AT it, not that the route is gone.
-   */
-  it('sends every auth action to Google OAuth, never to /sign-in', () => {
+  // Header actions enter the same permission checkpoint on desktop and mobile.
+  it('sends every auth action to the permission checkpoint', () => {
     const { container } = render(<PublicHeader />);
 
     const authLinks = screen.getAllByRole('link', { name: /Sign in|Start free/ });
     expect(authLinks.length).toBeGreaterThan(0);
     for (const link of authLinks) {
-      expect(link).toHaveAttribute('href', OAUTH_START);
+      expect(link).toHaveAttribute('href', PERMISSION_ENTRY);
     }
 
-    expect(container.querySelectorAll('a[href="/sign-in"]')).toHaveLength(0);
+    expect(container.querySelectorAll('a[href*="/api/auth/google/start"]')).toHaveLength(0);
   });
 
   /**

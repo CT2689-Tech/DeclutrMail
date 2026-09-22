@@ -118,11 +118,13 @@ export default function MethodologyPage() {
         </p>
       </DocSection>
 
-      <DocSection id="action-method" title="Nothing changes until the preview loads.">
+      <DocSection id="action-method" title="Mail-moving actions wait for their preview.">
         <p>
           Before you confirm, DeclutrMail shows how many emails are affected, a sample when
           available, and what will change in Gmail. If that preview cannot load, the action cannot
-          run. Activity records the result after Gmail or the sender confirms it.
+          run. Keep is an inline sender decision; enabled Autopilot rules can act on future matches
+          without a separate confirmation each time. Activity records the result after Gmail or the
+          sender confirms it.
         </p>
         <ActionLifecycleFigure />
       </DocSection>

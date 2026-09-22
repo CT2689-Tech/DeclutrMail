@@ -1,0 +1,12 @@
+.triage {
+  padding: 28px 24px 96px !important;
+}
+@media (max-width: 480px) {
+  .triage {
+    padding: 24px 16px 96px !important;
+    max-width: 672px !important;
+  }
+  .triage[data-triage-mode='list'] {
+    max-width: 912px !important;
+  }
+}

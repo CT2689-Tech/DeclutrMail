@@ -1,3 +1,4 @@
+import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { FaqEntry } from './types';
@@ -7,7 +8,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'what-is-declutrmail',
     question: 'What is DeclutrMail?',
     answer:
-      'DeclutrMail is a companion for Gmail that groups recurring email by sender, shows volume and read rate, and lets you choose Keep, Archive, Unsubscribe, Later, or Delete. Gmail remains the place where you read complete emails and check the final result.',
+      'DeclutrMail is a companion for Gmail that groups recurring email by sender, shows volume and Gmail marked-read rate, and lets you choose Keep, Archive, Unsubscribe, Later, or Delete. Marked-read flags are context, not proof that someone read an email. Gmail remains the place where you read complete emails and check the final result.',
     link: {
       href: '/how-to/clean-gmail-by-sender',
       label: 'See the sender-first workflow',
@@ -57,7 +58,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'future-mail',
     question: 'Does archiving a sender automatically archive future messages?',
     answer:
-      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail also has preset Autopilot rules on Plus and Pro; you preview what a rule would do before you turn it on, and from then on it acts on future matches. You can instead run a rule in Observe, where it collects matches and waits for your approval.',
+      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail also has preset Autopilot rules on Plus and Pro; you preview what a rule would do before you turn it on, and from then on it acts on future matches. You can instead choose Watch first for a rule, where it collects matches and waits for your approval.',
     link: {
       href: '/how-to/auto-archive-future-emails-in-gmail',
       label: 'Compare filters and Autopilot',
@@ -72,7 +73,9 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
       // uniform: there is no plan-dependency left to describe. A
       // divergent ladder restores it, because it would then be true.
       'No. Archive, Later, and Delete expose Activity Undo while their undo window is open' +
-      (UNIFORM_UNDO_WINDOW_DAYS === null ? ' (its length depends on your plan)' : '') +
+      (UNIFORM_UNDO_WINDOW_DAYS === null
+        ? ' (its length depends on your plan)'
+        : ` — ${UNIFORM_UNDO_WINDOW_DAYS} days on every plan`) +
       '. Delete also has separate Gmail Trash recovery for up to about 30 days unless Trash is emptied sooner. Keep and Protected are sender settings you can change again. A delivered unsubscribe request cannot be recalled.',
     link: {
       href: '/answers/how-undo-works-for-gmail-cleanup',
@@ -84,13 +87,13 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'where-undo',
     question: 'Where do I find an active undo?',
     answer:
-      'Activity is the dependable place to review completed actions and use Undo when it is available. Triage also shows recent actions. Undo does not appear on every screen, so use Activity when you need to check a result or recover email.',
+      'Activity is the dependable place to review completed actions and use Undo when it is available. Recent-action recovery also follows you across mailbox screens; it stays off account surfaces such as Billing and Settings.',
   },
   {
     id: 'unsubscribe',
     question: 'How does DeclutrMail Unsubscribe work?',
     answer:
-      'When a legitimate sender exposes the standards-based one-click method, DeclutrMail can submit the request and track its outcome. When the sender exposes only a mailto address, DeclutrMail opens a prepared Gmail draft and you press Send. Existing email stays where it is unless you separately approve Archive or Delete.',
+      'When a legitimate sender exposes the standards-based one-click unsubscribe method, DeclutrMail can submit the request and track its outcome. When the sender exposes only a mailto address, DeclutrMail opens a prepared Gmail draft: you send it yourself, and nothing is auto-sent. The sender controls whether and when future delivery stops. Existing email stays where it is unless you separately approve Archive or Delete.',
   },
   {
     id: 'unsubscribe-undo',
@@ -119,8 +122,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'plans',
     question: 'What changes between Free, Plus, and Pro?',
-    answer:
-      'Free supports one inbox with Senders, Triage, Later, bulk actions, and Activity, limited to 50 cleanup actions a month. Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro adds more connected inboxes and the two attention surfaces, Brief and Follow-ups. Use the pricing page for current plan details.',
+    answer: `Free supports ${TIER_MANIFEST.free.inboxLimit} inbox with Senders, Triage, Later, bulk actions, and Activity, limited to ${TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month. Plus removes the monthly limit and adds the Screener, Autopilot rules that keep working on their own, and Quiet hours. Pro adds more connected inboxes and the two attention surfaces, Brief and Follow-ups. Use the pricing page for current plan details.`,
     link: {
       href: '/pricing',
       label: 'Compare current plans',
@@ -150,3 +152,10 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     },
   },
 ];
+
+/** Help and acquisition FAQ share the same answer for overlapping product questions. */
+export function faqAnswer(id: string): string {
+  const entry = FAQ_ENTRIES.find((item) => item.id === id);
+  if (!entry) throw new Error(`Unknown public FAQ: ${id}`);
+  return entry.answer;
+}

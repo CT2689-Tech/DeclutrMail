@@ -119,7 +119,7 @@ const DECLUTR = {
   existingMail: {
     summary: 'Yes — by sender',
     detail:
-      'Archive, Later, and Delete act on matching current inbox mail. Unsubscribe does not move existing mail.',
+      'Archive and Later act on matching current inbox mail. Delete can also include archived mail when you explicitly choose that scope. Unsubscribe alone does not move existing mail.',
     state: 'supported',
   },
   futureMail: {

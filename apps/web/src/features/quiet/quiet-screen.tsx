@@ -8,6 +8,7 @@ import {
 } from '@/features/editorial/page';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 
 import { EmptyState, ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import { parseTimeToMinutes, type QuietHoursConfig } from '@declutrmail/shared/contracts';
@@ -58,7 +59,8 @@ export function QuietRoute() {
       <EditorialKicker>Automations / On your schedule</EditorialKicker>
       <h1 style={editorialTitleStyle}>Quiet hours</h1>
       <EditorialDescription>
-        Autopilot pauses during quiet hours. Your own actions still run.
+        Schedules for all connected inboxes. Autopilot pauses during each inbox’s quiet hours; Gmail
+        delivery and your own actions continue.
       </EditorialDescription>
       <ScreenIntro
         id="quiet"
@@ -73,7 +75,11 @@ export function QuietRoute() {
       ) : (
         <div style={{ display: 'grid', gap: 32, maxWidth: 720 }}>
           {mailboxes.map((mailbox) => (
-            <QuietHoursCardContainer key={mailbox.id} mailbox={mailbox} />
+            <QuietHoursCardContainer
+              key={mailbox.id}
+              mailbox={mailbox}
+              active={mailbox.id === me.activeMailboxId}
+            />
           ))}
         </div>
       )}
@@ -82,7 +88,7 @@ export function QuietRoute() {
 }
 
 /** Wires one mailbox's live query + mutation into the dumb card. */
-function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
+function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; active: boolean }) {
   const query = useQuietHours(mailbox.id);
   const update = useUpdateQuietHours(mailbox.id);
 
@@ -126,6 +132,7 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
   return (
     // One raised settings group per mailbox, its address as the group title.
     <div style={{ display: 'grid', gap: 8 }}>
+      {active && <p style={{ margin: 0, color: color.primary, fontSize: text.sm }}>Active inbox</p>}
       <QuietHoursCard
         mailboxEmail={mailbox.email}
         mailboxStatus={mailbox.status}
@@ -136,6 +143,7 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
       />
       {query.data && (
         <QuietQueueSummary
+          activeInbox={active}
           activeNow={query.data.activeNow}
           heldCount={query.data.heldCount}
           endsAt={query.data.endsAt}
@@ -147,11 +155,13 @@ function QuietHoursCardContainer({ mailbox }: { mailbox: MeMailbox }) {
 }
 
 function QuietQueueSummary({
+  activeInbox,
   activeNow,
   heldCount,
   endsAt,
   timezone,
 }: {
+  activeInbox: boolean;
   activeNow: boolean;
   heldCount: number;
   endsAt: string | null;
@@ -208,7 +218,14 @@ function QuietQueueSummary({
         fontVariantNumeric: 'tabular-nums',
       }}
     >
-      {summary}
+      {summary}{' '}
+      {activeInbox ? (
+        <Link href="/autopilot" style={{ color: color.primary }}>
+          Review Autopilot rules →
+        </Link>
+      ) : (
+        <span>Choose this inbox in the account menu to review its rules.</span>
+      )}
     </p>
   );
 }

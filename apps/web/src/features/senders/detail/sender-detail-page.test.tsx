@@ -308,7 +308,7 @@ describe('SenderDetailRoute', () => {
     expect(count).toHaveTextContent(/^64$/);
     const sentence = count.nextElementSibling!;
     expect(sentence).toHaveTextContent(/emails in the last 90 days/);
-    expect(sentence).toHaveTextContent('2,048');
+    expect(sentence).toHaveTextContent('2,048 received · all time');
     expect((document.body.textContent ?? '').match(/in the last 90 days/g)).toHaveLength(1);
     // No derived cadence, and no percentage in the headline.
     expect(sentence).not.toHaveTextContent(/%|\/mo/);
@@ -341,6 +341,10 @@ describe('SenderDetailRoute', () => {
       /ago|today|yesterday/,
     );
     expect(stats.getByText('You wrote').nextElementSibling).toHaveTextContent('3×');
+    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
+    expect(screen.getByText('Monthly values').closest('details')).toHaveTextContent(
+      TIMESERIES[0]!.yearMonth,
+    );
   });
 
   it('shows "—" for a read rate the wire does not know, never 0%', async () => {
@@ -409,7 +413,7 @@ describe('SenderDetailRoute', () => {
     // Still a sender with history: the count + lifetime total render,
     // and "Last seen" carries how long ago — never the "never" sentence.
     expect(screen.getByTestId('sender-detail-window-count')).toBeInTheDocument();
-    expect(screen.getByText(/2,048 total/)).toBeInTheDocument();
+    expect(screen.getByText(/2,048 received · all time/)).toBeInTheDocument();
     expect(screen.queryByText(/Hasn.t mailed you yet\./)).not.toBeInTheDocument();
   });
 

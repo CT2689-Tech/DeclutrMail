@@ -13,6 +13,7 @@ import {
   foundingProPromo,
   formatMoney,
   pricingTiers,
+  sharedAnnualMonthsFree,
   TIER_JOBS,
   type BillingInterval,
 } from './pricing-model';
@@ -191,9 +192,11 @@ function IntervalToggle({
   interval: BillingInterval;
   onChange: (next: BillingInterval) => void;
 }) {
+  const provider = useRegionProvider();
+  const savings = sharedAnnualMonthsFree(provider);
   const options: { id: BillingInterval; label: string }[] = [
     { id: 'monthly', label: 'Monthly' },
-    { id: 'annual', label: 'Annual — 2 months free' },
+    { id: 'annual', label: savings === null ? 'Annual' : `Annual — ${savings} months free` },
   ];
   return (
     <div role="group" aria-label="Billing interval" className="dm-pricing-toggle">

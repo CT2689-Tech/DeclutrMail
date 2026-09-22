@@ -607,7 +607,7 @@ describe('ActivityScreen — timeline (D57)', () => {
 
     // No `me` in the cache → the user zone falls back to UTC.
     await screen.findByRole('heading', { level: 2, name: 'Today' });
-    // The weekly panel's own heading sits above the day labels.
+    // History leads; weekly context is separate below the result list.
     expect(
       screen
         .getAllByRole('heading', { level: 2 })
@@ -623,6 +623,13 @@ describe('ActivityScreen — timeline (D57)', () => {
     // The row says the verb and the count the wire carries, then the clock.
     expect(within(may25).getByText('212 emails')).toBeInTheDocument();
     expect(within(may25).getByText('7:00 AM')).toBeInTheDocument();
+    const weekly = screen.getByRole('region', { name: 'Separate weekly overview' });
+    expect(may25.compareDocumentPosition(weekly) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(
+      weekly.compareDocumentPosition(
+        screen.getByRole('button', { name: 'Export support bundle' }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(within(may25).getByText('5:30 AM')).toBeInTheDocument();
   });
 });

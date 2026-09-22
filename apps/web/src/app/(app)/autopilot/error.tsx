@@ -16,6 +16,10 @@ export default function AutopilotError({
 }) {
   return (
     <RouteErrorScreen
+      gap={32}
+      title="Autopilot"
+      kicker="Automations / Your rules"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="autopilot"

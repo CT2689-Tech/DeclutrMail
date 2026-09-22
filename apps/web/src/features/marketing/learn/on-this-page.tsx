@@ -19,19 +19,28 @@ export function OnThisPage({
   items: readonly OnThisPageItem[];
   narrow?: 'list' | 'hidden';
 }) {
+  const links = (
+    <ol>
+      {items.map(({ id, label }) => (
+        <li key={id}>
+          <a href={`#${id}`}>{label}</a>
+        </li>
+      ))}
+    </ol>
+  );
   return (
     <nav
       aria-label="On this page"
-      className={narrow === 'hidden' ? 'dm-otp dm-otp--wide-only' : 'dm-otp'}
+      className={`dm-otp${narrow === 'hidden' ? ' dm-otp--article' : ''}`}
     >
-      <p className="dm-otp-title">On this page</p>
-      <ol>
-        {items.map(({ id, label }) => (
-          <li key={id}>
-            <a href={`#${id}`}>{label}</a>
-          </li>
-        ))}
-      </ol>
+      <div className="dm-otp-desktop">
+        <p className="dm-otp-title">On this page</p>
+        {links}
+      </div>
+      <details className="dm-otp-mobile">
+        <summary>On this page</summary>
+        {links}
+      </details>
     </nav>
   );
 }

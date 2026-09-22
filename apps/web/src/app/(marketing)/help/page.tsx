@@ -12,13 +12,10 @@
 // 2026-07-08 (D121): 30-day money-back guarantee on every paid plan;
 // the answer states it and links /refunds for the full terms.
 
+import { faqAnswer } from '@/features/marketing/learn/faq-content';
+import { SupportTasks } from '@/features/marketing/learn/support-tasks';
 import type { Metadata } from 'next';
-import {
-  ACTION_SAFETY_SUMMARY,
-  PRIVACY_BADGE_HEADLINE,
-  PRIVACY_STORAGE_ITEMS,
-} from '@declutrmail/shared';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 
 import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout';
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
@@ -33,7 +30,7 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/help',
 });
 
-const LAST_UPDATED = '2026-08-04';
+const LAST_UPDATED = '2026-09-22';
 
 /**
  * One source for the rendered Q&A and the FAQPage JSON-LD. Answers are
@@ -54,7 +51,7 @@ const FAQS: ReadonlyArray<{
   {
     id: 'unsubscribe-flow',
     q: 'How does Unsubscribe work?',
-    a: 'Where a sender supports the one-click unsubscribe standard (Gmail’s list-unsubscribe), DeclutrMail sends the unsubscribe request for you and tracks the result. Where a sender only offers a mailto: unsubscribe address, we prepare the email and you send it yourself from Gmail — nothing is auto-sent on your behalf. The request asks the sender to stop future email; the sender controls whether and when delivery stops. Nothing already in your inbox moves.',
+    a: faqAnswer('unsubscribe'),
   },
   {
     id: 'bulk-unsubscribe',
@@ -65,12 +62,12 @@ const FAQS: ReadonlyArray<{
   {
     id: 'actions-in-gmail-terms',
     q: 'What do Archive, Later, and Delete actually do in Gmail?',
-    a: 'Archive removes the messages from your inbox — Gmail keeps them in All Mail, searchable as ever. Later moves them out of the inbox into a DeclutrMail/Later label so you can come back to them. Delete moves them to Gmail’s Trash, normally for up to 30 days; permanently deleting a message or emptying Trash can end recovery sooner. Keep leaves everything where it is.',
+    a: faqAnswer('action-effects'),
   },
   {
     id: 'undo-windows',
     q: 'What can I undo, and for how long?',
-    a: `${ACTION_SAFETY_SUMMARY} The Archive, Later, and Delete Activity Undo window is ${TIER_MANIFEST.free.undoWindowDays} days on every plan.`,
+    a: faqAnswer('undo'),
   },
   {
     id: 'disconnect-mailbox',
@@ -85,21 +82,21 @@ const FAQS: ReadonlyArray<{
   },
   {
     id: 'autopilot-modes',
-    q: 'What is the difference between Autopilot’s Observe and Active modes?',
-    a: 'Autopilot rules are presets you turn on. Turning one on shows exactly what it would do to matching email already in your inbox; confirm and it acts, then keeps acting on matching email that arrives. If you would rather look first, choose Watch first and the rule collects matches for your approval without changing anything. You can switch a watching rule over later, or pause any rule at any time.',
+    q: 'What is the difference between Autopilot’s Watch first and Active modes?',
+    a: faqAnswer('autopilot'),
   },
   {
     id: 'pricing-tiers',
     q: 'What do the plans include?',
     // Derived from the pricing config (A3) — no plan number is written
     // here, so retuning the ladder cannot strand this answer.
-    a: `Free includes Senders, Triage, Later, and every cleanup action, with ${TIER_MANIFEST.free.cleanupActionsPerMonth} actions each month. Plus removes the monthly limit and adds the Screener, Autopilot rules and Quiet hours. Pro adds the Daily Brief, Follow-ups and ${TIER_MANIFEST.pro.inboxLimit} connected inboxes. Every plan gets a ${TIER_MANIFEST.free.undoWindowDays}-day Activity Undo window for Archive, Later, and Delete. Deleted email also stays in Gmail Trash for up to 30 days unless you empty Trash sooner. The pricing page has the current comparison.`,
+    a: faqAnswer('plans'),
     link: { href: '/pricing', label: 'Pricing' },
   },
   {
     id: 'refunds',
     q: 'Is there a refund policy?',
-    a: 'Yes — every paid plan comes with a 30-day money-back guarantee: tell us within 30 days of a charge and we refund it in full. You can also cancel anytime and keep access until the end of the period you paid for.',
+    a: faqAnswer('refunds-support'),
     link: { href: '/refunds', label: 'See the refund policy for full terms' },
   },
   {
@@ -131,8 +128,12 @@ const TOC = FAQS.map(({ id, q }) => ({ id, label: q }));
 
 export default function HelpPage() {
   return (
-    <LegalPageLayout title="Help & FAQ" lastUpdated={LAST_UPDATED} toc={TOC}>
+    <LegalPageLayout title="Help with your workspace" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="help" />
+      <SupportTasks />
+      <p>
+        Before you connect? <a href="/faq">Read the product and permission FAQ</a>.
+      </p>
       <JsonLd data={FAQ_JSON_LD} />
       {FAQS.map(({ id, q, a, link }) => (
         <LegalSection key={id} id={id} title={q}>

@@ -71,6 +71,18 @@ export function LegalPageLayout({
       centred={centred}
     >
       <article>{children}</article>
+      {['Privacy Policy', 'Terms of Service', 'Refund Policy', 'Cookie Preferences'].includes(
+        title,
+      ) && (
+        <nav className="dm-read-policy-links" aria-label="Related policies">
+          <a href="/privacy">Privacy</a>
+          <a href="/security">Security</a>
+          <a href="/terms">Terms</a>
+          <a href="/refunds">Refunds</a>
+          <a href="/cookies">Cookie preferences</a>
+          <a href="/contact">Contact</a>
+        </nav>
+      )}
     </ReadingLayout>
   );
 }

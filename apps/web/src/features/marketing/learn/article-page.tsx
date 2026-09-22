@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { demoForTopic } from './journey-links';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { formatReadingDate, ReadingCta, ReadingLayout } from './learn-shell';
@@ -97,6 +98,13 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
   const faq = faqJsonLd(article);
   return (
     <ReadingLayout
+      breadcrumb={
+        article.kind === 'How-to guide'
+          ? { href: '/how-to', label: 'Guides' }
+          : article.kind === 'Direct answer'
+            ? { href: '/answers', label: 'Answers' }
+            : { href: '/blog', label: 'Articles' }
+      }
       title={article.title}
       lede={article.intro}
       meta={
@@ -186,7 +194,7 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
         </ul>
       </section>
 
-      <ReadingCta />
+      <ReadingCta demo={demoForTopic(article.slug)} />
     </ReadingLayout>
   );
 }

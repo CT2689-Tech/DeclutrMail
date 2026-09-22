@@ -133,7 +133,7 @@ export function SuggestionGroup({
 /** "(N days left)" while the rule's observe window is running (D104 header). */
 function observeDaysLeft(rule: AutopilotRuleDto | null, now: number | null): string | null {
   if (rule == null || rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
-  if (rule.observeWindowElapsed) return 'observe window complete';
+  if (rule.observeWindowElapsed) return 'Watch first review ready';
   if (now === null) return null;
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;

@@ -1,6 +1,11 @@
 'use client';
 
-import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page';
+import {
+  editorialColumnStyle,
+  EditorialKicker,
+  EditorialContents,
+  EditorialDescription,
+} from '@/features/editorial/page';
 
 import { useEffect } from 'react';
 import {
@@ -103,6 +108,21 @@ export function PrivacyDataView({
       <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <EditorialKicker>Your workspace / Privacy & data</EditorialKicker>
       <PageHeader title="Privacy & data" backToSettings />
+      <EditorialDescription>
+        Review access and stored data for all connected inboxes, export your records, or manage
+        retention and deletion. Connection status is separate from sync health in Settings.
+      </EditorialDescription>
+      <EditorialContents
+        items={[
+          { href: '#privacy-connected-mailboxes', label: 'Connected inboxes' },
+          { href: '#privacy-gmail-data-inventory', label: 'Data inventory' },
+          { href: '#privacy-undo-retention', label: 'Recovery' },
+          { href: '#privacy-export-my-data', label: 'Export' },
+          { href: '#privacy-cookie-preferences', label: 'Cookies' },
+          { href: '#privacy-leave-cleanly', label: 'Disconnect or delete' },
+          { href: '#privacy-legal-evidence', label: 'Policies' },
+        ]}
+      />
       <ScreenIntro
         id="settings-privacy"
         title="Privacy & data"
@@ -240,7 +260,9 @@ export function PrivacyDataView({
 
       {/* D147 — the standing surface to change or withdraw the cookie
           choice (GDPR Art. 7(3)); also mounted on the public /cookies page. */}
-      <CookiePreferences />
+      <div id="privacy-cookie-preferences" style={{ scrollMarginTop: 24 }}>
+        <CookiePreferences />
+      </div>
 
       {/* 5 — leave cleanly (D116's exits, pointing at the owning flows). */}
       <Section title="Leave cleanly">
@@ -277,7 +299,15 @@ export function PrivacyDataView({
 const EXPORT_FORMATS = ['json', 'csv', 'senders-csv', 'decisions-csv'] as const;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return <SettingsGroup title={title}>{children}</SettingsGroup>;
+  const id = `privacy-${title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/-$/, '')}`;
+  return (
+    <SettingsGroup id={id} title={title}>
+      {children}
+    </SettingsGroup>
+  );
 }
 
 function inventoryDisplayItem(item: {

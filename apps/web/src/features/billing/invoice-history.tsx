@@ -1,5 +1,7 @@
 'use client';
 
+import linkStyles from './billing-links.module.css';
+
 /**
  * D119 / ADR-0035 — the invoice section.
  *
@@ -20,6 +22,8 @@
  *     open this page after leaving is to fetch last year's receipts.
  */
 
+import { useState } from 'react';
+
 import {
   Button,
   EmptyState,
@@ -33,13 +37,25 @@ import { formatProviderAmount, formatBillingDate } from './billing-model';
 import { useInvoiceDocument, useInvoices } from './api/use-invoices';
 import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, shadow, text } = tokens;
+const { color, radius, text } = tokens;
+const FILTER_STYLE = {
+  background: color.card,
+  color: color.fg,
+  border: `1px solid ${color.border}`,
+  borderRadius: radius.sm,
+  padding: '6px 8px',
+  minHeight: 36,
+  maxWidth: '100%',
+  minWidth: 0,
+  width: '100%',
+  boxSizing: 'border-box',
+} as const;
 
 const SECTION_STYLE = {
   background: color.card,
-  boxShadow: shadow.card,
-  borderRadius: radius.xl,
-  padding: 'clamp(20px, 4vw, 28px)',
+  border: `1px solid ${color.border}`,
+  borderRadius: radius.md,
+  padding: 'clamp(16px, 3vw, 22px)',
   display: 'flex',
   flexDirection: 'column',
   gap: 12,
@@ -63,6 +79,9 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const invoices = useInvoices({ enabled });
   const mint = useInvoiceDocument();
   const isPhone = useIsAtMost('xs');
+  const [status, setStatus] = useState('all');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   if (!enabled) return null;
 
@@ -95,10 +114,74 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const data = invoices.data;
   if (!data) return null;
   const partial = data.unavailableProviders.length > 0;
+  const filtered = data.invoices.filter((invoice) => {
+    const date = invoice.issuedAt.slice(0, 10);
+    return (
+      (status === 'all' || status === invoice.status) &&
+      (!from || date >= from) &&
+      (!to || date <= to)
+    );
+  });
 
   return (
     <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
       <GroupTitle as="div">Invoices</GroupTitle>
+      {data.invoices.length > 0 ? (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
+              Status{' '}
+              <select
+                style={FILTER_STYLE}
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+              >
+                <option value="all">All statuses</option>
+                <option value="paid">Paid invoices</option>
+                <option value="due">Due invoices</option>
+                <option value="canceled">Canceled invoices</option>
+                <option value="unknown">Unknown status</option>
+              </select>
+            </label>
+            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
+              From{' '}
+              <input
+                type="date"
+                style={FILTER_STYLE}
+                value={from}
+                onChange={(event) => setFrom(event.target.value)}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
+              Through{' '}
+              <input
+                type="date"
+                style={FILTER_STYLE}
+                value={to}
+                min={from || undefined}
+                onChange={(event) => setTo(event.target.value)}
+              />
+            </label>
+            {status !== 'all' || from || to ? (
+              <Button
+                size="sm"
+                onClick={() => {
+                  setStatus('all');
+                  setFrom('');
+                  setTo('');
+                }}
+              >
+                Clear filters
+              </Button>
+            ) : null}
+          </div>
+          <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+            {filtered.length} of {data.invoices.length} loaded invoices. Filters apply to this
+            loaded history only.
+          </p>
+          {filtered.length === 0 ? <p>No loaded invoices match these filters.</p> : null}
+        </>
+      ) : null}
 
       {data.invoices.length === 0 ? (
         // THREE distinct empty answers, never collapsed: a rail we could
@@ -152,7 +235,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             </div>
           ) : null}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
-            {data.invoices.map((invoice) => {
+            {filtered.map((invoice) => {
               const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
               const date = formatBillingDate(invoice.issuedAt);
               const label = STATUS_LABEL[invoice.status];
@@ -224,6 +307,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                   <span style={{ marginLeft: isPhone ? 0 : 'auto' }}>
                     {invoice.hostedUrl ? (
                       <a
+                        className={linkStyles.link}
                         href={invoice.hostedUrl}
                         target="_blank"
                         rel="noopener noreferrer"
@@ -271,7 +355,14 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
       {data.truncated ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          Showing your most recent invoices. Email support@declutrmail.com if you need older ones.
+          Showing your most recent invoices.{' '}
+          <a
+            className={linkStyles.link}
+            href="mailto:support@declutrmail.com?subject=Older%20invoice%20request"
+          >
+            Request older invoices
+          </a>
+          .
         </p>
       ) : null}
 

@@ -27,7 +27,7 @@ import type { BillingProviderId } from '@declutrmail/shared/contracts';
 import { usePaymentMethodSession } from './api/use-payment-method';
 import { GroupTitle } from '@/features/settings/settings-list';
 
-const { color, radius, shadow, text } = tokens;
+const { color, radius, text } = tokens;
 
 export function PaymentMethodCard({
   provider,
@@ -67,11 +67,13 @@ export function PaymentMethodCard({
         background: color.card,
         // Past due is said in amber lettering below; the ring only marks
         // which surface needs attention.
-        boxShadow: isPastDue ? `0 0 0 2px ${color.amber}, ${shadow.card}` : shadow.card,
-        borderRadius: radius.xl,
-        padding: 'clamp(20px, 4vw, 28px)',
+        border: `1px solid ${isPastDue ? color.amber : color.border}`,
+        flexDirection: isPastDue || showSupportPath ? 'column' : 'row',
+        flexWrap: 'wrap',
+        alignItems: isPastDue || showSupportPath ? undefined : 'center',
+        borderRadius: radius.md,
+        padding: isPastDue ? '20px' : '16px',
         display: 'flex',
-        flexDirection: 'column',
         gap: 10,
       }}
     >
@@ -101,10 +103,7 @@ export function PaymentMethodCard({
             </>
           )
         ) : (
-          <>
-            Your card is held by Paddle, our payment provider — we never see or store it. Updating
-            it opens Paddle&rsquo;s secure form, and you&rsquo;ll come back here afterwards.
-          </>
+          <>Managed securely by Paddle. Update your payment method in their secure form.</>
         )}
       </p>
 

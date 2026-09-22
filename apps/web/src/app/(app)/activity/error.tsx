@@ -16,6 +16,10 @@ export default function ActivityError({
 }) {
   return (
     <RouteErrorScreen
+      gap={20}
+      title="Activity"
+      kicker="Your history / Every outcome in view"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="activity"

@@ -6,6 +6,7 @@ import { Button, PreviewSheet, tokens } from '@declutrmail/shared';
 import type { CancelRequest } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST, type TierId } from '@declutrmail/shared/entitlements';
 
+import { PlanConsequences } from './plan-coverage';
 import { formatBillingDate, type SubscriptionRecord } from './billing-model';
 
 const { color, font, radius, space, text } = tokens;
@@ -159,6 +160,7 @@ export function CancelModal({
       cancelLabel={backsEntitlement ? 'Keep current plan' : 'Never mind'}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: space[4], textAlign: 'left' }}>
+        {backsEntitlement ? <PlanConsequences fromTier={entitlementTier} toTier="free" /> : null}
         {/* D118's retention offer. Offered only where it can actually
             work: Paddle (Razorpay has no pause primitive we drive —
             `PAUSE_UNSUPPORTED`), on an active row that is not already on

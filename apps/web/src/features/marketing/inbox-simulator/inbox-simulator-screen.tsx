@@ -28,7 +28,7 @@ import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
 import type { SheetableVerb } from '@/features/triage/store';
 import { ActivateRuleModal } from '@/features/autopilot/activate-rule-modal';
-import { oauthStartUrl, siteUrl } from '@/features/marketing/landing/urls';
+import { permissionEntryUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
 import {
@@ -164,8 +164,8 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     // Only the lead clause is hand-written; the recovery model itself is
     // the canonical claim, imported rather than retyped (D245-adjacent —
     // the same "one truth, many surfaces" reasoning as the storage list).
-    body: `Everything archived or unsubscribed so far only left the inbox — none of it freed storage. ${DELETE_RECOVERY_CLAIM}`,
-    prompt: 'Try Delete — the one action that actually clears space.',
+    body: `Archive leaves email in All Mail. Unsubscribe alone moves no existing email. Delete moves email to Trash; storage is freed only after permanent deletion in Gmail. ${DELETE_RECOVERY_CLAIM}`,
+    prompt: 'Try Delete — inspect the Trash and recovery boundaries before confirming.',
   },
 ] as const;
 
@@ -807,7 +807,21 @@ export function InboxSimulatorScreen() {
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
         <h1>Make four inbox decisions before you connect Gmail.</h1>
-        <p>Follow four made-up examples, then explore freely.</p>
+        <p>Try a daily review with four made-up examples, then explore freely.</p>
+        <details className="dm-simulator-orientation">
+          <summary>Where this fits in your workspace</summary>
+          <ol>
+            <li>Overview shows your progress and available review work.</li>
+            <li>
+              Clean up contains Senders, with a detail inspector, and Triage, the daily review
+              demonstrated here.
+            </li>
+            <li>
+              Preview mail-moving actions, then check outcomes and available Undo in Activity.
+            </li>
+            <li>Automations contains rules you deliberately enable for future email.</li>
+          </ol>
+        </details>
         <p className="dm-simulator-hero-note">
           No signup. The demo stays local to this browser and never touches Gmail.
         </p>
@@ -946,7 +960,7 @@ export function InboxSimulatorScreen() {
         <div className="dm-simulator-next-actions">
           <TrackedCta
             className="dm-simulator-primary"
-            href={oauthStartUrl()}
+            href={permissionEntryUrl()}
             cta="connect_gmail"
             placement="demo"
           >
@@ -1228,7 +1242,7 @@ function DemoCompletion({
         </span>
       </div>
       <div className="dm-simulator-complete-actions">
-        <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
+        <TrackedCta href={permissionEntryUrl()} cta="connect_gmail" placement="demo">
           Start free →
         </TrackedCta>
         <Button tone="default" onClick={onExplore}>
@@ -1261,7 +1275,7 @@ function ExploreCompletion({
       <h2>You explored every sender.</h2>
       <OutcomeSummary decisions={decisions} />
       <div className="dm-simulator-complete-actions">
-        <TrackedCta href={oauthStartUrl()} cta="connect_gmail" placement="demo">
+        <TrackedCta href={permissionEntryUrl()} cta="connect_gmail" placement="demo">
           Start free →
         </TrackedCta>
         <Button tone="default" onClick={onReset}>

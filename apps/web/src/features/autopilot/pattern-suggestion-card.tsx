@@ -31,7 +31,7 @@ export function PatternSuggestionCard({
       </p>
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
         <Button tone="primary" size="sm" onClick={onObserve} disabled={pendingDecision != null}>
-          {pendingDecision === 'observe' ? 'Starting Observe…' : 'Use in Observe'}
+          {pendingDecision === 'observe' ? 'Starting Watch first…' : 'Watch first'}
         </Button>
         <Button tone="default" size="sm" onClick={onDismiss} disabled={pendingDecision != null}>
           {pendingDecision === 'dismissed' ? 'Dismissing…' : 'Not now'}

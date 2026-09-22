@@ -91,8 +91,9 @@ describe('SyncGate render', () => {
     expect(html).toContain('aria-valuenow="45"');
     expect(html.match(/role="progressbar"/g)).toHaveLength(1);
     expect(html).toContain('Grouping email by sender.');
-    // No aspirational stage list — only the stage the worker reported.
-    expect(html).not.toContain('<ol');
+    // Journey orientation is separate from the real worker progress.
+    expect(html).toContain('aria-label="Getting started"');
+    expect(html).toMatch(/aria-current="step"[^>]*>Scan<\/li>/);
     expect(html).not.toContain('Preparing recommendations');
     // A waiting screen is not a decision point: the trust badge lives on
     // the promise step. Banned counter copy stays absent (CLAUDE.md §2.1).

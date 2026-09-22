@@ -154,6 +154,7 @@ export function StepPresetPick({
 
   return (
     <StepShell
+      phase="review"
       title="Choose what DeclutrMail should suggest."
       sub="Suggestions only — nothing changes until you approve it."
       maxWidth={560}
@@ -310,6 +311,7 @@ export function StepFirstSenderReview({
 
   return (
     <StepShell
+      phase="review"
       title="Choose your starting point."
       sub="This picks your first senders to review — nothing changes until you approve it."
       maxWidth={560}

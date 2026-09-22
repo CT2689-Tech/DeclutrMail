@@ -68,6 +68,25 @@ describe('HomeView', () => {
     expect(screen.getByText('Senders decided')).toBeInTheDocument();
   });
 
+  it('keeps the primary review destination out of the attention list', () => {
+    render(
+      <HomeView
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action: { label: 'Review 4 today', href: '/triage' },
+          pending: { triagePending: 4, screenerPending: 2 },
+        }}
+      />,
+    );
+    expect(
+      screen.getAllByRole('link').filter((link) => link.getAttribute('href') === '/triage'),
+    ).toHaveLength(1);
+    expect(screen.getByRole('link', { name: /2 new senders/ })).toBeInTheDocument();
+  });
+
   it('ready without secondary stats renders no stat row', () => {
     const { container } = render(
       <HomeView

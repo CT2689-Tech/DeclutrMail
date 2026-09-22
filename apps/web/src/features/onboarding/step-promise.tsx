@@ -23,7 +23,10 @@ const { color, radius, shadow, text } = tokens;
  */
 export function StepPromise({ onConnect }: { onConnect: () => void }) {
   return (
-    <StepShell title="Clear thousands of emails by sender — and see exactly what moves.">
+    <StepShell
+      phase="connect"
+      title="Clear thousands of emails by sender — and see exactly what moves."
+    >
       {/* The privacy boundary, stated once, at the decision point —
           directly above the button that starts Google consent. */}
       <PrivacyBadge

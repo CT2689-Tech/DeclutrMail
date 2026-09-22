@@ -26,7 +26,7 @@ export default function HowItWorksPage() {
   return (
     <ProductStoryShell
       title="A sender-control layer for Gmail."
-      lede="DeclutrMail groups your email by sender, so you make one decision per sender and see exactly what changes before it does."
+      lede="DeclutrMail groups your email by sender. Inspect the sender, choose an action, and preview affected email before a manual mail-moving change."
       visual={<HeroSendersFigure />}
     >
       <StorySection
@@ -57,7 +57,9 @@ export default function HowItWorksPage() {
           </div>
         </div>
         <p className="dm-story-note">
-          Recent subject links return to Gmail when you need the full conversation.
+          Overview shows your next step. Clean up contains Senders, Triage and New senders.
+          Automations contains Autopilot and Quiet hours. Activity records outcomes and available
+          Undo. Recent subject links return to Gmail when you need the full conversation.
         </p>
       </StorySection>
 
@@ -93,12 +95,13 @@ export default function HowItWorksPage() {
       <StorySection
         id="preview-first"
         layout="side"
-        title="Preview before anything changes."
+        title="Preview before email moves."
         intro={
           <p>
-            Some actions ask for options first, but the preview of affected emails always comes
-            before anything changes. Activity updates only after Gmail confirms the change, or the
-            sender reports the result of a one-click unsubscribe request.
+            Archive, Later, Delete, and unsubscribe requests have a confirmation step. Keep is an
+            inline sender decision. For mail-moving actions, the affected-email preview comes before
+            you confirm. Activity updates only after Gmail confirms the change, or the sender
+            reports the result of a one-click unsubscribe request.
           </p>
         }
         aside={<ConfirmCardFigure />}
@@ -123,8 +126,8 @@ export default function HowItWorksPage() {
         <div id="beyond-manual" className="dm-story-beyond">
           <p>
             Free covers every action above, up to a monthly cleanup limit. Plus adds the Screener,
-            which collects new senders for review instead of dropping them straight in your inbox,
-            the whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
+            which lists unfamiliar senders for review while their email still arrives in Gmail, the
+            whole Autopilot system for rules you turn on yourself, and Quiet hours, which decide
             when those rules may run. Pro adds the Daily Brief, a once-a-day summary of what needs
             your attention, and Follow-ups, a queue for senders you replied to but haven&rsquo;t
             heard back from. <a href="/pricing">See every plan</a>.

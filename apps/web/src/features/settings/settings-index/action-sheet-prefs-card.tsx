@@ -54,7 +54,7 @@ export function ActionSheetPrefsCard({
   return (
     <SettingsGroup
       id="actions"
-      title="Actions"
+      title="Action previews"
       footer={
         saveFailed && state.kind === 'ready' ? (
           <SettingsSaveError>Could not save the preference. Try again.</SettingsSaveError>
@@ -63,14 +63,18 @@ export function ActionSheetPrefsCard({
     >
       {state.kind === 'ready' ? (
         VERB_ROWS.map(({ wire, verb }) => (
-          <SettingsRow key={wire} label={`${verb} preview in the row`}>
+          <SettingsRow
+            key={wire}
+            label={`${verb} preview in the row`}
+            detail="The preview always appears. Choose inline in the sender row or in a separate window."
+          >
             <SettingsSwitch
               ariaLabel={`Show the ${verb} preview in the row`}
               on={state.prefs[wire]}
               // States where the preview lands. 'Skip'/'Show' named the
               // SHEET — a word this group never shows — and read as the
               // inverse of the "…in the row" label.
-              stateLabel={state.prefs[wire] ? 'Row' : 'Window'}
+              stateLabel={state.prefs[wire] ? 'Inline' : 'Separate window'}
               disabled={pendingWire !== null}
               pending={pendingWire === wire}
               onToggle={() => onToggle(wire, !state.prefs[wire])}

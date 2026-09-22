@@ -378,7 +378,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // Click 1 — the plan CTA opens the D226 confirm step in place.
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
     // Defaults: annual cycle, Paddle provider, Founding Pro NOT claimed.
     //
@@ -444,7 +444,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
 
     fireEvent.click(within(panel).getByRole('checkbox'));
@@ -495,7 +495,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(within(picker).getByRole('button', { name: 'Monthly' }));
     fireEvent.click(within(picker).getByRole('button', { name: 'Upgrade to Pro' }));
 
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
     // Razorpay went live 2026-07-25, so Pro monthly now carries a plan id
     // and the rail IS offered. What must not change is the default: this
@@ -537,7 +537,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Keep current plan' }));
 
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
@@ -556,7 +556,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     expect(
@@ -597,7 +597,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     // The truth CHANGED with #433: the provider SESSION exists and the
@@ -608,6 +608,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // outcome-neutral intent anchor and owns the release path.
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Checkout started');
+    expect(notice).toHaveTextContent('we do not yet know whether a payment completed');
+    expect(screen.getByTestId('current-plan-card')).not.toHaveTextContent(
+      /no card on file|Free forever/i,
+    );
+    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(notice).not.toHaveTextContent('Checkout reported completion');
   });
 
   it('a failed checkout CREATE surfaces the held claim — no invisible-lock trap (Codex 2026-07-29)', async () => {
@@ -636,7 +642,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     const notice = await screen.findByTestId('payment-processing-notice');
@@ -669,7 +675,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await within(panel).findByRole('alert');
@@ -706,7 +712,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(subscriptionReads).toBe(1);
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
@@ -964,7 +970,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // confirm panel is gone, and NO tier is claimed yet.
     act(() => capturedCheckoutEvents().onCompleted?.());
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
-      'Payment received — confirming your plan.',
+      'Checkout reported completion — confirming your plan.',
     );
     // The checkout_intent reservation transitioned to the id-less
     // `checkout` lock (own-id overwrite).
@@ -1074,13 +1080,16 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     try {
       act(() => capturedCheckoutEvents().onCompleted?.());
       expect(screen.getByTestId('payment-processing-notice')).toHaveTextContent(
-        'Payment received — confirming your plan.',
+        'Checkout reported completion — confirming your plan.',
       );
 
       act(() => vi.advanceTimersByTime(91_000));
       const notice = screen.getByTestId('payment-processing-notice');
       expect(notice).toHaveTextContent('Still confirming — this is taking longer than usual.');
-      expect(notice).toHaveTextContent('support@declutrmail.com');
+      expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
+        'href',
+        'mailto:support@declutrmail.com',
+      );
       // Still the truthful non-claim: the card has not flipped.
       expect(within(screen.getByTestId('current-plan-card')).getByText('Free')).toBeInTheDocument();
     } finally {
@@ -1110,7 +1119,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     expect(await within(panel).findByRole('alert')).toBeInTheDocument();
@@ -1149,7 +1158,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = screen.getByTestId('checkout-panel');
+    const panel = await screen.findByTestId('checkout-panel');
     expect(subscriptionReads).toBe(1);
 
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
@@ -1203,10 +1212,23 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
+    expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
+    expect(within(notice).getByText('What we know')).toBeInTheDocument();
+    expect(within(notice).getByText('What happens next')).toBeInTheDocument();
+    expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
+      'href',
+      'mailto:support@declutrmail.com',
+    );
+    expect(notice).toHaveTextContent('Billing changes stay paused to avoid charging you twice.');
+    const currentAccess = screen.getByTestId('current-plan-card');
+    expect(within(currentAccess).getByText('Free')).toBeInTheDocument();
+    expect(currentAccess).toHaveTextContent('3 of 50 cleanup actions left');
+    expect(currentAccess).not.toHaveTextContent(/no card on file|Free forever/i);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
     // D249 copy truth: a first purchase awaits a PLAN UPGRADE — the old
     // string claimed a "plan change" that never existed.
     expect(notice).toHaveTextContent(
-      'Payment received — your plan upgrade hasn’t come through yet.',
+      'Checkout reported completion — your plan upgrade hasn’t come through yet.',
     );
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
 
@@ -1564,7 +1586,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // The ambiguous lock survives verbatim and is what the screen shows.
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Plan change unconfirmed');
-    expect(notice).not.toHaveTextContent('Payment received');
+    expect(notice).not.toHaveTextContent('Checkout reported completion');
     const after = JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as {
       kind: string;
       attemptId?: string;
@@ -2386,6 +2408,18 @@ describe('BillingScreen — paid subscriber', () => {
     let changeBody: unknown = null;
     installFetchStub([
       {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          }),
+      },
+      {
         method: 'GET',
         path: '/api/billing/subscription',
         respond: () => jsonOk({ data: PLUS_SUB }),
@@ -2402,11 +2436,14 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
     expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
     expect(within(panel).getByText(/Plus \(monthly\) → Pro \(annual\)/)).toBeInTheDocument();
-    expect(within(panel).getByText(/existing payment method/i)).toBeInTheDocument();
+    await waitFor(() => expect(panel).toHaveTextContent('is charged today'));
 
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
     await waitFor(() => expect(changeBody).toEqual({ tierId: 'pro', cycle: 'annual' }));
 
@@ -2443,7 +2480,7 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
     // Codex round 2 (QA-billing-20260901-10): the panel is a PREVIEW
     // ("before anything changes") — nothing is charged until Confirm is
     // clicked, so the copy names it conditionally rather than asserting
@@ -2460,13 +2497,244 @@ describe('BillingScreen — paid subscriber', () => {
     expect(panel).toHaveTextContent(
       'Pro starts as soon as your payment provider confirms, usually within a minute.',
     );
-    expect(panel).toHaveTextContent('from Jul 30, 2027.');
+    expect(panel).toHaveTextContent('Next billing date: Jul 30, 2027.');
     // Money moves today, so the guarantee is reassurance and belongs here
     // — unlike the $0 downgrade branch, where it contradicts.
     expect(panel).toHaveTextContent('30-day money-back guarantee');
   });
 
-  it('upgrade panel falls back to generic mechanics when the preview fails — never an invented number', async () => {
+  it('blocks an upgrade while its quote fails, then retries before allowing confirmation', async () => {
+    mockTier = 'plus';
+    let quoteCalls = 0;
+    let changeCalls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () => {
+          quoteCalls++;
+          return quoteCalls === 1
+            ? jsonServerError()
+            : jsonOk({
+                data: {
+                  kind: 'immediate',
+                  result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+                  nextBilledAt: null,
+                },
+              });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () => {
+          changeCalls++;
+          return jsonOk({ data: PLUS_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(changeCalls).toBe(0);
+    fireEvent.click(await screen.findByRole('button', { name: 'Refresh quote' }));
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.getByTestId('change-plan-panel')).toHaveTextContent('$12.00 is charged today');
+    fireEvent.click(confirm);
+    await waitFor(() => expect(changeCalls).toBe(1));
+    expect(quoteCalls).toBe(2);
+  });
+
+  it('rechecks freshness at confirm time and never submits an expired quote', async () => {
+    mockTier = 'plus';
+    let quoteCalls = 0;
+    let changeCalls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () => {
+          quoteCalls++;
+          return jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () => {
+          changeCalls++;
+          return jsonOk({ data: PLUS_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 31_000);
+    try {
+      fireEvent.click(confirm);
+      await waitFor(() => expect(quoteCalls).toBe(2));
+      expect(changeCalls).toBe(0);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('ignores a late quote for a previous cycle while the current target is still loading', async () => {
+    mockTier = 'plus';
+    const pending: Record<string, (response: Response) => void> = {};
+    const changed: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: async (req) => {
+          const body = await req.json();
+          return new Promise<Response>((resolve) => {
+            pending[body.cycle] = resolve;
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: async (req) => {
+          changed.push(await req.json());
+          return jsonOk({ data: PLUS_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    await waitFor(() => expect(pending.annual).toBeTypeOf('function'));
+    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
+    await waitFor(() => expect(pending.monthly).toBeTypeOf('function'));
+    await act(async () =>
+      pending.annual!(
+        jsonOk({
+          data: {
+            kind: 'immediate',
+            result: { action: 'charge', amount: '9900', currencyCode: 'USD' },
+            nextBilledAt: null,
+          },
+        }),
+      ),
+    );
+    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
+    expect(confirm).toBeDisabled();
+    expect(screen.getByTestId('change-plan-panel')).not.toHaveTextContent(
+      '$99.00 is charged today',
+    );
+    fireEvent.click(confirm);
+    expect(changed).toHaveLength(0);
+    await act(async () =>
+      pending.monthly!(
+        jsonOk({
+          data: {
+            kind: 'immediate',
+            result: { action: 'charge', amount: '800', currencyCode: 'USD' },
+            nextBilledAt: null,
+          },
+        }),
+      ),
+    );
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.getByTestId('change-plan-panel')).toHaveTextContent('$8.00 is charged today');
+    fireEvent.click(confirm);
+    await waitFor(() => expect(changed).toEqual([{ tierId: 'pro', cycle: 'monthly' }]));
+  });
+
+  it('requires a new settled quote after closing and reopening an outstanding preview', async () => {
+    mockTier = 'plus';
+    const pending: Array<(response: Response) => void> = [];
+    let changeCalls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: PLUS_SUB }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () => new Promise<Response>((resolve) => pending.push(resolve)),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan',
+        respond: () => {
+          changeCalls++;
+          return jsonOk({ data: PLUS_SUB });
+        },
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    await waitFor(() => expect(pending).toHaveLength(1));
+    fireEvent.click(
+      within(screen.getByTestId('change-plan-panel')).getByRole('button', {
+        name: 'Keep current plan',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to Pro' }));
+    await act(async () =>
+      pending[0]!(
+        jsonOk({
+          data: {
+            kind: 'immediate',
+            result: { action: 'charge', amount: '9900', currencyCode: 'USD' },
+            nextBilledAt: null,
+          },
+        }),
+      ),
+    );
+    await waitFor(() => expect(pending).toHaveLength(2));
+    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(changeCalls).toBe(0);
+    await act(async () =>
+      pending[1]!(
+        jsonOk({
+          data: {
+            kind: 'immediate',
+            result: { action: 'charge', amount: '800', currencyCode: 'USD' },
+            nextBilledAt: null,
+          },
+        }),
+      ),
+    );
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.getByTestId('change-plan-panel')).toHaveTextContent('$8.00 is charged today');
+    expect(changeCalls).toBe(0);
+  });
+
+  it('does not accept an immediate preview without a provider amount', async () => {
     mockTier = 'plus';
     installFetchStub([
       {
@@ -2474,37 +2742,63 @@ describe('BillingScreen — paid subscriber', () => {
         path: '/api/billing/subscription',
         respond: () => jsonOk({ data: PLUS_SUB }),
       },
-      // No /change-plan/preview handler — the stub 599s it (a failed
-      // preview must degrade to copy, not block or fabricate).
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () => jsonOk({ data: { kind: 'immediate', result: null, nextBilledAt: null } }),
+      },
     ]);
     renderScreen();
-
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
-    // Codex round 1 (QA-billing-20260901-10): without provider truth the
-    // direction (charge vs. credit) is unknown too — a bolded "Charged
-    // today." here asserted a direction the screen doesn't actually have.
-    // Codex round 2: the replacement wording had picked a credit
-    // destination ("applies to your existing payment method") that
-    // contradicted the confirmed branch's "credited to your balance" —
-    // this full-sentence match pins the corrected, agreeing wording
-    // directly rather than via a negative check on the old phrasing
-    // (round 3: a negative check here would not have caught the round-1
-    // regression, since the old and new sentences never shared this
-    // exact substring either way).
+    await screen.findByRole('button', { name: 'Refresh quote' });
+    expect(screen.getByRole('button', { name: 'Confirm upgrade' })).toBeDisabled();
+  });
+
+  it('loads the manifest comparison when expanded and removes it when collapsed', async () => {
+    mockTier = 'pro';
+    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    renderScreen();
+    const summary = await screen.findByText('Compare included features');
+    expect(
+      screen.queryByRole('table', { name: 'Included features by plan' }),
+    ).not.toBeInTheDocument();
+    const disclosure = summary.closest('details') as HTMLDetailsElement;
+    disclosure.open = true;
+    fireEvent(disclosure, new Event('toggle'));
+    const table = await screen.findByRole('table', { name: 'Included features by plan' });
+    expect(within(table).getByRole('row', { name: 'Connected inboxes 1 1 5' })).toBeInTheDocument();
+    disclosure.open = false;
+    fireEvent(disclosure, new Event('toggle'));
     await waitFor(() =>
-      expect(panel).toHaveTextContent(
-        'the prorated difference for the rest of this period settles automatically — as a charge to your existing payment method, or a credit to your balance, whichever the difference favors',
-      ),
+      expect(
+        screen.queryByRole('table', { name: 'Included features by plan' }),
+      ).not.toBeInTheDocument(),
     );
-    expect(panel).not.toHaveTextContent('Charged today.');
-    // Codex round 3: the conditional "If you confirm:" framing applies to
-    // this branch too, not just the resolved charge/credit ones.
-    expect(panel).toHaveTextContent('If you confirm:');
-    // No quoted amount without provider truth — the mechanics sentence
-    // stays numberless (the header's $190/yr is a list price, not a
-    // proration claim).
-    expect(panel).not.toHaveTextContent(/\$\d+(\.\d+)? is charged now/);
+  });
+
+  it('puts coverage and invoices before plan shopping, with configured-price labeling and manifest consequences', async () => {
+    mockTier = 'pro';
+    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    renderScreen();
+    const current = await screen.findByTestId('current-plan-card');
+    expect(current).toHaveTextContent('Plan price: $19/mo');
+    const coverage = screen.getByRole('region', { name: 'Your plan includes' });
+    expect(coverage).toHaveTextContent('1 of 5 connected inboxes');
+    expect(within(coverage).getByRole('link', { name: 'Daily Brief' })).toHaveAttribute(
+      'href',
+      '/brief',
+    );
+    expect(
+      screen
+        .getByTestId('invoice-history')
+        .compareDocumentPosition(screen.getByRole('button', { name: 'Switch to Plus' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to Plus' }));
+    const panel = await screen.findByTestId('change-plan-panel');
+    expect(panel).toHaveTextContent('No longer included after the change: Daily Brief, Follow-ups');
+    expect(panel).toHaveTextContent('Existing connected inboxes continue working');
+    expect(screen.getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled();
   });
 
   it('upgrade panel states a credit outcome as landing in the account balance, conditional on confirm', async () => {
@@ -2531,7 +2825,7 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
     // Codex round 2 (QA-billing-20260901-10): a credit branch had no test
     // — the panel is a preview, so the credit outcome must read as
     // conditional on Confirm, and land in the account balance (never "the
@@ -2580,7 +2874,7 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
     expect(panel).toHaveTextContent('$0 today');
     expect(panel).toHaveTextContent('no refund or credit');
     // …and therefore NOT the money-back line, which read as a flat
@@ -2647,6 +2941,18 @@ describe('BillingScreen — paid subscriber', () => {
     let changeAttempts = 0;
     installFetchStub([
       {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          }),
+      },
+      {
         method: 'GET',
         path: '/api/billing/subscription',
         respond: () => jsonOk({ data: PLUS_SUB }),
@@ -2666,7 +2972,10 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
 
     // Panel gone, outcome-neutral notice up, picker locked: the
@@ -2675,7 +2984,9 @@ describe('BillingScreen — paid subscriber', () => {
     // by the paid→paid switch test above).
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Plan change unconfirmed — confirming your plan.');
-    expect(notice).toHaveTextContent(/may or may not have gone through/);
+    expect(notice).toHaveTextContent(
+      'The provider has not confirmed whether your plan change applied.',
+    );
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
     expect(changeAttempts).toBe(1);
@@ -2749,6 +3060,18 @@ describe('BillingScreen — paid subscriber', () => {
     let changePosts = 0;
     installFetchStub([
       {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          }),
+      },
+      {
         method: 'GET',
         path: '/api/billing/subscription',
         respond: () => jsonOk({ data: PLUS_SUB }),
@@ -2772,7 +3095,10 @@ describe('BillingScreen — paid subscriber', () => {
     try {
       renderScreen();
       fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-      const panel = screen.getByTestId('change-plan-panel');
+      const panel = await screen.findByTestId('change-plan-panel');
+      await waitFor(() =>
+        expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+      );
       fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
 
       // Stand-down: panel closes, nothing fires, nothing was written.
@@ -2794,6 +3120,18 @@ describe('BillingScreen — paid subscriber', () => {
     mockTier = 'plus';
     let changePosts = 0;
     installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          }),
+      },
       {
         method: 'GET',
         path: '/api/billing/subscription',
@@ -2825,7 +3163,10 @@ describe('BillingScreen — paid subscriber', () => {
       }),
     );
 
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
 
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
@@ -2901,7 +3242,7 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
     const alert = await within(panel).findByRole('alert');
@@ -2915,6 +3256,18 @@ describe('BillingScreen — paid subscriber', () => {
     // refused the call — outcome KNOWN, no lock, honest declined copy.
     mockTier = 'plus';
     installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          }),
+      },
       {
         method: 'GET',
         path: '/api/billing/subscription',
@@ -2939,7 +3292,10 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
 
     const alert = await within(panel).findByRole('alert');
@@ -2959,6 +3315,18 @@ describe('BillingScreen — paid subscriber', () => {
     let resolveChange: ((r: Response) => void) | null = null;
     installFetchStub([
       {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          }),
+      },
+      {
         method: 'GET',
         path: '/api/billing/subscription',
         respond: () => jsonOk({ data: PLUS_SUB }),
@@ -2972,7 +3340,10 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
     await waitFor(() => expect(resolveChange).not.toBeNull());
 
@@ -3020,6 +3391,18 @@ describe('BillingScreen — paid subscriber', () => {
     let resolveChange: ((r: Response) => void) | null = null;
     installFetchStub([
       {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () =>
+          jsonOk({
+            data: {
+              kind: 'immediate',
+              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
+              nextBilledAt: null,
+            },
+          }),
+      },
+      {
         method: 'GET',
         path: '/api/billing/subscription',
         respond: () => jsonOk({ data: PLUS_SUB }),
@@ -3033,7 +3416,10 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('change-plan-panel');
+    const panel = await screen.findByTestId('change-plan-panel');
+    await waitFor(() =>
+      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+    );
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
     await waitFor(() => expect(resolveChange).not.toBeNull());
 
@@ -3476,7 +3862,9 @@ describe('BillingScreen — one billing story (A6)', () => {
     // copy ("update your payment method with the provider") named no
     // destination at all.
     expect(notice).toHaveTextContent('Payment past due on this subscription');
-    expect(notice).toHaveTextContent('support@declutrmail.com');
+    for (const link of within(notice).getAllByRole('link', { name: 'support@declutrmail.com' })) {
+      expect(link).toHaveAttribute('href', 'mailto:support@declutrmail.com');
+    }
     expect(notice).toHaveTextContent('Your account is on Pro');
     // The mismatch row never puts its price on the card…
     const card = screen.getByTestId('current-plan-card');

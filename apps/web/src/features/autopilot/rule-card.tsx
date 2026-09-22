@@ -256,7 +256,7 @@ function ModeStatus({ rule, canActivate }: { rule: AutopilotRuleDto; canActivate
   // is the ordinary end state of enable-then-disable.
   // The switch beside it already says Off; a status word would repeat it.
   if (!rule.enabled) return null;
-  let label = 'Observing';
+  let label = 'Watch first';
   let tone: 'default' | 'primary' | 'amber' = 'default';
   if (rule.mode === 'paused') {
     label = 'Paused';
@@ -289,7 +289,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
       // excludes unsubscribe and no-op terminals write no Activity row.
       // 2026-09-19 brevity sweep: the in-flight clause is gone rather
       // than qualified — the line now says nothing about work underway.
-      return `Acting on its own is part of ${ACT_PLAN_NAME}, so this rule starts no new work. It returns to Observe and collects fresh matches for your approval.`;
+      return `Acting on its own is part of ${ACT_PLAN_NAME}, so this rule starts no new work. It returns to Watch first and collects fresh matches for your approval.`;
     }
     return 'Future matches run automatically; results appear in Activity.';
   }
@@ -321,12 +321,12 @@ function lastRunSummary(rule: AutopilotRuleDto, localizeDate: boolean): string {
 /** D10 observe-window countdown; null when not in Observe mode. */
 function observeWindowSummary(rule: AutopilotRuleDto, now: number | null): string | null {
   if (rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
-  if (rule.observeWindowElapsed) return 'Observe window complete';
+  if (rule.observeWindowElapsed) return 'Watch first window complete';
   if (now === null) return null;
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;
   const daysLeft = Math.max(1, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
-  return `Observing · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
+  return `Watch first · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`;
 }
 
 /**

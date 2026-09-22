@@ -51,6 +51,80 @@ describe('SendersPoliciesScreen', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('disables prior-result actions and pagination while a new search resolves', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) =>
+          url.searchParams.has('q')
+            ? new Promise<Response>(() => {})
+            : jsonOk({
+                data: [BASE_ROW],
+                meta: {
+                  pagination: { nextCursor: 'next', hasMore: true, limit: 50 },
+                  query: { totalMatching: 513, globalMaxTotal: 900 },
+                },
+              }),
+      },
+    ]);
+    renderScreen();
+    const action = await screen.findByRole('button', { name: 'Unprotect Sender A' });
+    expect(action).toBeEnabled();
+    const more = screen.getByRole('button', { name: 'Show more protected senders' });
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('searchbox'), 'remote');
+    await user.click(screen.getByRole('button', { name: /^Search$/ }));
+    await waitFor(() => expect(action).toBeDisabled());
+    expect(more.isConnected && more.matches(':enabled')).toBe(false);
+    expect(screen.getByText('Updating…')).toBeInTheDocument();
+    expect(screen.queryByText('513 senders')).not.toBeInTheDocument();
+  });
+
+  it('searches the complete protected collection on the server and clears back to all results', async () => {
+    const requests: string[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/senders',
+        respond: (_req, url) => {
+          requests.push(url.search);
+          const searched = url.searchParams.get('q') === 'remote';
+          return jsonOk({
+            data: [
+              {
+                ...BASE_ROW,
+                id: searched ? 'remote' : 'a',
+                displayName: searched ? 'Remote result' : 'Sender A',
+              },
+            ],
+            meta: {
+              pagination: { nextCursor: null, hasMore: false, limit: 50 },
+              query: { totalMatching: searched ? 1 : 513, globalMaxTotal: 900 },
+            },
+          });
+        },
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('513 senders')).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole('searchbox'), 'remote');
+    await user.click(screen.getByRole('button', { name: /^Search$/ }));
+    expect(await screen.findByText('Remote result')).toBeInTheDocument();
+    expect(
+      requests.some((query) => query.includes('q=remote') && query.includes('protected=true')),
+    ).toBe(true);
+    expect(screen.getByText('1 sender')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Clear search' }));
+    expect(await screen.findByText('Sender A')).toBeInTheDocument();
+    expect(screen.getByText('513 senders')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /all filters/i })).toHaveAttribute(
+      'href',
+      '/senders?activity=all&protected=true',
+    );
+  });
+
   it('shows the loading skeleton while the senders query is in-flight', () => {
     installFetchStub([
       {

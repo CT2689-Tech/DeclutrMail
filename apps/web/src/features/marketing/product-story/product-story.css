@@ -883,23 +883,14 @@
     border: 0;
   }
 
-  .dm-story-table td::before {
+  /* Only multi-column tables opt into repeated mobile column labels.
+     Methodology already labels each value with its visible row header. */
+  .dm-story-table td[data-label]::before {
+    content: attr(data-label);
     display: block;
     color: var(--dm-fg-muted);
     font-size: 13px;
     font-weight: 600;
-  }
-
-  .dm-story-table td:nth-of-type(1)::before {
-    content: 'What changes in Gmail';
-  }
-
-  .dm-story-table td:nth-of-type(2)::before {
-    content: 'Future email';
-  }
-
-  .dm-story-table td:nth-of-type(3)::before {
-    content: 'Undo';
   }
 
   .dm-story-table td + td {

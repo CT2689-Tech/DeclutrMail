@@ -8,8 +8,61 @@ vi.mock('@/lib/error-capture', () => ({
 }));
 
 import { RouteErrorScreen } from './route-error-screen';
+import LaterError from '@/app/(app)/later/error';
+import SettingsError from '@/app/(app)/settings/error';
+import PrivacyError from '@/app/(app)/settings/privacy/error';
+import ProtectedError from '@/app/(app)/settings/senders/error';
+import HelpError from '@/app/(app)/settings/help/error';
+import TriageError from '@/app/(app)/triage/error';
 
 describe('RouteErrorScreen', () => {
+  it.each([
+    { View: LaterError, title: 'Later', kicker: 'Catch up / Coming back to you', gap: 32 },
+    { View: SettingsError, title: 'Settings', kicker: 'Your workspace / Preferences', gap: 32 },
+    {
+      View: PrivacyError,
+      title: 'Privacy & data',
+      kicker: 'Your workspace / Privacy & data',
+      gap: 32,
+    },
+    {
+      View: ProtectedError,
+      title: 'Protected senders',
+      kicker: 'Your workspace / Sender policies',
+      gap: 12,
+    },
+    {
+      View: HelpError,
+      title: 'Help & glossary',
+      kicker: 'Your workspace / A useful reference',
+      gap: 24,
+    },
+  ])(
+    'retains $title identity while offering recovery without error leaks',
+    ({ View, title, kicker, gap }) => {
+      const reset = vi.fn();
+      render(<View error={new Error('private backend value')} reset={reset} />);
+      expect(screen.getByRole('heading', { level: 1, name: title })).toBeInTheDocument();
+      expect(screen.getByText(kicker)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 2, name: /couldn't load/i })).toBeInTheDocument();
+      expect(screen.getByRole('main')).toHaveStyle({ maxWidth: '1120px', gap: `${gap}px` });
+      expect(document.body).not.toHaveTextContent('private backend value');
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(reset).toHaveBeenCalledTimes(1);
+    },
+  );
+  it('uses saved Triage list geometry without changing the saved preference', () => {
+    localStorage.setItem('dm.triage.mode', JSON.stringify('list'));
+    try {
+      render(<TriageError error={new Error('private')} reset={() => {}} />);
+      expect(screen.getByRole('main')).toHaveStyle({ maxWidth: '928px' });
+      expect(screen.getByRole('main')).toHaveAttribute('data-triage-mode', 'list');
+      expect(screen.getByRole('main').className).toContain('triage');
+      expect(localStorage.getItem('dm.triage.mode')).toBe('"list"');
+    } finally {
+      localStorage.removeItem('dm.triage.mode');
+    }
+  });
   it('renders copy + digest, never the error message (D7), and tags the boundary', async () => {
     const reset = vi.fn();
     const error = Object.assign(new Error('secret internals: token=abc'), {

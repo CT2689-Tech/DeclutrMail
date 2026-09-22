@@ -411,15 +411,13 @@ export function ActivityScreen() {
           />
         </div>
         <FilterButton {...filterProps} isMobile={isMobile} />
-        <ExportSupportBundleButton
-          filters={filters}
-          mailboxEmail={activeMailboxEmail}
-          mailboxId={activeMailboxId}
-          disabled={invalidActiveFilters}
-          touch={isMobile}
-        />
       </header>
 
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+        History ·{' '}
+        {windowToLabel(filters.window ?? '30d', filters.dateFrom ?? null, filters.dateTo ?? null)} ·
+        Active mailbox
+      </p>
       <ActiveFilterChips {...filterProps} onClear={clearFilters} />
 
       {invalidActiveFilters ? (
@@ -435,10 +433,6 @@ export function ActivityScreen() {
         </>
       ) : (
         <>
-          {/* Same order as before the redesign: the week's outcomes, then
-              the window's totals, then the chips and the list they filter. */}
-          {weeklyStrip}
-
           <SummaryRow
             windowLabel={windowToLabel(
               filters.window ?? '30d',
@@ -526,6 +520,38 @@ export function ActivityScreen() {
           )}
         </>
       )}
+      {!invalidActiveFilters && (
+        <section
+          aria-label="Separate weekly overview"
+          style={{ borderTop: `1px solid ${color.line}`, paddingTop: 20 }}
+        >
+          <p style={{ color: color.fgMuted, fontSize: text.sm, margin: '0 0 12px' }}>
+            Weekly overview · Separate from the selected date window
+          </p>
+          {weeklyStrip}
+        </section>
+      )}
+      <div
+        style={{
+          borderTop: `1px solid ${color.line}`,
+          paddingTop: 16,
+          display: 'flex',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 12,
+        }}
+      >
+        <span style={{ color: color.fgMuted, fontSize: text.sm }}>
+          Need help investigating an outcome?
+        </span>{' '}
+        <ExportSupportBundleButton
+          filters={filters}
+          mailboxEmail={activeMailboxEmail}
+          mailboxId={activeMailboxId}
+          disabled={invalidActiveFilters}
+          touch={isMobile}
+        />
+      </div>
     </div>
   );
 }

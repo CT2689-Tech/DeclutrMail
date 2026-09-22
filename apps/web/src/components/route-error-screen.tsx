@@ -15,6 +15,12 @@
  */
 
 import Link from 'next/link';
+import styles from '@/app/(app)/route-loading.module.css';
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
 import { useEffect } from 'react';
 import { Button, TechnicalDetails, tokens } from '@declutrmail/shared';
 import { initSentryBrowser } from '@/lib/sentry';
@@ -24,6 +30,11 @@ const { color, font, motion, radius, text } = tokens;
 
 export function RouteErrorScreen({
   error,
+  title,
+  kicker,
+  maxWidth,
+  triageMode,
+  gap = 24,
   reset,
   boundary,
   headline,
@@ -31,6 +42,12 @@ export function RouteErrorScreen({
   escape,
 }: {
   error: Error & { digest?: string | undefined };
+  /** Route identity remains visible when its body fails. Omit for root errors. */
+  title?: string;
+  kicker?: string;
+  maxWidth?: number;
+  triageMode?: 'focus' | 'list';
+  gap?: number;
   reset: () => void;
   /** Sentry boundary tag — closed union, matches the route segment. */
   boundary: ErrorBoundary;
@@ -51,11 +68,15 @@ export function RouteErrorScreen({
     })();
   }, [error, boundary]);
 
+  const ErrorHeading = title ? 'h2' : 'h1';
+
   // The shared ErrorState composition (amber disc, title, one muted
   // sentence, one capsule) — kept inline only so the headline stays this
-  // page's h1 and the escape link + support reference can sit beneath.
+  // error heading and the escape link + support reference can sit beneath.
   return (
     <main
+      className={triageMode ? styles.triage : undefined}
+      data-triage-mode={triageMode}
       style={{
         minHeight: '60vh',
         background: color.bg,
@@ -65,13 +86,31 @@ export function RouteErrorScreen({
         alignItems: 'center',
         justifyContent: 'center',
         padding: '56px 24px',
+        ...(title
+          ? {
+              ...editorialColumnStyle,
+              ...(maxWidth ? { maxWidth } : {}),
+              minHeight: undefined,
+              alignItems: 'stretch',
+              justifyContent: 'flex-start',
+              flexDirection: 'column',
+              gap,
+            }
+          : {}),
       }}
     >
+      {title && (
+        <>
+          {kicker && <EditorialKicker>{kicker}</EditorialKicker>}
+          <h1 style={editorialTitleStyle}>{title}</h1>
+        </>
+      )}
       <style>{`.dm-route-escape { transition: background ${motion.fast} ${motion.ease}; }
 .dm-route-escape:hover { background: ${color.fill}; }`}</style>
       <div
         style={{
           maxWidth: 480,
+          ...(title ? { margin: '0 auto', padding: '24px 0' } : {}),
           width: '100%',
           textAlign: 'center',
           display: 'flex',
@@ -98,7 +137,7 @@ export function RouteErrorScreen({
         >
           !
         </span>
-        <h1
+        <ErrorHeading
           style={{
             fontFamily: font.sans,
             fontSize: text['2xl'],
@@ -108,7 +147,7 @@ export function RouteErrorScreen({
           }}
         >
           {headline}
-        </h1>
+        </ErrorHeading>
         <p
           style={{
             fontSize: text.md,

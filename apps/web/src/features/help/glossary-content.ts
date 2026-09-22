@@ -37,7 +37,7 @@ export const GLOSSARY_TERMS = {
   rule: {
     term: 'Rule',
     definition:
-      'An instruction for future matching email. Observe only suggests; Active can perform the rule’s action automatically.',
+      'An instruction for future matching email. Watch first only suggests; Active can perform the rule’s action automatically.',
   },
   protected: {
     term: 'Protected',
@@ -45,9 +45,9 @@ export const GLOSSARY_TERMS = {
       'A standing safety policy that locks a sender to Keep, prevents cleanup suggestions, and excludes the sender from bulk and automatic actions.',
   },
   observe: {
-    term: 'Observe',
+    term: 'Watch first',
     definition:
-      'An Autopilot rule records what it would do but does not change Gmail. You review and approve its suggestions yourself.',
+      'An optional Autopilot mode that records what a rule would do without changing Gmail. You review and approve its suggestions yourself. It never switches to Active automatically.',
   },
   active: {
     term: 'Active',

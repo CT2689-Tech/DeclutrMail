@@ -2,12 +2,12 @@ import Link from 'next/link';
 
 import { Logo } from '@declutrmail/shared';
 
-import { oauthStartUrl } from '../landing/urls';
+import { permissionEntryUrl } from '../landing/urls';
 import { TrackedCta } from '../landing/tracked-cta';
 import { PublicMobileMenu } from './public-mobile-menu';
 import { PublicNavLinks } from './public-nav-links';
 
-// Three links. Compare and Privacy & control stay reachable from the footer.
+// Three links. Learn and trust routes stay reachable from the footer; both auth CTAs use the permission checkpoint.
 const PRODUCT_LINKS = [
   { href: '/how-it-works', label: 'How it works' },
   { href: '/pricing', label: 'Pricing' },
@@ -74,7 +74,7 @@ export function PublicHeader() {
           <div className="dm-public-actions">
             <TrackedCta
               className="dm-public-sign-in"
-              href={oauthStartUrl()}
+              href={permissionEntryUrl()}
               cta="connect_gmail"
               placement="nav_sign_in"
             >
@@ -82,7 +82,7 @@ export function PublicHeader() {
             </TrackedCta>
             <TrackedCta
               className="dm-public-start"
-              href={oauthStartUrl()}
+              href={permissionEntryUrl()}
               cta="connect_gmail"
               placement="nav"
             >
@@ -90,7 +90,7 @@ export function PublicHeader() {
             </TrackedCta>
           </div>
 
-          <PublicMobileMenu links={PRODUCT_LINKS} startUrl={oauthStartUrl()} />
+          <PublicMobileMenu links={PRODUCT_LINKS} startUrl={permissionEntryUrl()} />
         </div>
       </header>
     </>

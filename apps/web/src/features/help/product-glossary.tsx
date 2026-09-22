@@ -1,24 +1,46 @@
 'use client';
 
-import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page';
+import {
+  editorialColumnStyle,
+  EditorialKicker,
+  EditorialContents,
+} from '@/features/editorial/page';
 
-import { ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
+import { useState } from 'react';
 
-import { DrillRow, PageHeader, SettingsGroup } from '@/features/settings/settings-list';
+import { ScreenIntro } from '@declutrmail/shared';
+
+import { PageHeader, SettingsGroup } from '@/features/settings/settings-list';
 import { GLOSSARY_GROUPS, GLOSSARY_TERMS, type GlossaryTermId } from './glossary-content';
 
-const { color, text } = tokens;
+import styles from './product-glossary.module.css';
 
 /** D245's compact, authenticated product glossary. */
 export function ProductGlossary() {
+  const [search, setSearch] = useState('');
+  const term = search.trim().toLocaleLowerCase();
+  const groups = GLOSSARY_GROUPS.map((group) => ({
+    ...group,
+    terms: group.terms.filter((id) => {
+      const entry = GLOSSARY_TERMS[id];
+      return `${entry.term} ${entry.definition}`.toLocaleLowerCase().includes(term);
+    }),
+  })).filter((group) => group.terms.length > 0);
   return (
     <div
-      className="dm-settings-page"
+      className={`dm-settings-page ${styles.page}`}
       style={{ ...editorialColumnStyle, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
-      <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
       <EditorialKicker>Your workspace / A useful reference</EditorialKicker>
       <PageHeader title="Help & glossary" backToSettings />
+      <EditorialContents
+        label="Help destinations"
+        items={[
+          { href: '#contact-support', label: 'Contact support' },
+          { href: '/help', label: 'Help & FAQ' },
+          { href: '/activity', label: 'Recover a change' },
+        ]}
+      />
       <ScreenIntro
         id="product-glossary"
         title="Help & glossary"
@@ -26,7 +48,25 @@ export function ProductGlossary() {
         learnMore={{ href: '/help', label: 'Browse Help & FAQ' }}
       />
 
-      {GLOSSARY_GROUPS.map((group) => (
+      <label className={styles.search}>
+        Search product terms
+        <input
+          type="search"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Try unsubscribe, recovery, or rules"
+          className={styles.input}
+        />
+      </label>
+      {groups.length === 0 && (
+        <p role="status" className={styles.empty}>
+          No terms match “{search}”.{' '}
+          <button type="button" onClick={() => setSearch('')} className={styles.clear}>
+            Clear search
+          </button>
+        </p>
+      )}
+      {groups.map((group) => (
         <SettingsGroup key={group.title} title={group.title}>
           <dl style={{ margin: 0 }}>
             {group.terms.map((id) => (
@@ -35,33 +75,16 @@ export function ProductGlossary() {
           </dl>
         </SettingsGroup>
       ))}
-
-      <SettingsGroup title="More help">
-        <DrillRow href="/help" label="Help & FAQ" />
-      </SettingsGroup>
     </div>
   );
 }
 
 function GlossaryEntry({ id }: { id: GlossaryTermId }) {
   const entry = GLOSSARY_TERMS[id];
-  const isPhone = useIsAtMost('xs');
   return (
-    <div
-      id={id}
-      className="dm-settings-row"
-      style={{
-        display: 'grid',
-        gap: isPhone ? 2 : 16,
-        gridTemplateColumns: isPhone ? '1fr' : 'minmax(130px, 0.34fr) minmax(0, 1fr)',
-        padding: '14px 16px',
-        scrollMarginTop: 20,
-      }}
-    >
-      <dt style={{ color: color.fg, fontSize: text.md, fontWeight: 500 }}>{entry.term}</dt>
-      <dd style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6, margin: 0 }}>
-        {entry.definition}
-      </dd>
+    <div id={id} className={`dm-settings-row ${styles.entry}`}>
+      <dt>{entry.term}</dt>
+      <dd>{entry.definition}</dd>
     </div>
   );
 }

@@ -207,7 +207,13 @@ describe('SettingsScreen', () => {
   it('renders every section, including the mounted deletion section', async () => {
     renderScreen();
 
-    for (const name of ['Gmail accounts', 'Actions', 'Notifications', 'More', 'Account']) {
+    for (const name of [
+      'Gmail accounts',
+      'Action previews',
+      'Notifications',
+      'Policies and help',
+      'Account',
+    ]) {
       expect(screen.getByRole('heading', { level: 2, name })).toBeInTheDocument();
     }
     // Drill-ins to the pages that have no sidebar entry. Autopilot and
@@ -461,16 +467,16 @@ describe('SettingsScreen', () => {
     // legacy 'Show'/'Skip' wording named the sheet (a word this card
     // never uses) and so read as the inverse of the switch's own label.
     expect(toggle).toHaveAttribute('aria-checked', 'false');
-    expect(toggle).toHaveTextContent('Window');
-    expect(toggle).not.toHaveTextContent('Row');
+    expect(toggle).toHaveTextContent('Separate window');
+    expect(toggle).not.toHaveTextContent('Inline');
 
     await userEvent.click(toggle);
 
     // pref=true → the sheet is skipped and the preview renders in the ROW.
     await waitFor(() => expect(patches).toEqual([{ archive: true }]));
     await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'));
-    expect(toggle).toHaveTextContent('Row');
-    expect(toggle).not.toHaveTextContent('Window');
+    expect(toggle).toHaveTextContent('Inline');
+    expect(toggle).not.toHaveTextContent('Separate window');
   });
 
   it('D34 toggle PATCHes the single changed key and mirrors into the triage store', async () => {

@@ -105,9 +105,9 @@ describe('/how-it-works', () => {
     expect(
       withinSection07.getByText(/the whole Autopilot system for rules you turn on yourself/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/quiet hours/i)).toBeInTheDocument();
-    expect(screen.getByText(/daily brief/i)).toBeInTheDocument();
-    expect(screen.getByText(/follow-ups/i)).toBeInTheDocument();
+    expect(withinSection07.getByText(/quiet hours/i)).toBeInTheDocument();
+    expect(withinSection07.getByText(/daily brief/i)).toBeInTheDocument();
+    expect(withinSection07.getByText(/follow-ups/i)).toBeInTheDocument();
   });
 
   it('publishes canonical social metadata', () => {

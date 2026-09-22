@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 
 import { TrackedCta } from '@/features/marketing/landing/tracked-cta';
-import { oauthStartUrl } from '@/features/marketing/landing/urls';
+import { permissionEntryUrl } from '@/features/marketing/landing/urls';
 
 /**
  * Two public templates live here, both on the `--dm-*` tokens:
@@ -53,7 +53,7 @@ export function ProductStoryShell({
             <div className="dm-story-actions">
               <TrackedCta
                 className="dm-story-button dm-story-button-primary"
-                href={oauthStartUrl()}
+                href={permissionEntryUrl()}
                 cta="connect_gmail"
                 placement="hero"
               >
@@ -120,7 +120,7 @@ export function FinalStoryCta({ title, body }: { title: string; body: string }) 
       <div className="dm-story-actions">
         <TrackedCta
           className="dm-story-button dm-story-button-primary"
-          href={oauthStartUrl()}
+          href={permissionEntryUrl()}
           cta="connect_gmail"
           placement="final"
         >

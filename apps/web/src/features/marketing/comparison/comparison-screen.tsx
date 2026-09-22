@@ -1,9 +1,10 @@
+import { demoForTopic } from '../learn/journey-links';
 import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { JsonLd } from '../json-ld';
 import { TrackedCta } from '../landing/tracked-cta';
-import { oauthStartUrl, siteUrl } from '../landing/urls';
+import { permissionEntryUrl, siteUrl } from '../landing/urls';
 import {
   ALTERNATIVES_SLUGS,
   comparisonBySlug,
@@ -79,7 +80,14 @@ export function MethodNote() {
   );
 }
 
-export function FinalCta({ competitorName }: { competitorName?: string }) {
+export function FinalCta({
+  competitorName,
+  topic = 'senders',
+}: {
+  competitorName?: string;
+  topic?: string;
+}) {
+  const demo = demoForTopic(topic);
   return (
     <section className="dm-compare-final" aria-labelledby="comparison-final-title">
       <h2 id="comparison-final-title">
@@ -93,8 +101,11 @@ export function FinalCta({ competitorName }: { competitorName?: string }) {
         bodies and attachments are not fetched.
       </p>
       <div className="dm-story-actions">
+        <TrackedCta href={demo.href} className="dm-story-link" cta="try_demo" placement="final">
+          {demo.label}
+        </TrackedCta>
         <TrackedCta
-          href={oauthStartUrl()}
+          href={permissionEntryUrl()}
           className="dm-story-button dm-story-button-primary"
           cta="connect_gmail"
           placement="final"
@@ -145,6 +156,26 @@ export function ComparisonIndexScreen() {
         </p>
       </header>
 
+      <section
+        className="dm-compare-section dm-compare-narrow"
+        aria-labelledby="comparison-intent-title"
+      >
+        <h2 id="comparison-intent-title">What are you trying to do?</h2>
+        <div className="dm-compare-intents">
+          <a href="/vs/leave-me-alone">
+            Reduce subscriptions<small>Compare unsubscribe workflows</small>
+          </a>
+          <a href="/vs/gmail">
+            Clear an existing backlog<small>Start with Gmail’s native tools</small>
+          </a>
+          <a href="/vs/gmail-filters">
+            Manage future email<small>Compare filters and automation</small>
+          </a>
+          <a href="/vs/clean-email">
+            Use more than Gmail<small>Check provider compatibility</small>
+          </a>
+        </div>
+      </section>
       <section
         className="dm-compare-section dm-compare-narrow"
         aria-labelledby="compare-list-title"
@@ -447,7 +478,7 @@ export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonD
         <MethodNote />
       </section>
 
-      <FinalCta competitorName={comparison.name} />
+      <FinalCta competitorName={comparison.name} topic={comparison.slug} />
 
       <nav className="dm-compare-more dm-compare-narrow" aria-label="More comparisons">
         <h2>Compare another approach</h2>

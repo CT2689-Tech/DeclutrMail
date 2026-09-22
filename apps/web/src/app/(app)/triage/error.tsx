@@ -4,6 +4,8 @@
 
 'use client';
 
+import { useLocalState } from '@declutrmail/shared/hooks/use-local-state';
+
 import { RouteErrorScreen } from '@/components/route-error-screen';
 
 export default function TriageError({
@@ -13,8 +15,14 @@ export default function TriageError({
   error: Error & { digest?: string | undefined };
   reset: () => void;
 }) {
+  const [mode] = useLocalState<'focus' | 'list'>('triage.mode', 'focus');
   return (
     <RouteErrorScreen
+      gap={20}
+      title="Triage"
+      kicker="Clean up / A considered decision"
+      maxWidth={mode === 'list' ? 928 : 688}
+      triageMode={mode === 'list' ? 'list' : 'focus'}
       error={error}
       reset={reset}
       boundary="triage"

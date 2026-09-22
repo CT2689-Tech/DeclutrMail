@@ -1,6 +1,10 @@
 'use client';
 
-import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page';
+import {
+  editorialColumnStyle,
+  EditorialKicker,
+  EditorialContents,
+} from '@/features/editorial/page';
 
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -347,6 +351,15 @@ export function SettingsScreen({
       </div>
       <EditorialKicker>Your workspace / Preferences</EditorialKicker>
       <PageHeader title="Settings" />
+      <EditorialContents
+        items={[
+          { href: '#mailboxes', label: 'Gmail accounts' },
+          { href: '#actions', label: 'Action previews' },
+          { href: '#notifications', label: 'Notifications' },
+          { href: '#more', label: 'Policies and help' },
+          { href: '#account', label: 'Account' },
+        ]}
+      />
       <ScreenIntro
         id="settings"
         title="Settings"
@@ -400,7 +413,7 @@ export function SettingsScreen({
 
       {/* Autopilot and Quiet hours live in the sidebar; these are the
           destinations that have no other way in. */}
-      <SettingsGroup id="more" title="More">
+      <SettingsGroup id="more" title="Policies and help">
         <DrillRow href="/settings/senders" label="Protected senders" />
         <DrillRow href="/settings/privacy" label="Privacy & data" />
         <DrillRow href="/settings/help" label="Help & glossary" />

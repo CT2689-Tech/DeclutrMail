@@ -33,6 +33,25 @@ export function EditorialDescription({ children }: { children: ReactNode }) {
   return <p className={styles.description}>{children}</p>;
 }
 
+/** In-page orientation for long reading and settings surfaces. */
+export function EditorialContents({
+  items,
+  label = 'On this page',
+}: {
+  items: readonly { href: string; label: string }[];
+  label?: string;
+}) {
+  return (
+    <nav aria-label={label} className={styles.contents}>
+      {items.map((item) => (
+        <a key={item.href} href={item.href}>
+          {item.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 /** A compact readout of feature-owned facts; callers supply already-scoped values. */
 export function EditorialStats({ items }: { items: { label: string; value: number }[] }) {
   return (

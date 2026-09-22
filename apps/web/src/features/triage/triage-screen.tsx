@@ -90,7 +90,7 @@ const BatchActionSheet = dynamic(
   { ssr: false },
 );
 
-const { color, font, radius } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * Default state — fixtures, used by Storybook variants and the
@@ -366,7 +366,10 @@ export function TriageScreen({
     TRIAGE_MODE_STORAGE_KEY,
     'focus',
   );
-  const mode: 'focus' | 'list' = journey === 'daily' ? storedMode : 'list';
+  const [modeReady, setModeReady] = useState(false);
+  useEffect(() => setModeReady(true), []);
+  const mode: 'focus' | 'list' = journey === 'daily' && storedMode !== 'list' ? 'focus' : 'list';
+  const showDecisionLayout = journey !== 'daily' || modeReady;
   /** Focus-stack items passed over this session — a view state, never a decision. */
   const [skipped, setSkipped] = useState<string[]>([]);
   /** The longest the queue has been this session — the "12" in "3 of 12". */
@@ -1487,7 +1490,12 @@ export function TriageScreen({
             minHeight: 44,
           }}
         >
-          <h1 style={editorialTitleStyle}>Triage</h1>
+          <div>
+            <h1 style={editorialTitleStyle}>Triage</h1>
+            <p style={{ margin: '6px 0 0', fontSize: text.sm, color: color.fgMuted }}>
+              Today’s review queue · One decision per sender
+            </p>
+          </div>
           {state.kind === 'ready' && hasQueue && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* The screen's one count. */}
@@ -1505,13 +1513,19 @@ export function TriageScreen({
                     : `${done} of ${total} decided`
                 }
               />
-              <Button
-                tone="ghost"
-                size={isNarrow ? 'lg' : 'md'}
-                onClick={() => setStoredMode(mode === 'focus' ? 'list' : 'focus')}
-              >
-                {mode === 'focus' ? 'See all' : 'One at a time'}
-              </Button>
+              <div role="group" aria-label="Review layout" style={{ display: 'flex', gap: 4 }}>
+                {(['focus', 'list'] as const).map((view) => (
+                  <Button
+                    key={view}
+                    tone={mode === view ? 'default' : 'ghost'}
+                    size={isNarrow ? 'lg' : 'md'}
+                    ariaPressed={mode === view}
+                    onClick={() => setStoredMode(view)}
+                  >
+                    {view === 'focus' ? 'Focus' : 'List'}
+                  </Button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1556,21 +1570,30 @@ export function TriageScreen({
           />
         </section>
       )}
-      {state.kind === 'ready' && hasQueue && mode === 'focus' && focusItem != null && (
-        <TriageFocusStack
-          item={focusItem}
-          canSkip={focusItems.length > 1}
-          onSkip={onSkip}
-          onAction={onRowActionWithInlineConfirm}
-          busyRowIds={busyRowIds}
-          previewInboxCount={previewInboxCount}
-          previewDetail={previewDetail}
-          previewQuotaRemaining={cleanupRemaining}
-          onBatchVerb={onBatchVerb}
-          batchBusyDomain={batchBusyDomain}
-        />
+      {state.kind === 'ready' && hasQueue && !showDecisionLayout && (
+        <div role="status" aria-label="Loading your review layout">
+          <TriageLoadingState variant="list" />
+        </div>
       )}
-      {state.kind === 'ready' && hasQueue && mode === 'list' && (
+      {showDecisionLayout &&
+        state.kind === 'ready' &&
+        hasQueue &&
+        mode === 'focus' &&
+        focusItem != null && (
+          <TriageFocusStack
+            item={focusItem}
+            canSkip={focusItems.length > 1}
+            onSkip={onSkip}
+            onAction={onRowActionWithInlineConfirm}
+            busyRowIds={busyRowIds}
+            previewInboxCount={previewInboxCount}
+            previewDetail={previewDetail}
+            previewQuotaRemaining={cleanupRemaining}
+            onBatchVerb={onBatchVerb}
+            batchBusyDomain={batchBusyDomain}
+          />
+        )}
+      {showDecisionLayout && state.kind === 'ready' && hasQueue && mode === 'list' && (
         <TriageQueue
           rows={state.rows}
           onAction={onRowActionWithInlineConfirm}

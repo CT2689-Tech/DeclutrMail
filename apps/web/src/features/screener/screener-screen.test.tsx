@@ -79,7 +79,7 @@ describe('ScreenerScreen — ready state', () => {
         totalPending={SCREENER_QUEUE.length}
       />,
     );
-    expect(html).toContain(`>${SCREENER_QUEUE.length}</span> new senders`);
+    expect(html).toContain(`>${SCREENER_QUEUE.length}</span> senders awaiting a first review`);
   });
 
   it('states the TRUE pending count in the heading, not the loaded page size', () => {
@@ -90,8 +90,8 @@ describe('ScreenerScreen — ready state', () => {
     const html = render(
       <ScreenerScreen state={{ kind: 'ready', rows: [...SCREENER_QUEUE] }} totalPending={3259} />,
     );
-    expect(html).toContain('>3,259</span> new senders');
-    expect(html).not.toContain(`>${SCREENER_QUEUE.length}</span> new senders`);
+    expect(html).toContain('>3,259</span> senders awaiting a first review');
+    expect(html).not.toContain(`>${SCREENER_QUEUE.length}</span> senders awaiting a first review`);
   });
 
   it('claims NO number while the count has not resolved (finding 5.2)', () => {

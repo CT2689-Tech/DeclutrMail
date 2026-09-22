@@ -378,7 +378,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     });
 
     showNextNotice();
-    await userEvent.click(screen.getByRole('button', { name: /use in observe/i }));
+    await userEvent.click(screen.getByRole('button', { name: 'Watch first' }));
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).not.toContain('preview');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -992,7 +992,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // at the boundary; undo exists only where mail actually moved).
     const explanation = screen.getByText(/this rule starts no new work/i);
     expect(explanation.textContent).toMatch(/part of Plus/i);
-    expect(explanation.textContent).toMatch(/returns to Observe/i);
+    expect(explanation.textContent).toMatch(/returns to Watch first/i);
     // The five failed absolutes, all rejected — incl. round 5's
     // "result lands in Activity" (unsubscribe is outside
     // EXECUTION_VERBS; no-op terminals write no Activity row).
@@ -1629,5 +1629,33 @@ describe('AutopilotScreen — pause-all (D105 + D226)', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(observed).toHaveLength(0);
+  });
+});
+
+describe('Autopilot rule status views', () => {
+  it('filters loaded rules without hiding suggestions, and resets an empty view', () => {
+    renderScreen(ready(PRESET_RULES_OBSERVE));
+    const group = screen.getByRole('group', { name: 'Filter rules by status' });
+    fireEvent.click(within(group).getByRole('button', { name: /^Acting/ }));
+    expect(screen.getByText('No rules in this view')).toBeInTheDocument();
+    expect(screen.getByText('Pending suggestions')).toBeInTheDocument();
+    expect(within(group).getByRole('button', { name: /^Acting/ })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Show all rules' }));
+    expect(screen.getByRole('list', { name: 'Autopilot rules' }).children).toHaveLength(
+      PRESET_RULES_OBSERVE.length,
+    );
+  });
+  it('classifies tier-blocked active rules as inactive', () => {
+    authState.tier = 'free';
+    renderScreen({
+      kind: 'ready',
+      rules: [{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }],
+      suggestions: [],
+    });
+    expect(screen.getByRole('button', { name: 'Paused or inactive · 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Acting · 0' })).toBeInTheDocument();
   });
 });

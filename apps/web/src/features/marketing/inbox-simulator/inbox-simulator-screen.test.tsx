@@ -81,7 +81,7 @@ describe('InboxSimulatorScreen', () => {
 
   it('identifies the sample as made up and local-only', () => {
     render(<InboxSimulatorScreen />);
-    expect(screen.getByText(/Follow four made-up examples/i)).toBeInTheDocument();
+    expect(screen.getByText(/daily review with four made-up examples/i)).toBeInTheDocument();
     expect(screen.getByText(/local to this browser/i)).toBeInTheDocument();
   });
 

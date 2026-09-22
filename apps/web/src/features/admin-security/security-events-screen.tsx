@@ -286,6 +286,18 @@ function FilterBar(props: FilterBarProps): ReactElement {
           aria-label="To timestamp"
         />
       </label>
+      <Button
+        tone="ghost"
+        disabled={!props.severity && !props.eventType && !props.from && !props.to}
+        onClick={() => {
+          props.onSeverity('');
+          props.onEventType('');
+          props.onFrom('');
+          props.onTo('');
+        }}
+      >
+        Clear filters
+      </Button>
     </div>
   );
 }
@@ -371,6 +383,8 @@ const labelStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: '4px',
+  minWidth: 0,
+  maxWidth: '100%',
 };
 
 const labelTextStyle: CSSProperties = {
@@ -387,6 +401,9 @@ const inputStyle: CSSProperties = {
   background: color.card,
   fontFamily: font.sans,
   fontSize: '14px',
+  color: color.fg,
+  boxSizing: 'border-box',
+  maxWidth: '100%',
 };
 
 const thStyle: CSSProperties = {

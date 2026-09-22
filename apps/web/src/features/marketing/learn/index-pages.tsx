@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SupportTasks } from './support-tasks';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
@@ -148,6 +149,7 @@ export function FaqPage() {
           })),
         }}
       />
+      <SupportTasks />
       <section className="dm-read-faq" aria-label="Frequently asked questions">
         {FAQ_ENTRIES.map((entry, index) => (
           <details key={entry.id} id={entry.id} open={index === 0}>
@@ -175,6 +177,15 @@ export function ChangelogPage() {
       lede="DeclutrMail does not use public version numbers yet, so updates are listed by the date they shipped rather than under invented release names. Every entry describes a change you can see in the product — it is not a promise that every account has received a rollout."
       meta={<Link href="/changelog/rss.xml">RSS feed</Link>}
     >
+      <nav className="dm-support-tasks" aria-label="Explore product updates">
+        <Link href="/how-it-works">
+          Review the current workflow
+          <small>See what changes in Gmail and what stays under your control</small>
+        </Link>
+        <Link href="/help">
+          Find help with a change<small>Recovery, connections and subscription support</small>
+        </Link>
+      </nav>
       <section className="dm-read-log" aria-label="Product update history">
         {CHANGELOG_ENTRIES.map((entry) => (
           <article key={entry.id} id={entry.id}>
@@ -182,6 +193,19 @@ export function ChangelogPage() {
             <div className="dm-read-log-entry">
               <h2>{entry.title}</h2>
               <p>{entry.summary}</p>
+              <p>
+                <Link
+                  href={
+                    /payment|plan|rupees|tier/i.test(entry.title)
+                      ? '/pricing'
+                      : /access|deletion/i.test(entry.title)
+                        ? '/security'
+                        : '/how-it-works'
+                  }
+                >
+                  Explore this part of the product →
+                </Link>
+              </p>
               {entry.added.length ? (
                 <>
                   <h3>Added</h3>

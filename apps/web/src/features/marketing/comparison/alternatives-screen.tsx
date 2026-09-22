@@ -131,7 +131,7 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
         <MethodNote />
       </section>
 
-      <FinalCta />
+      <FinalCta competitorName={subject.name} topic={subject.slug} />
     </div>
   );
 }

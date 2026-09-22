@@ -6,7 +6,7 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useNow } from '@/lib/use-now';
 
 import {
@@ -77,13 +77,6 @@ export function FollowupsScreen() {
   // rows so each restacks to a single-column card with wrapped actions.
   const isMobile = useIsAtMost('sm');
 
-  if (query.isLoading) {
-    return <LoadingState />;
-  }
-  if (query.isError) {
-    return <FollowupsErrorState onRetry={() => query.refetch()} />;
-  }
-
   const rows = query.data ?? [];
 
   return (
@@ -103,14 +96,18 @@ export function FollowupsScreen() {
         body="Conversations where you wrote last and haven't heard back."
       />
 
-      {rows.length === 0 ? (
+      <FollowupsScopeNote />
+      {query.isLoading ? (
+        <LoadingState />
+      ) : query.isError ? (
+        <FollowupsErrorState onRetry={() => query.refetch()} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="No follow-ups"
-          description="Nothing you sent in the last 60 days is waiting on a reply."
+          description="No tracked conversation is waiting on a reply."
         />
       ) : (
         <>
-          <FollowupsScopeNote />
           {grouped.high.length > 0 && (
             <PriorityGroup
               label="Over a week"
@@ -177,8 +174,8 @@ function groupByPriority(rows: readonly FollowupRow[]): GroupedFollowups {
 function FollowupsScopeNote() {
   return (
     <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
-      Checked about every six hours, so a recent reply can still show. Mark resolved only hides a
-      thread here — nothing changes in Gmail.
+      Sent in the last 60 days. Checked about every six hours, so a recent reply can still show.
+      Mark resolved only hides a thread here — nothing changes in Gmail.
     </p>
   );
 }
@@ -257,7 +254,7 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
 
 /**
  * Single Followups row. Recipient name + domain leads, subject is
- * truncated to 60 chars per D90, sent-at renders as a relative time,
+ * readable on touch and keyboard, sent-at renders as a relative time,
  * a trailing link opens the thread in Gmail, and the D88 button marks
  * the row resolved.
  */
@@ -275,7 +272,7 @@ export function FollowupListItem({
   mailboxEmail: string | null;
 }) {
   const recipient = recipientLine(row);
-  const subject = truncate(row.subject, 60);
+  const subject = row.subject;
   const now = useNow();
   const relative = now === null ? '' : relativeTime(row.sentAt, now);
   const gmailHref = mailboxEmail
@@ -326,17 +323,14 @@ export function FollowupListItem({
         </div>
       </div>
       <div
-        title={row.subject}
         style={{
           fontSize: text.md,
           color: color.fg,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          minWidth: 0,
           ...(isMobile ? { gridColumn: '1 / -1' } : null),
         }}
       >
-        {subject}
+        <FollowupSubject subject={subject} />
       </div>
       <time
         dateTime={row.sentAt}
@@ -406,6 +400,53 @@ export function FollowupListItem({
   );
 }
 
+function FollowupSubject({ subject }: { subject: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const canExpand = subject.length > 60;
+  return (
+    <>
+      <div
+        id={id}
+        style={{
+          overflowWrap: 'anywhere',
+          lineHeight: 1.5,
+          ...(canExpand && !expanded
+            ? {
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+              }
+            : {}),
+        }}
+      >
+        {subject || '(No subject)'}
+      </div>
+      {canExpand && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((value) => !value)}
+          style={{
+            border: 0,
+            padding: '6px 0',
+            background: 'none',
+            color: color.primary,
+            font: 'inherit',
+            fontSize: text.sm,
+            cursor: 'pointer',
+            minHeight: 36,
+          }}
+        >
+          {expanded ? 'Collapse subject' : 'Read full subject'}
+        </button>
+      )}
+    </>
+  );
+}
+
 // ── Loading / error branches ─────────────────────────────────────────
 
 function LoadingState() {
@@ -414,13 +455,10 @@ function LoadingState() {
       role="status"
       aria-live="polite"
       style={{
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
         width: '100%',
         boxSizing: 'border-box',
-        maxWidth: 880,
-        margin: '0 auto',
       }}
     >
       {[0, 1, 2, 3].map((i) => (
@@ -443,9 +481,6 @@ function FollowupsErrorState({ onRetry }: { onRetry: () => void }) {
       style={{
         width: '100%',
         boxSizing: 'border-box',
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '20px clamp(12px, 4vw, 24px) 28px',
         fontFamily: font.sans,
       }}
     >

@@ -151,42 +151,46 @@ export function DecisionsTable() {
         <tbody>
           <tr>
             {row('keep')}
-            <td>Nothing. Your decision is recorded.</td>
-            <td>
+            <td data-label="What changes in Gmail">Nothing. Your decision is recorded.</td>
+            <td data-label="Future email">
               The sender stops coming up in Triage. Keep is not Protect: only Protect keeps a sender
               out of bulk and automatic changes.
             </td>
-            <td>Change the decision any time.</td>
+            <td data-label="Undo">Change the decision any time.</td>
           </tr>
           <tr>
             {row('archive')}
-            <td>The previewed emails leave Inbox and stay in All Mail.</td>
-            <td>{futureUnchanged}</td>
-            <td>{UNDO_DAYS} days, on every plan.</td>
+            <td data-label="What changes in Gmail">
+              The previewed emails leave Inbox and stay in All Mail.
+            </td>
+            <td data-label="Future email">{futureUnchanged}</td>
+            <td data-label="Undo">{UNDO_DAYS} days, on every plan.</td>
           </tr>
           <tr>
             {row('unsubscribe')}
-            <td>
+            <td data-label="What changes in Gmail">
               Sends the sender&rsquo;s one-click request, or prepares a Gmail draft for you to send.
               Existing email stays where it is.
             </td>
-            <td>The sender may stop mailing once it accepts the request.</td>
-            <td>A sent request cannot be undone.</td>
+            <td data-label="Future email">
+              The sender may stop mailing once it accepts the request.
+            </td>
+            <td data-label="Undo">A sent request cannot be undone.</td>
           </tr>
           <tr>
             {row('later')}
-            <td>
+            <td data-label="What changes in Gmail">
               The previewed emails leave Inbox for DeclutrMail/Later until the return time you
               choose.
             </td>
-            <td>{futureUnchanged}</td>
-            <td>{UNDO_DAYS} days, on every plan.</td>
+            <td data-label="Future email">{futureUnchanged}</td>
+            <td data-label="Undo">{UNDO_DAYS} days, on every plan.</td>
           </tr>
           <tr>
             {row('delete')}
-            <td>The previewed emails move to Gmail Trash.</td>
-            <td>{futureUnchanged}</td>
-            <td>
+            <td data-label="What changes in Gmail">The previewed emails move to Gmail Trash.</td>
+            <td data-label="Future email">{futureUnchanged}</td>
+            <td data-label="Undo">
               {UNDO_DAYS} days from Activity. Gmail Trash is a separate fallback, normally up to 30
               days unless emptied sooner.
             </td>

@@ -249,7 +249,7 @@
   padding: 12px 0;
   border-block: 1px solid var(--dm-line-soft);
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr);
   gap: 15px;
 }
 .volumeSummary > div {
@@ -257,11 +257,7 @@
   flex-direction: column;
   gap: 7px;
 }
-.volumeSummary > div + div {
-  border-left: 1px solid var(--dm-line-soft);
-  padding-left: 15px;
-}
-.volumeSummary .volumeNumber {
+.volumeNumber {
   font-family: var(--dm-font-sans);
   font-size: 30px;
   line-height: 1;

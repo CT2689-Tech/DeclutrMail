@@ -4,9 +4,11 @@ import {
   editorialColumnStyle,
   editorialTitleStyle,
   EditorialKicker,
+  EditorialDescription,
 } from '@/features/editorial/page';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 
 import {
   Button,
@@ -105,13 +107,6 @@ export function SnoozedScreen() {
   // rows so each restacks to a single column.
   const isMobile = useIsAtMost('sm');
 
-  if (query.isLoading) {
-    return <LoadingState />;
-  }
-  if (query.isError) {
-    return <SnoozedErrorState error={query.error} onRetry={() => query.refetch()} />;
-  }
-
   return (
     <div
       style={{
@@ -123,6 +118,7 @@ export function SnoozedScreen() {
     >
       <EditorialKicker>Catch up / Coming back to you</EditorialKicker>
       <h1 style={editorialTitleStyle}>Later</h1>
+      <EditorialDescription>Return times for the active inbox · {timeZone}</EditorialDescription>
       <ScreenIntro
         id="snoozed"
         title="Later"
@@ -135,12 +131,23 @@ export function SnoozedScreen() {
           second banner; the affected rows below carry the per-sender
           detail instead. */}
 
-      {rows.length === 0 ? (
+      {query.isLoading ? (
+        <LoadingState />
+      ) : query.isError ? (
+        <SnoozedErrorState error={query.error} onRetry={() => query.refetch()} />
+      ) : rows.length === 0 ? (
         <EmptyState
           title="Nothing in Later"
           description={
             <>
               Send a sender to <strong>Later</strong> from Triage or Senders.
+              <br />
+              <Link
+                href="/senders"
+                style={{ color: color.primary, display: 'inline-block', paddingTop: 12 }}
+              >
+                Browse senders →
+              </Link>
             </>
           }
         />
@@ -631,13 +638,10 @@ function LoadingState() {
       role="status"
       aria-live="polite"
       style={{
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
         width: '100%',
         boxSizing: 'border-box',
-        maxWidth: 880,
-        margin: '0 auto',
       }}
     >
       {[0, 1, 2, 3].map((i) => (
@@ -656,9 +660,6 @@ function SnoozedErrorState({ error, onRetry }: { error: unknown; onRetry: () => 
   return (
     <div
       style={{
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
-        maxWidth: 720,
-        margin: '0 auto',
         fontFamily: font.sans,
       }}
     >

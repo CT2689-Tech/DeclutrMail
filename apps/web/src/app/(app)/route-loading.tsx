@@ -19,21 +19,34 @@
  */
 
 import { Skeleton, tokens } from '@declutrmail/shared';
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+import styles from './route-loading.module.css';
 
-const { color, font, radius, text } = tokens;
+const { radius } = tokens;
 
 export function RouteLoading({
   title,
+  kicker,
+  variant,
+  triageMode,
   label,
   rows,
   rowHeight,
   rowRadius = radius.lg,
-  maxWidth = 880,
+  maxWidth = 1120,
   gap = 24,
   headerHeight = 36,
 }: {
   /** The screen's own visible `<h1>` text. */
   title: string;
+  kicker: string;
+  /** Triage has a deliberately narrower decision column. */
+  variant?: 'triage';
+  triageMode?: 'focus' | 'list';
   /** Screen-reader name of the pending region, e.g. "Loading activity". */
   label: string;
   rows: number;
@@ -46,28 +59,21 @@ export function RouteLoading({
 }) {
   return (
     <div
+      className={variant === 'triage' ? styles.triage : undefined}
+      data-triage-mode={triageMode}
       style={{
-        boxSizing: 'border-box',
-        width: '100%',
+        ...editorialColumnStyle,
         maxWidth,
-        margin: '0 auto',
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
         display: 'flex',
         flexDirection: 'column',
         gap,
-        fontFamily: font.sans,
       }}
     >
+      <EditorialKicker>{kicker}</EditorialKicker>
       <h1
         style={{
-          margin: 0,
+          ...editorialTitleStyle,
           minHeight: headerHeight,
-          display: 'flex',
-          alignItems: 'center',
-          fontSize: text['2xl'],
-          fontWeight: 650,
-          letterSpacing: '-0.02em',
-          color: color.fg,
         }}
       >
         {title}

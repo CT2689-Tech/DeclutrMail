@@ -78,15 +78,17 @@ describe('TriageScreen — populated queue', () => {
   // A static render is the FIRST render, which is focus mode: the
   // per-device list preference is read after mount. The list's own
   // render-shape lives in `triage-focus.test.tsx` (client render).
-  it('opens on one decision, not the list', () => {
+  it('waits for the saved layout instead of flashing the wrong decision view', () => {
     const html = renderState({
       kind: 'ready',
       rows: [...TRIAGE_QUEUE],
       stats: TRIAGE_SESSION_STATS,
     });
-    expect(html).toContain('aria-label="Current decision"');
+    expect(html).toContain('aria-label="Loading your review layout"');
+    expect(html).not.toContain('aria-label="Current decision"');
     expect(html).not.toContain('aria-label="Triage queue"');
-    expect(html).toContain('>See all<');
+    expect(html).toContain('>List<');
+    expect(html).toContain('>Focus<');
   });
 
   it('titles the screen "Triage" and states the queue length once, as the progress total', () => {

@@ -5,6 +5,7 @@ import { ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
 import { EditorialKicker } from '@/features/editorial/page';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
+import type { HomeSenderPreview } from './api/use-home-pending';
 import styles from './home-view.module.css';
 
 /** Real cleanup history and the next available task, with no inferred savings or inbox score. */
@@ -44,6 +45,11 @@ export function HomeView({ state }: { state: HomeState }) {
 }
 
 function HomeBody({ state }: { state: HomeState }) {
+  const hasAttention =
+    state.kind === 'ready' &&
+    (state.action.href !== '/senders' ||
+      (state.pending?.triagePending ?? 0) > 0 ||
+      (state.pending?.screenerPending ?? 0) > 0);
   switch (state.kind) {
     case 'loading':
       return <HomeSkeleton />;
@@ -57,18 +63,34 @@ function HomeBody({ state }: { state: HomeState }) {
       );
     case 'empty':
       return (
-        <section className={styles.beginning} aria-label="Your next step">
-          <span className={styles.eyebrow}>
-            {state.syncing ? 'Getting the picture' : 'A fresh start'}
-          </span>
-          <h2>{state.syncing ? 'Reading your inbox' : 'Nothing cleared yet'}</h2>
-          <p>
-            {state.syncing
-              ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
-              : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
-          </p>
-          <PrimaryLink action={state.action} />
-          <span className={styles.footnote}>You’ll see a preview before email is moved.</span>
+        <section
+          className={state.senders?.length ? styles.summaryGrid : styles.beginning}
+          aria-label="Your next step"
+        >
+          <div className={state.senders?.length ? styles.nextStep : undefined}>
+            <span className={styles.eyebrow}>
+              {state.syncing ? 'Getting the picture' : 'A fresh start'}
+            </span>
+            <h2>
+              {state.syncing
+                ? 'Reading your inbox'
+                : state.senders?.length
+                  ? 'Your first review is ready'
+                  : 'Nothing cleared yet'}
+            </h2>
+            <p>
+              {state.syncing
+                ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
+                : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
+            </p>
+            <PrimaryLink action={state.action} />
+            <span className={styles.footnote}>You’ll see a preview before email is moved.</span>
+          </div>
+          {!!state.senders?.length && (
+            <div className={styles.opportunityList}>
+              <SenderPreviews senders={state.senders} />
+            </div>
+          )}
         </section>
       );
     case 'sync-failed':
@@ -102,35 +124,7 @@ function HomeBody({ state }: { state: HomeState }) {
             </div>
             <div className={styles.opportunityList}>
               {state.senders && state.senders.length > 0 ? (
-                <>
-                  <div className={styles.listLabel}>
-                    <span>Sender</span>
-                    <span>Last 90 days</span>
-                  </div>
-                  {state.senders.map((sender) => (
-                    <Link
-                      className={styles.senderRow}
-                      key={sender.id}
-                      href={`/senders?sender=${encodeURIComponent(sender.id)}`}
-                    >
-                      <span className={styles.avatar} aria-hidden="true">
-                        {sender.name.slice(0, 1)}
-                      </span>
-                      <span className={styles.senderIdentity}>
-                        <strong>{sender.name}</strong>
-                        <small>{sender.domain}</small>
-                      </span>
-                      <span className={styles.senderCount}>
-                        {sender.recentCount.toLocaleString('en-US')}
-                        <small>emails</small>
-                      </span>
-                      <span aria-hidden="true">↗</span>
-                    </Link>
-                  ))}
-                  <p className={styles.footnote}>
-                    From your daily review queue. Counts cover the last 90 days.
-                  </p>
-                </>
+                <SenderPreviews senders={state.senders} />
               ) : (
                 <>
                   <span className={styles.eyebrow}>Your recorded progress</span>
@@ -149,30 +143,44 @@ function HomeBody({ state }: { state: HomeState }) {
               )}
             </div>
           </section>
-          <section className={styles.overviewLower}>
-            <div className={styles.attention}>
-              <h2>A little attention.</h2>
-              {state.pending?.triagePending != null && state.pending.triagePending > 0 && (
-                <AttentionLink
-                  href="/triage"
-                  title={`${state.pending.triagePending.toLocaleString('en-US')} to review today`}
-                  description="One sender at a time, with the detail to decide."
-                />
-              )}
-              {state.pending?.screenerPending != null && state.pending.screenerPending > 0 && (
-                <AttentionLink
-                  href="/screener"
-                  title={`${state.pending.screenerPending.toLocaleString('en-US')} new senders`}
-                  description="Review unfamiliar senders on your terms."
-                />
-              )}
-              <AttentionLink
-                href="/senders"
-                title="See your senders"
-                description="Revisit the senders that have a place in your inbox."
-              />
-            </div>
-            <div className={styles.activity}>
+          <section
+            className={styles.overviewLower}
+            style={!hasAttention ? { gridTemplateColumns: '1fr' } : undefined}
+          >
+            {hasAttention && (
+              <div className={styles.attention}>
+                <h2>A little attention.</h2>
+                {state.action.href !== '/triage' &&
+                  state.pending?.triagePending != null &&
+                  state.pending.triagePending > 0 && (
+                    <AttentionLink
+                      href="/triage"
+                      title={`${state.pending.triagePending.toLocaleString('en-US')} to review today`}
+                      description="One sender at a time, with the detail to decide."
+                    />
+                  )}
+                {state.action.href !== '/screener' &&
+                  state.pending?.screenerPending != null &&
+                  state.pending.screenerPending > 0 && (
+                    <AttentionLink
+                      href="/screener"
+                      title={`${state.pending.screenerPending.toLocaleString('en-US')} new senders`}
+                      description="Review unfamiliar senders on your terms."
+                    />
+                  )}
+                {state.action.href !== '/senders' && (
+                  <AttentionLink
+                    href="/senders"
+                    title="See your senders"
+                    description="Revisit the senders that have a place in your inbox."
+                  />
+                )}
+              </div>
+            )}
+            <div
+              className={styles.activity}
+              style={!hasAttention ? { borderLeft: 0, paddingLeft: 0 } : undefined}
+            >
               <span className={styles.eyebrow}>Small decisions add up</span>
               <h2>
                 More space.
@@ -195,6 +203,40 @@ function HomeBody({ state }: { state: HomeState }) {
         </>
       );
   }
+}
+
+function SenderPreviews({ senders }: { senders: HomeSenderPreview[] }) {
+  return (
+    <>
+      <div className={styles.listLabel}>
+        <span>Sender</span>
+        <span>Last 90 days</span>
+      </div>
+      {senders.map((sender) => (
+        <Link
+          className={styles.senderRow}
+          key={sender.id}
+          href={`/senders?sender=${encodeURIComponent(sender.id)}`}
+        >
+          <span className={styles.avatar} aria-hidden="true">
+            {sender.name.slice(0, 1)}
+          </span>
+          <span className={styles.senderIdentity}>
+            <strong>{sender.name}</strong>
+            <small>{sender.domain}</small>
+          </span>
+          <span className={styles.senderCount}>
+            {sender.recentCount.toLocaleString('en-US')}
+            <small>emails</small>
+          </span>
+          <span aria-hidden="true">↗</span>
+        </Link>
+      ))}
+      <p className={styles.footnote}>
+        From your daily review queue. Counts cover the last 90 days.
+      </p>
+    </>
+  );
 }
 
 function AttentionLink({

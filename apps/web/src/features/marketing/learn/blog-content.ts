@@ -14,7 +14,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
     slug: 'why-cleanup-starts-with-senders',
     path: '/blog/why-cleanup-starts-with-senders',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-07-14',
+    updatedAt: '2026-09-22',
     kind: 'Launch essay',
     title: 'Why email cleanup should start with senders',
     description:
@@ -85,7 +85,7 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         paragraphs: [
           'Sender volume and engagement are falsifiable facts. Category labels such as “promotional,” “financial,” or “security-sensitive” are model judgments that can sound more certain than their evidence. DeclutrMail deliberately avoids machine-learning category prediction and auto-protection based on guessed content classes.',
           'The recommendation system can say that a sender arrived often, was rarely marked read, and was never written back to. It cannot conclude that the sender is safe to delete. The product can propose Archive or Unsubscribe while keeping the user’s Protected decisions above the recommendation.',
-          'This hierarchy matters most in automation. One mistaken suggestion is inconvenient; one mistaken recurring rule compounds. Observe mode exists so a user can see multiple would-be matches before an Autopilot preset becomes Active.',
+          'This hierarchy matters most in automation. One mistaken suggestion is inconvenient; one mistaken recurring rule compounds. Optional Watch first lets you review would-be matches without moving email. You can instead choose Act now after the activation preview; neither a seven-day wait nor an automatic promotion is required.',
         ],
       },
       {

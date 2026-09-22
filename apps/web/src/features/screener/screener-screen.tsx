@@ -20,7 +20,14 @@ import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbo
 import { sendersKeys } from '@/features/senders/api/query-keys';
 // Cross-feature component import per ADR-0007's second-consumer rule —
 // same precedent as Triage importing the senders-owned callout.
-import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
+import dynamic from 'next/dynamic';
+
+// This follow-up is only needed after an email-based unsubscribe intent.
+const UnsubMailtoCallout = dynamic(
+  () =>
+    import('@/features/senders/unsub-mailto-callout').then((module) => module.UnsubMailtoCallout),
+  { loading: () => <p role="status">Loading the remaining email unsubscribe step…</p> },
+);
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
 import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE, type ActionReach } from '@/lib/api/actions';
@@ -644,11 +651,15 @@ export function ScreenerScreen({
             <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
               {totalPending.toLocaleString('en-US')}
             </span>{' '}
-            new sender{totalPending === 1 ? '' : 's'}
+            sender{totalPending === 1 ? '' : 's'} awaiting a first review
           </span>
         )}
       </div>
 
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
+        New to review, not necessarily new to your inbox. These senders are waiting for your first
+        decision; their email keeps arriving in Gmail.
+      </p>
       <ScreenIntro
         id="screener"
         title="How the Screener works"

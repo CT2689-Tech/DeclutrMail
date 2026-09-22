@@ -162,6 +162,17 @@ describe('HomeScreen', () => {
     expect(calls.screener).toBe(0);
   });
 
+  it('shows existing review work before any cleanup history, without an achievement count', async () => {
+    stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }), queueLength: 2 });
+    renderHome();
+    expect(await screen.findByRole('link', { name: /Journal 0/ })).toHaveAttribute(
+      'href',
+      '/senders?sender=sender-0',
+    );
+    expect(screen.queryByTestId('home-hero')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Review 2 today' })).toBeInTheDocument();
+  });
+
   it('new user: no number, a title and the button', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();

@@ -1,9 +1,10 @@
+import { ProductJourney } from '@/features/marketing/landing/product-journey';
 import type { Metadata } from 'next';
 
 import '@/features/marketing/landing/landing.css';
 import { Hero } from '@/features/marketing/landing/hero';
 import { HowItWorks, PrivacyDesk } from '@/features/marketing/landing/sections';
-import { PricingTeaser } from '@/features/marketing/landing/pricing-teaser';
+import { PricingTeaserView } from '@/features/marketing/landing/pricing-teaser-view';
 import { FinalCta } from '@/features/marketing/landing/footer';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
@@ -11,10 +12,10 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  * Public landing page at `/`.
  *
  * Renders inside the `(marketing)` route group — NO AuthProvider in
- * the chain, no auth round-trip before paint. The only session
- * awareness is intentionally absent; auth CTAs start Google OAuth directly.
+ * the chain, no auth round-trip before paint. Auth CTAs open the
+ * public permission checkpoint before the final Google OAuth hop.
  *
- * Five blocks, one idea each: hero + demo → how it works → privacy →
+ * Hero + demo → workspace journey → how it works → privacy →
  * pricing teaser → final CTA. The FAQ (and its FAQPage JSON-LD) lives on
  * /faq and /help, not here — Google does not allow FAQ markup for answers
  * the page does not visibly render. D136 still ships no testimonials
@@ -55,7 +56,7 @@ export const metadata: Metadata = marketingPageMetadata({
  * `/pricing` for the real grid.
  *
  * What this costs: the teaser quotes USD to everyone (the
- * `useRegionProvider` default). `/pricing` still quotes INR to India,
+ * explicit Paddle display rail). `/pricing` still quotes INR to India,
  * and `/billing` — where checkout actually opens — reads geo server-side
  * and charges correctly. No one is charged a price they were not shown
  * at the point of sale; the landing strip is simply denominated in USD.
@@ -64,9 +65,10 @@ export default function LandingPage() {
   return (
     <div className="dm-mkt dm-mkt-landing">
       <Hero />
+      <ProductJourney />
       <HowItWorks />
       <PrivacyDesk />
-      <PricingTeaser />
+      <PricingTeaserView provider="paddle" />
       <FinalCta />
     </div>
   );

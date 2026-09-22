@@ -3,7 +3,7 @@
  *
  * Two render variants share one page:
  *   - organic visit (no `reason` param) → open-beta copy with a real
- *     "Sign in with Google" CTA (signup is open: BETA_GATE_ENABLED is
+ *     permission-checkpoint CTA (signup is open: BETA_GATE_ENABLED is
  *     off in prod), NO `beta_gate_denied` event, NO waitlist CTA
  *   - OAuth-callback denial (`?reason=not_invited`) → denial copy +
  *     exactly one `beta_gate_denied` emit with the closed-enum payload
@@ -48,7 +48,7 @@ function callsFor(event: string) {
 }
 
 describe('/beta page — F7 beta status page', () => {
-  it('renders the open-beta copy with sign-in + founder-contact CTAs and no fetch', async () => {
+  it('renders open beta with permission entry, sample demo, founder contact and no fetch', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
 
     await renderPage();
@@ -56,14 +56,19 @@ describe('/beta page — F7 beta status page', () => {
     expect(
       screen.getByRole('heading', { name: /declutrmail is in open beta/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /sign in with google/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /review Gmail permissions/i })).toHaveAttribute(
       'href',
-      expect.stringMatching(/\/api\/auth\/google\/start$/),
+      '/sign-in',
     );
     expect(screen.getByRole('link', { name: /email the founder/i })).toHaveAttribute(
       'href',
       expect.stringMatching(/^mailto:/),
     );
+    expect(screen.getByRole('link', { name: /try the daily review demo/i })).toHaveAttribute(
+      'href',
+      '/inbox-simulator',
+    );
+    expect(document.querySelector('a[href*="/api/auth/google/start"]')).toBeNull();
     // The Team-tier waitlist CTA is gone — signup is open (2026-07-07).
     expect(screen.queryByRole('link', { name: /waitlist/i })).not.toBeInTheDocument();
     expect(fetchSpy).not.toHaveBeenCalled();

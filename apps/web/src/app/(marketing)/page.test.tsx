@@ -80,10 +80,10 @@ describe('landing page — D134', () => {
     expect(text).not.toContain('Pending confirmation');
   });
 
-  it('is five blocks: hero, how it works, privacy, pricing, final CTA', async () => {
+  it('includes the product journey alongside hero, workflow, privacy, pricing and final CTA', async () => {
     const { container } = await renderLanding();
-    expect(container.querySelectorAll('.dm-mkt-landing > section')).toHaveLength(5);
-    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(4);
+    expect(container.querySelectorAll('.dm-mkt-landing > section')).toHaveLength(6);
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(5);
     // No mono "№ 02 — …" eyebrows, and no FAQ block — so no FAQPage
     // JSON-LD either: Google only allows FAQ markup for answers the page
     // visibly renders. /faq and /help carry it.
@@ -117,10 +117,10 @@ describe('landing page — D134', () => {
     expect(workflow?.textContent).toMatch(/illustrative/i);
   });
 
-  it('states the undo window once, with the one decision Undo cannot reach', async () => {
+  it('states the same undo window in workflow and inspector, with the external request boundary', async () => {
     const { container } = await renderLanding();
     const text = container.textContent ?? '';
-    expect(text.split(`${MIN_UNDO_WINDOW_DAYS} days`).length - 1).toBe(1);
+    expect(text.split(`${MIN_UNDO_WINDOW_DAYS} days`).length - 1).toBe(2);
     expect(text).toMatch(/unsubscribe requests cannot be taken back/i);
   });
 
@@ -144,26 +144,25 @@ describe('landing page — D134', () => {
     const { container } = await renderLanding();
     const hero = container.querySelector('.dm-mkt-hero') as HTMLElement;
     expect(hero.querySelectorAll('.dm-mkt-cta')).toHaveLength(1);
-    expect(within(hero).getByRole('link', { name: 'Start free' }).getAttribute('href')).toMatch(
-      /\/api\/auth\/google\/start$/,
+    expect(within(hero).getByRole('link', { name: 'Start free' }).getAttribute('href')).toBe(
+      '/sign-in',
     );
     expect(within(hero).getByRole('link', { name: /Try the demo/ })).toHaveAttribute(
       'href',
       '/inbox-simulator',
     );
-    // "Start free" goes straight to Google's consent screen, so the
-    // pre-consent disclosure sits beside it — collapsed.
+    // "Start free" opens the permission checkpoint. The concise scope
+    // disclosure also stays beside the CTA — collapsed.
     const disclosure = hero.querySelector('details.dm-mkt-scope');
     expect(disclosure).not.toBeNull();
     expect(disclosure).not.toHaveAttribute('open');
   });
 
-  it('points the primary CTA at OAuth and exposes demo, pricing, and privacy routes', async () => {
+  it('points the primary CTA at the permission checkpoint and exposes demo, pricing, and privacy routes', async () => {
     const { container } = await renderLanding();
     const ctas = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
-    expect(ctas.filter((href) => href?.endsWith('/api/auth/google/start')).length).toBeGreaterThan(
-      0,
-    );
+    expect(ctas).toContain('/sign-in');
+    expect(ctas.some((href) => href?.includes('/api/auth/google/start'))).toBe(false);
     for (const route of ['/inbox-simulator', '/pricing', '/privacy']) {
       expect(ctas).toContain(route);
     }
@@ -197,9 +196,9 @@ describe('landing page — D134', () => {
     });
   });
 
-  it('uses one label for every CTA that starts Google sign-in', async () => {
+  it('uses one label for both primary permission-entry CTAs', async () => {
     const { container } = await renderLanding();
-    const labels = Array.from(container.querySelectorAll('a[href$="/api/auth/google/start"]')).map(
+    const labels = Array.from(container.querySelectorAll('a.dm-mkt-cta[href="/sign-in"]')).map(
       (a) => a.textContent,
     );
     expect(labels).toEqual(['Start free', 'Start free']);

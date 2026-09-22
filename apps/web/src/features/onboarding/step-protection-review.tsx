@@ -16,6 +16,7 @@ import type { TriageScreenState, TriageSessionStats } from '@/features/triage/da
 import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
+import { OnboardingPhase } from './onboarding-phase';
 
 const { color, font, text } = tokens;
 
@@ -226,6 +227,7 @@ export function StepProtectionReview({
         }}
       >
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <OnboardingPhase phase="review" />
           <h1
             style={{
               fontFamily: font.sans,
@@ -497,7 +499,10 @@ function PanelShell({ corner, children }: { corner?: ReactNode; children: ReactN
       }}
     >
       {corner && <div style={{ position: 'absolute', top: 20, right: 24 }}>{corner}</div>}
-      <div style={{ width: '100%', maxWidth: 560 }}>{children}</div>
+      <div style={{ width: '100%', maxWidth: 560 }}>
+        <OnboardingPhase phase="review" />
+        {children}
+      </div>
     </main>
   );
 }

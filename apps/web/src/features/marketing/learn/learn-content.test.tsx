@@ -172,7 +172,9 @@ describe('public learning content registry', () => {
     const entry = FAQ_ENTRIES.find((candidate) => candidate.id === 'undo')!;
     expect(entry.answer).not.toContain('its length depends on your plan');
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(entry.answer).toContain('while their undo window is open. Delete also has');
+      expect(entry.answer).toContain(
+        `while their undo window is open — ${UNIFORM_UNDO_WINDOW_DAYS} days on every plan. Delete also has`,
+      );
     }
     // Gmail's own Trash retention is a separate fact and stays literal.
     expect(entry.answer).toContain('separate Gmail Trash recovery for up to about 30 days');

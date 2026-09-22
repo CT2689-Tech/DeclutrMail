@@ -2427,34 +2427,100 @@ function SendersScreenContent({
           </div>
         </header>
         <div className={workspaceStyles.listColumn}>
-          <div className={workspaceStyles.eyebrow}>Your senders</div>
-          <div className={workspaceStyles.tools}>
-            <SenderSearch
-              value={query}
-              onChange={setQuery}
-              senders={senders}
-              onPick={onSearchPick}
-            />
-            <FilterButton
-              state={compose}
-              updating={countsMayBeStale}
-              counts={filterCounts}
-              onChange={setCompose}
-              onClear={clearCompose}
-              domainSuggestions={topDomains(senders)}
-              views={{
-                names: savedViews.map((v) => v.name),
-                onApply: applySavedView,
-                onSave: saveCurrentView,
-                onDelete: deleteSavedView,
-                canSaveCurrent: hasAnyFilter(compose),
-                capReached: savedViews.length >= SENDER_VIEWS_CAP,
-                mutating: saveViews.isPending,
-              }}
-            />
-            <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
-          </div>
+          <section
+            aria-label="Sender search and filters"
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <div className={workspaceStyles.tools}>
+              <SenderSearch
+                value={query}
+                onChange={setQuery}
+                senders={senders}
+                onPick={onSearchPick}
+              />
+              <FilterButton
+                state={compose}
+                updating={countsMayBeStale}
+                counts={filterCounts}
+                onChange={setCompose}
+                onClear={clearCompose}
+                domainSuggestions={topDomains(senders)}
+                views={{
+                  names: savedViews.map((v) => v.name),
+                  onApply: applySavedView,
+                  onSave: saveCurrentView,
+                  onDelete: deleteSavedView,
+                  canSaveCurrent: hasAnyFilter(compose),
+                  capReached: savedViews.length >= SENDER_VIEWS_CAP,
+                  mutating: saveViews.isPending,
+                }}
+              />
+              <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
+            </div>
 
+            {/* Hero — the screen's one big number: senders matching the
+            active filters, mailbox-wide (BE-honest). On the untouched
+            default it says what that default is, because no chip does. */}
+            {senders.length > 0 && (
+              <div className={workspaceStyles.summary}>
+                <div data-testid="senders-hero" aria-busy={countsMayBeStale}>
+                  <span
+                    style={{
+                      fontFamily: font.display,
+                      fontWeight: 400,
+                      fontSize: text['3xl'],
+                      lineHeight: 1,
+                      letterSpacing: '-0.03em',
+                      color: color.fg,
+                      fontVariantNumeric: 'tabular-nums',
+                      // The count may be one response behind mid-refetch.
+                      opacity: countsMayBeStale ? 0.55 : 1,
+                      transition: `opacity ${motion.fast} ${motion.ease}`,
+                    }}
+                  >
+                    {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: font.sans,
+                      fontSize: text.lg,
+                      color: color.fgMuted,
+                      marginLeft: 10,
+                    }}
+                  >
+                    {isDefaultCompose(compose) && !hasQuery ? 'active senders' : 'senders'}
+                  </span>
+                </div>
+                {!showingStaleRows && (
+                  <BulkSelectButton
+                    // Busy rows cannot be individually deselected (their
+                    // checkbox is off) and any overlap refuses the WHOLE bulk
+                    // — so select-all must never put them in the selection.
+                    senders={senders.filter((row) => !isRowBusy(rowActivity.get(row.id)))}
+                    selected={selected}
+                    setSelected={setSelected}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Only when something is actually wrong with what is on screen. */}
+            <SenderResultsWarning
+              approximate={totalMatching === undefined && senders.length > 0}
+              rowsReadOnly={showingStaleRows}
+              // With no rows, the empty state below already says it.
+              stillSyncing={mailboxStillSyncing && senders.length > 0}
+              syncFailed={mailboxSyncFailed && senders.length > 0}
+            />
+
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
+              Active mailbox ·{' '}
+              {isDefaultCompose(compose) && !hasQuery
+                ? 'Active senders'
+                : 'Matching your search and filters'}
+            </p>
+            <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
+          </section>
           <ScreenIntro
             id="senders"
             title="How Senders works"
@@ -2488,63 +2554,6 @@ function SendersScreenContent({
               onDismiss={() => setBulkMailtoFollowups([])}
             />
           )}
-
-          {/* Hero — the screen's one big number: senders matching the
-            active filters, mailbox-wide (BE-honest). On the untouched
-            default it says what that default is, because no chip does. */}
-          {senders.length > 0 && (
-            <div className={workspaceStyles.summary}>
-              <div data-testid="senders-hero" aria-busy={countsMayBeStale}>
-                <span
-                  style={{
-                    fontFamily: font.display,
-                    fontWeight: 400,
-                    fontSize: text['3xl'],
-                    lineHeight: 1,
-                    letterSpacing: '-0.03em',
-                    color: color.fg,
-                    fontVariantNumeric: 'tabular-nums',
-                    // The count may be one response behind mid-refetch.
-                    opacity: countsMayBeStale ? 0.55 : 1,
-                    transition: `opacity ${motion.fast} ${motion.ease}`,
-                  }}
-                >
-                  {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
-                </span>
-                <span
-                  style={{
-                    fontFamily: font.sans,
-                    fontSize: text.lg,
-                    color: color.fgMuted,
-                    marginLeft: 10,
-                  }}
-                >
-                  {isDefaultCompose(compose) && !hasQuery ? 'active senders' : 'senders'}
-                </span>
-              </div>
-              {!showingStaleRows && (
-                <BulkSelectButton
-                  // Busy rows cannot be individually deselected (their
-                  // checkbox is off) and any overlap refuses the WHOLE bulk
-                  // — so select-all must never put them in the selection.
-                  senders={senders.filter((row) => !isRowBusy(rowActivity.get(row.id)))}
-                  selected={selected}
-                  setSelected={setSelected}
-                />
-              )}
-            </div>
-          )}
-
-          {/* Only when something is actually wrong with what is on screen. */}
-          <SenderResultsWarning
-            approximate={totalMatching === undefined && senders.length > 0}
-            rowsReadOnly={showingStaleRows}
-            // With no rows, the empty state below already says it.
-            stillSyncing={mailboxStillSyncing && senders.length > 0}
-            syncFailed={mailboxSyncFailed && senders.length > 0}
-          />
-
-          <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
 
           {/* F011 — the widened-search notice.
             Announced, never silent: the rows below are NOT what the

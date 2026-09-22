@@ -20,7 +20,13 @@ const PREVIEW_PROMISE = ACTION_PREVIEW_CLAIM.split(/(?<=\.)\s+/)[0];
  * the Google button, and the full scope disclosure beside it; the storage
  * list one click away; the demo as the quiet alternative.
  */
-export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
+export function AuthEntry({
+  authResult,
+  returnTo,
+}: {
+  authResult?: 'inbox_limit';
+  returnTo?: string;
+}) {
   return (
     <div className="dm-auth-entry">
       <section className="dm-auth-entry-card" aria-labelledby="dm-auth-entry-title">
@@ -45,7 +51,7 @@ export function AuthEntry({ authResult }: { authResult?: 'inbox_limit' }) {
 
         <TrackedCta
           className="dm-auth-entry-google"
-          href={oauthStartUrl()}
+          href={oauthStartUrl(returnTo)}
           cta="connect_gmail"
           placement="hero"
         >

@@ -40,6 +40,7 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
 
   return (
     <StepShell
+      phase="connect"
       title={variant === 'fresh' ? 'Connect your Gmail.' : 'Reconnect your Gmail.'}
       sub={
         variant === 'fresh'

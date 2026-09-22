@@ -16,6 +16,9 @@ export default function SendersError({
 }) {
   return (
     <RouteErrorScreen
+      title="Senders"
+      kicker="Your inbox, by sender"
+      maxWidth={1480}
       error={error}
       reset={reset}
       boundary="senders"

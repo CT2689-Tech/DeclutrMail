@@ -164,7 +164,7 @@ describe('focus mode — resting states', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Loading triage queue');
     expect(document.querySelectorAll('.dm-skeleton')).toHaveLength(1);
     expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'See all' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'List' })).toBeNull();
   });
 
   it('error: states the failure and offers Retry', () => {
@@ -559,7 +559,7 @@ describe('focus mode — batch offers are their own card', () => {
 describe('focus ↔ list', () => {
   it('"See all" switches to the list and the choice persists on this device', () => {
     const first = renderScreen(ready([GROUPON, LINKEDIN]));
-    fireEvent.click(screen.getByRole('button', { name: 'See all' }));
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
     expect(screen.getByRole('list', { name: 'Triage queue' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Current decision' })).toBeNull();
     // List mode counts decisions, not a position.
@@ -568,7 +568,9 @@ describe('focus ↔ list', () => {
 
     renderScreen(ready([GROUPON, LINKEDIN]));
     expect(screen.getByRole('list', { name: 'Triage queue' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'One at a time' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+    expect(screen.getByRole('button', { name: 'Focus' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'false');
     expect(card()).toBeInTheDocument();
   });
 
@@ -588,7 +590,7 @@ describe('focus ↔ list', () => {
   it('onboarding journeys keep their fixed list and ignore the preference', () => {
     renderScreen(ready([GROUPON, LINKEDIN]), createTestQueryClient(), { journey: 'first_relief' });
     expect(screen.getByRole('list', { name: 'Triage queue' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'See all' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'List' })).toBeNull();
     expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
   });
 });

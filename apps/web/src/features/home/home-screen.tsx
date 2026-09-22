@@ -59,7 +59,7 @@ export function HomeScreen() {
     if (numbers === null) {
       // A failed scan is not a healthy empty mailbox — never "Nothing cleared yet".
       if (readiness === 'failed') return { kind: 'sync-failed' };
-      return { kind: 'empty', syncing, action };
+      return { kind: 'empty', syncing, action, senders: pending.senders };
     }
     return {
       kind: 'ready',

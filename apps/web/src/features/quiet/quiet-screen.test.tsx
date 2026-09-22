@@ -73,6 +73,25 @@ describe('QuietRoute', () => {
     resetFetchStub();
   });
 
+  it('links only the active inbox to its Autopilot rules', async () => {
+    me = makeMe([mailbox(MAILBOX_A, 'a@b.com'), mailbox(MAILBOX_B, 'b@b.com')]);
+    installFetchStub(
+      [MAILBOX_A, MAILBOX_B].map((id) => ({
+        method: 'GET' as const,
+        path: `/api/mailboxes/${id}/quiet-hours`,
+        respond: () =>
+          jsonEnvelope({ config: CONFIG, activeNow: true, heldCount: 2, endsAt: null }),
+      })),
+    );
+    renderRoute();
+    await screen.findByText(/Choose this inbox in the account menu/i);
+    expect(screen.getAllByRole('link', { name: /Review Autopilot rules/i })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: /Review Autopilot rules/i })).toHaveAttribute(
+      'href',
+      '/autopilot',
+    );
+  });
+
   it('renders the empty state when no mailboxes are connected', () => {
     me = makeMe([]);
     renderRoute();

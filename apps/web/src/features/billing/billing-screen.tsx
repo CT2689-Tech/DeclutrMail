@@ -1,5 +1,7 @@
 'use client';
 
+import linkStyles from './billing-links.module.css';
+
 import {
   editorialColumnStyle,
   editorialTitleStyle,
@@ -68,6 +70,7 @@ import {
   type PendingCheckout,
   type PendingKind,
 } from './pending-checkout';
+import { PlanCoverage } from './plan-coverage';
 import { PlanPicker } from './plan-picker';
 import { GroupTitle } from '@/features/settings/settings-list';
 
@@ -78,7 +81,7 @@ const CancelModal = dynamic(() => import('./cancel-modal').then((m) => m.CancelM
   ssr: false,
 });
 
-const { color, font, radius, shadow, text } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * Post-checkout poll cadence — how often the screen re-reads the
@@ -643,11 +646,14 @@ export function BillingScreen({
         ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
-        gap: 32,
+        gap: 20,
       }}
     >
       <EditorialKicker>Your workspace / Plan & billing</EditorialKicker>
       <h1 style={editorialTitleStyle}>Plan &amp; billing</h1>
+      <p style={{ margin: 0, color: color.fgSoft }}>
+        Applies to this workspace and its connected inboxes.
+      </p>
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -656,12 +662,24 @@ export function BillingScreen({
 
       <NoticeSlot notices={notices} />
 
+      {!billingDark && paymentMethodSub && paymentMethodSub.status === 'past_due' ? (
+        <PaymentMethodCard
+          provider={paymentMethodSub.provider}
+          isPastDue={paymentMethodSub.status === 'past_due'}
+          disabled={pending !== null}
+          disabledReason={
+            pending !== null ? 'Available once the payment above finishes confirming.' : null
+          }
+        />
+      ) : null}
+
       <CurrentPlanCard
         plan={plan}
         cleanupRemaining={cleanupRemaining}
         cleanupResetsAt={cleanupResetsAt}
         billingDark={billingDark}
         pauseConfirming={pauseConfirming}
+        paymentPending={pending !== null || data?.pendingCheckout != null}
         onCancel={() => setCancelOpen(true)}
         onResumeCancellation={() =>
           resumeCancellation.mutate(undefined, {
@@ -688,10 +706,12 @@ export function BillingScreen({
           the picker. Withheld while a money action is unresolved — the
           portal can start a payment, and arming two money paths at once
           is the double-charge case this screen is built around. */}
-      {!billingDark && paymentMethodSub ? (
+      <PlanCoverage tier={plan.entitlementTier} />
+
+      {!billingDark && paymentMethodSub && paymentMethodSub.status !== 'past_due' ? (
         <PaymentMethodCard
           provider={paymentMethodSub.provider}
-          isPastDue={paymentMethodSub.status === 'past_due'}
+          isPastDue={false}
           disabled={pending !== null}
           disabledReason={
             pending !== null ? 'Available once the payment above finishes confirming.' : null
@@ -699,6 +719,14 @@ export function BillingScreen({
         />
       ) : null}
 
+      {/* Renders for anyone who has EVER paid, including a workspace
+          now back on Free: the tax need outlives the subscription, and
+          fetching last year's receipts is the commonest reason to open
+          this page after leaving. Billing-dark carries no rows to read
+          and never fetches. */}
+      {invoiceHistory ?? <InvoiceHistory enabled={!billingDark && hasBillingHistory} />}
+
+      <div id="change-plan" style={{ scrollMarginTop: 80 }} />
       <PlanPicker
         currentTier={plan.entitlementTier}
         grantingSub={grantingBackingSub}
@@ -755,13 +783,15 @@ export function BillingScreen({
         }
       />
 
-      {/* Renders for anyone who has EVER paid, including a workspace
-          now back on Free: the tax need outlives the subscription, and
-          fetching last year's receipts is the commonest reason to open
-          this page after leaving. Billing-dark carries no rows to read
-          and never fetches. */}
-      {invoiceHistory ?? <InvoiceHistory enabled={!billingDark && hasBillingHistory} />}
-
+      <p style={{ fontSize: text.sm }}>
+        <a className={linkStyles.link} href="/settings/help">
+          Billing help
+        </a>{' '}
+        ·{' '}
+        <a className={linkStyles.link} href="/refunds">
+          Refund policy
+        </a>
+      </p>
       <CancelModal
         open={cancelOpen}
         variant={isPhone ? 'sheet' : 'modal'}
@@ -979,7 +1009,7 @@ export function PaymentProcessingNotice({
   // was lost, so every claim below stays outcome-neutral for it.
   const acted =
     kind === 'checkout'
-      ? 'Payment received'
+      ? 'Checkout reported completion'
       : kind === 'checkout_intent'
         ? 'Checkout started'
         : kind === 'change'
@@ -995,6 +1025,16 @@ export function PaymentProcessingNotice({
       : kind === 'resume'
         ? 'resume'
         : 'plan upgrade';
+  const recoveryButtonStyle = {
+    maxWidth: '100%',
+    minWidth: 0,
+    height: 'auto',
+    minHeight: 36,
+    padding: '8px 16px',
+    boxSizing: 'border-box',
+    whiteSpace: 'normal',
+    lineHeight: 1.4,
+  } as const;
   return (
     <div
       role="status"
@@ -1012,58 +1052,48 @@ export function PaymentProcessingNotice({
         color: color.fg,
       }}
     >
-      <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span aria-hidden>⏳</span>
-        {phase === 'unconfirmed' ? (
-          <span>
-            <strong style={{ fontWeight: 600 }}>
-              {acted} — your {awaited} hasn&rsquo;t come through yet.
-            </strong>{' '}
-            <span style={{ color: color.fgSoft }}>
-              The provider&rsquo;s confirmation hasn&rsquo;t reached our server, so further billing
-              changes stay paused — starting another could charge you twice. Waiting is always safe:
-              this page keeps checking, and your plan updates the moment the confirmation arrives.
-              Email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-                support@declutrmail.com
-              </a>{' '}
-              and we&rsquo;ll sort it out.
-            </span>
-          </span>
-        ) : phase === 'slow' ? (
-          <span>
-            <strong style={{ fontWeight: 600 }}>
-              Still confirming — this is taking longer than usual.
-            </strong>{' '}
-            <span style={{ color: color.fgSoft }}>
-              {kind === 'checkout'
-                ? 'Your payment went through and is safe; this page keeps checking automatically.'
-                : kind === 'change_unconfirmed' || kind === 'checkout_intent'
-                  ? 'The outcome is unconfirmed; this page keeps checking automatically.'
-                  : 'The provider accepted the change; this page keeps checking automatically.'}{' '}
-              If your plan hasn&rsquo;t updated in a few minutes, reload the page or email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-                support@declutrmail.com
-              </a>
-              .
-            </span>
-          </span>
-        ) : (
-          <span>
-            <strong style={{ fontWeight: 600 }}>{acted} — confirming your plan.</strong>{' '}
-            <span style={{ color: color.fgSoft }}>
-              {kind === 'resume'
-                ? 'No charge was started; your existing paid period continues.'
+      <h2 style={{ margin: 0, fontSize: text.md, fontWeight: 600 }}>
+        {phase === 'unconfirmed'
+          ? `${acted} — your ${awaited} hasn’t come through yet.`
+          : phase === 'slow'
+            ? 'Still confirming — this is taking longer than usual.'
+            : `${acted} — confirming your plan.`}
+      </h2>
+      <dl style={{ display: 'grid', gap: 10, margin: 0 }}>
+        <div>
+          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What we know</dt>
+          <dd style={{ margin: 0, color: color.fgSoft }}>
+            {kind === 'checkout'
+              ? 'Checkout reported completion. Our server has not yet confirmed your new plan.'
+              : kind === 'checkout_intent'
+                ? 'Checkout started, but we do not yet know whether a payment completed.'
                 : kind === 'change_unconfirmed'
-                  ? 'The payment provider didn’t confirm your upgrade — it may or may not have gone through. If it did, your plan updates here and nothing further is needed.'
-                  : kind === 'checkout_intent'
-                    ? 'A checkout was started here but its outcome wasn’t observed — if you paid, your plan updates here and nothing further is needed.'
-                    : 'The payment provider is finalizing your subscription.'}{' '}
-              This page updates automatically, usually within a minute.
-            </span>
-          </span>
-        )}
-      </span>
+                  ? 'The provider has not confirmed whether your plan change applied.'
+                  : kind === 'resume'
+                    ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
+                    : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}
+          </dd>
+        </div>
+        <div>
+          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What happens next</dt>
+          <dd style={{ margin: 0, color: color.fgSoft }}>
+            This page keeps checking automatically. Billing changes stay paused to avoid charging
+            you twice.
+            {phase === 'fresh'
+              ? ' Confirmation usually arrives within a minute.'
+              : ' You can wait here or return later.'}
+          </dd>
+        </div>
+      </dl>
+      {phase !== 'fresh' ? (
+        <p style={{ margin: 0, fontSize: text.sm }}>
+          Need help?{' '}
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
+            Contact billing support
+          </a>
+          .
+        </p>
+      ) : null}
       {reconcilable && providerCheck !== 'idle' ? (
         // D249 — the server's own answer, stated before any customer
         // question. Each line asserts only what the check verified.
@@ -1072,6 +1102,7 @@ export function PaymentProcessingNotice({
           style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
+          <strong>Latest provider check: </strong>
           {providerCheck === 'checking' ? (
             'Checking with the payment provider…'
           ) : providerCheck === 'none_found' ? (
@@ -1131,7 +1162,7 @@ export function PaymentProcessingNotice({
         // independent of the release, which `payment_in_progress`
         // rightly keeps locked while still needing a way to re-ask.
         <div>
-          <Button tone="default" onClick={recheckProvider}>
+          <Button style={recoveryButtonStyle} tone="default" onClick={recheckProvider}>
             Check again
           </Button>
         </div>
@@ -1173,10 +1204,14 @@ export function PaymentProcessingNotice({
                 )}
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Button tone="default" onClick={() => setConfirmingRelease(false)}>
+                <Button
+                  style={recoveryButtonStyle}
+                  tone="default"
+                  onClick={() => setConfirmingRelease(false)}
+                >
                   Keep waiting
                 </Button>
-                <Button tone="danger" onClick={onRelease}>
+                <Button style={recoveryButtonStyle} tone="danger" onClick={onRelease}>
                   {kind === 'checkout' || kind === 'checkout_intent'
                     ? 'I checked — no charge. Resume checkout'
                     : 'I checked — nothing applied. Let me retry'}
@@ -1185,7 +1220,11 @@ export function PaymentProcessingNotice({
             </div>
           ) : (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <Button tone="default" onClick={() => setConfirmingRelease(true)}>
+              <Button
+                style={recoveryButtonStyle}
+                tone="default"
+                onClick={() => setConfirmingRelease(true)}
+              >
                 {kind === 'checkout' || kind === 'checkout_intent'
                   ? providerCheck === 'none_found'
                     ? 'No payment found — resume checkout'
@@ -1201,7 +1240,7 @@ export function PaymentProcessingNotice({
           // re-applying the same change is a provider no-op — so a
           // single explicit release is enough.
           <div>
-            <Button tone="default" onClick={onRelease}>
+            <Button style={recoveryButtonStyle} tone="default" onClick={onRelease}>
               Stop waiting — let me try again
             </Button>
           </div>
@@ -1219,6 +1258,7 @@ function CurrentPlanCard({
   cleanupResetsAt,
   billingDark,
   pauseConfirming,
+  paymentPending,
   onCancel,
   onResumeCancellation,
   isResumingCancellation,
@@ -1228,6 +1268,8 @@ function CurrentPlanCard({
   cleanupRemaining: number | null;
   cleanupResetsAt: string | null;
   billingDark: boolean;
+  /** A pending checkout may already hold card details or a payment. */
+  paymentPending: boolean;
   /** QA-billing-20260901-03 — a pause was requested but the webhook that
    *  actually changes `status` hasn't landed yet. The plan is still
    *  active and billing at its current price until that confirms, so
@@ -1285,9 +1327,9 @@ function CurrentPlanCard({
       data-testid="current-plan-card"
       style={{
         background: color.card,
-        boxShadow: shadow.card,
-        borderRadius: radius.xl,
-        padding: 'clamp(20px, 4vw, 28px)',
+        border: `1px solid ${color.border}`,
+        borderRadius: radius.md,
+        padding: 'clamp(16px, 3vw, 22px)',
         display: 'flex',
         flexDirection: 'column',
         gap: 14,
@@ -1315,7 +1357,12 @@ function CurrentPlanCard({
               fontVariantNumeric: 'tabular-nums',
             }}
           >
-            {priceLabel}
+            {plan.backing.state === 'active' ||
+            plan.backing.state === 'past_due' ||
+            plan.backing.state === 'cancel_scheduled' ? (
+              <span style={{ fontWeight: 400 }}>Plan price: </span>
+            ) : null}
+            <span>{priceLabel}</span>
           </span>
         </div>
         {renewal ? (
@@ -1342,8 +1389,9 @@ function CurrentPlanCard({
         <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
           {/* "No card on file" is a claim about the PROVIDER — with a
               paused or ended subscription record the provider may well
-              hold one, so the line renders only when no record exists. */}
-          {plan.nonBacking === null ? 'Free forever — no card on file.' : null}
+              hold one. A pending checkout may also have collected payment details,
+              so reassurance requires no history AND no unresolved payment. */}
+          {plan.nonBacking === null && !paymentPending ? 'Free forever — no card on file.' : null}
           {cleanupRemaining !== null ? (
             <>
               {' '}
@@ -1392,7 +1440,10 @@ function CurrentPlanCard({
       {!billingDark &&
       !pauseConfirming &&
       (backing.state === 'active' || backing.state === 'past_due') ? (
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <a className={linkStyles.link} href="#change-plan">
+            Manage plan
+          </a>
           {/* QA-billing-20260901-06: this opens the preview; the modal's
               own destructive confirm keeps "Cancel subscription" so the
               two clicks read as two different things — matching the

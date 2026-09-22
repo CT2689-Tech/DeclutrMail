@@ -1,5 +1,5 @@
 import { ScopeDisclosure } from './scope-disclosure';
-import { oauthStartUrl } from './urls';
+import { permissionEntryUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 
 /**
@@ -12,7 +12,7 @@ export function FinalCta() {
       <h2 className="dm-mkt-h2">Start with one sender.</h2>
       <div className="dm-mkt-hero-ctas">
         <TrackedCta
-          href={oauthStartUrl()}
+          href={permissionEntryUrl()}
           cta="connect_gmail"
           placement="final"
           className="dm-mkt-cta dm-mkt-cta-primary"

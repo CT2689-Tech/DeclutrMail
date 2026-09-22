@@ -21,7 +21,7 @@ import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page
 // another feature needs the same "Manage standing policies" pattern
 // (mobile settings, billing surface, etc.).
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Avatar,
@@ -55,7 +55,9 @@ const { color, font, space, radius, text, motion } = tokens;
  * pages are loaded on demand via the "Show more" affordance below.
  */
 export function SendersPoliciesScreen() {
-  const sendersQuery = useSenders({ isProtected: true, limit: 50 });
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const sendersQuery = useSenders({ isProtected: true, limit: 50, ...(query ? { q: query } : {}) });
   const { fetchNextPage, hasNextPage, isFetchingNextPage, isFetchNextPageError, data } =
     sendersQuery;
 
@@ -83,7 +85,6 @@ export function SendersPoliciesScreen() {
   const queryMeta = data?.pages[0]?.meta.query;
   const totalMatching = queryMeta?.totalMatching;
 
-  if (sendersQuery.isLoading) return <LoadingState />;
   // Gated on `data == null`, not bare `isError`. In TanStack v5 the
   // query-wide `isError` also flips on a failed BACKGROUND refetch (a
   // window-focus refetch, or a failed "Show more") while data is
@@ -91,9 +92,6 @@ export function SendersPoliciesScreen() {
   // "couldn't load protected senders", a false statement that also
   // discards the rows. Same fix `activity-screen.tsx` documents; the
   // footer below owns the next-page failure instead.
-  if (sendersQuery.isError && data == null) {
-    return <PoliciesErrorState onRetry={() => void sendersQuery.refetch()} />;
-  }
 
   return (
     <div
@@ -114,13 +112,19 @@ export function SendersPoliciesScreen() {
         >
           {/* Without a server total, a capped page cannot claim one — say
               what is on screen instead (the Autopilot "latest N" posture). */}
-          {totalMatching !== undefined
-            ? `${totalMatching.toLocaleString('en-US')} ${totalMatching === 1 ? 'sender' : 'senders'}`
-            : hasNextPage
-              ? `Showing ${protectedSenders.length.toLocaleString('en-US')}`
-              : `${protectedSenders.length.toLocaleString('en-US')} ${
-                  protectedSenders.length === 1 ? 'sender' : 'senders'
-                }`}
+          {sendersQuery.isLoading
+            ? 'Loading…'
+            : sendersQuery.isPlaceholderData
+              ? 'Updating…'
+              : sendersQuery.isError && data == null
+                ? 'Unavailable'
+                : totalMatching !== undefined
+                  ? `${totalMatching.toLocaleString('en-US')} ${totalMatching === 1 ? 'sender' : 'senders'}`
+                  : hasNextPage
+                    ? `Showing ${protectedSenders.length.toLocaleString('en-US')}`
+                    : `${protectedSenders.length.toLocaleString('en-US')} ${
+                        protectedSenders.length === 1 ? 'sender' : 'senders'
+                      }`}
         </span>
       </PageHeader>
       {/* Describe the GUARD, never an outcome we do not control:
@@ -133,17 +137,87 @@ export function SendersPoliciesScreen() {
         still applies.
       </p>
 
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          setQuery(search.trim());
+        }}
+        role="search"
+        aria-label="Search protected senders"
+        style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'end' }}
+      >
+        <label
+          style={{
+            display: 'grid',
+            gap: 6,
+            flex: '1 1 220px',
+            color: color.fgMuted,
+            fontSize: text.sm,
+          }}
+        >
+          Search all protected senders in this inbox
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Name, email, or domain"
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              minHeight: 40,
+              padding: '8px 12px',
+              border: `1px solid ${color.border}`,
+              borderRadius: 6,
+              color: color.fg,
+              background: color.card,
+              font: 'inherit',
+            }}
+          />
+        </label>
+        <Button type="submit">Search</Button>
+        {(query || search) && (
+          <Button
+            tone="ghost"
+            onClick={() => {
+              setSearch('');
+              setQuery('');
+            }}
+          >
+            Clear search
+          </Button>
+        )}
+      </form>
+      <Link
+        href="/senders?activity=all&protected=true"
+        style={{ color: color.primary, fontSize: text.sm }}
+      >
+        Open protected senders with all filters →
+      </Link>
+      {sendersQuery.isPlaceholderData && (
+        <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+          Updating results… Previous results remain visible until the search finishes.
+        </p>
+      )}
+
       <section>
-        {protectedSenders.length === 0 ? (
+        {sendersQuery.isLoading ? (
+          <LoadingState />
+        ) : sendersQuery.isError && data == null ? (
+          <PoliciesErrorState onRetry={() => void sendersQuery.refetch()} />
+        ) : protectedSenders.length === 0 ? (
           <div style={{ padding: `${space[5]}px 0` }}>
             <EmptyState
-              title="No protected senders yet"
+              title={query ? 'No protected senders match your search' : 'No protected senders yet'}
               /* Must not say protection is something you set by hand:
                  three of the four reasons are AUTOMATIC, and this is the
                  same claim the page's intro paragraph was already fixed
                  for. Naming the automatic triggers also stops an empty
                  result reading as a broken scan. */
-              description="Senders you've written to at least three times, starred, or that Gmail keeps marking important are protected automatically."
+              description={
+                query
+                  ? 'Try another name, email, or domain, or clear the search to see all protected senders.'
+                  : "Senders you've written to at least three times, starred, or that Gmail keeps marking important are protected automatically."
+              }
               action={
                 <Link href="/senders" style={{ textDecoration: 'none' }}>
                   <Button size="sm">Browse senders</Button>
@@ -152,9 +226,13 @@ export function SendersPoliciesScreen() {
             />
           </div>
         ) : (
-          <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          <ul
+            inert={sendersQuery.isPlaceholderData}
+            aria-busy={sendersQuery.isPlaceholderData}
+            style={{ listStyle: 'none', margin: 0, padding: 0 }}
+          >
             {protectedSenders.map((s) => (
-              <PolicyRow key={s.id} sender={s} />
+              <PolicyRow key={s.id} sender={s} disabled={sendersQuery.isPlaceholderData} />
             ))}
           </ul>
         )}
@@ -181,9 +259,9 @@ export function SendersPoliciesScreen() {
             <Button
               size="sm"
               onClick={() => {
-                if (!isFetchingNextPage) void fetchNextPage();
+                if (!isFetchingNextPage && !sendersQuery.isPlaceholderData) void fetchNextPage();
               }}
-              disabled={isFetchingNextPage}
+              disabled={isFetchingNextPage || sendersQuery.isPlaceholderData}
               ariaLabel="Show more protected senders"
             >
               {isFetchingNextPage ? 'Loading…' : isFetchNextPageError ? 'Try again' : 'Show more'}
@@ -223,7 +301,7 @@ function compareKnownDesc(left: number | null | undefined, right: number | null 
   return right - left;
 }
 
-function PolicyRow({ sender }: { sender: Sender }) {
+function PolicyRow({ sender, disabled = false }: { sender: Sender; disabled?: boolean }) {
   const setPolicy = useSetSenderPolicy();
   const reason = normalizeProtectionReason(sender.protectionFlags.protectionReason);
   const evidenceStale = sender.protectionFlags.protectionEvidenceCurrent === false;
@@ -321,7 +399,7 @@ function PolicyRow({ sender }: { sender: Sender }) {
             override: automatic protection will not re-apply. */}
         <Button
           size="sm"
-          disabled={setPolicy.isPending}
+          disabled={setPolicy.isPending || disabled}
           ariaLabel={`Unprotect ${sender.name}`}
           onClick={() =>
             setPolicy.mutate(

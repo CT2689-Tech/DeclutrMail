@@ -1287,23 +1287,17 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           only when the sender never mailed at all, so it keys on
           `totalReceived`, never on an empty recent window. */}
         {sender.totalReceived > 0 ? (
-          <div className={styles.volumeSummary}>
-            <div>
-              <span className={styles.volumeNumber} data-testid="sender-detail-inbox-count">
-                {sender.inboxCount != null ? sender.inboxCount.toLocaleString('en-US') : '—'}
-              </span>
-              <p className={styles.volumeLabel}>Currently in your inbox</p>
+          <section aria-label="Now">
+            <div className={styles.eyebrow}>Now · Current inbox</div>
+            <div className={styles.volumeSummary}>
+              <div>
+                <span className={styles.volumeNumber} data-testid="sender-detail-inbox-count">
+                  {sender.inboxCount != null ? sender.inboxCount.toLocaleString('en-US') : '—'}
+                </span>
+                <p className={styles.volumeLabel}>Currently in your inbox</p>
+              </div>
             </div>
-            <div>
-              <span className={styles.volumeNumber} data-testid="sender-detail-window-count">
-                {sender.monthlyVolume != null ? sender.monthlyVolume.toLocaleString('en-US') : '—'}
-              </span>
-              <p className={styles.volumeLabel}>
-                {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
-                {sender.totalReceived.toLocaleString('en-US')} total
-              </p>
-            </div>
-          </div>
+          </section>
         ) : (
           <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
             Hasn&rsquo;t mailed you yet.
@@ -1330,7 +1324,18 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
 
         {/* Evidence remains visible in both the inspector and full page. */}
         <div className={styles.statsSection}>
-          <div className={styles.eyebrow}>The pattern, at a glance</div>
+          <div className={styles.eyebrow}>Pattern · Your history</div>
+          {sender.totalReceived > 0 && (
+            <div>
+              <span className={styles.volumeNumber} data-testid="sender-detail-window-count">
+                {sender.monthlyVolume != null ? sender.monthlyVolume.toLocaleString('en-US') : '—'}
+              </span>
+              <p className={styles.volumeLabel}>
+                {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
+                {sender.totalReceived.toLocaleString('en-US')} received · all time
+              </p>
+            </div>
+          )}
           <dl aria-label="Sender stats" className={styles.statsGrid}>
             {/* `null` readRate = no email in the window — an em-dash, never
               a fabricated 0%. Labelled "marked read": Gmail exposes no
@@ -1348,7 +1353,36 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
               )}
             </Stat>
             <Stat label="12-month trend">
-              {volumes.length > 0 ? <Spark values={volumes} width={72} height={20} /> : '—'}
+              {volumes.length > 0 ? (
+                <>
+                  <Spark values={volumes} width={72} height={20} />
+                  <details style={{ fontSize: text.sm }}>
+                    <summary style={{ cursor: 'pointer', padding: '12px 0', minHeight: 44 }}>
+                      Monthly values
+                    </summary>
+                    <dl style={{ margin: 0 }}>
+                      {timeseries.map((point) => (
+                        <div
+                          key={point.yearMonth}
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            flexWrap: 'wrap',
+                            gap: '2px 12px',
+                          }}
+                        >
+                          <dt>{point.yearMonth}</dt>
+                          <dd style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                            {point.volume.toLocaleString('en-US')} emails
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
+                </>
+              ) : (
+                '—'
+              )}
             </Stat>
             <Stat label="Last seen">{relTime(stats.lastSeenDays)}</Stat>
             <Stat label="You wrote">

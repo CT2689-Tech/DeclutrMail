@@ -4,6 +4,7 @@ import {
   editorialColumnStyle,
   editorialTitleStyle,
   EditorialKicker,
+  EditorialContents,
 } from '@/features/editorial/page';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -277,6 +278,20 @@ function BriefBody({
       ) : (
         <>
           {narrative.trim().length > 0 && <Narrative narrative={narrative} />}
+          <EditorialContents
+            label="Brief sections"
+            items={[
+              ...(reply.length
+                ? [{ href: '#brief-reply', label: `Reply · ${replyTotal ?? reply.length}` }]
+                : []),
+              ...(fyi.length
+                ? [{ href: '#brief-fyi', label: `FYI · ${fyiTotal ?? fyi.length}` }]
+                : []),
+              ...(noise.length
+                ? [{ href: '#brief-noise', label: `Noise · ${noise.length} senders` }]
+                : []),
+            ]}
+          />
           {reply.length > 0 && (
             <ReplyFyiSection
               label="Reply"
@@ -461,8 +476,9 @@ function ReplyFyiSection({
 }) {
   return (
     <section
+      id={`brief-${label.toLowerCase()}`}
       aria-label={`${label} (${rows.length})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 24 }}
     >
       <style>{flatRowCss('dm-brief-row', 70)}</style>
       <SectionHeading label={label} count={rows.length} total={total} />
@@ -528,11 +544,12 @@ function NoiseSection({
 
   return (
     <section
+      id="brief-noise"
       // Carries the same "yesterday" anchor the visible subline does — a
       // screen reader must not get the un-anchored number this whole
       // surface is careful to avoid.
       aria-label={`Noise (${groups.length} senders, ${totalMessages} messages ${dayWord})`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 24 }}
     >
       <style>{flatRowCss('dm-noise-row', 12)}</style>
       <SectionHeading
@@ -1085,8 +1102,10 @@ function LoadingState() {
     <div
       role="status"
       aria-live="polite"
-      style={{ ...COLUMN, display: 'flex', flexDirection: 'column' }}
+      style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <h1 style={H1_STYLE}>Daily Brief</h1>
       {[0, 1, 2, 3, 4].map((i) => (
         <div
           key={i}
@@ -1101,7 +1120,9 @@ function LoadingState() {
 
 function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
-    <div style={COLUMN}>
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
+      <h1 style={H1_STYLE}>Daily Brief</h1>
       <RetryableErrorState
         title="We couldn't load your Brief"
         description={loadErrorDescription(error)}
@@ -1120,15 +1141,24 @@ function BriefErrorState({ error, onRetry }: { error: unknown; onRetry: () => vo
  */
 function NotYetState({ onRefresh }: { onRefresh: () => void }) {
   return (
-    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 32 }}>
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
       <h1 style={H1_STYLE}>Daily Brief</h1>
       <EmptyState
-        title="Your Brief lands soon"
+        title="Your Brief is not available yet"
+        description="Briefs summarize the previous day’s email after your inbox has been scanned. There is no edition available for this inbox yet. You can review senders while you wait."
         action={
           <Button tone="primary" onClick={onRefresh}>
             Refresh
           </Button>
         }
+      />
+      <EditorialContents
+        label="While you wait"
+        items={[
+          { href: '/senders', label: 'Review senders' },
+          { href: '/settings#notifications', label: 'Brief delivery settings' },
+        ]}
       />
     </div>
   );

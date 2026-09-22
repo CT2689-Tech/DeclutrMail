@@ -1,6 +1,7 @@
 'use client';
 
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
+import { OnboardingPhase } from './onboarding-phase';
 
 import { Button, tokens } from '@declutrmail/shared';
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
@@ -351,6 +352,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           alignItems: 'center',
         }}
       >
+        <OnboardingPhase phase="scan" />
         {children}
       </div>
     </main>

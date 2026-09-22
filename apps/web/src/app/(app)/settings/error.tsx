@@ -15,6 +15,10 @@ export default function SettingsError({
 }) {
   return (
     <RouteErrorScreen
+      gap={32}
+      title="Settings"
+      kicker="Your workspace / Preferences"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="settings"

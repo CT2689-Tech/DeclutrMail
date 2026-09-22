@@ -2,7 +2,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { InboxCollapse } from './inbox-collapse';
 import { ScopeDisclosure } from './scope-disclosure';
-import { oauthStartUrl } from './urls';
+import { permissionEntryUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 
 /**
@@ -24,7 +24,7 @@ export function Hero() {
         </p>
         <div className="dm-mkt-hero-ctas">
           <TrackedCta
-            href={oauthStartUrl()}
+            href={permissionEntryUrl()}
             cta="connect_gmail"
             placement="hero"
             className="dm-mkt-cta dm-mkt-cta-primary"
@@ -43,7 +43,7 @@ export function Hero() {
         <p className="dm-mkt-hero-note">
           {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month, free. No credit card.
         </p>
-        {/* "Start free" goes straight to Google's consent screen, so the
+        {/* "Start free" opens the permission checkpoint; the
             pre-consent disclosure sits beside it (copy contract in
             packages/shared/src/copy/privacy.ts) — collapsed to one line. */}
         <div className="dm-mkt-hero-note">

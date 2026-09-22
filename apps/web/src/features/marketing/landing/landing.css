@@ -1102,3 +1102,203 @@
     padding: 18px;
   }
 }
+
+.dm-mkt-journey {
+  padding-block: 54px;
+}
+.dm-mkt-journey-heading {
+  max-width: 700px;
+  margin-bottom: 28px;
+}
+.dm-mkt-journey-kicker,
+.dm-mkt-sample-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-journey-heading em,
+.dm-mkt-workspace-heading em {
+  color: #a35237;
+  font-weight: 400;
+}
+[data-theme='dark'] .dm-mkt-journey em {
+  color: #e1a085;
+}
+.dm-mkt-workspace-example {
+  margin: 0;
+}
+.dm-mkt-workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 20px 0;
+  border-top: 1px solid var(--dm-line);
+}
+.dm-mkt-workspace-heading strong {
+  font-family: var(--dm-font-display);
+  font-size: 28px;
+  font-weight: 400;
+}
+.dm-mkt-workspace-heading > span,
+.dm-mkt-workspace-example figcaption {
+  font-size: 11px;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-workspace-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.dm-mkt-sample-list,
+.dm-mkt-sample-inspector {
+  min-width: 0;
+  background: var(--dm-card);
+  padding: 22px;
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+}
+.dm-mkt-sample-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.dm-mkt-sample-row > div {
+  flex: 1;
+  min-width: 0;
+}
+.dm-mkt-sample-row strong {
+  font-size: 14px;
+}
+.dm-mkt-sample-row small,
+.dm-mkt-sample-identity small {
+  display: block;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dm-fg-muted);
+  overflow-wrap: anywhere;
+}
+.dm-mkt-sample-row > span:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dm-mkt-sample-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background: var(--dm-fill);
+  border-radius: 8px;
+  color: var(--dm-primary);
+}
+.dm-mkt-sample-row-selected {
+  box-shadow: inset 3px 0 var(--dm-primary);
+  padding-left: 12px;
+}
+.dm-mkt-sample-identity {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-block: 16px;
+}
+.dm-mkt-sample-identity h3 {
+  font-family: var(--dm-font-display);
+  font-size: 27px;
+  margin: 0;
+  font-weight: 400;
+}
+.dm-mkt-sample-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 14px 0;
+  border-block: 1px solid var(--dm-line);
+  margin: 0;
+  gap: 16px;
+}
+.dm-mkt-sample-metrics div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+}
+.dm-mkt-sample-metrics dt {
+  font-size: 11px;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-sample-metrics dd {
+  font-size: 30px;
+  margin: 0;
+}
+.dm-mkt-sample-note,
+.dm-mkt-sample-preview p,
+.dm-mkt-journey-steps p {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dm-fg-soft);
+}
+.dm-mkt-sample-preview {
+  padding: 16px 0;
+  border-block: 1px solid var(--dm-line);
+}
+.dm-mkt-sample-preview strong {
+  font-size: 16px;
+}
+.dm-mkt-sample-preview span,
+.dm-mkt-sample-verbs {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--dm-fg-muted);
+}
+.dm-mkt-journey-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--dm-primary);
+  font-size: 13px;
+}
+.dm-mkt-workspace-example figcaption {
+  padding: 12px 0;
+  line-height: 1.6;
+}
+.dm-mkt-journey-steps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  padding: 24px 0 0;
+  margin: 0;
+  border-top: 1px solid var(--dm-line);
+}
+.dm-mkt-journey-steps strong {
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .dm-mkt-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+  .dm-mkt-journey-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 480px) {
+  .dm-mkt-sample-list,
+  .dm-mkt-sample-inspector {
+    padding: 16px;
+  }
+  .dm-mkt-journey-steps {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .dm-mkt-sample-row {
+    gap: 8px;
+  }
+  .dm-mkt-sample-avatar {
+    width: 32px;
+    height: 32px;
+  }
+}

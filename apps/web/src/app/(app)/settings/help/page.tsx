@@ -11,10 +11,12 @@ export default function SettingsHelpPage() {
     <>
       <ProductGlossary />
       <div
+        id="contact-support"
         className="dm-settings-page"
         style={{
           ...editorialColumnStyle,
           paddingTop: 0,
+          scrollMarginTop: 24,
         }}
       >
         <ContactSupportForm />

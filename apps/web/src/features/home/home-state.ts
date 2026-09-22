@@ -32,7 +32,7 @@ export interface HomeStat {
 export type HomeState =
   | { kind: 'loading' }
   | { kind: 'error'; error: unknown; retry: () => void }
-  | { kind: 'empty'; syncing: boolean; action: HomeAction }
+  | { kind: 'empty'; syncing: boolean; action: HomeAction; senders?: HomeSenderPreview[] }
   /** The active mailbox's first scan failed terminally (`readiness === 'failed'`) and nothing is decided. */
   | { kind: 'sync-failed' }
   | {

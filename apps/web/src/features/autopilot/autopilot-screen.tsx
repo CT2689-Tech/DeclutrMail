@@ -4,7 +4,6 @@ import {
   editorialColumnStyle,
   editorialTitleStyle,
   EditorialKicker,
-  EditorialStats,
 } from '@/features/editorial/page';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -190,6 +189,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   const canActivate = hasCapability(auth?.me.tier ?? 'free', 'autopilot-active');
   const decidePattern = useDecidePatternSuggestion();
 
+  const [ruleFilter, setRuleFilter] = useState<'all' | 'watching' | 'acting' | 'inactive'>('all');
+  useEffect(() => setRuleFilter('all'), [activeMailboxId]);
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
@@ -227,6 +228,14 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 
   const rules: AutopilotRuleDto[] =
     state.kind === 'ready' || state.kind === 'empty' ? state.rules : [];
+  const ruleStatus = (rule: AutopilotRuleDto) =>
+    !rule.enabled || rule.mode === 'paused' || (rule.mode === 'active' && !canActivate)
+      ? 'inactive'
+      : rule.mode === 'observe'
+        ? 'watching'
+        : 'acting';
+  const visibleRules =
+    ruleFilter === 'all' ? rules : rules.filter((rule) => ruleStatus(rule) === ruleFilter);
   const suggestions: SuggestionWithRule[] = state.kind === 'ready' ? state.suggestions : [];
   const patternSuggestion =
     state.kind === 'ready' || state.kind === 'empty' ? (state.patternSuggestion ?? null) : null;
@@ -749,28 +758,32 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       <AutopilotBannerStack banners={banners} />
 
       {state.kind === 'ready' && rules.length > 0 && (
-        <EditorialStats
-          items={[
-            {
-              label: 'Watching rules',
-              value: rules.filter((rule) => rule.enabled && rule.mode === 'observe').length,
-            },
-            {
-              label: 'Acting rules',
-              value: rules.filter((rule) => rule.enabled && rule.mode === 'active' && canActivate)
-                .length,
-            },
-            {
-              label: 'Paused or inactive rules',
-              value: rules.filter(
-                (rule) =>
-                  !rule.enabled ||
-                  rule.mode === 'paused' ||
-                  (rule.mode === 'active' && !canActivate),
-              ).length,
-            },
-          ]}
-        />
+        <div
+          role="group"
+          aria-label="Filter rules by status"
+          style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+        >
+          {(
+            [
+              { id: 'all', label: 'All rules' },
+              { id: 'watching', label: 'Watch first' },
+              { id: 'acting', label: 'Acting' },
+              { id: 'inactive', label: 'Paused or inactive' },
+            ] as const
+          ).map((filter) => (
+            <Button
+              key={filter.id}
+              tone={ruleFilter === filter.id ? 'default' : 'ghost'}
+              ariaPressed={ruleFilter === filter.id}
+              onClick={() => setRuleFilter(filter.id)}
+            >
+              {filter.label} ·{' '}
+              {filter.id === 'all'
+                ? rules.length
+                : rules.filter((rule) => ruleStatus(rule) === filter.id).length}
+            </Button>
+          ))}
+        </div>
       )}
 
       {/* Whole-surface failure — one designed error block, not one per
@@ -809,7 +822,17 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                 description="Rules appear after your mailbox finishes its first sync."
               />
             )}
-            {state.kind === 'ready' && rules.length > 0 && (
+            {state.kind === 'ready' && rules.length > 0 && visibleRules.length === 0 && (
+              <EmptyState
+                title="No rules in this view"
+                action={
+                  <Button tone="ghost" onClick={() => setRuleFilter('all')}>
+                    Show all rules
+                  </Button>
+                }
+              />
+            )}
+            {state.kind === 'ready' && visibleRules.length > 0 && (
               <ul
                 aria-label="Autopilot rules"
                 style={{
@@ -825,7 +848,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                   overflow: 'hidden',
                 }}
               >
-                {rules.map((rule) => (
+                {visibleRules.map((rule) => (
                   <RuleCard
                     key={rule.id}
                     rule={rule}

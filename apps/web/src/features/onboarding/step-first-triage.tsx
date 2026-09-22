@@ -13,6 +13,7 @@ import { ApiError } from '@/lib/api/client';
 import { track } from '@/lib/posthog';
 
 import { useFirstTriage } from './api/use-onboarding';
+import { OnboardingPhase } from './onboarding-phase';
 
 const { color, font, text } = tokens;
 
@@ -185,6 +186,7 @@ export function StepFirstTriage({
         }}
       >
         <div>
+          <OnboardingPhase phase="review" />
           <h1
             style={{
               margin: 0,
@@ -256,7 +258,10 @@ function PanelShell({ corner, children }: { corner?: ReactNode; children: ReactN
       }}
     >
       {corner && <div style={{ position: 'absolute', top: 20, right: 24 }}>{corner}</div>}
-      <div style={{ width: '100%', maxWidth: 560 }}>{children}</div>
+      <div style={{ width: '100%', maxWidth: 560 }}>
+        <OnboardingPhase phase="review" />
+        {children}
+      </div>
     </main>
   );
 }

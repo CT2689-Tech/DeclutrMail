@@ -159,7 +159,9 @@ describe('BriefScreen — edge states', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /your brief lands soon/i })).toBeInTheDocument(),
+      expect(
+        screen.getByRole('heading', { name: /your brief is not available yet/i }),
+      ).toBeInTheDocument(),
     );
     expect(screen.getByRole('button', { name: /refresh/i })).toBeInTheDocument();
   });

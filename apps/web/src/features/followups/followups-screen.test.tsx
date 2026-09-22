@@ -123,6 +123,30 @@ describe('FollowupsScreen — populated list', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('retains the full subject and exposes expansion without needing a hover tooltip', async () => {
+    const subject =
+      'A longer conversation subject about the upcoming launch and the final details that need a response';
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [{ ...ROW_HIGH, subject }] }),
+      },
+    ]);
+    renderScreen();
+    const expand = await screen.findByRole('button', { name: 'Read full subject' });
+    expect(screen.getByText(subject)).toBeInTheDocument();
+    expect(expand).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(expand);
+    expect(screen.getByRole('button', { name: 'Collapse subject' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+    expect(document.getElementById(expand.getAttribute('aria-controls')!)).toHaveTextContent(
+      subject,
+    );
+  });
+
   it('renders the header + grouped sections per D90', async () => {
     installFetchStub([
       {
@@ -138,12 +162,13 @@ describe('FollowupsScreen — populated list', () => {
       await screen.findByRole('heading', { level: 1, name: 'Follow-ups' }),
     ).toBeInTheDocument();
 
+    await screen.findByText('Big Boss');
     // Both priority group headings render, each carrying its count once.
     expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /1.3 days · 1/i })).toBeInTheDocument();
 
     // Each row renders recipient + subject + Open-in-Gmail link.
-    expect(screen.getByText('Big Boss')).toBeInTheDocument();
+    expect(await screen.findByText('Big Boss')).toBeInTheDocument();
     expect(screen.getAllByRole('group', { name: /useful follow-up/i })).toHaveLength(2);
     expect(screen.getByText('Q4 plans — please review')).toBeInTheDocument();
     expect(screen.getByText('Lunch?')).toBeInTheDocument();
@@ -174,7 +199,7 @@ describe('FollowupsScreen — populated list', () => {
     expect(note).toHaveTextContent(/recent reply can still show/i);
     expect(note).toHaveTextContent(/nothing changes in Gmail/i);
     expect(
-      screen.getByRole('button', {
+      await screen.findByRole('button', {
         name: /mark resolved in declutrmail — big boss/i,
       }),
     ).toHaveAttribute('title', 'Mark resolved in DeclutrMail');

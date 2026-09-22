@@ -15,6 +15,9 @@ export default function QuietError({
 }) {
   return (
     <RouteErrorScreen
+      title="Quiet hours"
+      kicker="Automations / On your schedule"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="quiet"

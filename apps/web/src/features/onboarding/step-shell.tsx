@@ -3,6 +3,7 @@
 import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
 
 import type { ReactNode } from 'react';
+import { OnboardingPhase, type OnboardingPhaseName } from './onboarding-phase';
 import { tokens } from '@declutrmail/shared';
 
 const { color, font, text } = tokens;
@@ -16,12 +17,14 @@ const { color, font, text } = tokens;
  */
 export function StepShell({
   title,
+  phase,
   sub,
   maxWidth = 520,
   corner,
   children,
 }: {
   title: string;
+  phase: OnboardingPhaseName;
   /** At most one sentence. */
   sub?: string;
   maxWidth?: number;
@@ -58,6 +61,7 @@ export function StepShell({
           alignItems: 'center',
         }}
       >
+        <OnboardingPhase phase={phase} />
         <EditorialKicker>A clearer inbox starts here</EditorialKicker>
         <h1 style={{ ...editorialTitleStyle, margin: '20px 0 14px' }}>{title}</h1>
         {sub && (

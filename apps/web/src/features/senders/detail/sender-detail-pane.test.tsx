@@ -179,7 +179,9 @@ describe('SenderDetailPane', () => {
     await screen.findByRole('heading', { level: 2, name: 'LinkedIn' });
     expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent('12');
     expect(screen.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
-    expect(screen.getByText(/2,048 total/)).toBeInTheDocument();
+    expect(screen.getByText(/2,048 received · all time/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
+    expect(screen.getByLabelText('Now')).not.toHaveTextContent('2,048');
   });
 
   it('advertises and binds no K/A/U/L/D key — the list owns those keys beside it', async () => {

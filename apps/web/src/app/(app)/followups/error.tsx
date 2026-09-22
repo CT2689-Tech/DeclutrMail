@@ -15,6 +15,10 @@ export default function FollowupsError({
 }) {
   return (
     <RouteErrorScreen
+      gap={32}
+      title="Follow-ups"
+      kicker="Catch up / Conversations"
+      maxWidth={1120}
       error={error}
       reset={reset}
       boundary="followups"
