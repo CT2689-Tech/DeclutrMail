@@ -29,7 +29,7 @@
 
 import { dehydrate, HydrationBoundary } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -81,7 +81,14 @@ vi.mock('@/features/triage/triage-undo-tray', () => ({
 import { AppChromeLayout as AppLayout } from './app-chrome-layout';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 
+// These integration assertions inspect expanded navigation counts and plan chips.
+// The shell interaction suite separately verifies the default compact rail.
+beforeEach(() => {
+  window.localStorage.setItem('dm.sidebar.collapsed', 'false');
+});
+
 afterEach(() => {
+  window.localStorage.removeItem('dm.sidebar.collapsed');
   vi.restoreAllMocks();
   pushSpy.mockClear();
   prefetchSpy.mockClear();

@@ -1,11 +1,13 @@
 'use client';
 
+import { editorialTitleStyle } from '@/features/editorial/page';
+
 import type { CSSProperties, ReactNode, SelectHTMLAttributes } from 'react';
 import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
 import { SwitchTrack } from './switch';
 
-const { color, font, text, motion, radius, shadow } = tokens;
+const { color, font, text, motion, radius } = tokens;
 
 /**
  * List primitives for Settings and its sub-screens: a titled group is ONE
@@ -62,19 +64,7 @@ export function PageHeader({
           <Chevron size={16} />
         </Link>
       )}
-      <h1
-        style={{
-          margin: 0,
-          fontFamily: font.sans,
-          fontSize: text['2xl'],
-          fontWeight: 650,
-          letterSpacing: '-0.02em',
-          color: color.fg,
-          minWidth: 0,
-        }}
-      >
-        {title}
-      </h1>
+      <h1 style={{ ...editorialTitleStyle, minWidth: 0 }}>{title}</h1>
       {children != null && <div style={{ marginLeft: 'auto' }}>{children}</div>}
     </header>
   );
@@ -142,7 +132,7 @@ export function SettingsGroup({
         className="dm-settings-rows"
         style={{
           background: color.card,
-          boxShadow: shadow.card,
+          border: `1px solid ${color.border}`,
           borderRadius: radius.xl,
           overflow: 'hidden',
         }}

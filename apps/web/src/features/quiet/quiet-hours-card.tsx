@@ -10,7 +10,7 @@ import {
   type QuietHoursConfig,
 } from '@declutrmail/shared/contracts';
 
-const { color, font, radius, shadow, text } = tokens;
+const { color, font, radius, text } = tokens;
 
 /**
  * Per-mailbox quiet-hours config card (U18 — D92/D95).
@@ -202,7 +202,7 @@ function QuietHoursForm({
     color: color.fg,
     background: color.fill,
     border: 'none',
-    borderRadius: radius.pill,
+    borderRadius: radius.sm,
     padding: '0 14px',
     height: isPhone ? 44 : 36,
     boxSizing: 'border-box',
@@ -302,7 +302,7 @@ function QuietHoursForm({
 /** The raised group every mailbox's quiet settings sit in (Settings grammar). */
 const groupSurface = {
   background: color.card,
-  boxShadow: shadow.card,
+  border: `1px solid ${color.border}`,
   borderRadius: radius.xl,
   overflow: 'hidden',
 } as const;

@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialOnboardingActionStyle } from '@/features/editorial/page';
+
 import { useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, tokens, toast } from '@declutrmail/shared';
@@ -254,7 +256,7 @@ export function StepPresetPick({
         size="xl"
         onClick={onContinue}
         disabled={submit.isPending || goal === null}
-        style={{ minWidth: 240 }}
+        style={editorialOnboardingActionStyle}
       >
         {submit.isPending
           ? 'Saving…'
@@ -319,7 +321,7 @@ export function StepFirstSenderReview({
         size="xl"
         onClick={onContinue}
         disabled={submit.isPending || goal === null}
-        style={{ minWidth: 240 }}
+        style={editorialOnboardingActionStyle}
       >
         {submit.isPending
           ? 'Getting it ready…'

@@ -37,6 +37,7 @@ const { color, motion } = tokens;
 //   always in the tab order, and focusing it reveals it.
 const LIST_CSS = `
 .dm-srow::after{content:'';position:absolute;left:12px;right:12px;bottom:0;height:1px;background:${color.lineSoft};pointer-events:none}
+.dm-srow[data-active]{box-shadow:inset 3px 0 ${color.primary}}
 .dm-srow:hover{background:${color.fill}}
 .dm-srow:hover::after,.dm-srow[data-active]::after{opacity:0}
 .dm-srow-check{opacity:0;transition:opacity ${motion.fast} ${motion.ease}}
@@ -161,7 +162,7 @@ export function SenderList({
       data-any-selected={anySelected || undefined}
       // Rows carry 12px of inner padding for their hover fill; pull the
       // list out by the same amount so logos share the title's left edge.
-      style={{ margin: '0 -12px' }}
+      style={{ margin: 0 }}
     >
       <style>{LIST_CSS}</style>
       {entries.map((entry) => {

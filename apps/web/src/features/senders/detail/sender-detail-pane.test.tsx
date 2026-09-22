@@ -154,7 +154,13 @@ describe('SenderDetailPane', () => {
     expect(await pane.findByRole('heading', { level: 2, name: 'LinkedIn' })).toBeInTheDocument();
     expect(pane.queryByRole('heading', { level: 1 })).not.toBeInTheDocument();
     expect(pane.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
+    expect(pane.getByTestId('sender-detail-inbox-count')).toHaveTextContent('—');
     expect(pane.getByRole('switch', { name: 'Protected' })).toBeInTheDocument();
+    const actions = within(pane.getByRole('group', { name: 'Sender actions' }));
+    for (const verb of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
+      expect(actions.getByRole('button', { name: verb })).toBeInTheDocument();
+      expect(pane.getAllByRole('button', { name: verb })).toHaveLength(1);
+    }
     expect(pane.getByLabelText('Sender stats')).toBeInTheDocument();
     expect(pane.getByRole('region', { name: 'Recent messages' })).toBeInTheDocument();
     expect(pane.getByRole('heading', { name: 'Decision timeline' })).toBeInTheDocument();
@@ -165,6 +171,15 @@ describe('SenderDetailPane', () => {
     );
     fireEvent.click(pane.getByRole('button', { name: 'Close sender details' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps current inbox scope separate from received history', async () => {
+    install(() => jsonOk({ data: { ...DETAIL, inboxCount: 12 } }));
+    renderPane();
+    await screen.findByRole('heading', { level: 2, name: 'LinkedIn' });
+    expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent('12');
+    expect(screen.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
+    expect(screen.getByText(/2,048 total/)).toBeInTheDocument();
   });
 
   it('advertises and binds no K/A/U/L/D key — the list owns those keys beside it', async () => {

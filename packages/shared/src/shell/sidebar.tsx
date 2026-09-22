@@ -1,7 +1,8 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Logo } from '../components/logo';
-import { color, font, motion, radius, shadow, text } from '../tokens/tokens';
+import { font, motion, radius, text } from '../tokens/tokens';
 import { useLabels, type LabelKey } from '../hooks/use-labels';
 
 interface NavItem {
@@ -37,7 +38,7 @@ export const NAV: readonly NavItem[] = [
 ];
 
 export const SIDEBAR_WIDTH = 220;
-export const SIDEBAR_RAIL_WIDTH = 56;
+export const SIDEBAR_RAIL_WIDTH = 72;
 
 export function NavIcon({ d, size = 18 }: { d: string; size?: number }) {
   return (
@@ -97,8 +98,24 @@ export function Sidebar({
   animateWidth?: boolean;
 }) {
   const labels = useLabels();
+  const [hint, setHint] = useState<{ label: string; top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!hint) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setHint(null);
+    };
+    window.addEventListener('keydown', dismiss);
+    return () => window.removeEventListener('keydown', dismiss);
+  }, [hint]);
+  const showHint = (element: HTMLButtonElement, label: string) => {
+    if (!collapsed) return;
+    const bounds = element.getBoundingClientRect();
+    setHint({ label, left: bounds.right + 12, top: bounds.top });
+  };
   return (
     <aside
+      className="dm-editorial-sidebar"
+      onScroll={() => setHint(null)}
       data-collapsed={collapsed ? 'true' : 'false'}
       style={{
         width: collapsed ? SIDEBAR_RAIL_WIDTH : SIDEBAR_WIDTH,
@@ -107,11 +124,10 @@ export function Sidebar({
         boxSizing: 'border-box',
         overflowX: 'hidden',
         overflowY: 'auto',
-        // A source list: the paper tone does the separating, the hairline
-        // only finishes the edge.
-        borderRight: `1px solid ${color.lineSoft}`,
-        background: color.paper,
-        padding: collapsed ? '20px 8px 12px' : '20px 12px 12px',
+        // A quiet forest rail anchors the warm paper workspace.
+        borderRight: '1px solid #ffffff0b',
+        background: 'var(--dm-nav-bg)',
+        padding: '24px 14px 16px',
         display: 'flex',
         flexDirection: 'column',
         gap: 24,
@@ -122,7 +138,7 @@ export function Sidebar({
       {/* Hover is the neutral fill, not a line tone. The selector outranks
           tokens.css `.dm-nav-row:hover`; the active row's inline
           background outranks both. */}
-      <style>{`aside .dm-nav-row:hover{background:var(--dm-fill)}`}</style>
+
       {/* Brand. ADR-0036 is the whole specification: the mark, the
           wordmark, the ratio between them and the tone belong to the
           component, not to this consumer. `size` is the only lever, and
@@ -138,12 +154,12 @@ export function Sidebar({
           padding: collapsed ? 0 : '0 8px',
         }}
       >
-        <Logo size={24} variant={collapsed ? 'mark' : 'horizontal'} />
+        <Logo size={24} tone="reversed" variant={collapsed ? 'mark' : 'horizontal'} />
       </div>
 
       <nav
         aria-label="Product navigation"
-        style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1 }}
+        style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1 }}
       >
         {NAV.map((item) => {
           const on = active === item.id;
@@ -153,6 +169,9 @@ export function Sidebar({
           const lockLabel = lock == null ? undefined : `${lock} feature`;
           const countText = typeof count === 'object' ? count.text : count;
           const countLabel = typeof count === 'object' ? count.label : undefined;
+          const railLabel = [label, lockLabel, countLabel ?? countText]
+            .filter((value) => value != null)
+            .join(', ');
           const signalNavigationIntent = () => {
             if (!on) onNavigateIntent?.(item.id);
           };
@@ -162,33 +181,43 @@ export function Sidebar({
               type="button"
               className="dm-nav-row"
               onClick={() => onNavigate(item.id)}
-              onFocus={signalNavigationIntent}
+              onFocus={(event) => {
+                signalNavigationIntent();
+                showHint(event.currentTarget, railLabel);
+              }}
+              onBlur={() => setHint(null)}
               onTouchStart={signalNavigationIntent}
-              onMouseEnter={signalNavigationIntent}
+              onMouseEnter={(event) => {
+                signalNavigationIntent();
+                showHint(event.currentTarget, railLabel);
+              }}
+              onMouseLeave={() => setHint(null)}
               aria-current={on ? 'page' : undefined}
               // The rail hides the label, so the row needs its name back;
-              // `title` is the hover tooltip.
-              aria-label={
-                collapsed ? [label, lockLabel, countLabel].filter(Boolean).join(', ') : undefined
-              }
-              title={collapsed ? label : undefined}
+              // visible hints also retain counts and plan-gate context.
+              aria-label={collapsed ? railLabel : undefined}
+              title={collapsed ? railLabel : undefined}
               style={{
                 position: 'relative',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: collapsed ? 'center' : 'flex-start',
                 gap: 10,
-                height: 36,
+                height: 42,
                 flexShrink: 0,
                 padding: collapsed ? 0 : '0 10px',
                 borderRadius: radius.md,
                 border: 'none',
                 // Resting + hover backgrounds are CSS (`.dm-nav-row`) so
-                // hover needs no JS and works in both themes; only the
-                // active state is decided here. Active is a raised card,
-                // not a tinted slab — the teal is spent on the icon alone.
-                ...(on ? { background: color.card, boxShadow: shadow.card } : {}),
-                color: on ? color.fg : color.fgSoft,
+                // hover needs no JS and works in both themes. The active
+                // item has a soft fill and a warm edge marker.
+                ...(on
+                  ? {
+                      background: 'var(--dm-nav-active)',
+                      boxShadow: 'inset 3px 0 var(--dm-nav-marker)',
+                    }
+                  : {}),
+                color: on ? 'var(--dm-nav-fg)' : 'var(--dm-nav-muted)',
                 fontFamily: font.sans,
                 fontSize: text.md,
                 fontWeight: on ? 600 : 500,
@@ -198,7 +227,12 @@ export function Sidebar({
                 transition: `background ${motion.fast} ${motion.ease}`,
               }}
             >
-              <span style={{ display: 'inline-flex', color: on ? color.primary : color.fgMuted }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  color: on ? 'var(--dm-nav-fg)' : 'var(--dm-nav-muted)',
+                }}
+              >
                 <NavIcon d={item.icon} />
               </span>
               {!collapsed && (
@@ -218,26 +252,29 @@ export function Sidebar({
                 <span
                   className="dm-nav-lock"
                   aria-label={lockLabel}
-                  style={{ fontSize: text.xs, color: color.fgMuted }}
+                  style={{ fontSize: text.xs, color: 'var(--dm-nav-muted)' }}
                 >
                   {lock}
                 </span>
               )}
               {countText != null &&
                 (collapsed ? (
-                  <span
-                    aria-hidden="true"
-                    data-testid={`nav-dot-${item.id}`}
-                    style={{
-                      position: 'absolute',
-                      top: 8,
-                      right: 12,
-                      width: 6,
-                      height: 6,
-                      borderRadius: radius.pill,
-                      background: color.primary,
-                    }}
-                  />
+                  countText !== 0 &&
+                  countText !== '0' && (
+                    <span
+                      aria-hidden="true"
+                      data-testid={`nav-dot-${item.id}`}
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 12,
+                        width: 6,
+                        height: 6,
+                        borderRadius: radius.pill,
+                        background: 'var(--dm-nav-marker)',
+                      }}
+                    />
+                  )
                 ) : (
                   <span
                     aria-label={countLabel}
@@ -245,7 +282,7 @@ export function Sidebar({
                       fontSize: text.sm,
                       fontWeight: 500,
                       fontVariantNumeric: 'tabular-nums',
-                      color: color.fgMuted,
+                      color: 'var(--dm-nav-muted)',
                     }}
                   >
                     {countText}
@@ -256,6 +293,11 @@ export function Sidebar({
         })}
       </nav>
 
+      {hint && collapsed && (
+        <span aria-hidden="true" className="dm-nav-hint" style={{ top: hint.top, left: hint.left }}>
+          {hint.label}
+        </span>
+      )}
       {onToggleCollapsed && (
         <button
           type="button"
@@ -275,7 +317,7 @@ export function Sidebar({
             padding: 0,
             borderRadius: radius.pill,
             border: 'none',
-            color: color.fgMuted,
+            color: 'var(--dm-nav-muted)',
             cursor: 'pointer',
             transition: `background ${motion.fast} ${motion.ease}`,
           }}

@@ -69,13 +69,15 @@ describe('AppShell interactions', () => {
 });
 
 describe('AppShell — collapsible icon rail', () => {
-  it('starts expanded, collapses to icons, and remembers the choice on this device', () => {
+  it('starts as an icon rail, expands labels, and remembers the choice on this device', () => {
     const first = render(
       <AppShell active="senders" onNavigate={vi.fn()}>
         <div>Page content</div>
       </AppShell>,
     );
 
+    expect(within(sidebar()).queryByText('Triage')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand sidebar' }));
     expect(within(sidebar()).getByText('Triage')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Collapse sidebar' }));
 

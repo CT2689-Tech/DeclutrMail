@@ -66,12 +66,18 @@ describe('<SenderRow /> — what the row says', () => {
     expect(screen.getByText('redfin.com')).toBeInTheDocument();
   });
 
-  it('shows ONE number — the received count — with its unit', () => {
-    renderRow({ totalReceived: 1204, monthlyVolume: 37 });
+  it('keeps lifetime received alongside current inbox and explicitly scoped read-state evidence', () => {
+    renderRow({ totalReceived: 1204, monthlyVolume: 37, inboxCount: 42, readRate: 0.2 });
     expect(screen.getByText('1,204')).toBeInTheDocument();
     expect(screen.getByText('emails')).toBeInTheDocument();
     expect(screen.queryByText(/37/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/last seen|marked read/i)).not.toBeInTheDocument();
+    expect(screen.getByText('42 in inbox')).toBeInTheDocument();
+    expect(screen.getByText('20% marked read · 90d')).toBeInTheDocument();
+  });
+
+  it('does not turn unknown inbox or read-state evidence into zero', () => {
+    renderRow({ inboxCount: null, readRate: null });
+    expect(screen.queryByText(/in inbox|marked read/)).not.toBeInTheDocument();
   });
 
   it('marks a Protected sender', () => {
@@ -84,6 +90,36 @@ describe('<SenderRow /> — what the row says', () => {
   it('says nothing about unsubscribe until the user has asked for one', () => {
     renderRow({ unsubscribeMethod: 'one_click' });
     expect(screen.queryByText(/request|unavailable|gmail/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps compact identity separate from one lifecycle status and complete evidence', () => {
+    renderRow(
+      {
+        displayName: 'Old Navy',
+        policyType: 'unsubscribe',
+        unsubStatus: 'endpoint_accepted',
+        inboxCount: 18,
+        readRate: 0.12,
+      },
+      { compact: true },
+    );
+    const name = screen.getByRole('link', { name: 'Old Navy' });
+    const status = screen.getByText('Request accepted');
+    expect(name.parentElement).not.toContainElement(status);
+    expect(screen.getAllByText('Request accepted')).toHaveLength(1);
+    expect(screen.getByText('18 in inbox')).toBeInTheDocument();
+    expect(screen.getByText('12% marked read · 90d')).toBeInTheDocument();
+  });
+
+  it('keeps one compact activity status below the identity without changing its accessible label', () => {
+    renderRow(
+      { id: 'working', displayName: 'Substack' },
+      { compact: true },
+      new Map([['working', { phase: 'working', verb: 'archive' }]]),
+    );
+    const name = screen.getByRole('link', { name: 'Substack, Archiving…' });
+    expect(screen.getAllByText('Archiving…')).toHaveLength(1);
+    expect(name.parentElement).not.toContainElement(screen.getByText('Archiving…'));
   });
 
   it('states the unsubscribe lifecycle once it exists', () => {

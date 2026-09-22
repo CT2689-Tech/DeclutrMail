@@ -1,5 +1,12 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+  EditorialDescription,
+} from '@/features/editorial/page';
+
 import { useEffect } from 'react';
 
 import { EmptyState, ScreenIntro, toast, tokens } from '@declutrmail/shared';
@@ -43,27 +50,16 @@ export function QuietRoute() {
   return (
     <div
       style={{
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
+        ...editorialColumnStyle,
         display: 'grid',
         gap: 24,
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 880,
-        margin: '0 auto',
-        fontFamily: font.sans,
       }}
     >
-      <h1
-        style={{
-          margin: 0,
-          fontSize: text['2xl'],
-          fontWeight: 650,
-          letterSpacing: '-0.02em',
-          color: color.fg,
-        }}
-      >
-        Quiet hours
-      </h1>
+      <EditorialKicker>Automations / On your schedule</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Quiet hours</h1>
+      <EditorialDescription>
+        Autopilot pauses during quiet hours. Your own actions still run.
+      </EditorialDescription>
       <ScreenIntro
         id="quiet"
         title="Quiet hours"

@@ -119,7 +119,12 @@ const OVERRIDES_KB = {
   // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
   // /triage above.
   '/(app)/senders/[id]/page': 204,
-  '/(app)/billing/page': 185, // 181.3 — checkout + invoices + plan controls + explainer
+  // Editorial integration (2026-09-22): measured 185.2 / 180.6 / 125.0 kB
+  // for billing / screener / admin. Retain the visible count/plan navigation
+  // hints and shared page presentation; allow 1 kB on these three routes
+  // only. The general 180 kB ratchet and all other route budgets stay put.
+  '/(app)/billing/page': 186, // checkout + invoices + plan controls + editorial shell
+  '/(app)/screener/page': 181, // queue + decision controls + editorial shell
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the
@@ -147,7 +152,7 @@ const OVERRIDES_KB = {
   '/(app)/quiet/page': 165, // 161.7 — schedule controls + explainer
   '/(app)/later/page': 150, // 145.2 — return queue + explainer
   '/(app)/followups/page': 150, // 145.2 — follow-up queue + explainer
-  '/(app)/admin/security/page': 125, // 120.4
+  '/(app)/admin/security/page': 126, // 125.0 — operator log + editorial shell
   // Raised 115 -> 120 on 2026-09-01: measured 118.2, up from 112.2. The
   // new "Contact support" form (subject/message fields, submit handler,
   // the postSupportRequest API wrapper, and its own track() call) landed

@@ -1271,10 +1271,12 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={nothingAnywhere}
       />,
     );
-    // Both reaches count 0, so the choice changes nothing and is not offered
-    // (ADR-0042) — and the zero still blocks confirm.
-    expect(reachRow()).toBeNull();
+    // Scope stays inspectable even at zero; neither selection can arm a
+    // mutation without matching mail.
+    expect(reachRow()).not.toBeNull();
     expect(screen.getByRole('heading', { name: /Nothing in your inbox from/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
     expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
   });
 
@@ -2375,26 +2377,100 @@ describe('ConfirmActionModal — submitting', () => {
   });
 });
 
-// ADR-0042 — a chooser whose options all give one count is noise, and a
-// zero names the reason it is zero in the title.
-describe('ConfirmActionModal — choosers only where they change the count (ADR-0042)', () => {
-  it('hides the window chooser when every window gives the same count, and still sends the window', () => {
+// Production-main parity: period and supported reach remain explicit even
+// when the preview snapshot gives every option the same count.
+describe('ConfirmActionModal — explicit period and scope choices', () => {
+  const flat = { all: 7, olderThan30d: 7, olderThan90d: 7, olderThan180d: 7, olderThan365d: 7 };
+
+  it.each(['Archive', 'Delete'] as const)(
+    'keeps the %s period editable when all counts tie',
+    (verb) => {
+      const onConfirm = vi.fn();
+      render(
+        <ConfirmActionModal
+          request={request(verb)}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+          compositePreview={{ ...livePreview, counts: flat }}
+        />,
+      );
+      const period = screen.getByRole('combobox', { name: /How far back/i });
+      expect(period).toHaveValue(verb === 'Delete' ? '180' : 'all');
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`${verb} 7`) }));
+      expect(onConfirm).toHaveBeenLastCalledWith(
+        expect.objectContaining({ olderThanDays: verb === 'Delete' ? 180 : null }),
+      );
+      fireEvent.change(period, { target: { value: '365' } });
+      fireEvent.click(screen.getByRole('button', { name: new RegExp(`${verb} 7`) }));
+      expect(onConfirm).toHaveBeenLastCalledWith(expect.objectContaining({ olderThanDays: 365 }));
+    },
+  );
+
+  it('keeps Delete reach explicit when inbox and all-mail counts tie', () => {
     const onConfirm = vi.fn();
-    const flat = { all: 7, olderThan30d: 7, olderThan90d: 7, olderThan180d: 7, olderThan365d: 7 };
     render(
       <ConfirmActionModal
         request={request('Delete')}
         onCancel={() => {}}
         onConfirm={onConfirm}
-        compositePreview={{ ...livePreview, counts: flat }}
+        compositePreview={{
+          ...livePreview,
+          counts: flat,
+          allMail: { counts: flat, recentMessages: subjects },
+        }}
       />,
     );
-    expect(screen.queryByRole('combobox', { name: /How far back/i })).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Delete 7 emails?' })).toBeInTheDocument();
+    const wider = screen.getByRole('radio', { name: /Inbox \+ archived/ });
+    expect(screen.getByRole('radio', { name: /Inbox only/ })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    fireEvent.click(wider);
     fireEvent.click(screen.getByRole('button', { name: /Delete 7/ }));
-    // A render flag only: the payload keeps the Delete default window.
-    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ olderThanDays: 180 }));
+    expect(onConfirm).toHaveBeenLastCalledWith(
+      expect.objectContaining({ reach: 'all_mail', olderThanDays: 180 }),
+    );
   });
+
+  it.each(['archive', 'delete'] as const)(
+    'preserves tied-count period choices for Unsubscribe + %s',
+    (secondary) => {
+      const onConfirm = vi.fn();
+      render(
+        <ConfirmActionModal
+          request={request('Unsubscribe')}
+          onCancel={() => {}}
+          onConfirm={onConfirm}
+          compositePreview={{
+            ...livePreview,
+            counts: flat,
+            allMail: { counts: flat, recentMessages: subjects },
+          }}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole('radio', {
+          name: secondary === 'archive' ? 'Archive them' : 'Delete them',
+        }),
+      );
+      fireEvent.change(screen.getByRole('combobox', { name: /How far back/i }), {
+        target: { value: '90' },
+      });
+      if (secondary === 'delete')
+        fireEvent.click(screen.getByRole('radio', { name: /Inbox \+ archived/ }));
+      else
+        expect(
+          screen.queryByRole('radiogroup', { name: /Where it applies/ }),
+        ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /Unsubscribe/ }));
+      expect(onConfirm).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          secondary: { type: secondary, olderThanDays: 90 },
+          ...(secondary === 'delete' ? { reach: 'all_mail' } : {}),
+        }),
+      );
+    },
+  );
 
   it('titles a window-only zero with the window, and names the way out', () => {
     render(

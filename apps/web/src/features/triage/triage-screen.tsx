@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
+
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -88,7 +90,7 @@ const BatchActionSheet = dynamic(
   { ssr: false },
 );
 
-const { color, font, radius, text } = tokens;
+const { color, font, radius } = tokens;
 
 /**
  * Default state — fixtures, used by Storybook variants and the
@@ -1466,33 +1468,26 @@ export function TriageScreen({
         maxWidth: (mode === 'focus' ? 640 : 880) + 2 * (isNarrow ? 16 : 24),
         margin: '0 auto',
         // Bottom room clears the fixed undo pill.
-        padding: isNarrow ? '16px 16px 96px' : '20px 24px 96px',
+        padding: isNarrow ? '24px 16px 96px' : '28px 24px 96px',
         display: 'flex',
         flexDirection: 'column',
         gap: 20,
         fontFamily: font.sans,
       }}
     >
+      {journey === 'daily' && <EditorialKicker>Clean up / A considered decision</EditorialKicker>}
       {journey === 'daily' && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
+            flexWrap: 'wrap',
             gap: 16,
             minHeight: 44,
           }}
         >
-          <h1
-            style={{
-              fontSize: text['2xl'],
-              fontWeight: 650,
-              letterSpacing: '-0.02em',
-              margin: 0,
-            }}
-          >
-            Triage
-          </h1>
+          <h1 style={editorialTitleStyle}>Triage</h1>
           {state.kind === 'ready' && hasQueue && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* The screen's one count. */}

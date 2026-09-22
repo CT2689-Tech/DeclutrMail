@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page';
+
 import { useEffect } from 'react';
 import {
   Button,
@@ -92,16 +94,14 @@ export function PrivacyDataView({
     <div
       className="dm-settings-page"
       style={{
-        padding: '20px 24px 40px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
-        maxWidth: 720,
-        margin: '0 auto',
-        fontFamily: font.sans,
       }}
     >
       <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
+      <EditorialKicker>Your workspace / Privacy & data</EditorialKicker>
       <PageHeader title="Privacy & data" backToSettings />
       <ScreenIntro
         id="settings-privacy"

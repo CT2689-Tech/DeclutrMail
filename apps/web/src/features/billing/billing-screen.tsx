@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
 import { useEffect, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
@@ -634,26 +640,14 @@ export function BillingScreen({
   return (
     <div
       style={{
-        padding: 'clamp(12px, 4vw, 24px) clamp(12px, 4vw, 24px) 28px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
-        maxWidth: 1080,
-        margin: '0 auto',
-        fontFamily: font.sans,
       }}
     >
-      <h1
-        style={{
-          margin: 0,
-          fontSize: text['2xl'],
-          fontWeight: 650,
-          letterSpacing: '-0.02em',
-          color: color.fg,
-        }}
-      >
-        Plan &amp; billing
-      </h1>
+      <EditorialKicker>Your workspace / Plan & billing</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Plan &amp; billing</h1>
       <ScreenIntro
         id="billing"
         title="Plan & billing"

@@ -955,10 +955,9 @@ export function ConfirmActionModal({
   const reachWindow = showWindowChips ? olderThanDays : null;
   const inboxReachCount = pickBucketCount(inboxCounts, reachWindow);
   const allMailReachCount = pickBucketCount(allMailCounts, reachWindow);
-  // Shown only where the options give different counts — but never
-  // hidden while armed at the wider reach, which would leave a choice
-  // the user cannot see or undo.
-  const showReach = reachAvailable && (allMailScope || inboxReachCount !== allMailReachCount);
+  // Scope remains an explicit decision even when this snapshot's counts
+  // happen to tie. Preserve main's server-capability and verb gates.
+  const showReach = reachAvailable;
   const windowOptions = TIME_WINDOW_PRESETS.map((preset) => ({
     value: preset.days === null ? 'all' : String(preset.days),
     days: preset.days,
@@ -966,13 +965,10 @@ export function ConfirmActionModal({
     label: preset.days === null && allMailScope ? 'All mail' : preset.label,
     count: pickBucketCount(bucketCounts, preset.days),
   }));
-  // Five options that all give one count are noise — render only when the
-  // choice changes the number. Deliberately a RENDER flag: `showWindowRow`
-  // still governs `buildConfirmOpts`, so the payload is byte-identical.
-  const showWindowSelect =
-    showWindowChips &&
-    windowOptions.some((o) => o.count !== undefined) &&
-    windowOptions.some((o) => o.count !== windowOptions[0]!.count);
+  // A tied snapshot must not conceal the selected period or prevent the
+  // user changing it. Keep the existing empty-inbox gate; preview validity
+  // continues to control confirmation independently below.
+  const showWindowSelect = showWindowChips;
 
   const controls: ReactNode[] = [];
   if (showSecondaryRow) {

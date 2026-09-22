@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
 import type { CSSProperties, ReactElement } from 'react';
 import { useMemo, useState } from 'react';
 
@@ -74,7 +80,9 @@ export function AdminSecurityEventsScreen(): ReactElement {
   }
 
   return (
-    <div style={{ padding: 'clamp(12px, 4vw, 24px)', maxWidth: '1280px', margin: '0 auto' }}>
+    <div style={{ ...editorialColumnStyle, display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <EditorialKicker>Operator workspace / Audit log</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Security events</h1>
       <ScreenIntro
         id="admin-security-intro"
         title="Security events"

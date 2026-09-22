@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
+
 import type { ReactNode } from 'react';
 import { tokens } from '@declutrmail/shared';
 
@@ -36,7 +38,7 @@ export function StepShell({
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: '48px 24px',
+        padding: '56px 20px',
         background: color.bg,
         fontFamily: font.sans,
         position: 'relative',
@@ -46,25 +48,18 @@ export function StepShell({
       <div
         style={{
           width: '100%',
-          maxWidth,
+          maxWidth: maxWidth + 48,
+          padding: 'clamp(24px, 4vw, 40px)',
+          background: color.card,
+          border: `1px solid ${color.border}`,
+          borderRadius: 12,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
         }}
       >
-        <h1
-          style={{
-            fontFamily: font.sans,
-            fontSize: text['3xl'],
-            fontWeight: 650,
-            letterSpacing: '-0.025em',
-            lineHeight: 1.12,
-            color: color.fg,
-            margin: '0 0 12px',
-          }}
-        >
-          {title}
-        </h1>
+        <EditorialKicker>A clearer inbox starts here</EditorialKicker>
+        <h1 style={{ ...editorialTitleStyle, margin: '20px 0 14px' }}>{title}</h1>
         {sub && (
           <p
             style={{

@@ -55,7 +55,18 @@ function row(id: string): TriageDecisionRow {
 }
 
 function frame(children: React.ReactNode) {
-  return <div style={{ background: color.bg, padding: 24, width: 560 }}>{children}</div>;
+  return (
+    <div
+      style={{
+        background: color.bg,
+        padding: 'clamp(12px, 3vw, 24px)',
+        width: 'min(560px, calc(100vw - 32px))',
+        boxSizing: 'border-box',
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 const base = { whyOpen: false, onToggleWhy: () => {}, onAction: () => {} };

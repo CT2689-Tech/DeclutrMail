@@ -1,4 +1,4 @@
-/* /pricing — page-scoped styles. Tokens only; the page is pinned light. */
+/* /pricing — page-scoped styles. Theme-aware tokens shared with the working product. */
 
 .dm-pricing {
   width: min(1080px, calc(100% - 32px));
@@ -571,5 +571,52 @@
   .dm-pricing *,
   .dm-pricing *::before {
     transition: none !important;
+  }
+}
+
+/* Prices stay manifest-driven; the presentation follows the editorial study. */
+.dm-pricing {
+  width: min(1180px, calc(100% - 40px));
+  padding-top: clamp(56px, 7vw, 96px);
+}
+.dm-pricing-head h1 {
+  font-size: clamp(42px, 6vw, 76px);
+  font-weight: 450;
+  line-height: 1.08;
+}
+.dm-pricing-tiers {
+  gap: 20px;
+}
+.dm-tier {
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+  background: var(--dm-card);
+  box-shadow: 0 8px 26px color-mix(in srgb, var(--dm-fg) 4%, transparent);
+}
+.dm-tier[data-highlighted='true'] {
+  border-color: var(--dm-primary);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--dm-primary) 10%, transparent);
+}
+.dm-tier-name h2 {
+  font-family: var(--dm-font-display);
+  font-size: 28px;
+  font-weight: 500;
+}
+.dm-tier-cta,
+.dm-pricing-promo button {
+  border-radius: 8px;
+}
+.dm-tier-amount > span:first-child {
+  font-family: var(--dm-font-display);
+  font-weight: 500;
+  font-size: 58px;
+}
+.dm-pricing-promo {
+  border-radius: 10px;
+  border: 1px solid var(--dm-line);
+}
+@media (max-width: 600px) {
+  .dm-pricing {
+    width: calc(100% - 32px);
   }
 }

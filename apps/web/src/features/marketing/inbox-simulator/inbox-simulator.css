@@ -594,3 +594,30 @@
     padding: 38px 18px;
   }
 }
+
+/* The interactive demo shares the working product's paper and panels. */
+.dm-simulator {
+  padding-top: clamp(48px, 6vw, 80px);
+}
+.dm-simulator-hero h1 {
+  font-weight: 450;
+  font-size: clamp(40px, 5.6vw, 70px);
+  line-height: 1.12;
+}
+.dm-simulator-workspace {
+  border-radius: 14px;
+  border: 1px solid var(--dm-line);
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--dm-fg) 7%, transparent);
+}
+.dm-simulator-queue,
+.dm-simulator-activity {
+  border-radius: 10px;
+}
+.dm-simulator-primary,
+.dm-simulator-complete a {
+  border-radius: 8px;
+}
+.dm-simulator-next {
+  border-top: 1px solid var(--dm-line);
+  padding-top: 40px;
+}

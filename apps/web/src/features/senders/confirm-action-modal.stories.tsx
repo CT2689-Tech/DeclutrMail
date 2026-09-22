@@ -3,7 +3,7 @@
 // The mandatory preview before any Senders mutation, on the shared
 // `PreviewSheet`: the count in the title, where the email goes in the
 // subtitle, how to undo it in the note — each once — with only the
-// controls that change the count in the body and every other fact behind
+// supported scope/period controls in the body and other facts behind
 // "Details". Same grammar as Triage's ActionSheet.
 
 import type { ComponentProps } from 'react';
@@ -31,7 +31,7 @@ const meta: StoryMeta<typeof ConfirmActionModal> = {
     docs: {
       description: {
         component:
-          'The Senders D226 preview on the shared PreviewSheet (ADR-0042). Title = count + verb as a question, subtitle = whose email and where it goes, note = how to undo it; reach / window / backlog choosers appear only when they change the count; everything else sits behind Details.',
+          'The Senders D226 preview on the shared PreviewSheet (ADR-0042). Title = count + verb as a question, subtitle = whose email and where it goes, note = how to undo it; supported reach / window / backlog choosers remain visible even when counts tie; everything else sits behind Details.',
       },
     },
   },
@@ -199,5 +199,27 @@ export const PreviewFailed: Story<typeof ConfirmActionModal> = {
     request: { verb: 'Archive', senders: [macys] },
     compositePreviewError: true,
     onRetryPreview: noop,
+  } satisfies Args,
+};
+
+/** All messages are old; equal counts still leave time and scope editable. */
+export const EqualCountChoices: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Delete', senders: [macys] },
+    compositePreview: {
+      ...preview,
+      counts: { all: 7, olderThan30d: 7, olderThan90d: 7, olderThan180d: 7, olderThan365d: 7 },
+      allMail: {
+        counts: { all: 7, olderThan30d: 7, olderThan90d: 7, olderThan180d: 7, olderThan365d: 7 },
+        recentMessages: {
+          all: [],
+          olderThan30d: [],
+          olderThan90d: [],
+          olderThan180d: [],
+          olderThan365d: [],
+        },
+      },
+    },
   } satisfies Args,
 };

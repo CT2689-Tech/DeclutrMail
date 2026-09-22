@@ -7,7 +7,7 @@ import type { Sender } from './data';
 
 const { color, font, radius, text: typeScale } = tokens;
 
-// A pill well: no border at rest, a ring only while focused. Inline styles
+// A quiet input well with a visible focus ring. Inline styles
 // cannot express :focus-visible, and the global ring is an outline.
 const SEARCH_CSS = `
 .dm-search-well{outline:none;transition:box-shadow 120ms}
@@ -223,7 +223,7 @@ export function SenderSearch({
   };
 
   return (
-    <div ref={ref} style={{ position: 'relative', width: 240 }}>
+    <div ref={ref} style={{ position: 'relative', width: 240, maxWidth: '100%' }}>
       <style>{SEARCH_CSS}</style>
       <span
         aria-hidden="true"
@@ -286,10 +286,10 @@ export function SenderSearch({
           width: '100%',
           boxSizing: 'border-box',
           padding: '0 16px 0 38px',
-          background: color.fill,
+          background: color.card,
           color: color.fg,
-          border: 'none',
-          borderRadius: radius.pill,
+          border: `1px solid ${color.lineSoft}`,
+          borderRadius: radius.md,
           fontFamily: font.sans,
           fontSize: typeScale.base,
         }}

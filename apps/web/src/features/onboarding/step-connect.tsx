@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialOnboardingActionStyle } from '@/features/editorial/page';
+
 import type { ReactNode } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
 import {
@@ -95,7 +97,7 @@ export function StepConnect({ variant = 'fresh' }: { variant?: 'fresh' | 'reconn
         tone="primary"
         size="xl"
         onClick={() => window.location.assign(startUrl)}
-        style={{ minWidth: 240 }}
+        style={editorialOnboardingActionStyle}
       >
         Continue to Google
       </Button>

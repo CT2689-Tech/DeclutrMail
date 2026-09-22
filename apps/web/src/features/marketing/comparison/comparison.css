@@ -513,3 +513,31 @@
     font-weight: 650;
   }
 }
+
+/* Comparable facts remain intact, with a clearer editorial hierarchy. */
+.dm-compare-hero {
+  padding-top: clamp(56px, 7vw, 96px);
+}
+.dm-compare-hero h1 {
+  font-weight: 450;
+  font-size: clamp(42px, 5.8vw, 72px);
+  line-height: 1.1;
+}
+.dm-compare-breadcrumb {
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+  flex-wrap: wrap;
+}
+.dm-compare-method {
+  border-left: 3px solid var(--dm-primary);
+  background: var(--dm-paper);
+  padding: 20px 24px;
+}
+.dm-comparison table th {
+  background: var(--dm-paper);
+}
+.dm-comparison table :is(td, th) {
+  padding-block: 18px;
+}

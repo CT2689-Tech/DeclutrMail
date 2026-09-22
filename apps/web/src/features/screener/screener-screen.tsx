@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
@@ -43,7 +49,7 @@ import { ScreenerEmptyState } from './empty-state';
 import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
 
-const { color, font, text } = tokens;
+const { color, text } = tokens;
 
 /**
  * D226 overdue release — how long the polled decision handle may stay
@@ -620,29 +626,15 @@ export function ScreenerScreen({
   return (
     <div
       style={{
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
         gap: 24,
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 880,
-        margin: '0 auto',
-        fontFamily: font.sans,
       }}
     >
+      <EditorialKicker>Clean up / New senders</EditorialKicker>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-        <h1
-          style={{
-            fontSize: text['2xl'],
-            fontWeight: 650,
-            letterSpacing: '-0.02em',
-            margin: 0,
-            color: color.fg,
-          }}
-        >
-          Screener
-        </h1>
+        <h1 style={editorialTitleStyle}>Screener</h1>
         {/* Only the count query knows the true total — the queue loads a
             working window (top N), so `rows.length` is a page size. Until
             the count resolves, claim no number rather than presenting the

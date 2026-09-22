@@ -145,7 +145,7 @@ const CARET = (
   </svg>
 );
 
-// A quiet capsule (the `default` Button look) — fill, never an outline.
+// Compact workspace controls share the editorial input geometry.
 function headerButtonStyle(on: boolean): React.CSSProperties {
   return {
     display: 'inline-flex',
@@ -153,9 +153,9 @@ function headerButtonStyle(on: boolean): React.CSSProperties {
     gap: 6,
     height: 36,
     padding: '0 16px',
-    border: 'none',
-    borderRadius: radius.pill,
-    background: on ? color.fillHover : color.fill,
+    border: `1px solid ${color.lineSoft}`,
+    borderRadius: radius.md,
+    background: on ? color.fillHover : color.card,
     color: color.fg,
     fontFamily: font.sans,
     fontSize: text.base,

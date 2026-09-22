@@ -18,7 +18,7 @@ const MORE_ICON = 'M5 12h.01M12 12h.01M19 12h.01';
  * Responsive behaviour is **CSS-driven** (`tokens.css` media queries on
  * `dm-sidebar-desktop` / `dm-topbar-hamburger` / `dm-tabbar`) so the
  * layout is correct at first paint — a JS breakpoint hook would flash
- * the desktop shell on mobile before hydration. Below `sm` the sidebar
+ * the desktop shell on mobile before hydration. At 760px and below the sidebar
  * hides; a bottom tab bar carries the four daily destinations and its
  * "More" (like the hamburger) opens the full nav as a drawer.
  * Routing-agnostic — the host supplies `active`/`onNavigate`.
@@ -60,8 +60,8 @@ export function AppShell({
   const drawerRef = useFocusTrap<HTMLDivElement>(drawerOpen);
 
   // Per-device choice. `useLocalState` reads storage after mount, so the
-  // server and first client render agree on the expanded default.
-  const [collapsed, setCollapsed] = useLocalState<boolean>('sidebar.collapsed', false);
+  // server and first client render agree on the compact default.
+  const [collapsed, setCollapsed] = useLocalState<boolean>('sidebar.collapsed', true);
   const [animateWidth, setAnimateWidth] = useState(false);
   // The top bar is borderless at rest; a hairline appears only once
   // content has scrolled under it.
@@ -86,7 +86,7 @@ export function AppShell({
   // Close it when the viewport crosses INTO desktop. Responsive
   // behaviour here is CSS-only by design, which means `drawerOpen` has
   // no idea the breakpoint moved: open the drawer at 800px, then widen
-  // or rotate past 900px, and the hamburger disappears while the dialog
+  // or rotate past 760px, and the hamburger disappears while the dialog
   // stays mounted — a second <Sidebar> in an aria-modal dialog pinned
   // over the now-visible desktop one, focus trap and duplicate nav
   // landmarks included. That is precisely the state the inline-`display`
@@ -95,7 +95,7 @@ export function AppShell({
   // it only retires a state the layout can no longer host.
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
-    const desktop = window.matchMedia('(min-width: 901px)');
+    const desktop = window.matchMedia('(min-width: 761px)');
     const closeIfDesktop = () => {
       if (desktop.matches) setDrawerOpen(false);
     };
@@ -137,7 +137,7 @@ export function AppShell({
         overflow: 'hidden',
       }}
     >
-      {/* Desktop sidebar — CSS-hidden below the `sm` breakpoint. */}
+      {/* Desktop sidebar — CSS-hidden at 760px and below. */}
       <div className="dm-sidebar-desktop" style={{ flexShrink: 0 }}>
         <Sidebar
           active={active}
@@ -253,7 +253,7 @@ export function AppShell({
               // NO `display` here — it lives in tokens.css. An inline
               // `display: inline-flex`
               // outranks `.dm-topbar-hamburger { display: none }` and the
-              // ≤900px media query that re-enables it, so the button
+              // ≤760px media query that re-enables it, so the button
               // rendered at EVERY width. On desktop that let a click
               // mount the mobile drawer — a second <Sidebar> in an
               // aria-modal dialog pinned left:0, landing pixel-aligned on
@@ -286,7 +286,10 @@ export function AppShell({
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <div style={{ flex: 1 }} />
+          <div className="dm-shell-location" style={{ flex: 1 }}>
+            <span>YOUR WORKSPACE /</span>
+            <strong>{labels[active as LabelKey] ?? active}</strong>
+          </div>
           <HelpButton />
           {topbarRight ? (
             <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
@@ -323,7 +326,7 @@ export function AppShell({
           {children}
         </div>
 
-        {/* Mobile tab bar — CSS-hidden above the `sm` breakpoint. In
+        {/* Mobile tab bar — CSS-hidden above 760px. In
             flow (not fixed), so content can never sit underneath it. */}
         <nav
           className="dm-tabbar"

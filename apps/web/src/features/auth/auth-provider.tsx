@@ -168,7 +168,9 @@ function AuthSkeleton() {
       <div
         aria-hidden
         style={{
-          width: 228,
+          // Match AppShell's compact first-render rail (SIDEBAR_RAIL_WIDTH).
+          width: 72,
+          boxSizing: 'border-box',
           flexShrink: 0,
           borderRight: '1px solid var(--color-line, rgba(20,30,50,0.08))',
           padding: '20px 14px',
@@ -179,10 +181,9 @@ function AuthSkeleton() {
         }}
         className="dm-skeleton-sidebar"
       />
-      {/* Keep first paint on the exact same breakpoint as AppShell. A
-          tablet between 768px and 900px used to receive a desktop rail
-          while loading, then jump to the mobile hamburger after auth. */}
-      <style>{`@media (min-width: 901px) { .dm-skeleton-sidebar { display: flex !important; } }`}</style>
+      {/* Match the shell's 760px navigation threshold; feature content
+          keeps its independent 900px small-screen breakpoint. */}
+      <style>{`@media (min-width: 761px) { .dm-skeleton-sidebar { display: flex !important; } }`}</style>
       <div
         aria-hidden
         style={{

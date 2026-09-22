@@ -113,6 +113,7 @@ export function ScreenerRow({
   const ageLabel =
     scoredAt !== undefined && now !== null ? scoredAgeLabel(scoredAt, new Date(now)) : null;
   const isPhone = useIsAtMost('xs');
+  const compactHeader = useIsAtMost('sm');
 
   return (
     <div
@@ -142,8 +143,8 @@ export function ScreenerRow({
         aria-label={`${row.senderName} — ${expanded ? 'collapse' : 'expand'} new-sender detail`}
         style={{
           display: 'grid',
-          gridTemplateColumns: isPhone
-            ? '44px minmax(0, 1fr) auto 18px'
+          gridTemplateColumns: compactHeader
+            ? '44px minmax(0, 1fr) 18px'
             : '44px minmax(0, 1fr) auto auto 18px',
           gap: isPhone ? 10 : 12,
           alignItems: 'center',
@@ -157,7 +158,15 @@ export function ScreenerRow({
         <Avatar name={row.senderName} domain={row.senderDomain} size={44} hasMark={row.brandMark} />
 
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, gap: 2 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: compactHeader ? 'column' : 'row',
+              alignItems: compactHeader ? 'stretch' : 'baseline',
+              gap: compactHeader ? 2 : 8,
+              minWidth: 0,
+            }}
+          >
             <span
               style={{
                 fontWeight: 600,
@@ -166,7 +175,8 @@ export function ScreenerRow({
                 color: color.fg,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
+                whiteSpace: compactHeader ? 'normal' : 'nowrap',
+                overflowWrap: compactHeader ? 'anywhere' : undefined,
                 minWidth: 0,
               }}
             >
@@ -176,11 +186,17 @@ export function ScreenerRow({
               style={{
                 fontSize: text.sm,
                 color: color.fgMuted,
-                flexShrink: 0,
+                flexShrink: compactHeader ? 1 : 0,
+                overflowWrap: compactHeader ? 'anywhere' : undefined,
               }}
             >
               {row.senderDomain}
             </span>
+            {compactHeader && (
+              <span style={{ fontSize: text.xs, color: color.fgMuted }}>
+                First seen {firstSeenLabel(row.firstSeenAt)}
+              </span>
+            )}
           </div>
           {/* Sample subject — the latest message (D71). */}
           <span
@@ -199,7 +215,7 @@ export function ScreenerRow({
         {/* First seen — relative (D71). Hidden in the collapsed header at
             phone width to fit the grid; still shown in the expanded
             detail body below. */}
-        {!isPhone && (
+        {!compactHeader && (
           <span
             style={{
               fontSize: text.sm,
@@ -220,30 +236,38 @@ export function ScreenerRow({
             describe the same read differently. See
             `@declutrmail/shared/copy/engine-confidence` for why the
             cascade's number does not support two digits. */}
-        {row.recommendation != null ? (
-          <Pill tone={VERDICT_TONE[row.recommendation.verdict]}>
-            {verdictLabel(row.recommendation.verdict)}
-            {(() => {
-              const band = confidenceBand(
-                row.recommendation.verdict,
-                row.recommendation.confidence,
-              );
-              return band === null ? null : (
-                <span style={{ opacity: 0.85 }}>
-                  {' · '}
-                  {band}
-                </span>
-              );
-            })()}
-          </Pill>
-        ) : (
-          <Pill>New</Pill>
-        )}
-
+        <div
+          style={{
+            display: 'inline-flex',
+            minWidth: 0,
+            ...(compactHeader ? { gridColumn: 2, gridRow: 2 } : {}),
+          }}
+        >
+          {row.recommendation != null ? (
+            <Pill tone={VERDICT_TONE[row.recommendation.verdict]}>
+              {verdictLabel(row.recommendation.verdict)}
+              {(() => {
+                const band = confidenceBand(
+                  row.recommendation.verdict,
+                  row.recommendation.confidence,
+                );
+                return band === null ? null : (
+                  <span style={{ opacity: 0.85 }}>
+                    {' · '}
+                    {band}
+                  </span>
+                );
+              })()}
+            </Pill>
+          ) : (
+            <Pill>New</Pill>
+          )}
+        </div>
         {/* Chevron. */}
         <span
           aria-hidden="true"
           style={{
+            ...(compactHeader ? { gridColumn: 3, gridRow: '1 / 3' } : {}),
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',

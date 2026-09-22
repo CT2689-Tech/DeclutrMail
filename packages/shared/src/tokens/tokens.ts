@@ -33,12 +33,12 @@ export const color = {
   fillHover: 'var(--dm-fill-hover)',
   scrim: 'var(--dm-scrim)',
 
-  /** Deep-teal accent. */
+  /** Forest accent. */
   primary: 'var(--dm-primary)',
   primaryDeep: 'var(--dm-primary-deep)',
   primarySoft: 'var(--dm-primary-soft)',
   primaryBorder: 'var(--dm-primary-border)',
-  /** Pale teal wash — informational banner backgrounds. */
+  /** Pale forest wash — informational banner backgrounds. */
   primaryWash: 'var(--dm-primary-wash)',
   mint: 'var(--dm-mint)',
 
@@ -92,21 +92,9 @@ export const color = {
   fgInverseMuted: 'var(--dm-fg-inverse-muted)',
   lineInverse: 'var(--dm-line-inverse)',
 
-  /**
-   * Dashboard-surface palette extension per ADR-0009 (amends D2).
-   *
-   * SCOPE: Senders, Activity, Brief, future Insights surfaces ONLY.
-   * Use violet for live/active affordances + filter-chip active state.
-   *
-   * FORBIDDEN everywhere: violet on action buttons (Keep / Archive /
-   * Unsubscribe / Later — D227), on trust affordances (D7 / D228), on
-   * recommendation tones (D26 / D31), or on any non-dashboard surface
-   * (Triage / Onboarding / Settings / Billing / marketing).
-   *
-   * Consumer convention: files importing `color.dashboard.*` must
-   * include the ADR-0009 file-header comment block. An ESLint guardrail
-   * scoping these imports to apps/web/src/features/{senders,activity,brief}/**
-   * is tracked in FOUNDER-FOLLOWUPS.md (2026-05-25 entry).
+  /** Dashboard emphasis. Warm forest hues from the approved Editorial
+   * redesign (2026-09-22), reserved for navigation and evidence filters.
+   * Action tones remain independently semantic: danger, warning, primary.
    */
   dashboard: {
     accent: 'var(--dm-dash-accent)',

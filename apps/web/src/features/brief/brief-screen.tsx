@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -51,22 +57,9 @@ const NoiseArchiveSheet = dynamic(
 const { color, font, text } = tokens;
 
 /** One column for every Brief state — header, lists and edge states align. */
-const COLUMN = {
-  padding: '20px clamp(16px, 4vw, 24px) 28px',
-  width: '100%',
-  boxSizing: 'border-box',
-  maxWidth: 880,
-  margin: '0 auto',
-  fontFamily: font.sans,
-} as const;
+const COLUMN = editorialColumnStyle;
 
-const H1_STYLE = {
-  margin: 0,
-  fontSize: text['2xl'],
-  fontWeight: 650,
-  letterSpacing: '-0.02em',
-  color: color.fg,
-} as const;
+const H1_STYLE = editorialTitleStyle;
 
 /**
  * Daily Brief screen (D61, D63, D67, D69, D70).
@@ -246,7 +239,8 @@ function BriefBody({
   }, [brief.id, brief.openedAt, isToday, markOpened]);
 
   return (
-    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 32 }}>
+    <div style={{ ...COLUMN, display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <EditorialKicker>Catch up / Your daily edition</EditorialKicker>
       <div
         style={{
           display: 'flex',
@@ -426,7 +420,11 @@ function Narrative({ narrative }: { narrative: string }) {
     <p
       style={{
         margin: 0,
-        fontSize: text.lg,
+        fontFamily: font.display,
+        fontSize: 'clamp(21px, 2.2vw, 27px)',
+        padding: '18px 0 22px',
+        borderBottom: `1px solid ${color.line}`,
+        letterSpacing: '-0.015em',
         lineHeight: 1.55,
         color: color.fg,
         // Cap the reading measure at the ~65-75 characters the eye
@@ -731,8 +729,9 @@ function SectionHeading({
         alignItems: 'baseline',
         gap: 6,
         margin: 0,
-        fontSize: text.lg,
-        fontWeight: 650,
+        fontFamily: font.display,
+        fontSize: text['2xl'],
+        fontWeight: 400,
         letterSpacing: '-0.01em',
         color: color.fg,
       }}

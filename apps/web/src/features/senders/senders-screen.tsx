@@ -72,6 +72,7 @@ import {
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { useAuth } from '@/features/auth/auth-provider';
 import { SenderList } from './sender-list';
+import workspaceStyles from './sender-workspace.module.css';
 import { useSenderPane } from './use-sender-pane';
 
 // The pane mounts only after a row click at ≥ 1100px, and it carries the
@@ -2413,49 +2414,17 @@ function SendersScreenContent({
 
   return (
     <RowActivityProvider value={rowActivity}>
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns:
-            paneSenderId !== null ? 'minmax(0, 1fr) clamp(360px, 40%, 480px)' : 'minmax(0, 1fr)',
-          alignItems: 'start',
-          // The list reads best at ≤880px; an open pane widens the frame,
-          // never the list.
-          maxWidth: paneSenderId !== null ? 928 + 480 : 928,
-          margin: '0 auto',
-        }}
-      >
-        <div
-          style={{
-            padding: '20px clamp(16px, 4vw, 24px) 28px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 16,
-            minWidth: 0,
-          }}
-        >
-          {/* Header — one line: title, then search + Filter + Sort. */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px 16px',
-              flexWrap: 'wrap',
-            }}
-          >
-            <h1
-              style={{
-                fontFamily: font.sans,
-                fontSize: text['2xl'],
-                fontWeight: 650,
-                letterSpacing: '-0.02em',
-                margin: 0,
-              }}
-            >
-              Senders
-            </h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div className={workspaceStyles.workspace} data-split={canSplit || undefined}>
+        <div className={workspaceStyles.listColumn}>
+          <header className={workspaceStyles.heading}>
+            <div>
+              <div className={workspaceStyles.eyebrow}>Your inbox, by sender</div>
+              <h1 className={workspaceStyles.title}>Senders</h1>
+              <p className={workspaceStyles.subtitle}>
+                See the pattern. Decide what deserves a place.
+              </p>
+            </div>
+            <div className={workspaceStyles.tools}>
               <SenderSearch
                 value={query}
                 onChange={setQuery}
@@ -2481,7 +2450,7 @@ function SendersScreenContent({
               />
               <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
             </div>
-          </div>
+          </header>
 
           <ScreenIntro
             id="senders"
@@ -2521,21 +2490,13 @@ function SendersScreenContent({
             active filters, mailbox-wide (BE-honest). On the untouched
             default it says what that default is, because no chip does. */}
           {senders.length > 0 && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                gap: 16,
-                flexWrap: 'wrap',
-              }}
-            >
+            <div className={workspaceStyles.summary}>
               <div data-testid="senders-hero" aria-busy={countsMayBeStale}>
                 <span
                   style={{
                     fontFamily: font.display,
                     fontWeight: 400,
-                    fontSize: text['4xl'],
+                    fontSize: text['3xl'],
                     lineHeight: 1,
                     letterSpacing: '-0.03em',
                     color: color.fg,
@@ -2631,16 +2592,15 @@ function SendersScreenContent({
             loaded set with an active query/filter means "no matches" —
             not "not synced yet". */}
           <fieldset
+            className={workspaceStyles.results}
             data-testid="sender-results-region"
             disabled={showingStaleRows}
             inert={showingStaleRows ? true : undefined}
             aria-busy={showingStaleRows}
             aria-disabled={showingStaleRows}
             style={{
-              border: 0,
               margin: 0,
               minWidth: 0,
-              padding: 0,
               opacity: showingStaleRows ? 0.55 : 1,
               pointerEvents: showingStaleRows ? 'none' : undefined,
               transition: `opacity ${motion.fast} ${motion.ease}`,
@@ -2706,7 +2666,7 @@ function SendersScreenContent({
                 onAction={requestAction}
                 onOpen={openSender}
                 activeId={paneSenderId}
-                compact={isPhone || (paneSenderId !== null && tightSplit)}
+                compact={isPhone || (canSplit && tightSplit)}
                 followKeys={canSplit}
               />
             )}
@@ -2762,21 +2722,44 @@ function SendersScreenContent({
             ))}
         </div>
 
-        {paneSenderId !== null && (
-          // Sticky inside the shell's scroller, so the list scrolls under
-          // a pane that stays put. 56px ≈ the shell's top bar.
-          <div
-            style={{
-              position: 'sticky',
-              top: 0,
-              height: 'calc(100dvh - 56px)',
-              // Inset so the raised pane floats clear of the edges.
-              padding: 12,
-              boxSizing: 'border-box',
-              minWidth: 0,
-            }}
-          >
-            <SenderDetailPane key={paneSenderId} senderId={paneSenderId} onClose={closePane} />
+        {canSplit && (
+          <div className={workspaceStyles.inspectorColumn}>
+            {paneSenderId !== null ? (
+              <SenderDetailPane key={paneSenderId} senderId={paneSenderId} onClose={closePane} />
+            ) : (
+              <aside className={workspaceStyles.emptyInspector} aria-label="Sender inspector">
+                <div className={workspaceStyles.emptyIcon} aria-hidden="true">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.3"
+                  >
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <path d="m3 6 9 7 9-7" />
+                  </svg>
+                </div>
+                <div className={workspaceStyles.eyebrow}>A little context goes a long way</div>
+                <h2>A closer look.</h2>
+                <p>
+                  Choose a sender to explore their mail, understand the pattern and make a
+                  considered decision.
+                </p>
+                <div className={workspaceStyles.inspectorSteps}>
+                  <span>
+                    <b>01</b> Review recent messages and history
+                  </span>
+                  <span>
+                    <b>02</b> Choose an action and inspect its scope
+                  </span>
+                  <span>
+                    <b>03</b> Confirm when you're ready
+                  </span>
+                </div>
+              </aside>
+            )}
           </div>
         )}
       </div>

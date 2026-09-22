@@ -1,0 +1,228 @@
+.page {
+  color: var(--dm-fg);
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  padding: 0 0 27px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--dm-line);
+}
+.header h1 {
+  font-family: var(--dm-font-display);
+  font-weight: 400;
+  font-size: clamp(36px, 4.2vw, 54px);
+  line-height: 1.1;
+  letter-spacing: -0.04em;
+  margin: 23px 0 10px;
+}
+.subtitle {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--dm-fg-muted);
+}
+.headerNote {
+  font-family: var(--dm-font-display);
+  font-style: italic;
+  font-size: 17px;
+  color: var(--dm-fg-muted);
+  max-width: 175px;
+  text-align: right;
+}
+.summaryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  min-width: 0;
+  background: var(--dm-card);
+  border: 1px solid var(--dm-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.progress {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-start;
+  padding: clamp(24px, 4vw, 42px);
+  gap: 16px;
+  min-width: 0;
+}
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--dm-fg-muted);
+  line-height: 1.6;
+}
+.number {
+  font-family: var(--dm-font-display);
+  font-size: clamp(58px, 7vw, 92px);
+  line-height: 1.05;
+  font-weight: 400;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.numberLabel {
+  font-size: 16px;
+  color: var(--dm-fg);
+  margin: 0;
+  line-height: 1.5;
+}
+.progressNote {
+  font-size: 12px;
+  color: var(--dm-fg-muted);
+  max-width: 260px;
+  line-height: 1.65;
+  padding-top: 13px;
+  border-top: 1px solid var(--dm-line);
+}
+.nextStep {
+  padding: clamp(24px, 4vw, 42px);
+  border-left: 1px solid var(--dm-line);
+  background: var(--dm-paper);
+  min-width: 0;
+}
+.nextStep h2,
+.beginning h2 {
+  font-family: var(--dm-font-display);
+  font-weight: 400;
+  font-size: clamp(30px, 3vw, 40px);
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+  margin: 16px 0;
+}
+.nextStep p,
+.beginning p {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--dm-fg-muted);
+  max-width: 420px;
+  margin: 0 0 24px;
+}
+.primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 46px;
+  padding: 12px 20px;
+  border-radius: 6px;
+  background: var(--dm-primary);
+  color: var(--dm-fg-inverse);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  line-height: 1.5;
+  max-width: 100%;
+  transition: background 120ms ease;
+}
+.primary:hover {
+  background: var(--dm-primary-deep);
+}
+.primary:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 4px;
+}
+.primary span {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.footnote {
+  display: block;
+  font-size: 11px;
+  color: var(--dm-fg-muted);
+  margin-top: 14px;
+  line-height: 1.7;
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  padding: 24px 0;
+  gap: 20px 42px;
+  border-bottom: 1px solid var(--dm-line);
+}
+.stats > div {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 7px;
+  min-width: 120px;
+  flex: 1;
+}
+.stats dt {
+  font-size: 12px;
+  color: var(--dm-fg-muted);
+}
+.stats dd {
+  margin: 0;
+  font-family: var(--dm-font-display);
+  font-size: 30px;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.closing {
+  margin: 20px 0;
+  font-size: 12px;
+  color: var(--dm-fg-muted);
+}
+.beginning {
+  padding: clamp(24px, 4vw, 46px);
+  border: 1px solid var(--dm-border);
+  background: var(--dm-card);
+  border-radius: 10px;
+}
+.beginning h2 {
+  font-size: clamp(32px, 4vw, 46px);
+  margin-top: 21px;
+}
+@media (max-width: 700px) {
+  .headerNote {
+    display: none;
+  }
+  .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+  .progress {
+    padding: 27px;
+    gap: 12px;
+  }
+  .nextStep {
+    border-left: 0;
+    border-top: 1px solid var(--dm-line);
+    padding: 27px;
+  }
+  .number {
+    font-size: 68px;
+  }
+  .nextStep h2 br {
+    display: none;
+  }
+  .stats {
+    gap: 20px;
+  }
+  .stats > div {
+    min-width: 100px;
+  }
+  .header {
+    margin-bottom: 20px;
+    padding-bottom: 22px;
+  }
+  .header h1 {
+    font-size: 39px;
+  }
+  .subtitle {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .primary {
+    transition: none;
+  }
+}

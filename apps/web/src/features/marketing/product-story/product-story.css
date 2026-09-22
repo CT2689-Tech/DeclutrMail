@@ -943,3 +943,25 @@
     transform: none;
   }
 }
+
+/* Editorial pacing around the existing, truthful product demonstrations. */
+.dm-story-hero h1 {
+  font-weight: 450;
+  line-height: 1.1;
+  font-size: clamp(42px, 6vw, 76px);
+}
+.dm-story-button {
+  border-radius: 8px;
+}
+.dm-story-device {
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+  background: var(--dm-card);
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--dm-fg) 7%, transparent);
+}
+.dm-story-device-bar {
+  background: var(--dm-paper);
+}
+.dm-story-vignette {
+  border-radius: 12px;
+}

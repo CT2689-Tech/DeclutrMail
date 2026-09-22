@@ -61,6 +61,7 @@ import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
 import { useNow } from '@/lib/use-now';
 import { SwitchTrack } from '@/features/settings/switch';
+import styles from '../sender-workspace.module.css';
 
 const { color, font, radius, space, text } = tokens;
 
@@ -74,10 +75,10 @@ export type DetailLayout = 'page' | 'pane';
  * Order (2026-09 simplification of ADR-0012's Variant D):
  *   1. Identity — logo, name, address; Protected switch with its exact
  *      reason (D245); unsub status; a quiet "Open in Gmail" link.
- *   2. ONE number — email in the last 90 days — and one sentence.
+ *   2. Current inbox count alongside 90-day volume and lifetime received.
  *   3. The five verbs; the fact-derived primary is the one filled button.
  *      The engine's suggestion stays a separate quiet disclosure (D245).
- *   4. Quiet stats row — read rate · 12-month trend · last seen · you
+ *   4. Compact evidence grid — read rate · 12-month trend · last seen · you
  *      wrote (the stats that left the list row).
  *   5. Recent messages.
  *   6. Decision timeline.
@@ -1142,142 +1143,142 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
     return history.map((row, i) => historyRowToTimelineItem(row, i === currentIndex, now));
   }, [history, now]);
 
+  const actionToolbar = (
+    <RowActivityProvider value={pageActivity}>
+      <ActionToolbar sender={sender} onAction={requestAction} shortcuts={layout === 'page'} />
+    </RowActivityProvider>
+  );
+
   return (
-    <DetailFrame layout={layout}>
-      {/* D230 manual path — the "finish in Gmail" step for a mailto
+    <DetailFrame layout={layout} scrollable>
+      <div className={styles.detailContent}>
+        {/* D230 manual path — the "finish in Gmail" step for a mailto
           sender. Transient right after this tab's confirm; persistent
           (from the wire row) whenever the standing unsub policy exists
           and the sender's channel is mailto, so a user returning later
           still finds the send affordance. The USER sends — never
           DeclutrMail. */}
-      {(() => {
-        const persistent =
-          detail.policyType === 'unsubscribe' &&
-          detail.unsubscribeMethod === 'mailto' &&
-          detail.unsubscribeMailtoUrl
-            ? {
-                senderId: sender.id,
-                senderName: sender.name,
-                mailtoUrl: detail.unsubscribeMailtoUrl,
-              }
-            : null;
-        const callout = mailtoFollowup ?? persistent;
-        return callout ? (
-          <UnsubMailtoCallout
-            senderId={callout.senderId}
-            senderName={callout.senderName}
-            mailtoUrl={callout.mailtoUrl}
-            status={detail.unsubStatus}
-            {...(mailtoFollowup ? { onDismiss: () => setMailtoFollowup(null) } : {})}
-          />
-        ) : null;
-      })()}
+        {(() => {
+          const persistent =
+            detail.policyType === 'unsubscribe' &&
+            detail.unsubscribeMethod === 'mailto' &&
+            detail.unsubscribeMailtoUrl
+              ? {
+                  senderId: sender.id,
+                  senderName: sender.name,
+                  mailtoUrl: detail.unsubscribeMailtoUrl,
+                }
+              : null;
+          const callout = mailtoFollowup ?? persistent;
+          return callout ? (
+            <UnsubMailtoCallout
+              senderId={callout.senderId}
+              senderName={callout.senderName}
+              mailtoUrl={callout.mailtoUrl}
+              status={detail.unsubStatus}
+              {...(mailtoFollowup ? { onDismiss: () => setMailtoFollowup(null) } : {})}
+            />
+          ) : null;
+        })()}
 
-      {/* 1. Identity — who this is, and whether they are Protected. */}
-      <header style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
-        <div style={{ display: 'flex', gap: space[4], alignItems: 'center', minWidth: 0 }}>
-          <Avatar name={sender.name} domain={sender.domain} size={64} hasMark={sender.brandMark} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-            {/* The pane sits beside the Senders list, which owns the h1. */}
-            <NameHeading
-              style={{
-                margin: 0,
-                fontSize: text['2xl'],
-                fontWeight: 650,
-                letterSpacing: '-0.02em',
-                lineHeight: 1.2,
-                color: color.fg,
-                overflowWrap: 'anywhere',
-              }}
-            >
-              {sender.name}
-            </NameHeading>
-            <span
-              // Address, not domain — the header has to name WHICH
-              // sender this page is about; a brand can own several rows
-              // that share a domain (`senderAddressLine`).
-              style={{
-                fontSize: text.sm,
-                color: color.fgMuted,
-                overflowWrap: 'anywhere',
-              }}
-            >
-              {senderAddressLine(sender)}
-            </span>
+        {/* 1. Identity — who this is, and whether they are Protected. */}
+        <header className={styles.detailIdentity}>
+          <div className={styles.identityMain}>
+            <Avatar
+              name={sender.name}
+              domain={sender.domain}
+              size={64}
+              hasMark={sender.brandMark}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              {/* The pane sits beside the Senders list, which owns the h1. */}
+              <NameHeading className={styles.detailName}>{sender.name}</NameHeading>
+              <span
+                // Address, not domain — the header has to name WHICH
+                // sender this page is about; a brand can own several rows
+                // that share a domain (`senderAddressLine`).
+                style={{
+                  fontSize: text.sm,
+                  color: color.fgMuted,
+                  overflowWrap: 'anywhere',
+                }}
+              >
+                {senderAddressLine(sender)}
+              </span>
+            </div>
           </div>
-        </div>
 
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: space[3],
-            flexWrap: 'wrap',
-            minWidth: 0,
-          }}
-        >
-          {/* Unsub status (D9 Wave 2). Mirrors the senders-list chip:
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: space[3],
+              flexWrap: 'wrap',
+              minWidth: 0,
+            }}
+          >
+            {/* Unsub status (D9 Wave 2). Mirrors the senders-list chip:
               shown while a standing unsubscribe policy exists, copy keyed
               by the REAL execution outcome (`unsubStatus`) via the shared
               UNSUB_PILL map — never a static "queued" that outlives a
               terminal done/failed state. */}
-          {detail.policyType === 'unsubscribe' && (
-            <UnsubStatusPill status={detail.unsubStatus} method={detail.unsubscribeMethod} />
-          )}
+            {detail.policyType === 'unsubscribe' && (
+              <UnsubStatusPill status={detail.unsubStatus} method={detail.unsubscribeMethod} />
+            )}
 
-          {/* DeclutrMail never renders message bodies (D7); the fastest
+            {/* DeclutrMail never renders message bodies (D7); the fastest
               path to "see this sender's email" is Gmail's own search. */}
-          {openAllInGmailHref && (
-            <a
-              href={openAllInGmailHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => {
-                void track('gmail_deep_link_opened', {
-                  source: 'sender_detail_open_all',
-                  deep_link_kind: 'all_from_sender',
-                });
-                addBreadcrumb({
-                  category: 'navigation',
-                  message: `gmail-deep-link: all-from-sender ${sender.id}`,
-                  level: 'info',
-                });
-              }}
-              style={{
-                fontSize: text.sm,
-                fontWeight: 500,
-                color: color.fgSoft,
-                textDecoration: 'none',
-                whiteSpace: 'nowrap',
-              }}
-              // QA-sender-detail-20260902-05: one description for every
-              // user, and no "all"/"every" — the link is a `from:` search
-              // (GmailOpenLinkService.buildFromSearchLink), and Gmail's
-              // default search excludes Spam and Trash.
-              aria-label="Open a Gmail search for email from this sender"
-              title="Open a Gmail search for email from this sender"
-            >
-              Open in Gmail
-            </a>
-          )}
-        </div>
+            {openAllInGmailHref && (
+              <a
+                href={openAllInGmailHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  void track('gmail_deep_link_opened', {
+                    source: 'sender_detail_open_all',
+                    deep_link_kind: 'all_from_sender',
+                  });
+                  addBreadcrumb({
+                    category: 'navigation',
+                    message: `gmail-deep-link: all-from-sender ${sender.id}`,
+                    level: 'info',
+                  });
+                }}
+                style={{
+                  fontSize: text.sm,
+                  fontWeight: 500,
+                  color: color.fgSoft,
+                  textDecoration: 'none',
+                  whiteSpace: 'nowrap',
+                }}
+                // QA-sender-detail-20260902-05: one description for every
+                // user, and no "all"/"every" — the link is a `from:` search
+                // (GmailOpenLinkService.buildFromSearchLink), and Gmail's
+                // default search excludes Spam and Trash.
+                aria-label="Open a Gmail search for email from this sender"
+                title="Open a Gmail search for email from this sender"
+              >
+                Open in Gmail
+              </a>
+            )}
+          </div>
 
-        {/* The EXACT reason, on the surface that owns this sender
+          {/* The EXACT reason, on the surface that owns this sender
             (CLAUDE.md §2.6 / D245) — three of the four reasons are
             AUTOMATIC, so the state alone never says why. One visible
             line under the label (QA-sender-detail-20260902-15: a
             `title=` tooltip never opens on touch); wording comes from
             the one shared source, so Detail, Triage, the Screener and
             Settings cannot drift apart. */}
-        <ProtectRow
-          checked={detail.isProtected}
-          reason={protectionReasonLine}
-          disabled={setPolicy.isPending}
-          onToggle={toggleProtect}
-        />
-      </header>
+          <ProtectRow
+            checked={detail.isProtected}
+            reason={protectionReasonLine}
+            disabled={setPolicy.isPending}
+            onToggle={toggleProtect}
+          />
+        </header>
 
-      {/* 2. The one number — email received in the engine's 90-day window
+        {/* 2. Current inbox scope beside email received in the engine's 90-day window
           (`monthlyVolume` is `last90dMsgs` server-side, the same count the
           read rate below is computed over) — and one sentence that adds
           only the lifetime total (`totalReceived`). No averages, no
@@ -1285,135 +1286,132 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
           QA-sender-detail-20260902-01: "Hasn't mailed you yet." is true
           only when the sender never mailed at all, so it keys on
           `totalReceived`, never on an empty recent window. */}
-      {sender.totalReceived > 0 ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: space[1] }}>
-          <span
-            data-testid="sender-detail-window-count"
-            style={{
-              fontFamily: font.display,
-              fontSize: text['4xl'],
-              fontWeight: 400,
-              letterSpacing: '-0.02em',
-              lineHeight: 1,
-              color: color.fg,
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {sender.monthlyVolume != null ? sender.monthlyVolume.toLocaleString('en-US') : '—'}
-          </span>
-          <p style={{ margin: 0, fontSize: text.md, color: color.fgMuted }}>
-            {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
-            {sender.totalReceived.toLocaleString('en-US')} total
+        {sender.totalReceived > 0 ? (
+          <div className={styles.volumeSummary}>
+            <div>
+              <span className={styles.volumeNumber} data-testid="sender-detail-inbox-count">
+                {sender.inboxCount != null ? sender.inboxCount.toLocaleString('en-US') : '—'}
+              </span>
+              <p className={styles.volumeLabel}>Currently in your inbox</p>
+            </div>
+            <div>
+              <span className={styles.volumeNumber} data-testid="sender-detail-window-count">
+                {sender.monthlyVolume != null ? sender.monthlyVolume.toLocaleString('en-US') : '—'}
+              </span>
+              <p className={styles.volumeLabel}>
+                {sender.monthlyVolume === 1 ? 'email' : 'emails'} in the last 90 days ·{' '}
+                {sender.totalReceived.toLocaleString('en-US')} total
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+            Hasn&rsquo;t mailed you yet.
           </p>
-        </div>
-      ) : (
-        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-          Hasn&rsquo;t mailed you yet.
-        </p>
-      )}
+        )}
 
-      {/* 3. The five verbs (K/A/U/L/D). The fact-derived primary is the
+        {/* 3. The five verbs (K/A/U/L/D). The fact-derived primary is the
           one filled button (D245); the engine's read stays a separate,
           quiet disclosure because the two are allowed to disagree. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: space[3] }}>
-        {/* The page's own action feedback — same model and wording as a
-            senders-list row: working (verbs inert), then how it ended. */}
-        <RowActivityProvider value={pageActivity}>
-          <ActionToolbar sender={sender} onAction={requestAction} shortcuts={layout === 'page'} />
-        </RowActivityProvider>
-        {recommendation != null && (
-          <RecommendationBanner
-            recommendation={recommendation}
-            toolbarHighlight={derivePrimaryVerbId(sender)}
-          />
-        )}
-      </div>
+        <div className={styles.actionSection}>
+          {layout === 'page' && (
+            <>
+              <div className={styles.eyebrow}>Your next decision</div>
+              {actionToolbar}
+            </>
+          )}
+          {recommendation != null && (
+            <RecommendationBanner
+              recommendation={recommendation}
+              toolbarHighlight={derivePrimaryVerbId(sender)}
+            />
+          )}
+        </div>
 
-      {/* 4. Quiet stats — the four facts that left the list row. */}
-      <div>
-        <dl
-          aria-label="Sender stats"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-            gap: space[3],
-            margin: 0,
-            padding: 0,
-          }}
-        >
-          {/* `null` readRate = no email in the window — an em-dash, never
+        {/* Evidence remains visible in both the inspector and full page. */}
+        <div className={styles.statsSection}>
+          <div className={styles.eyebrow}>The pattern, at a glance</div>
+          <dl aria-label="Sender stats" className={styles.statsGrid}>
+            {/* `null` readRate = no email in the window — an em-dash, never
               a fabricated 0%. Labelled "marked read": Gmail exposes no
               open events, only the UNREAD flag. */}
-          <Stat label="Marked read">
-            {stats.readRate !== null ? (
-              <>
-                <span>{formatReadRatePct(stats.readRate)}%</span>
-                {/* The window rides with the rate: beside lifetime facts
+            <Stat label="Marked read">
+              {stats.readRate !== null ? (
+                <>
+                  <span>{formatReadRatePct(stats.readRate)}%</span>
+                  {/* The window rides with the rate: beside lifetime facts
                     an unqualified rate reads as lifetime. */}
-                <span style={{ fontSize: text.xs, color: color.fgMuted }}> · 90 days</span>
-              </>
-            ) : (
-              '—'
-            )}
-          </Stat>
-          <Stat label="12-month trend">
-            {volumes.length > 0 ? <Spark values={volumes} width={72} height={20} /> : '—'}
-          </Stat>
-          <Stat label="Last seen">{relTime(stats.lastSeenDays)}</Stat>
-          <Stat label="You wrote">
-            <span>{sender.wroteToCount}×</span>
-          </Stat>
-        </dl>
-        {/* THE SPLIT (F012). A third-party sweeper can mark mail read
+                  <span style={{ fontSize: text.xs, color: color.fgMuted }}> · 90 days</span>
+                </>
+              ) : (
+                '—'
+              )}
+            </Stat>
+            <Stat label="12-month trend">
+              {volumes.length > 0 ? <Spark values={volumes} width={72} height={20} /> : '—'}
+            </Stat>
+            <Stat label="Last seen">{relTime(stats.lastSeenDays)}</Stat>
+            <Stat label="You wrote">
+              <span>{sender.wroteToCount}×</span>
+            </Stat>
+          </dl>
+          {/* THE SPLIT (F012). A third-party sweeper can mark mail read
             through the API; those are already out of the percentage
             above. Saying so lets the product EXPLAIN a number that looks
             lower than expected instead of silently compensating. Only
             when there is something to disclose and a rate to explain. */}
-        {stats.readRate !== null && (stats.readRateSweeperMarked ?? 0) > 0 && (
-          <p style={{ margin: `${space[2]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
-            {stats.readRateSweeperMarked!.toLocaleString('en-US')} marked read by another tool — not
-            counted.
-          </p>
-        )}
-      </div>
+          {stats.readRate !== null && (stats.readRateSweeperMarked ?? 0) > 0 && (
+            <p style={{ margin: `${space[2]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+              {stats.readRateSweeperMarked!.toLocaleString('en-US')} marked read by another tool —
+              not counted.
+            </p>
+          )}
+        </div>
 
-      {/* 5. Recent messages */}
-      <RecentMessages
-        messages={recentMessages}
-        mailboxEmail={activeMailboxEmail}
-        senderEmail={detail.email}
-      />
+        {/* 5. Recent messages */}
+        <RecentMessages
+          messages={recentMessages}
+          mailboxEmail={activeMailboxEmail}
+          senderEmail={detail.email}
+        />
 
-      {/* 6. Decision timeline. Rows are actions taken on this sender
+        {/* 6. Decision timeline. Rows are actions taken on this sender
           (`activity_log`), so this list and the Activity feed can never
           disagree. */}
-      <DecisionTimeline
-        heading="Decision timeline"
-        empty={
-          <EmptyState
-            title="Nothing decided yet"
-            description="Pick an action above and it shows up here."
-          />
-        }
-        // Cross-link into the Activity feed pre-filtered to this sender.
-        // `sender_q` is Activity's substring filter over name/email —
-        // the full address is the collision-safe query.
-        action={
-          <a
-            href={`/activity?sender_q=${encodeURIComponent(detail.email)}`}
-            style={{
-              fontSize: text.sm,
-              color: color.fgSoft,
-              textDecoration: 'none',
-              fontWeight: 500,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            View in Activity →
-          </a>
-        }
-        items={timelineItems}
-      />
+        <DecisionTimeline
+          heading="Decision timeline"
+          empty={
+            <EmptyState
+              title="Nothing decided yet"
+              description="Your decisions will appear here."
+            />
+          }
+          // Cross-link into the Activity feed pre-filtered to this sender.
+          // `sender_q` is Activity's substring filter over name/email —
+          // the full address is the collision-safe query.
+          action={
+            <a
+              href={`/activity?sender_q=${encodeURIComponent(detail.email)}`}
+              style={{
+                fontSize: text.sm,
+                color: color.fgSoft,
+                textDecoration: 'none',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              View in Activity →
+            </a>
+          }
+          items={timelineItems}
+        />
+      </div>
+      {layout === 'pane' && (
+        <div className={styles.paneActions} role="group" aria-label="Sender actions">
+          <div className={styles.eyebrow}>Your next decision</div>
+          {actionToolbar}
+        </div>
+      )}
 
       <ConfirmActionModal
         request={pendingAction}
@@ -1447,25 +1445,21 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
  * shifts the column. `page` is a centred reading column; `pane` fills
  * the side pane the Senders list gives it (the pane owns the scroll).
  */
-function DetailFrame({ layout, children }: { layout: DetailLayout; children: ReactNode }) {
+function DetailFrame({
+  layout,
+  children,
+  scrollable = false,
+}: {
+  layout: DetailLayout;
+  children: ReactNode;
+  scrollable?: boolean;
+}) {
   return (
     <div
-      className="dm-sender-detail-page"
+      className={`dm-sender-detail-page ${styles.detailFrame}`}
       data-layout={layout}
-      style={{
-        boxSizing: 'border-box',
-        width: '100%',
-        padding: layout === 'pane' ? '20px 16px 32px' : '24px 24px 40px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: space[6],
-        ...(layout === 'page' ? { maxWidth: 760, margin: '0 auto' } : {}),
-        fontFamily: font.sans,
-      }}
+      data-scrollable={(layout === 'pane' && scrollable) || undefined}
     >
-      <style>{`@media (max-width: 480px) {
-        .dm-sender-detail-page { padding-left: 16px !important; padding-right: 16px !important; }
-      }`}</style>
       {children}
     </div>
   );

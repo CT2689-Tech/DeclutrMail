@@ -104,7 +104,7 @@ export function Button({
         background: t.bg,
         color: t.fg,
         border: 'none',
-        borderRadius: radius.pill,
+        borderRadius: radius.md,
         boxShadow: t.filled && !disabled && !inert ? shadow.button : 'none',
         fontFamily: font.sans,
         fontSize: s.fs,

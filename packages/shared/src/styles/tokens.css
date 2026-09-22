@@ -29,29 +29,34 @@
 :root,
 [data-theme='light'] {
   color-scheme: light;
+  --dm-nav-bg: #173e32;
+  --dm-nav-fg: #e9eedf;
+  --dm-nav-muted: #bbcec0;
+  --dm-nav-active: #ffffff18;
+  --dm-nav-marker: #d9b591;
 
   /* Warm-newsprint surface stack */
-  --dm-bg: #fafaf7;
-  --dm-paper: #f4f4f0;
-  --dm-card: #ffffff;
+  --dm-bg: #f5f3ec;
+  --dm-paper: #eeece3;
+  --dm-card: #fffef9;
 
   /* Ink */
-  --dm-fg: #0e1413;
-  --dm-fg-soft: #4b5552;
-  --dm-fg-muted: #646d69;
+  --dm-fg: #213b32;
+  --dm-fg-soft: #526459;
+  --dm-fg-muted: #5e6f63;
 
   /* Lines / borders */
   --dm-border: rgba(14, 20, 19, 0.14);
   --dm-line: rgba(14, 20, 19, 0.1);
   --dm-line-soft: rgba(14, 20, 19, 0.06);
-  --dm-muted-bg: #eff2f5;
+  --dm-muted-bg: #eeece3;
 
   /* Deep-teal accent */
-  --dm-primary: #006b5f;
-  --dm-primary-deep: #00463f;
-  --dm-primary-soft: rgba(0, 107, 95, 0.08);
-  --dm-primary-border: rgba(0, 107, 95, 0.35);
-  --dm-primary-wash: hsl(174 60% 96%);
+  --dm-primary: #244f41;
+  --dm-primary-deep: #193d30;
+  --dm-primary-soft: rgba(36, 79, 65, 0.08);
+  --dm-primary-border: rgba(36, 79, 65, 0.35);
+  --dm-primary-wash: #edf1e8;
   --dm-mint: #79e6dc;
 
   /* Semantic hues */
@@ -78,9 +83,9 @@
   --dm-line-inverse: rgba(255, 255, 255, 0.16);
 
   /* Dashboard accent (ADR-0009 scope) */
-  --dm-dash-accent: #7c3aed;
-  --dm-dash-accent-soft: rgba(124, 58, 237, 0.1);
-  --dm-dash-accent-border: rgba(124, 58, 237, 0.2);
+  --dm-dash-accent: #376650;
+  --dm-dash-accent-soft: rgba(55, 102, 80, 0.1);
+  --dm-dash-accent-border: rgba(55, 102, 80, 0.25);
 
   /* Avatar tonal tile (ADR-0024). Generated color can be mistaken for
      brand identity, so both themes are achromatic; verified logos are
@@ -123,7 +128,7 @@
   --dm-scrim: rgba(14, 20, 19, 0.26);
 
   /* Focus ring */
-  --dm-ring: #006b5f;
+  --dm-ring: #244f41;
 }
 
 /* Dark theme — same ink-forward editorial restraint, inverted. The
@@ -132,25 +137,30 @@
    AA contrast on dark surfaces. */
 [data-theme='dark'] {
   color-scheme: dark;
+  --dm-nav-bg: #10271f;
+  --dm-nav-fg: #e9eedf;
+  --dm-nav-muted: #bbcec0;
+  --dm-nav-active: #ffffff18;
+  --dm-nav-marker: #d9b591;
 
-  --dm-bg: #0f1211;
-  --dm-paper: #141817;
-  --dm-card: #1a1f1e;
+  --dm-bg: #192620;
+  --dm-paper: #17291f;
+  --dm-card: #203229;
 
-  --dm-fg: #f1f4f3;
-  --dm-fg-soft: #b6bfbb;
-  --dm-fg-muted: #8b948f;
+  --dm-fg: #eeeee1;
+  --dm-fg-soft: #c1cabb;
+  --dm-fg-muted: #a7b7a6;
 
   --dm-border: rgba(238, 246, 243, 0.18);
   --dm-line: rgba(238, 246, 243, 0.12);
   --dm-line-soft: rgba(238, 246, 243, 0.07);
-  --dm-muted-bg: #222826;
+  --dm-muted-bg: #2c3c30;
 
-  --dm-primary: #2fb5a0;
-  --dm-primary-deep: #52c9b6;
-  --dm-primary-soft: rgba(47, 181, 160, 0.14);
-  --dm-primary-border: rgba(47, 181, 160, 0.42);
-  --dm-primary-wash: hsl(174 40% 11%);
+  --dm-primary: #9bc5ac;
+  --dm-primary-deep: #b5d8c2;
+  --dm-primary-soft: rgba(155, 197, 172, 0.12);
+  --dm-primary-border: rgba(155, 197, 172, 0.38);
+  --dm-primary-wash: #1d3427;
   --dm-mint: #79e6dc;
 
   --dm-amber: #e3a75c;
@@ -178,9 +188,9 @@
   --dm-fg-inverse-muted: rgba(16, 32, 29, 0.56);
   --dm-line-inverse: rgba(16, 32, 29, 0.18);
 
-  --dm-dash-accent: #a78bfa;
-  --dm-dash-accent-soft: rgba(167, 139, 250, 0.16);
-  --dm-dash-accent-border: rgba(167, 139, 250, 0.3);
+  --dm-dash-accent: #a8cbb6;
+  --dm-dash-accent-soft: rgba(168, 203, 182, 0.14);
+  --dm-dash-accent-border: rgba(168, 203, 182, 0.32);
 
   /* Dark counterpart of the same neutral monogram surface. */
   --dm-avatar-highlight-l: 30%;
@@ -214,7 +224,7 @@
   --dm-scrollbar-hover: rgba(238, 246, 243, 0.28);
   --dm-scrim: rgba(0, 0, 0, 0.55);
 
-  --dm-ring: #2fb5a0;
+  --dm-ring: #9bc5ac;
 }
 
 /* Back-compat aliases — a handful of call sites reached for
@@ -411,7 +421,7 @@ button {
    Responsive shell — CSS-driven so the layout is correct at first
    paint. A JS breakpoint hook resolves only after hydration, which
    flashes the desktop shell on mobile; these media queries do not.
-   900px = the `sm` breakpoint.
+   Navigation switches at 760px; feature-content `sm` remains 900px.
    ───────────────────────────────────────────────────────────── */
 .dm-sidebar-desktop {
   display: block;
@@ -428,7 +438,7 @@ button {
      the shell's scroller subtracts it from the undo-tray reserve. */
   --dm-tabbar-inset: 0px;
 }
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .dm-sidebar-desktop {
     display: none;
   }
@@ -449,12 +459,12 @@ button {
 }
 
 /* Top-bar icon buttons: compact with a pointer, 44px touch targets
-   below the `sm` breakpoint. */
+   below the 760px navigation threshold. */
 .dm-topbar-icon {
   width: 32px;
   height: 32px;
 }
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .dm-topbar-icon {
     width: 44px;
     height: 44px;
@@ -471,7 +481,7 @@ button {
 }
 /* The drawer is touch-first: rows grow from 36px to a 44px target.
    `min-height` beats the inline `height`. */
-@media (max-width: 900px) {
+@media (max-width: 760px) {
   .dm-nav-row {
     min-height: 44px;
   }
@@ -605,4 +615,52 @@ button {
     border-radius: 28px 28px 0 0;
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)) !important;
   }
+}
+
+/* Approved Editorial shell. Feature screens share these foundations instead
+   of restating a palette. The mobile drawer keeps the complete route list. */
+.dm-editorial-sidebar {
+  --dm-ring: #d9b591;
+}
+.dm-editorial-sidebar .dm-nav-row:hover {
+  background: #ffffff0f;
+}
+.dm-editorial-sidebar .dm-nav-row:focus-visible {
+  outline: 2px solid var(--dm-nav-marker);
+  outline-offset: -2px;
+}
+.dm-shell-location {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--dm-fg-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  min-width: 0;
+}
+.dm-shell-location strong {
+  font-weight: 600;
+  color: var(--dm-fg-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 600px) {
+  .dm-shell-location > span {
+    display: none;
+  }
+}
+
+.dm-nav-hint {
+  position: fixed;
+  z-index: 90;
+  padding: 9px 12px;
+  background: var(--dm-card);
+  color: var(--dm-fg);
+  border: 1px solid var(--dm-border);
+  border-radius: 8px;
+  font-size: 13px;
+  box-shadow: var(--dm-shadow-pop);
+  pointer-events: none;
 }

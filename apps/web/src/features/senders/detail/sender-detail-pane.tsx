@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import { SenderDetailRoute } from './sender-detail-page';
+import styles from '../sender-workspace.module.css';
 
-const { color, font, motion, radius, shadow, text } = tokens;
+const { color, motion, radius } = tokens;
 
 /**
  * Sender Detail as a side pane of the Senders list. Same content, same
@@ -18,52 +19,14 @@ const { color, font, motion, radius, shadow, text } = tokens;
  */
 export function SenderDetailPane({ senderId, onClose }: { senderId: string; onClose: () => void }) {
   return (
-    <aside
-      aria-label="Sender details"
-      data-testid="sender-detail-pane"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-        maxWidth: 480,
-        height: '100%',
-        minHeight: 0,
-        overflowY: 'auto',
-        background: color.card,
-        borderRadius: radius.xl,
-        boxShadow: shadow.lift,
-        boxSizing: 'border-box',
-        fontFamily: font.sans,
-      }}
-    >
-      <div
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 12,
-          padding: '10px 12px 10px 20px',
-          // Translucent card + blur: content scrolls softly under the bar.
-          background: `color-mix(in srgb, ${color.card} 82%, transparent)`,
-          backdropFilter: 'saturate(180%) blur(16px)',
-          WebkitBackdropFilter: 'saturate(180%) blur(16px)',
-          borderBottom: `1px solid ${color.lineSoft}`,
-        }}
-      >
-        <Link
-          href={`/senders/${encodeURIComponent(senderId)}?from=senders_table`}
-          style={{
-            fontSize: text.sm,
-            fontWeight: 500,
-            color: color.fgSoft,
-            textDecoration: 'none',
-          }}
-        >
-          Open full page
-        </Link>
+    <aside aria-label="Sender details" data-testid="sender-detail-pane" className={styles.pane}>
+      <div className={styles.paneBar}>
+        <div>
+          <span className={styles.paneBarLabel}>Sender details</span>
+          <Link href={`/senders/${encodeURIComponent(senderId)}?from=senders_table`}>
+            Open full page
+          </Link>
+        </div>
         <button
           type="button"
           onClick={onClose}

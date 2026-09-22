@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialOnboardingActionStyle } from '@/features/editorial/page';
+
 import { Button, PrivacyBadge, tokens } from '@declutrmail/shared';
 
 import { StepShell } from './step-shell';
@@ -35,7 +37,7 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
         }}
       />
 
-      <Button tone="primary" size="xl" onClick={onConnect} style={{ minWidth: 240 }}>
+      <Button tone="primary" size="xl" onClick={onConnect} style={editorialOnboardingActionStyle}>
         Connect Gmail
       </Button>
 

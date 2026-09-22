@@ -1,4 +1,6 @@
 'use client';
+
+import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page';
 // apps/web/src/features/settings/senders-policies/senders-policies-screen.tsx
 //
 // Phase X3 of the sender-bucketing re-design, now the STANDING
@@ -97,17 +99,15 @@ export function SendersPoliciesScreen() {
     <div
       className="dm-settings-page"
       style={{
-        padding: '20px 24px 40px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
         gap: 12,
-        maxWidth: 880,
-        margin: '0 auto',
-        fontFamily: font.sans,
       }}
     >
       <style>{POLICY_ROW_CSS}</style>
       <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
+      <EditorialKicker>Your workspace / Sender policies</EditorialKicker>
       <PageHeader title="Protected senders" backToSettings>
         <span
           style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}

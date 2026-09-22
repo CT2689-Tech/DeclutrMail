@@ -87,24 +87,27 @@ describe('Sidebar — icon rail', () => {
 
   it('collapses to icons: labels become the accessible name and tooltip', () => {
     const html = renderSidebar({ collapsed: true, onToggleCollapsed: () => undefined });
-    expect(html).toContain('width:56px');
+    expect(html).toContain('width:72px');
     expect(html).not.toContain('>Triage</span>');
     expect(html).toContain('aria-label="Triage"');
     expect(html).toContain('title="Triage"');
     expect(html).toContain('aria-label="Expand sidebar"');
   });
 
-  it('shows a count as a dot and speaks locks on the rail', () => {
+  it('shows a count as a dot and exposes count and lock context on the rail', () => {
     const html = renderSidebar({
       collapsed: true,
-      counts: { screener: { text: 7, label: '7 new senders waiting in Screener' } },
+      counts: { screener: { text: 7, label: '7 new senders waiting in Screener' }, senders: 0 },
       locks: { brief: 'Pro' },
     });
     expect(html).toContain('data-testid="nav-dot-screener"');
+    expect(html).not.toContain('data-testid="nav-dot-senders"');
     expect(html).not.toContain('>7</span>');
     // The dot is decorative, so the count moves into the row's name.
     expect(html).toContain('aria-label="Screener, 7 new senders waiting in Screener"');
     // No room for the chip, so the lock moves into the row's name too.
     expect(html).toContain('aria-label="Brief, Pro feature"');
+    expect(html).toContain('title="Brief, Pro feature"');
+    expect(html).toContain('title="Screener, 7 new senders waiting in Screener"');
   });
 });

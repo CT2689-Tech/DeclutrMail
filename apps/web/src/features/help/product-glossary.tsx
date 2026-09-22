@@ -1,30 +1,23 @@
 'use client';
 
+import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page';
+
 import { ScreenIntro, tokens, useIsAtMost } from '@declutrmail/shared';
 
 import { DrillRow, PageHeader, SettingsGroup } from '@/features/settings/settings-list';
 import { GLOSSARY_GROUPS, GLOSSARY_TERMS, type GlossaryTermId } from './glossary-content';
 
-const { color, font, text } = tokens;
+const { color, text } = tokens;
 
 /** D245's compact, authenticated product glossary. */
 export function ProductGlossary() {
   return (
     <div
       className="dm-settings-page"
-      style={{
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '20px 24px 28px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 32,
-        fontFamily: font.sans,
-      }}
+      style={{ ...editorialColumnStyle, display: 'flex', flexDirection: 'column', gap: 24 }}
     >
       <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
+      <EditorialKicker>Your workspace / A useful reference</EditorialKicker>
       <PageHeader title="Help & glossary" backToSettings />
       <ScreenIntro
         id="product-glossary"

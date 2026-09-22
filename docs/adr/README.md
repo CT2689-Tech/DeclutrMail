@@ -28,6 +28,8 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 | [0006](./0006-unsubscribe-cascade-rfc8058-mailto-manual.md) | Accepted | Unsubscribe cascade — RFC 8058 one-click, mailto deferred manual, fallback none | D9, D230 |
 | [0007](./0007-component-placement-rule.md) | Accepted | Component placement — lazy promotion + spec override | D198, D199 |
 
+| [0043](./0043-warm-editorial-product-system.md) | Accepted | Warm Editorial product system | D7, D226, D227 preserved |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next

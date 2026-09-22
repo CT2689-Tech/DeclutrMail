@@ -98,8 +98,8 @@ export function TriageFocusCard({
             ? `${space[8]}px ${space[5]}px ${space[6]}px`
             : `${space[10]}px ${space[8]}px`,
           background: color.card,
-          borderRadius: radius['2xl'],
-          boxShadow: shadow.lift,
+          borderRadius: radius.lg,
+          border: `1px solid ${color.border}`,
           // pan-y: vertical drags stay with the browser; horizontal
           // swipes reach the pointer handlers (see `triage-row.tsx`).
           ...(isNarrow ? { touchAction: 'pan-y' as const } : null),
@@ -124,8 +124,9 @@ export function TriageFocusCard({
           style={{
             margin: `${space[5]}px 0 0`,
             maxWidth: '100%',
-            fontSize: text['2xl'],
-            fontWeight: 650,
+            fontFamily: font.display,
+            fontSize: 'clamp(26px, 3vw, 34px)',
+            fontWeight: 400,
             letterSpacing: '-0.02em',
             lineHeight: 1.2,
             color: color.fg,
@@ -161,8 +162,8 @@ export function TriageFocusCard({
           style={{
             marginTop: space[8],
             fontFamily: font.display,
-            fontSize: 'clamp(56px, 7vw, 80px)',
-            fontWeight: 600,
+            fontSize: 'clamp(52px, 6vw, 70px)',
+            fontWeight: 400,
             lineHeight: 1,
             letterSpacing: '-0.03em',
             color: color.fg,

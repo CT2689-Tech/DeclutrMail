@@ -18,6 +18,7 @@
 //   • Pane         — the same content at side-pane width
 
 import type { ComponentProps } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { tokens } from '@declutrmail/shared';
 import { buildSenderDetail } from '@/mocks/sender-detail-builder';
 import { SENDER_FIXTURES } from '@/mocks/sender-fixture-data';
@@ -47,7 +48,7 @@ const meta: StoryMeta<typeof SenderDetailPage> = {
     docs: {
       description: {
         component:
-          'Sender Detail (D39-D46). Order: identity + Protected switch → one 90-day count → the five verbs (K/A/U/L/D, fact-derived primary filled) + optional suggestion → quiet stats row → Recent messages (Gmail deep-link per D41) → Decision timeline. Mandatory action preview per D226. Never renders message bodies per D7. `layout="pane"` is the same content inside the Senders list side pane.',
+          'Sender Detail (D39-D46). Order: identity + Protected switch → current inbox + 90-day count → the five verbs (K/A/U/L/D, fact-derived primary filled) + optional suggestion → compact evidence grid → Recent messages (Gmail deep-link per D41) → Decision timeline. Mandatory action preview per D226. Never renders message bodies per D7. `layout="pane"` is the same content inside the Senders list side pane.',
       },
     },
   },
@@ -69,8 +70,16 @@ if (linkedin == null || sarah == null || stripeSender == null || groupon == null
   );
 }
 
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+});
+
 function frame(children: React.ReactNode) {
-  return <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <div style={{ background: color.bg, minHeight: '100vh' }}>{children}</div>
+    </QueryClientProvider>
+  );
 }
 
 /** Default — a high-volume promotional sender with a recommendation. */
@@ -188,15 +197,44 @@ export const MobileNarrow: Story<typeof SenderDetailPage> = {
 };
 
 /** Pane — the content as the Senders list's side pane renders it. */
+const paneDetail = buildSenderDetail(linkedin);
+
 export const Pane: Story<typeof SenderDetailPage> = {
   args: {
-    state: { kind: 'ready', detail: buildSenderDetail(linkedin) },
+    state: {
+      kind: 'ready',
+      detail: { ...paneDetail, sender: { ...paneDetail.sender, inboxCount: 128 } },
+    },
     layout: 'pane',
   },
   render: (args: PageArgs) =>
     frame(
-      <div style={{ width: 440, borderLeft: `1px solid ${color.line}` }}>
+      <div
+        style={{
+          width: 440,
+          maxWidth: '100%',
+          height: 'min(760px, calc(100vh - 24px))',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: color.card,
+          border: `1px solid ${color.line}`,
+          borderRadius: 12,
+        }}
+      >
         <SenderDetailPage {...args} />
       </div>,
     ),
+};
+
+/** Explicit deploy-skew/unknown count variant; never invent an empty inbox. */
+export const PaneUnknownInbox: Story<typeof SenderDetailPage> = {
+  ...Pane,
+  args: {
+    state: {
+      kind: 'ready',
+      detail: { ...paneDetail, sender: { ...paneDetail.sender, inboxCount: null } },
+    },
+    layout: 'pane',
+  },
 };

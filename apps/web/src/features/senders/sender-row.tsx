@@ -10,8 +10,9 @@
  * hover / focus, whenever any row is selected, and always on touch
  * (see `sender-list.tsx`), so the list shares the title's left edge.
  *
- * The row answers "who, how much, what do I do" and nothing else; trend,
- * read rate, last seen and the volume chart live in the detail pane.
+ * The row keeps sender identity and received volume, with current inbox
+ * scope and marked-read evidence when known. Deeper history and trends
+ * remain in the detail pane.
  *
  * Clicking the row (not its checkbox or buttons) opens the sender. The
  * NAME is a real link to `/senders/[id]`, so keyboard and no-JS users get
@@ -34,6 +35,8 @@ import { Avatar, Pill, tokens } from '@declutrmail/shared';
 import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from './action-row';
 import { isStandingProtected, senderAddressLine, type ActionRequest, type Sender } from './data';
 import { RowCheckbox } from './row-checkbox';
+import { formatReadRatePct } from './fact-language';
+import styles from './sender-workspace.module.css';
 import {
   isRowBusy,
   RowActivityPill,
@@ -110,30 +113,49 @@ const SHIELD = (
   </svg>
 );
 
-/** The right-aligned count: number and unit on one baseline. */
-function CountCell({ value, unit }: { value: number; unit: string }) {
+/** Lifetime received stays distinct from the row's current inbox scope. */
+function CountCell({
+  value,
+  unit,
+  compact = false,
+}: {
+  value: number;
+  unit: string;
+  compact?: boolean;
+}) {
   return (
     <div
       style={{
         display: 'flex',
-        alignItems: 'baseline',
-        justifyContent: 'flex-end',
-        gap: 4,
-        minWidth: 72,
+        flexDirection: 'column',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        gap: 1,
+        minWidth: compact ? 48 : 64,
         whiteSpace: 'nowrap',
       }}
     >
       <span
         style={{
-          fontSize: text.md,
-          fontWeight: 600,
-          color: color.fg,
-          fontVariantNumeric: 'tabular-nums',
+          display: 'flex',
+          flexDirection: compact ? 'column' : 'row',
+          alignItems: compact ? 'flex-end' : 'baseline',
+          gap: compact ? 0 : 4,
         }}
       >
-        {value.toLocaleString('en-US')}
+        <span
+          style={{
+            fontSize: text.md,
+            fontWeight: 600,
+            color: color.fg,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {value.toLocaleString('en-US')}
+        </span>
+        <span style={{ fontSize: text.xs, color: color.fgMuted }}>{unit}</span>
       </span>
-      <span style={{ fontSize: text.xs, color: color.fgMuted }}>{unit}</span>
+      <span style={{ fontSize: 11, color: color.fgMuted }}>received</span>
     </div>
   );
 }
@@ -169,6 +191,13 @@ export function SenderRow({
       ? unsubscribeStatusCopy(s.unsubStatus, s.unsubscribeMethod)
       : null;
 
+  const evidence = (s.inboxCount != null || s.readRate != null) && (
+    <div className={styles.rowEvidence}>
+      {s.inboxCount != null && <span>{s.inboxCount.toLocaleString('en-US')} in inbox</span>}
+      {s.readRate != null && <span>{formatReadRatePct(s.readRate)}% marked read · 90d</span>}
+    </div>
+  );
+
   const swipe = useSwipeRight(compact, () => {
     // The same action the busy row's inert button refuses.
     if (busy) return;
@@ -196,10 +225,10 @@ export function SenderRow({
         display: 'grid',
         gridTemplateColumns: ROW_GRID,
         alignItems: 'center',
-        columnGap: 14,
-        minHeight: 72,
-        padding: '0 12px',
-        borderRadius: radius.lg,
+        columnGap: compact ? 9 : 12,
+        minHeight: 88,
+        padding: '10px 12px',
+        borderRadius: radius.sm,
         cursor: 'pointer',
         // Busy is a TINT, never a fade: opacity on the row would also fade
         // the status, the one thing the user needs to read.
@@ -255,7 +284,8 @@ export function SenderRow({
               textDecoration: 'none',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
+              whiteSpace: compact ? 'normal' : 'nowrap',
+              overflowWrap: compact ? 'anywhere' : undefined,
               minWidth: 0,
             }}
           >
@@ -271,13 +301,11 @@ export function SenderRow({
               {SHIELD}
             </span>
           )}
-          {unsub && (
+          {unsub && !compact && (
             <span title={unsub.title} style={{ display: 'inline-flex', flex: '0 0 auto' }}>
               <Pill>{unsub.label}</Pill>
             </span>
           )}
-          {/* Only where no button is on the row to carry the status. */}
-          {activity && compact && <RowActivityPill activity={activity} />}
         </div>
         <span
           title={addressLine}
@@ -292,11 +320,31 @@ export function SenderRow({
         >
           {addressLine}
         </span>
+        {!compact && evidence}
       </div>
 
-      <CountCell value={s.totalReceived} unit={s.totalReceived === 1 ? 'email' : 'emails'} />
+      <CountCell
+        value={s.totalReceived}
+        unit={s.totalReceived === 1 ? 'email' : 'emails'}
+        compact={compact}
+      />
 
       <SenderActionRow sender={s} onAction={onAction} compact={compact} />
+      {compact && (unsub || activity || evidence) && (
+        <div className={styles.compactRowContext}>
+          {(unsub || activity) && (
+            <div className={styles.compactRowStatus}>
+              {unsub && (
+                <span title={unsub.title}>
+                  <Pill>{unsub.label}</Pill>
+                </span>
+              )}
+              {activity && <RowActivityPill activity={activity} />}
+            </div>
+          )}
+          {evidence}
+        </div>
+      )}
 
       {/* Live gesture feedback: while a touch drag would resolve to the
           swipe, name the verb so releasing is informed. */}

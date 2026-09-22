@@ -831,3 +831,40 @@
     transition: none !important;
   }
 }
+
+/* The same calm reading surface for guides, help, policy and editorial pages. */
+.dm-read {
+  --read-measure: 720px;
+  padding-top: clamp(56px, 7vw, 96px);
+}
+.dm-read-head {
+  padding-bottom: 32px;
+  border-bottom: 1px solid var(--dm-line);
+  margin-bottom: 40px;
+}
+.dm-read-title {
+  font-size: clamp(40px, 5.6vw, 68px);
+  font-weight: 450;
+  line-height: 1.1;
+}
+.dm-read-body {
+  line-height: 1.8;
+}
+.dm-read-body h2 {
+  font-family: var(--dm-font-display);
+  font-weight: 500;
+  font-size: 30px;
+  line-height: 1.25;
+}
+.dm-read-cta {
+  background: var(--dm-paper);
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+  padding: clamp(24px, 4vw, 40px);
+}
+.dm-read-button {
+  border-radius: 8px;
+}
+.dm-read-body :is(th, td) {
+  padding-block: 15px;
+}

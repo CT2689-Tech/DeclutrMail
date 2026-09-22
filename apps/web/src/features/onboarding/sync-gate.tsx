@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialOnboardingActionStyle } from '@/features/editorial/page';
+
 import { Button, tokens } from '@declutrmail/shared';
 import type { SyncStatus, SyncStage } from '@declutrmail/shared/contracts';
 
@@ -258,7 +260,7 @@ function SyncFailed({
             size="xl"
             onClick={() => canRetry && startMailboxConnect(mailboxId ?? undefined)}
             disabled={!canRetry}
-            style={{ minWidth: 240 }}
+            style={editorialOnboardingActionStyle}
           >
             Reconnect Gmail
           </Button>
@@ -272,7 +274,7 @@ function SyncFailed({
             size="xl"
             onClick={() => canRetry && retry.mutate()}
             disabled={!canRetry || retry.isPending}
-            style={{ minWidth: 240 }}
+            style={editorialOnboardingActionStyle}
           >
             {retry.isPending ? 'Starting…' : 'Try again'}
           </Button>
@@ -312,9 +314,9 @@ function SyncFailed({
 }
 
 const titleStyle = {
-  fontFamily: font.sans,
-  fontSize: text['3xl'],
-  fontWeight: 650,
+  fontFamily: font.display,
+  fontSize: 'clamp(30px, 4vw, 42px)',
+  fontWeight: 400,
   letterSpacing: '-0.025em',
   lineHeight: 1.12,
   color: color.fg,
@@ -339,7 +341,11 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div
         style={{
           width: '100%',
-          maxWidth: 460,
+          maxWidth: 540,
+          padding: 'clamp(24px, 4vw, 40px)',
+          background: color.card,
+          border: `1px solid ${color.border}`,
+          borderRadius: radius.lg,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',

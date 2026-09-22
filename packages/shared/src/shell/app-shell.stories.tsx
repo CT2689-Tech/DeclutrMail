@@ -1,7 +1,7 @@
 // packages/shared/src/shell/app-shell.stories.tsx
 //
 // Visual reference for the app chrome: the flat sidebar and its icon
-// rail, the quiet top bar with the `?` help button, and (at ≤900px
+// rail, the quiet top bar with the `?` help button, and (at ≤760px
 // viewports) the bottom tab bar. Per D210, shared components ship with
 // Storybook coverage.
 //
@@ -34,7 +34,7 @@ const meta: StoryMeta<typeof AppShell> = {
     docs: {
       description: {
         component:
-          'App chrome. One flat nav (Home first; Billing and Settings live in the account menu), collapsible to a 56px icon rail whose state persists per device. Locks show on row hover/focus only; counts are quiet numerals (a dot on the rail). The top bar holds the `?` help button, which appears only while a mounted `<ScreenIntro>` has registered help. Below 900px the sidebar becomes a drawer and a bottom tab bar appears.',
+          'App chrome. One flat nav (Home first; Billing and Settings live in the account menu), collapsible to a 72px icon rail whose state persists per device. Locks show on row hover/focus only; counts are quiet numerals (a dot on the rail). The top bar holds the `?` help button, which appears only while a mounted `<ScreenIntro>` has registered help. At 760px and below the sidebar becomes a drawer and a bottom tab bar appears.',
       },
     },
   },

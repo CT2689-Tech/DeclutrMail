@@ -10,6 +10,7 @@ import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { bannerSurface } from './autopilot-banner-stack';
 import { observeDigestSummary } from './observe-digest';
 import { presetDisplayName } from './preset-labels';
+import styles from './observe-window-banner.module.css';
 
 const { color, text } = tokens;
 
@@ -105,65 +106,57 @@ export function ObserveWindowBanner({
           const pending = rule.observeDigest?.pendingTotal ?? 0;
           const isDismissing = dismissingRuleId === rule.id;
           return (
-            <li
-              key={rule.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 10,
-                fontSize: text.sm,
-              }}
-            >
-              <span style={{ flex: 1, minWidth: 0, color: color.fgSoft }}>
+            <li key={rule.id} className={styles.rule} style={{ fontSize: text.sm }}>
+              <span className={styles.copy} style={{ color: color.fgSoft }}>
                 <strong style={{ color: color.fg, fontWeight: 600 }}>{name}</strong>
                 {digest != null
                   ? ` — ${lowerFirst(digest)}.`
                   : ` — ${pending} pending suggestion${pending === 1 ? '' : 's'} collected.`}{' '}
                 {canActivate ? 'Activate?' : 'Approve or dismiss them below.'}
               </span>
-              <Button
-                tone="default"
-                size="sm"
-                onClick={() => onDismiss(rule)}
-                disabled={isDismissing}
-                ariaLabel={
-                  canActivate
-                    ? `Dismiss activation prompt for rule ${name}`
-                    : `Dismiss this prompt for rule ${name}`
-                }
-              >
-                {isDismissing ? 'Dismissing…' : 'Not now'}
-              </Button>
-              {canActivate ? (
+              <div className={styles.actions}>
                 <Button
                   tone="default"
                   size="sm"
-                  onClick={() => onActivate(rule)}
+                  onClick={() => onDismiss(rule)}
                   disabled={isDismissing}
-                  ariaLabel={`Switch rule ${name} to Active`}
+                  ariaLabel={
+                    canActivate
+                      ? `Dismiss activation prompt for rule ${name}`
+                      : `Dismiss this prompt for rule ${name}`
+                  }
                 >
-                  Switch to Active…
+                  {isDismissing ? 'Dismissing…' : 'Not now'}
                 </Button>
-              ) : (
-                // D251 — a link to the upgrade, never a disabled Activate
-                // button. A greyed-out control reads as "temporarily
-                // unavailable"; this states the actual reason and where to
-                // go, and it can never fire a request that 402s.
-                <Link
-                  href={upgradeHref}
-                  style={{
-                    fontSize: text.sm,
-                    fontWeight: 600,
-                    color: color.fg,
-                    textDecoration: 'underline',
-                    whiteSpace: 'nowrap',
-                  }}
-                  aria-label={`Run rule ${name} without asking — requires ${actName}`}
-                >
-                  Run without asking → {actName}
-                </Link>
-              )}
+                {canActivate ? (
+                  <Button
+                    tone="default"
+                    size="sm"
+                    onClick={() => onActivate(rule)}
+                    disabled={isDismissing}
+                    ariaLabel={`Switch rule ${name} to Active`}
+                  >
+                    Switch to Active…
+                  </Button>
+                ) : (
+                  // D251 — a link to the upgrade, never a disabled Activate
+                  // button. A greyed-out control reads as "temporarily
+                  // unavailable"; this states the actual reason and where to
+                  // go, and it can never fire a request that 402s.
+                  <Link
+                    href={upgradeHref}
+                    style={{
+                      fontSize: text.sm,
+                      fontWeight: 600,
+                      color: color.fg,
+                      textDecoration: 'underline',
+                    }}
+                    aria-label={`Run rule ${name} without asking — requires ${actName}`}
+                  >
+                    Run without asking → {actName}
+                  </Link>
+                )}
+              </div>
             </li>
           );
         })}

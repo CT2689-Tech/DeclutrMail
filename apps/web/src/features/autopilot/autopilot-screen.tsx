@@ -1,5 +1,12 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+  EditorialStats,
+} from '@/features/editorial/page';
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
@@ -61,7 +68,7 @@ import type {
  */
 const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
 
-const { color, font, radius, shadow, text } = tokens;
+const { color, radius, text } = tokens;
 
 /**
  * BE page cap on GET /api/autopilot/pending-suggestions (D104) —
@@ -695,37 +702,24 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   return (
     <div
       style={{
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 880,
-        margin: '0 auto',
-        fontFamily: font.sans,
       }}
     >
+      <EditorialKicker>Automations / Your rules</EditorialKicker>
       {/* Header — one line: title + the master pause (D105). */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexWrap: 'wrap',
           gap: 16,
         }}
       >
-        <h1
-          style={{
-            fontSize: text['2xl'],
-            fontWeight: 650,
-            letterSpacing: '-0.02em',
-            margin: 0,
-            color: color.fg,
-          }}
-        >
-          Autopilot
-        </h1>
+        <h1 style={editorialTitleStyle}>Autopilot</h1>
         <Button
           tone="default"
           onClick={() => setPauseConfirmOpen(true)}
@@ -753,6 +747,31 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       />
 
       <AutopilotBannerStack banners={banners} />
+
+      {state.kind === 'ready' && rules.length > 0 && (
+        <EditorialStats
+          items={[
+            {
+              label: 'Watching rules',
+              value: rules.filter((rule) => rule.enabled && rule.mode === 'observe').length,
+            },
+            {
+              label: 'Acting rules',
+              value: rules.filter((rule) => rule.enabled && rule.mode === 'active' && canActivate)
+                .length,
+            },
+            {
+              label: 'Paused or inactive rules',
+              value: rules.filter(
+                (rule) =>
+                  !rule.enabled ||
+                  rule.mode === 'paused' ||
+                  (rule.mode === 'active' && !canActivate),
+              ).length,
+            },
+          ]}
+        />
+      )}
 
       {/* Whole-surface failure — one designed error block, not one per
           section. The two reads share a fate and retry explicitly. */}
@@ -801,7 +820,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                   flexDirection: 'column',
                   // One raised group; rows divide with inset hairlines.
                   background: color.card,
-                  boxShadow: shadow.card,
+                  border: `1px solid ${color.border}`,
                   borderRadius: radius.xl,
                   overflow: 'hidden',
                 }}

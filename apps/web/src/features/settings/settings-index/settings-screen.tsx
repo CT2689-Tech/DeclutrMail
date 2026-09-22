@@ -1,5 +1,7 @@
 'use client';
 
+import { editorialColumnStyle, EditorialKicker } from '@/features/editorial/page';
+
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
@@ -318,13 +320,10 @@ export function SettingsScreen({
     <div
       className="dm-settings-page"
       style={{
-        maxWidth: 720,
-        margin: '0 auto',
-        padding: '20px 24px 40px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
-        fontFamily: font.sans,
       }}
     >
       <style>{`@media (max-width: 480px) { .dm-settings-page { padding-left: 16px !important; padding-right: 16px !important; } }`}</style>
@@ -346,6 +345,7 @@ export function SettingsScreen({
       >
         {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
       </div>
+      <EditorialKicker>Your workspace / Preferences</EditorialKicker>
       <PageHeader title="Settings" />
       <ScreenIntro
         id="settings"

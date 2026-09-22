@@ -1,4 +1,4 @@
-/* /sign-in — one centred auth card. Tokens only; the page is pinned light. */
+/* /sign-in — one centred auth card. Theme-aware tokens shared with the working product. */
 
 .dm-auth-entry {
   width: min(560px, calc(100% - 32px));
@@ -242,4 +242,28 @@
   .dm-auth-entry-storage summary::after {
     transition: none;
   }
+}
+
+/* A considered arrival, preserving every OAuth and account-state branch. */
+.dm-auth-entry {
+  width: min(600px, calc(100% - 32px));
+  padding-top: clamp(48px, 7vw, 88px);
+}
+.dm-auth-entry-card {
+  border-radius: 14px;
+  border: 1px solid var(--dm-line);
+  padding: clamp(28px, 5vw, 56px);
+  box-shadow: 0 18px 60px color-mix(in srgb, var(--dm-fg) 7%, transparent);
+}
+.dm-auth-entry-card h1 {
+  font-size: clamp(34px, 4vw, 46px);
+  line-height: 1.14;
+  font-weight: 450;
+}
+.dm-auth-entry-google {
+  border-radius: 8px;
+  min-height: 54px;
+}
+.dm-auth-entry-alert {
+  border-radius: 8px;
 }

@@ -97,7 +97,7 @@ export function RuleCard({
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
-        padding: '12px 16px',
+        padding: '16px 20px',
         fontFamily: font.sans,
       }}
     >
@@ -113,7 +113,7 @@ export function RuleCard({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>{name}</span>
+          <span style={{ fontSize: text.lg, fontWeight: 550, color: color.fg }}>{name}</span>
           <ModeStatus rule={rule} canActivate={canActivate} />
         </div>
         <Switch

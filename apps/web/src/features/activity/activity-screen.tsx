@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
 import dynamic from 'next/dynamic';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useNow } from '@/lib/use-now';
@@ -392,21 +398,11 @@ export function ActivityScreen() {
 
   return (
     <div style={screenColumnStyle}>
+      <EditorialKicker>Your history / Every outcome in view</EditorialKicker>
       <ScreenIntro id="activity" title="Activity" body={activityUndoRecoveryHelp} />
 
       <header style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-        <h1
-          style={{
-            margin: 0,
-            marginRight: 'auto',
-            fontSize: text['2xl'],
-            fontWeight: 650,
-            letterSpacing: '-0.02em',
-            color: color.fg,
-          }}
-        >
-          Activity
-        </h1>
+        <h1 style={{ ...editorialTitleStyle, marginRight: 'auto' }}>Activity</h1>
         <div style={isMobile ? { order: 3, flexBasis: '100%' } : undefined}>
           <SenderSearchInput
             value={filters.senderQuery ?? ''}
@@ -540,15 +536,10 @@ export function ActivityScreen() {
  * server-rendered.
  */
 const screenColumnStyle: CSSProperties = {
-  boxSizing: 'border-box',
-  width: '100%',
-  maxWidth: 880,
-  margin: '0 auto',
-  padding: '20px clamp(16px, 4vw, 24px) 28px',
+  ...editorialColumnStyle,
   display: 'flex',
   flexDirection: 'column',
-  gap: 16,
-  fontFamily: font.sans,
+  gap: 20,
 };
 
 // ── Timeline (D57) ────────────────────────────────────────────────────

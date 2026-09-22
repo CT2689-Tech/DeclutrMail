@@ -1,5 +1,5 @@
 // Storybook CSF3 stories for the Senders list (D210) — the ONE layout:
-// hairline rows, one number, one verb + ⋯, collapsible domain groups.
+// hairline rows, scoped evidence, one verb + ⋯, collapsible domain groups.
 // Pins the row's states: plain, Protected, unsubscribe lifecycle, selected,
 // open in the pane, busy / done (#751–#753), and the phone (`compact`) row.
 
@@ -26,7 +26,7 @@ const meta: StoryMeta<typeof SenderList> = {
     docs: {
       description: {
         component:
-          'The single Senders layout. Row click opens the sender (side pane at ≥1100px, else the full page); checkbox, verb and ⋯ never do. Every mutation routes through the host’s D226 preview.',
+          'The single Senders layout. Row click opens the sender (side pane above the tablet breakpoint, else the full page); checkbox, verb and ⋯ never do. Every mutation routes through the host’s D226 preview.',
       },
     },
   },
@@ -42,6 +42,8 @@ const SENDERS = [
     email: 'no-reply@substack.com',
     domain: 'substack.com',
     totalReceived: 1204,
+    inboxCount: 128,
+    readRate: 0.08,
     unsubscribeMethod: 'one_click',
   }),
   makeSender({
@@ -50,6 +52,8 @@ const SENDERS = [
     email: 'alerts@chase.com',
     domain: 'chase.com',
     totalReceived: 312,
+    inboxCount: 42,
+    readRate: 0.88,
     gmailCategory: 'primary',
     protectionFlags: { isProtected: true, protectionReason: 'starred', protectionSetAt: null },
   }),

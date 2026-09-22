@@ -1,5 +1,11 @@
 'use client';
 
+import {
+  editorialColumnStyle,
+  editorialTitleStyle,
+  EditorialKicker,
+} from '@/features/editorial/page';
+
 import { useEffect, useMemo } from 'react';
 import { useNow } from '@/lib/use-now';
 
@@ -83,28 +89,14 @@ export function FollowupsScreen() {
   return (
     <div
       style={{
-        padding: '20px clamp(16px, 4vw, 24px) 28px',
+        ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
-        width: '100%',
-        boxSizing: 'border-box',
-        maxWidth: 880,
-        margin: '0 auto',
-        fontFamily: font.sans,
       }}
     >
-      <h1
-        style={{
-          margin: 0,
-          fontSize: text['2xl'],
-          fontWeight: 650,
-          letterSpacing: '-0.02em',
-          color: color.fg,
-        }}
-      >
-        Follow-ups
-      </h1>
+      <EditorialKicker>Catch up / Conversations</EditorialKicker>
+      <h1 style={editorialTitleStyle}>Follow-ups</h1>
       <ScreenIntro
         id="followups"
         title="Follow-ups"

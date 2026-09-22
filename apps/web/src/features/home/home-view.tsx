@@ -1,64 +1,25 @@
 'use client';
 
 import Link from 'next/link';
-import { EmptyState, ErrorState, ScreenIntro, Skeleton, tokens } from '@declutrmail/shared';
-
+import { ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
+import { EditorialKicker, editorialColumnStyle } from '@/features/editorial/page';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
+import styles from './home-view.module.css';
 
-const { color, font, motion, shadow, text, radius } = tokens;
-
-/** The screen's single display number — the one size off the `text` scale. */
-const HERO_SIZE = 'clamp(72px, 9vw, 120px)';
-/** Skeleton stand-in for the hero line box (the clamp's floor). */
-const HERO_SKELETON_PX = 72;
-
-/**
- * Home — presentational (D198). Props only, so Storybook and tests drive
- * every state without AuthProvider or a QueryClient; `HomeScreen` wires
- * the reads.
- */
+/** Real cleanup history and the next available task, with no inferred savings or inbox score. */
 export function HomeView({ state }: { state: HomeState }) {
   return (
-    <div
-      style={{
-        maxWidth: 880,
-        margin: '0 auto',
-        // Every state is one centred composition: the block sits in the
-        // middle of the space under the 56px top bar, nudged up so it
-        // reads as optically centred rather than sagging.
-        minHeight: 'calc(100dvh - 56px - var(--dm-tabbar-inset, 0px))',
-        boxSizing: 'border-box',
-        padding: '24px clamp(16px, 4vw, 32px) 72px',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: font.sans,
-      }}
-    >
-      <style>{`
-        .dm-home-primary { background: ${color.primary}; }
-        .dm-home-primary:hover { background: ${color.primaryDeep}; }
-      `}</style>
+    <div style={editorialColumnStyle} className={styles.page}>
       <ScreenIntro id="home" title="How Home works" body="Undone actions are not counted." />
-      {/* The number is the page. The heading stays for screen readers and
-          the document outline, but a visible "Home" above it says nothing. */}
-      <h1
-        style={{
-          position: 'absolute',
-          width: 1,
-          height: 1,
-          margin: -1,
-          padding: 0,
-          overflow: 'hidden',
-          clip: 'rect(0 0 0 0)',
-          whiteSpace: 'nowrap',
-          border: 0,
-        }}
-      >
-        Home
-      </h1>
+      <header className={styles.header}>
+        <div>
+          <EditorialKicker>Your personal space</EditorialKicker>
+          <h1>Home</h1>
+          <p className={styles.subtitle}>A clearer view. A little more room for what matters.</p>
+        </div>
+        <span className={styles.headerNote}>One thoughtful decision at a time.</span>
+      </header>
       <HomeBody state={state} />
     </div>
   );
@@ -70,163 +31,119 @@ function HomeBody({ state }: { state: HomeState }) {
       return <HomeSkeleton />;
     case 'error':
       return (
-        <div style={{ width: '100%', maxWidth: 720 }}>
-          <ErrorState
-            title="We couldn't load Home"
-            description={loadErrorDescription(state.error)}
-            onRetry={state.retry}
-          />
-        </div>
+        <ErrorState
+          title="We couldn't load Home"
+          description={loadErrorDescription(state.error)}
+          onRetry={state.retry}
+        />
       );
     case 'empty':
       return (
-        <div style={{ width: '100%' }}>
-          <EmptyState
-            title={state.syncing ? 'Reading your inbox' : 'Nothing cleared yet'}
-            action={<PrimaryLink action={state.action} />}
-          />
-        </div>
+        <section className={styles.beginning} aria-label="Your next step">
+          <span className={styles.eyebrow}>
+            {state.syncing ? 'Getting the picture' : 'A fresh start'}
+          </span>
+          <h2>{state.syncing ? 'Reading your inbox' : 'Nothing cleared yet'}</h2>
+          <p>
+            {state.syncing
+              ? 'Your first scan is in progress. Available senders are ready to explore as the picture comes together.'
+              : 'Start with the senders in your inbox. See their activity, then decide what deserves a place.'}
+          </p>
+          <PrimaryLink action={state.action} />
+          <span className={styles.footnote}>You’ll see a preview before email is moved.</span>
+        </section>
       );
     case 'sync-failed':
-      // Never "Nothing cleared yet" here: that reads as a healthy, checked
-      // mailbox, and a failed scan means it was not.
       return (
-        <div style={{ width: '100%' }}>
-          <EmptyState
-            title="Gmail scan failed"
-            action={<PrimaryLink action={SYNC_FAILED_ACTION} />}
-          />
-        </div>
+        <section className={styles.beginning} aria-label="Mailbox needs attention">
+          <span className={styles.eyebrow}>Connection needs attention</span>
+          <h2>Gmail scan failed</h2>
+          <p>Open your Gmail account settings to review the connection and try again.</p>
+          <PrimaryLink action={SYNC_FAILED_ACTION} />
+        </section>
       );
     case 'ready':
       return (
-        <section
-          aria-label="Your cleanup so far"
-          style={{
-            width: '100%',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            textAlign: 'center',
-          }}
-        >
-          <span
-            data-testid="home-hero"
-            style={{
-              fontFamily: font.display,
-              fontSize: HERO_SIZE,
-              fontWeight: 300,
-              lineHeight: 1,
-              letterSpacing: '-0.04em',
-              fontVariantNumeric: 'tabular-nums',
-              color: color.fg,
-            }}
-          >
-            {state.hero.value.toLocaleString('en-US')}
-          </span>
-          <p style={{ margin: '16px 0 0', fontSize: text.lg, color: color.fgMuted }}>
-            {state.hero.label}
-            {state.since ? ` since ${formatSince(state.since)}` : ''}
-          </p>
-          {state.secondary.length > 0 && <SecondaryRow stats={state.secondary} />}
-          <div style={{ marginTop: 48 }}>
-            <PrimaryLink action={state.action} />
+        <>
+          <div className={styles.summaryGrid}>
+            <section className={styles.progress} aria-label="Your cleanup so far">
+              <span className={styles.eyebrow}>The space you’ve made</span>
+              <span className={styles.number} data-testid="home-hero">
+                {state.hero.value.toLocaleString('en-US')}
+              </span>
+              <p className={styles.numberLabel}>
+                {state.hero.label}
+                {state.since ? ` since ${formatSince(state.since)}` : ''}
+              </p>
+              <span className={styles.progressNote}>
+                From your recorded decisions. Undone actions are excluded.
+              </span>
+            </section>
+            <section className={styles.nextStep} aria-label="Your next step">
+              <span className={styles.eyebrow}>A good place to continue</span>
+              <h2>
+                Make room
+                <br />
+                for what’s next.
+              </h2>
+              <p>
+                {state.action.href === '/triage'
+                  ? 'Your daily review is ready. Work through one sender at a time, with the detail you need to decide.'
+                  : state.action.href === '/screener'
+                    ? 'New senders are ready for your attention. Their email keeps arriving until you choose what to do.'
+                    : 'Explore your senders, look at their activity, and decide what still belongs in your inbox.'}
+              </p>
+              <PrimaryLink action={state.action} />
+              <span className={styles.footnote}>Preview every change. Keep the final say.</span>
+            </section>
           </div>
-        </section>
+          {state.secondary.length > 0 && <SecondaryRow stats={state.secondary} />}
+          <p className={styles.closing}>Small decisions. A more considered inbox.</p>
+        </>
       );
   }
 }
 
 function SecondaryRow({ stats }: { stats: HomeStat[] }) {
   return (
-    <dl
-      style={{
-        margin: '48px 0 0',
-        display: 'flex',
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        gap: '20px clamp(32px, 6vw, 64px)',
-      }}
-    >
+    <dl className={styles.stats}>
       {stats.map((stat) => (
-        <div key={stat.label} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <dd
-            style={{
-              margin: 0,
-              fontSize: text.xl,
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              fontVariantNumeric: 'tabular-nums',
-              color: color.fg,
-            }}
-          >
-            {stat.value.toLocaleString('en-US')}
-          </dd>
-          <dt style={{ fontSize: text.sm, color: color.fgMuted }}>{stat.label}</dt>
+        <div key={stat.label}>
+          <dt>{stat.label}</dt>
+          <dd>{stat.value.toLocaleString('en-US')}</dd>
         </div>
       ))}
     </dl>
   );
 }
 
-/** A link, not a button: it navigates, so it keeps open-in-new-tab. */
 function PrimaryLink({ action }: { action: HomeAction }) {
   return (
-    <Link
-      href={action.href}
-      // `data-dm-button` gives the link the shared press-scale (tokens.css).
-      data-dm-button=""
-      className="dm-home-primary"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: 50,
-        padding: '0 28px',
-        color: color.fgInverse,
-        borderRadius: radius.pill,
-        boxShadow: shadow.button,
-        fontSize: text.lg,
-        fontWeight: 600,
-        letterSpacing: '-0.006em',
-        textDecoration: 'none',
-        whiteSpace: 'nowrap',
-        transition: `background ${motion.fast} ${motion.ease}, transform ${motion.fast} ${motion.ease}`,
-      }}
-    >
+    <Link href={action.href} data-dm-button="" className={styles.primary}>
       {action.label}
+      <span aria-hidden="true">↗</span>
     </Link>
   );
 }
 
 function HomeSkeleton() {
   return (
-    <div
-      role="status"
-      aria-label="Loading Home"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-      }}
-    >
-      <Skeleton variant="rect" width={240} height={HERO_SKELETON_PX} />
-      <div style={{ marginTop: 20 }}>
+    <div role="status" aria-label="Loading Home" className={styles.summaryGrid}>
+      <div className={styles.progress}>
+        <Skeleton variant="text" width={160} />
+        <Skeleton variant="rect" width={210} height={90} />
         <Skeleton variant="text" width={180} />
       </div>
-      <div style={{ marginTop: 48, display: 'flex', gap: 48 }}>
-        <Skeleton variant="rect" width={72} height={40} />
-        <Skeleton variant="rect" width={72} height={40} />
-        <Skeleton variant="rect" width={72} height={40} />
-      </div>
-      <div style={{ marginTop: 48 }}>
-        <Skeleton variant="pill" width={188} height={50} />
+      <div className={styles.nextStep}>
+        <Skeleton variant="text" width={150} />
+        <Skeleton variant="rect" width={210} height={80} />
+        <Skeleton variant="text" width={180} />
+        <Skeleton variant="rect" width={180} height={44} />
       </div>
     </div>
   );
 }
 
-/** "Mar 2026" — fixed locale so the label does not shift per browser. */
 function formatSince(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }

@@ -108,9 +108,13 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('auth-skeleton')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
     // The loading rail and real AppShell must switch at the same width;
-    // otherwise 768–900px tablets jump from a desktop rail to a hamburger.
+    // otherwise loading and authenticated content shift on tablet widths.
     expect(container.innerHTML).not.toContain('min-width: 768px');
-    expect(container.innerHTML).toContain('min-width: 901px');
+    expect(container.innerHTML).toContain('min-width: 761px');
+    expect(container.querySelector('.dm-skeleton-sidebar')).toHaveStyle({
+      width: '72px',
+      boxSizing: 'border-box',
+    });
   });
 
   it('drops a revoked session even though one is cached, without navigating itself', async () => {
