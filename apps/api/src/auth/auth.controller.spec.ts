@@ -76,8 +76,9 @@ describe('AuthController me', () => {
       ),
     };
     const sync = {
-      getReadinessByMailbox: vi.fn().mockResolvedValue(new Map([['mb-1', 'ready']])),
-      getNeedsReconnectByMailbox: vi.fn().mockResolvedValue(new Map([['mb-1', false]])),
+      getMailboxHealth: vi
+        .fn()
+        .mockResolvedValue(new Map([['mb-1', { readiness: 'ready', needsReconnect: false }]])),
     };
     const entitlements = {
       cleanupSummary: vi.fn().mockResolvedValue({

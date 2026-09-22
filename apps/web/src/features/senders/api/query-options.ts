@@ -130,6 +130,9 @@ export function senderTimeseriesQueryOptions(
 ) {
   return queryOptions({
     queryKey: sendersKeys.timeseries(id),
+    // Received-volume history tolerates a five-minute revisit cache. Explicit
+    // action/sync/mailbox invalidation still bypasses this freshness window.
+    staleTime: 5 * 60_000,
     queryFn: ({ signal }) => reader(signal),
     retry: retryUnless4xx,
   });

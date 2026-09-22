@@ -304,6 +304,31 @@ describe('TriageReadService.listQueue — the daily ORDER BY is a total order', 
     svc = new TriageReadService(db as never);
   });
 
+  it('starts both aggregate reads while outbound enrichment is still pending', async () => {
+    let release!: (value: boolean) => void;
+    const outbound = vi
+      .spyOn(
+        svc as unknown as { mailboxHasOutboundIndexed(id: string): Promise<boolean> },
+        'mailboxHasOutboundIndexed',
+      )
+      .mockImplementation(
+        () =>
+          new Promise<boolean>((resolve) => {
+            release = resolve;
+          }),
+      );
+    const reads = vi.spyOn(db, 'select');
+    const pending = svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
+    try {
+      await vi.waitFor(() => expect(outbound).toHaveBeenCalledOnce());
+      // Page plus both enrichments are issued before outbound completes.
+      expect(reads).toHaveBeenCalledTimes(3);
+    } finally {
+      release(false);
+    }
+    expect(await pending).toHaveLength(3);
+  });
+
   it('breaks confidence ties deterministically instead of by physical row order', async () => {
     const rows = await svc.listQueue({ mailboxAccountId: mailboxId, limit: 12 });
     expect(rows).toHaveLength(3);

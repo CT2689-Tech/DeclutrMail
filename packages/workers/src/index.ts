@@ -406,6 +406,7 @@ export type {
 } from './sender-index-sweep.worker.js';
 export {
   enqueueSenderIndexSweepTick,
+  enqueueSenderIndexSweepContinuation,
   scheduledAtMinute as senderIndexSweepScheduledAtMinute,
   SENDER_INDEX_SWEEP_INTERVAL_MS,
   SENDER_INDEX_SWEEP_JOB,
@@ -515,3 +516,6 @@ export {
 } from './billing-verdict.queue.js';
 
 export { writeWorkerHeartbeat, workerHeartbeatIsFresh } from './worker-heartbeat.js';
+
+export { workerRuntimeConfig } from './worker-runtime-config.js';
+export { measuredMailboxLock } from './measured-mailbox-lock.js';

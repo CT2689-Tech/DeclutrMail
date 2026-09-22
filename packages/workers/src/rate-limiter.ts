@@ -1,3 +1,4 @@
+import { abortableDelay } from './abortable-delay.js';
 /**
  * Sliding-window rate limiter (D5 — Gmail API throttle).
  *
@@ -16,14 +17,14 @@ export interface RateLimiterClock {
   /** Current time, ms. */
   now?: () => number;
   /** Delay `ms` before resolving. */
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 export class RateLimiter {
   /** Timestamps + unit cost of recent acquisitions, oldest first. */
   private readonly events: { at: number; units: number }[] = [];
   private readonly now: () => number;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
 
   /**
    * @param maxUnits  Max units allowed within any `windowMs` span.
@@ -36,20 +37,21 @@ export class RateLimiter {
     clock: RateLimiterClock = {},
   ) {
     this.now = clock.now ?? Date.now;
-    this.sleep = clock.sleep ?? defaultSleep;
+    this.sleep = clock.sleep ?? abortableDelay;
   }
 
   /**
    * Block until `units` can be spent without breaching the window, then
    * record the spend.
    */
-  async acquire(units: number): Promise<void> {
+  async acquire(units: number, signal?: AbortSignal): Promise<void> {
     for (;;) {
+      signal?.throwIfAborted();
       const waitMs = this.reserve(units, this.now());
       if (waitMs === 0) {
         return;
       }
-      await this.sleep(waitMs);
+      await this.sleep(waitMs, signal);
     }
   }
 
@@ -70,8 +72,4 @@ export class RateLimiter {
     // Wait for the oldest event to leave the window (+1ms guard).
     return this.windowMs - (now - this.events[0]!.at) + 1;
   }
-}
-
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -1,3 +1,4 @@
+import { abortableDelay } from './abortable-delay.js';
 /**
  * Cross-process Gmail quota limiter (D5, D156).
  *
@@ -67,7 +68,7 @@ export interface GmailQuotaRedis {
  * the in-process implementation stays a drop-in fallback.
  */
 export interface GmailQuotaLimiter {
-  acquire(units: number): Promise<void>;
+  acquire(units: number, signal?: AbortSignal): Promise<void>;
 }
 
 /** Redis key for one mailbox's Gmail quota bucket. */
@@ -139,11 +140,7 @@ return { allowed, wait_ms }
 /** Injectable clock + delay — defaults are real; tests override both. */
 export interface GmailQuotaClock {
   now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
-}
-
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 /**
@@ -159,7 +156,7 @@ function defaultSleep(ms: number): Promise<void> {
  */
 export class RedisGmailQuotaLimiter implements GmailQuotaLimiter {
   private readonly now: () => number;
-  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   private readonly refillPerMs: number;
   private readonly ttlSec: number;
 
@@ -182,14 +179,14 @@ export class RedisGmailQuotaLimiter implements GmailQuotaLimiter {
     clock: GmailQuotaClock = {},
   ) {
     this.now = clock.now ?? Date.now;
-    this.sleep = clock.sleep ?? defaultSleep;
+    this.sleep = clock.sleep ?? abortableDelay;
     this.refillPerMs = sustainedUnitsPerWindow / windowMs;
     // 2x the window so an idle mailbox's key expires on its own without
     // ever discarding state a live sync still needs.
     this.ttlSec = Math.max(Math.ceil((2 * windowMs) / 1000), 1);
   }
 
-  async acquire(units: number): Promise<void> {
+  async acquire(units: number, signal?: AbortSignal): Promise<void> {
     if (units > this.burstCapacity) {
       // Would sleep forever: the bucket can never hold this much. A
       // caller asking for more than the burst ceiling in one call is a
@@ -199,6 +196,7 @@ export class RedisGmailQuotaLimiter implements GmailQuotaLimiter {
       );
     }
     for (;;) {
+      signal?.throwIfAborted();
       let result: [number, number];
       try {
         result = await this.evalScript(units);
@@ -213,11 +211,13 @@ export class RedisGmailQuotaLimiter implements GmailQuotaLimiter {
         );
         // Per-process ceiling from here on for THIS call. The next call
         // retries Redis — a blip must not permanently unshare the limiter.
-        return this.fallback.acquire(units);
+        signal?.throwIfAborted();
+        return signal ? this.fallback.acquire(units, signal) : this.fallback.acquire(units);
       }
+      signal?.throwIfAborted();
       const [allowed, waitMs] = result;
       if (allowed === 1) return;
-      await this.sleep(waitMs);
+      await this.sleep(waitMs, signal);
     }
   }
 

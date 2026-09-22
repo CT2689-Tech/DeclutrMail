@@ -17,11 +17,12 @@
  * entries ARE the visible set (search / filters narrow server-side).
  */
 
-import { useEffect, useMemo, useState, type MouseEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { tokens } from '@declutrmail/shared';
 import type { ActionRequest, Sender } from './data';
 import type { RollupEntry } from './domain-rollup';
 import { isTypingTarget } from './keyboard';
+import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { DomainGroupRow, SenderRow } from './sender-row';
 
 const { color, motion } = tokens;
@@ -56,6 +57,7 @@ export interface SenderListProps {
   onAction: (req: ActionRequest) => void;
   /** Open a sender — the host picks the side pane or the full page. */
   onOpen: (id: string) => void;
+  onIntent?: ((id: string) => void) | undefined;
   /** The sender currently open in the detail pane, if any. */
   activeId: string | null;
   /** Phone layout for every row. */
@@ -74,6 +76,7 @@ export function SenderList({
   onToggleSelect,
   onAction,
   onOpen,
+  onIntent,
   activeId,
   compact,
   followKeys,
@@ -141,21 +144,47 @@ export function SenderList({
     return () => window.removeEventListener('keydown', onKey);
   }, [followKeys, visibleIds, activeId, anySelected, onOpen]);
 
+  const intentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelIntent = useCallback(() => {
+    if (intentTimer.current !== null) clearTimeout(intentTimer.current);
+    intentTimer.current = null;
+  }, []);
+  useEffect(() => {
+    window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, cancelIntent);
+    return () => {
+      cancelIntent();
+      window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, cancelIntent);
+    };
+  }, [cancelIntent, onIntent]);
+  const scheduleIntent = (target: EventTarget) => {
+    const id =
+      target instanceof Element
+        ? target.closest<HTMLElement>('[data-sender-id]')?.dataset.senderId
+        : undefined;
+    cancelIntent();
+    if (id && id !== activeId && onIntent) {
+      intentTimer.current = setTimeout(() => onIntent(id), 100);
+    }
+  };
   const row = (s: Sender) => (
-    <SenderRow
+    <BoundSenderRow
       key={s.id}
       s={s}
       selected={selectedIds.has(s.id)}
       active={s.id === activeId}
       compact={compact}
-      onToggleSelect={(evt) => onToggleSelect(s.id, evt)}
-      onOpen={() => onOpen(s.id)}
+      onToggleSelect={onToggleSelect}
+      onOpen={onOpen}
       onAction={onAction}
     />
   );
 
   return (
     <div
+      onMouseOver={(event) => scheduleIntent(event.target)}
+      onMouseLeave={cancelIntent}
+      onFocus={(event) => scheduleIntent(event.target)}
+      onBlur={cancelIntent}
       role="list"
       aria-label="Senders"
       data-testid="sender-list"
@@ -184,3 +213,35 @@ export function SenderList({
     </div>
   );
 }
+
+/** Memoize at the id-binding boundary so callbacks stay stable for untouched rows. */
+const BoundSenderRow = memo(function BoundSenderRow({
+  s,
+  selected,
+  active,
+  compact,
+  onToggleSelect,
+  onOpen,
+  onAction,
+}: Pick<SenderListProps, 'onToggleSelect' | 'onOpen' | 'onAction' | 'compact'> & {
+  s: Sender;
+  selected: boolean;
+  active: boolean;
+}) {
+  const toggle = useCallback(
+    (event: MouseEvent) => onToggleSelect(s.id, event),
+    [onToggleSelect, s.id],
+  );
+  const open = useCallback(() => onOpen(s.id), [onOpen, s.id]);
+  return (
+    <SenderRow
+      s={s}
+      selected={selected}
+      active={active}
+      compact={compact}
+      onToggleSelect={toggle}
+      onOpen={open}
+      onAction={onAction}
+    />
+  );
+});

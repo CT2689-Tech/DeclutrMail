@@ -13,7 +13,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { drizzle } from 'drizzle-orm/pglite';
 import { eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FollowupReadService } from './followup.read-service.js';
 
@@ -114,6 +114,43 @@ describe('FollowupReadService', () => {
   });
 
   describe('listAwaiting', () => {
+    it('walks timestamp ties by id and reuses exclusions only within one request', async () => {
+      const blocked = 'blocked@example.com';
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA.mailboxAccountId,
+        senderKey: senderKeyFor(blocked),
+        policyType: 'archive',
+      });
+      await db.insert(followupTracker).values(
+        Array.from({ length: 230 }, (_, i) => ({
+          id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+          workspaceId: mailboxA.workspaceId,
+          mailboxAccountId: mailboxA.mailboxAccountId,
+          providerThreadId: `tied-${i}`,
+          recipientEmail: i < 220 ? blocked : 'eligible@example.com',
+          subject: 'tie',
+          sentAt: new Date(NOW_MS - 86_400_000),
+          status: 'awaiting' as const,
+        })),
+      );
+      const reads = vi.spyOn(db, 'select');
+      const rows = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      expect(rows).toHaveLength(10);
+      expect(rows.map((row) => row.id)).toEqual(
+        Array.from(
+          { length: 10 },
+          (_, i) => `00000000-0000-4000-8000-${String(i + 221).padStart(12, '0')}`,
+        ),
+      );
+      // Three page reads, only two distinct-recipient policy reads.
+      expect(reads).toHaveBeenCalledTimes(5);
+      await db
+        .update(senderPolicies)
+        .set({ policyType: 'keep' })
+        .where(eq(senderPolicies.mailboxAccountId, mailboxA.mailboxAccountId));
+      expect(await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS)).toHaveLength(100);
+    });
+
     it('projects the current user rating for an observed follow-up', async () => {
       const followupId = await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
         threadId: 'rated',

@@ -58,6 +58,9 @@ import {
   enqueueFollowupCheckTick,
   enqueueOpsRetentionTick,
   enqueueSenderIndexSweepTick,
+  enqueueSenderIndexSweepContinuation,
+  workerRuntimeConfig,
+  measuredMailboxLock,
   enqueueSendersCounterReconciliationTick,
   enqueueSnoozeWakeTick,
   enqueueUndoExpiryTick,
@@ -458,7 +461,9 @@ async function bootstrap(): Promise<void> {
   // multi-statement rebuilds (root cause of senders.total_received=0
   // shipping to prod 2026-06-08; ADR-0022). Setting prepare:false on
   // every `postgres()` call here forces simple-protocol queries.
-  const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false });
+  const workerBudgets = workerRuntimeConfig(process.env);
+  bootStep('worker_resource_budgets', workerBudgets);
+  const pg = postgres(requireEnv('DATABASE_URL'), { prepare: false, max: workerBudgets.dbPoolMax });
   const db = drizzle(pg, { schema });
   bootStep('postgres_pool_done');
 
@@ -496,7 +501,7 @@ async function bootstrap(): Promise<void> {
    * (2026-08-22); `mailbox_lock.pool_wait` now measures what raising it
    * would actually buy.
    */
-  const LOCK_POOL_MAX = LABEL_ACTION_CONCURRENCY;
+  const LOCK_POOL_MAX = workerBudgets.lockPoolMax;
   /**
    * DEDICATED connection pool for the per-mailbox advisory lock, sized to
    * the label-action concurrency. This is the deadlock fix: the lock
@@ -808,7 +813,15 @@ async function bootstrap(): Promise<void> {
   // lock bound (must stay below cronPolicy's 60s job cap), and the
   // unlock leak detector. Factored out so its failure paths are
   // unit-tested; the 2026-08-12 leak lived in an untested catch {}.
-  const mailboxLock = createMailboxActionLock(lockPg);
+  const lockTransport = createMailboxActionLock(lockPg);
+  const mailboxLock = {
+    ...lockTransport,
+    ...measuredMailboxLock(lockTransport, (timings) => {
+      console.log(
+        JSON.stringify({ level: 'info', kind: 'mailbox_lock.slow_operation', ...timings }),
+      );
+    }),
+  };
   // Prove SESSION semantics on the live pool at boot instead of
   // trusting the DSN's string shape: over a transaction-mode pooler
   // the probe's unlock lands on another backend and returns false —
@@ -1722,7 +1735,17 @@ async function bootstrap(): Promise<void> {
    * sweep and a sync never write each other's snapshot. concurrency 1 —
    * it is nightly and holds a lock per mailbox.
    */
-  const senderIndexSweepWorker = new SenderIndexSweepWorker({ db, lock: mailboxLock });
+  const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
+    SENDER_INDEX_SWEEP_QUEUE,
+    { connection },
+  );
+  const senderIndexSweepWorker = new SenderIndexSweepWorker({
+    db,
+    lock: mailboxLock,
+    enqueueContinuation: (payload) =>
+      enqueueSenderIndexSweepContinuation(senderIndexSweepSchedulerQueue, payload),
+    statementTimeoutMs: workerBudgets.sweepStatementTimeoutMs,
+  });
   senderIndexSweepWorker.setObserver(observer);
   senderIndexSweepWorker.setDeadLetterRecorder(deadLetterRecorder);
 
@@ -1742,11 +1765,6 @@ async function bootstrap(): Promise<void> {
       }),
     );
   });
-
-  const senderIndexSweepSchedulerQueue = new Queue<SenderIndexSweepJobData>(
-    SENDER_INDEX_SWEEP_QUEUE,
-    { connection },
-  );
 
   async function enqueueSenderIndexSweep(): Promise<void> {
     if (shuttingDown) return;

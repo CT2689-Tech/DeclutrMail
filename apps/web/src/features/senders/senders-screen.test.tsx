@@ -32,6 +32,9 @@ const mockAuth = vi.hoisted(() => ({
 // test renders without mounting the real AuthProvider (which fetches `me`).
 // The pane is the detail agent's surface (its own tests cover it); here it
 // only has to prove WHICH sender the list opened.
+// Network/chunk speculation is covered with the real query cache in inspector-intent.test.
+// These screen tests isolate the pane host and must not launch a background real pane import.
+vi.mock('./inspector-intent', () => ({ prefetchSenderInspector: vi.fn() }));
 vi.mock('./detail/sender-detail-pane', () => ({
   SenderDetailPane: ({ senderId, onClose }: { senderId: string; onClose: () => void }) => (
     <aside data-testid="sender-detail-pane">

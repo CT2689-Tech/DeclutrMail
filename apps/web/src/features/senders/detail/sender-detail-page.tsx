@@ -1,5 +1,7 @@
 'use client';
 
+import { reconcileAction } from '@/lib/api/reconcile-action';
+
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
@@ -928,8 +930,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
     });
     if (data.status === 'done') {
       // No toast, no strip: the bottom pill is the one voice for the outcome.
-      void qc.invalidateQueries({ queryKey: sendersKeys.all });
-      void qc.invalidateQueries({ queryKey: activityKeys.all });
+      reconcileAction(qc, data, data.actionId);
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
@@ -957,8 +958,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
     // D226 — the parked mutation just changed what any kept-open (or
     // next-opened) confirm surface describes: its preview must re-count
     // before the freed guard lets it dispatch.
-    void qc.invalidateQueries({ queryKey: ['composite-preview'] });
-    void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+    reconcileAction(qc, data, data.actionId);
     setSettled(
       data.status === 'done'
         ? {
@@ -975,8 +975,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
     });
     if (data.status === 'done') {
       // No toast, no strip: the bottom pill is the one voice for the outcome.
-      void qc.invalidateQueries({ queryKey: sendersKeys.all });
-      void qc.invalidateQueries({ queryKey: activityKeys.all });
+      reconcileAction(qc, data, data.actionId);
     }
     setOverdueAction(null);
   }, [
@@ -1015,8 +1014,7 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
     } else {
       toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
     }
-    void qc.invalidateQueries({ queryKey: sendersKeys.all });
-    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
 

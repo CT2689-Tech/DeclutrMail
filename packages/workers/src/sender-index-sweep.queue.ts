@@ -51,10 +51,13 @@ export function scheduledAtMinute(now: Date = new Date()): string {
  * class's `getIdempotencyKey`, the cron cannot run twice for the same
  * minute under any race.
  */
-export function senderIndexSweepJobOptions(scheduledAtMinuteValue: string): JobsOptions {
+export function senderIndexSweepJobOptions(
+  scheduledAtMinuteValue: string,
+  afterMailboxId?: string,
+): JobsOptions {
   const policy = WORKER_POLICIES.cronPolicy;
   return {
-    jobId: `SenderIndexSweepWorker:${scheduledAtMinuteValue}`,
+    jobId: `SenderIndexSweepWorker__${scheduledAtMinuteValue.replaceAll(':', '-')}__${afterMailboxId ?? 'root'}`,
     attempts: policy.maxAttempts,
     ...(policy.backoff
       ? { backoff: { type: policy.backoff.type, delay: policy.backoff.delayMs } }
@@ -79,5 +82,17 @@ export async function enqueueSenderIndexSweepTick(
     SENDER_INDEX_SWEEP_JOB,
     { scheduledAtMinute: minute },
     senderIndexSweepJobOptions(minute),
+  );
+}
+
+/** Same sweep and cursor always deduplicate, including after an interrupted enqueue. */
+export async function enqueueSenderIndexSweepContinuation(
+  queue: Queue<SenderIndexSweepJobData>,
+  payload: SenderIndexSweepJobData,
+): Promise<void> {
+  await queue.add(
+    SENDER_INDEX_SWEEP_JOB,
+    payload,
+    senderIndexSweepJobOptions(payload.scheduledAtMinute, payload.afterMailboxId),
   );
 }

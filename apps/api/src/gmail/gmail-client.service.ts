@@ -238,12 +238,12 @@ export class GmailClientService
   }
 
   /** Page through every message id in the mailbox (ids only — no bodies). */
-  async listMessageIds(pageToken?: string): Promise<GmailMessageListPage> {
+  async listMessageIds(pageToken?: string, signal?: AbortSignal): Promise<GmailMessageListPage> {
     const params = new URLSearchParams({ maxResults: String(PAGE_SIZE) });
     if (pageToken) {
       params.set('pageToken', pageToken);
     }
-    const json = await this.get<GmailListResponse>(`/messages?${params.toString()}`, false);
+    const json = await this.get<GmailListResponse>(`/messages?${params.toString()}`, false, signal);
     const ids = (json?.messages ?? [])
       .map((m) => m.id)
       .filter((id): id is string => typeof id === 'string');
@@ -255,7 +255,10 @@ export class GmailClientService
    * fetched (D7). Returns `null` when the message no longer exists (404
    * — it was deleted between `messages.list` and this call).
    */
-  async getMessageMetadata(messageId: string): Promise<GmailMessageMetadata | null> {
+  async getMessageMetadata(
+    messageId: string,
+    signal?: AbortSignal,
+  ): Promise<GmailMessageMetadata | null> {
     const params = new URLSearchParams();
     params.set('format', METADATA_FORMAT);
     for (const header of GMAIL_METADATA_HEADERS) {
@@ -266,6 +269,7 @@ export class GmailClientService
       json = await this.get<GmailGetResponse>(
         `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
         true,
+        signal,
       );
     } catch (err) {
       // Gmail cannot render EVERY message in the metadata projection and
@@ -347,11 +351,12 @@ export class GmailClientService
    * plus a fields mask keeps snippets, headers, bodies, and attachment data
    * out of the response entirely.
    */
-  async getMessageLabelIds(messageId: string): Promise<string[] | null> {
+  async getMessageLabelIds(messageId: string, signal?: AbortSignal): Promise<string[] | null> {
     const params = new URLSearchParams({ format: 'minimal', fields: 'id,labelIds' });
     const json = await this.get<GmailGetResponse>(
       `/messages/${encodeURIComponent(messageId)}?${params.toString()}`,
       true,
+      signal,
     );
     if (json === null) return null;
     return Array.isArray(json.labelIds) ? json.labelIds : [];
@@ -362,8 +367,8 @@ export class GmailClientService
    * `users.getProfile` (D5 — incremental-sync starting cursor for PR-D).
    * Body-free; just the profile resource (email, historyId, totals).
    */
-  async getProfile(): Promise<{ historyId: string }> {
-    const json = await this.get<GmailProfileResponse>('/profile', false);
+  async getProfile(signal?: AbortSignal): Promise<{ historyId: string }> {
+    const json = await this.get<GmailProfileResponse>('/profile', false, signal);
     if (!json?.historyId) {
       throw new TransientError('Gmail profile response missing historyId');
     }
@@ -386,12 +391,20 @@ export class GmailClientService
    * snapshotting `getProfile()` + scheduling a full re-sync rather
    * than blindly retrying.
    */
-  async listHistory(startHistoryId: string, pageToken?: string): Promise<GmailHistoryPage | null> {
+  async listHistory(
+    startHistoryId: string,
+    pageToken?: string,
+    signal?: AbortSignal,
+  ): Promise<GmailHistoryPage | null> {
     const params = new URLSearchParams({ startHistoryId, maxResults: String(PAGE_SIZE) });
     if (pageToken) {
       params.set('pageToken', pageToken);
     }
-    const json = await this.get<GmailHistoryResponse>(`/history?${params.toString()}`, true);
+    const json = await this.get<GmailHistoryResponse>(
+      `/history?${params.toString()}`,
+      true,
+      signal,
+    );
     if (json === null) {
       // 404 — `startHistoryId` too old. Caller falls back to full re-sync.
       return null;
@@ -461,17 +474,24 @@ export class GmailClientService
    * `BaseDeclutrWorker` classifies retry vs. dead-letter correctly.
    * `allow404` returns `null` instead of throwing.
    */
-  private async get<T>(path: string, allow404: boolean): Promise<T | null> {
-    await this.limiter.acquire(UNITS_PER_CALL);
+  private async get<T>(path: string, allow404: boolean, signal?: AbortSignal): Promise<T | null> {
+    signal?.throwIfAborted();
+    if (signal) await this.limiter.acquire(UNITS_PER_CALL, signal);
+    else await this.limiter.acquire(UNITS_PER_CALL);
+    signal?.throwIfAborted();
     const token = await this.accessToken();
+    signal?.throwIfAborted();
 
     let res: Response;
     try {
       res = await fetch(`${GMAIL_API_BASE}${path}`, {
         headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
+          : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (err) {
+      signal?.throwIfAborted();
       // Network failure or request timeout — retryable.
       throw new TransientError(`Gmail request failed: ${errorMessage(err)}`);
     }

@@ -1818,6 +1818,25 @@ describe('AutopilotReadService', () => {
       });
     }
 
+    it('deduplicates recent sender joins while retaining old pending and excluding resolved history', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      const recent = new Date(Date.now() - 86_400_000);
+      const old = new Date(Date.now() - 30 * 86_400_000);
+      await seedPending(mailboxA, ruleId, SENDER_1, recent);
+      await seedPending(mailboxA, ruleId, SENDER_1, recent, 'dismissed');
+      await seedPending(mailboxA, ruleId, SENDER_1, old, 'dismissed');
+      await seedPending(mailboxA, ruleId, SENDER_2, old);
+      await seedPending(mailboxA, ruleId, SENDER_3, old, 'dismissed');
+      await seedMessages(mailboxA, SENDER_1, { inbox: 3, archived: 2 });
+      await seedMessages(mailboxA, SENDER_2, { inbox: 5, archived: 0 });
+      await seedMessages(mailboxA, SENDER_3, { inbox: 7, archived: 0 });
+      expect((await service.getRule(mailboxA, ruleId))!.observeDigest).toEqual({
+        pendingTotal: 2,
+        senders7d: 1,
+        inboxMessagesNow: 3,
+      });
+    });
+
     it('counts pending backlog but includes every resolution in the 7-day history', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const now = Date.now();

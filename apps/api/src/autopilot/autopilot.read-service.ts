@@ -24,6 +24,7 @@
 // The rule's `conditions` + `action_payload` jsonb reference engine
 // signals, never message body content.
 
+import { measureRequestOperation } from '../observability/request-performance.js';
 import {
   BadRequestException,
   Inject,
@@ -429,49 +430,70 @@ export class AutopilotReadService {
     mailboxAccountId: string,
     ruleId?: string,
   ): Promise<Map<string, AutopilotObserveDigest>> {
-    const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
-    const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
-    const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
-    const rows = await this.db
-      .select({
-        ruleId: ruleMatchLog.ruleId,
-        pendingTotal: sql<number>`count(distinct ${ruleMatchLog.id}) filter (where ${pending} and ${SENDER_INDEXED_AT_MATCH_TIME})::int`,
-        senders7d: sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`,
-        inboxMessagesNow: sql<number>`count(distinct ${mailMessages.id}) filter (where ${recent})::int`,
-      })
-      .from(ruleMatchLog)
-      .leftJoin(
-        mailMessages,
-        and(
-          eq(mailMessages.mailboxAccountId, ruleMatchLog.mailboxAccountId),
-          eq(mailMessages.senderKey, ruleMatchLog.senderKey),
-          // `is_outbound = false` — this preview counts what an observe-
-          // mode rule WOULD move, and the executor resolves that set
-          // through `senderInboxActionWhere`, which excludes the user's
-          // own sent mail. Without it the number promised more than the
-          // action could deliver.
-          eq(mailMessages.isOutbound, false),
-          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-        ),
-      )
-      .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.modeAtMatch, 'observe'),
-          ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
-        ),
-      )
-      .groupBy(ruleMatchLog.ruleId);
-    return new Map(
-      rows.map((r) => [
-        r.ruleId,
-        {
-          pendingTotal: r.pendingTotal,
-          senders7d: r.senders7d,
-          inboxMessagesNow: r.inboxMessagesNow,
-        },
-      ]),
-    );
+    return measureRequestOperation('autopilot.observe', async () => {
+      const cutoff = new Date(Date.now() - OBSERVE_WINDOW_MS).toISOString();
+      const recent: SQL = sql`${ruleMatchLog.matchedAt} >= ${cutoff}::timestamptz`;
+      const pending: SQL = sql`${ruleMatchLog.resolution} = 'pending'`;
+      const scope = and(
+        eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+        eq(ruleMatchLog.modeAtMatch, 'observe'),
+        ...(ruleId ? [eq(ruleMatchLog.ruleId, ruleId)] : []),
+      );
+      // Historical resolved matches cannot contribute to any digest. Count
+      // matches without a message join, then join each recent sender once.
+      const recentSenders = this.db
+        .selectDistinct({
+          ruleId: ruleMatchLog.ruleId,
+          senderKey: ruleMatchLog.senderKey,
+        })
+        .from(ruleMatchLog)
+        .where(and(scope, recent))
+        .as('recent_observe_senders');
+      const counts = this.db
+        .select({
+          ruleId: ruleMatchLog.ruleId,
+          pendingTotal:
+            sql<number>`count(*) filter (where ${pending} and ${SENDER_INDEXED_AT_MATCH_TIME})::int`.as(
+              'pending_total',
+            ),
+          senders7d:
+            sql<number>`count(distinct ${ruleMatchLog.senderKey}) filter (where ${recent})::int`.as(
+              'senders_7d',
+            ),
+        })
+        .from(ruleMatchLog)
+        .where(and(scope, sql`(${pending} or ${recent})`))
+        .groupBy(ruleMatchLog.ruleId)
+        .as('observe_counts');
+      const inboxCounts = this.db
+        .select({
+          ruleId: recentSenders.ruleId,
+          inboxMessagesNow: sql<number>`count(${mailMessages.id})::int`.as('inbox_messages_now'),
+        })
+        .from(recentSenders)
+        .innerJoin(
+          mailMessages,
+          and(
+            eq(mailMessages.mailboxAccountId, mailboxAccountId),
+            eq(mailMessages.senderKey, recentSenders.senderKey),
+            eq(mailMessages.isOutbound, false),
+            sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+          ),
+        )
+        .groupBy(recentSenders.ruleId)
+        .as('observe_inbox_counts');
+      // One statement also keeps counts and inbox evidence on one snapshot.
+      const rows = await this.db
+        .select({
+          ruleId: counts.ruleId,
+          pendingTotal: counts.pendingTotal,
+          senders7d: counts.senders7d,
+          inboxMessagesNow: sql<number>`coalesce(${inboxCounts.inboxMessagesNow}, 0)::int`,
+        })
+        .from(counts)
+        .leftJoin(inboxCounts, eq(inboxCounts.ruleId, counts.ruleId));
+      return new Map(rows.map(({ ruleId: id, ...digest }) => [id, digest]));
+    });
   }
 
   /**

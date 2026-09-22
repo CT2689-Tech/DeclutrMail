@@ -1,3 +1,4 @@
+import { measureRequestOperation } from '../observability/request-performance.js';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { engagementWindowStart } from '@declutrmail/shared/contracts';
 import { and, count, desc, eq, getTableName, gte, inArray, isNull, ne, or, sql } from 'drizzle-orm';
@@ -649,11 +650,6 @@ export class TriageReadService {
       return [];
     }
 
-    // Mailbox-level, read once per call rather than per row: without
-    // outbound mail indexed, "you wrote to them" is unmeasurable and
-    // every correspondence shield would otherwise read as unsupported.
-    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(input.mailboxAccountId);
-
     // Aggregate per-sender message stats in a single follow-up query
     // (cheaper than a correlated subquery per row).
     const senderKeys = rows.map((r) => r.senderKey);
@@ -664,7 +660,7 @@ export class TriageReadService {
     // `gte()` in a `.where()` handles Dates fine; only raw `sql`
     // fragments need the manual ISO + cast.
     const ninetyDaysAgoIso = (input.windowStart ?? noiseWindowStartFrom(undefined)).toISOString();
-    const aggRows = await this.db
+    const aggregateQuery = this.db
       .select({
         senderKey: mailMessages.senderKey,
         total: count(),
@@ -721,7 +717,7 @@ export class TriageReadService {
     // absent from the preview moved at execution anyway. Separate query
     // because the aggregate above deliberately spans ALL stored mail
     // (totals, 90-day window) rather than the inbox-only action set.
-    const inboxRows = await this.db
+    const inboxQuery = this.db
       .select({
         senderKey: mailMessages.senderKey,
         inboxCount: count(),
@@ -736,6 +732,18 @@ export class TriageReadService {
       .from(mailMessages)
       .where(senderInboxActionWhere({ mailboxAccountId: input.mailboxAccountId, senderKeys }))
       .groupBy(mailMessages.senderKey);
+    // Mailbox-level, read once per call rather than per row: without
+    // outbound mail indexed, "you wrote to them" is unmeasurable and
+    // every correspondence shield would otherwise read as unsupported.
+    const [mailboxHasOutbound, aggRows, inboxRows] = await measureRequestOperation(
+      'triage.enrichment',
+      () =>
+        Promise.all([
+          this.mailboxHasOutboundIndexed(input.mailboxAccountId),
+          aggregateQuery,
+          inboxQuery,
+        ]),
+    );
     const inboxBySender = new Map(
       inboxRows.map((r) => [
         r.senderKey,

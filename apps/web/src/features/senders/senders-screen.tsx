@@ -1,5 +1,7 @@
 'use client';
 
+import { reconcileAction } from '@/lib/api/reconcile-action';
+
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
@@ -74,6 +76,7 @@ import { useAuth } from '@/features/auth/auth-provider';
 import { SenderList } from './sender-list';
 import workspaceStyles from './sender-workspace.module.css';
 import { useSenderPane } from './use-sender-pane';
+import { prefetchSenderInspector } from './inspector-intent';
 
 // The pane mounts only after a row click above the mobile shell breakpoint, and it carries the
 // whole Sender Detail surface. Loading it on demand keeps the list route
@@ -81,7 +84,9 @@ import { useSenderPane } from './use-sender-pane';
 // so there is no separate loading placeholder here.
 const SenderDetailPane = dynamic(
   () => import('./detail/sender-detail-pane').then((m) => m.SenderDetailPane),
-  { ssr: false },
+  {
+    ssr: false,
+  },
 );
 import { SelectionFab } from './mobile/selection-fab';
 import { rollupByDomain } from './domain-rollup';
@@ -976,8 +981,20 @@ function SendersScreenContent({
   useMailboxScopeReset(actionMailboxId, closePane);
   const paneSenderId = canSplit ? urlSenderId : null;
   const openSender = useCallback(
-    (id: string) => (canSplit ? openPane(id) : openSenderPage(id)),
-    [canSplit, openPane, openSenderPage],
+    (id: string) => {
+      if (canSplit) {
+        // Explicit selection starts code and data together, even without hover.
+        if (!showingStaleRows) prefetchSenderInspector(qc, id, false);
+        openPane(id);
+      } else openSenderPage(id);
+    },
+    [canSplit, openPane, openSenderPage, showingStaleRows, qc],
+  );
+  const previewSenderIntent = useCallback(
+    (id: string) => {
+      if (canSplit && !showingStaleRows) prefetchSenderInspector(qc, id);
+    },
+    [canSplit, showingStaleRows, qc],
   );
   // A `?sender=` link opened on a narrow screen has no pane to show it in.
   const strandedSenderId = canSplit ? null : urlSenderId;
@@ -1027,36 +1044,31 @@ function SendersScreenContent({
   const toggleWithRange = useCallback(
     (orderedIds: readonly string[], id: string, shiftKey: boolean) => {
       if (showingStaleRows) return;
-      const next = new Set(selected);
-      const checked = !selected.has(id);
       const anchor = selectionAnchorRef.current;
-      if (shiftKey && anchor !== null && anchor !== id) {
-        const ai = orderedIds.indexOf(anchor);
-        const bi = orderedIds.indexOf(id);
-        // Both ends must be in the current visual order — a stale
-        // anchor (row filtered away / view switched) degrades to a
-        // plain single toggle rather than guessing a range.
-        if (ai !== -1 && bi !== -1) {
-          const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
-          for (let i = lo; i <= hi; i++) {
-            const rid = orderedIds[i]!;
-            // A busy row cannot be selected by click or select-all — nor by
-            // a range that happens to span it.
-            if (checked && isRowBusy(rowActivity.get(rid))) continue;
-            if (checked) next.add(rid);
-            else next.delete(rid);
-          }
-          selectionAnchorRef.current = id;
-          setSelected(next);
-          return;
-        }
-      }
-      if (checked) next.add(id);
-      else next.delete(id);
       selectionAnchorRef.current = id;
-      setSelected(next);
+      setSelected((previous) => {
+        const next = new Set(previous);
+        const checked = !previous.has(id);
+        if (shiftKey && anchor !== null && anchor !== id) {
+          const ai = orderedIds.indexOf(anchor);
+          const bi = orderedIds.indexOf(id);
+          if (ai !== -1 && bi !== -1) {
+            const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
+            for (let i = lo; i <= hi; i++) {
+              const rid = orderedIds[i]!;
+              if (checked && isRowBusy(rowActivity.get(rid))) continue;
+              if (checked) next.add(rid);
+              else next.delete(rid);
+            }
+            return next;
+          }
+        }
+        if (checked) next.add(id);
+        else next.delete(id);
+        return next;
+      });
     },
-    [selected, showingStaleRows, rowActivity],
+    [showingStaleRows, rowActivity],
   );
 
   // D51 brand rollup — group loaded senders by registrable domain
@@ -1075,6 +1087,12 @@ function SendersScreenContent({
         e.kind === 'sender' ? [e.sender.id] : e.senders.map((s) => s.id),
       ),
     [listEntries],
+  );
+  const toggleSenderSelection = useCallback(
+    (id: string, evt: React.MouseEvent) => {
+      toggleWithRange(orderedIds, id, evt.shiftKey);
+    },
+    [toggleWithRange, orderedIds],
   );
 
   const infiniteScrollEnabled = isFeatureEnabled('infiniteScroll');
@@ -1747,8 +1765,7 @@ function SendersScreenContent({
       // No toast and no strip: the bottom pill is the one voice for an
       // action's outcome (founder decision 2026-09-20). Senders rows moved
       // AND the worker wrote an activity row (0-affected included).
-      void qc.invalidateQueries({ queryKey: sendersKeys.all });
-      void qc.invalidateQueries({ queryKey: activityKeys.all });
+      reconcileAction(qc, data, data.actionId);
     }
     setActiveAction(null);
   }, [actionStatus.data, actionStatus.isError, actionStatus.error, activeAction, qc]);
@@ -1787,8 +1804,7 @@ function SendersScreenContent({
     );
     // D226 — the parked mutation just changed what any kept-open (or
     // next-opened) confirm surface describes: its preview must re-count.
-    void qc.invalidateQueries({ queryKey: ['composite-preview'] });
-    void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+    reconcileAction(qc, data, data.actionId);
     setReceipt({
       ...buildActionReceiptResult(data),
       senderCount: 1,
@@ -1796,8 +1812,7 @@ function SendersScreenContent({
       senderName: overdueAction.senderName,
     });
     if (data.status === 'done') {
-      void qc.invalidateQueries({ queryKey: sendersKeys.all });
-      void qc.invalidateQueries({ queryKey: activityKeys.all });
+      reconcileAction(qc, data, data.actionId);
     }
     setOverdueAction(null);
   }, [
@@ -1839,8 +1854,7 @@ function SendersScreenContent({
     } else {
       toast(`Unsubscribe from ${activeUnsub.senderName} failed — Archive still works.`, 'warn');
     }
-    void qc.invalidateQueries({ queryKey: sendersKeys.all });
-    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    reconcileAction(qc, data, data.actionId);
     setActiveUnsub(null);
   }, [unsubExecStatus.data, unsubExecStatus.isError, unsubExecStatus.error, activeUnsub, qc]);
 
@@ -1877,8 +1891,7 @@ function SendersScreenContent({
         : null,
       pending: outcomes?.pending ?? 0,
     });
-    void qc.invalidateQueries({ queryKey: sendersKeys.all });
-    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    reconcileAction(qc, data);
     setActiveUnsubBatch(null);
   }, [
     unsubBatchStatus.data,
@@ -1907,8 +1920,7 @@ function SendersScreenContent({
     if (!data || !isTerminalStatus(data.status)) return;
     // D226 — the parked mutation may have changed what any kept-open
     // confirm surface describes: its preview must re-count.
-    void qc.invalidateQueries({ queryKey: ['composite-preview'] });
-    void qc.invalidateQueries({ queryKey: ['bulk-action-preview'] });
+    reconcileAction(qc, data);
     const outcomes = data.unsubscribeOutcomes ?? null;
     setUnsubBatchReceipt({
       senderCount: overdueUnsubBatch.senderCount,
@@ -1922,8 +1934,7 @@ function SendersScreenContent({
         : null,
       pending: outcomes?.pending ?? 0,
     });
-    void qc.invalidateQueries({ queryKey: sendersKeys.all });
-    void qc.invalidateQueries({ queryKey: activityKeys.all });
+    reconcileAction(qc, data);
     setOverdueUnsubBatch(null);
   }, [
     overdueUnsubBatchStatus.data,
@@ -2674,9 +2685,10 @@ function SendersScreenContent({
               <SenderList
                 entries={listEntries}
                 selectedIds={selected}
-                onToggleSelect={(id, evt) => toggleWithRange(orderedIds, id, evt.shiftKey)}
+                onToggleSelect={toggleSenderSelection}
                 onAction={requestAction}
                 onOpen={openSender}
+                onIntent={previewSenderIntent}
                 activeId={paneSenderId}
                 compact={isPhone || (canSplit && tightSplit)}
                 followKeys={canSplit}

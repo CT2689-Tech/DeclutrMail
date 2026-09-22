@@ -17,6 +17,7 @@ const API = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 /** The request init Gmail calls are issued with (the fields we assert on). */
 interface FetchInit {
+  signal?: AbortSignal;
   method?: string;
   headers?: Record<string, string>;
   body?: string;
@@ -90,6 +91,29 @@ describe('GmailClientService — label mutation primitive (D5, D201)', () => {
     }
     return JSON.parse(call[1].body ?? '{}') as Record<string, unknown>;
   }
+
+  it('does not fetch after a read is cancelled during quota acquisition', async () => {
+    const controller = new AbortController();
+    acquireSpy.mockImplementation(async () => {
+      controller.abort(new Error('stop'));
+    });
+    const client = new GmailClientService(oauth, limiter);
+    await expect(client.getProfile(controller.signal)).rejects.toThrow('stop');
+    expect(acquireSpy).toHaveBeenCalledWith(5, controller.signal);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts an in-flight Gmail read through the supplied signal', async () => {
+    const controller = new AbortController();
+    fetchMock.mockImplementation(async (_url, init) => {
+      controller.abort(new Error('stop'));
+      expect(init.signal?.aborted).toBe(true);
+      init.signal?.throwIfAborted();
+      return jsonOk({});
+    });
+    const client = new GmailClientService(oauth, limiter);
+    await expect(client.getMessageMetadata('fixture', controller.signal)).rejects.toThrow('stop');
+  });
 
   describe('modifyLabels', () => {
     it('POSTs the add/remove label change to /messages/:id/modify', async () => {

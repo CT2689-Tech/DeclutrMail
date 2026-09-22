@@ -178,6 +178,129 @@ describe('IncrementalSyncWorker', () => {
     mailboxAccountId = await seedMailbox(db);
   });
 
+  it.each([false, true])(
+    'prefetches bursts outside lock and preserves concurrent action labels (changed=%s)',
+    async (changed) => {
+      const ids = Array.from({ length: 8 }, (_, i) => `burst-${i}`);
+      let locked = false;
+      let profileCalls = 0;
+      const client = new FakeGmailClient(
+        [
+          {
+            forCursor: '1000',
+            page: {
+              records: ids.map((id) => ({
+                kind: 'added',
+                messageId: id,
+                threadId: id,
+                labelIds: ['INBOX'],
+              })),
+              historyId: '1500',
+            },
+          },
+        ],
+        new Map(
+          ids.map((id) => [id, makeMetadata(id, id, 'sender@example.com', ['INBOX'], Date.now())]),
+        ),
+      );
+      const metadata = vi.spyOn(client, 'getMessageMetadata').mockImplementation(async (id) => {
+        expect(locked).toBe(false);
+        return makeMetadata(id, id, 'sender@example.com', ['INBOX'], Date.now());
+      });
+      client.getProfile = async () => ({
+        historyId: changed && ++profileCalls > 1 ? '1600' : '1500',
+      });
+      const labels = vi.fn(async () => {
+        expect(locked).toBe(true);
+        return ['TRASH'];
+      });
+      const enhanced = Object.assign(client, { getMessageLabelIds: labels });
+      const worker = new IncrementalSyncWorker({
+        db,
+        gmailAccess: accessFor(enhanced),
+        lock: {
+          run: async (_, fn) => {
+            locked = true;
+            try {
+              return await fn();
+            } finally {
+              locked = false;
+            }
+          },
+        },
+      });
+      await worker.processJob(
+        { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+        CTX,
+      );
+      expect(metadata).toHaveBeenCalledTimes(8);
+      expect(labels).toHaveBeenCalledTimes(changed ? 8 : 0);
+      const rows = await db.select().from(mailMessages);
+      expect(rows).toHaveLength(8);
+      for (const row of rows) expect(row.labelIds).toEqual(changed ? ['TRASH'] : ['INBOX']);
+    },
+  );
+
+  it('discards prefetched metadata when the cursor advances and refetches outside the lock', async () => {
+    const ids = Array.from({ length: 8 }, (_, i) => `superseded-${i}`);
+    let locked = false;
+    let locks = 0;
+    const client = new FakeGmailClient(
+      [
+        {
+          forCursor: '1000',
+          page: {
+            records: ids.map((id) => ({
+              kind: 'added',
+              messageId: id,
+              threadId: id,
+              labelIds: ['INBOX'],
+            })),
+            historyId: '1500',
+          },
+        },
+        { forCursor: '1600', page: { records: [], historyId: '1700' } },
+      ],
+      new Map(
+        ids.map((id) => [id, makeMetadata(id, id, 'sender@example.com', ['INBOX'], Date.now())]),
+      ),
+    );
+    const history = client.listHistory.bind(client);
+    client.listHistory = async (...args) => {
+      expect(locked).toBe(false);
+      return history(...args);
+    };
+    const labels = vi.fn(async () => ['INBOX']);
+    const worker = new IncrementalSyncWorker({
+      db,
+      gmailAccess: accessFor(Object.assign(client, { getMessageLabelIds: labels })),
+      lock: {
+        run: async (_, fn) => {
+          locks++;
+          if (locks === 1)
+            await db
+              .update(providerSyncState)
+              .set({ lastHistoryId: 1600n })
+              .where(eq(providerSyncState.mailboxAccountId, mailboxAccountId));
+          locked = true;
+          try {
+            return await fn();
+          } finally {
+            locked = false;
+          }
+        },
+      },
+    });
+    const result = await worker.processJob(
+      { mailboxAccountId, startHistoryId: '1000', endHistoryId: '1500' },
+      CTX,
+    );
+    expect(locks).toBe(2);
+    expect(result.advancedToHistoryId).toBe('1700');
+    expect(await db.select().from(mailMessages)).toHaveLength(0);
+    expect(labels).not.toHaveBeenCalled();
+  });
+
   it('no-ops a disconnected mailbox before Gmail access or cursor writes', async () => {
     await db
       .update(mailboxAccounts)

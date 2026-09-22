@@ -1,3 +1,4 @@
+import { measureRequestOperation } from '../observability/request-performance.js';
 import {
   Controller,
   Get,
@@ -121,14 +122,13 @@ export class AuthController {
         ? stored
         : (mailboxes.find((m) => m.status === 'active')?.id ?? null);
     // Compose per-mailbox sync readiness via the sync facade (D116, D204).
-    const [readiness, needsReconnect] = await Promise.all([
-      this.sync.getReadinessByMailbox(mailboxes.map((m) => m.id)),
-      this.sync.getNeedsReconnectByMailbox(mailboxes.map((m) => m.id)),
-    ]);
+    const health = await measureRequestOperation('auth.sync-state', () =>
+      this.sync.getMailboxHealth(mailboxes.map((m) => m.id)),
+    );
     const mailboxViews: MailboxView[] = mailboxes.map((m) => ({
       ...m,
-      readiness: readiness.get(m.id) ?? null,
-      needsReconnect: needsReconnect.get(m.id) ?? false,
+      readiness: health.get(m.id)?.readiness ?? null,
+      needsReconnect: health.get(m.id)?.needsReconnect ?? false,
     }));
     return ok({
       user: {

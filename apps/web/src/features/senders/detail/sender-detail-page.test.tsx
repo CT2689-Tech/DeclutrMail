@@ -1409,7 +1409,9 @@ describe('SenderDetailRoute', () => {
         previewCount = 5;
         firstActionDone = true;
         await tick(2_500);
-        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.all });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['senders', 'list'] });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['senders', 'summary'] });
+        expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: sendersKeys.detail('linkedin') });
         expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: activityKeys.all });
         // The verb that was "not confirmed" now says what happened.
         expect(doneMark()).toHaveTextContent('Archived 12');

@@ -243,7 +243,9 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
    */
   async run(job: Job<TPayload, TResult>): Promise<TResult> {
     const config = WORKER_POLICIES[this.policy];
+    const deadline = new AbortController();
     const ctx: WorkerContext = {
+      signal: deadline.signal,
       jobId: job.id ?? 'unknown',
       workerName: this.workerName,
       attempt: job.attemptsMade + 1,
@@ -257,6 +259,12 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
 
     const idempotencyKey = this.getIdempotencyKey?.(job.data);
     this.emit('worker.started', ctx, {
+      ...(Number.isFinite(job.timestamp)
+        ? {
+            jobAgeMs: Math.max(0, Date.now() - job.timestamp),
+            ...(ctx.attempt === 1 ? { queueWaitMs: Math.max(0, Date.now() - job.timestamp) } : {}),
+          }
+        : {}),
       ...(idempotencyKey ? { idempotencyRef: telemetryReference(idempotencyKey) } : {}),
     });
 
@@ -264,7 +272,12 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
       const result =
         config.timeoutMs === null
           ? await this.processJob(job.data, ctx)
-          : await withTimeout(this.processJob(job.data, ctx), config.timeoutMs, this.workerName);
+          : await withTimeout(
+              this.processJob(job.data, ctx),
+              config.timeoutMs,
+              this.workerName,
+              deadline,
+            );
       // Keep useful counts/booleans/closed outcomes while dropping
       // capability tokens and provider/cursor identifiers from logs.
       this.emit('worker.succeeded', ctx, { result: sanitizeWorkerResult(result) });
@@ -424,6 +437,7 @@ export abstract class BaseDeclutrWorker<TPayload, TResult> {
         jobRef: telemetryReference(ctx.jobId),
         ...(ctx.mailboxAccountId ? { mailboxRef: telemetryReference(ctx.mailboxAccountId) } : {}),
         attempt: ctx.attempt,
+        durationMs: Math.max(0, Date.now() - ctx.startedAt.getTime()),
         ...extra,
       }),
     );
@@ -639,17 +653,26 @@ function safeTelemetryError(error: unknown, message: string): Error {
   return safe;
 }
 
-/** Reject if `promise` does not settle within `ms` (policy timeout guard). */
-async function withTimeout<T>(promise: Promise<T>, ms: number, workerName: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${workerName} exceeded ${ms}ms timeout`)), ms);
-  });
+/** Signal the deadline, then drain the attempt before reporting failure/retrying.
+ * This is cooperative cancellation, not a hard timeout on arbitrary third-party calls. */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  workerName: string,
+  deadline: AbortController,
+): Promise<T> {
+  const error = new Error(`${workerName} exceeded ${ms}ms timeout`);
+  const timer = setTimeout(() => deadline.abort(error), ms);
   try {
-    return await Promise.race([promise, timeout]);
+    // Never release the BullMQ attempt while its DB transaction/lock is still alive.
+    // Cooperative workers stop at boundaries; uncancellable calls must settle first.
+    const result = await promise;
+    deadline.signal.throwIfAborted();
+    return result;
+  } catch (cause) {
+    if (deadline.signal.aborted) throw error;
+    throw cause;
   } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
+    clearTimeout(timer);
   }
 }
