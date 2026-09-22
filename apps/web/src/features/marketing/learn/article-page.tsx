@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SenderWalkthrough } from '@/features/marketing/landing/sender-walkthrough';
 import { demoForTopic } from './journey-links';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
@@ -134,6 +135,15 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
       ) : null}
 
       {article.example ? <SyntheticPanel example={article.example} /> : null}
+
+      {[
+        'clean-gmail-by-sender',
+        'bulk-delete-emails-from-one-sender',
+        'gmail-storage-full',
+        'is-it-safe-to-connect-gmail-app',
+      ].includes(article.slug) ? (
+        <SenderWalkthrough id={`guide-${article.slug}`} />
+      ) : null}
 
       {article.sections.map((section) => (
         <section key={section.id} id={section.id}>

@@ -53,11 +53,11 @@ async function expectCriticalControlsHaveNames(page: Page, isMobile: boolean): P
   const tabBar = page.getByRole('navigation', { name: 'Primary' });
   const sidebar = page.getByRole('navigation', { name: 'Product navigation' });
   if (isMobile) {
-    await expect(tabBar.getByRole('button', { name: 'More' })).toBeVisible();
+    await expect(tabBar.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
     await expect(sidebar).toHaveCount(0);
   } else {
     await expect(tabBar).toHaveCount(0);
-    await expect(sidebar.getByRole('button', { name: 'Home' })).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Overview', exact: true })).toBeVisible();
   }
 
   // The hamburger is present ONLY at phone widths. It needs the same

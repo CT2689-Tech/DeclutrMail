@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { request, type APIRequestContext } from '@playwright/test';
 
 import { E2E_ENV } from './env';
+import { BILLING_SEED } from './seed-billing';
 
 /** D202 envelope shape — every api response unwraps from `data`. */
 interface Envelope<T> {
@@ -120,27 +121,15 @@ export interface CompositePreview {
   protected: boolean;
 }
 
-/**
- * Probe the live stack: api reachable + session valid + an active
- * mailbox selected. Returns the active mailbox id, or `null` with a
- * reason when any leg is missing — callers `test.skip()` on null so
- * the suite stays honest in environments without the live mailbox
- * (e.g. a future CI without Gmail).
- */
+/** Require the fixture session; absent or foreign sessions fail rather than skip. */
 export async function requireLiveStack(
   api: ApiClient,
 ): Promise<{ mailboxId: string } | { mailboxId: null; reason: string }> {
-  let me: Me;
-  try {
-    me = await api.get<Me>('/api/auth/me');
-  } catch (err) {
-    return {
-      mailboxId: null,
-      reason: `api not reachable / session invalid at ${E2E_ENV.apiUrl}: ${String(err)}`,
-    };
-  }
-  if (!me.activeMailboxId) {
-    return { mailboxId: null, reason: 'no active mailbox on the dev-login user' };
+  const me = await api.get<Me>('/api/auth/me');
+  if (me.activeMailboxId !== BILLING_SEED.mailboxId) {
+    throw new Error(
+      'E2E session must select the synthetic fixture mailbox; refusing any other mailbox.',
+    );
   }
   return { mailboxId: me.activeMailboxId };
 }

@@ -1,26 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type postgres from 'postgres';
 
+import { applyJourneySeed } from '../helpers/seed-journeys';
+
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect, getSenderPolicy, senderKeyById, type SenderPolicyRow } from '../helpers/db';
 
-/**
- * Golden spec 2 — Sender standing policy: the Protect toggle (D183 / D42 / D43).
- *
- * Walks senders list → sender detail → Protect chip:
- *
- *   1. /senders renders the live grid; the first card supplies the
- *      target sender id (list → detail walk).
- *   2. On /senders/:id the Protected switch flips (`aria-checked`) and writes
- *      `sender_policies.is_protected` via `PATCH /api/senders/:id/policy`
- *      (SET-STATE — non-destructive, no D226 preview by design).
- *   3. Persistence is asserted by RELOADING the page between toggles —
- *      the chip state must come back from the server, not local state.
- *   4. The toggle is flipped back, so the flow is self-restoring at
- *      the UI level; teardown additionally restores the policy row to
- *      its exact pre-test snapshot and removes the D43 audit rows the
- *      toggles appended (shared dev DB — leave no trace).
- */
+/** Isolated synthetic API/UI journey. No Gmail credentials or worker. */
 
 const api = new ApiClient();
 let sql: postgres.Sql;
@@ -30,9 +16,10 @@ let testStart: Date;
 
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
-  test.skip(live.mailboxId === null, 'reason' in live ? live.reason : undefined);
+  expect(live.mailboxId).not.toBeNull();
   mailboxId = live.mailboxId!;
   sql = dbConnect();
+  await applyJourneySeed(sql);
 });
 
 test.afterAll(async () => {

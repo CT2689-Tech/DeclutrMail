@@ -173,11 +173,14 @@ export function SenderDetailRoute({
   id,
   layout = 'page',
   onClose,
+  onAction,
 }: {
   id: string;
   layout?: DetailLayout;
   /** Pane only — what "back" means when the list is already on screen. */
   onClose?: () => void;
+  /** The split workspace owns its actions above the replaceable inspector. */
+  onAction?: ((request: ActionRequest) => void) | undefined;
 }) {
   const detail = useSenderDetail(id);
   // QA-sender-detail-20260902-09, Codex adversarial review round 2: the
@@ -341,10 +344,18 @@ export function SenderDetailRoute({
     return <LoadingState layout={layout} />;
   }
 
-  return <ReadyState initial={adapted} layout={layout} />;
+  return <ReadyState initial={adapted} layout={layout} onAction={onAction} />;
 }
 
-function ReadyState({ initial, layout }: { initial: SenderDetail; layout: DetailLayout }) {
+function ReadyState({
+  initial,
+  layout,
+  onAction,
+}: {
+  initial: SenderDetail;
+  layout: DetailLayout;
+  onAction?: ((request: ActionRequest) => void) | undefined;
+}) {
   const auth = useOptionalAuth();
   const actionMailboxId = auth?.me.activeMailboxId ?? undefined;
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
@@ -1141,7 +1152,13 @@ function ReadyState({ initial, layout }: { initial: SenderDetail; layout: Detail
     return history.map((row, i) => historyRowToTimelineItem(row, i === currentIndex, now));
   }, [history, now]);
 
-  const actionToolbar = (
+  // The list and inspector are simultaneous views of the same sender.
+  // In the split workspace, inherit its activity map and action lifecycle;
+  // an inspector-local provider would hide jobs started from the list and
+  // allow a second mutation. Full pages retain their own lifecycle.
+  const actionToolbar = onAction ? (
+    <ActionToolbar sender={sender} onAction={onAction} />
+  ) : (
     <RowActivityProvider value={pageActivity}>
       <ActionToolbar sender={sender} onAction={requestAction} shortcuts={layout === 'page'} />
     </RowActivityProvider>

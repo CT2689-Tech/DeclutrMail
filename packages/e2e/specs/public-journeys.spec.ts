@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.use({ storageState: { cookies: [], origins: [] } });
+
 // Exercise connected acquisition paths without a Gmail account or provider writes.
 async function follow(page: Page, path: string) {
   await page.locator(`a[href="${path}"]:visible`).first().click();
@@ -12,6 +14,11 @@ async function consent(page: Page) {
 }
 
 async function assertSignupRef(page: Page, ref: string) {
+  if (new URL(page.url()).pathname !== '/sign-in') {
+    await page.locator('a[href^="/sign-in"]:visible').last().click();
+    await expect(page).toHaveURL(/\/sign-in(?:\?|$)/);
+  }
+  await expect(page.locator('main')).toContainText('Gmail');
   // Observe the real click destination, stopping before OAuth or any account creation.
   await page.route('**/api/auth/google/start**', (route) =>
     route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>OAuth boundary</h1>' }),

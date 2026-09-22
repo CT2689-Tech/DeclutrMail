@@ -6,38 +6,10 @@ import { dbConnect, senderKeyById } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
 
 /**
- * Brief Noise bulk archive — D65 / D226 / D69 / D35.
- *
- * The second Gmail-mutating spec, and the regression test for the worst
- * defect the D65 review found: the `Archived ✓` mark and the receipt
- * used to be plain component state, so a real tray undo left the Brief
- * asserting an archive whose mail was already back in the inbox. The
- * final assertion here is that the mark is GONE after the undo — it
- * fails against any implementation that stores that state instead of
- * deriving it from the server.
- *
- * Full lifecycle exercised for real:
- *
- *   checkbox selection → Archive N senders → mandatory preview modal
- *   → confirm → worker Gmail mutation → persistent receipt + Archived ✓
- *   → tray Undo → reverse job → mark and receipt both disappear
- *
- * Restore: the undo IS the restore. A teardown safety net re-fires the
- * token via the api if the spec dies between the archive and the undo,
- * so a red run never leaves the founder's mailbox mutated. The token is
- * captured from the DB BEFORE any visual assertion, for exactly that
- * reason (the pattern undo.spec.ts arrived at the hard way).
- *
- * Blast radius: exactly ONE Noise sender — the one with the SMALLEST live
- * inbox count that still fits the window. Every other sender is unchecked
- * before the archive runs.
- *
- * On skipping: only three states skip, and each is a genuinely degenerate
- * environment (not Pro, no snapshot, every Noise sender Protected).
- * "A Brief with actionable Noise senders, none of which fits the window"
- * FAILS, loudly, with the observed counts — a spec that can silently skip
- * on the path it exists to cover is the blind-guard failure: green
- * forever, verifying nothing.
+ * Deferred provider contract. Requires E2E_PROVIDER_HARNESS=1 plus a synthetic
+ * provider worker (not supplied). Not in default or launch CI. The mailbox
+ * guard refuses non-fixture sessions. Never point this at real Gmail.
+ * Preview/cancel and demo Undo coverage are separate and do not prove this flow.
  */
 
 interface BriefNoiseSenderWire {
@@ -103,6 +75,12 @@ async function declineNonEssentialCookies(page: Page): Promise<void> {
 }
 
 test.beforeAll(async () => {
+  if (process.env.E2E_PROVIDER_HARNESS !== '1') {
+    throw new Error(
+      'Provider journey requires an isolated mock-provider worker harness. Never run against real Gmail.',
+    );
+  }
+
   const live = await requireLiveStack(api);
   test.skip(live.mailboxId === null, 'reason' in live ? live.reason : undefined);
   mailboxId = live.mailboxId!;
@@ -176,7 +154,7 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   // close to a contradiction. A window that no candidate can satisfy is a
   // permanently-skipped spec — green forever, verifying nothing — which is
   // the blind-guard failure this repo has a standing rule about. Measured
-  // 2026-08-10 against the founder's mailbox: the fourteen actionable
+  // 2026-08-10 against the synthetic fixture's mailbox: the fourteen actionable
   // Noise senders ranged 24..497, so a ceiling of 5 could never match.
   const MAX_INBOX_COUNT = 60;
   const PROBE_LIMIT = 30;
@@ -322,11 +300,14 @@ test('Archive one Noise sender from the Brief, then undo it from the tray', asyn
   await expect(archivedRow).toContainText(/messages? yesterday/);
 
   // ---- Undo through the global tray.
-  const tray = page.getByRole('region', { name: 'Recent actions — undo available' });
+  const tray = page.getByRole('region', { name: 'Recent actions' });
   await expect(tray).toBeVisible({ timeout: 30_000 });
   const entries = await api.get<{ token: string }[]>('/api/undo');
   expect(entries.some((e) => e.token === undoToken)).toBe(true);
-  await tray.getByRole('button', { name: 'Undo Archive' }).first().click();
+  await tray
+    .getByRole('button', { name: /^Undo Archive/ })
+    .first()
+    .click();
 
   await expect(page.getByText('Undone — email is back where it was.')).toBeVisible({
     timeout: 90_000,

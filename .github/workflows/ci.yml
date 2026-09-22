@@ -565,12 +565,12 @@ jobs:
       postgres:
         image: postgres:16-alpine
         env:
-          POSTGRES_DB: declutrmail
+          POSTGRES_DB: declutrmail_e2e
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d declutrmail"
+          --health-cmd "pg_isready -U postgres -d declutrmail_e2e"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -584,7 +584,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/declutrmail
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/declutrmail_e2e
       REDIS_URL: redis://127.0.0.1:6379/12
       RATE_LIMIT_ENABLED: 'false'
       JWT_ACCESS_SECRET: e2e-access-secret-is-longer-than-thirty-two-bytes
@@ -599,6 +599,9 @@ jobs:
       CORS_ORIGIN: http://127.0.0.1:3104
       E2E_WEB_URL: http://127.0.0.1:3104
       E2E_API_URL: http://127.0.0.1:4104
+      E2E_ISOLATED: '1'
+      E2E_POSTHOG: '1'
+      NEXT_PUBLIC_POSTHOG_KEY: phc_e2e_dummy
       E2E_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       E2E_BILLING_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4104
@@ -730,6 +733,18 @@ jobs:
       # Playwright exits 0 when every test skips, so the two steps above
       # can pass having asserted nothing. This is the required check that
       # would go green over it, so coverage is asserted, not assumed.
+      - name: Verify isolated harness guards
+        run: pnpm --filter @declutrmail/e2e run test:harness
+
+      - name: Run isolated product and public journeys
+        run: pnpm --filter @declutrmail/e2e run e2e:journeys
+        env:
+          E2E_JSON_REPORT: ${{ github.workspace }}/e2e-journeys-report.json
+
+      - name: Assert each required journey executed
+        if: always()
+        run: node packages/e2e/contracts/assert-journeys.mjs e2e-journeys-report.json
+
       - name: Assert both e2e lanes actually ran
         if: always()
         run: |

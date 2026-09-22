@@ -15,8 +15,8 @@ type Status = 'idle' | 'submitting' | 'confirmed' | 'error';
 
 /**
  * "Contact support" — Settings → Help & glossary, below the product
- * glossary. Authed users only; sends one email to support@ via
- * `POST /api/support-request`. No attachment, no ticket persistence —
+ * glossary. Authed users only; queues a request to support@ via
+ * `POST /api/support-request`. No attachment or ticket table —
  * see docs/superpowers/specs/2026-09-01-contact-support-form-design.md.
  */
 export function ContactSupportForm() {
@@ -51,7 +51,11 @@ export function ContactSupportForm() {
             color: color.fg,
           }}
         >
-          Message sent — we reply within 2 business days.
+          Request received — we reply within 2 business days. You can also email{' '}
+          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            support@declutrmail.com
+          </a>
+          .
         </p>
       </SettingsGroup>
     );

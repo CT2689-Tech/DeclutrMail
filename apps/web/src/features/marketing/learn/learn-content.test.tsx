@@ -56,6 +56,31 @@ const BLOG = BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug]);
 const ALL_ARTICLES = [...HOW_TO, ...ANSWERS, ...BLOG];
 
 describe('public learning content registry', () => {
+  it('keeps examples as request outcomes rather than guaranteed delivery changes', () => {
+    const senderGuide = HOW_TO_ARTICLES['clean-gmail-by-sender'];
+    const unsubscribe = senderGuide.example!.rows.find((row) => row.action === 'Unsubscribe')!;
+    expect(unsubscribe.result).toMatch(/request.*draft/);
+    expect(unsubscribe.result).toContain('sender controls delivery');
+    for (const article of ALL_ARTICLES) {
+      expect(JSON.stringify(article)).not.toMatch(
+        /Future delivery is stopped|every action is reversible/i,
+      );
+    }
+  });
+
+  it('explains real sender inspection and historical scope before bulk approval', () => {
+    const senderText = articleText(HOW_TO_ARTICLES['clean-gmail-by-sender']);
+    const deleteText = articleText(HOW_TO_ARTICLES['bulk-delete-emails-from-one-sender']);
+    for (const text of [senderText, deleteText]) {
+      expect(text).toMatch(/sender inspector/);
+      expect(text).toContain('How far back');
+      expect(text).toContain('Inbox only or Inbox + archived');
+    }
+    if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
+      expect(senderText).toContain(`${UNIFORM_UNDO_WINDOW_DAYS}-day window on every plan`);
+    }
+  });
+
   it('ships exactly the published how-to routes and five answer routes', () => {
     expect(HOW_TO_SLUGS).toEqual([
       'clean-gmail-by-sender',
@@ -186,7 +211,9 @@ describe('public learning content registry', () => {
     )!.callout!;
     expect(callout.body).not.toContain('its length depends on your plan');
     if (UNIFORM_UNDO_WINDOW_DAYS !== null) {
-      expect(callout.body).toContain('while their undo window is open. Delete also has');
+      expect(callout.body).toContain(
+        `within the ${UNIFORM_UNDO_WINDOW_DAYS}-day window on every plan. Delete also has`,
+      );
     }
     // Gmail's own Trash retention is a separate fact and stays literal.
     expect(callout.body).toContain('separate Gmail Trash recovery for up to about 30 days');

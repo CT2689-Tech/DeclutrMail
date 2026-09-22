@@ -870,12 +870,17 @@ export function ConfirmActionModal({
         : destination;
 
   // ── How to undo it (note) ────────────────────────────────────────────
-  // Protected senders the action will not touch — said ONCE. Two
-  // disjoint sets: the ones the eligibility gate dropped before the sheet
-  // opened (`request.skipped`) and the ones the live bulk preview newly
-  // flags among the requested senders (`protectedCount`).
-  const protectedSkipped =
-    (request.skipped?.protectedCount ?? 0) + (bulkPreview?.data?.protectedCount ?? 0);
+  // Archive/Later/Delete retain protected rows in the preview request,
+  // while Unsubscribe and quota-capped requests drop them upstream.
+  // Count only those actually dropped before adding the live preview's
+  // protected population; the two raw counts can contain the same sender.
+  const protectedDroppedBeforePreview = Math.max(
+    0,
+    (request.skipped?.protectedCount ?? 0) - senders.filter(isStandingProtected).length,
+  );
+  const protectedSkipped = bulkPreview?.data
+    ? protectedDroppedBeforePreview + bulkPreview.data.protectedCount
+    : (request.skipped?.protectedCount ?? 0);
   const peopleSkipped = request.skipped?.peopleCount ?? 0;
   const skipSentence =
     protectedSkipped > 0 && peopleSkipped > 0

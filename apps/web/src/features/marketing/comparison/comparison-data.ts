@@ -59,7 +59,7 @@ export interface ComparisonDefinition {
   readonly slug: ComparisonSlug;
   readonly name: string;
   readonly category: string;
-  /** ISO `YYYY-MM-DD` this page's sources were last read end to end. */
+  /** ISO `YYYY-MM-DD` this page's retained claims were checked against its sources. */
   readonly verifiedIso: string;
   readonly title: string;
   readonly description: string;
@@ -131,7 +131,7 @@ const DECLUTR = {
   unsubscribe: {
     summary: 'When the sender provides an unsubscribe method',
     detail:
-      'RFC one-click requests can run directly. Mailto-based requests require a manual step; unsupported senders stay explicit.',
+      'Standards-based one-click requests can be submitted directly. Mailto opens a prepared Gmail draft that you send. The sender controls whether and when delivery stops; unsupported senders stay explicit.',
     state: 'limited',
   },
   preview: {
@@ -167,7 +167,7 @@ const cleanEmail: ComparisonDefinition = {
   slug: 'clean-email',
   name: 'Clean Email',
   category: 'Broad cleanup suite',
-  verifiedIso: '2026-08-30',
+  verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs Clean Email',
   description:
     'A source-backed comparison of DeclutrMail and Clean Email for Gmail cleanup, automation, unsubscribe, privacy, and pricing.',
@@ -248,9 +248,9 @@ const cleanEmail: ComparisonDefinition = {
       label: 'Preview and recovery',
       declutrMail: DECLUTR.recovery,
       competitor: {
-        summary: 'Action history published; undo window not publicly stated',
+        summary: 'Optional five-second Quick Cancel; durable undo not stated',
         detail:
-          'The reviewed feature pages describe logs/history, but do not state a durable, universal undo period.',
+          'Quick Cancel delays cleaning for five seconds when enabled and is off by default. This is a pre-execution cancel window; a durable, universal undo period is not stated in the reviewed pages.',
         state: 'unknown',
       },
     },
@@ -258,9 +258,9 @@ const cleanEmail: ComparisonDefinition = {
       label: 'Email-data posture',
       declutrMail: DECLUTR.data,
       competitor: {
-        summary: 'Vendor says cleanup analysis uses email headers and other listed details',
+        summary: 'Vendor says it accesses envelope and header information',
         detail:
-          'Clean Email also publishes in-app open, read, reply, and forward features; consult its privacy policy for the exact processing that applies to features you enable.',
+          'Its September privacy policy says bodies are never downloaded or accessed by its systems. Its feature page also offers in-app reading and replies; these are vendor statements, not an independent audit.',
         state: 'limited',
       },
     },
@@ -287,6 +287,11 @@ const cleanEmail: ComparisonDefinition = {
       note: 'Free limits, trial, premium-only features, sender settings, and subscription model.',
     },
     {
+      label: 'Clean Email Quick Cancel',
+      url: 'https://clean.email/help/cleaning/canceling-accidental-action-with-quick-cancel',
+      note: 'Optional five-second delay before execution, disabled by default.',
+    },
+    {
       label: 'Clean Email privacy policy',
       url: 'https://clean.email/privacy',
       note: 'Vendor’s current legal description of Gmail-data access and processing.',
@@ -298,7 +303,7 @@ const trimbox: ComparisonDefinition = {
   slug: 'trimbox',
   name: 'Trimbox',
   category: 'In-inbox unsubscriber',
-  verifiedIso: '2026-08-30',
+  verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs Trimbox',
   description:
     'A source-backed comparison of DeclutrMail and Trimbox for Gmail unsubscribe, past-email deletion, automation, privacy, and pricing.',
@@ -429,7 +434,7 @@ const sanebox: ComparisonDefinition = {
   slug: 'sanebox',
   name: 'SaneBox',
   category: 'Importance sorting',
-  verifiedIso: '2026-08-30',
+  verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs SaneBox',
   description:
     'A source-backed comparison of DeclutrMail and SaneBox for sender cleanup, importance sorting, training, privacy, providers, and pricing.',
@@ -439,7 +444,8 @@ const sanebox: ComparisonDefinition = {
     'Choose between learned importance sorting for incoming mail and explicit sender decisions you approve one at a time.',
   primaryUnit: 'Learned sender importance and training folders',
   providerScope: 'Most IMAP/Exchange-style providers',
-  publicEntryPoint: '7-day trial; plans limit accounts and enabled features',
+  publicEntryPoint:
+    'Free trial advertised; current price and limits not stated in the reviewed snapshot',
   chooseCompetitor: {
     headline: 'Choose SaneBox for continuous sorting',
     points: [
@@ -479,7 +485,7 @@ const sanebox: ComparisonDefinition = {
       label: 'Existing-mail cleanup',
       declutrMail: DECLUTR.existingMail,
       competitor: {
-        summary: 'Backlog sorting plus Email Deep Clean',
+        summary: 'Gradual backlog sorting',
         detail: 'SaneBox says initial SaneLater backlog processing happens gradually overnight.',
         state: 'supported',
       },
@@ -499,7 +505,7 @@ const sanebox: ComparisonDefinition = {
       competitor: {
         summary: 'SaneBlackHole trains future mail to Trash',
         detail:
-          'SaneBox markets this as one-click unsubscribe; its help page describes sender training to Trash rather than a confirmed mailing-list opt-out.',
+          'Its feature guide describes moving current and future Inbox mail from a sender to SaneBlackHole for later automatic trashing, rather than confirming a mailing-list opt-out.',
         state: 'limited',
       },
     },
@@ -509,7 +515,7 @@ const sanebox: ComparisonDefinition = {
       competitor: {
         summary: 'Correct by moving and retraining',
         detail:
-          'Fresh SaneBlackHole messages remain reviewable for seven days; a general Activity undo window is not publicly stated.',
+          'SaneLater can be corrected by moving mail back to Inbox and retraining. A general Activity undo window is not publicly stated in the reviewed pages.',
         state: 'limited',
       },
     },
@@ -519,7 +525,7 @@ const sanebox: ComparisonDefinition = {
       competitor: {
         summary: 'Headers for core sorting; optional features can need more',
         detail:
-          'SaneBox says core features use headers. Its privacy help lists limited extra access for attachments, reminders, and some snooze options.',
+          'SaneBox describes header-based core sorting with exceptions for optional features. Its current feature guide also lists AI summaries and reply drafts; do not read the header-only claim as applying to every feature.',
         state: 'limited',
       },
     },
@@ -527,9 +533,10 @@ const sanebox: ComparisonDefinition = {
       label: 'Public starting point',
       declutrMail: DECLUTR.price,
       competitor: {
-        summary: '7-day trial; paid plans by accounts and feature slots',
-        detail: 'Official pricing lists 1/2/4 accounts with 2/6/all selectable Sane features.',
-        state: 'supported',
+        summary: 'Free trial advertised; paid amounts not stated in reviewed snapshot',
+        detail:
+          'The feature guide confirms plan-dependent feature limits. The pricing snapshot did not expose current amounts, trial duration, or account allowances; check the vendor before buying.',
+        state: 'unknown',
       },
     },
   ],
@@ -537,7 +544,7 @@ const sanebox: ComparisonDefinition = {
     {
       label: 'SaneBox pricing',
       url: 'https://www.sanebox.com/pricing',
-      note: 'Trial, account limits, feature allowances, and included tools.',
+      note: 'Pricing destination; dynamically rendered amounts and allowances were unavailable in this review.',
     },
     {
       label: 'What is a SaneBox feature?',
@@ -561,21 +568,21 @@ const leaveMeAlone: ComparisonDefinition = {
   slug: 'leave-me-alone',
   name: 'Leave Me Alone',
   category: 'Subscription control',
-  verifiedIso: '2026-08-30',
+  verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs Leave Me Alone',
   description:
     'A source-backed comparison of DeclutrMail and Leave Me Alone for unsubscribe, newsletter rollups, sender cleanup, privacy, providers, and pricing.',
   verdict:
-    'Leave Me Alone is purpose-built for subscriptions, Rollups, and Inbox Shield across providers. DeclutrMail treats newsletters as one part of a broader Gmail sender-cleanup workflow.',
+    'Leave Me Alone is purpose-built for subscriptions, Rollups, and Screener across providers. DeclutrMail treats newsletters as one part of a broader Gmail sender-cleanup workflow.',
   indexSummary:
     'Choose between an unsubscribe specialist and a broader Gmail workflow that also includes supported unsubscribe, Keep, Archive, Later, and Delete.',
-  primaryUnit: 'Subscription or shield rule',
+  primaryUnit: 'Subscription or screening rule',
   providerScope: 'Google, Microsoft, Yahoo, iCloud, AOL, Fastmail, and IMAP',
   publicEntryPoint: '10 unsubscribes free; $19 seven-day pass',
   chooseCompetitor: {
     headline: 'Choose Leave Me Alone for subscriptions',
     points: [
-      'Unsubscribing, newsletter Rollups, private addresses, and Inbox Shield are the whole job.',
+      'Unsubscribing, newsletter Rollups, private addresses, and Screener are the whole job.',
       'You want several scheduled digests for newsletters you still enjoy.',
       'You need Google, Microsoft, Yahoo, iCloud, Fastmail, AOL, or another IMAP mailbox.',
     ],
@@ -593,7 +600,7 @@ const leaveMeAlone: ComparisonDefinition = {
       label: 'Core approach',
       declutrMail: DECLUTR.focus,
       competitor: {
-        summary: 'Subscription cleanup, Rollups, and Inbox Shield',
+        summary: 'Subscription cleanup, Rollups, and Screener',
         detail:
           'The service centers on mailing lists, digests, screening, blocklists, and quiet periods.',
         state: 'supported',
@@ -623,7 +630,7 @@ const leaveMeAlone: ComparisonDefinition = {
       label: 'Future-mail automation',
       declutrMail: DECLUTR.futureMail,
       competitor: {
-        summary: 'Inbox Shield, filters, Rollups, and do-not-disturb',
+        summary: 'Screener, filters, Rollups, and do-not-disturb',
         detail:
           'Published tools can screen senders, route newsletters, block unwanted mail, and hold mail on a schedule.',
         state: 'supported',
@@ -635,7 +642,7 @@ const leaveMeAlone: ComparisonDefinition = {
       competitor: {
         summary: 'Core feature',
         detail:
-          'Follows a published link or sends a request from a unique address when only email opt-out is available.',
+          'The FAQ describes following opt-out links or sending a request from a unique address. Its security page also documents fallback filters when it cannot unsubscribe; sender compliance is not guaranteed.',
         state: 'supported',
       },
     },
@@ -654,7 +661,7 @@ const leaveMeAlone: ComparisonDefinition = {
       competitor: {
         summary: 'Subscription details; encrypted email content for Rollups',
         detail:
-          'Inbox Shield stores subscription details. Rollups fetch, encrypt, and store the email content needed to create the digest.',
+          'The security page describes storing subscription metadata. Rollups fetch, encrypt, and store the email content needed to create the digest.',
         state: 'limited',
       },
     },
@@ -678,7 +685,7 @@ const leaveMeAlone: ComparisonDefinition = {
     {
       label: 'Leave Me Alone security',
       url: 'https://leavemealone.com/security/',
-      note: 'OAuth scopes and storage for subscriptions, Rollups, and Inbox Shield.',
+      note: 'OAuth scopes and storage for subscriptions, Rollups, and Screener.',
     },
     {
       label: 'Leave Me Alone pricing',
@@ -705,14 +712,14 @@ const unrollMe: ComparisonDefinition = {
   slug: 'unroll-me',
   name: 'Unroll.Me',
   category: 'Digest and blocking',
-  verifiedIso: '2026-08-13',
+  verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs Unroll.Me',
   description:
     'A source-backed comparison of DeclutrMail and Unroll.Me on Gmail cleanup, blocking, digests, email-data access, the market-research business model and cost.',
   verdict:
-    'Unroll.Me is free because your commercial email feeds a market-research business it names on its own site. DeclutrMail charges for subscriptions instead, does not fetch full message bodies, and previews each move before it runs — the trade is money for data access, and it is worth deciding deliberately.',
+    'Unroll.Me offers free subscription management and describes a market-research business. Its privacy notice also states additional restrictions for Gmail API data. DeclutrMail offers Free and paid plans, does not fetch full message bodies, and previews manual moves; compare the exact data terms for your connection.',
   indexSummary:
-    'A free daily digest funded by market research, versus a paid Gmail workflow that does not fetch message bodies.',
+    'A free daily digest with published market-research terms, versus a Gmail cleanup workflow with Free and paid plans and no full-body fetching.',
   primaryUnit: 'Subscription sender and daily digest',
   providerScope: 'Gmail documented; other providers not named',
   publicEntryPoint: 'Free sign-up; funded by market research',
@@ -720,16 +727,16 @@ const unrollMe: ComparisonDefinition = {
     headline: 'Choose Unroll.Me if the digest is the point',
     points: [
       'You want many subscriptions collapsed into one daily digest email rather than decided one by one.',
-      'Paying nothing matters more to you than limiting what a vendor reads, and you accept the market-research terms.',
-      'Your mailbox holds little you would mind a research panel deriving purchase data from.',
+      'You want free subscription management and have reviewed the data terms that apply to your connection.',
+      'You have reviewed the distinction between its panel-data terms and its additional Gmail API restrictions.',
     ],
   },
   chooseDeclutrMail: {
-    headline: 'Choose DeclutrMail to pay in money, not mailbox access',
+    headline: 'Choose DeclutrMail for its narrower data boundary',
     points: [
       'You want full message bodies and attachments never fetched, with the stored field list published.',
       'You want the count, a sample, and the exact Gmail changes before Archive, Later, or Delete runs.',
-      'You would rather be the customer than the panel: no mailbox data is sold, shared for research, or used for advertising.',
+      'You want a published commitment not to sell mailbox data or use it for advertising or market research.',
     ],
   },
   rows: [
@@ -809,7 +816,7 @@ const unrollMe: ComparisonDefinition = {
       competitor: {
         summary: 'A market-research panel, stated on its own site',
         detail:
-          'Its site says: “We use your data to fuel our market research business, NielsenIQ.” The privacy notice says panelist data about the commercial emails you receive, plus demographics, may be sold or shared with customers including e-commerce businesses, investment companies, consumer brands, media companies, and data brokers — while directly identifying details are never sold to target you.',
+          'Its site says: “We use your data to fuel our market research business, NielsenIQ.” The privacy notice says panelist data about the commercial emails you receive, plus demographics, may be sold or shared with customers including e-commerce businesses, investment companies, consumer brands, media companies, and data brokers — while directly identifying details are never sold to target you. The notice separately limits Gmail API data to providing the service and restricts transfers; do not apply the general panel terms to every Gmail connection.',
         state: 'supported',
       },
     },
@@ -862,7 +869,7 @@ const gmailFilters: ComparisonDefinition = {
   slug: 'gmail-filters',
   name: 'Gmail filters',
   category: 'Native rules',
-  verifiedIso: '2026-08-30',
+  verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs Gmail filters',
   description:
     'A source-backed comparison of DeclutrMail and native Gmail filters for sender cleanup, future-mail rules, unsubscribe, preview, recovery, and cost.',
@@ -999,7 +1006,7 @@ const gmailNative: ComparisonDefinition = {
   slug: 'gmail',
   name: "Gmail's built-in cleanup",
   category: 'Native tools',
-  verifiedIso: '2026-08-30',
+  verifiedIso: '2026-09-22',
   title: "DeclutrMail vs Gmail's built-in cleanup",
   description:
     "A source-backed comparison of DeclutrMail and Gmail's own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.",
@@ -1062,7 +1069,7 @@ const gmailNative: ComparisonDefinition = {
       competitor: {
         summary: 'Via filters, built separately',
         detail:
-          'Manage subscriptions does not create rules; ongoing routing means composing Gmail filters yourself.',
+          'Gmail filters provide custom ongoing routing. Google also says new mail from senders unsubscribed through Manage subscriptions goes to Spam; this is distinct from a filter you create.',
         state: 'limited',
       },
     },
@@ -1080,9 +1087,9 @@ const gmailNative: ComparisonDefinition = {
       label: 'Preview and recovery',
       declutrMail: DECLUTR.recovery,
       competitor: {
-        summary: 'Selection count and brief Undo; no long-term action history',
+        summary: 'Native selection and recovery; separate action history not stated',
         detail:
-          'Bulk changes show the selected count and a brief Undo; archives stay recoverable in All Mail and deletes in Trash for about 30 days. There is no long-term record for each action or multi-day undo window.',
+          'Archives stay recoverable in All Mail; deleted mail normally remains in Trash for 30 days unless removed sooner. The reviewed help pages do not describe a separate long-term record and undo deadline for each cleanup action.',
         state: 'limited',
       },
     },
@@ -1148,7 +1155,7 @@ const metaMuse: ComparisonDefinition = {
   slug: 'meta-muse',
   name: 'Meta Muse',
   category: 'General-purpose AI agent',
-  verifiedIso: '2026-09-18',
+  verifiedIso: '2026-09-22',
   title: 'DeclutrMail vs Meta Muse',
   description:
     'A source-backed comparison of DeclutrMail and Meta Muse for Gmail: a narrow cleanup tool that never fetches full message contents versus a general AI agent that can read and send mail.',
@@ -1250,7 +1257,7 @@ const metaMuse: ComparisonDefinition = {
       competitor: {
         summary: 'Free tier plus subscriptions; Meta says no ad-system sharing',
         detail:
-          'Meta states that Muse does not share your conversations or the data in your virtual machine with Meta ad systems, and that you decide whether your interactions are used to improve its AI models.',
+          'Meta states that Muse does not share your conversations or the data in your virtual machine with Meta ad systems, and that you can choose whether interactions improve its AI models. The Help Center says model improvement is enabled initially and can be turned off in Data controls.',
         state: 'supported',
       },
     },

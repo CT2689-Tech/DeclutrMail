@@ -6,23 +6,23 @@ Open this when you are confused. Do the next unchecked box. Do not re-read the
 
 **If a skill, draft, or old checklist conflicts with this file, this file wins.**
 
-Last updated: 2026-08-26 (Phase B attribution plumbing).
+Last updated: 2026-09-22 (branch facts and launch-gate reconciliation).
+
+Repository completion is not production verification. See [current founder gates](founder-launch-checklist.md), [September delivery audit](implementation-delivery-audit-2026-09-22.md), and [performance evidence](performance-delivery-audit-2026-09-22.md). No launch slot, live provider check, or published release is implied by these edits.
 
 ---
 
 ## 0. If you are overwhelmed, do this
 
-You are a solo founder with zero customers and zero paid budget. The product
+This runbook assumes a solo founder and no paid acquisition budget; current customer counts have not been re-queried. The product
 already has a landing page, how-tos, `/vs` pages, and `/inbox-simulator`.
-**Reach is not blocked by more pages. It is blocked by (1) signups you cannot
-attribute to a channel, (2) nothing posted, (3) you not being in comment
-sections.**
+Attribution plumbing exists in the repository. Verify it survives the production OAuth path before increasing outreach; do not rebuild it or add pages merely to expand the inventory.
 
 Today:
 
 1. Finish **Phase A handles** yourself (~30 minutes: brand + human accounts,
    bios, F5Bot). Coming Soon and HN seasoning are this-week work, not 30 minutes.
-2. Tell Cursor: _"Follow MARKETING-RUNBOOK.md Phase B. Use the attribution skill."_
+2. Complete the production verification gates in the founder checklist, then address the unchecked launch-copy tasks below.
 3. Every day, run **the community loop** even if launch is not booked.
 
 Do not: re-edit the hero, install more marketing skills, start a Discord, buy ads,
@@ -51,17 +51,17 @@ Homepage only when they asked for the company, not the product.
 
 ## 2. Locked facts (do not paraphrase upward)
 
-| Thing     | Say this                                                                                            | Never say                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Privacy   | **We never fetch or store full email contents.** + the generated storage list                       | `Full bodies fetched: 0`, `Bodies read: 0`, "privacy-first", "never reads your email" |
-| Hero      | _For inboxes you gave up on._ **Clear thousands of emails by sender — and see exactly what moves.** | A new headline experiment                                                             |
-| Verbs     | Keep · Archive · Unsubscribe · Later · Delete                                                       | "Screen" in UI or posts                                                               |
-| Undo      | Archive / Later / Delete; 7-day Free/Plus, 30-day Pro                                               | "Every action is reversible" (unsubscribe cannot be recalled)                         |
-| Autopilot | Plus _finds_, you approve. Pro can _act_ after you enable                                           | "auto-clean", "AI-powered", predicted categories                                      |
-| Proof     | Founder mailbox only, labeled as yours, numbers re-queried at publish                               | Fake users, testimonials, MAU                                                         |
-| CASA      | Google approved a verification (21 Apr 2026)                                                        | "Google certified us"                                                                 |
-| Offer     | Founding Pro $129/yr, first 250, locked while active                                                | "X left" unless it reads live redemptions                                             |
-| Free      | 50 actions/month, 1 inbox — untargeted copy must be true here                                       | Promising Plus/Pro-only features as the default                                       |
+| Thing     | Say this                                                                              | Never say                                                                             |
+| --------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Privacy   | **We never fetch or store full email contents.** + the generated storage list         | `Full bodies fetched: 0`, `Bodies read: 0`, "privacy-first", "never reads your email" |
+| Hero      | Current `landing/hero.tsx`: “Clear years of clutter, one sender at a time.”           | Reusing the old locked headline without checking the rendered page                    |
+| Verbs     | Keep · Archive · Unsubscribe · Later · Delete                                         | "Screen" in UI or posts                                                               |
+| Undo      | Archive / Later / Delete; 30-day window on every tier; Delete requires retained Trash | "Every action is reversible" (unsubscribe cannot be recalled)                         |
+| Autopilot | Plus and Pro: preview, then Act now or Watch first; no mandatory Observe wait         | "auto-clean", "AI-powered", predicted categories                                      |
+| Proof     | Founder mailbox only, labeled as yours, numbers re-queried at publish                 | Fake users, testimonials, MAU                                                         |
+| CASA      | Google approved a verification (21 Apr 2026)                                          | "Google certified us"                                                                 |
+| Offer     | Founding Pro $129/yr, first 250, locked while active                                  | "X left" unless it reads live redemptions                                             |
+| Free      | 50 actions/month, 1 inbox — untargeted copy must be true here                         | Promising Plus/Pro-only features as the default                                       |
 
 Do not list in AI-tool directories (category prediction is banned).
 
@@ -179,9 +179,10 @@ self-report side by side.
 
 Tell Cursor: **"Follow MARKETING-RUNBOOK.md Phase C. Use copy-editing, then copywriting."**
 
-- [ ] Sweep `.agents/product-marketing.md` and `launch-content-drafts-2026-08-04.md` for banned privacy counters
+- [x] Reconcile `.agents/product-marketing.md` with current plan, privacy, recovery, and unsubscribe contracts (2026-09-22; repository evidence)
+- [ ] Sweep the older `launch-content-drafts-2026-08-04.md` again before posting; it is not an approved current launch announcement
 - [ ] Write the **12-answer crib** (HN/PH comments). Answer 1: restricted-scope / CASA (verification ≠ certification). Answer 2: why this exists vs Gmail Manage subscriptions → `/vs/gmail`. Every answer links a live proof page. First link = simulator
-- [ ] Rewrite Show HN body, PH maker comment, X launch thread onto the locked headline
+- [ ] Rewrite Show HN body, PH maker comment, X launch thread against the current `landing/hero.tsx` and manifest; old drafts are not current claims
 
 ### Phase D — Evidence (founder + agent for charts)
 
@@ -207,15 +208,15 @@ Tell Cursor: **"Follow MARKETING-RUNBOOK.md Phase E. Use directory-submissions. 
 
 **Do not book a slot until all of these are true:**
 
-| Gate | What                                   | Status as of 2026-08-25                                      |
-| ---- | -------------------------------------- | ------------------------------------------------------------ |
-| G1   | Production hero matches `hero.tsx`     | Shipped in repo — confirm production HTML                    |
-| G2   | `/vs/gmail` and `/vs/unroll-me` live   | Shipped in repo — confirm production                         |
-| G3   | 12-answer crib, no banned privacy copy | OPEN (Phase C)                                               |
-| G4   | Attribution through OAuth              | Shipped in repo 2026-08-26 — confirm production after deploy |
-| G5   | PH Coming Soon collecting ≥1 week      | OPEN (Phase A)                                               |
-| G6   | Anatomy blog post published            | OPEN (Phase D)                                               |
-| G7   | Simulator OG unfurls on X/Slack        | Shipped in repo — confirm production unfurl                  |
+| Gate | What                                   | Status as of 2026-09-22                                          |
+| ---- | -------------------------------------- | ---------------------------------------------------------------- |
+| G1   | Production hero matches `hero.tsx`     | Implemented in repo — confirm production HTML                    |
+| G2   | `/vs/gmail` and `/vs/unroll-me` live   | Implemented in repo — confirm production                         |
+| G3   | 12-answer crib, no banned privacy copy | OPEN (Phase C)                                                   |
+| G4   | Attribution through OAuth              | Implemented in repo 2026-08-26 — confirm production after deploy |
+| G5   | PH Coming Soon collecting ≥1 week      | OPEN (Phase A)                                                   |
+| G6   | Anatomy blog post published            | OPEN (Phase D)                                                   |
+| G7   | Simulator OG unfurls on X/Slack        | Implemented in repo — confirm production unfurl                  |
 
 Calendar (solo founder cannot staff two comment sections the same day):
 
@@ -263,10 +264,10 @@ Every Haines skill reads `.agents/product-marketing.md` first. Keep that file ho
 
 ---
 
-## 7. Already shipped (do not rebuild)
+## 7. Already implemented in the repository (verify rollout; do not rebuild)
 
 - Hero in `apps/web/src/features/marketing/landing/hero.tsx`
-- `/vs`: clean-email, trimbox, sanebox, leave-me-alone, gmail-filters, gmail, unroll-me
+- `/vs`: clean-email, trimbox, sanebox, leave-me-alone, gmail-filters, gmail, unroll-me, meta-muse
 - 6 `/how-to` (including `gmail-storage-full`) + 5 `/answers` + hubs
 - `/inbox-simulator` + OG card. `/demo` 308s here
 - `/pricing.md`, `public/llms.txt`, FAQPage JSON-LD
@@ -313,9 +314,9 @@ Ignore until 100 users: PH rank, HN karma, followers, likes, pageviews, keyword 
 Copy one line:
 
 ```
-Read docs/execution/MARKETING-RUNBOOK.md. Do the next unchecked box in Phase B.
-Use the attribution skill. Set-once ref through OAuth; separate self-report;
-do not let simulator overwrite hn/ph. Do not re-edit the hero. Do not install more skills.
+Read docs/execution/MARKETING-RUNBOOK.md and founder-launch-checklist.md.
+Verify the outstanding production gates without assuming repository implementation
+proves rollout. Preserve first-touch attribution through OAuth and consent gating.
 ```
 
 When B is checked:

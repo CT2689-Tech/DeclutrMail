@@ -127,9 +127,9 @@ describe('sitemap — D134', () => {
       const childDates = COMPARISONS.map((comparison) => comparison.verifiedIso);
       const compare = entryFor('/compare')?.lastModified;
       expect(compare).toBe(COMPARISONS_VERIFIED_FLOOR_ISO);
-      // The floor is genuinely weaker than the freshest child, so this
-      // assertion would fail if the hub ever started claiming the max.
-      expect(compare).not.toBe(childDates.reduce((a, b) => (a > b ? a : b)));
+      // A source review can refresh every child on the same day. The
+      // minimum remains correct even when the minimum and maximum tie.
+      expect(compare).toBe([...childDates].sort()[0]);
     });
 
     it('omits lastModified where no attributable date exists', () => {

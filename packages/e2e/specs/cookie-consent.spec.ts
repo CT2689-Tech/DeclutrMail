@@ -8,6 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { expect, test, type Page } from '@playwright/test';
 
 import { E2E_ENV } from '../helpers/env';
+import { requirePrecondition } from '../helpers/preconditions';
 import { ANALYTICS_PRIVACY_CLAIM } from '@declutrmail/shared/copy';
 
 /**
@@ -69,7 +70,10 @@ test.beforeAll(async () => {
   } catch {
     webUp = false;
   }
-  test.skip(!webUp, `web not reachable at ${E2E_ENV.webUrl} — boot it per playwright.config.ts`);
+  requirePrecondition(
+    !webUp,
+    `web not reachable at ${E2E_ENV.webUrl} — boot it per playwright.config.ts`,
+  );
 });
 
 /**
@@ -164,7 +168,7 @@ test('decline is the default: "Essential only" persists and PostHog stays fully 
 });
 
 test('"Accept all" initializes PostHog and page_viewed reaches the wire', async ({ page }) => {
-  test.skip(
+  requirePrecondition(
     process.env.E2E_POSTHOG !== '1',
     'needs the web server booted with NEXT_PUBLIC_POSTHOG_KEY — set E2E_POSTHOG=1 (recipe in the header)',
   );

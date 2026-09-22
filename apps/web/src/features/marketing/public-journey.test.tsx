@@ -51,18 +51,20 @@ describe('rendered public promises and product entry', () => {
     expect(rendered).not.toMatch(/actually clears space|unsubscribed so far only left/);
   });
 
-  it('labels the sample inspector and explains the complete product journey without fake controls', () => {
+  it('labels the illustrative walkthrough and explains the complete product journey', () => {
     render(<ProductJourney />);
-    expect(screen.getByText(/made-up data/)).toBeInTheDocument();
+    expect(screen.getByText(/Illustrative walkthrough · made-up data/)).toBeInTheDocument();
     expect(screen.getByText(/not your mailbox/)).toBeInTheDocument();
     expect(screen.getByText(/Keep is an inline decision/)).toBeInTheDocument();
     expect(
       screen.getByText(/Delivered unsubscribe requests cannot be recalled/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Try a review/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Try the interactive demo/ })).toHaveAttribute(
       'href',
       '/inbox-simulator?step=1',
     );
+    expect(screen.getByRole('radio', { name: '1. Inspect' })).toBeChecked();
+    expect(screen.getAllByRole('radio')).toHaveLength(4);
     expect(screen.queryByRole('button')).toBeNull();
   });
 

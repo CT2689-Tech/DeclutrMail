@@ -1,27 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type postgres from 'postgres';
 
+import { applyJourneySeed } from '../helpers/seed-journeys';
+
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 
-/**
- * Followups dismiss spec — D88 "Mark resolved".
- *
- * The FollowupCheckWorker isn't registered yet (integration-owned), so
- * the spec seeds its own `followup_tracker` row via SQL — the same way
- * the feature was smoked — then drives the REAL UI:
- *
- *   1. /followups renders the seeded row in its D85 age bucket.
- *   2. The per-row button ("Mark resolved in DeclutrMail — <name>") removes the
- *      row optimistically; the screen refetches server truth.
- *   3. Durability is asserted in the DB: `status='dismissed'` +
- *      `dismissed_at` set, plus the D88 `followup-dismiss` activity row.
- *   4. Reload — the row must NOT come back (dismissed rows are excluded
- *      from the awaiting list per D86).
- *
- * Teardown deletes the seeded tracker row and the activity rows the
- * dismissal appended (shared dev DB — leave no trace).
- */
+/** Isolated synthetic API/UI journey. No Gmail credentials or worker. */
 
 const RECIPIENT_NAME = 'E2E Dismiss Target';
 const THREAD_ID = `e2e-followups-dismiss-${Date.now()}`;
@@ -34,9 +19,10 @@ let testStart: Date;
 
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
-  test.skip(live.mailboxId === null, 'reason' in live ? live.reason : undefined);
+  expect(live.mailboxId).not.toBeNull();
   mailboxId = live.mailboxId!;
   sql = dbConnect();
+  await applyJourneySeed(sql);
 });
 
 test.afterAll(async () => {

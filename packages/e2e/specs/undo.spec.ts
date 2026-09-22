@@ -5,24 +5,10 @@ import { ApiClient, requireLiveStack, type CompositePreview } from '../helpers/a
 import { dbConnect, senderKeyById } from '../helpers/db';
 
 /**
- * Golden spec 3 — Archive → receipt → Undo via the tray (D183 / D226 / D35).
- *
- * THE Gmail-mutating spec: it archives ONE small sender's inbox mail
- * for real (worker executes the Gmail label mutation), then restores
- * it through the REAL undo pipeline — the full D226 lifecycle:
- *
- *   intent (card ⋯ → Archive) → mandatory preview modal → confirm
- *   → worker mutation → receipt (real undo token) → tray on /triage
- *   → Z / row-Undo → reverse job → server-confirmed restore.
- *
- * Restore: the undo IS the restore (Gmail labels + DB rows + triage
- * queue exclusion all reverse). A teardown safety net re-fires the
- * undo token via the api if the test died between archive and undo.
- * The activity/undo-journal audit rows are left in place — they are
- * the true record of a real, reversed mutation (never falsify audit).
- *
- * Target choice keeps blast radius tiny: an unprotected sender with
- * 1–5 messages currently in the inbox (live composite preview count).
+ * Deferred provider contract. Requires E2E_PROVIDER_HARNESS=1 plus a synthetic
+ * provider worker (not supplied). Not in default or launch CI. The mailbox
+ * guard refuses non-fixture sessions. Never point this at real Gmail.
+ * Preview/cancel and demo Undo coverage are separate and do not prove this flow.
  */
 
 interface SenderRow {
@@ -39,6 +25,12 @@ let undoToken: string | null = null;
 let undone = false;
 
 test.beforeAll(async () => {
+  if (process.env.E2E_PROVIDER_HARNESS !== '1') {
+    throw new Error(
+      'Provider journey requires an isolated mock-provider worker harness. Never run against real Gmail.',
+    );
+  }
+
   const live = await requireLiveStack(api);
   test.skip(live.mailboxId === null, 'reason' in live ? live.reason : undefined);
   mailboxId = live.mailboxId!;
@@ -47,7 +39,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   // Safety net — if the spec failed after the archive landed but
-  // before the tray undo confirmed, reverse it now so the founder's
+  // before the tray undo confirmed, reverse it now so the synthetic fixture's
   // mailbox is never left mutated by a red test run.
   if (undoToken && !undone) {
     try {
@@ -129,7 +121,7 @@ test('Archive one sender via preview, then restore it through the undo tray', as
   // The old order captured the token only after the receipt assertion —
   // so a failure inside that assertion died with `undoToken` still
   // null, the afterAll skipped the revert, and the run left the
-  // founder's mail archived (exactly what the 2026-08-10 diagnosis
+  // synthetic fixture's mail archived (exactly what the 2026-08-10 diagnosis
   // found: two Jockey emails stranded by a red run). The worker writes
   // the activity row within ~a second of the mutation; poll for it
   // before asserting anything visual.

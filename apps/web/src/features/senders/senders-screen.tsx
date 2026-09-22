@@ -2749,7 +2749,12 @@ function SendersScreenContent({
         {canSplit && (
           <div className={workspaceStyles.inspectorColumn}>
             {paneSenderId !== null ? (
-              <SenderDetailPane key={paneSenderId} senderId={paneSenderId} onClose={closePane} />
+              <SenderDetailPane
+                key={paneSenderId}
+                senderId={paneSenderId}
+                onClose={closePane}
+                onAction={requestAction}
+              />
             ) : (
               <aside className={workspaceStyles.emptyInspector} aria-label="Sender inspector">
                 <div className={workspaceStyles.emptyIcon} aria-hidden="true">

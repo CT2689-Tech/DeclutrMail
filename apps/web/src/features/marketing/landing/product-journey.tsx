@@ -1,5 +1,4 @@
-import Link from 'next/link';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { SenderWalkthrough } from './sender-walkthrough';
 
 /** Static, labeled example of the production workspace. Live decisions belong to the simulator. */
 export function ProductJourney() {
@@ -59,46 +58,11 @@ export function ProductJourney() {
               Search, filter and select senders. Review one at a time or preview a batch.
             </p>
           </div>
-          <div className="dm-mkt-sample-inspector">
-            <p className="dm-mkt-sample-label">Sender details</p>
-            <div className="dm-mkt-sample-identity">
-              <span className="dm-mkt-sample-avatar">in</span>
-              <div>
-                <h3>LinkedIn Updates</h3>
-                <small>updates@example.com · sample sender</small>
-              </div>
-            </div>
-            <dl className="dm-mkt-sample-metrics">
-              <div>
-                <dt>Currently in inbox</dt>
-                <dd>128</dd>
-              </div>
-              <div>
-                <dt>Received · last 90 days</dt>
-                <dd>64</dd>
-              </div>
-            </dl>
-            <p className="dm-mkt-sample-note">
-              Marked-read flags and recent subjects give you context. They do not prove an email was
-              read.
-            </p>
-            <div className="dm-mkt-sample-preview">
-              <strong>Archive 128 emails?</strong>
-              <p>
-                These emails leave Inbox and stay in Gmail All Mail. This does not create a rule for
-                future email.
-              </p>
-              <span>Activity Undo available for {MIN_UNDO_WINDOW_DAYS} days.</span>
-            </div>
-            <p className="dm-mkt-sample-verbs">Keep · Archive · Unsubscribe · Later · Delete</p>
-            <Link className="dm-mkt-journey-link" href="/inbox-simulator?step=1">
-              Try a review with sample mail →
-            </Link>
-          </div>
+          <SenderWalkthrough id="homepage-cleanup" />
         </div>
         <figcaption>
-          Example layout, not your mailbox. The interactive demo uses a separate made-up daily
-          review queue.
+          Example layout, not your mailbox. Choose a walkthrough step, or try the separate made-up
+          daily review queue.
         </figcaption>
       </figure>
       <ol className="dm-mkt-journey-steps">

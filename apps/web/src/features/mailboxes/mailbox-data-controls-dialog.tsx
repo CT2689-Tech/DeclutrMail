@@ -221,7 +221,6 @@ export function MailboxDataControlsDialog({
                 color: color.fg,
                 fontFamily: font.sans,
                 fontSize: text.md,
-                outline: 'none',
               }}
             />
             <div style={{ marginTop: 10 }}>

@@ -1,5 +1,11 @@
 import 'reflect-metadata';
 
+import {
+  SupportRequestWorker,
+  SUPPORT_REQUEST_QUEUE,
+  type SupportRequestJobData,
+} from '@declutrmail/workers';
+
 import { writeWorkerHeartbeat } from '@declutrmail/workers';
 import {
   collectOperationalTelemetry,
@@ -2060,6 +2066,22 @@ async function bootstrap(): Promise<void> {
    * boot crash). The same queue instance is the PRODUCER handed to the
    * sync-ready email trigger and the deletion purge worker.
    */
+  const supportRequestWorker = new SupportRequestWorker(
+    new EmailService(new EmailSuppressionService(db)),
+  );
+  supportRequestWorker.setObserver(observer);
+  supportRequestWorker.setDeadLetterRecorder(deadLetterRecorder);
+  const supportRequestBullWorker = new Worker<SupportRequestJobData>(
+    SUPPORT_REQUEST_QUEUE,
+    (job) => supportRequestWorker.run(job),
+    { connection, concurrency: 2, ...userFacingTuning },
+  );
+  supportRequestBullWorker.on('error', () => {
+    console.error(
+      JSON.stringify({ level: 'error', kind: 'bullmq.error', queue: SUPPORT_REQUEST_QUEUE }),
+    );
+  });
+
   const emailSendQueue = new Queue<EmailSendJobData>(EMAIL_SEND_QUEUE, { connection });
   const emailSendWorker = new EmailSendWorker({
     db,
@@ -2989,6 +3011,7 @@ async function bootstrap(): Promise<void> {
       await gmailQuotaConnection.quit().catch(() => undefined);
       await watchRenewalBullWorker.close();
       await watchRenewalSchedulerQueue.close();
+      await supportRequestBullWorker.close();
       await emailSendBullWorker.close();
       await emailSendQueue.close();
       await weeklyValueReceiptBullWorker.close();

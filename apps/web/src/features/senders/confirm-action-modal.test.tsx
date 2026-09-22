@@ -2222,6 +2222,63 @@ describe('ConfirmActionModal — the title names the verb and the count (QA-arch
     expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
   });
 
+  it.each([
+    { retained: true, skipped: 1 },
+    { retained: false, skipped: 2 },
+  ])(
+    'counts protected skips once when the originally protected row is retained=$retained',
+    ({ retained, skipped }) => {
+      const protectedSender = makeSender({
+        id: 'protected-sender',
+        protectionFlags: {
+          isProtected: retained,
+          protectionReason: retained ? 'user_defined' : null,
+          protectionSetAt: null,
+        },
+      });
+      render(
+        <ConfirmActionModal
+          request={{
+            verb: 'Delete',
+            senders: [sender, protectedSender],
+            selectedCount: retained ? 2 : 3,
+            actionableCount: retained ? 1 : 2,
+            // If retained=false, a different protected sender was dropped
+            // upstream; this row became protected during the live preview.
+            skipped: { protectedCount: 1, peopleCount: 0 },
+          }}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          bulkPreview={{
+            data: {
+              senders: [
+                { senderId: sender.id, name: sender.name, counts: buckets, protected: false },
+                {
+                  senderId: protectedSender.id,
+                  name: protectedSender.name,
+                  counts: buckets,
+                  protected: true,
+                },
+              ],
+              totals: buckets,
+              protectedCount: 1,
+            },
+            loading: false,
+            error: false,
+          }}
+        />,
+      );
+      expect(
+        screen.getByRole('heading', { name: 'Delete 1 email from 1 sender?' }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          new RegExp(`${skipped} Protected sender${skipped === 1 ? ' is' : 's are'} skipped\\.`),
+        ),
+      ).toBeInTheDocument();
+    },
+  );
+
   // Codex review 2026-09-03, round 2: `nothingToActOn` only blocks verbs
   // that move CURRENT inbox mail, and is deliberately silent for
   // Unsubscribe (it cuts future mail, not a count). But the live bulk

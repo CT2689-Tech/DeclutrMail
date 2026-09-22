@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import { SenderDetailRoute } from './sender-detail-page';
+import type { ActionRequest } from '../data';
 import styles from '../sender-workspace.module.css';
 
 const { color, motion, radius } = tokens;
@@ -17,7 +18,16 @@ const { color, motion, radius } = tokens;
  * The parent owns placement (grid column, drawer, sheet); this fills the
  * height it is given.
  */
-export function SenderDetailPane({ senderId, onClose }: { senderId: string; onClose: () => void }) {
+export function SenderDetailPane({
+  senderId,
+  onClose,
+  onAction,
+}: {
+  senderId: string;
+  onClose: () => void;
+  /** Share the list's preview, in-flight ownership and row feedback. */
+  onAction?: ((request: ActionRequest) => void) | undefined;
+}) {
   return (
     <aside aria-label="Sender details" data-testid="sender-detail-pane" className={styles.pane}>
       <div className={styles.paneBar}>
@@ -60,10 +70,15 @@ export function SenderDetailPane({ senderId, onClose }: { senderId: string; onCl
           </svg>
         </button>
       </div>
-      {/* Keyed by sender so picking another row remounts the content —
-          pending previews, receipts and optimistic flips never carry over
-          to a different sender. */}
-      <SenderDetailRoute key={senderId} id={senderId} layout="pane" onClose={onClose} />
+      {/* Remount sender-local state on selection. When the workspace owns
+          onAction, its running jobs survive this inspector being replaced. */}
+      <SenderDetailRoute
+        key={senderId}
+        id={senderId}
+        layout="pane"
+        onClose={onClose}
+        onAction={onAction}
+      />
       <style>{`.dm-sender-detail-pane-close:hover{background:${color.fill}}
 @media (max-width: 480px){.dm-sender-detail-pane-close{width:44px !important;height:44px !important}}`}</style>
     </aside>

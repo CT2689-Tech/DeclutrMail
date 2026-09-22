@@ -519,3 +519,14 @@ export { writeWorkerHeartbeat, workerHeartbeatIsFresh } from './worker-heartbeat
 
 export { workerRuntimeConfig } from './worker-runtime-config.js';
 export { measuredMailboxLock } from './measured-mailbox-lock.js';
+
+export {
+  SupportRequestWorker,
+  SupportRequestJobSchema,
+  type SupportRequestJobData,
+} from './support-request.worker.js';
+export {
+  SUPPORT_REQUEST_QUEUE,
+  SupportRequestQueue,
+  supportRequestJobOptions,
+} from './support-request.queue.js';
