@@ -38,6 +38,9 @@ export function observeDigestSummary(rule: AutopilotRuleDto): string | null {
     case 'archive':
       return `Would archive ${emails} now, from ${matched}`;
     case 'later':
+      if (rule.presetKey === 'auto_screen_new_senders') {
+        return `${matched} · ${emails} could move to Later if you approve them`;
+      }
       return `Would move ${emails} to Later now, from ${matched}`;
     case 'unsubscribe':
       // Unsubscribe requests act per sender, not per message. A match

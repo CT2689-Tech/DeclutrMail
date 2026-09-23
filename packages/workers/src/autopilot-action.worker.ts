@@ -651,6 +651,24 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
         continue;
       }
 
+      // A rule that was Active before new-sender review became mandatory
+      // may already have auto-approved matches waiting in the queue.
+      // Retire those before Gmail is touched. A claim that is already
+      // in flight still completes so its mutation receives an Activity
+      // record and undo token.
+      if (
+        !inFlight &&
+        match.presetKey === 'auto_screen_new_senders' &&
+        match.modeAtMatch === 'active'
+      ) {
+        await this.deps.db
+          .update(ruleMatchLog)
+          .set({ resolution: 'dismissed', resolvedAt: now, dismissReason: 'superseded' })
+          .where(and(eq(ruleMatchLog.id, match.matchId), eq(ruleMatchLog.intentApplied, false)));
+        result.skippedRuleInactive += 1;
+        continue;
+      }
+
       if (!inFlight && shieldedBy.get(match.senderKey)) {
         await this.dismissShieldedMatch(match, now);
         result.skippedProtected += 1;

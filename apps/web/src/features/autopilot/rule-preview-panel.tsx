@@ -29,10 +29,12 @@ export function RulePreviewPanel({
   ruleName,
   state,
   onRetry,
+  requiresApproval = false,
 }: {
   ruleName: string;
   state: RulePreviewState;
   onRetry: () => void;
+  requiresApproval?: boolean;
 }) {
   return (
     <div
@@ -45,7 +47,12 @@ export function RulePreviewPanel({
         fontFamily: font.sans,
       }}
     >
-      <RulePreviewHero state={state} onRetry={onRetry} align="start" />
+      <RulePreviewHero
+        state={state}
+        onRetry={onRetry}
+        align="start"
+        requiresApproval={requiresApproval}
+      />
       {state.status === 'ready' && (
         <>
           <RulePreviewTotals result={state.result} />
@@ -70,10 +77,12 @@ export function RulePreviewHero({
   state,
   onRetry,
   align = 'center',
+  requiresApproval = false,
 }: {
   state: RulePreviewState;
   onRetry: () => void;
   align?: Align;
+  requiresApproval?: boolean;
 }) {
   const justify = align === 'center' ? 'center' : 'flex-start';
 
@@ -130,7 +139,7 @@ export function RulePreviewHero({
         {n.toLocaleString('en-US')}
       </strong>
       <span style={{ fontSize: text.md, color: color.fgMuted }}>
-        sender{n === 1 ? '' : 's'} actionable now
+        sender{n === 1 ? '' : 's'} {requiresApproval ? 'ready for review' : 'actionable now'}
       </span>
     </div>
   );

@@ -313,6 +313,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         (r) =>
           r.enabled &&
           r.mode === 'observe' &&
+          r.presetKey !== 'auto_screen_new_senders' &&
           r.observeWindowElapsed &&
           r.observePromptDismissedAt == null &&
           (r.observeDigest?.pendingTotal ?? 0) > 0,
@@ -504,7 +505,10 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
    */
   const onActivateConfirm = () =>
     commitConfirm(
-      confirmTarget?.intent === 'enable' && !canActivate ? 'observe' : 'active',
+      confirmTarget?.intent === 'enable' &&
+        (!canActivate || confirmTarget.rule.presetKey === 'auto_screen_new_senders')
+        ? 'observe'
+        : 'active',
       'primary',
     );
 
@@ -1050,7 +1054,9 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       <ActivateRuleModal
         rule={confirmTarget?.rule ?? null}
         intent={confirmTarget?.intent ?? 'activate'}
-        canRunUnattended={canActivate}
+        canRunUnattended={
+          canActivate && confirmTarget?.rule.presetKey !== 'auto_screen_new_senders'
+        }
         pendingAction={pendingCommit}
         mailboxEmail={activeEmail ?? undefined}
         pendingCount={

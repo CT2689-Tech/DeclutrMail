@@ -21,7 +21,7 @@ const PRESET_LABEL_OVERRIDES: Partial<Record<AutopilotPresetKey, string>> = {
   // D227: "Screen" is an internal enum, never a user-facing verb. The
   // canonical fourth verb is Later (L); the preset's actionKind is
   // already 'later'.
-  auto_screen_new_senders: 'Later for new senders',
+  auto_screen_new_senders: 'Review new senders for Later',
 };
 
 /**

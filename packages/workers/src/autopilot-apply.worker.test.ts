@@ -207,6 +207,42 @@ async function enablePreset(
 }
 
 describe('AutopilotApplyWorker', () => {
+  it('keeps a legacy Active new-sender rule in review mode', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mbId);
+    await enablePreset(db, mbId, 'auto_screen_new_senders', {
+      enabled: true,
+      mode: 'active',
+    });
+    const senderKey = await seedSender(db, mbId, {
+      email: 'account@example.com',
+      firstSeenAt: new Date('2026-05-24T00:00:00Z'),
+      decision: { verdict: 'keep', confidence: 0.95 },
+      totalMessages: 1,
+    });
+
+    const enqueue = vi.fn();
+    const worker = new AutopilotApplyWorker({
+      db: db as never,
+      now: () => NOW,
+      onActiveMatchesPending: enqueue,
+    });
+    const result = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(result.observeMatches).toBe(1);
+    expect(result.activeMatches).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+    const [match] = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(eq(ruleMatchLog.senderKey, senderKey));
+    expect(match).toMatchObject({ modeAtMatch: 'observe', resolution: 'pending' });
+  });
+
   describe('sender-index rebuild synchronisation', () => {
     // `perMailboxPolicy` declares one in-flight job per mailbox but the
     // consumer does not enforce it (apps/api/src/worker.ts), so an

@@ -145,7 +145,7 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
     domain: amazonBatch.domain,
     shortLabel: 'Scale',
     title: 'Review a group in one decision.',
-    body: `${amazonBatch.rows.length} senders share ${amazonBatch.domain}. ${amazonBatch.eligibleRows.length} can join this batch; Protected senders stay out. Preview the current count before anything moves.`,
+    body: `${amazonBatch.rows.length} senders share ${amazonBatch.domain}. ${amazonBatch.eligibleRows.length} can join this batch; Protected and low-signal senders stay out. Preview the current count before anything moves.`,
     prompt: 'Try Archive all — it covers every eligible sender at once.',
   },
   {
@@ -719,7 +719,7 @@ export function InboxSimulatorScreen() {
    * Batch confirm — one `DemoDecision` per ELIGIBLE row, appended in a
    * single state update (looping `recordDecision` would read the same
    * stale `decisions` closure on every iteration and lose all but the
-   * last). Protected rows never enter `eligible`, matching the sheet's
+   * last). Protected and low-signal rows never enter `eligible`, matching the sheet's
    * own totals (D245).
    */
   const recordBatchDecision = (batch: DomainBatch, verb: BatchVerb) => {

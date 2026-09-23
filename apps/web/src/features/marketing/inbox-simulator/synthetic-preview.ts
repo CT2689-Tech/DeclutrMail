@@ -49,26 +49,24 @@ const EMPTY_BUCKETS = {
 
 /**
  * Build a `BulkActionPreviewResult` for `BatchActionSheet` from a
- * `DomainBatch`'s own rows — the local stand-in for
- * `POST /api/actions/preview/bulk`. Protected rows are marked
- * `protected: true` and excluded from `totals`, mirroring the real
- * preview: the total is what will actually move, never what the run
- * merely contains (D245 — Protected never bulks).
+ * `DomainBatch`'s eligible rows — the local stand-in for
+ * `POST /api/actions/preview/bulk`. The product sends only eligible
+ * sender IDs to that endpoint. Protected, Keep, and low-signal Later
+ * rows remain visible in the card for individual review, but never
+ * enter the preview's count or confirm payload.
  */
 export function buildSyntheticBulkPreview(batch: DomainBatch): BulkActionPreviewResult {
-  const senders = batch.rows.map((row) => ({
+  const senders = batch.eligibleRows.map((row) => ({
     senderId: row.senderId,
     name: row.senderName,
     counts: { ...EMPTY_BUCKETS, all: syntheticInboxCount(row) },
-    protected: row.protectionReason !== null,
+    protected: false,
   }));
-  const totalAll = senders
-    .filter((sender) => !sender.protected)
-    .reduce((sum, sender) => sum + sender.counts.all, 0);
+  const totalAll = senders.reduce((sum, sender) => sum + sender.counts.all, 0);
   return {
     senders,
     totals: { ...EMPTY_BUCKETS, all: totalAll },
-    protectedCount: senders.filter((sender) => sender.protected).length,
+    protectedCount: 0,
   };
 }
 

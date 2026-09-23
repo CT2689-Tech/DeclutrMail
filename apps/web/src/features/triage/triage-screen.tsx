@@ -259,6 +259,9 @@ export function TriageScreen({
   const setRememberPreference = useTriageStore((s) => s.setRememberPreference);
   const setExpandedRow = useTriageStore((s) => s.setExpandedRow);
   const incrementSessionDecided = useTriageStore((s) => s.incrementSessionDecided);
+  const sessionDecidedCount = useTriageStore((s) => s.sessionDecidedCount);
+  const sessionMailboxId = useTriageStore((s) => s.sessionMailboxId);
+  const resetSessionCounts = useTriageStore((s) => s.resetSessionCounts);
   const dismissedBatchDomains = useTriageStore((s) => s.dismissedBatchDomains);
   const dismissBatchDomain = useTriageStore((s) => s.dismissBatchDomain);
   const addSessionMessagesMoved = useTriageStore((s) => s.addSessionMessagesMoved);
@@ -372,22 +375,23 @@ export function TriageScreen({
   const showDecisionLayout = journey !== 'daily' || modeReady;
   /** Focus-stack items passed over this session — a view state, never a decision. */
   const [skipped, setSkipped] = useState<string[]>([]);
-  /** The longest the queue has been this session — the "12" in "3 of 12". */
-  const [sessionTotal, setSessionTotal] = useState(0);
-  const queueLength = state.kind === 'ready' ? state.rows.length : 0;
-  useEffect(() => {
-    setSessionTotal((t) => Math.max(t, queueLength));
-  }, [queueLength]);
-
+  /** The card kept on stage across refetches within this mailbox. */
+  const [heldKey, setHeldKey] = useState<string | null>(null);
   const resetPendingScope = useCallback(() => {
     clearPending();
     setPendingBatch(null);
     setExpandedRow(null);
     setMailtoFollowup(null);
     setSkipped([]);
-    setSessionTotal(0);
-  }, [clearPending, setExpandedRow]);
+    setHeldKey(null);
+    resetSessionCounts(actionMailboxId);
+  }, [actionMailboxId, clearPending, resetSessionCounts, setExpandedRow]);
   useMailboxScopeReset(actionMailboxId, resetPendingScope);
+  // The mailbox may have changed while Triage was unmounted. Hide the
+  // previous mailbox's count immediately, then start this one's session.
+  useEffect(() => {
+    if (sessionMailboxId !== actionMailboxId) resetSessionCounts(actionMailboxId);
+  }, [actionMailboxId, resetSessionCounts, sessionMailboxId]);
 
   // D226 — the batch sheet's REAL aggregated counts. A batch is only
   // constructed with ≥MIN_BATCH_RUN eligible rows (domain-batch.ts), so
@@ -1425,7 +1429,6 @@ export function TriageScreen({
   // A sender with an open preview stays on stage. The stack re-plans on
   // every refetch (a batch offer can appear, the order can change), and
   // a D226 preview must never be left pending behind a different card.
-  const [heldKey, setHeldKey] = useState<string | null>(null);
   const focusItem: FocusItem | null =
     pendingRow != null
       ? { kind: 'row', row: pendingRow }
@@ -1446,11 +1449,10 @@ export function TriageScreen({
 
   const isNarrow = useIsAtMost('xs');
   const hasQueue = readyRows.length > 0;
-  const total = Math.max(sessionTotal, readyRows.length);
-  const done = total - readyRows.length;
   const batchBusyDomain = batchAction?.domain ?? overdueBatch?.domain ?? null;
-  // Same-verdict batch offer (2026-07-10) — mounts when ≥3 unprotected
-  // rows share an Archive/Later recommendation. Routes through the SAME
+  // Same-verdict batch offer — mounts when ≥3 unprotected rows share a
+  // fresh, confident Archive recommendation. Uncertain Later rows stay
+  // individual decisions. Routes through the SAME
   // pendingBatch → BatchActionSheet → composite pipeline as the domain
   // batch (D226 preview + one cascade undo). Dismiss is session-scoped
   // via the shared dismissal list (the label is the key). In focus mode
@@ -1500,18 +1502,11 @@ export function TriageScreen({
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               {/* The screen's one count. */}
               <SessionProgress
-                current={
-                  mode === 'focus' && focusItem != null
-                    ? done + focusPosition(readyRows, focusItem)
-                    : done
-                }
-                done={done}
-                total={total}
-                label={
-                  mode === 'focus'
-                    ? `Decision ${focusItem != null ? done + focusPosition(readyRows, focusItem) : done} of ${total}`
-                    : `${done} of ${total} decided`
-                }
+                decided={sessionMailboxId === actionMailboxId ? sessionDecidedCount : 0}
+                queued={readyRows.length}
+                {...(mode === 'focus' && focusItem != null
+                  ? { focusPosition: focusPosition(readyRows, focusItem) }
+                  : {})}
               />
               <div role="group" aria-label="Review layout" style={{ display: 'flex', gap: 4 }}>
                 {(['focus', 'list'] as const).map((view) => (

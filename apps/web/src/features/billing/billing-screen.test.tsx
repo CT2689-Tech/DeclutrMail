@@ -2007,6 +2007,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(
       within(modal).getByText('Your Pro features stay active until Jul 1, 2026.'),
     ).toBeInTheDocument();
+    expect(modal.textContent).not.toMatch(/Autopilot, Autopilot/);
     // Canceling is framed honestly as "not a refund" instead of the old
     // misleading "No refund for unused time" absolute.
     expect(within(modal).getByText(/on its own it isn.t\s+a refund/i)).toBeInTheDocument();

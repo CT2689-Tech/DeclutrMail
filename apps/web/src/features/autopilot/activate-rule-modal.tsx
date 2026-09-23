@@ -129,6 +129,7 @@ function ActivateRuleSheet({
   // became one choice; the requests themselves are unchanged.
   const [choice, setChoice] = useState<'act' | 'watch'>('act');
   const name = presetDisplayName(rule.presetKey, rule.name);
+  const reviewOnly = rule.presetKey === 'auto_screen_new_senders';
 
   const enabling = intent === 'enable';
   // Turning a rule on without the unattended capability can only mean
@@ -150,14 +151,18 @@ function ActivateRuleSheet({
   return (
     <ConfirmModalFrame
       title={enabling ? `Turn on ${name}?` : `Switch ${name} to Active?`}
-      subtitle={matchEffectCopy(presentation)}
+      subtitle={
+        reviewOnly
+          ? 'Matching new senders become suggestions. You decide which email moves to Later.'
+          : matchEffectCopy(presentation)
+      }
       note={`${
         protectedCount > 0
           ? `${protectedCount.toLocaleString('en-US')} Protected sender${
               protectedCount === 1 ? ' is' : 's are'
             } skipped.`
           : 'Protected senders are skipped.'
-      } ${undoNote(rule, undoWindowDays)}`}
+      } ${reviewOnly ? 'No mail moves until you approve a suggestion.' : undoNote(rule, undoWindowDays)}`}
       confirmLabel={watching ? 'Watch first' : enabling ? 'Turn on' : 'Switch to Active'}
       confirmBusyLabel={
         pendingAction === 'secondary' || (pendingAction == null && watching)
@@ -177,8 +182,8 @@ function ActivateRuleSheet({
       // the commit the user has selected and can see on the button.
       onConfirm={watching && onWatchFirst != null ? onWatchFirst : onConfirm}
       facts={[
-        ...(preview.status === 'ready' ? activationFacts(rule, preview.result) : []),
-        ...ruleEffectFacts(presentation.primary),
+        ...(preview.status === 'ready' ? activationFacts(rule, preview.result, reviewOnly) : []),
+        ...(reviewOnly ? [] : ruleEffectFacts(presentation.primary)),
         // Gated on the COUNT, not on the intent. A RE-enabled rule keeps
         // its pending matches in the buffer (`listPendingSuggestions`
         // filters on mode + resolution, never on `enabled`), and they
@@ -215,7 +220,7 @@ function ActivateRuleSheet({
       <div style={{ display: 'flex', flexDirection: 'column', gap: space[4] }}>
         {/* D226 — what the FIRST active sweep would act on right now (same
             signal materializer as the apply worker). */}
-        <RulePreviewHero state={preview} onRetry={onRetryPreview} />
+        <RulePreviewHero state={preview} onRetry={onRetryPreview} requiresApproval={reviewOnly} />
         {offersChoice ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: space[2] }}>
             <SheetSegmented
@@ -266,6 +271,7 @@ const plural = (count: number, word: string, suffix = 's') =>
 function activationFacts(
   rule: AutopilotRuleDto,
   result: AutopilotRulePreviewResultDto,
+  reviewOnly = false,
 ): SheetFactItem[] {
   const weekly =
     result.weeklyVolume.basis === 'observed_7d'
@@ -283,7 +289,7 @@ function activationFacts(
     },
     {
       // "Actionable" = the rule has something to do for that sender now.
-      label: 'Actionable now',
+      label: reviewOnly ? 'If approved' : 'Actionable now',
       value:
         rule.actionKind === 'unsubscribe'
           ? `${plural(result.actionableSenderCount, 'request')} · ${plural(

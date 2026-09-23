@@ -42,6 +42,7 @@ import {
   PRESET_RULES_ALL_PAUSED,
   PRESET_RULES_OBSERVE,
   RULE_PREVIEW_RESULT,
+  SCREEN_NEW_SENDERS,
 } from './fixtures';
 import type { AutopilotScreenState, SuggestionWithRule } from './types';
 import type { AutopilotPatternSuggestionDto } from '@/lib/api/autopilot';
@@ -258,7 +259,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(rulesList).getAllByRole('listitem')).toHaveLength(5);
     expect(within(rulesList).getAllByRole('switch')).toHaveLength(5);
     // D227 — the screen-new-senders preset surfaces as Later, never "Screen".
-    expect(within(rulesList).getByText(/later for new senders/i)).toBeInTheDocument();
+    expect(within(rulesList).getByText(/review new senders for later/i)).toBeInTheDocument();
     expect(within(rulesList).queryByText(/auto-screen/i)).not.toBeInTheDocument();
   });
 
@@ -472,8 +473,11 @@ describe('AutopilotScreen — rules management (D101)', () => {
     // Matched on the leading "Would " every digest sentence opens with,
     // not on "would have": only the unsubscribe branch still says that,
     // because it is the one branch whose number really was windowed.
+    expect(
+      within(rulesList).getByText(/could move to Later if you approve them/i),
+    ).toBeInTheDocument();
     expect(within(rulesList).queryAllByText(/^Would (archive|move|have requested)/i)).toHaveLength(
-      4,
+      3,
     );
   });
 
@@ -538,6 +542,34 @@ describe('AutopilotScreen — rules management (D101)', () => {
     ).toBeInTheDocument();
     // The whole point: mail state is untouched until the user confirms.
     expect(observed).toHaveLength(0);
+  });
+
+  it('offers review only when turning on the new-sender rule', async () => {
+    const observed: unknown[] = [];
+    const off = { ...SCREEN_NEW_SENDERS, enabled: false };
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () => jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: off.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({ data: { ...off, enabled: true } });
+        },
+      },
+    ]);
+    renderScreen({ kind: 'ready', rules: [off], suggestions: [] });
+
+    await userEvent.click(screen.getByRole('switch', { name: /enable rule review new senders/i }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/no mail moves until you approve/i)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/act now/i)).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn on' }));
+    await waitFor(() => expect(observed).toEqual([{ enabled: true, mode: 'observe' }]));
   });
 
   it('“Act now” (the default choice) patches enabled + mode=active in ONE request', async () => {

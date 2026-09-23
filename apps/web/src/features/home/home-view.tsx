@@ -186,7 +186,7 @@ function HomeBody({
                   state.pending.screenerPending > 0 && (
                     <AttentionLink
                       href="/screener"
-                      title={`${state.pending.screenerPending.toLocaleString('en-US')} unreviewed senders`}
+                      title={`${state.pending.screenerPending.toLocaleString('en-US')} unreviewed ${state.pending.screenerPending === 1 ? 'sender' : 'senders'}`}
                       description="Give each sender a first decision on your terms."
                     />
                   )}
@@ -357,7 +357,7 @@ function SenderPreviews({ senders }: { senders: HomeSenderPreview[] }) {
           </span>
           <span className={styles.senderCount}>
             {sender.inboxCount.toLocaleString('en-US')}
-            <small>emails</small>
+            <small>{sender.inboxCount === 1 ? 'email' : 'emails'}</small>
           </span>
           <span aria-hidden="true">↗</span>
         </Link>

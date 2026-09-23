@@ -63,7 +63,8 @@ export function DomainBatchCard({
   // The shared eligibility set — same rows the sheet previews and the
   // enqueue sends, so the headline count can never drift from them.
   const eligible = batch.eligibleRows;
-  const protectedCount = batch.rows.length - eligible.length;
+  const protectedCount = batch.rows.filter((row) => row.protectionReason !== null).length;
+  const reviewCount = batch.rows.length - eligible.length - protectedCount;
   const focus = variant === 'focus';
   const scope = headline ?? `senders from ${batch.domain}`;
   const verbLabel = (verb: BatchVerb) =>
@@ -73,12 +74,16 @@ export function DomainBatchCard({
         ? `Archive all ${eligible.length} senders from ${batch.domain}`
         : `Move all ${eligible.length} senders from ${batch.domain} to Later`;
 
-  const protectedNote = protectedCount > 0 && (
+  const excludedNote = (protectedCount > 0 || reviewCount > 0) && (
     <span style={{ fontSize: text.sm, color: color.fgMuted }}>
       {/* The verb has to agree too. This read "1 protected sender stay
           untouched" until 2026-08-27 — the noun was pluralised and the verb
           was not, and a test asserted the broken string verbatim. */}
-      {protectedCount} protected sender{protectedCount === 1 ? ' stays' : 's stay'} untouched
+      {protectedCount > 0 &&
+        `${protectedCount} protected sender${protectedCount === 1 ? ' stays' : 's stay'} untouched`}
+      {protectedCount > 0 && reviewCount > 0 && ' · '}
+      {reviewCount > 0 &&
+        `${reviewCount} sender${reviewCount === 1 ? ' needs' : 's need'} individual review`}
     </span>
   );
 
@@ -146,6 +151,10 @@ export function DomainBatchCard({
           {row.protectionReason !== null ? (
             <span style={{ fontSize: text.xs, fontWeight: 600, color: color.primary }}>
               Protected
+            </span>
+          ) : !eligible.includes(row) ? (
+            <span style={{ fontSize: text.xs, fontWeight: 600, color: color.fgMuted }}>
+              Review separately
             </span>
           ) : (
             <Pill tone="default">{verdictToVerb(row.verdict)}</Pill>
@@ -240,7 +249,7 @@ export function DomainBatchCard({
           >
             {scope}
           </h2>
-          {protectedNote}
+          {excludedNote}
           {disclosure}
           {members}
         </div>
@@ -275,7 +284,7 @@ export function DomainBatchCard({
         </span>
         {buttons}
       </div>
-      {protectedNote}
+      {excludedNote}
       {disclosure}
       {members}
       {status}

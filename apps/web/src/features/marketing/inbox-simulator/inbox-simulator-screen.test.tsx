@@ -185,7 +185,7 @@ describe('InboxSimulatorScreen', () => {
 
   it('restores a completed batch decision and resumes the guide at the next step', async () => {
     // A batch decision is stored as one ordinary DemoDecision per
-    // eligible row — restoring all five is what "step 1 is done" looks
+    // eligible row — restoring all four is what "step 1 is done" looks
     // like on disk, exercising `isScenarioComplete`'s batch branch.
     const amazonBatch = findDomainBatches(TRIAGE_QUEUE).find((b) => b.domain === 'amazon.com')!;
     const amazonDecisions = amazonBatch.eligibleRows.map((row, index) => ({
@@ -209,7 +209,7 @@ describe('InboxSimulatorScreen', () => {
     // Found via browser smoke: `dismissedDomains` (the "Decide one by one"
     // choice) is never persisted, so a reload after deciding ONE amazon.com
     // sender individually used to forget the dismissal while keeping the
-    // decision — re-showing "5 senders from amazon.com" with the decided
+    // decision — re-showing "4 senders from amazon.com" with the decided
     // sender's count still folded into the aggregate total and its own
     // row gone missing from the one-by-one fallback. Restoring exactly one
     // individual decision reproduces that state without a real reload.
@@ -310,12 +310,12 @@ describe('InboxSimulatorScreen', () => {
     );
   });
 
-  it('offers the amazon.com batch, excluding the protected sender from the count', () => {
+  it('offers the amazon.com batch, excluding protected and low-signal senders', () => {
     render(<InboxSimulatorScreen />);
     expect(
-      screen.getByText(/6 senders share amazon\.com\. 5 can join this batch/i),
+      screen.getByText(/6 senders share amazon\.com\. 4 can join this batch/i),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Archive all 5/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Archive all 4/i })).toBeInTheDocument();
   });
 
   it('confirms the amazon.com batch through the mandatory preview, then continues into the one-way step', () => {
@@ -327,14 +327,16 @@ describe('InboxSimulatorScreen', () => {
 
     // The visitor checks eligibility and the mandatory preview before
     // moving any email in the group.
-    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     const sheet = sheetFor('amazon.com');
     expect(
-      within(sheet).getByRole('heading', { name: /^Archive [\d,]+ emails from 5 senders\?$/ }),
+      within(sheet).getByRole('heading', { name: /^Archive [\d,]+ emails from 4 senders\?$/ }),
     ).toBeInTheDocument();
-    // Protection shown, not claimed: the sixth sender is named as skipped,
-    // never silently folded into the aggregated total (D245).
-    expect(within(sheet).getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
+    // The real product previews only the eligible IDs selected by the
+    // batch card. Protected and low-signal senders are excluded before
+    // the preview, rather than counted as mail that might move.
+    expect(within(sheet).getAllByRole('listitem')).toHaveLength(4);
+    expect(within(sheet).queryByText('Amazon Orders')).toBeNull();
 
     fireEvent.click(within(sheet).getByRole('button', { name: /^Archive( [\d,]+)?$/ }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -465,7 +467,7 @@ describe('InboxSimulatorScreen', () => {
    *  (step 2) — the exact journey the "confirms the amazon.com batch…"
    *  test above already exercises — to land on step 3, the rule step. */
   function reachRuleStep() {
-    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
         name: /^Archive( [\d,]+)?$/,
@@ -626,7 +628,7 @@ describe('InboxSimulatorScreen', () => {
       const t0 = new Date('2026-08-27T00:00:00.000Z').getTime();
 
       function completeGuideWithGap(gapMs: number) {
-        fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+        fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
         fireEvent.click(
           within(sheetFor('amazon.com')).getByRole('button', {
             name: /^Archive( [\d,]+)?$/,
@@ -751,7 +753,7 @@ describe('InboxSimulatorScreen', () => {
 
     // Jump back and actually decide step 1.
     fireEvent.click(screen.getByRole('button', { name: 'Go to guided decision 1: Scale' }));
-    fireEvent.click(screen.getByRole('button', { name: /Archive all 5/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Archive all 4/i }));
     fireEvent.click(
       within(sheetFor('amazon.com')).getByRole('button', {
         name: /^Archive( [\d,]+)?$/,

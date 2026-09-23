@@ -189,6 +189,30 @@ describe('findDomainBatches — protection-aware eligibility (D245)', () => {
     // 4-run, 2 eligible — below MIN_BATCH_RUN, no card.
     expect(findDomainBatches(rows)).toHaveLength(0);
   });
+
+  it('never groups uncertain, Keep, or stale senders into an action', () => {
+    const rows = [
+      row('a', 'amazon.com'),
+      { ...row('new', 'amazon.com'), verdict: 'later' as const, confidence: 0.7 },
+      { ...row('relationship', 'amazon.com'), verdict: 'keep' as const, confidence: 0.95 },
+      { ...row('stale', 'amazon.com'), stale: true },
+      row('b', 'amazon.com'),
+      row('c', 'amazon.com'),
+    ];
+    const [batch] = findDomainBatches(rows);
+    expect(batch?.rows).toHaveLength(6);
+    expect(batch?.eligibleRows.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('offers no same-domain shortcut for a new mailbox full of Later abstentions', () => {
+    const rows = ['account', 'orders', 'security', 'support'].map((id) => ({
+      ...row(id, 'amazon.com'),
+      verdict: 'later' as const,
+      confidence: 0.7,
+    }));
+    expect(findDomainBatches(rows)).toHaveLength(0);
+    expect(planQueueItems(rows).every((item) => item.kind === 'row')).toBe(true);
+  });
 });
 
 describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
@@ -196,6 +220,7 @@ describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
     id: string,
     verdict: TriageDecisionRow['verdict'],
     protectionReason: TriageDecisionRow['protectionReason'] = null,
+    confidence = 0.9,
   ): TriageDecisionRow {
     return {
       ...TRIAGE_QUEUE[0]!,
@@ -205,6 +230,7 @@ describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
       senderDomain: `${id}.example`,
       verdict,
       protectionReason,
+      confidence,
     };
   }
 
@@ -240,7 +266,26 @@ describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
     expect(findVerdictBatch(rows)).toBeNull();
   });
 
-  it('prefers archive over later when both qualify; falls back to later when archive is dismissed', () => {
+  it('never converts low-signal Later abstentions into a batch recommendation', () => {
+    const uncertain = Array.from({ length: 12 }, (_, i) =>
+      vrow(`uncertain-${i}`, 'later', null, 0.7),
+    );
+    expect(findVerdictBatch(uncertain)).toBeNull();
+  });
+
+  it('only batches fresh Archive rows above the recommendation floor', () => {
+    const rows = [
+      vrow('a', 'archive', null, 0.8),
+      vrow('b', 'archive', null, 0.72), // on the floor is not recommended
+      vrow('c', 'archive', null, 0.8),
+      { ...vrow('d', 'archive', null, 0.8), stale: true },
+      vrow('e', 'archive', null, 0.8),
+    ];
+    expect(findVerdictBatch(rows)?.batch.rows.map((r) => r.id)).toEqual(['a', 'c', 'e']);
+    expect(findVerdictBatch(rows.slice(0, 4))).toBeNull();
+  });
+
+  it('dismisses Archive without replacing it with a Later batch', () => {
     const rows = [
       vrow('a', 'archive'),
       vrow('b', 'archive'),
@@ -251,9 +296,6 @@ describe('findVerdictBatch — same-recommendation batch (2026-07-10)', () => {
     ];
     expect(findVerdictBatch(rows)?.verdict).toBe('archive');
     const afterDismiss = findVerdictBatch(rows, [VERDICT_BATCH_LABELS.archive]);
-    expect(afterDismiss?.verdict).toBe('later');
-    expect(
-      findVerdictBatch(rows, [VERDICT_BATCH_LABELS.archive, VERDICT_BATCH_LABELS.later]),
-    ).toBeNull();
+    expect(afterDismiss).toBeNull();
   });
 });

@@ -385,6 +385,28 @@ describe('AutopilotReadService', () => {
   });
 
   describe('patchRule', () => {
+    it('keeps new-sender matches review-only, including legacy Active rows', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_screen_new_senders');
+      await expect(
+        service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
+      ).rejects.toThrow('New-sender matches require review');
+      const enabled = await service.patchRule(mailboxA, ruleId, {
+        enabled: true,
+        mode: 'observe',
+      });
+      expect(enabled?.mode).toBe('observe');
+      expect(enabled?.observeWindowEndsAt).toBeNull();
+
+      // Rows activated before this guard may still exist in a mailbox.
+      await db
+        .update(automationRules)
+        .set({ mode: 'active' })
+        .where(eq(automationRules.id, ruleId));
+      const projected = await service.getRule(mailboxA, ruleId);
+      expect(projected?.mode).toBe('observe');
+      expect(projected?.observeWindowElapsed).toBe(false);
+    });
+
     it('toggles enabled + flips mode (and resets modeChangedAt)', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       const before = await service.getRule(mailboxA, ruleId);

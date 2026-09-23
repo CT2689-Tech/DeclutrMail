@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
@@ -274,7 +274,14 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
         threshold = parsed;
       }
-      const modeAtMatch: AutopilotMatchMode = rule.mode === 'active' ? 'active' : 'observe';
+      // A new sender has too little history to distinguish a promotion
+      // from an account, purchase, or security message reliably. Even
+      // legacy rows left in Active mode must collect suggestions for a
+      // person to approve rather than moving that mail unattended.
+      const modeAtMatch: AutopilotMatchMode =
+        rule.mode === 'active' && rule.presetKey !== 'auto_screen_new_senders'
+          ? 'active'
+          : 'observe';
       const resolution: AutopilotMatchResolution =
         modeAtMatch === 'active' ? 'approved' : 'pending';
 
@@ -573,6 +580,10 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     // than silently continuing to act on a tier that stopped paying for
     // it, while Observe rules keep running.
     //
+    // A legacy Active new-sender row is the exception: the matcher
+    // forces Observe for that preset, so a review-entitled workspace
+    // may still collect its suggestions after a future tier split.
+    //
     // 2026-08-23: both capabilities sit on Plus, so the only tier with
     // `mayActUnattended === false` is `free` — which already returned
     // above. The `ne(mode,'active')` term below is therefore unreachable
@@ -589,7 +600,14 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           eq(automationRules.mailboxAccountId, mailboxAccountId),
           eq(automationRules.enabled, true),
           ne(automationRules.mode, 'paused'),
-          ...(mayActUnattended ? [] : [ne(automationRules.mode, 'active')]),
+          ...(mayActUnattended
+            ? []
+            : [
+                or(
+                  ne(automationRules.mode, 'active'),
+                  eq(automationRules.presetKey, 'auto_screen_new_senders'),
+                ),
+              ]),
           eq(automationRules.isPreset, true),
         ),
       );

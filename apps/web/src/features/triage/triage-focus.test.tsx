@@ -6,16 +6,16 @@
  *
  * | state / transition              | UI shows                                            | cache / store effect                         | tested |
  * |---------------------------------|-----------------------------------------------------|----------------------------------------------|--------|
- * | loading                         | h1 + ONE card-sized skeleton, no progress/toggle    | none                                         | here   |
+ * | loading                         | h1 + ONE card-sized skeleton, no count/toggle       | none                                         | here   |
  * | error                           | h1 + ErrorState with Retry                          | retry() refetches                            | here   |
  * | empty, never decided            | "Nothing needs a decision right now."               | none                                         | here   |
  * | empty, sync failed              | "last scan didn't finish" + Open Settings           | none                                         | triage-screen.test / empty-state.test |
  * | completion (decided today > 0)  | check, title, 1 sentence, one tally line            | none                                         | here   |
- * | ready                           | first stack item as the card, "1 of N", See all     | none                                         | here   |
+ * | ready                           | first stack item, queue position + decided count    | none                                         | here   |
  * | ready → verb (mail-moving)      | EXISTING sheet + D226 preview; cancel = no mutation | pendingAction set / cleared                  | here   |
  * | ready → Keep                    | POST keep-intent, no sheet (D40)                    | invalidate on 200                            | here   |
  * | row busy / in-flight            | card aria-busy, verbs disabled, stays until refetch | no optimistic removal (D226)                 | here   |
- * | decided → refetch drops the row | next sender's card; progress advances               | "2 of N" read off the queue itself           | here   |
+ * | decided → refetch drops the row | next sender's card; confirmed count advances        | server-confirmed session count               | here   |
  * | D34 inline preview              | preview + Confirm INSIDE the card; Esc cancels      | pendingAction surface=inline                 | here   |
  * | protected sender                | Protected mark + evidence why-line                  | override rides the existing dispatch         | here   |
  * | mailto unsubscribe              | D230 callout above the card                         | none                                         | here   |
@@ -25,7 +25,7 @@
  * | See all ↔ One at a time         | list ↔ card; persisted per device                   | localStorage `dm.triage.mode`                | here   |
  * | "Why?"                          | reasoning + band + stats; arms D25 stale refresh    | store.expandedRowId (same as a list expand)  | here   |
  * | mobile (≤480)                   | 44px verb bar, swipe → same onAction, no caption    | none                                         | here   |
- * | mailbox switch                  | skip list + session total reset                     | via useMailboxScopeReset (existing)          | triage-screen.actions.test (pending reset) |
+ * | mailbox switch                  | skip list + session count reset                     | via useMailboxScopeReset                     | triage-screen.actions.test |
  * | 409 no-active / select-mailbox  | owned by the app chrome — this screen never mounts  | —                                            | app-chrome-layout.test |
  * | tier-gated                      | owned by `TierGate` around the route                | —                                            | tier-gate tests |
  * | onboarding journeys             | list only, no header — unchanged                    | preference ignored                           | here   |
@@ -45,7 +45,7 @@ import {
 } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { TRIAGE_QUEUE, TRIAGE_SESSION_STATS, type TriageScreenState } from './data';
-import { VERDICT_BATCH_LABELS } from './domain-batch';
+import { isBatchEligible, VERDICT_BATCH_LABELS } from './domain-batch';
 import {
   planFocusItems,
   skipFocusItem,
@@ -163,7 +163,7 @@ describe('focus mode — resting states', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Triage' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('Loading triage queue');
     expect(document.querySelectorAll('.dm-skeleton')).toHaveLength(1);
-    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByRole('status', { name: /decided this session/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'List' })).toBeNull();
   });
 
@@ -214,8 +214,11 @@ describe('focus mode — the card', () => {
     expect(screen.queryByRole('list', { name: 'Triage queue' })).toBeNull();
     // The second sender is not on screen.
     expect(screen.queryByRole('heading', { name: GROUPON.senderName })).toBeNull();
-    expect(screen.getByRole('progressbar', { name: 'Decision 1 of 2' })).toBeInTheDocument();
-    expect(screen.getByText('1 of 2')).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', {
+        name: '0 decided this session; 2 in queue; reviewing 1 of 2',
+      }),
+    ).toHaveTextContent('0 decided·Reviewing 1 of 2');
   });
 
   it('fills the suggested verb only, and keeps all five with their key hints', () => {
@@ -331,9 +334,11 @@ describe('focus mode — deciding runs the EXISTING lifecycle (D226)', () => {
     // The server-confirmed refetch is what removes the sender.
     view.setState(ready([LINKEDIN]));
     expect(cardTitle()).toBe(LINKEDIN.senderName);
-    // Progress reads the queue itself: one of the session's two has left.
-    expect(screen.getByText('2 of 2')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '1');
+    expect(
+      screen.getByRole('status', {
+        name: '1 decided this session; 1 in queue; reviewing 1 of 1',
+      }),
+    ).toBeInTheDocument();
   });
 
   it('D34 inline preview renders INSIDE the card with its Confirm; Esc cancels', async () => {
@@ -395,8 +400,11 @@ describe('focus mode — Skip', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Skip (→)' }));
     expect(cardTitle()).toBe(LINKEDIN.senderName);
     // Position, not decisions: nothing left the queue.
-    expect(screen.getByText('2 of 2')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
+    expect(
+      screen.getByRole('status', {
+        name: '0 decided this session; 2 in queue; reviewing 2 of 2',
+      }),
+    ).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'ArrowRight' });
     expect(cardTitle()).toBe(GROUPON.senderName);
     expect(posts).not.toHaveBeenCalled();
@@ -525,7 +533,7 @@ describe('focus mode — batch offers are their own card', () => {
     // would lead; pass on it the way a user does.
     useTriageStore.getState().dismissBatchDomain(VERDICT_BATCH_LABELS.archive);
     renderScreen(ready(AMAZON));
-    const eligible = AMAZON.filter((r) => r.protectionReason === null).length;
+    const eligible = AMAZON.filter(isBatchEligible).length;
     expect(cardTitle()).toBe('senders from amazon.com');
     fireEvent.click(
       screen.getByRole('button', { name: `Archive all ${eligible} senders from amazon.com` }),
@@ -563,7 +571,9 @@ describe('focus ↔ list', () => {
     expect(screen.getByRole('list', { name: 'Triage queue' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Current decision' })).toBeNull();
     // List mode counts decisions, not a position.
-    expect(screen.getByRole('progressbar', { name: '0 of 2 decided' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+    ).toBeInTheDocument();
     first.unmount();
 
     renderScreen(ready([GROUPON, LINKEDIN]));

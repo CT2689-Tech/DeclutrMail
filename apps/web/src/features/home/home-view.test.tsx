@@ -137,6 +137,32 @@ describe('HomeView', () => {
     expect(screen.getByRole('link', { name: /2 unreviewed senders/ })).toBeInTheDocument();
   });
 
+  it('uses singular copy when one sender awaits a first decision', () => {
+    render(
+      <HomeView
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 1 },
+          since: null,
+          secondary: [],
+          action: { label: 'Review 1 today', href: '/triage' },
+          pending: { triagePending: 0, screenerPending: 1 },
+          senders: [
+            { id: 'sender/1', name: 'A journal', domain: 'journal.example', inboxCount: 1 },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByRole('link', { name: /1 unreviewed sender\b/ })).toHaveAttribute(
+      'href',
+      '/screener',
+    );
+    expect(screen.getByRole('link', { name: /A journal.*1 email\b/ })).toHaveAttribute(
+      'href',
+      '/senders?sender=sender%2F1',
+    );
+  });
+
   it('ready without secondary stats renders no stat row', () => {
     const { container } = render(
       <HomeView

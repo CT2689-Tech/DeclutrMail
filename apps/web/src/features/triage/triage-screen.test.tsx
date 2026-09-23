@@ -91,7 +91,7 @@ describe('TriageScreen — populated queue', () => {
     expect(html).toContain('>Focus<');
   });
 
-  it('titles the screen "Triage" and states the queue length once, as the progress total', () => {
+  it('titles the screen "Triage" and distinguishes decided senders from the rolling queue', () => {
     const html = renderState({
       kind: 'ready',
       rows: [...TRIAGE_QUEUE],
@@ -99,8 +99,8 @@ describe('TriageScreen — populated queue', () => {
     });
     expect(html).toContain('>Triage</h1>');
     expect(html).not.toContain('decisions, one at a time.');
-    // "1 of 15" — and the number appears nowhere else as a count.
-    expect(html).toContain(`>1 of ${TRIAGE_QUEUE.length}<`);
+    expect(html).toContain('>0 decided<');
+    expect(html).toContain(`>Reviewing 1 of ${TRIAGE_QUEUE.length}<`);
     expect(html).not.toContain('decisions waiting');
   });
 
@@ -158,8 +158,8 @@ describe('TriageScreen — empty / loading branches', () => {
     );
     expect(html).toContain('Nothing needs a decision right now.');
     expect(html).not.toContain('last scan didn&#x27;t finish');
-    // No progress and no mode toggle over an empty queue.
-    expect(html).not.toContain('role="progressbar"');
+    // No session count and no mode toggle over an empty queue.
+    expect(html).not.toContain('decided this session');
     expect(html).not.toContain('>See all<');
   });
 

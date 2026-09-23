@@ -85,7 +85,12 @@ export function RuleCard({
   // actually watching (enabled + Observe). Disabled rules stay quiet.
   const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
   const observeSummary = observeWindowSummary(rule, now);
-  const explanation = ruleModeExplanation(rule, canActivate);
+  const explanation =
+    rule.presetKey === 'auto_screen_new_senders'
+      ? rule.enabled
+        ? 'New senders wait for your approval; no mail moves on its own.'
+        : null
+      : ruleModeExplanation(rule, canActivate);
   const detailsId = `rule-details-${rule.id}`;
 
   return (
@@ -227,7 +232,12 @@ export function RuleCard({
       )}
 
       {previewOpen && preview != null && (
-        <RulePreviewPanel ruleName={name} state={preview} onRetry={onRetryPreview} />
+        <RulePreviewPanel
+          ruleName={name}
+          state={preview}
+          onRetry={onRetryPreview}
+          requiresApproval={rule.presetKey === 'auto_screen_new_senders'}
+        />
       )}
     </li>
   );

@@ -67,19 +67,14 @@ export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTie
   const to = TIER_MANIFEST[toTier];
   const lost = from.capabilities.filter((cap) => !to.capabilities.includes(cap));
   const gained = to.capabilities.filter((cap) => !from.capabilities.includes(cap));
+  const labelsFor = (capabilities: typeof lost) =>
+    [...new Set(capabilities.map((cap) => CAPABILITY_LABELS[cap]))].join(', ');
   if (fromTier === toTier)
     return <p style={{ margin: 0 }}>Your included features and inbox allowance stay the same.</p>;
   return (
     <div style={{ fontSize: 14, lineHeight: 1.6 }}>
-      {gained.length ? (
-        <p>Added: {gained.map((cap) => CAPABILITY_LABELS[cap]).join(', ')}.</p>
-      ) : null}
-      {lost.length ? (
-        <p>
-          No longer included after the change:{' '}
-          {lost.map((cap) => CAPABILITY_LABELS[cap]).join(', ')}.
-        </p>
-      ) : null}
+      {gained.length ? <p>Added: {labelsFor(gained)}.</p> : null}
+      {lost.length ? <p>No longer included after the change: {labelsFor(lost)}.</p> : null}
       <p>
         {to.name} includes {to.inboxLimit} connected {to.inboxLimit === 1 ? 'inbox' : 'inboxes'} and{' '}
         {to.cleanupActionsPerMonth === null

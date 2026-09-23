@@ -1,4 +1,4 @@
-// Storybook CSF3 stories for the Triage session burn-down (D37, D200).
+// Storybook CSF3 stories for the Triage session count (D37, D200).
 //
 // Storybook itself is seeded in PR 3 (D210). Until the seed lands, this
 // file uses the same lightweight local CSF shims as
@@ -6,10 +6,10 @@
 // `@storybook/react` installed.
 //
 // Variants:
-//   • FocusPosition — focus mode: the card's position, "3 of 12"
-//   • ListDecided   — list mode: decisions made, "3 of 12"
-//   • JustArrived   — nothing has left the queue yet (empty bar)
-//   • EmptyQueueRendersNothing — a zero total renders NOTHING
+//   • FocusPosition — focus mode: the card's current queue position
+//   • ListDecided   — list mode: confirmed decisions + current queue
+//   • JustArrived   — nothing decided yet
+//   • EmptyQueueRendersNothing — an empty queue renders NOTHING
 
 import { tokens } from '@declutrmail/shared';
 import { SessionProgress } from './session-progress';
@@ -37,7 +37,7 @@ const meta: StoryMeta<typeof SessionProgress> = {
     docs: {
       description: {
         component:
-          'The Triage screen’s one count — "3 of 12" plus a thin bar. `total` is the longest the queue has been this session and `done` is how many have left it; both are read off the queue, which only shrinks on a server-confirmed decision (D226), so the bar can never run ahead of reality.',
+          'Confirmed decisions in this mailbox session and the current rolling queue length. Focus mode also shows the card’s position within that queue. New senders may backfill the queue, so there is no fixed completion percentage.',
       },
     },
   },
@@ -64,26 +64,26 @@ function frame(children: React.ReactNode) {
   );
 }
 
-/** Focus mode — two decided, the third sender on stage. */
+/** Focus mode — two decided, the third sender in the current queue on stage. */
 export const FocusPosition: Story<typeof SessionProgress> = {
-  args: { current: 3, done: 2, total: 12, label: 'Decision 3 of 12' },
+  args: { decided: 2, queued: 12, focusPosition: 3 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
 /** List mode — the label counts decisions made. */
 export const ListDecided: Story<typeof SessionProgress> = {
-  args: { current: 3, done: 3, total: 12, label: '3 of 12 decided' },
+  args: { decided: 3, queued: 12 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/** Just arrived — a full queue, an empty bar. */
+/** Just arrived — a full queue, no confirmed decisions. */
 export const JustArrived: Story<typeof SessionProgress> = {
-  args: { current: 1, done: 0, total: 12, label: 'Decision 1 of 12' },
+  args: { decided: 0, queued: 12, focusPosition: 1 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };
 
-/** A zero total renders NOTHING — this story is the contract proof of the null return. */
+/** An empty queue renders NOTHING — this story proves the null return. */
 export const EmptyQueueRendersNothing: Story<typeof SessionProgress> = {
-  args: { current: 0, done: 0, total: 0, label: 'Decision 0 of 0' },
+  args: { decided: 3, queued: 0 },
   render: (args: Args) => frame(<SessionProgress {...args} />),
 };

@@ -78,7 +78,7 @@ export function whyLine(row: TriageDecisionRow): string {
   }
   const phrase = readPhrase(row.readRate, row.last90dMessages);
   if (row.readRate >= 0.7) return `${phrase} · keep close`;
-  return `${phrase} · ${row.last90dMessages} messages`;
+  return `${phrase} · ${row.last90dMessages} ${row.last90dMessages === 1 ? 'message' : 'messages'}`;
 }
 
 /**
@@ -90,10 +90,17 @@ export function focusFacts(row: TriageDecisionRow): {
   unit: string;
   why: string | null;
 } {
-  const windowed = { count: row.last90dMessages, unit: 'emails in 90 days' };
+  const windowed = {
+    count: row.last90dMessages,
+    unit: `${row.last90dMessages === 1 ? 'email' : 'emails'} in 90 days`,
+  };
   if (row.protectionReason !== null) return { ...windowed, why: protectedWhy(row) };
   if (row.last90dMessages === 0) {
-    return { count: row.totalAllTime, unit: 'emails received', why: 'Quiet 90d' };
+    return {
+      count: row.totalAllTime,
+      unit: `${row.totalAllTime === 1 ? 'email' : 'emails'} received`,
+      why: 'Quiet 90d',
+    };
   }
   if (row.readRate === null) return { ...windowed, why: null };
   const phrase = readPhrase(row.readRate, row.last90dMessages);

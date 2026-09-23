@@ -158,6 +158,101 @@ describe('TriageScreen — D226 mutation wiring', () => {
     resetFetchStub();
   });
 
+  it('counts confirmed decisions when the queue backfills, then resets on mailbox switch', async () => {
+    const backfill = TRIAGE_QUEUE[2]!;
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/keep-intent',
+        respond: () =>
+          jsonOk({
+            data: {
+              senderId: GROUPON.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '66666666-6666-4666-8666-666666666666',
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const view = renderScreen(client);
+    expect(
+      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+    ).toBeInTheDocument();
+
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'k' });
+    await waitFor(() => expect(useTriageStore.getState().sessionDecidedCount).toBe(1));
+
+    // The server replaces the decided row, leaving the queue at the
+    // same length. Its size alone cannot measure decisions this session.
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageScreen
+          state={{ kind: 'ready', rows: [LINKEDIN, backfill], stats: TRIAGE_SESSION_STATS }}
+        />
+      </QueryWrapper>,
+    );
+    expect(
+      screen.getByRole('status', { name: '1 decided this session; 2 in queue' }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Focus' }));
+    expect(
+      screen.getByRole('status', {
+        name: '1 decided this session; 2 in queue; reviewing 1 of 2',
+      }),
+    ).toBeInTheDocument();
+
+    h.mailbox = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    view.rerender(
+      <QueryWrapper client={client}>
+        <TriageScreen
+          state={{ kind: 'ready', rows: [GROUPON, LINKEDIN], stats: TRIAGE_SESSION_STATS }}
+        />
+      </QueryWrapper>,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('status', {
+          name: '0 decided this session; 2 in queue; reviewing 1 of 2',
+        }),
+      ).toBeInTheDocument(),
+    );
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+  });
+
+  it('does not carry a decided count across a mailbox switch while Triage is unmounted', async () => {
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: '/api/actions/keep-intent',
+        respond: () =>
+          jsonOk({
+            data: {
+              senderId: GROUPON.senderId,
+              recordedAt: new Date().toISOString(),
+              activityLogId: '66666666-6666-4666-8666-666666666666',
+            },
+          }),
+      },
+    ]);
+    const client = createTestQueryClient();
+    const first = renderScreen(client);
+    expandRow(GROUPON.senderName);
+    fireEvent.keyDown(window, { key: 'k' });
+    await waitFor(() => expect(useTriageStore.getState().sessionDecidedCount).toBe(1));
+    first.unmount();
+
+    h.mailbox = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    renderScreen(client);
+    expect(
+      screen.getByRole('status', { name: '0 decided this session; 2 in queue' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(useTriageStore.getState().sessionMailboxId).toBe(h.mailbox));
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+  });
+
   it('keeps a delayed action on its original mailbox after the user switches', async () => {
     const originalMailbox = h.mailbox;
     let finish!: (response: Response) => void;

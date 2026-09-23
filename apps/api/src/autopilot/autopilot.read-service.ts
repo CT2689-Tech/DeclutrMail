@@ -533,6 +533,24 @@ export class AutopilotReadService {
         throw new BadRequestException('confidenceThreshold must be a finite number in [0, 1].');
       }
     }
+    if (patch.mode === 'active') {
+      const [target] = await this.db
+        .select({ presetKey: automationRules.presetKey })
+        .from(automationRules)
+        .where(
+          and(
+            eq(automationRules.mailboxAccountId, mailboxAccountId),
+            eq(automationRules.id, id),
+            eq(automationRules.isPreset, true),
+          ),
+        )
+        .limit(1);
+      if (target?.presetKey === 'auto_screen_new_senders') {
+        throw new BadRequestException(
+          'New-sender matches require review before moving mail to Later.',
+        );
+      }
+    }
 
     // Drizzle's update().set() accepts `SQL` for any column on the
     // Postgres dialect; `$inferInsert` narrows too aggressively to
@@ -1387,7 +1405,12 @@ function projectRule(
   // from the LAST mode transition (`patchRule` resets `modeChangedAt`).
   // No auto-promotion happens at elapse (locked safe variant) — the FE
   // day-7 banner (U15) prompts the user off `observeWindowElapsed`.
-  const inObserve = row.mode === 'observe';
+  // Older mailboxes may retain this preset in Active mode. The apply
+  // worker treats it as review-only, so the API must show the effective
+  // behavior rather than promise unattended moves that cannot happen.
+  const reviewOnlyNewSenders = row.presetKey === 'auto_screen_new_senders';
+  const mode = reviewOnlyNewSenders && row.mode === 'active' ? 'observe' : row.mode;
+  const inObserve = mode === 'observe';
   const observeWindowEndsAtMs = row.modeChangedAt.getTime() + OBSERVE_WINDOW_MS;
   return {
     id: row.id,
@@ -1395,10 +1418,11 @@ function projectRule(
     isPreset: row.isPreset,
     name: row.name,
     enabled: row.enabled,
-    mode: row.mode as AutopilotRuleMode,
+    mode: mode as AutopilotRuleMode,
     modeChangedAt: row.modeChangedAt.toISOString(),
-    observeWindowEndsAt: inObserve ? new Date(observeWindowEndsAtMs).toISOString() : null,
-    observeWindowElapsed: inObserve && Date.now() >= observeWindowEndsAtMs,
+    observeWindowEndsAt:
+      inObserve && !reviewOnlyNewSenders ? new Date(observeWindowEndsAtMs).toISOString() : null,
+    observeWindowElapsed: inObserve && !reviewOnlyNewSenders && Date.now() >= observeWindowEndsAtMs,
     observePromptDismissedAt: row.observePromptDismissedAt?.toISOString() ?? null,
     // Digest is an Observe-mode surface — Active/Paused rules keep the
     // wire field null even when stale pending rows exist for them

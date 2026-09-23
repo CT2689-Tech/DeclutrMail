@@ -777,10 +777,17 @@ describe('AutopilotActionWorker', () => {
     ]);
   });
 
-  it('captures the one-week wake time for an approved Later match (D245)', async () => {
-    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders');
+  it('captures the one-week wake time for a manually approved new-sender Later match (D245)', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders', 'observe');
     const { senderKey } = await seedSender(db, mailboxId, 'new@shop.com', { inboxMessages: 1 });
-    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+    const matchId = await seedApprovedMatch(
+      db,
+      mailboxId,
+      ruleId,
+      senderKey,
+      'approved',
+      'observe',
+    );
 
     await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
 
@@ -797,6 +804,29 @@ describe('AutopilotActionWorker', () => {
       .where(eq(outboxEvents.topic, TOPICS.ACTION_LABEL_APPLIED));
     expect(events).toHaveLength(1);
     expect((events[0]!.payload as { wakeAt: string }).wakeAt).toBe('2026-06-17T08:00:00.000Z');
+  });
+
+  it('retires a legacy unattended new-sender match before any Gmail mutation', async () => {
+    const ruleId = await enablePreset(db, mailboxId, 'auto_screen_new_senders');
+    const { senderKey } = await seedSender(db, mailboxId, 'account@service.com', {
+      inboxMessages: 1,
+    });
+    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+
+    expect(result.labelActionsExecuted).toBe(0);
+    expect(gmail.calls).toHaveLength(0);
+    expect(await db.select().from(actionJobs)).toHaveLength(0);
+    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+    expect(match).toMatchObject({
+      resolution: 'dismissed',
+      dismissReason: 'superseded',
+      intentApplied: false,
+    });
   });
 
   // ── D251: the Plus/Pro split is per-match, not per-tier ──────────────

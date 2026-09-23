@@ -2,71 +2,43 @@
 
 import { tokens } from '@declutrmail/shared';
 
-const { color, font, motion, radius, text } = tokens;
+const { color, font, text } = tokens;
 
-/**
- * The screen's one count — "3 of 12" plus a thin bar.
- *
- * `total` is the longest the queue has been this session and `done` is
- * how many of those have left it. Both are read off the queue itself,
- * which only shrinks on a server-confirmed decision (D226), so the bar
- * can never run ahead of reality — and an Undo that returns a sender
- * walks it back.
- *
- * `current` is what the label counts: the focus card's position in
- * focus mode, the decisions made in list mode.
- */
+/** The queue backfills, so it has no fixed completion percentage. */
 export function SessionProgress({
-  current,
-  done,
-  total,
-  label,
+  decided,
+  queued,
+  focusPosition,
 }: {
-  current: number;
-  done: number;
-  total: number;
-  /** Accessible name — says what `current` counts. */
-  label: string;
+  /** Decisions confirmed by the server in this mailbox session. */
+  decided: number;
+  /** Senders in the current rolling queue. */
+  queued: number;
+  /** Current card's position within the visible Focus queue. */
+  focusPosition?: number;
 }) {
-  if (total === 0) return null;
-  const pct = Math.round((done / total) * 100);
+  if (queued === 0) return null;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontFamily: font.sans }}>
-      <div
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={done}
-        aria-label={label}
-        style={{
-          width: 88,
-          height: 3,
-          borderRadius: radius.pill,
-          background: color.fill,
-          overflow: 'hidden',
-        }}
-      >
-        <div
-          style={{
-            width: `${pct}%`,
-            height: '100%',
-            borderRadius: radius.pill,
-            background: color.primary,
-            transition: `width ${motion.base} ${motion.ease}`,
-          }}
-        />
-      </div>
-      <span
-        style={{
-          fontSize: text.sm,
-          fontWeight: 500,
-          color: color.fgMuted,
-          fontVariantNumeric: 'tabular-nums',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {current} of {total}
+    <div
+      role="status"
+      aria-label={`${decided} decided this session; ${queued} in queue${focusPosition == null ? '' : `; reviewing ${focusPosition} of ${queued}`}`}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        fontFamily: font.sans,
+        fontSize: text.sm,
+        fontWeight: 500,
+        color: color.fgMuted,
+        fontVariantNumeric: 'tabular-nums',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span>{decided} decided</span>
+      <span aria-hidden="true">·</span>
+      <span>
+        {focusPosition == null ? `${queued} in queue` : `Reviewing ${focusPosition} of ${queued}`}
       </span>
     </div>
   );
