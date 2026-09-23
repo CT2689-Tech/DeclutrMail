@@ -1246,7 +1246,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // releases nothing yet.
     fireEvent.click(
       await within(notice).findByRole('button', {
-        name: 'No charge went through — resume checkout',
+        name: 'Review before resuming checkout',
       }),
     );
     const releaseConfirm = within(notice).getByTestId('release-confirm');
@@ -1262,7 +1262,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // Only the confirmed assertion releases the lock.
     fireEvent.click(
-      within(notice).getByRole('button', { name: 'No charge went through — resume checkout' }),
+      within(notice).getByRole('button', { name: 'Review before resuming checkout' }),
     );
     fireEvent.click(
       within(notice).getByRole('button', { name: 'I checked — no charge. Resume checkout' }),
@@ -1657,7 +1657,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // Re-arming is the user's explicit two-step no-charge assertion —
     // available immediately for a surfaced reservation.
     fireEvent.click(
-      within(notice).getByRole('button', { name: 'No charge went through — resume checkout' }),
+      within(notice).getByRole('button', { name: 'Review before resuming checkout' }),
     );
     fireEvent.click(
       within(notice).getByRole('button', { name: 'I checked — no charge. Resume checkout' }),

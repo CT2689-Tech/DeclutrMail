@@ -66,7 +66,7 @@ const FAQS: ReadonlyArray<{
   },
   {
     id: 'undo-windows',
-    q: 'What can I undo, and for how long?',
+    q: 'Can every DeclutrMail action be undone, and for how long?',
     a: faqAnswer('undo'),
   },
   {

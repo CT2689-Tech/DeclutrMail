@@ -1685,7 +1685,7 @@ function NotFoundState({ layout, onClose }: { layout: DetailLayout; onClose?: ()
               </Button>
             )
           ) : (
-            <Button tone="primary" onClick={() => window.history.back()}>
+            <Button tone="primary" onClick={() => window.location.assign('/senders')}>
               Back to Senders
             </Button>
           )

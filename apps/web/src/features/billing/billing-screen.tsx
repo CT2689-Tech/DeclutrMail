@@ -1230,7 +1230,7 @@ export function PaymentProcessingNotice({
                     ? 'No payment found — resume checkout'
                     : providerCheck === 'no_pending'
                       ? 'Nothing in flight — resume checkout'
-                      : 'No charge went through — resume checkout'
+                      : 'Review before resuming checkout'
                   : 'The change didn’t apply — let me retry'}
               </Button>
             </div>
