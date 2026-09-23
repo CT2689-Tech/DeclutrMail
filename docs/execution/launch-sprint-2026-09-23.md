@@ -35,6 +35,10 @@ The populated Brief exposed an unsafe-seeming default: a generated list of dozen
 
 At a 390 px viewport, public home, pricing, comparison and demo, plus Home, Senders, Triage, Screener, Brief, Follow-ups, Autopilot, billing, settings and sender detail were checked for horizontal overflow and error overlays. Sender detail correctly uses a full page on the narrow viewport. The root test suite passed with 6,757 tests passing and 15 skipped; typecheck, lint, formatting, the production web build, bundle budget, static-prerender checks and whitespace validation passed. These checks cover the local candidate, not the external release gates above.
 
+The local worker reported 337 unreplayed dead-letter rows, with none failed on this date or in the preceding hour. Most were old incremental-sync failures from Google token endpoint DNS failures; a fresh incremental sync succeeded. Other parked jobs include domain-icon quota/timeouts and email sends refused because local Resend delivery is not configured or the business postal address is still unset. Review the production dead-letter tail, configure and rehearse transactional email, and establish the postal address before enabling commercial email. Do not bulk-replay this historical local backlog into connected mailboxes.
+
+The founder chose to keep commercial emails disabled for launch. While the postal address remains unset, the email queue now declines all three commercial kinds before scheduling; the send worker retains its execution-time refusal for any older queued jobs. Sync-complete and other transactional notices remain eligible, subject to a configured and rehearsed delivery provider.
+
 ## Competing on value and learning quickly
 
 - Give Free users a visible first win before asking them to pay. Measure mailbox connected → real preview → accepted action → completed outcome → next-session return. Use first-party records for paid outcomes and consent-gated analytics for behavior; never send mailbox content to telemetry.
