@@ -126,6 +126,15 @@ describe('<SenderRow /> — what the row says', () => {
     renderRow({ policyType: 'unsubscribe', unsubStatus: 'endpoint_accepted' });
     expect(screen.getByText('Request accepted')).toBeInTheDocument();
   });
+
+  it('does not imply a legacy one-click request is still being delivered', () => {
+    renderRow({ policyType: 'unsubscribe', unsubscribeMethod: 'one_click', unsubStatus: null });
+    expect(screen.getByText('Outcome unknown').parentElement).toHaveAttribute(
+      'title',
+      'This earlier unsubscribe has no delivery record, so we cannot confirm its outcome',
+    );
+    expect(screen.queryByText('Requesting…')).not.toBeInTheDocument();
+  });
 });
 
 describe('<SenderRow /> — opening vs. acting', () => {

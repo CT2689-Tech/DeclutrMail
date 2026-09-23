@@ -251,8 +251,9 @@ export interface SenderListRow {
    * Truthful unsubscribe lifecycle from `sender_policies.unsub_status`.
    * One-click endpoint acceptance, manual mailto progress, terminal
    * failure/uncertainty, and unavailable channels are distinct. Legacy
-   * DB values are normalized before they reach the wire. `null` means
-   * the sender has no recorded unsubscribe intent yet.
+   * DB values are normalized before they reach the wire. For an existing
+   * unsubscribe policy, `null` can also mean the intent predates outcome
+   * tracking; clients must not display it as a request in flight.
    */
   unsubStatus: UnsubExecutionStatus | null;
 }

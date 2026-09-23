@@ -4,9 +4,9 @@ import type { Sender } from './data';
 
 /**
  * Unsubscribe status copy by execution state (D9 Wave 2 — honest states,
- * never a promised outcome). `none` covers a recorded intent with NO
- * tracked execution — a mailto sender whose manual send happens from
- * Sender Detail (D230), or method-none.
+ * never a promised outcome). A null status on a one-click intent is a
+ * legacy record from before execution tracking, so its outcome is unknown.
+ * Mailto and method-none intents have their own fallback copy.
  *
  * The ONE copy source for the status: the list row and the Sender Detail
  * header render the same map, so list ↔ detail never contradict.
@@ -51,8 +51,14 @@ export function unsubscribeStatusCopy(
   status: UnsubscribeLifecycleStatus | null | undefined,
   method: Sender['unsubscribeMethod'],
 ): { label: string; title: string } {
+  if (status == null && method === 'one_click') {
+    return {
+      label: 'Outcome unknown',
+      title: 'This earlier unsubscribe has no delivery record, so we cannot confirm its outcome',
+    };
+  }
   const resolved =
     status ??
-    (method === 'mailto' ? 'action_required' : method === 'none' ? 'unavailable' : 'requested');
+    (method === 'mailto' ? 'action_required' : method === 'none' ? 'unavailable' : 'unconfirmed');
   return UNSUB_PILL[resolved];
 }
