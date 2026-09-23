@@ -59,6 +59,7 @@ export function DecidePreview({
   inboxCount,
   inboxTotal = null,
   windowDays = null,
+  onWindowChange,
   allMailCount = null,
   allMailTotal = null,
   reach = 'inbox_only',
@@ -84,6 +85,7 @@ export function DecidePreview({
    * every other verb passes `null` — no window, acts on the whole inbox).
    */
   windowDays?: number | null;
+  onWindowChange?: ((days: number | null) => void) | undefined;
   /**
    * ADR-0028 — the sender's all-mail count (inbox + archived) from the
    * same composite preview. `null` = the API predates the field or the
@@ -213,7 +215,9 @@ export function DecidePreview({
   const activeMailboxEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
 
   const previewBlocked = moves && (inboxCount === 'loading' || inboxCount === 'unavailable');
-  const confirmDisabled = confirming || previewBlocked;
+  // A zero-match Delete would only remove the review row while moving no
+  // email. Keep is the explicit app-only decision for that intent.
+  const confirmDisabled = confirming || previewBlocked || (moves && liveCount === 0);
 
   // A Protected sender decided EXPLICITLY, one at a time — the path
   // D245 leaves open (it excludes Protected from bulk and automatic
@@ -255,7 +259,7 @@ export function DecidePreview({
   // Same "(older than N)" qualifier the senders confirm modal renders
   // beside its own live count when a window is active.
   const windowQualifier =
-    !allMailReach && windowDays !== null
+    windowDays !== null
       ? ` (older than ${WINDOW_PRESET_LABELS[windowDays] ?? `${windowDays} days`})`
       : '';
 
@@ -381,6 +385,45 @@ export function DecidePreview({
             ]}
           />
         </div>
+      )}
+
+      {verb === 'delete' && onWindowChange && (
+        <label
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: space[2],
+            marginTop: space[3],
+            fontSize: text.sm,
+            color: color.fgMuted,
+          }}
+        >
+          How far back to delete
+          <select
+            aria-label="How far back to delete"
+            value={windowDays === null ? 'all' : String(windowDays)}
+            onChange={(event) =>
+              onWindowChange(
+                event.currentTarget.value === 'all' ? null : Number(event.currentTarget.value),
+              )
+            }
+            style={{
+              minHeight: 40,
+              padding: `0 ${space[3]}px`,
+              border: `1px solid ${color.lineSoft}`,
+              borderRadius: radius.md,
+              background: color.card,
+              color: color.fg,
+              font: 'inherit',
+            }}
+          >
+            <option value="all">Any age</option>
+            <option value="30">30 days+</option>
+            <option value="90">3 months+</option>
+            <option value="180">6 months+</option>
+            <option value="365">1 year+</option>
+          </select>
+        </label>
       )}
 
       {/* Protected acknowledgement (D42/D245) — stated before the

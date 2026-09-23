@@ -134,15 +134,17 @@ describe('every shared public content variant has a usable next step', () => {
 });
 
 describe('truthful Watch first activation guidance', () => {
-  it('renders both optional watching and immediate activation without a required wait', () => {
+  it('distinguishes review-only low-engagement Archive from eligible automatic presets', () => {
     const guide = text(
       renderToStaticMarkup(
         <ArticlePage article={HOW_TO_ARTICLES['auto-archive-future-emails-in-gmail']!} />,
       ),
     );
-    expect(guide).toContain('choose Act now for automatic actions or Watch first');
-    expect(guide).toContain('There is no mandatory waiting period');
-    expect(guide).toContain('does not automatically activate the rule');
+    expect(guide).toContain(
+      'always collects matches for review; it cannot be set to act on its own',
+    );
+    expect(guide).toContain('For other eligible presets, switching to Active requires a preview');
+    expect(guide).toContain('no rule promotes itself automatically');
     expect(guide).not.toMatch(/Every preset begins in|After seven days, you review/);
   });
 

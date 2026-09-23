@@ -30,7 +30,12 @@ const UnsubMailtoCallout = dynamic(
 );
 import { useActionStatus } from '@/lib/api/use-action';
 import { useCompositePreview } from '@/lib/api/use-action';
-import { isTerminalStatus, UNSUB_AMBIGUOUS_ERROR_CODE, type ActionReach } from '@/lib/api/actions';
+import {
+  isTerminalStatus,
+  UNSUB_AMBIGUOUS_ERROR_CODE,
+  type ActionReach,
+  type CompositeActionPreviewResult,
+} from '@/lib/api/actions';
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { trackActionConfirmed } from '@/lib/action-analytics';
@@ -57,6 +62,20 @@ import { ScreenerRow } from './screener-row';
 import { resolveScreenerShortcut, VERB_LABEL } from './verbs';
 
 const { color, text } = tokens;
+
+/** Select the exact server preview bucket the Delete choice will enqueue. */
+function deleteWindowCount(
+  counts: CompositeActionPreviewResult['counts'] | undefined,
+  days: number | null,
+): number | undefined {
+  if (!counts) return undefined;
+  if (days === null) return counts.all;
+  if (days === 30) return counts.olderThan30d;
+  if (days === 90) return counts.olderThan90d;
+  if (days === 180) return counts.olderThan180d;
+  if (days === 365) return counts.olderThan365d;
+  return undefined;
+}
 
 /**
  * D226 overdue release — how long the polled decision handle may stay
@@ -188,6 +207,8 @@ export function ScreenerScreen({
     wakeAt: string | null;
     /** ADR-0028 — Delete's reach. Reset to the safe default per verb click. */
     reach: ActionReach;
+    /** Delete defaults to the safe six-month window, then follows the user's choice. */
+    windowDays: number | null;
   } | null>(null);
   /** The enqueued label-modify action being polled to terminal. */
   const [activeAction, setActiveAction] = useState<{
@@ -274,7 +295,7 @@ export function ScreenerScreen({
     (pending.verb === 'archive' || pending.verb === 'later' || pending.verb === 'delete')
       ? pendingRow.senderId
       : null;
-  const compositePreview = useCompositePreview(previewSenderId);
+  const compositePreview = useCompositePreview(previewSenderId, pending?.mailboxId);
   useEffect(() => {
     if (!compositePreview.isError || previewSenderId == null) return;
     captureFeatureException(compositePreview.error, {
@@ -282,12 +303,8 @@ export function ScreenerScreen({
       reason: 'composite_preview',
     });
   }, [compositePreview.isError, compositePreview.error, previewSenderId]);
-  // QA-delete-20260829-01 (2026-08-30) — Delete defaults to the same
-  // safer DEFAULT_DELETE_WINDOW_DAYS window the senders confirm modal
-  // applies; every other windowed verb keeps acting on the whole
-  // inbox. Screener offers no chip to widen it (unlike the modal) —
-  // narrower scope only, never a silent behavior change the reader
-  // cannot see (the title + notice below say so).
+  // Delete starts at the same safer six-month window as Senders. The
+  // reader can widen it here when newer mail would otherwise count zero.
   const isPendingDelete = pending?.verb === 'delete';
   // isFetching keeps a reopened preview in 'loading' while cached data
   // refetches — a cached count must never arm confirm (D226).
@@ -296,7 +313,8 @@ export function ScreenerScreen({
     : compositePreview.isFetching || compositePreview.data == null
       ? ('loading' as const)
       : isPendingDelete
-        ? compositePreview.data.counts.olderThan180d
+        ? (deleteWindowCount(compositePreview.data.counts, pending?.windowDays ?? null) ??
+          'unavailable')
         : compositePreview.data.counts.all;
   // The TRUE un-windowed inbox count, for the empty-window notice (the
   // same `inboxTotal` the senders confirm modal reconciles against).
@@ -308,7 +326,8 @@ export function ScreenerScreen({
   const previewAllMailCount =
     typeof previewInboxCount === 'number'
       ? isPendingDelete
-        ? (compositePreview.data?.allMail?.counts.olderThan180d ?? null)
+        ? (deleteWindowCount(compositePreview.data?.allMail?.counts, pending?.windowDays ?? null) ??
+          null)
         : (compositePreview.data?.allMail?.counts.all ?? null)
       : null;
   // Codex review 2026-09-03 (QA-delete-20260903-01, round 2): the TRUE
@@ -320,7 +339,12 @@ export function ScreenerScreen({
   const previewAllMailTotal = compositePreview.data?.allMail?.counts.all ?? null;
   const pendingMovesMail =
     pending?.verb === 'archive' || pending?.verb === 'later' || pending?.verb === 'delete';
-  const pendingPreviewBlocked = pendingMovesMail && typeof previewInboxCount !== 'number';
+  const selectedPreviewCount =
+    isPendingDelete && pending?.reach === 'all_mail' && previewAllMailCount !== null
+      ? previewAllMailCount
+      : previewInboxCount;
+  const pendingPreviewBlocked =
+    pendingMovesMail && (typeof selectedPreviewCount !== 'number' || selectedPreviewCount === 0);
 
   // Drive the enqueued-action lifecycle off the polled status.
   useEffect(() => {
@@ -465,6 +489,7 @@ export function ScreenerScreen({
         verb,
         wakeAt: verb === 'later' ? defaultLaterWakeAtIso() : null,
         reach: 'inbox_only',
+        windowDays: verb === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null,
       });
       setExpandedRowId(row.id);
     },
@@ -499,7 +524,9 @@ export function ScreenerScreen({
           // the mutation exactly as it did in the preview that armed
           // this confirm; the two can never show one count and act on
           // another.
-          ...(verb === 'delete' ? { olderThanDays: DEFAULT_DELETE_WINDOW_DAYS } : {}),
+          ...(verb === 'delete' && pending.windowDays !== null
+            ? { olderThanDays: pending.windowDays }
+            : {}),
           // ADR-0028 — only the non-default reach travels, and only on
           // Delete (the one verb the chips render for; the server
           // rejects it anywhere else). Gated on the same all-mail block
@@ -796,7 +823,12 @@ export function ScreenerScreen({
                   pendingVerb={pending?.rowId === row.id ? pending.verb : null}
                   previewInboxCount={previewInboxCount}
                   previewInboxTotal={previewInboxTotal}
-                  previewWindowDays={isPendingDelete ? DEFAULT_DELETE_WINDOW_DAYS : null}
+                  previewWindowDays={isPendingDelete ? pending?.windowDays : null}
+                  onWindowChange={(windowDays) =>
+                    setPending((cur) =>
+                      cur && cur.rowId === row.id ? { ...cur, windowDays } : cur,
+                    )
+                  }
                   previewAllMailCount={previewAllMailCount}
                   previewAllMailTotal={previewAllMailTotal}
                   pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}

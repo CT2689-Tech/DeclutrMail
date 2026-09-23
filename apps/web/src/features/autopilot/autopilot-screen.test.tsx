@@ -117,7 +117,7 @@ function renderRoute() {
 const PATTERN_SUGGESTION: AutopilotPatternSuggestionDto = {
   ruleId: AUTO_ARCHIVE_LOW_ENGAGEMENT.id,
   presetKey: 'auto_archive_low_engagement',
-  ruleName: 'Auto-archive low-engagement',
+  ruleName: 'Review low-engagement senders for Archive',
   actionKind: 'archive',
   scope: 'account',
   evidenceCount: 4,
@@ -205,7 +205,7 @@ describe('AutopilotScreen — edge states', () => {
     ).toHaveAttribute('href', '#pending-heading');
     // Two groups — auto-archive (2 rows) + newsletter graveyard (1 row).
     const archiveGroup = screen.getByRole('list', {
-      name: /pending suggestions from auto-archive low-engagement — rows/i,
+      name: /pending suggestions from review low-engagement senders for archive — rows/i,
     });
     expect(within(archiveGroup).getAllByRole('listitem')).toHaveLength(2);
     const graveyardGroup = screen.getByRole('list', {
@@ -222,7 +222,7 @@ describe('AutopilotScreen — edge states', () => {
     }));
     renderScreen({ kind: 'ready', rules: PRESET_RULES_OBSERVE, suggestions });
     const group = screen.getByRole('list', {
-      name: /pending suggestions from auto-archive low-engagement — rows/i,
+      name: /pending suggestions from review low-engagement senders for archive — rows/i,
     });
     expect(within(group).getAllByRole('listitem')).toHaveLength(8);
     fireEvent.click(screen.getByRole('button', { name: 'Show all 50 suggestions' }));
@@ -429,8 +429,8 @@ describe('AutopilotScreen — rules management (D101)', () => {
   });
 
   it('explains Observe, Active, Paused, and Off consequences at rule level', () => {
-    const active = { ...PRESET_RULES_OBSERVE[0]!, id: 'active-rule', mode: 'active' as const };
-    const paused = { ...PRESET_RULES_ALL_PAUSED[0]!, id: 'paused-rule' };
+    const active = { ...NEWSLETTER_GRAVEYARD, id: 'active-rule', mode: 'active' as const };
+    const paused = { ...PRESET_RULES_ALL_PAUSED[1]!, id: 'paused-rule' };
     const off = { ...PRESET_RULES_ALL_FIVE[4]!, id: 'off-rule' };
     renderScreen({
       kind: 'ready',
@@ -439,7 +439,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     });
 
     const rulesList = screen.getByRole('list', { name: /autopilot rules/i });
-    expect(within(rulesList).getByText(/matches become suggestions/i)).toBeInTheDocument();
+    expect(within(rulesList).getByText(/matches wait for your approval/i)).toBeInTheDocument();
     expect(within(rulesList).getByText(/future matches run automatically/i)).toBeInTheDocument();
     expect(within(rulesList).getByText(/does nothing until you resume/i)).toBeInTheDocument();
     // Off needs no sentence and no status word — the switch says it, once.
@@ -460,7 +460,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
         // The 7-day window belongs to the SENDER count only; the message
         // count is the senders' whole current inbox backlog. The old copy
         // attached "in the last 7 days" to both (audit 2026-08-21).
-        /would archive 212 emails now, from 34 senders matched in the last 7 days/i,
+        /34 senders matched in the last 7 days.*212 emails could be archived if you approve them/i,
       ),
     ).toBeInTheDocument();
     // Unsubscribe preset — sender count only (request acts per sender).
@@ -469,15 +469,12 @@ describe('AutopilotScreen — rules management (D101)', () => {
         /would have requested unsubscribe from 2 senders in the last 7 days/i,
       ),
     ).toBeInTheDocument();
-    // Disabled rule (long-dormant) shows NO digest line even in observe mode.
-    // Matched on the leading "Would " every digest sentence opens with,
-    // not on "would have": only the unsubscribe branch still says that,
-    // because it is the one branch whose number really was windowed.
+    // Review-only rules describe approval instead of unattended actions.
     expect(
       within(rulesList).getByText(/could move to Later if you approve them/i),
     ).toBeInTheDocument();
     expect(within(rulesList).queryAllByText(/^Would (archive|move|have requested)/i)).toHaveLength(
-      3,
+      2,
     );
   });
 
@@ -496,7 +493,9 @@ describe('AutopilotScreen — rules management (D101)', () => {
 
     renderScreen({ kind: 'ready', rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT], suggestions: [] });
     await userEvent.click(
-      screen.getByRole('switch', { name: /disable rule auto-archive low-engagement/i }),
+      screen.getByRole('switch', {
+        name: /disable rule review low-engagement senders for archive/i,
+      }),
     );
 
     await waitFor(() => expect(observed).toHaveLength(1));
@@ -568,6 +567,38 @@ describe('AutopilotScreen — rules management (D101)', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText(/no mail moves until you approve/i)).toBeInTheDocument();
     expect(within(dialog).queryByText(/act now/i)).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Turn on' }));
+    await waitFor(() => expect(observed).toEqual([{ enabled: true, mode: 'observe' }]));
+  });
+
+  it('offers review only when turning on low-engagement Archive', async () => {
+    const observed: unknown[] = [];
+    const off = { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: false };
+    installFetchStub([
+      {
+        method: 'POST',
+        path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
+        respond: () => jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: off.id } }),
+      },
+      {
+        method: 'PATCH',
+        path: /\/api\/autopilot\/rules\/[^/]+$/,
+        respond: async (req) => {
+          observed.push(await req.json());
+          return jsonOk({ data: { ...off, enabled: true, mode: 'observe' } });
+        },
+      },
+    ]);
+    renderScreen({ kind: 'ready', rules: [off], suggestions: [] });
+
+    await userEvent.click(
+      screen.getByRole('switch', {
+        name: /enable rule review low-engagement senders for archive/i,
+      }),
+    );
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/no mail moves until you approve/i)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('radio', { name: /act now/i })).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Turn on' }));
     await waitFor(() => expect(observed).toEqual([{ enabled: true, mode: 'observe' }]));
   });
@@ -869,7 +900,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     renderScreen({ kind: 'ready', rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT], suggestions: [] });
     openAllRuleDetails();
     const slider = screen.getByRole('slider', {
-      name: /confidence threshold for rule auto-archive low-engagement/i,
+      name: /confidence threshold for rule review low-engagement senders for archive/i,
     });
     fireEvent.change(slider, { target: { value: '0.9' } });
     expect(observed).toHaveLength(0); // no PATCH while dragging
@@ -891,7 +922,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     renderScreen({ kind: 'ready', rules: [AUTO_ARCHIVE_LOW_ENGAGEMENT], suggestions: [] });
     openAllRuleDetails();
     const slider = screen.getByRole('slider', {
-      name: /confidence threshold for rule auto-archive low-engagement/i,
+      name: /confidence threshold for rule review low-engagement senders for archive/i,
     }) as HTMLInputElement;
 
     fireEvent.change(slider, { target: { value: '0.9' } });
@@ -922,20 +953,20 @@ describe('AutopilotScreen — rules management (D101)', () => {
     openAllRuleDetails();
     await userEvent.click(
       screen.getByRole('button', {
-        name: /preview matches for rule auto-archive low-engagement/i,
+        name: /preview matches for rule review low-engagement senders for archive/i,
       }),
     );
 
     await waitFor(() => expect(observed).toHaveLength(1));
     expect(observed[0]).toBe(`/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}/preview`);
     const panel = await screen.findByRole('region', {
-      name: /current match preview for rule auto-archive low-engagement/i,
+      name: /current match preview for rule review low-engagement senders for archive/i,
     });
     // The would-match count, out of the senders checked…
     expect(within(panel).getByText(/12 of 148 senders checked match/i)).toBeInTheDocument();
-    // …and the one number the rule would act on now.
+    // …and the one number a person can review now.
     expect(within(panel).getByText('10')).toBeInTheDocument();
-    expect(within(panel).getByText('senders actionable now')).toBeInTheDocument();
+    expect(within(panel).getByText('senders ready for review')).toBeInTheDocument();
   });
 });
 
@@ -1021,8 +1052,8 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // that no longer holds `autopilot-active`; the apply worker skips
     // it, so the card must not assert automation that is not happening.
     const withActive = [
-      { ...PRESET_RULES_OBSERVE[0]!, mode: 'active' as const },
-      ...PRESET_RULES_OBSERVE.slice(1),
+      { ...PRESET_RULES_OBSERVE[1]!, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.filter((_, index) => index !== 1),
     ];
     renderScreen({ kind: 'ready', rules: withActive, suggestions: [] });
 
@@ -1065,8 +1096,8 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
   it('pro: an active rule still renders the green Active pill', () => {
     authState.tier = 'pro';
     const withActive = [
-      { ...PRESET_RULES_OBSERVE[0]!, mode: 'active' as const },
-      ...PRESET_RULES_OBSERVE.slice(1),
+      { ...PRESET_RULES_OBSERVE[1]!, mode: 'active' as const },
+      ...PRESET_RULES_OBSERVE.filter((_, index) => index !== 1),
     ];
     renderScreen({ kind: 'ready', rules: withActive, suggestions: [] });
 
@@ -1093,7 +1124,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
   it('hides the day-7 prompt for a dismissed rule (D10 — persisted dismissal)', () => {
     const dismissed = PRESET_RULES_OBSERVE.map((r) =>
-      r.id === AUTO_ARCHIVE_LOW_ENGAGEMENT.id
+      r.id === NEWSLETTER_GRAVEYARD.id
         ? { ...r, observePromptDismissedAt: '2026-05-25T10:00:00.000Z' }
         : r,
     );
@@ -1103,7 +1134,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
   it('hides the day-7 prompt when the window elapsed with ZERO pending matches (D10)', () => {
     const quietWeek = PRESET_RULES_OBSERVE.map((r) =>
-      r.id === AUTO_ARCHIVE_LOW_ENGAGEMENT.id
+      r.id === NEWSLETTER_GRAVEYARD.id
         ? { ...r, observeDigest: { pendingTotal: 0, senders7d: 0, inboxMessagesNow: 0 } }
         : r,
     );
@@ -1115,7 +1146,9 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     renderScreen(ready());
     const banner = screen.getByRole('status');
     expect(
-      within(banner).getByText(/would archive 212 emails now, from 34 senders matched/i),
+      within(banner).getByText(
+        /would have requested unsubscribe from 34 senders in the last 7 days/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -1129,7 +1162,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
           observed.push({ path: url.pathname, body: await req.json() });
           return jsonOk({
             data: {
-              ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+              ...NEWSLETTER_GRAVEYARD,
               observePromptDismissedAt: '2026-05-26T10:00:00.000Z',
             },
           });
@@ -1140,12 +1173,12 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     renderScreen(ready());
     await userEvent.click(
       screen.getByRole('button', {
-        name: /dismiss activation prompt for rule auto-archive low-engagement/i,
+        name: /dismiss activation prompt for rule newsletter graveyard/i,
       }),
     );
 
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]!.path).toBe(`/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}`);
+    expect(observed[0]!.path).toBe(`/api/autopilot/rules/${NEWSLETTER_GRAVEYARD.id}`);
     expect(observed[0]!.body).toEqual({ observePromptDismissed: true });
   });
 
@@ -1161,7 +1194,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
         path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
         respond: async () => {
           await previewGate;
-          return jsonOk({ data: RULE_PREVIEW_RESULT });
+          return jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: NEWSLETTER_GRAVEYARD.id } });
         },
       },
       {
@@ -1169,14 +1202,14 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
         path: /\/api\/autopilot\/rules\/[^/]+$/,
         respond: async (req, url) => {
           observed.push({ path: url.pathname, body: await req.json() });
-          return jsonOk({ data: { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, mode: 'active' } });
+          return jsonOk({ data: { ...NEWSLETTER_GRAVEYARD, mode: 'active' } });
         },
       },
     ]);
 
     renderScreen(ready());
     await userEvent.click(
-      screen.getByRole('button', { name: /switch rule auto-archive low-engagement to active/i }),
+      screen.getByRole('button', { name: /switch rule newsletter graveyard to active/i }),
     );
 
     // Modal renders — the preview MUST be visible before the mutation,
@@ -1193,12 +1226,12 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // up front, the activation report (no longer under its own heading)
     // in Details.
     expect(within(dialog).getByText('senders actionable now')).toBeInTheDocument();
-    expect(within(dialog).getByText('10 senders · 74 inbox emails')).toBeInTheDocument();
+    expect(within(dialog).getByText('10 requests · 74 inbox emails')).toBeInTheDocument();
     // Said once per surface — in the note; the Details totals omit it.
     expect(within(dialog).getAllByText(/3 Protected senders are skipped/i)).toHaveLength(1);
     expect(within(dialog).getByText('34 matches')).toBeInTheDocument();
     expect(within(dialog).getByText(/^100 actions, the rest wait/)).toBeInTheDocument();
-    expect(within(dialog).getByText(/Undo from Activity for 30 days/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Unsubscribe requests can’t be undone/i)).toBeInTheDocument();
 
     await userEvent.click(confirm);
     await waitFor(() => expect(observed).toHaveLength(1));
@@ -1213,14 +1246,16 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
         path: /\/api\/autopilot\/rules\/[^/]+\/preview$/,
         respond: () => {
           previewCalls += 1;
-          return previewCalls === 1 ? jsonServerError() : jsonOk({ data: RULE_PREVIEW_RESULT });
+          return previewCalls === 1
+            ? jsonServerError()
+            : jsonOk({ data: { ...RULE_PREVIEW_RESULT, ruleId: NEWSLETTER_GRAVEYARD.id } });
         },
       },
     ]);
 
     renderScreen(ready());
     await userEvent.click(
-      screen.getByRole('button', { name: /switch rule auto-archive low-engagement to active/i }),
+      screen.getByRole('button', { name: /switch rule newsletter graveyard to active/i }),
     );
 
     const dialog = screen.getByRole('dialog', { name: /switch .* to active/i });
@@ -1288,7 +1323,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
   it('going Active, says the rule takes over the collected backlog', () => {
     render(
       <ActivateRuleModal
-        rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
+        rule={NEWSLETTER_GRAVEYARD}
         intent="enable"
         canRunUnattended
         pendingCount={3}
@@ -1345,7 +1380,7 @@ describe('ActivateRuleModal — action-specific recovery', () => {
   // tell "threaded from the caller" apart from "happens to match the
   // manifest" — every tier is currently 30 days, so a 30 here would
   // pass against the old hardcoded constant too.
-  it('quotes the CALLER’S undo window, not a tier constant', () => {
+  it('does not promise undo for a review-only rule before approval', () => {
     render(
       <ActivateRuleModal
         rule={AUTO_ARCHIVE_LOW_ENGAGEMENT}
@@ -1362,7 +1397,10 @@ describe('ActivateRuleModal — action-specific recovery', () => {
     );
 
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText(/Undo from Activity for 12 days/)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(/No mail moves until you approve a suggestion/i),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByText(/Undo from Activity for 12 days/)).not.toBeInTheDocument();
   });
 });
 
@@ -1450,7 +1488,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     renderScreen(ready());
     await userEvent.click(
       screen.getByRole('button', {
-        name: /review all suggestions from rule auto-archive low-engagement/i,
+        name: /review all suggestions from rule review low-engagement senders for archive/i,
       }),
     );
 
@@ -1497,7 +1535,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     expect(screen.getByText('Review all ~214')).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole('button', {
-        name: /review all suggestions from rule auto-archive low-engagement/i,
+        name: /review all suggestions from rule review low-engagement senders for archive/i,
       }),
     );
 
@@ -1526,7 +1564,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     renderScreen(ready());
     // "Approve selected" is disabled until something is checked.
     const approveSelected = screen.getByRole('button', {
-      name: /review selected suggestions from rule auto-archive low-engagement/i,
+      name: /review selected suggestions from rule review low-engagement senders for archive/i,
     });
     expect(approveSelected).toBeDisabled();
 
@@ -1562,7 +1600,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     renderScreen(ready());
     await userEvent.click(
       screen.getByRole('button', {
-        name: /review all suggestions from rule auto-archive low-engagement/i,
+        name: /review all suggestions from rule review low-engagement senders for archive/i,
       }),
     );
     const dialog = screen.getByRole('dialog', { name: /approve 2 suggestions/i });

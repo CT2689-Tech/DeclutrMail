@@ -125,7 +125,7 @@ const DECLUTR = {
   futureMail: {
     summary: 'Separate Autopilot rules',
     detail:
-      'Autopilot rules are configured separately — you preview a rule before turning it on, and it then acts on future matches, or collects them for your batch approval if you choose Watch first. A one-time Archive or Later action does not automatically become a future-mail rule.',
+      'Autopilot rules are configured separately and previewed before they run. Low-engagement Archive and new-sender Later matches always wait for your approval; other presets can act automatically if you choose. A one-time Archive or Later action does not automatically become a future-mail rule.',
     state: 'limited',
   },
   unsubscribe: {

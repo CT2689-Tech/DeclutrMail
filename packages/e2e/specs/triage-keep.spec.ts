@@ -93,7 +93,11 @@ test('Keep via K: preview-on-cancel leaves queue intact; Keep removes the row se
   await page.keyboard.press('a');
   const sheet = page.getByRole('dialog');
   await expect(sheet).toBeVisible();
-  await expect(page.getByRole('region', { name: `Preview · Archive ${senderName}` })).toBeVisible();
+  // The region wraps a fixed-position sheet, so its own box has no visible
+  // area even while the dialog is on screen.
+  await expect(page.getByRole('region', { name: `Preview · Archive ${senderName}` })).toHaveCount(
+    1,
+  );
   // The count + verb is the title ("Archive 12 emails?"); whose email and
   // where it goes is the subtitle.
   await expect(sheet.getByRole('heading', { level: 2 })).toHaveText(/^Archive .*\?$/);

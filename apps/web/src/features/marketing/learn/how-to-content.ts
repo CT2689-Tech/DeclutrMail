@@ -498,7 +498,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
     example: {
       label: 'Made-up example',
       caption:
-        'Made-up rule matches show how optional Watch first lets you review evidence before automatic actions.',
+        'Made-up rule matches show how the low-engagement preset waits for your review before moving email.',
       rows: [
         {
           sender: 'Product Roundup',
@@ -520,7 +520,7 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         title: 'Choose between an exact filter and an observed preset',
         paragraphs: [
           'Gmail filters are best when you can state an exact condition such as one sender address or a stable subject prefix. They are transparent, free, and run entirely in Gmail. A filter can Skip Inbox, apply a label, mark as read, forward, or delete future matches.',
-          'DeclutrMail’s launch automation uses presets instead of a custom rule builder. Its “Auto-archive low-engagement” preset uses sender volume and Gmail marked-read flags, not proof of reading. On Plus and Pro, preview the sample and affected count, then choose Act now for automatic actions or Watch first to collect matches without moving email. There is no mandatory waiting period before choosing Act now.',
+          'DeclutrMail’s launch automation uses presets instead of a custom rule builder. Its low-engagement Archive preset uses sender volume and Gmail marked-read flags, not proof of reading. On Plus and Pro, preview the sample and affected count, then turn it on to collect suggestions. You approve each match before mail moves.',
         ],
       },
       {
@@ -556,25 +556,25 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
         id: 'declutrmail-autopilot',
         title: 'Use DeclutrMail Autopilot without blind activation',
         paragraphs: [
-          'Autopilot ships five launch presets on Plus and Pro; turning one on previews what it would do, then lets it act on future matches without per-batch approval. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
-          'Watch first is an optional way to gather evidence. You approve or dismiss its collected matches yourself. Switching to Active requires an activation preview; it is a deliberate choice, never an automatic promotion.',
+          'Autopilot ships five launch presets on Plus and Pro. The low-engagement Archive preset always collects matches for review; it cannot be set to act on its own. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
+          'You approve or dismiss collected matches yourself. For other eligible presets, switching to Active requires a preview and a deliberate choice; no rule promotes itself automatically.',
         ],
         steps: [
           {
-            name: 'Optionally choose Watch first',
-            text: 'Watch first records would-be matches without moving email. Choose it in the turn-on preview if you want to review matches before allowing automatic actions.',
+            name: 'Turn on review',
+            text: 'The low-engagement Archive preset records possible matches without moving email. It always waits for your approval.',
           },
           {
             name: 'Wait for representative traffic',
-            text: 'If you choose Watch first, let it collect representative traffic. The seven-day review reminder does not automatically activate the rule or impose a required wait before activation.',
+            text: 'Let the preset collect representative traffic, then review the senders and current Inbox counts before deciding.',
           },
           {
             name: 'Review names, counts, and exceptions',
-            text: 'Review the sample before turning on the rule. Mark important senders Protected so automatic cleanup leaves them alone.',
+            text: 'Review the sample before turning on the rule. Mark important senders Protected so they stay out of bulk and automatic cleanup.',
           },
           {
-            name: 'Activate only if the sample is acceptable',
-            text: 'The activation preview describes the first sweep and future behavior. Active applies the preset to future matches; you can pause it later. For this archive preset, archived mail remains in Gmail.',
+            name: 'Approve individual matches',
+            text: 'Approve only the senders whose Inbox mail you want archived. You can dismiss suggestions or pause the rule later. Archived mail remains in Gmail All Mail.',
           },
         ],
       },

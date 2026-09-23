@@ -41,7 +41,7 @@ afterEach(() => {
   resetFetchStub();
 });
 
-function livePreviewHandler(all: number, allMailTotal?: number) {
+function livePreviewHandler(all: number, allMailTotal?: number, olderThan180d = all) {
   return {
     method: 'GET' as const,
     path: '/api/actions/preview',
@@ -65,7 +65,7 @@ function livePreviewHandler(all: number, allMailTotal?: number) {
             // these fixtures realistic (a sender whose mail is all older
             // than 6 months); a fixture that left this at 0 would now
             // silently test Delete's empty-window edge case instead.
-            olderThan180d: all,
+            olderThan180d,
             olderThan365d: all,
           },
           recentMessages: {
@@ -233,9 +233,13 @@ describe('Screener keyboard handler (#220, D226)', () => {
 describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () => {
   const actionId = '99999999-9999-4999-8999-999999999999';
 
-  function installDecideStub(opts: { allMailTotal?: number; bodies: Record<string, unknown>[] }) {
+  function installDecideStub(opts: {
+    allMailTotal?: number;
+    olderThan180d?: number;
+    bodies: Record<string, unknown>[];
+  }) {
     installFetchStub([
-      livePreviewHandler(2, opts.allMailTotal),
+      livePreviewHandler(2, opts.allMailTotal, opts.olderThan180d ?? 2),
       {
         method: 'POST',
         path: '/api/screener/decide',
@@ -310,6 +314,24 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(Object.keys(bodies[0]!)).not.toContain('reach');
+  });
+
+  it('widens a zero-match Delete to any age and sends the matching unwindowed scope', async () => {
+    const bodies: Record<string, unknown>[] = [];
+    installDecideStub({ allMailTotal: 2, olderThan180d: 0, bodies });
+    renderReady();
+    expandFirstRow();
+    fireEvent.keyDown(window, { key: 'd' });
+    await screen.findByRole('combobox', { name: 'How far back to delete' });
+    expect(screen.getByRole('button', { name: /Confirm Delete for/ })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
+      target: { value: 'all' },
+    });
+    expect(screen.getByRole('button', { name: /Confirm Delete for/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /Confirm Delete for/ }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).not.toHaveProperty('olderThanDays');
   });
 
   it('hides the chips entirely against an API without the all-mail block (deploy skew)', async () => {

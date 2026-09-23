@@ -554,7 +554,7 @@ function ReadyState({
       previewVerb === 'Later')
       ? (pendingAction.senders[0]?.id ?? null)
       : null;
-  const compositePreviewQuery = useCompositePreview(previewSenderId);
+  const compositePreviewQuery = useCompositePreview(previewSenderId, actionMailboxId);
   useEffect(() => {
     if (!compositePreviewQuery.isError || previewSenderId == null) return;
     // architecture-guardian 2026-06-06: route the failure through

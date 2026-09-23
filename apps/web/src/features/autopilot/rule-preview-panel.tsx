@@ -167,7 +167,11 @@ export function RulePreviewSample({
 }) {
   if (result.sample.length === 0) {
     return (
-      <span style={{ fontSize: text.sm, color: color.fgMuted }}>Nothing matches right now.</span>
+      <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+        {result.wouldMatchCount > 0
+          ? 'Matching senders have no Inbox mail to act on right now.'
+          : 'Nothing matches right now.'}
+      </span>
     );
   }
   return (

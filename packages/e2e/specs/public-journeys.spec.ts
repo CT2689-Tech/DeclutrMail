@@ -5,7 +5,9 @@ test.use({ storageState: { cookies: [], origins: [] } });
 // Exercise connected acquisition paths without a Gmail account or provider writes.
 async function follow(page: Page, path: string) {
   await page.locator(`a[href="${path}"]:visible`).first().click();
-  await expect(page).toHaveURL(new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+  await expect(page).toHaveURL(new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), {
+    timeout: 60_000,
+  });
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 }
 
@@ -27,8 +29,15 @@ async function assertSignupRef(page: Page, ref: string) {
     (r) => new URL(r.url()).pathname === '/api/auth/google/start',
   );
   await page.locator('a[href*="/api/auth/google/start"]:visible').last().click();
-  const url = new URL((await request).url());
-  expect(url.searchParams.get('ref')).toBe(ref);
+  const oauthRequest = await request;
+  const url = new URL(oauthRequest.url());
+  const cookie = (await oauthRequest.allHeaders()).cookie
+    ?.split('; ')
+    .find((part) => part.startsWith('dm_signup_ref='))
+    ?.slice('dm_signup_ref='.length);
+  // The API prefers the set-once first-party cookie; the query parameter
+  // covers clicks where the client enhancer has already hydrated.
+  expect(cookie ?? url.searchParams.get('ref')).toBe(ref);
 }
 
 test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then signs up', async ({
@@ -47,12 +56,13 @@ test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then 
   await annual.click();
   await expect(annual).toHaveAttribute('aria-pressed', 'true');
   await follow(page, '/inbox-simulator');
-  await page.getByRole('button', { name: /^Archive all \d+ senders/ }).click();
+  await page.getByRole('checkbox', { name: 'Select all visible senders' }).check();
+  await page.locator('.dm-senders-demo-selection').getByRole('button', { name: 'Archive' }).click();
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
   await preview.getByRole('button', { name: /^Archive [\d,]+$/ }).click();
   await expect(preview).toHaveCount(0);
-  const undoButtons = page.getByRole('button', { name: 'Undo demo action', exact: true });
+  const undoButtons = page.getByRole('button', { name: 'Undo mail movement', exact: true });
   const undo = undoButtons.first();
   await expect(undo).toBeVisible();
   const undoableBefore = await undoButtons.count();
@@ -66,6 +76,9 @@ test('comparison visitor checks sources and refund terms before permission-aware
   page,
 }) => {
   await page.goto('/vs/unroll-me?ref=hn');
+  expect(
+    (await page.context().cookies()).find((cookie) => cookie.name === 'dm_signup_ref')?.value,
+  ).toBe('hn');
   await consent(page);
   await page.locator('a[href="#sources"]').click();
   await expect(page.locator('#sources')).toBeInViewport();

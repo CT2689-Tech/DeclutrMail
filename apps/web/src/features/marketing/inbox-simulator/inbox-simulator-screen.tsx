@@ -1200,17 +1200,17 @@ export function InboxSimulatorScreen() {
         <ActivateRuleModal
           rule={SYNTHETIC_RULE}
           intent="enable"
-          canRunUnattended
+          canRunUnattended={false}
           pendingCount={0}
           pendingApproximate={false}
-          preview={buildSyntheticRulePreview()}
+          preview={buildSyntheticRulePreview(decisions)}
           undoWindowDays={MIN_UNDO_WINDOW_DAYS}
           onRetryPreview={() => undefined}
           onWatchFirst={() => confirmRule('observe')}
           isActivating={false}
           error={null}
           onCancel={() => setPendingRule(false)}
-          onConfirm={() => confirmRule('active')}
+          onConfirm={() => confirmRule('observe')}
         />
       ) : null}
     </div>
@@ -1297,7 +1297,8 @@ function RuleStepCard({ onPreview }: { onPreview: () => void }) {
       <p style={{ margin: 0, fontSize: 13, color: color.fgSoft, lineHeight: 1.5 }}>
         Preview the existing low-engagement Archive preset against this sample mailbox. It matches
         the engine’s Archive verdict above its confidence threshold, independently of the manual
-        batch you reviewed. You can watch first or turn it on after reviewing the dry run.
+        batch you reviewed. Turn it on to collect suggestions for your approval after reviewing the
+        dry run.
       </p>
       <div>
         <Button tone="primary" onClick={onPreview}>

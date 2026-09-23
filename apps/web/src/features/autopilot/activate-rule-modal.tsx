@@ -5,7 +5,7 @@ import { SheetSegmented, tokens, type SheetFactItem } from '@declutrmail/shared'
 import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import type { AutopilotRuleDto, AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
-import { presetDisplayName } from './preset-labels';
+import { isReviewOnlyPreset, presetDisplayName } from './preset-labels';
 import { RulePreviewHero, RulePreviewSample } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
@@ -129,7 +129,7 @@ function ActivateRuleSheet({
   // became one choice; the requests themselves are unchanged.
   const [choice, setChoice] = useState<'act' | 'watch'>('act');
   const name = presetDisplayName(rule.presetKey, rule.name);
-  const reviewOnly = rule.presetKey === 'auto_screen_new_senders';
+  const reviewOnly = isReviewOnlyPreset(rule.presetKey);
 
   const enabling = intent === 'enable';
   // Turning a rule on without the unattended capability can only mean
@@ -144,16 +144,18 @@ function ActivateRuleSheet({
   // sentence reads differently either way, because the server supersedes
   // this rule's pending Observe suggestions only on the transition into
   // `active`.
-  const commitsActive = (!enabling || enablingToAct) && !watching;
+  const commitsActive = !reviewOnly && (!enabling || enablingToAct) && !watching;
   const presentation = rulePresentation(rule);
   const protectedCount = preview.status === 'ready' ? preview.result.protectedWouldMatchCount : 0;
 
   return (
     <ConfirmModalFrame
-      title={enabling ? `Turn on ${name}?` : `Switch ${name} to Active?`}
+      title={
+        enabling ? `Turn on ${name}?` : reviewOnly ? `Watch ${name}?` : `Switch ${name} to Active?`
+      }
       subtitle={
         reviewOnly
-          ? 'Matching new senders become suggestions. You decide which email moves to Later.'
+          ? 'Matches become suggestions. You decide which email to act on.'
           : matchEffectCopy(presentation)
       }
       note={`${
@@ -163,7 +165,9 @@ function ActivateRuleSheet({
             } skipped.`
           : 'Protected senders are skipped.'
       } ${reviewOnly ? 'No mail moves until you approve a suggestion.' : undoNote(rule, undoWindowDays)}`}
-      confirmLabel={watching ? 'Watch first' : enabling ? 'Turn on' : 'Switch to Active'}
+      confirmLabel={
+        watching ? 'Watch first' : enabling ? 'Turn on' : reviewOnly ? 'Watch' : 'Switch to Active'
+      }
       confirmBusyLabel={
         pendingAction === 'secondary' || (pendingAction == null && watching)
           ? 'Starting to watch…'
@@ -240,7 +244,7 @@ function ActivateRuleSheet({
           </div>
         ) : (
           <span style={{ fontSize: text.sm, lineHeight: 1.45, color: color.fgMuted }}>
-            {enabling
+            {reviewOnly || enabling
               ? 'Nothing moves until you approve each match.'
               : 'Stops asking and starts acting.'}
           </span>

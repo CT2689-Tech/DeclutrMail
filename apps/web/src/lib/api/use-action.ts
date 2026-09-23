@@ -195,10 +195,10 @@ export function useEnqueueComposite() {
  * keeps a 4xx (404 unowned) a designed state, never a poll storm.
  * `staleTime: 0` so reopening re-counts (the inbox moves under us).
  */
-export function useCompositePreview(senderId: string | null) {
+export function useCompositePreview(senderId: string | null, mailboxId?: string | null) {
   return useQuery({
-    queryKey: ['composite-preview', senderId] as const,
-    queryFn: () => getCompositePreview(senderId as string),
+    queryKey: ['composite-preview', senderId, { mailboxId: mailboxId ?? null }] as const,
+    queryFn: () => getCompositePreview(senderId as string, mailboxId ? { mailboxId } : undefined),
     enabled: senderId !== null,
     retry: false,
     staleTime: 0,
@@ -252,11 +252,12 @@ export function useEnqueueBulkAction() {
  * `staleTime: 0` so reopening re-counts (the inbox moves under us);
  * `retry: false` per the read-guard-4xx rule (§8).
  */
-export function useBulkActionPreview(senderIds: string[] | null) {
+export function useBulkActionPreview(senderIds: string[] | null, mailboxId?: string | null) {
   const key = senderIds ? [...senderIds].sort().join(',') : null;
   return useQuery({
-    queryKey: ['bulk-action-preview', key] as const,
-    queryFn: () => getBulkActionPreview(senderIds as string[]),
+    queryKey: ['bulk-action-preview', key, { mailboxId: mailboxId ?? null }] as const,
+    queryFn: () =>
+      getBulkActionPreview(senderIds as string[], mailboxId ? { mailboxId } : undefined),
     enabled: senderIds !== null && senderIds.length > 1,
     retry: false,
     staleTime: 0,

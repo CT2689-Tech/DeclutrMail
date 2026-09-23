@@ -42,7 +42,7 @@ export const GLOSSARY_TERMS = {
   protected: {
     term: 'Protected',
     definition:
-      'A standing safety policy that locks a sender to Keep, prevents cleanup suggestions, and excludes the sender from bulk and automatic actions.',
+      'A standing safety policy that recommends Keep and excludes the sender from bulk and automatic cleanup. You can still choose a single-sender action after acknowledging the override.',
   },
   observe: {
     term: 'Watch first',

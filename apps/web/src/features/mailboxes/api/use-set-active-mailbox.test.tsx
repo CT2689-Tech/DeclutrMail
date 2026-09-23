@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { useSetActiveMailbox } from './use-set-active-mailbox';
+import { MAILBOX_SWITCH_STORAGE_KEY } from './reset-mailbox-cache';
 
 describe('useSetActiveMailbox', () => {
   beforeEach(() => installFetchStub([]));
@@ -27,5 +28,6 @@ describe('useSetActiveMailbox', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(client.getQueryData(['senders', 'list'])).toBeUndefined();
+    expect(window.localStorage.getItem(MAILBOX_SWITCH_STORAGE_KEY)).toBe('mb-2');
   });
 });

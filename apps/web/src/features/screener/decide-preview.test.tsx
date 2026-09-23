@@ -291,7 +291,7 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
     expect(screen.getByText(/They move to Gmail Trash\./)).toBeInTheDocument();
   });
 
-  it('applies no window qualifier or empty-window notice at all-mail reach', () => {
+  it('names the selected time window at all-mail reach without an inbox-only notice', () => {
     render(
       <DecidePreview
         verb="delete"
@@ -307,7 +307,32 @@ describe('DecidePreview — Delete default window (QA-delete-20260829-01)', () =
         onCancel={() => {}}
       />,
     );
-    expect(screen.queryByText(/older than/i)).toBeNull();
+    expect(
+      screen.getByText(/Inbox \+ archived now \(older than 6 months\+\)/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('lets the reader widen Delete to any age and blocks a zero-count Delete', () => {
+    const onWindowChange = vi.fn();
+    render(
+      <DecidePreview
+        verb="delete"
+        row={row}
+        inboxCount={0}
+        inboxTotal={2}
+        windowDays={180}
+        onWindowChange={onWindowChange}
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByRole('button', { name: /Confirm Delete/i })).toBeDisabled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'How far back to delete' }), {
+      target: { value: 'all' },
+    });
+    expect(onWindowChange).toHaveBeenCalledWith(null);
   });
 });
 

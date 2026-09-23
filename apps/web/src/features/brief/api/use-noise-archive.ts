@@ -387,8 +387,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   // confirm until it lands.
   const singleId = pending && pending.senderIds.length === 1 ? pending.senderIds[0]! : null;
   const bulkIds = pending && pending.senderIds.length > 1 ? pending.senderIds : null;
-  const composite = useCompositePreview(singleId);
-  const bulk = useBulkActionPreview(bulkIds);
+  const composite = useCompositePreview(singleId, activeMailboxId);
+  const bulk = useBulkActionPreview(bulkIds, activeMailboxId);
 
   const previewError = singleId ? composite.isError : bulkIds ? bulk.isError : false;
   const previewErrorValue = singleId ? composite.error : bulk.error;

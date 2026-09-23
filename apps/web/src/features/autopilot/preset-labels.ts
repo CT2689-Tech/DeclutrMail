@@ -18,11 +18,17 @@
 import type { AutopilotPresetKey } from '@/lib/api/autopilot';
 
 const PRESET_LABEL_OVERRIDES: Partial<Record<AutopilotPresetKey, string>> = {
+  auto_archive_low_engagement: 'Review low-engagement senders for Archive',
   // D227: "Screen" is an internal enum, never a user-facing verb. The
   // canonical fourth verb is Later (L); the preset's actionKind is
   // already 'later'.
   auto_screen_new_senders: 'Review new senders for Later',
 };
+
+/** Presets whose matches always need a person to approve them. */
+export function isReviewOnlyPreset(presetKey: AutopilotPresetKey | null): boolean {
+  return presetKey === 'auto_screen_new_senders' || presetKey === 'auto_archive_low_engagement';
+}
 
 /**
  * Returns the user-facing label for a rule. Prefers an override; falls

@@ -24,7 +24,50 @@ import {
   useActionStatus,
   useBatchStatus,
   useRecordUnsubscribeIntent,
+  useCompositePreview,
+  useBulkActionPreview,
 } from './use-action';
+
+describe('mandatory action previews', () => {
+  afterEach(() => resetFetchStub());
+
+  it('pins single and bulk preview requests to the mailbox shown in the UI', async () => {
+    const requests: Array<{ path: string; mailboxId: string | null }> = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: (req, url) => {
+          requests.push({ path: url.pathname, mailboxId: req.headers.get('X-Active-Mailbox-Id') });
+          return jsonOk({ data: { senderId: 'sender-a', counts: {} } });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/actions/preview/bulk',
+        respond: (req, url) => {
+          requests.push({ path: url.pathname, mailboxId: req.headers.get('X-Active-Mailbox-Id') });
+          return jsonOk({ data: { senders: [], totals: {}, protectedCount: 0 } });
+        },
+      },
+    ]);
+    const client = createTestQueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+
+    const single = renderHook(() => useCompositePreview('sender-a', 'mailbox-a'), { wrapper });
+    const bulk = renderHook(() => useBulkActionPreview(['sender-a', 'sender-b'], 'mailbox-a'), {
+      wrapper,
+    });
+    await waitFor(() =>
+      expect(single.result.current.isSuccess && bulk.result.current.isSuccess).toBe(true),
+    );
+    expect(requests).toEqual([
+      { path: '/api/actions/preview', mailboxId: 'mailbox-a' },
+      { path: '/api/actions/preview/bulk', mailboxId: 'mailbox-a' },
+    ]);
+  });
+});
 
 function status(s: ActionStatusResult['status']): ActionStatusResult {
   return {

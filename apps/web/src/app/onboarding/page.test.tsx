@@ -86,8 +86,9 @@ const onboardingState = (over: Record<string, unknown> = {}): FetchStubHandler =
         presets: [
           {
             key: 'auto_archive_low_engagement',
-            name: 'Auto-archive low-engagement',
-            description: 'Archives email from senders you almost never open.',
+            name: 'Review low-engagement senders for Archive',
+            description:
+              'Collects Archive suggestions from low-engagement senders for your approval; no mail moves on its own.',
             verb: 'archive',
           },
         ],
@@ -228,7 +229,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
       expect(
         await screen.findByText('Choose what DeclutrMail should suggest.'),
       ).toBeInTheDocument();
-      expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
+      expect(screen.getByText('Review low-engagement senders for Archive')).toBeInTheDocument();
     },
   );
 
@@ -237,7 +238,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     renderPage();
 
     expect(await screen.findByText('Choose what DeclutrMail should suggest.')).toBeInTheDocument();
-    expect(screen.getByText('Auto-archive low-engagement')).toBeInTheDocument();
+    expect(screen.getByText('Review low-engagement senders for Archive')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Choose a goal to continue' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: /Reduce newsletters/i })).toBeInTheDocument();
   });

@@ -207,6 +207,41 @@ async function enablePreset(
 }
 
 describe('AutopilotApplyWorker', () => {
+  it('keeps a legacy Active low-engagement Archive rule in review mode', async () => {
+    const db = await freshDb();
+    const mbId = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mbId);
+    const ruleId = await enablePreset(db, mbId, 'auto_archive_low_engagement', {
+      enabled: true,
+      mode: 'active',
+    });
+    const senderKey = await seedSender(db, mbId, {
+      email: 'financial-alert@example.com',
+      decision: { verdict: 'archive', confidence: 0.92 },
+      totalMessages: 10,
+    });
+
+    const enqueue = vi.fn();
+    const worker = new AutopilotApplyWorker({
+      db: db as never,
+      now: () => NOW,
+      onActiveMatchesPending: enqueue,
+    });
+    const result = await worker.processJob(
+      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+      FAKE_CTX,
+    );
+
+    expect(result.observeMatches).toBe(1);
+    expect(result.activeMatches).toBe(0);
+    expect(enqueue).not.toHaveBeenCalled();
+    const [match] = await db
+      .select()
+      .from(ruleMatchLog)
+      .where(and(eq(ruleMatchLog.ruleId, ruleId), eq(ruleMatchLog.senderKey, senderKey)));
+    expect(match).toMatchObject({ modeAtMatch: 'observe', resolution: 'pending' });
+  });
+
   it('keeps a legacy Active new-sender rule in review mode', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);

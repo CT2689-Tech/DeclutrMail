@@ -454,7 +454,8 @@ export function SendersSimulator() {
           <div className="dm-senders-demo-list-head">
             <div>
               <strong>
-                {visible.length} {filter === 'active' ? 'active ' : ''}senders
+                {visible.length} {filter === 'active' ? 'active ' : ''}sender
+                {visible.length === 1 ? '' : 's'}
               </strong>
               <span>Select a sender to inspect it</span>
             </div>
@@ -500,9 +501,7 @@ export function SendersSimulator() {
                   aria-current={selectedSender?.id === sender.id ? 'true' : undefined}
                 >
                   <strong>{sender.name}</strong>
-                  <span>
-                    {sender.category} · {summaryFor(sender)}
-                  </span>
+                  <span>{summaryFor(sender)}</span>
                 </button>
                 {sender.protected ? <span className="dm-senders-demo-badge">Protected</span> : null}
               </div>
@@ -559,7 +558,6 @@ export function SendersSimulator() {
                 </div>
               </div>
               <div className="dm-senders-demo-insight">
-                <span>{selectedSender.category}</span>
                 <span>
                   {selectedSender.protected
                     ? 'Protected from bulk actions'

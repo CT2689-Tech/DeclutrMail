@@ -109,7 +109,7 @@ function accessFor(client: GmailMetadataClient): GmailAccess {
 /**
  * A mailbox whose sender index ALREADY KNOWS the newsletter sender —
  * `senders` row + fresh archive-verdict decision + the
- * `auto_archive_low_engagement` preset enabled in the given mode. Same
+ * an eligible Active unsubscribe rule or review-only Archive rule. Same
  * seed as the chain test, plus the `provider_sync_state` row the
  * incremental worker's cursor advance updates.
  */
@@ -147,7 +147,10 @@ async function seedKnownSenderMailbox(
     .where(
       and(
         eq(automationRules.mailboxAccountId, mailboxId),
-        eq(automationRules.presetKey, 'auto_archive_low_engagement'),
+        eq(
+          automationRules.presetKey,
+          mode === 'active' ? 'auto_unsubscribe_noisy' : 'auto_archive_low_engagement',
+        ),
       ),
     );
 
@@ -165,8 +168,8 @@ async function seedKnownSenderMailbox(
   await db.insert(triageDecisions).values({
     mailboxAccountId: mailboxId,
     senderKey,
-    verdict: 'archive',
-    confidence: '0.92',
+    verdict: mode === 'active' ? 'unsubscribe' : 'archive',
+    confidence: mode === 'active' ? '0.95' : '0.92',
     reasoning: 'test',
     generatedBy: 'template',
     producedAt: NOW,
@@ -351,7 +354,7 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     expect(jobIds[2]).not.toBe(jobIds[0]);
   });
 
-  it('steady state — a swept-clean sender is NOT re-matched every window; new mail re-arms it', async () => {
+  it('steady state — a completed unsubscribe is NOT re-matched; removing the policy re-arms it', async () => {
     const db = await freshDb();
     const { mailboxId, senderKey } = await seedKnownSenderMailbox(db, 'active');
 
@@ -366,19 +369,21 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     const first = await chain.applyWorker.processJob(jobData, FAKE_CTX);
     expect(first.activeMatches).toBe(1);
 
-    // Simulate the action worker having executed the archive: the
-    // INBOX label leaves the local projection and the match resolves.
-    await db
-      .update(mailMessages)
-      .set({ labelIds: ['CATEGORY_PROMOTIONS'] })
-      .where(and(eq(mailMessages.mailboxAccountId, mailboxId)));
+    // Simulate a completed unsubscribe. The policy projection makes a
+    // second unattended request a no-op even if messages stay in Inbox.
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      policyType: 'unsubscribe',
+      unsubStatus: 'done',
+    });
     await db
       .update(ruleMatchLog)
       .set({ intentApplied: true, resolvedAt: NOW })
       .where(eq(ruleMatchLog.mailboxAccountId, mailboxId));
 
-    // Sweep 2 (next delta window, nothing new in INBOX) — the rule
-    // still MATCHES the sender, but acting would be a 0-affected no-op,
+    // Sweep 2 (next delta window) — the rule still MATCHES the sender,
+    // but a second unsubscribe request would be a no-op,
     // so no new approved row is inserted. Without this gate every
     // 5-min window re-wrote rule_match_log + action_jobs +
     // "archived 0" activity rows forever.
@@ -393,8 +398,16 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
       );
     expect(afterSecond).toHaveLength(1); // still just sweep 1's row
 
-    // New mail arrives → sender is actionable again → sweep 3 writes a
-    // fresh approved row. The D100 re-trigger semantics survive the gate.
+    // A user clears the unsubscribe policy and new mail arrives → the
+    // sender is actionable again, so sweep 3 writes a fresh approved row.
+    await db
+      .delete(senderPolicies)
+      .where(
+        and(
+          eq(senderPolicies.mailboxAccountId, mailboxId),
+          eq(senderPolicies.senderKey, senderKey),
+        ),
+      );
     await db.insert(mailMessages).values({
       mailboxAccountId: mailboxId,
       providerMessageId: 'm-new-2',
@@ -467,13 +480,15 @@ describe('incremental-sync delta → autopilot apply trigger', () => {
     // action worker resolves the sender's INBOX ids at act time.
     expect(actionAdd).toHaveBeenCalledTimes(2);
 
-    // Quiet ends, the deferred sweep executes: intent applied, inbox
-    // cleared. The next delta sweep skips on actionability (not the
-    // dedup) and does NOT re-chain.
-    await db
-      .update(mailMessages)
-      .set({ labelIds: ['CATEGORY_PROMOTIONS'] })
-      .where(eq(mailMessages.mailboxAccountId, mailboxId));
+    // Quiet ends and the deferred unsubscribe completes. Its sender
+    // policy, rather than Inbox labels, makes a repeat request
+    // nonactionable. The next delta sweep does NOT re-chain.
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey,
+      policyType: 'unsubscribe',
+      unsubStatus: 'done',
+    });
     await db
       .update(ruleMatchLog)
       .set({ intentApplied: true, resolvedAt: NOW })

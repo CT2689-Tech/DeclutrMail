@@ -274,12 +274,13 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
         threshold = parsed;
       }
-      // A new sender has too little history to distinguish a promotion
-      // from an account, purchase, or security message reliably. Even
-      // legacy rows left in Active mode must collect suggestions for a
-      // person to approve rather than moving that mail unattended.
+      // New-sender and low-engagement signals cannot reliably distinguish
+      // promotions from account, purchase, or security messages. Even legacy
+      // Active rows collect suggestions rather than moving mail unattended.
       const modeAtMatch: AutopilotMatchMode =
-        rule.mode === 'active' && rule.presetKey !== 'auto_screen_new_senders'
+        rule.mode === 'active' &&
+        rule.presetKey !== 'auto_screen_new_senders' &&
+        rule.presetKey !== 'auto_archive_low_engagement'
           ? 'active'
           : 'observe';
       const resolution: AutopilotMatchResolution =
@@ -580,8 +581,8 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     // than silently continuing to act on a tier that stopped paying for
     // it, while Observe rules keep running.
     //
-    // A legacy Active new-sender row is the exception: the matcher
-    // forces Observe for that preset, so a review-entitled workspace
+    // Legacy Active new-sender and low-engagement rows are exceptions: the
+    // matcher forces Observe for those presets, so a review-entitled workspace
     // may still collect its suggestions after a future tier split.
     //
     // 2026-08-23: both capabilities sit on Plus, so the only tier with
@@ -606,6 +607,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
                 or(
                   ne(automationRules.mode, 'active'),
                   eq(automationRules.presetKey, 'auto_screen_new_senders'),
+                  eq(automationRules.presetKey, 'auto_archive_low_engagement'),
                 ),
               ]),
           eq(automationRules.isPreset, true),

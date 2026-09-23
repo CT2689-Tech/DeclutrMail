@@ -1,9 +1,14 @@
 'use client';
 
-import { createContext, useContext, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import { ErrorState } from '@declutrmail/shared';
 
+import {
+  MAILBOX_SWITCH_STORAGE_KEY,
+  resetMailboxScopedCache,
+} from '@/features/mailboxes/api/reset-mailbox-cache';
 import { ApiError } from '@/lib/api/client';
 import { useMe, type Me } from './api/use-me';
 
@@ -57,6 +62,18 @@ export function useOptionalAuth(): AuthContextValue | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useMe();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const handleMailboxSwitch = (event: StorageEvent) => {
+      if (event.key !== MAILBOX_SWITCH_STORAGE_KEY || event.newValue === null) return;
+      // Storage events only reach other tabs, not the tab that switched.
+      // Reset before any later action can reuse that tab's old rows.
+      void resetMailboxScopedCache(queryClient);
+    };
+    window.addEventListener('storage', handleMailboxSwitch);
+    return () => window.removeEventListener('storage', handleMailboxSwitch);
+  }, [queryClient]);
 
   // A revoked session is the one failure that must NOT keep rendering off a
   // cached identity. The redirect itself is NOT done here: `apiGet`'s own

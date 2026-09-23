@@ -51,6 +51,7 @@ export function ScreenerRow({
   previewAllMailTotal = null,
   pendingReach = 'inbox_only',
   onReachChange,
+  onWindowChange,
   wakeAt = null,
   onToggleExpand,
   onVerbClick,
@@ -71,6 +72,7 @@ export function ScreenerRow({
   previewInboxTotal?: number | null;
   /** QA-delete-20260829-01 — the window days active on `previewInboxCount`, if any. */
   previewWindowDays?: number | null;
+  onWindowChange?: ((days: number | null) => void) | undefined;
   /** ADR-0028 all-mail count — `null` hides the Delete reach chips. */
   previewAllMailCount?: number | null;
   /**
@@ -409,6 +411,7 @@ export function ScreenerRow({
               inboxCount={previewInboxCount}
               inboxTotal={previewInboxTotal}
               windowDays={previewWindowDays}
+              onWindowChange={onWindowChange}
               allMailCount={previewAllMailCount}
               allMailTotal={previewAllMailTotal}
               reach={pendingReach}

@@ -36,6 +36,9 @@ export function observeDigestSummary(rule: AutopilotRuleDto): string | null {
   const matched = `${senders} matched in the last 7 days`;
   switch (rule.actionKind) {
     case 'archive':
+      if (rule.presetKey === 'auto_archive_low_engagement') {
+        return `${matched} · ${emails} could be archived if you approve them`;
+      }
       return `Would archive ${emails} now, from ${matched}`;
     case 'later':
       if (rule.presetKey === 'auto_screen_new_senders') {

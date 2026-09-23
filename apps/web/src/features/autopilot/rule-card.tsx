@@ -7,7 +7,7 @@ import { Switch } from '@/features/settings/switch';
 import { TIER_MANIFEST, minimumTierForCapability } from '@declutrmail/shared/entitlements';
 import type { AutopilotActionKind, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { observeDigestSummary } from './observe-digest';
-import { presetDisplayName } from './preset-labels';
+import { isReviewOnlyPreset, presetDisplayName } from './preset-labels';
 import { RulePreviewPanel } from './rule-preview-panel';
 import type { RulePreviewState } from './types';
 
@@ -85,12 +85,11 @@ export function RuleCard({
   // actually watching (enabled + Observe). Disabled rules stay quiet.
   const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
   const observeSummary = observeWindowSummary(rule, now);
-  const explanation =
-    rule.presetKey === 'auto_screen_new_senders'
-      ? rule.enabled
-        ? 'New senders wait for your approval; no mail moves on its own.'
-        : null
-      : ruleModeExplanation(rule, canActivate);
+  const explanation = isReviewOnlyPreset(rule.presetKey)
+    ? rule.enabled
+      ? 'Matches wait for your approval; no mail moves on its own.'
+      : null
+    : ruleModeExplanation(rule, canActivate);
   const detailsId = `rule-details-${rule.id}`;
 
   return (
@@ -236,7 +235,7 @@ export function RuleCard({
           ruleName={name}
           state={preview}
           onRetry={onRetryPreview}
-          requiresApproval={rule.presetKey === 'auto_screen_new_senders'}
+          requiresApproval={isReviewOnlyPreset(rule.presetKey)}
         />
       )}
     </li>

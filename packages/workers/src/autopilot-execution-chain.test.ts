@@ -77,7 +77,10 @@ async function seedMatchableMailbox(
     .where(
       and(
         eq(automationRules.mailboxAccountId, mailboxId),
-        eq(automationRules.presetKey, 'auto_archive_low_engagement'),
+        eq(
+          automationRules.presetKey,
+          mode === 'active' ? 'auto_unsubscribe_noisy' : 'auto_archive_low_engagement',
+        ),
       ),
     );
 
@@ -95,8 +98,8 @@ async function seedMatchableMailbox(
   await db.insert(triageDecisions).values({
     mailboxAccountId: mailboxId,
     senderKey,
-    verdict: 'archive',
-    confidence: '0.92',
+    verdict: mode === 'active' ? 'unsubscribe' : 'archive',
+    confidence: mode === 'active' ? '0.95' : '0.92',
     reasoning: 'test',
     generatedBy: 'template',
     producedAt: NOW,

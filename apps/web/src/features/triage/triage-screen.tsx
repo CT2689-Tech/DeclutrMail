@@ -400,7 +400,7 @@ export function TriageScreen({
   const pendingBatchSenderIds = pendingBatch
     ? pendingBatch.batch.eligibleRows.map((r) => r.senderId)
     : null;
-  const bulkPreview = useBulkActionPreview(pendingBatchSenderIds);
+  const bulkPreview = useBulkActionPreview(pendingBatchSenderIds, actionMailboxId);
   const batchSheetOpen = pendingBatch != null;
   useEffect(() => {
     if (!bulkPreview.isError || !batchSheetOpen) return;
@@ -530,7 +530,7 @@ export function TriageScreen({
     pendingAction != null && pendingAction.verb !== 'Keep' && pendingRow != null
       ? pendingRow.senderId
       : null;
-  const compositePreview = useCompositePreview(previewSenderId);
+  const compositePreview = useCompositePreview(previewSenderId, actionMailboxId);
   useEffect(() => {
     if (!compositePreview.isError || previewSenderId == null) return;
     // The preview is D226-mandatory — a sustained failure must be

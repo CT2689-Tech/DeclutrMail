@@ -917,7 +917,7 @@ function SendersScreenContent({
       ? (pendingAction.senders[0] ?? null)
       : null;
   const previewSenderId = previewFirstSender?.id ?? null;
-  const compositePreviewQuery = useCompositePreview(previewSenderId);
+  const compositePreviewQuery = useCompositePreview(previewSenderId, actionMailboxId);
   useEffect(() => {
     if (!compositePreviewQuery.isError || previewSenderId == null) return;
     const err = compositePreviewQuery.error;
@@ -943,7 +943,7 @@ function SendersScreenContent({
         : null,
     [pendingAction],
   );
-  const bulkPreviewQuery = useBulkActionPreview(bulkPreviewSenderIds);
+  const bulkPreviewQuery = useBulkActionPreview(bulkPreviewSenderIds, actionMailboxId);
   useEffect(() => {
     if (!bulkPreviewQuery.isError || bulkPreviewSenderIds == null) return;
     const err = bulkPreviewQuery.error;

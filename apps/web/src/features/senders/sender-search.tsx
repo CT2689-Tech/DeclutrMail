@@ -167,8 +167,7 @@ export function SenderSearch({
         // than guessed when the wire does not say — an unlabelled row is
         // honest; a wrong label re-creates the contradiction.
         secondary:
-          s.totalReceived.toLocaleString('en-US') +
-          ' emails' +
+          `${s.totalReceived.toLocaleString('en-US')} ${s.totalReceived === 1 ? 'email' : 'emails'}` +
           (s.activity ? ` · ${s.activity}` : ''),
       }));
     }
@@ -184,7 +183,7 @@ export function SenderSearch({
       // remote branch above; only the activity-bucket suffix is missing
       // (the local page doesn't compute one), which is a gentler swap
       // than the number itself changing meaning.
-      secondary: s.totalReceived.toLocaleString('en-US') + ' emails',
+      secondary: `${s.totalReceived.toLocaleString('en-US')} ${s.totalReceived === 1 ? 'email' : 'emails'}`,
     }));
   }, [trimmed, remote.suggestions, remote.loading, remote.error, fallbackMatches]);
 

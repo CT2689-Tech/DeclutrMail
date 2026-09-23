@@ -88,7 +88,9 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     expect(screen.getByTestId('autopilot-observe-preview')).toBeInTheDocument();
     expect(screen.getByText(/previews are read-only/i)).toBeInTheDocument();
     await waitFor(() => expect(rulesReads).toBe(1));
-    expect(await screen.findByText('Auto-archive low-engagement')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Review low-engagement senders for Archive'),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview current matches' }));
     await waitFor(() => expect(previewReads).toBe(1));

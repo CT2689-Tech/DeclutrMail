@@ -58,7 +58,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'future-mail',
     question: 'Does archiving a sender automatically archive future messages?',
     answer:
-      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. DeclutrMail also has preset Autopilot rules on Plus and Pro; you preview what a rule would do before you turn it on, and from then on it acts on future matches. You can instead choose Watch first for a rule, where it collects matches and waits for your approval.',
+      'No. Manual Archive acts on the current matching inbox messages. For exact future routing, create a Gmail filter. On Plus and Pro, the low-engagement Archive preset collects suggestions about future mail for your approval; it does not silently archive new messages.',
     link: {
       href: '/how-to/auto-archive-future-emails-in-gmail',
       label: 'Compare filters and Autopilot',
@@ -111,7 +111,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Plus and Pro include five preset rules. Turning one on shows a sample of what it would do to matching email already in your inbox; confirm and it acts, then keeps acting on matching email that arrives. Choose Watch first instead and the rule collects possible matches without moving email, for you to approve or dismiss batch by batch. It can handle future matches automatically. Custom rule creation is not part of the launch product, and every rule can be paused.',
+      'Plus and Pro include five preset rules. Turning one on first shows a preview of matching email. The low-engagement Archive and new-sender Later presets always collect suggestions for your approval. Other presets can act on future matches if you choose Act now, or collect suggestions if you choose Watch first. Custom rule creation is not part of the launch product, and every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',

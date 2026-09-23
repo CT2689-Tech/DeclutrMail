@@ -48,6 +48,7 @@ import { ObserveWindowBanner } from './observe-window-banner';
 import { PauseConfirmModal } from './pause-confirm-modal';
 import { PausedBanner } from './paused-banner';
 import { PatternSuggestionCard } from './pattern-suggestion-card';
+import { isReviewOnlyPreset } from './preset-labels';
 import { RuleCard } from './rule-card';
 import { SuggestionGroup } from './suggestion-group';
 import { loadErrorDescription } from '@/lib/load-error-copy';
@@ -313,7 +314,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
         (r) =>
           r.enabled &&
           r.mode === 'observe' &&
-          r.presetKey !== 'auto_screen_new_senders' &&
+          !isReviewOnlyPreset(r.presetKey) &&
           r.observeWindowElapsed &&
           r.observePromptDismissedAt == null &&
           (r.observeDigest?.pendingTotal ?? 0) > 0,
@@ -505,8 +506,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
    */
   const onActivateConfirm = () =>
     commitConfirm(
-      confirmTarget?.intent === 'enable' &&
-        (!canActivate || confirmTarget.rule.presetKey === 'auto_screen_new_senders')
+      (confirmTarget != null && isReviewOnlyPreset(confirmTarget.rule.presetKey)) ||
+        (confirmTarget?.intent === 'enable' && !canActivate)
         ? 'observe'
         : 'active',
       'primary',
@@ -1054,9 +1055,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
       <ActivateRuleModal
         rule={confirmTarget?.rule ?? null}
         intent={confirmTarget?.intent ?? 'activate'}
-        canRunUnattended={
-          canActivate && confirmTarget?.rule.presetKey !== 'auto_screen_new_senders'
-        }
+        canRunUnattended={canActivate && !isReviewOnlyPreset(confirmTarget?.rule.presetKey ?? null)}
         pendingAction={pendingCommit}
         mailboxEmail={activeEmail ?? undefined}
         pendingCount={

@@ -78,7 +78,7 @@ export const SYNTHETIC_RULE: AutopilotRuleDto = {
   id: 'demo-rule-archive-low-engagement',
   presetKey: 'auto_archive_low_engagement',
   isPreset: true,
-  name: 'Auto-archive low-engagement',
+  name: 'Review low-engagement senders for Archive',
   enabled: false,
   mode: 'observe',
   modeChangedAt: '2026-08-01T00:00:00.000Z',
@@ -101,9 +101,12 @@ export const SYNTHETIC_RULE: AutopilotRuleDto = {
  * Dry run of the same predicate as `auto_archive_low_engagement` in
  * `packages/workers/src/autopilot-presets.ts`: engine Archive verdict
  * with confidence strictly above 0.72. Protected matches are excluded.
- * Manual decisions in the preceding step do not affect this preset.
+ * Manual decisions do not change the rule's match predicate, but mail
+ * already moved out of Inbox cannot count as actionable again.
  */
-export function buildSyntheticRulePreview(): RulePreviewState {
+export function buildSyntheticRulePreview(
+  decisions: readonly { rowId: string; affectedCount: number }[] = [],
+): RulePreviewState {
   const threshold = SYNTHETIC_RULE.confidenceThreshold;
   if (threshold === null)
     throw new Error('The demo Archive preset requires a confidence threshold');
@@ -112,8 +115,14 @@ export function buildSyntheticRulePreview(): RulePreviewState {
   );
   const matched = wouldMatch.filter((row) => row.protectionReason === null);
   const protectedCount = wouldMatch.length - matched.length;
+  const movedBySender = new Map(
+    decisions.map((decision) => [decision.rowId, decision.affectedCount]),
+  );
+  const remainingInboxCount = (row: TriageDecisionRow) =>
+    Math.max(0, syntheticInboxCount(row) - (movedBySender.get(row.id) ?? 0));
+  const actionable = matched.filter((row) => remainingInboxCount(row) > 0);
 
-  const sample: AutopilotPreviewSampleDto[] = matched.map((row) => ({
+  const sample: AutopilotPreviewSampleDto[] = actionable.map((row) => ({
     senderKey: row.senderKey,
     senderName: row.senderName,
     senderEmail: row.senderEmail,
@@ -125,10 +134,8 @@ export function buildSyntheticRulePreview(): RulePreviewState {
     result: {
       ruleId: SYNTHETIC_RULE.id,
       wouldMatchCount: matched.length,
-      // Archive has no channel dependency (unlike Unsubscribe), so every
-      // matched sender is actionable now.
-      actionableSenderCount: matched.length,
-      actionableMessageCount: matched.reduce((sum, row) => sum + syntheticInboxCount(row), 0),
+      actionableSenderCount: actionable.length,
+      actionableMessageCount: actionable.reduce((sum, row) => sum + remainingInboxCount(row), 0),
       protectedWouldMatchCount: protectedCount,
       evaluatedSenders: TRIAGE_QUEUE.length,
       // Mirrors `auto_archive_low_engagement`'s real daily cap

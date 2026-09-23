@@ -51,7 +51,7 @@ The workflow provisions disposable Postgres/Redis services; no worker or real cr
 
 `contracts/assert-journeys.mjs` requires every named file and its expected minimum case count; skips, failed cases and flaky retries fail the lane. `test:harness` runs safety and report-contract checks without a browser. `typecheck` validates all specs.
 
-**Unrun boundary:** no browser suite was executed during this coding pass because browser automation is restricted to CUA. The CI configuration and specs are prepared, not a claim that they have passed in Chromium. Manual CUA verification and the actual CI result are required before claiming readiness.
+**Latest local run (2026-09-23):** ten selected Chromium journeys passed against a disposable synthetic API/web stack after dev-server routes warmed: Triage Keep, sender protection, Protected Settings, Follow-up dismissal, Brief, three search cases, and two public acquisition paths. The initial cold-compile timeouts were rerun after compilation. The public tests now follow the current Senders demo and accept the API's first-touch cookie as well as a decorated OAuth URL. This is not a claim that the complete CI lane, consent tests, or provider-contract suite passed. See the [coordinated QA report](../../docs/execution/qa-sweep-2026-09-23.md) for live-account coverage and remaining exclusions.
 
 The [September 22 launch audit](../../docs/execution/launch-readiness-audit-2026-09-22.md) records manual CUA checks on the isolated stack and their limits. Those observations do not replace the complete CI browser suite.
 

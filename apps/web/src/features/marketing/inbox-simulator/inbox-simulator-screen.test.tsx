@@ -502,27 +502,34 @@ describe('InboxSimulatorScreen', () => {
     finishFromRuleStep();
   }
 
-  it('offers both turning the rule on and watching first, and names Plus', () => {
+  it('offers a review-only rule and names Plus', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     expect(screen.getByRole('heading', { name: 'A preset can keep watch.' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    // Real ActivateRuleModal: the two ways to run are a choice on the
-    // sheet (Act now is the default), committed by one button.
-    expect(screen.getByRole('radio', { name: 'Act now' })).toBeChecked();
-    expect(screen.getByRole('radio', { name: 'Watch first' })).toBeInTheDocument();
+    // Low-engagement signals can include important account mail, so this
+    // preset never offers an unattended acting path.
+    expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
+    expect(screen.getByText(/Nothing moves until you approve each match/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Turn on$/ })).toBeInTheDocument();
     expect(screen.getByText(/\bPlus\b/)).toBeInTheDocument();
   });
 
-  it('previews the independent Archive preset against only matching sample verdicts', () => {
+  it('previews only Inbox mail still actionable after the earlier batch', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    const preview = buildSyntheticRulePreview();
+    const archivedBatch = findDomainBatches(TRIAGE_QUEUE, []).find(
+      (batch) => batch.domain === 'amazon.com',
+    )!;
+    const decisions = archivedBatch.eligibleRows.map((row) => ({
+      rowId: row.id,
+      affectedCount: syntheticInboxCount(row),
+    }));
+    const preview = buildSyntheticRulePreview(decisions);
     expect(preview.status).toBe('ready');
     if (preview.status !== 'ready') return;
     const eligible = TRIAGE_QUEUE.filter(
@@ -532,12 +539,18 @@ describe('InboxSimulatorScreen', () => {
         row.protectionReason === null,
     );
     expect(preview.result.wouldMatchCount).toBe(eligible.length);
-    expect(preview.result.sample.map((row) => row.senderName)).toEqual(
-      eligible.map((row) => row.senderName),
+    const stillActionable = eligible.filter((row) => !decisions.some((d) => d.rowId === row.id));
+    expect(preview.result.actionableSenderCount).toBe(stillActionable.length);
+    expect(preview.result.actionableMessageCount).toBe(
+      stillActionable.reduce((sum, row) => sum + syntheticInboxCount(row), 0),
     );
-    for (const row of eligible) {
+    expect(preview.result.sample.map((row) => row.senderName)).toEqual(
+      stillActionable.map((row) => row.senderName),
+    );
+    for (const row of stillActionable) {
       expect(screen.getByText(row.senderName)).toBeInTheDocument();
     }
+    expect(screen.getByText(`${stillActionable.length}`)).toBeInTheDocument();
     expect(screen.getByText(/Protected senders? (are|is) skipped/i)).toBeInTheDocument();
   });
 
@@ -555,14 +568,13 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('watching first is also a complete decision for the step, not a dead end', () => {
+  it('turning on the review-only rule completes the step without an acting option', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview the Autopilot rule/i }));
 
-    // The mode is a choice on the sheet; the one button commits it.
-    fireEvent.click(screen.getByRole('radio', { name: 'Watch first' }));
-    fireEvent.click(screen.getByRole('button', { name: /^Watch first$/ }));
+    expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Turn on$/ }));
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByText('3 of 4 decisions complete')).toBeInTheDocument();
@@ -580,7 +592,7 @@ describe('InboxSimulatorScreen', () => {
     await waitFor(() =>
       expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toMatchObject({
         version: 4,
-        ruleDecision: 'active',
+        ruleDecision: 'observe',
       }),
     );
     unmount();
