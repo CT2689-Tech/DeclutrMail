@@ -481,6 +481,68 @@ describe('SendersReadService', () => {
       expect(detail!.inboxCount).toBe(2);
     });
 
+    it('filters across the mailbox by live inbound Inbox membership without hiding unsubscribe-only senders by default', async () => {
+      const inbox = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'inbox@example.com',
+        lastSeenAt: new Date('2026-07-21T00:00:00Z'),
+      });
+      const archived = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'unsubscribe-only@example.com',
+        lastSeenAt: new Date('2026-07-20T00:00:00Z'),
+        unsubscribeMethod: 'one_click',
+      });
+      const outbound = await seedSender(db, {
+        mailboxAccountId: mailboxId,
+        email: 'outbound@example.com',
+        lastSeenAt: new Date('2026-07-19T00:00:00Z'),
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: inbox.senderKey,
+        internalDate: new Date('2026-07-21T00:00:00Z'),
+        labelIds: ['INBOX'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: archived.senderKey,
+        internalDate: new Date('2026-07-20T00:00:00Z'),
+        labelIds: ['CATEGORY_PROMOTIONS'],
+      });
+      await seedMessage(db, {
+        mailboxAccountId: mailboxId,
+        senderKey: outbound.senderKey,
+        internalDate: new Date('2026-07-19T00:00:00Z'),
+        labelIds: ['INBOX', 'SENT'],
+        isOutbound: true,
+      });
+
+      const all = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        cursor: null,
+        limit: 10,
+      });
+      expect(all.map((r) => r.id)).toContain(archived.id);
+
+      const filtered = await svc.listSenders({
+        mailboxAccountId: mailboxId,
+        category: null,
+        hasInboxMail: true,
+        cursor: null,
+        limit: 10,
+      });
+      expect(filtered.map((r) => r.id)).toEqual([inbox.id]);
+      expect(filtered[0]!.inboxCount).toBe(1);
+      const meta = await svc.getSenderListQueryMeta({
+        mailboxAccountId: mailboxId,
+        category: null,
+        hasInboxMail: true,
+      });
+      expect(meta.totalMatching).toBe(1);
+    });
+
     describe('q search (#145)', () => {
       async function seedSearchFixture() {
         await seedSender(db, {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 
 import { TrackedCta } from '../landing/tracked-cta';
@@ -14,48 +14,61 @@ export function PublicMobileMenu({
   startUrl: string;
 }) {
   const pathname = usePathname();
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const close = () => detailsRef.current?.removeAttribute('open');
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
 
   // Route groups preserve this layout during client navigation. Close the
-  // disclosure so the next page does not inherit an open menu.
+  // sheet so the next page does not inherit an open menu.
   useEffect(() => {
-    detailsRef.current?.removeAttribute('open');
+    setOpen(false);
   }, [pathname]);
 
   return (
-    <details
-      ref={detailsRef}
+    <div
       className="dm-public-menu"
+      data-open={open ? 'true' : 'false'}
       onKeyDown={(event) => {
-        if (event.key !== 'Escape' || !detailsRef.current?.open) return;
+        if (event.key !== 'Escape' || !open) return;
         event.preventDefault();
-        detailsRef.current.open = false;
-        detailsRef.current.querySelector('summary')?.focus();
+        close();
+        buttonRef.current?.focus();
       }}
     >
-      <summary aria-label="Open navigation">Menu</summary>
-      <nav aria-label="Mobile navigation">
-        <PublicNavLinks links={links} onNavigate={close} />
-        <TrackedCta
-          className="dm-public-menu-sign-in"
-          href={startUrl}
-          cta="connect_gmail"
-          placement="nav_sign_in"
-          onClick={close}
-        >
-          Sign in
-        </TrackedCta>
-        <TrackedCta
-          className="dm-public-menu-start"
-          href={startUrl}
-          cta="connect_gmail"
-          placement="nav"
-          onClick={close}
-        >
-          Start free
-        </TrackedCta>
-      </nav>
-    </details>
+      <button
+        ref={buttonRef}
+        type="button"
+        className="dm-public-menu-button"
+        aria-label={open ? 'Close navigation' : 'Open navigation'}
+        aria-expanded={open}
+        aria-controls={open ? 'dm-public-mobile-nav' : undefined}
+        onClick={() => setOpen((value) => !value)}
+      >
+        Menu
+      </button>
+      {open ? (
+        <nav id="dm-public-mobile-nav" aria-label="Mobile navigation">
+          <PublicNavLinks links={links} onNavigate={close} />
+          <TrackedCta
+            className="dm-public-menu-sign-in"
+            href={startUrl}
+            cta="connect_gmail"
+            placement="nav_sign_in"
+            onClick={close}
+          >
+            Sign in
+          </TrackedCta>
+          <TrackedCta
+            className="dm-public-menu-start"
+            href={startUrl}
+            cta="connect_gmail"
+            placement="nav"
+            onClick={close}
+          >
+            Start free
+          </TrackedCta>
+        </nav>
+      ) : null}
+    </div>
   );
 }

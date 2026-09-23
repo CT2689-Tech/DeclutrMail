@@ -118,6 +118,11 @@
   gap: 14px;
 }
 
+.dm-public-theme-toggle {
+  flex: 0 0 auto;
+  outline-offset: 3px;
+}
+
 .dm-public-start {
   min-height: 40px;
   display: inline-flex;
@@ -148,9 +153,10 @@
   position: relative;
 }
 
-.dm-public-menu summary {
+.dm-public-menu-button {
   min-width: 44px;
   min-height: 44px;
+  border: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -160,14 +166,9 @@
   color: var(--dm-fg);
   font: 600 14px/1 var(--dm-font-sans);
   cursor: pointer;
-  list-style: none;
 }
 
-.dm-public-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.dm-public-menu[open] summary {
+.dm-public-menu[data-open='true'] .dm-public-menu-button {
   background: var(--dm-fg);
   color: var(--dm-fg-inverse);
 }
@@ -189,7 +190,7 @@
   background: var(--dm-bg);
 }
 
-body:has(.dm-public-menu[open]) {
+body:has(.dm-public-menu[data-open='true']) {
   overflow: hidden;
 }
 
@@ -303,6 +304,11 @@ body:has(.dm-public-menu[open]) {
 
   .dm-public-menu {
     display: block;
+    margin-left: 0;
+  }
+
+  .dm-public-theme-toggle {
+    margin-left: auto;
   }
 
   .dm-public-footer-inner {
@@ -317,6 +323,10 @@ body:has(.dm-public-menu[open]) {
     width: min(100% - 32px, 1180px);
   }
 
+  .dm-public-header-inner {
+    gap: 8px;
+  }
+
   .dm-public-footer-groups {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     row-gap: 34px;
@@ -327,6 +337,12 @@ body:has(.dm-public-menu[open]) {
     align-items: flex-start;
     flex-direction: column;
     justify-content: center;
+  }
+}
+
+@media (max-width: 360px) {
+  .dm-public-theme-toggle span {
+    display: none;
   }
 }
 
@@ -344,7 +360,7 @@ body:has(.dm-public-menu[open]) {
   letter-spacing: -0.035em;
 }
 .dm-public-start,
-.dm-public-menu summary,
+.dm-public-menu-button,
 .dm-public-menu nav .dm-public-menu-start {
   border-radius: 8px;
 }
@@ -382,7 +398,7 @@ body:has(.dm-public-menu[open]) {
 .dm-public-menu nav {
   height: calc(100dvh - 76px);
 }
-.dm-public-header :is(a, summary):focus-visible {
+.dm-public-header :is(a, button):focus-visible {
   outline: 2px solid var(--dm-primary);
   outline-offset: 5px;
 }

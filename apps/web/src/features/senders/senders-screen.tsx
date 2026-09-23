@@ -444,7 +444,8 @@ function describeNarrowedFilters(compose: ComposeState): string {
     compose.protectedFlag !== null ||
     compose.windowDays !== null ||
     compose.domain !== null ||
-    compose.unsubIgnored;
+    compose.unsubIgnored ||
+    compose.hasInboxMail === true;
   if (compose.activity && !compose.activityNegate && !hasOtherFilters) return compose.activity;
   // QA-senders-20260901-09: 'matching' collided with the template's own
   // "senders match" a few words later ("No matching senders match ...").
@@ -2354,7 +2355,12 @@ function SendersScreenContent({
           : 'total';
       const next: SavedSenderView[] = [
         ...savedViews.filter((v) => v.name !== name),
-        { name, compose: { ...compose }, sort, direction: sortDirection },
+        {
+          name,
+          compose: { ...compose, hasInboxMail: compose.hasInboxMail === true },
+          sort,
+          direction: sortDirection,
+        },
       ];
       if (next.length > SENDER_VIEWS_CAP) {
         toast(`Saved views are capped at ${SENDER_VIEWS_CAP} — delete one first`, 'warn');
@@ -2449,6 +2455,17 @@ function SendersScreenContent({
                 senders={senders}
                 onPick={onSearchPick}
               />
+              <button
+                type="button"
+                className={workspaceStyles.inboxFilter}
+                aria-pressed={compose.hasInboxMail === true}
+                title="Show only senders with mail currently in Inbox. Turn off to see senders you may still want to unsubscribe."
+                onClick={() =>
+                  setCompose({ ...compose, hasInboxMail: compose.hasInboxMail !== true })
+                }
+              >
+                Mail in Inbox
+              </button>
               <FilterButton
                 state={compose}
                 updating={countsMayBeStale}

@@ -1,14 +1,13 @@
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
-import { InboxCollapse } from './inbox-collapse';
+import { HeroWorkspace } from './hero-workspace';
 import { ScopeDisclosure } from './scope-disclosure';
 import { permissionEntryUrl } from './urls';
 import { TrackedCta } from './tracked-cta';
 
 /**
- * One idea: the headline, one button, one quiet link, one muted line, the
- * collapsed OAuth disclosure — and beside it, the product doing the one
- * thing it does (an inbox collapsing into senders, then a confirm card).
+ * The chosen editorial stage: a clear promise and the sender workspace
+ * visible immediately, with the OAuth disclosure beside the sign-up CTA.
  *
  * The muted line keeps the Free cap beside "No credit card" on purpose
  * (QA-sign-in-05): "free" with no limit stated read as unlimited. The
@@ -16,11 +15,15 @@ import { TrackedCta } from './tracked-cta';
  */
 export function Hero() {
   return (
-    <section className="dm-mkt-hero dm-mkt-shell">
+    <section className="dm-mkt-hero dm-mkt-shell" aria-labelledby="dm-home-hero-title">
       <div className="dm-mkt-hero-copy">
-        <h1 className="dm-mkt-h1">Clear years of clutter, one sender at a time.</h1>
+        <p className="dm-mkt-hero-kicker">A CLEARER WAY THROUGH GMAIL</p>
+        <h1 id="dm-home-hero-title" className="dm-mkt-h1">
+          Clear Gmail clutter. <em>See what moves first.</em>
+        </h1>
         <p className="dm-mkt-hero-sub">
-          Review your Gmail by sender. Preview which emails will move, then decide what stays.
+          Review years of mail by sender. See the matching count and planned Gmail change before you
+          confirm a move. Gmail stays where you read and reply.
         </p>
         <div className="dm-mkt-hero-ctas">
           <TrackedCta
@@ -32,16 +35,17 @@ export function Hero() {
             Start free
           </TrackedCta>
           <TrackedCta
-            href="/inbox-simulator"
+            href="/inbox-simulator?workspace=senders"
             cta="try_demo"
             placement="hero"
             className="dm-mkt-cta-link"
           >
-            Try the demo
+            Explore the demo
           </TrackedCta>
         </div>
         <p className="dm-mkt-hero-note">
-          {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month, free. No credit card.
+          Free to begin · {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions a month · No
+          credit card.
         </p>
         {/* "Start free" opens the permission checkpoint; the
             pre-consent disclosure sits beside it (copy contract in
@@ -51,7 +55,10 @@ export function Hero() {
         </div>
       </div>
       <div className="dm-mkt-hero-visual">
-        <InboxCollapse />
+        <div className="dm-mkt-hero-stage-label">
+          THE PRODUCT, UP CLOSE <span>↘</span>
+        </div>
+        <HeroWorkspace />
       </div>
     </section>
   );

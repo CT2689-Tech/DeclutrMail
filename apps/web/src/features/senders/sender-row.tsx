@@ -118,10 +118,12 @@ function CountCell({
   value,
   unit,
   compact = false,
+  scope = 'all time',
 }: {
   value: number;
   unit: string;
   compact?: boolean;
+  scope?: string;
 }) {
   return (
     <div
@@ -156,7 +158,7 @@ function CountCell({
         </span>
         <span style={{ fontSize: text.xs, color: color.fgMuted }}>{unit}</span>
       </span>
-      <span style={{ fontSize: 11, color: color.fgMuted }}>received</span>
+      <span style={{ fontSize: 11, color: color.fgMuted }}>received · {scope}</span>
     </div>
   );
 }
@@ -492,7 +494,7 @@ export function DomainGroupRow({
             )}
           </span>
         </span>
-        <CountCell value={totalReceived} unit="emails" />
+        <CountCell value={totalReceived} unit="emails" scope="retained" />
       </button>
     </div>
   );

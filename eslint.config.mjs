@@ -13,6 +13,7 @@ export default tseslint.config(
       '**/coverage/**',
       '**/storybook-static/**',
       '.claude/**',
+      '.playwright-mcp/**',
       'pnpm-lock.yaml',
     ],
   },

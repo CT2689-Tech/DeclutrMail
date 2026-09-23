@@ -113,7 +113,9 @@ export function TierCard({
               {struckAmount ? <s>{struckAmount}</s> : null}
             </div>
             <p className="dm-tier-note" data-tone="promo">
-              Limited launch price. Availability confirmed at checkout.
+              {tier.promo.name}: first {tier.promo.maxRedemptions} paid subscriptions. Price locked
+              while your subscription stays active. New annual Pro subscriptions only. Availability
+              confirmed at checkout.
             </p>
           </>
         ) : price ? (
@@ -130,7 +132,13 @@ export function TierCard({
       </div>
 
       <button type="button" className="dm-tier-cta" onClick={() => void onCta()} disabled={busy}>
-        {busy ? 'One moment…' : isFree ? 'Start free' : `Get ${tier.name}`}
+        {busy
+          ? 'One moment…'
+          : isFree
+            ? 'Start free'
+            : promoActive && tier.promo
+              ? `Get ${tier.promo.name}`
+              : `Get ${tier.name}`}
       </button>
 
       <ul className="dm-tier-features">

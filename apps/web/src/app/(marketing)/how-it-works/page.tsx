@@ -9,11 +9,11 @@ import {
   DataBoundaryFigure,
   DecisionsTable,
   FinalStoryCta,
-  HeroSendersFigure,
   ProductStoryShell,
   SenderDecisionFigure,
   StorySection,
 } from '@/features/marketing/product-story';
+import { HeroWorkspace } from '@/features/marketing/landing/hero-workspace';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'How DeclutrMail works with Gmail — DeclutrMail',
@@ -25,10 +25,18 @@ export const metadata: Metadata = marketingPageMetadata({
 export default function HowItWorksPage() {
   return (
     <ProductStoryShell
-      title="A sender-control layer for Gmail."
-      lede="DeclutrMail groups your email by sender. Inspect the sender, choose an action, and preview affected email before a manual mail-moving change."
-      visual={<HeroSendersFigure />}
+      title="See the sender. Know what will change."
+      lede="DeclutrMail puts recurring senders and their recent email in one place. Open the right-hand inspector, then preview the exact scope before moving mail."
+      visual={<HeroWorkspace />}
     >
+      <nav className="dm-story-jumps dm-story-shell" aria-label="Explore how it works">
+        <span>Jump to</span>
+        <a href="#walkthrough">Sender view</a>
+        <a href="#gmail-actions">Five decisions</a>
+        <a href="#past-email">Past email</a>
+        <a href="#manual-versus-automation">Automation</a>
+        <a href="#connect-boundary">Privacy & control</a>
+      </nav>
       <StorySection
         id="gmail-stays-home"
         layout="side"
@@ -107,6 +115,36 @@ export default function HowItWorksPage() {
         aside={<ConfirmCardFigure />}
       >
         <ActionLifecycleFigure />
+      </StorySection>
+
+      <StorySection
+        id="past-email"
+        layout="side"
+        title="Unsubscribe is also a choice about past email."
+        intro={
+          <p>
+            An unsubscribe request asks a sender to stop future mail. The email already in Gmail
+            stays where it is unless you choose a separate cleanup action.
+          </p>
+        }
+      >
+        <div className="dm-story-split">
+          <div>
+            <h3>Leave it alone</h3>
+            <p>Keep past email in place while the unsubscribe request is sent.</p>
+          </div>
+          <div>
+            <h3>Archive or Delete it</h3>
+            <p>
+              Choose how far back to act. For Delete, choose Inbox only or Inbox + archived. The
+              affected count updates in the preview before you confirm.
+            </p>
+          </div>
+        </div>
+        <p className="dm-story-note">
+          The sent unsubscribe request cannot be recalled. Archive and Delete have their own Undo in
+          Activity when past email moves.
+        </p>
       </StorySection>
 
       <StorySection

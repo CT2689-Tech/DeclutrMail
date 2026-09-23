@@ -11,7 +11,7 @@
  */
 import type { AutopilotPreviewSampleDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import type { RulePreviewState } from '@/features/autopilot/types';
-import { findDomainBatches, type DomainBatch } from '@/features/triage/domain-batch';
+import type { DomainBatch } from '@/features/triage/domain-batch';
 import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 
@@ -25,6 +25,15 @@ import type { BulkActionPreviewResult } from '@/lib/api/use-action';
 export function syntheticInboxCount(row: TriageDecisionRow): number {
   if (row.last90dMessages === 0) return Math.min(row.totalAllTime, 6);
   return Math.max(1, Math.min(row.last90dMessages, row.totalAllTime));
+}
+
+/** Explicit sample of mail outside Inbox. It is bounded by the fixture's
+ * received total and exists only to exercise the real Delete reach choice. */
+export function syntheticArchivedCount(row: TriageDecisionRow): number {
+  return Math.max(
+    0,
+    Math.min(row.totalAllTime - syntheticInboxCount(row), Math.round(row.totalAllTime * 0.3)),
+  );
 }
 
 /** No time-bucketed fixture data exists, so only `all` is ever non-zero —
@@ -64,32 +73,11 @@ export function buildSyntheticBulkPreview(batch: DomainBatch): BulkActionPreview
 }
 
 /**
- * The amazon.com domain batch, independently — `buildSyntheticRulePreview`
- * has no parameters (matches `ActivateRuleModal`'s dry-run shape: the real
- * `POST /rules/:id/preview` also takes none, since a rule's matcher runs
- * against the whole mailbox). Recomputed from the same `TRIAGE_QUEUE` the
- * screen's own `amazonBatch` derives from, so the two can never disagree.
- */
-function requireAmazonBatch(): DomainBatch {
-  const batch = findDomainBatches(TRIAGE_QUEUE).find(
-    (candidate) => candidate.domain === 'amazon.com',
-  );
-  if (!batch) throw new Error('Missing inbox simulator fixture batch: amazon.com');
-  return batch;
-}
-
-/**
- * The Autopilot rule step 3 offers — a brand-new, never-enabled preset
- * that would cover the same senders step 1 just archived by hand.
- * `enabled: false` and no run history: nothing has acted on the
- * visitor's behalf yet. `presetKey`/`actionKind`/`confidenceThreshold`/
- * the real `auto_archive_low_engagement` preset
- * (`packages/workers/src/autopilot-presets.ts`) so the numbers this
- * demo cites trace to the product's own configuration, not an invented
- * one.
+ * An existing product preset, independent of the manual batch in step 1.
+ * The real product does not create custom rules from a sender decision.
  */
 export const SYNTHETIC_RULE: AutopilotRuleDto = {
-  id: 'demo-rule-archive-amazon',
+  id: 'demo-rule-archive-low-engagement',
   presetKey: 'auto_archive_low_engagement',
   isPreset: true,
   name: 'Auto-archive low-engagement',
@@ -112,18 +100,20 @@ export const SYNTHETIC_RULE: AutopilotRuleDto = {
 };
 
 /**
- * Dry-run preview for `SYNTHETIC_RULE` — the local stand-in for
- * `POST /rules/:id/preview`. Matched senders are the SAME five eligible
- * amazon.com senders step 1 just archived (`buildSyntheticBulkPreview`'s
- * own eligible set), so this step reads as that decision's consequence
- * rather than a new topic. The sixth, Protected sender is counted as
- * `protectedWouldMatchCount`, never folded into what would act (D245 —
- * Protected never matched).
+ * Dry run of the same predicate as `auto_archive_low_engagement` in
+ * `packages/workers/src/autopilot-presets.ts`: engine Archive verdict
+ * with confidence strictly above 0.72. Protected matches are excluded.
+ * Manual decisions in the preceding step do not affect this preset.
  */
 export function buildSyntheticRulePreview(): RulePreviewState {
-  const batch = requireAmazonBatch();
-  const matched = batch.eligibleRows;
-  const protectedCount = batch.rows.length - matched.length;
+  const threshold = SYNTHETIC_RULE.confidenceThreshold;
+  if (threshold === null)
+    throw new Error('The demo Archive preset requires a confidence threshold');
+  const wouldMatch = TRIAGE_QUEUE.filter(
+    (row) => row.verdict === 'archive' && row.confidence > threshold,
+  );
+  const matched = wouldMatch.filter((row) => row.protectionReason === null);
+  const protectedCount = wouldMatch.length - matched.length;
 
   const sample: AutopilotPreviewSampleDto[] = matched.map((row) => ({
     senderKey: row.senderKey,

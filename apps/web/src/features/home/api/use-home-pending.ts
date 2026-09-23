@@ -19,13 +19,14 @@ import {
   type TriageBootstrap,
   triageBootstrapQueryOptions,
 } from '@/features/triage/api/query-options';
+import type { TriageDecisionRow } from '@/features/triage/data';
 import { apiGet } from '@/lib/api/client';
 
 export interface HomeSenderPreview {
   id: string;
   name: string;
   domain: string;
-  recentCount: number;
+  inboxCount: number;
 }
 
 export interface HomePending {
@@ -34,6 +35,28 @@ export interface HomePending {
   screenerPending: number | null;
   /** True while an ENABLED read has not answered yet. */
   isLoading: boolean;
+}
+
+/** Home points to senders with mail currently in the Inbox, not historical traffic. */
+export function selectHomeSenderPreviews(
+  rows: Pick<TriageDecisionRow, 'senderId' | 'senderName' | 'senderDomain' | 'inboxCount'>[],
+): HomeSenderPreview[] {
+  return rows
+    .filter(
+      (row): row is typeof row & { inboxCount: number } =>
+        Boolean(row.senderId) &&
+        Boolean(row.senderName) &&
+        typeof row.inboxCount === 'number' &&
+        Number.isFinite(row.inboxCount) &&
+        row.inboxCount > 0,
+    )
+    .slice(0, 3)
+    .map((row) => ({
+      id: row.senderId,
+      name: row.senderName,
+      domain: row.senderDomain,
+      inboxCount: row.inboxCount,
+    }));
 }
 
 export function useHomePending(options: { tier: TierId; enabled: boolean }): HomePending {
@@ -51,15 +74,7 @@ export function useHomePending(options: { tier: TierId; enabled: boolean }): Hom
 
   return {
     triagePending: triage.data?.length ?? null,
-    senders: (triage.data ?? [])
-      .filter((row) => row.senderId && row.senderName && Number.isFinite(row.last90dMessages))
-      .slice(0, 3)
-      .map((row) => ({
-        id: row.senderId,
-        name: row.senderName,
-        domain: row.senderDomain,
-        recentCount: row.last90dMessages,
-      })),
+    senders: selectHomeSenderPreviews(triage.data ?? []),
     screenerPending: screener.data?.pending ?? null,
     isLoading: triage.isLoading || screener.isLoading,
   };

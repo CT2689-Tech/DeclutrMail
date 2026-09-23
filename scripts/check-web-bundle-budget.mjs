@@ -119,11 +119,11 @@ const OVERRIDES_KB = {
   // import dragging in unrelated weight. 204 leaves ~4 kB, same margin as
   // /triage above.
   '/(app)/senders/[id]/page': 204,
-  // Editorial integration (2026-09-22): measured 185.2 / 180.6 / 125.0 kB
-  // for billing / screener / admin. Retain the visible count/plan navigation
-  // hints and shared page presentation; allow 1 kB on these three routes
-  // only. The general 180 kB ratchet and all other route budgets stay put.
-  '/(app)/billing/page': 186, // checkout + invoices + plan controls + editorial shell
+  // Editorial integration (2026-09-22): measured 186.2 / 180.6 / 125.0 kB
+  // for billing / screener / admin. The public theme and refreshed shared
+  // tokens also reach billing's shell. Allow its measured 0.2 kB increase
+  // while keeping the general 180 kB ratchet and other routes unchanged.
+  '/(app)/billing/page': 187, // checkout + invoices + plan controls + editorial shell
   '/(app)/screener/page': 181, // queue + decision controls + editorial shell
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
@@ -159,7 +159,9 @@ const OVERRIDES_KB = {
   // entirely in this route's own chunk — confirmed no OTHER route's
   // budget moved in the same CI run, so nothing leaked into a shared
   // chunk via the newly-added `Button` import. 120 leaves ~2 kB headroom.
-  '/(app)/settings/help/page': 120, // 118.2
+  // Rechecked after the shared editorial shell and brand update: 120.4 kB.
+  // The support form remains on this route; keep a narrow 0.6 kB margin.
+  '/(app)/settings/help/page': 121, // 120.4
 };
 
 let manifest;

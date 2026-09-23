@@ -50,9 +50,9 @@ export const Cleared: Story<typeof HomeView> = {
       action: { label: 'Review 8 today', href: '/triage' },
       pending: { triagePending: 8, screenerPending: 3 },
       senders: [
-        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', recentCount: 28 },
-        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', recentCount: 16 },
-        { id: 'dispatch', name: 'Design Dispatch', domain: 'dispatch.example', recentCount: 42 },
+        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', inboxCount: 28 },
+        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', inboxCount: 16 },
+        { id: 'dispatch', name: 'Design Dispatch', domain: 'dispatch.example', inboxCount: 42 },
       ],
     },
   },
@@ -97,8 +97,8 @@ export const FirstReviewReady: Story<typeof HomeView> = {
       syncing: false,
       action: { label: 'Review 2 today', href: '/triage' },
       senders: [
-        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', recentCount: 28 },
-        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', recentCount: 16 },
+        { id: 'journal', name: 'The Sunday Journal', domain: 'journal.example', inboxCount: 28 },
+        { id: 'studio', name: 'Studio Notes', domain: 'studio.example', inboxCount: 16 },
       ],
     },
   },

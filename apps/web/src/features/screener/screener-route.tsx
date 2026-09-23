@@ -16,7 +16,7 @@ import { ScreenerScreen } from './screener-screen';
  */
 export const SCREENER_GATE_COPY = {
   title: 'Screener',
-  pitch: 'One decision per new sender; their email keeps arriving until you choose.',
+  pitch: 'Give each undecided sender a first review; their email keeps arriving until you choose.',
   footnote: 'You can still move any sender to Later from Triage.',
 } as const;
 

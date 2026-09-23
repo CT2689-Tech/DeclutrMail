@@ -31,6 +31,8 @@ const SenderViewComposeSchema = z
     domain: z.string().max(120).nullable(),
     /** D51 "unsub'd, still emailing" — on/off. */
     unsubIgnored: z.boolean(),
+    /** Existing saved views predate this filter; omitted means off. */
+    hasInboxMail: z.boolean().default(false),
   })
   .strict();
 

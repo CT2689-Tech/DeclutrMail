@@ -252,10 +252,11 @@ export function AppShell({
                   if (!on) onNavigateIntent?.(id);
                 }}
                 aria-current={on ? 'page' : undefined}
+                aria-label={item.label}
                 style={tabStyle(on)}
               >
                 <NavIcon d={item.icon} size={20} />
-                {item.label}
+                <span className="dm-tabbar-label">{item.label}</span>
               </button>
             );
           })}

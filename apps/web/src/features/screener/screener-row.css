@@ -1,0 +1,41 @@
+/* Flat rows share one stylesheet instead of rendering a style tag per sender. */
+.dm-screener-row {
+  position: relative;
+  margin: 0 -12px;
+  border-radius: 14px;
+  transition:
+    background 120ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.dm-screener-list > * + * > .dm-screener-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 68px;
+  right: 12px;
+  height: 1px;
+  background: var(--dm-line-soft);
+}
+
+.dm-screener-row:not([data-expanded='true']):hover {
+  background: var(--dm-fill);
+}
+.dm-screener-row[data-expanded='true'] {
+  background: var(--dm-primary-wash);
+}
+.dm-screener-list > * > .dm-screener-row:hover::before,
+.dm-screener-list > * > .dm-screener-row[data-expanded='true']::before,
+.dm-screener-list > *:has(> .dm-screener-row:hover) + * > .dm-screener-row::before,
+.dm-screener-list > *:has(> .dm-screener-row[data-expanded='true']) + * > .dm-screener-row::before {
+  opacity: 0;
+}
+
+.dm-screener-verb {
+  transition:
+    background 120ms cubic-bezier(0.2, 0, 0, 1),
+    transform 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+.dm-screener-verb:not(:disabled):active {
+  transform: scale(0.97);
+}

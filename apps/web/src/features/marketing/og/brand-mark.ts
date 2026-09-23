@@ -23,7 +23,7 @@ const REGULAR = {
 } as const;
 
 /**
- * `ink` for the paper card, `reversed` for an ink or teal ground.
+ * `ink` for the paper card, `reversed` for an ink or plum ground.
  *
  * Returned as a data URI rather than inline JSX: Satori's `<svg>` support is
  * partial, and an `<img>` with a data URI is the path it handles most
@@ -31,7 +31,7 @@ const REGULAR = {
  */
 export function ogMarkDataUri(tone: 'ink' | 'reversed' = 'ink'): string {
   const [frameColor, tailColor] =
-    tone === 'reversed' ? (['#FAFAF7', '#79E6DC'] as const) : (['#0E1413', '#006B5F'] as const);
+    tone === 'reversed' ? (['#FAF4ED', '#D1B8D6'] as const) : (['#2D2630', '#59415F'] as const);
 
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${REGULAR.viewBox}" fill="none">` +

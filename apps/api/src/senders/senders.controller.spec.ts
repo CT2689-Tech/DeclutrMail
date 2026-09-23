@@ -205,6 +205,35 @@ describe('SendersController', () => {
       );
     });
 
+    it('applies the optional Inbox-mail filter to rows and matching counts', async () => {
+      reads.listSenders.mockResolvedValue([]);
+      await ctrl.list(
+        MAILBOX,
+        undefined,
+        '10',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'true',
+        'true',
+      );
+      expect(reads.listSenders).toHaveBeenCalledWith(
+        expect.objectContaining({ currentMailOnly: true, hasInboxMail: true }),
+      );
+      expect(reads.getSenderListQueryMeta).toHaveBeenCalledWith(
+        expect.objectContaining({ currentMailOnly: true, hasInboxMail: true }),
+      );
+    });
+
     it('returns the D202 paginated envelope with hasMore=false when the service returns ≤ limit rows', async () => {
       reads.listSenders.mockResolvedValue([makeSenderRow()]);
       const res = await ctrl.list(

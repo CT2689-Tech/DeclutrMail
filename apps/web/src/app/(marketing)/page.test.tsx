@@ -42,9 +42,8 @@ describe('landing page — D134', () => {
   it('renders the launch headline as the page h1', async () => {
     await renderLanding();
     const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.textContent).toBe('Clear years of clutter, one sender at a time.');
-    // One ink colour: no accented phrase inside the headline.
-    expect(h1.querySelector('em, i, b, strong, span')).toBeNull();
+    expect(h1.textContent).toBe('Clear Gmail clutter. See what moves first.');
+    expect(h1.querySelector('em')?.textContent).toBe('See what moves first.');
   });
 
   it('states the D228 trust copy once: the badge, plus the collapsed scope disclosures', async () => {
@@ -82,8 +81,11 @@ describe('landing page — D134', () => {
 
   it('includes the product journey alongside hero, workflow, privacy, pricing and final CTA', async () => {
     const { container } = await renderLanding();
-    expect(container.querySelectorAll('.dm-mkt-landing > section')).toHaveLength(6);
-    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(5);
+    expect(container.querySelectorAll('.dm-mkt-landing > section')).toHaveLength(7);
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(6);
+    expect(
+      screen.getByRole('heading', { name: 'A clearer inbox is only the beginning.' }),
+    ).toBeInTheDocument();
     // No mono "№ 02 — …" eyebrows, and no FAQ block — so no FAQPage
     // JSON-LD either: Google only allows FAQ markup for answers the page
     // visibly renders. /faq and /help carry it.
@@ -91,15 +93,12 @@ describe('landing page — D134', () => {
     expect(container.querySelector('script[type="application/ld+json"]')).toBeNull();
   });
 
-  it('names all five user actions from the registry (D227 + ADR-0019)', async () => {
+  it('explains why the workspace sits beside Gmail', async () => {
     const { container } = await renderLanding();
     const workflow = container.querySelector('#how-it-works');
-    expect(workflow?.textContent).toContain('Keep, Archive, Unsubscribe, Later, or Delete');
-    // The Review step's vignette carries the same five, from the same registry.
-    const demoVerbs = Array.from(container.querySelectorAll('.dm-mkt-vig-verb')).map(
-      (el) => el.textContent,
-    );
-    expect(demoVerbs).toEqual(['KKeep', 'AArchive', 'UUnsubscribe', 'LLater', 'DDelete']);
+    expect(workflow?.textContent).toContain('Gmail stays where you read and reply');
+    expect(workflow?.textContent).toContain('live action preview');
+    expect(workflow?.textContent).toContain('recorded result');
   });
 
   it('states the canonical refund terms beside the prices (D121)', async () => {
@@ -109,32 +108,33 @@ describe('landing page — D134', () => {
     expect(foot?.textContent).toContain('every paid plan');
   });
 
-  it('labels the sample-inbox arithmetic as an illustration', async () => {
+  it('keeps the complete data list available without making it the first trust message', async () => {
     const { container } = await renderLanding();
-    const workflow = container.querySelector('#how-it-works');
-    expect(workflow?.textContent).toContain('12,418');
-    expect(workflow?.textContent).toContain('143');
-    expect(workflow?.textContent).toMatch(/illustrative/i);
+    expect(container.querySelector('.dm-mkt-privacy-inventory')).not.toHaveAttribute('open');
+    expect(container.querySelector('.dm-mkt-privacy-inventory summary')?.textContent).toBe(
+      'See the full data list',
+    );
   });
 
-  it('states the same undo window in workflow and inspector, with the external request boundary', async () => {
+  it('states the recovery window in the walkthrough and the external request boundary', async () => {
     const { container } = await renderLanding();
     const text = container.textContent ?? '';
-    expect(text.split(`${MIN_UNDO_WINDOW_DAYS} days`).length - 1).toBe(2);
-    expect(text).toMatch(/unsubscribe requests cannot be taken back/i);
+    expect(text).toContain(`${MIN_UNDO_WINDOW_DAYS} days`);
+    expect(text).toMatch(/delivered unsubscribe requests cannot be recalled/i);
   });
 
-  it('settles the hero inbox on a confirm card that states the count and where email goes', async () => {
+  it('shows the sender list and right-hand details in a clearly illustrative hero', async () => {
     const { container } = await renderLanding();
-    const figure = container.querySelector('.dm-mkt-inbox-figure') as HTMLElement;
-    // Labelled as an illustration, visibly and to assistive tech.
-    expect(figure.querySelector('figcaption')?.textContent).toMatch(/illustrative/i);
-    const confirm = figure.querySelector('.dm-mkt-inbox-confirm');
-    // The preview owes the count and where the email goes (D226).
-    expect(confirm?.textContent).toContain('Archive 412 emails?');
-    expect(confirm?.textContent).toContain('stay in Gmail');
+    const figure = container.querySelector('.dm-mkt-hero-workspace-figure') as HTMLElement;
+    expect(figure.querySelector('figcaption')?.textContent).toMatch(/fictional sample/i);
+    expect(figure.querySelector('.dm-mkt-hero-workspace-list')?.textContent).toContain(
+      'Fieldnotes',
+    );
+    expect(figure.querySelector('.dm-mkt-hero-workspace-detail')?.textContent).toContain('128');
     expect(
-      screen.getByRole('img', { name: /Illustrative inbox.*Archive 412 emails from LinkedIn/i }),
+      screen.getByRole('img', {
+        name: /Illustrative DeclutrMail workspace.*right-hand detail inspector/i,
+      }),
     ).toBeInTheDocument();
     // Decorative UI, not controls: nothing in the figure is focusable.
     expect(figure.querySelector('button, a, [tabindex]')).toBeNull();
@@ -147,9 +147,9 @@ describe('landing page — D134', () => {
     expect(within(hero).getByRole('link', { name: 'Start free' }).getAttribute('href')).toBe(
       '/sign-in',
     );
-    expect(within(hero).getByRole('link', { name: /Try the demo/ })).toHaveAttribute(
+    expect(within(hero).getByRole('link', { name: /Explore the demo/ })).toHaveAttribute(
       'href',
-      '/inbox-simulator',
+      '/inbox-simulator?workspace=senders',
     );
     // "Start free" opens the permission checkpoint. The concise scope
     // disclosure also stays beside the CTA — collapsed.
@@ -163,7 +163,7 @@ describe('landing page — D134', () => {
     const ctas = Array.from(container.querySelectorAll('a')).map((a) => a.getAttribute('href'));
     expect(ctas).toContain('/sign-in');
     expect(ctas.some((href) => href?.includes('/api/auth/google/start'))).toBe(false);
-    for (const route of ['/inbox-simulator', '/pricing', '/privacy']) {
+    for (const route of ['/inbox-simulator?workspace=senders', '/pricing', '/privacy']) {
       expect(ctas).toContain(route);
     }
   });

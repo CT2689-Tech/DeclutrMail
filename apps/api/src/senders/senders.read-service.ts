@@ -164,6 +164,20 @@ function hasCurrentMail(
   )`;
 }
 
+/** Same live Inbox set as the per-row inboxCount and inbox-scoped actions.
+ * EXISTS can stop at the first match and uses the partial Inbox index;
+ * ranking every sender by a correlated COUNT before LIMIT cannot.
+ */
+function hasInboxMail(): SQL {
+  return sql`EXISTS (
+    SELECT 1 FROM ${mailMessages}
+    WHERE ${mailMessages.mailboxAccountId} = ${senders.mailboxAccountId}
+      AND ${mailMessages.senderKey} = ${senders.senderKey}
+      AND ${mailMessages.isOutbound} = false
+      AND 'INBOX' = ANY(${mailMessages.labelIds})
+  )`;
+}
+
 /**
  * Build the server-side search predicate for the senders list (#145).
  * Matches the query case-insensitively (substring) against the three
@@ -436,6 +450,8 @@ export class SendersReadService {
     mailboxAccountId: string;
     /** Cleanup lists exclude senders with no current inbound mail. */
     currentMailOnly?: boolean;
+    /** Require at least one inbound message currently in Inbox. */
+    hasInboxMail?: boolean;
     category: GmailCategory | null;
     /**
      * When `true`, return only senders with a standing Protect policy
@@ -635,6 +651,7 @@ export class SendersReadService {
     // never drifts between them.
     const conditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (args.currentMailOnly) conditions.push(hasCurrentMail());
+    if (args.hasInboxMail) conditions.push(hasInboxMail());
     if (category) {
       conditions.push(eq(senders.gmailCategory, category));
     }
@@ -941,6 +958,7 @@ export class SendersReadService {
   async getSenderListQueryMeta(args: {
     mailboxAccountId: string;
     currentMailOnly?: boolean;
+    hasInboxMail?: boolean;
     category: GmailCategory | null;
     isProtected?: boolean | null;
     /** Search term (#145) — `totalMatching` must reflect the same filter
@@ -961,6 +979,7 @@ export class SendersReadService {
 
     const totalMatchingConditions = [eq(senders.mailboxAccountId, mailboxAccountId)];
     if (args.currentMailOnly) totalMatchingConditions.push(hasCurrentMail());
+    if (args.hasInboxMail) totalMatchingConditions.push(hasInboxMail());
     if (category) {
       totalMatchingConditions.push(eq(senders.gmailCategory, category));
     }

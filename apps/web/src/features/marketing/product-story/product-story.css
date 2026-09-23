@@ -3,7 +3,7 @@
 
    Built entirely on the --dm-* app tokens. One display face (Fraunces)
    for headlines, set large in one ink colour; Geist for everything else.
-   Teal is the only accent: the primary button and small highlights.
+   The shared brand accent appears on the primary button and small highlights.
    Product vignettes are the only raised objects; everything else sits
    flat on the paper. No motion beyond hover/press. */
 
@@ -349,8 +349,36 @@
 
 /* ── Sections ────────────────────────────────────────────────── */
 
+.dm-story-jumps {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px 18px;
+  margin-top: 54px;
+  padding-block: 16px;
+  border-block: 1px solid var(--dm-line);
+  font-size: 13px;
+}
+
+.dm-story-jumps span {
+  color: var(--dm-fg-muted);
+  font-weight: 700;
+}
+
+.dm-story-jumps a {
+  color: var(--dm-primary);
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.dm-story-jumps a:hover,
+.dm-story-jumps a:focus-visible {
+  text-decoration: underline;
+}
+
 .dm-story-section {
   padding-top: clamp(72px, 7vw, 96px);
+  scroll-margin-top: 72px;
 }
 
 @media (min-width: 961px) {
@@ -681,6 +709,49 @@
   margin: 16px 0 0;
   color: var(--dm-fg-muted);
   font-size: 14px;
+}
+
+.dm-doc-highlights {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 34px;
+}
+
+.dm-doc-highlights a {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-height: 106px;
+  padding: 17px;
+  border: 1px solid var(--dm-line);
+  border-radius: 8px;
+  background: var(--dm-card);
+  color: var(--dm-fg);
+  text-decoration: none;
+}
+
+.dm-doc-highlights a:hover,
+.dm-doc-highlights a:focus-visible {
+  border-color: var(--dm-primary);
+}
+
+.dm-doc-highlights strong {
+  font-size: 14px;
+}
+.dm-doc-highlights span {
+  color: var(--dm-fg-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 620px) {
+  .dm-doc-highlights {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dm-doc-highlights a {
+    min-height: 0;
+  }
 }
 
 .dm-doc-section {

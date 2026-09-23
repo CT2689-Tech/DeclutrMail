@@ -18,7 +18,13 @@ import { getResolvedTheme, setTheme, type Theme } from './theme';
 
 const { color, motion, radius } = tokens;
 
-export function ThemeToggle() {
+export function ThemeToggle({
+  className = '',
+  showLabel = false,
+}: {
+  className?: string;
+  showLabel?: boolean;
+}) {
   // `null` until mounted — the server can't know the resolved theme,
   // so render a neutral placeholder first and let the client fill in
   // the real icon post-hydration (avoids a hydration mismatch).
@@ -43,18 +49,20 @@ export function ThemeToggle() {
       title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
       // `dm-nav-row` = transparent at rest, neutral fill on hover, and a
       // 44px touch height below the `sm` breakpoint (tokens.css).
-      className="dm-nav-row"
+      className={`dm-nav-row ${className}`.trim()}
       style={{
         display: 'inline-flex',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 36,
-        height: 36,
+        width: showLabel ? 'auto' : 36,
+        height: showLabel ? 44 : 36,
         borderRadius: radius.pill,
-        border: 'none',
-        color: color.fgMuted,
+        border: showLabel ? `1px solid ${color.border}` : 'none',
+        background: showLabel ? color.fill : 'transparent',
+        color: showLabel ? color.fg : color.fgMuted,
         cursor: 'pointer',
-        padding: 0,
+        padding: showLabel ? '0 10px' : 0,
+        gap: showLabel ? 7 : 0,
         transition: `background ${motion.fast} ${motion.ease}`,
       }}
     >
@@ -83,6 +91,11 @@ export function ThemeToggle() {
           />
         </svg>
       )}
+      {showLabel ? (
+        <span style={{ fontSize: 12, fontWeight: 600 }}>
+          {theme === null ? 'Theme' : dark ? 'Light mode' : 'Dark mode'}
+        </span>
+      ) : null}
     </button>
   );
 }

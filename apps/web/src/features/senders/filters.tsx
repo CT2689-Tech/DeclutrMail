@@ -60,6 +60,8 @@ export interface ComposeState {
    * the complement isn't a scope anyone composes).
    */
   unsubIgnored: boolean;
+  /** Live Inbox membership; optional for saved views created before this axis. */
+  hasInboxMail?: boolean;
 }
 
 export const EMPTY_COMPOSE: ComposeState = {
@@ -71,6 +73,7 @@ export const EMPTY_COMPOSE: ComposeState = {
   windowDays: null,
   domain: null,
   unsubIgnored: false,
+  hasInboxMail: false,
 };
 
 /**
@@ -105,7 +108,8 @@ export function hasAnyFilter(s: ComposeState): boolean {
     s.protectedFlag !== null ||
     s.windowDays !== null ||
     s.domain !== null ||
-    s.unsubIgnored
+    s.unsubIgnored ||
+    s.hasInboxMail === true
   );
 }
 
@@ -123,7 +127,8 @@ export function isDefaultCompose(c: ComposeState): boolean {
     c.protectedFlag === DEFAULT_COMPOSE.protectedFlag &&
     c.windowDays === DEFAULT_COMPOSE.windowDays &&
     c.domain === DEFAULT_COMPOSE.domain &&
-    c.unsubIgnored === DEFAULT_COMPOSE.unsubIgnored
+    c.unsubIgnored === DEFAULT_COMPOSE.unsubIgnored &&
+    c.hasInboxMail !== true
   );
 }
 
@@ -312,6 +317,12 @@ export function FilterPanel({
       </Section>
 
       <Section label="Show only">
+        <OnOffChip
+          label="mail in Inbox"
+          count={undefined}
+          active={state.hasInboxMail === true}
+          onToggle={() => onChange({ ...state, hasInboxMail: state.hasInboxMail !== true })}
+        />
         <ToggleChip
           label="has unsubscribe"
           count={counts?.unsubReady}
@@ -689,6 +700,13 @@ function activeFilterChips(s: ComposeState): ActiveChip[] {
   tri('unsubReady', 'Has unsubscribe', 'No unsubscribe');
   tri('wroteTo', 'You wrote to them', 'Never wrote to them');
   tri('protectedFlag', 'Protected', 'Not protected');
+  if (s.hasInboxMail) {
+    out.push({
+      key: 'hasInboxMail',
+      label: 'Mail in Inbox',
+      cleared: { ...s, hasInboxMail: false },
+    });
+  }
   if (s.unsubIgnored) {
     out.push({
       key: 'unsubIgnored',

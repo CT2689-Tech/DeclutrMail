@@ -1900,6 +1900,19 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
 
+  it('explains why an existing paid subscriber cannot claim a Founding Pro pricing link', async () => {
+    mockTier = 'pro';
+    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
+
+    expect(
+      await screen.findByText(
+        /Your active paid subscription cannot be converted to the promotional price/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+  });
+
   it('a deep link naming the same tier at a DIFFERENT cycle (monthly->annual) still auto-opens the confirm panel', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));

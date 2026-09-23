@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 
 import {
   ACTION_SAFETY_SUMMARY,
@@ -23,7 +24,9 @@ import { TRIAGE_QUEUE, type TriageDecisionRow } from '@/features/triage/data';
 import { findDomainBatches, type DomainBatch } from '@/features/triage/domain-batch';
 import { DomainBatchCard, type BatchVerb } from '@/features/triage/domain-batch-card';
 import { ActionSheet, type ConfirmDetails } from '@/features/triage/action-sheet';
+import type { ActionPreviewDetail } from '@/features/triage/action-preview-detail';
 import { BatchActionSheet } from '@/features/triage/batch-action-sheet';
+import { TriageFocusCard } from '@/features/triage/focus-card';
 import { TriageRow } from '@/features/triage/triage-row';
 import { VERB_ORDER, type ActionVerb } from '@/features/triage/types';
 import type { SheetableVerb } from '@/features/triage/store';
@@ -34,11 +37,18 @@ import { track } from '@/lib/posthog';
 import {
   buildSyntheticBulkPreview,
   buildSyntheticRulePreview,
+  syntheticArchivedCount,
   syntheticInboxCount,
   SYNTHETIC_RULE,
 } from './synthetic-preview';
 
 const { color } = tokens;
+
+// Keep the richer synthetic Senders workspace out of Triage's first-load chunk.
+const SendersSimulator = dynamic(
+  () => import('./senders-simulator').then((module) => module.SendersSimulator),
+  { ssr: false },
+);
 
 // The FULL fixture queue on purpose (was slice(0,7)): the last two
 // rows are the demo's most instructive states — a reply-protected
@@ -126,19 +136,16 @@ interface RuleScenario extends ScenarioBase {
 }
 export type GuidedScenario = RowScenario | BatchScenario | RuleScenario;
 
-/** The Amazon batch's own facts, derived rather than retyped — a fixture
- *  edit (another sender, a changed verdict) keeps this copy honest. */
+/** The Amazon batch's own facts, derived rather than retyped. */
 const amazonBatch = requireDemoBatch('amazon.com');
-const amazonMessageTotal = amazonBatch.eligibleRows.reduce((sum, row) => sum + row.totalAllTime, 0);
-const amazonVerdictCount = new Set(amazonBatch.eligibleRows.map((row) => row.verdict)).size;
 
 export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
   {
     kind: 'batch',
     domain: amazonBatch.domain,
     shortLabel: 'Scale',
-    title: 'One decision covers thousands of messages.',
-    body: `This inbox has ${amazonBatch.rows.length} senders from ${amazonBatch.domain}, holding ${amazonMessageTotal.toLocaleString('en-US')} messages between them. The engine does not even agree with itself — ${amazonVerdictCount} different recommendations across the group — and one decision below covers all of it.`,
+    title: 'Review a group in one decision.',
+    body: `${amazonBatch.rows.length} senders share ${amazonBatch.domain}. ${amazonBatch.eligibleRows.length} can join this batch; Protected senders stay out. Preview the current count before anything moves.`,
     prompt: 'Try Archive all — it covers every eligible sender at once.',
   },
   {
@@ -152,9 +159,9 @@ export const GUIDED_SCENARIOS: readonly GuidedScenario[] = [
   {
     kind: 'rule',
     shortLabel: 'Make it stick',
-    title: 'A one-time decision does not repeat itself.',
-    body: MANUAL_ACTION_SCOPE_CLAIM,
-    prompt: 'See the Autopilot rule this decision would create.',
+    title: 'A preset can keep watch.',
+    body: `${MANUAL_ACTION_SCOPE_CLAIM} Autopilot offers separate preset rules; a manual decision does not create one.`,
+    prompt: 'Preview the low-engagement Archive preset against the sample mailbox.',
   },
   {
     kind: 'row',
@@ -269,11 +276,13 @@ function parseStoredDecisions(parsed: unknown): DemoDecision[] | null {
     // single hard-coded expectation would reject an honest entry (and
     // one malformed entry rejects the whole snapshot below).
     const expectedCounts: readonly number[] =
-      record.verb === 'Archive' || record.verb === 'Later' || record.verb === 'Delete'
-        ? [syntheticInboxCount(row)]
-        : record.verb === 'Unsubscribe'
-          ? [0, syntheticInboxCount(row)]
-          : [0];
+      record.verb === 'Delete'
+        ? [syntheticInboxCount(row), syntheticInboxCount(row) + syntheticArchivedCount(row)]
+        : record.verb === 'Archive' || record.verb === 'Later'
+          ? [syntheticInboxCount(row)]
+          : record.verb === 'Unsubscribe'
+            ? [0, syntheticInboxCount(row)]
+            : [0];
     if (!expectedCounts.includes(record.affectedCount)) return null;
 
     if (
@@ -386,7 +395,12 @@ function decisionSummary(decision: DemoDecision): string {
 }
 
 function isActivityUndoable(decision: DemoDecision): boolean {
-  return decision.verb === 'Archive' || decision.verb === 'Later' || decision.verb === 'Delete';
+  return (
+    decision.verb === 'Archive' ||
+    decision.verb === 'Later' ||
+    decision.verb === 'Delete' ||
+    (decision.verb === 'Unsubscribe' && decision.affectedCount > 0)
+  );
 }
 
 /**
@@ -429,12 +443,15 @@ function capabilitiesAddedBy(tier: TierId, previous: TierId): readonly string[] 
 }
 
 export function InboxSimulatorScreen() {
+  const [orientationOpen, setOrientationOpen] = useState(false);
+  const [workspace, setWorkspace] = useState<'triage' | 'senders'>('senders');
   const [decisions, setDecisions] = useState<DemoDecision[]>([]);
-  const [mode, setMode] = useState<DemoMode>('guided');
-  const [expandedId, setExpandedId] = useState<string | null>(
-    GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null,
-  );
+  const [mode, setMode] = useState<DemoMode>('explore');
+  const [reviewLayout, setReviewLayout] = useState<'focus' | 'list'>('list');
+  const [focusIndex, setFocusIndex] = useState(0);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingDecision | null>(null);
+  const [deleteReach, setDeleteReach] = useState<'inbox_only' | 'all_mail'>('inbox_only');
   const [pendingBatch, setPendingBatch] = useState<{
     batch: DomainBatch;
     verb: BatchVerb;
@@ -478,12 +495,12 @@ export function InboxSimulatorScreen() {
           : null;
       if (restored) {
         setDecisions(restored.decisions);
-        setMode(restored.mode);
+        // The old persisted guide remains available, but a direct visit
+        // should present the current Triage queue rather than an old tour.
+        setMode('explore');
         setRuleActivated(restored.ruleDecision);
         const ruleDecidedRestored = restored.ruleDecision != null;
-        setExpandedId(
-          firstUndecidedRow(restored.mode, restored.decisions, ruleDecidedRestored)?.id ?? null,
-        );
+        setExpandedId(null);
         guidedCompletionTracked.current = hasCompletedGuide(
           restored.decisions,
           ruleDecidedRestored,
@@ -500,9 +517,12 @@ export function InboxSimulatorScreen() {
     // pattern.
     try {
       const params = new URLSearchParams(window.location.search);
+      if (params.get('workspace') === 'triage' || params.has('step')) setWorkspace('triage');
+      if (params.get('tour') === '1') setMode('guided');
       const stepParam = params.get('step');
       const stepIndex = stepParam === null ? NaN : Number(stepParam) - 1;
       if (Number.isInteger(stepIndex) && stepIndex >= 0 && stepIndex < GUIDED_SCENARIOS.length) {
+        setMode('guided');
         setViewIndex(stepIndex);
       }
     } catch {
@@ -561,7 +581,6 @@ export function InboxSimulatorScreen() {
   // Whether the Amazon batch step (index 0) is decided — the rule step's
   // card references it, and with free navigation that step may not have
   // happened yet when the rule step is the one on screen.
-  const batchStepDecided = isScenarioComplete(GUIDED_SCENARIOS[0]!, decidedIds, ruleDecided);
   const currentBatch =
     currentScenario?.kind === 'batch'
       ? (findDomainBatches(DEMO_ROWS, dismissedDomains).find(
@@ -592,6 +611,8 @@ export function InboxSimulatorScreen() {
         ? [currentScenario.row]
         : (dismissedBatchRows ?? [])
       : DEMO_ROWS.filter((row) => !decidedIds.has(row.id));
+  const focusedRow = mode === 'explore' && rows.length > 0 ? rows[focusIndex % rows.length]! : null;
+  const isFocusReview = reviewLayout === 'focus' && focusedRow !== null;
   const guidedDecisions = decisions.filter((decision) => GUIDED_ROW_IDS.has(decision.rowId));
   // `null` unless BOTH timestamps exist — see the `completedAt` note above:
   // a session restored already-complete from storage never re-enters
@@ -643,7 +664,8 @@ export function InboxSimulatorScreen() {
       verb === 'Later' ||
       verb === 'Delete' ||
       (verb === 'Unsubscribe' && archiveHistoric)
-        ? syntheticInboxCount(row)
+        ? syntheticInboxCount(row) +
+          (verb === 'Delete' && deleteReach === 'all_mail' ? syntheticArchivedCount(row) : 0)
         : 0;
     const at = Math.max(
       Date.now(),
@@ -660,7 +682,10 @@ export function InboxSimulatorScreen() {
       },
     ];
     setDecisions(nextDecisions);
-    setExpandedId(firstUndecidedRow(mode, nextDecisions, ruleDecided)?.id ?? null);
+    setFocusIndex(0);
+    setExpandedId(
+      mode === 'guided' ? (firstUndecidedRow(mode, nextDecisions, ruleDecided)?.id ?? null) : null,
+    );
     setPending(null);
 
     void track('demo_decision_confirmed', {
@@ -719,7 +744,10 @@ export function InboxSimulatorScreen() {
     }));
     const nextDecisions = [...decisions, ...newDecisions];
     setDecisions(nextDecisions);
-    setExpandedId(firstUndecidedRow(mode, nextDecisions, ruleDecided)?.id ?? null);
+    setFocusIndex(0);
+    setExpandedId(
+      mode === 'guided' ? (firstUndecidedRow(mode, nextDecisions, ruleDecided)?.id ?? null) : null,
+    );
     setPendingBatch(null);
 
     void track('demo_decision_confirmed', {
@@ -763,6 +791,7 @@ export function InboxSimulatorScreen() {
     // without a future return time, the real `ActionSheet` disables
     // confirm outright rather than silently no-op-ing.
     setPending({ row, verb, wakeAt: verb === 'Later' ? defaultLaterWakeAtIso() : null });
+    setDeleteReach('inbox_only');
     void track('demo_preview_opened', {
       verb: verb.toLowerCase() as Lowercase<ActionVerb>,
       decision_index: decisions.length + 1,
@@ -770,16 +799,24 @@ export function InboxSimulatorScreen() {
   };
 
   const undo = (decision: DemoDecision) => {
-    const nextDecisions = decisions.filter((item) => item.at !== decision.at);
+    // An unsubscribe request cannot be recalled. If its historic Archive
+    // was selected, Undo restores only that mail movement and leaves the
+    // one-way request in Activity, as the connected product does.
+    const nextDecisions =
+      decision.verb === 'Unsubscribe'
+        ? decisions.map((item) => (item.at === decision.at ? { ...item, affectedCount: 0 } : item))
+        : decisions.filter((item) => item.at !== decision.at);
     setDecisions(nextDecisions);
-    setExpandedId(decision.rowId);
+    if (decision.verb !== 'Unsubscribe') setExpandedId(decision.rowId);
   };
 
   const reset = () => {
     void track('demo_reset', { decisions_completed: decisions.length });
     guidedCompletionTracked.current = false;
     setDecisions([]);
-    setMode('guided');
+    setMode('explore');
+    setReviewLayout('list');
+    setFocusIndex(0);
     setPending(null);
     setPendingBatch(null);
     setPendingRule(false);
@@ -787,7 +824,7 @@ export function InboxSimulatorScreen() {
     setDismissedDomains([]);
     setStartedAt(null);
     setCompletedAt(null);
-    setExpandedId(GUIDED_SCENARIOS[0]?.kind === 'row' ? GUIDED_SCENARIOS[0].row.id : null);
+    setExpandedId(null);
     setViewIndex(null);
     try {
       localStorage.removeItem(STORAGE_KEY);
@@ -798,163 +835,312 @@ export function InboxSimulatorScreen() {
 
   const changeMode = (nextMode: DemoMode) => {
     setMode(nextMode);
+    setFocusIndex(0);
     setPending(null);
     setViewIndex(null);
-    setExpandedId(firstUndecidedRow(nextMode, decisions, ruleDecided)?.id ?? null);
+    setExpandedId(
+      nextMode === 'guided'
+        ? (firstUndecidedRow(nextMode, decisions, ruleDecided)?.id ?? null)
+        : null,
+    );
+    const url = new URL(window.location.href);
+    url.searchParams.delete('step');
+    if (nextMode === 'guided') url.searchParams.set('tour', '1');
+    else url.searchParams.delete('tour');
+    window.history.replaceState(window.history.state, '', url);
   };
+
+  const changeWorkspace = (next: 'triage' | 'senders') => {
+    setWorkspace(next);
+    if (next === 'triage') changeMode('explore');
+    const url = new URL(window.location.href);
+    if (next === 'senders') {
+      url.searchParams.set('workspace', 'senders');
+      url.searchParams.delete('step');
+      url.searchParams.delete('tour');
+    } else {
+      url.searchParams.set('workspace', 'triage');
+      url.searchParams.delete('step');
+      url.searchParams.delete('tour');
+    }
+    window.history.replaceState(window.history.state, '', url);
+  };
+
+  const pendingInboxCount = pending ? syntheticInboxCount(pending.row) : 0;
+  const pendingArchivedCount = pending ? syntheticArchivedCount(pending.row) : 0;
+  const pendingReachCount =
+    pending?.verb === 'Delete' && deleteReach === 'all_mail'
+      ? pendingInboxCount + pendingArchivedCount
+      : pendingInboxCount;
+  const pendingDetail: ActionPreviewDetail | undefined = pending
+    ? {
+        mailLocationLine: `Where it is now: ${pendingInboxCount} emails in your inbox · ${pendingArchivedCount} emails elsewhere in Gmail.`,
+        ...(pending.verb === 'Delete'
+          ? {
+              reachControl: {
+                reach: deleteReach,
+                inboxCount: pendingInboxCount,
+                allMailCount: pendingInboxCount + pendingArchivedCount,
+                onChange: setDeleteReach,
+              },
+            }
+          : {}),
+      }
+    : undefined;
 
   return (
     <div className="dm-simulator">
       <section className="dm-simulator-hero">
-        <h1>Make four inbox decisions before you connect Gmail.</h1>
-        <p>Try a daily review with four made-up examples, then explore freely.</p>
-        <details className="dm-simulator-orientation">
-          <summary>Where this fits in your workspace</summary>
-          <ol>
-            <li>Overview shows your progress and available review work.</li>
-            <li>
-              Clean up contains Senders, with a detail inspector, and Triage, the daily review
-              demonstrated here.
-            </li>
-            <li>
-              Preview mail-moving actions, then check outcomes and available Undo in Activity.
-            </li>
-            <li>Automations contains rules you deliberately enable for future email.</li>
-          </ol>
-        </details>
+        <h1>Try the workspace.</h1>
+        <p>
+          Explore Senders and a made-up Triage queue. Open a sender, filter, select several, and
+          preview what each decision would do before you connect Gmail.
+        </p>
+        <div className="dm-simulator-orientation">
+          <button
+            type="button"
+            aria-expanded={orientationOpen}
+            aria-controls="dm-simulator-orientation-content"
+            onClick={() => setOrientationOpen((open) => !open)}
+          >
+            Where this fits in your workspace
+          </button>
+          {orientationOpen ? (
+            <ol id="dm-simulator-orientation-content">
+              <li>Overview shows your progress and available review work.</li>
+              <li>
+                Clean up contains Senders, with search, filters, selection and a right-hand
+                inspector, and Triage for daily review. Try either workspace below.
+              </li>
+              <li>
+                Preview mail-moving actions, then check outcomes and available Undo in Activity.
+              </li>
+              <li>Automations contains rules you deliberately enable for future email.</li>
+            </ol>
+          ) : null}
+        </div>
         <p className="dm-simulator-hero-note">
           No signup. The demo stays local to this browser and never touches Gmail.
         </p>
       </section>
 
-      <section className="dm-simulator-workspace" aria-label="Inbox simulator">
-        <div className="dm-simulator-queue">
-          {mode === 'guided' && currentScenario ? (
-            <GuidedScenarioPanel
-              scenario={currentScenario}
-              currentIndex={effectiveIndex}
-              decidedIds={decidedIds}
-              ruleDecided={ruleDecided}
-              onSelect={setViewIndex}
-            />
-          ) : null}
+      <nav className="dm-simulator-workspace-switch" aria-label="Choose demo workspace">
+        <button
+          type="button"
+          aria-pressed={workspace === 'senders'}
+          onClick={() => changeWorkspace('senders')}
+        >
+          <strong>Senders workspace</strong>
+          <span>Inspector · filters · bulk actions · unsubscribe preview</span>
+        </button>
+        <button
+          type="button"
+          aria-pressed={workspace === 'triage'}
+          onClick={() => changeWorkspace('triage')}
+        >
+          <strong>Daily Triage</strong>
+          <span>Review queue · Focus or List · guided tour</span>
+        </button>
+      </nav>
 
-          <div className="dm-simulator-queue-head">
+      {workspace === 'senders' ? (
+        <SendersSimulator />
+      ) : (
+        <>
+          <header className="dm-simulator-triage-head">
             <div>
-              <span>{mode === 'guided' ? 'Guided sender review' : 'Explore sample Triage'}</span>
-              <strong>
-                {mode === 'guided'
-                  ? `${completedGuideCount} of ${GUIDED_SCENARIOS.length} decisions complete`
-                  : `${rows.length} decision${rows.length === 1 ? '' : 's'} remaining`}
-              </strong>
+              <span>Clean up / A considered decision</span>
+              <h2>Triage</h2>
+              <p>Today’s review queue · One decision per sender · fictional sample</p>
             </div>
-            <div className="dm-simulator-queue-head-actions">
-              <CopySimulatorLink
-                step={mode === 'guided' && effectiveIndex !== -1 ? effectiveIndex + 1 : null}
-              />
-              <button
-                type="button"
-                className="dm-simulator-mode-button"
-                onClick={() => changeMode(mode === 'guided' ? 'explore' : 'guided')}
+            <div className="dm-simulator-triage-controls">
+              <div
+                role="progressbar"
+                aria-label={
+                  isFocusReview
+                    ? `Decision ${focusIndex + 1} of ${rows.length}`
+                    : `${decisions.length} of ${DEMO_ROWS.length} decided`
+                }
+                aria-valuenow={decisions.length}
+                aria-valuemin={0}
+                aria-valuemax={DEMO_ROWS.length}
               >
-                {mode === 'guided' ? `Explore all ${DEMO_ROWS.length} senders` : 'Return to guide'}
-              </button>
-            </div>
-          </div>
-
-          {mode === 'guided' && currentScenario === null ? (
-            <DemoCompletion
-              decisions={guidedDecisions}
-              elapsedMs={elapsedMs}
-              onExplore={() => changeMode('explore')}
-              onReset={reset}
-            />
-          ) : mode === 'guided' && currentScenario?.kind === 'batch' && currentBatch ? (
-            <DomainBatchCard
-              batch={currentBatch}
-              busy={pendingBatch != null}
-              onVerb={(verb) => chooseBatchAction(currentBatch, verb)}
-              onDismiss={() => setDismissedDomains((prev) => [...prev, currentBatch.domain])}
-            />
-          ) : mode === 'guided' && currentScenario?.kind === 'rule' ? (
-            <RuleStepCard
-              onPreview={() => setPendingRule(true)}
-              batchStepDecided={batchStepDecided}
-            />
-          ) : mode === 'explore' && rows.length === 0 ? (
-            <ExploreCompletion decisions={decisions} onReset={reset} />
-          ) : (
-            <div className="dm-simulator-rows">
-              {rows.map((row, index) => (
-                <TriageRow
-                  key={row.id}
-                  row={row}
-                  expanded={expandedId === row.id}
-                  hero={index === 0}
-                  busy={pending?.row.id === row.id}
-                  onToggleExpand={() =>
-                    setExpandedId((current) => (current === row.id ? null : row.id))
-                  }
-                  onAction={(verb) => chooseAction(row, verb)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        <aside className="dm-simulator-activity" aria-label="Sample activity">
-          <div className="dm-simulator-activity-head">
-            <div>
-              <span>Activity</span>
-              <strong>What actually happened</strong>
-            </div>
-            {decisions.length > 0 ? (
-              <button type="button" onClick={reset}>
-                Start over
-              </button>
-            ) : null}
-          </div>
-
-          {decisions.length === 0 ? (
-            <p className="dm-simulator-activity-empty">
-              Choose an action. If mail would move, inspect the preview and confirm it. Outcomes
-              appear here only after the decision is recorded.
-            </p>
-          ) : (
-            <ol>
-              {decisions
-                .slice()
-                .reverse()
-                .map((decision) => (
-                  <li key={decision.at}>
-                    <div>
-                      <strong>
-                        {decision.senderName} · {decision.verb}
-                      </strong>
-                      <p>{decisionSummary(decision)}</p>
-                    </div>
-                    {isActivityUndoable(decision) ? (
-                      <button type="button" onClick={() => undo(decision)}>
-                        Undo demo action
-                      </button>
-                    ) : null}
-                  </li>
+                <span>
+                  {isFocusReview ? focusIndex + 1 : decisions.length} of{' '}
+                  {isFocusReview ? rows.length : DEMO_ROWS.length}
+                </span>
+              </div>
+              <div role="group" aria-label="Review layout">
+                {(['focus', 'list'] as const).map((layout) => (
+                  <button
+                    key={layout}
+                    type="button"
+                    aria-pressed={mode === 'explore' && reviewLayout === layout}
+                    onClick={() => {
+                      changeMode('explore');
+                      setReviewLayout(layout);
+                    }}
+                  >
+                    {layout === 'focus' ? 'Focus' : 'List'}
+                  </button>
                 ))}
-            </ol>
-          )}
-
-          {mode === 'explore' ? (
-            <div className="dm-simulator-delete-note">
-              <Eyebrow tone="amber">Delete is always yours to choose</Eyebrow>
-              <p>{ACTION_REGISTRY.delete.copy.description}</p>
+              </div>
             </div>
-          ) : null}
-        </aside>
-      </section>
+          </header>
+          <section className="dm-simulator-workspace" aria-label="Inbox simulator">
+            <div className="dm-simulator-queue">
+              {mode === 'guided' && currentScenario ? (
+                <GuidedScenarioPanel
+                  scenario={currentScenario}
+                  currentIndex={effectiveIndex}
+                  decidedIds={decidedIds}
+                  ruleDecided={ruleDecided}
+                  onSelect={setViewIndex}
+                />
+              ) : null}
+
+              <div className="dm-simulator-queue-head">
+                <div>
+                  <span>
+                    {mode === 'guided' ? 'Guided sender review' : 'Explore sample Triage'}
+                  </span>
+                  <strong>
+                    {mode === 'guided'
+                      ? `${completedGuideCount} of ${GUIDED_SCENARIOS.length} decisions complete`
+                      : `${rows.length} decision${rows.length === 1 ? '' : 's'} remaining`}
+                  </strong>
+                </div>
+                <div className="dm-simulator-queue-head-actions">
+                  <CopySimulatorLink
+                    step={mode === 'guided' && effectiveIndex !== -1 ? effectiveIndex + 1 : null}
+                  />
+                  <button
+                    type="button"
+                    className="dm-simulator-mode-button"
+                    onClick={() => changeMode(mode === 'guided' ? 'explore' : 'guided')}
+                  >
+                    {mode === 'guided'
+                      ? `Explore all ${DEMO_ROWS.length} senders`
+                      : 'Take guided tour'}
+                  </button>
+                </div>
+              </div>
+
+              {mode === 'guided' && currentScenario === null ? (
+                <DemoCompletion
+                  decisions={guidedDecisions}
+                  elapsedMs={elapsedMs}
+                  onExplore={() => changeMode('explore')}
+                  onReset={reset}
+                />
+              ) : mode === 'guided' && currentScenario?.kind === 'batch' && currentBatch ? (
+                <DomainBatchCard
+                  batch={currentBatch}
+                  busy={pendingBatch != null}
+                  onVerb={(verb) => chooseBatchAction(currentBatch, verb)}
+                  onDismiss={() => setDismissedDomains((prev) => [...prev, currentBatch.domain])}
+                />
+              ) : mode === 'guided' && currentScenario?.kind === 'rule' ? (
+                <RuleStepCard onPreview={() => setPendingRule(true)} />
+              ) : mode === 'explore' && rows.length === 0 ? (
+                <ExploreCompletion decisions={decisions} onReset={reset} />
+              ) : mode === 'explore' && reviewLayout === 'focus' && focusedRow ? (
+                <div className="dm-simulator-focus">
+                  <TriageFocusCard
+                    row={focusedRow}
+                    whyOpen={expandedId === focusedRow.id}
+                    onToggleWhy={() =>
+                      setExpandedId((current) => (current === focusedRow.id ? null : focusedRow.id))
+                    }
+                    onAction={(verb) => chooseAction(focusedRow, verb)}
+                  />
+                  {rows.length > 1 ? (
+                    <button
+                      type="button"
+                      className="dm-simulator-skip"
+                      onClick={() => setFocusIndex((index) => (index + 1) % rows.length)}
+                    >
+                      Skip (→)
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="dm-simulator-rows">
+                  {rows.map((row, index) => (
+                    <TriageRow
+                      key={row.id}
+                      row={row}
+                      expanded={expandedId === row.id}
+                      hero={index === 0}
+                      busy={pending?.row.id === row.id}
+                      onToggleExpand={() =>
+                        setExpandedId((current) => (current === row.id ? null : row.id))
+                      }
+                      onAction={(verb) => chooseAction(row, verb)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <aside className="dm-simulator-activity" aria-label="Sample activity">
+              <div className="dm-simulator-activity-head">
+                <div>
+                  <span>Activity</span>
+                  <strong>What actually happened</strong>
+                  <small>Sample outcomes · separate Activity screen in the product</small>
+                </div>
+                {decisions.length > 0 ? (
+                  <button type="button" onClick={reset}>
+                    Start over
+                  </button>
+                ) : null}
+              </div>
+
+              {decisions.length === 0 ? (
+                <p className="dm-simulator-activity-empty">
+                  Choose an action. If mail would move, inspect the preview and confirm it. Outcomes
+                  appear here only after the decision is recorded.
+                </p>
+              ) : (
+                <ol>
+                  {decisions
+                    .slice()
+                    .reverse()
+                    .map((decision) => (
+                      <li key={decision.at}>
+                        <div>
+                          <strong>
+                            {decision.senderName} · {decision.verb}
+                          </strong>
+                          <p>{decisionSummary(decision)}</p>
+                        </div>
+                        {isActivityUndoable(decision) ? (
+                          <button type="button" onClick={() => undo(decision)}>
+                            {decision.verb === 'Unsubscribe'
+                              ? 'Undo archived mail'
+                              : 'Undo demo action'}
+                          </button>
+                        ) : null}
+                      </li>
+                    ))}
+                </ol>
+              )}
+
+              {mode === 'explore' ? (
+                <div className="dm-simulator-delete-note">
+                  <Eyebrow tone="amber">Delete is always yours to choose</Eyebrow>
+                  <p>{ACTION_REGISTRY.delete.copy.description}</p>
+                </div>
+              ) : null}
+            </aside>
+          </section>
+        </>
+      )}
 
       <section className="dm-simulator-next">
         <div>
-          <h2>The preview you saw here is always part of the product.</h2>
+          <h2>Every mail-moving decision has a preview.</h2>
           <p>{ACTION_SAFETY_SUMMARY}</p>
         </div>
         <div className="dm-simulator-next-actions">
@@ -970,7 +1156,7 @@ export function InboxSimulatorScreen() {
         </div>
         <p className="dm-simulator-next-oauth">{OAUTH_SCOPE_DISCLOSURE}</p>
         <aside className="dm-simulator-tier-note" aria-label="Plan availability">
-          <strong>Triage is included on every plan.</strong>{' '}
+          <strong>Senders and Triage are included on every plan.</strong>{' '}
           <span>
             Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions every month;
             paid plans are unlimited.
@@ -985,8 +1171,10 @@ export function InboxSimulatorScreen() {
         open={pending != null}
         verb={pending?.verb ?? 'Archive'}
         row={pending?.row ?? null}
-        inboxCount={pending ? syntheticInboxCount(pending.row) : 0}
+        inboxCount={pendingReachCount}
         wakeAt={pending?.wakeAt ?? null}
+        detail={pendingDetail}
+        reach={deleteReach}
         onCancel={() => setPending(null)}
         onConfirm={confirm}
       />
@@ -1084,7 +1272,7 @@ function GuidedScenarioPanel({
 
 /**
  * Step 3's queue-area entry point — a lightweight offer to preview the
- * Autopilot rule the guide's decisions so far would create, mirroring
+ * Autopilot preset preview entry point, mirroring
  * `DomainBatchCard`'s own role for step 1 (a card that OPENS the
  * D226-mandatory preview, rather than being the preview itself).
  *
@@ -1092,16 +1280,7 @@ function GuidedScenarioPanel({
  * 2026-08-23, and a demo that gets this wrong contradicts the pricing
  * page it is trying to sell.
  */
-function RuleStepCard({
-  onPreview,
-  batchStepDecided,
-}: {
-  onPreview: () => void;
-  /** Whether the Amazon batch step (step 1) has been decided yet. Free
-   *  navigation means this step can be viewed before that one — the
-   *  copy has to read correctly either way rather than assume order. */
-  batchStepDecided: boolean;
-}) {
+function RuleStepCard({ onPreview }: { onPreview: () => void }) {
   return (
     <div
       style={{
@@ -1116,9 +1295,9 @@ function RuleStepCard({
     >
       <Eyebrow tone="primary">Autopilot · {tierGranting('autopilot')}</Eyebrow>
       <p style={{ margin: 0, fontSize: 13, color: color.fgSoft, lineHeight: 1.5 }}>
-        {batchStepDecided
-          ? 'Turn this into a standing rule: the senders you just archived, archived automatically as more mail like them arrives — after you preview exactly what it would do right now.'
-          : 'Turn a decision like this into a standing rule: senders you archive get archived automatically as more mail like them arrives — after you preview exactly what it would do right now.'}
+        Preview the existing low-engagement Archive preset against this sample mailbox. It matches
+        the engine’s Archive verdict above its confidence threshold, independently of the manual
+        batch you reviewed. You can watch first or turn it on after reviewing the dry run.
       </p>
       <div>
         <Button tone="primary" onClick={onPreview}>

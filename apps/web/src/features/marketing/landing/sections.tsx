@@ -1,140 +1,107 @@
 import {
   CASA_VERIFICATION_APPROVED_MONTH,
   CASA_VERIFICATION_APPROVED_ON,
+  PRIVACY_BADGE_HEADLINE,
   PrivacyBadge,
 } from '@declutrmail/shared';
-import { VERB_REGISTRY } from '@declutrmail/shared/actions';
-import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
 
 /**
  * Landing body sections. All server-rendered; zero client JS.
  *
- * Each block states its idea once. Undo lives in How it works, the storage
- * statement lives in Privacy, the OAuth scope disclosure lives beside each
- * CTA that starts Google sign-in — none of them is repeated elsewhere.
+ * Each block states its idea once. The interactive journey carries Undo,
+ * Privacy carries the storage boundary, and each Google sign-in CTA carries
+ * the OAuth scope disclosure.
  */
 
-/** "Keep, Archive, Unsubscribe, Later, or Delete" — from the registry (D227). */
-const VERB_LIST = new Intl.ListFormat('en', { type: 'disjunction' }).format(
-  VERB_REGISTRY.map((verb) => verb.label),
-);
+/** A short bridge from the sender walkthrough to the rest of the product. */
+export function ProductBreadth() {
+  return (
+    <section className="dm-mkt-breadth dm-mkt-shell" aria-labelledby="dm-mkt-breadth-title">
+      <div className="dm-mkt-breadth-heading">
+        <p className="dm-mkt-journey-kicker">After the first cleanup</p>
+        <h2 id="dm-mkt-breadth-title" className="dm-mkt-h2">
+          A clearer inbox is only the beginning.
+        </h2>
+        <p className="dm-mkt-lede">
+          DeclutrMail also helps you notice what changed, return to unanswered conversations, and
+          decide which cleanup should repeat.
+        </p>
+      </div>
+      <div className="dm-mkt-breadth-grid">
+        <article className="dm-mkt-breadth-card">
+          <span className="dm-mkt-breadth-number">01 / CATCH UP</span>
+          <div className="dm-mkt-breadth-visual" aria-hidden="true">
+            <span>YOUR DAILY EDITION</span>
+            <strong>What needs a look today</strong>
+            <i>Reply · For your information · Noise</i>
+          </div>
+          <h3>Read the day at a glance.</h3>
+          <p>Daily Brief groups the latest changes into short, source-linked items you can scan.</p>
+          <a href="/how-it-works#beyond-manual">
+            Explore Daily Brief <span aria-hidden="true">↗</span>
+          </a>
+        </article>
+        <article className="dm-mkt-breadth-card">
+          <span className="dm-mkt-breadth-number">02 / FOLLOW THROUGH</span>
+          <div className="dm-mkt-breadth-visual" aria-hidden="true">
+            <span>CONVERSATIONS</span>
+            <strong>Still waiting on a reply</strong>
+            <i>Open in Gmail · Mark resolved</i>
+          </div>
+          <h3>Keep a thread from slipping.</h3>
+          <p>
+            Follow-ups surfaces sent conversations still waiting on a response, with a link back to
+            Gmail.
+          </p>
+          <a href="/how-it-works#beyond-manual">
+            Explore Follow-ups <span aria-hidden="true">↗</span>
+          </a>
+        </article>
+        <article className="dm-mkt-breadth-card">
+          <span className="dm-mkt-breadth-number">03 / KEEP IT CLEAR</span>
+          <div className="dm-mkt-breadth-visual" aria-hidden="true">
+            <span>RULE PREVIEW</span>
+            <strong>Review before it repeats</strong>
+            <i>Watch first · Pause anytime</i>
+          </div>
+          <h3>Put chosen rules to work.</h3>
+          <p>
+            Autopilot starts with suggestions and previews. You choose whether a rule only watches
+            or takes action.
+          </p>
+          <a href="/how-it-works#manual-versus-automation">
+            Explore Autopilot <span aria-hidden="true">↗</span>
+          </a>
+        </article>
+      </div>
+      <p className="dm-mkt-breadth-note">
+        Daily Brief and Follow-ups are included with Pro. Autopilot starts with Plus.
+      </p>
+    </section>
+  );
+}
 
-/**
- * Why sender-by-sender is faster (one typographic moment), then the three
- * steps — a real sequence, so numbered — each with a small piece of product
- * UI instead of a paragraph.
- */
+/** A short bridge from the sender walkthrough to the rest of the product. */
 export function HowItWorks() {
   return (
-    <section id="how-it-works" className="dm-mkt-section dm-mkt-shell">
-      <div className="dm-mkt-scale">
-        <h2 className="dm-mkt-h2">Thousands of emails. Far fewer senders.</h2>
-        <p className="dm-mkt-lede">Review each recurring sender once, not every email.</p>
-        {/* The figures are an illustration, not a measurement, and the label
-            beside them has to keep saying so. */}
-        <p className="dm-mkt-scale-figures">
-          <span className="dm-mkt-scale-figure">
-            <b>12,418</b>
-            <span>emails</span>
-          </span>
-          <span className="dm-mkt-scale-figure dm-mkt-scale-figure-to">
-            <b>143</b>
-            <span>decisions</span>
-          </span>
+    <section id="how-it-works" className="dm-mkt-section dm-mkt-shell dm-mkt-companion">
+      <div className="dm-mkt-companion-head">
+        <p className="dm-mkt-journey-kicker">A companion to Gmail</p>
+        <h2 className="dm-mkt-h2">Keep your inbox. Get a better way to decide.</h2>
+        <p className="dm-mkt-lede">
+          Gmail stays where you read and reply. DeclutrMail brings each sender's context, a live
+          action preview, and the recorded result into one clear flow.
         </p>
-        <p className="dm-mkt-scale-note">Illustrative sample inbox</p>
       </div>
-
-      <ol className="dm-mkt-steps">
-        <li className="dm-mkt-step">
-          <ConnectVignette />
-          <h3 className="dm-mkt-step-title">Connect</h3>
-          <p className="dm-mkt-step-body">
-            One Google sign-in. DeclutrMail scans the sender, subject, and short preview line Gmail
-            already shows you.
-          </p>
-        </li>
-        <li className="dm-mkt-step">
-          <ReviewVignette />
-          <h3 className="dm-mkt-step-title">Review</h3>
-          <p className="dm-mkt-step-body">Choose {VERB_LIST} with a preview before mail moves.</p>
-        </li>
-        <li className="dm-mkt-step">
-          <UndoVignette />
-          <h3 className="dm-mkt-step-title">Undo</h3>
-          {/* The last sentence is a disclosure, not help text: Unsubscribe is
-              the one decision Undo cannot reach. */}
-          <p className="dm-mkt-step-body">
-            Undo Archive, Later, or Delete for {MIN_UNDO_WINDOW_DAYS} days. Sent unsubscribe
-            requests cannot be taken back.
-          </p>
-        </li>
-      </ol>
       <a className="dm-mkt-cta-link" href="/how-it-works">
-        See the full product flow
+        See how the whole product works →
       </a>
     </section>
   );
 }
 
-/* Vignettes are decoration beside text that already says the same thing,
-   so they are hidden from assistive tech rather than described twice. */
-
-/** One email row with the three details DeclutrMail reads marked. */
-function ConnectVignette() {
-  return (
-    <div className="dm-mkt-vignette" aria-hidden="true">
-      <div className="dm-mkt-vig-mail">
-        <span className="dm-mkt-vig-mark">LinkedIn</span>
-        <span className="dm-mkt-vig-mark">New jobs that match your profile</span>
-        <span className="dm-mkt-vig-mark dm-mkt-vig-snippet">Product designer roles near you…</span>
-      </div>
-    </div>
-  );
-}
-
-/** A sender row and the five decisions, Archive chosen. */
-function ReviewVignette() {
-  return (
-    <div className="dm-mkt-vignette" aria-hidden="true">
-      <div className="dm-mkt-vig-sender">
-        <span className="dm-mkt-inbox-avatar">in</span>
-        <b>LinkedIn</b>
-        <span>412</span>
-      </div>
-      <div className="dm-mkt-vig-verbs">
-        {VERB_REGISTRY.map((verb) => (
-          <span
-            key={verb.id}
-            className={`dm-mkt-vig-verb${verb.id === 'archive' ? ' dm-mkt-vig-verb-on' : ''}`}
-          >
-            <kbd>{verb.shortcut}</kbd>
-            {verb.label}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** The product's one bottom pill: what happened, and Undo. */
-function UndoVignette() {
-  return (
-    <div className="dm-mkt-vignette" aria-hidden="true">
-      <div className="dm-mkt-vig-pill">
-        <span>412 emails archived</span>
-        <span className="dm-mkt-vig-undo">Undo</span>
-      </div>
-    </div>
-  );
-}
-
 /**
- * Privacy — the one place on the page that makes the storage statement.
- * The badge IS the statement (headline + the list generated from the D245
- * registry). It renders from the shared component, not a copy of its
- * strings, so the page can never drift from the registry; the landing only
- * re-lays it out flat, as two columns (stores / never fetches).
+ * Privacy — a short trust answer with the full registry available on demand.
  *
  * The verification line may not exceed what /security#verification states:
  * Google APPROVED an OAuth verification for one restricted scope. It is not
@@ -145,10 +112,10 @@ export function PrivacyDesk() {
   return (
     <section id="privacy" className="dm-mkt-section dm-mkt-shell dm-mkt-privacy">
       <div className="dm-mkt-privacy-head">
-        <h2 className="dm-mkt-h2">See exactly which Gmail details DeclutrMail stores.</h2>
+        <h2 className="dm-mkt-h2">Know what we see. Keep the final say.</h2>
         <p className="dm-mkt-lede">
-          Disconnect Gmail at any time. Export your data or schedule permanent deletion of your
-          account.
+          {PRIVACY_BADGE_HEADLINE} Disconnect Gmail at any time. Export your data or schedule
+          permanent deletion of your account.
         </p>
         <div className="dm-mkt-privacy-links">
           <a href="/privacy">Read the privacy policy</a>
@@ -160,11 +127,28 @@ export function PrivacyDesk() {
           </a>
         </div>
       </div>
-      <div className="dm-mkt-privacy-badge">
-        <PrivacyBadge
-          variant="card"
-          style={{ background: 'transparent', border: 0, boxShadow: 'none', padding: 0 }}
-        />
+      <div className="dm-mkt-privacy-summary">
+        <div>
+          <strong>Only the details needed</strong>
+          <p>Sender, subject, Gmail preview snippet and the signals used to show your options.</p>
+        </div>
+        <div>
+          <strong>Full messages stay in Gmail</strong>
+          <p>DeclutrMail does not fetch or store full email contents or attachments.</p>
+        </div>
+        <div>
+          <strong>Your decisions remain yours</strong>
+          <p>Review a live preview before mail moves. Turn on future rules separately.</p>
+        </div>
+        <details className="dm-mkt-privacy-inventory">
+          <summary>See the full data list</summary>
+          <div className="dm-mkt-privacy-badge">
+            <PrivacyBadge
+              variant="card"
+              style={{ background: 'transparent', border: 0, boxShadow: 'none', padding: 0 }}
+            />
+          </div>
+        </details>
       </div>
     </section>
   );

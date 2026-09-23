@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 
 import '@/features/marketing/landing/landing.css';
 import { Hero } from '@/features/marketing/landing/hero';
-import { HowItWorks, PrivacyDesk } from '@/features/marketing/landing/sections';
+import { HowItWorks, PrivacyDesk, ProductBreadth } from '@/features/marketing/landing/sections';
 import { PricingTeaserView } from '@/features/marketing/landing/pricing-teaser-view';
 import { FinalCta } from '@/features/marketing/landing/footer';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
@@ -65,7 +65,13 @@ export default function LandingPage() {
   return (
     <div className="dm-mkt dm-mkt-landing">
       <Hero />
+      <div className="dm-mkt-values-strip dm-mkt-shell" aria-label="Product principles">
+        <span>See the whole sender</span>
+        <span>Preview before moving mail</span>
+        <span>Keep the final say</span>
+      </div>
       <ProductJourney />
+      <ProductBreadth />
       <HowItWorks />
       <PrivacyDesk />
       <PricingTeaserView provider="paddle" />

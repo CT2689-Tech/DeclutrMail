@@ -222,7 +222,7 @@ describe('BriefScreen — populated', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
-  it('D63 — renders Reply / FYI / Noise headings with correct counts', async () => {
+  it('D63 — renders Review / FYI / Noise headings with correct counts', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -234,7 +234,7 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
     );
     expect(screen.getByRole('heading', { name: /fyi · 1$/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /noise · 1 · 4 messages/i })).toBeInTheDocument();
@@ -280,9 +280,9 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
     );
-    expect(screen.queryByRole('heading', { name: /reply · 2 of 2/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /review · 2 of 2/i })).not.toBeInTheDocument();
   });
 
   it('names the real total when the cap truncated the section', async () => {
@@ -303,7 +303,7 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2 of 8/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review · 2 of 8/i })).toBeInTheDocument(),
     );
     expect(screen.getByRole('heading', { name: /fyi · 1 of 5/i })).toBeInTheDocument();
   });
@@ -322,11 +322,11 @@ describe('BriefScreen — populated', () => {
     renderScreen();
 
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
     );
   });
 
-  it('renders the narrative pre-amble when non-empty', async () => {
+  it('keeps the generated note optional and leads with linked actions', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -336,7 +336,51 @@ describe('BriefScreen — populated', () => {
     ]);
 
     renderScreen();
-    await waitFor(() => expect(screen.getByText(/2 emails need replies/i)).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: /review · 2/i })).toBeInTheDocument(),
+    );
+    expect(screen.getByRole('link', { name: /start here 2 to review/i })).toHaveAttribute(
+      'href',
+      '#brief-reply',
+    );
+    const note = screen.getByText(/2 emails need replies/i);
+    expect(note).not.toBeVisible();
+    await userEvent.click(screen.getByText('Read generated note'));
+    expect(note).toBeVisible();
+  });
+
+  it('presents an older multi-sentence generated note as separate observations', async () => {
+    const brief = {
+      ...BASE_BRIEF,
+      briefPayload: {
+        ...BASE_BRIEF.briefPayload,
+        narrative: 'First observation. Second observation. Check the original message.',
+      },
+    };
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: brief }) },
+    ]);
+    renderScreen();
+    await userEvent.click(await screen.findByText('Read generated note'));
+    const points = screen.getByText('First observation.').closest('ul');
+    expect(points?.querySelectorAll('li')).toHaveLength(3);
+    expect(screen.getByText(/observations, not confirmed actions/i)).toBeVisible();
+  });
+
+  it('retires a long frozen note that predates the current bounded summary', async () => {
+    const brief = {
+      ...BASE_BRIEF,
+      briefPayload: {
+        ...BASE_BRIEF.briefPayload,
+        narrative: Array.from({ length: 60 }, () => 'unsupported').join(' '),
+      },
+    };
+    installFetchStub([
+      { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: brief }) },
+    ]);
+    renderScreen();
+    expect(await screen.findByText(/earlier generated note was retired/i)).toBeInTheDocument();
+    expect(screen.queryByText('Read generated note')).toBeNull();
   });
 
   it('D62 — `via template` marker shows only when fallback ran', async () => {
@@ -364,7 +408,7 @@ describe('BriefScreen — populated', () => {
 
     renderScreen();
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
     );
     expect(screen.queryByText(/via template/i)).not.toBeInTheDocument();
   });
@@ -463,7 +507,7 @@ describe('BriefScreen — D61 mark-opened mutation', () => {
     // Wait for the populated content so we know the effect had a
     // chance to run; then assert no POST was made.
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: /reply · 2$/i })).toBeInTheDocument(),
+      expect(screen.getByRole('heading', { name: /review · 2$/i })).toBeInTheDocument(),
     );
     expect(postCount).toBe(0);
   });

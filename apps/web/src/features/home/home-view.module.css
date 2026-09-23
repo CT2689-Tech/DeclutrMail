@@ -204,6 +204,9 @@
 .nextStep h2 {
   font-size: 35px;
 }
+.nextLine {
+  display: block;
+}
 .opportunityList {
   min-width: 0;
   padding: 24px 25px;
@@ -264,6 +267,86 @@
   grid-template-columns: 1.25fr 1fr;
   gap: 48px;
   padding: 34px 0;
+}
+.workflows {
+  padding: 34px 0 42px;
+  border-top: 1px solid var(--dm-line);
+}
+.workflowsHeading {
+  max-width: 560px;
+  margin-bottom: 26px;
+}
+.workflowsHeading h2 {
+  margin: 9px 0;
+  font-family: var(--dm-font-display);
+  font-size: clamp(29px, 3vw, 38px);
+  font-weight: 400;
+  letter-spacing: -0.025em;
+}
+.workflowsHeading p {
+  margin: 0;
+  color: var(--dm-fg-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.workflowGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(26px, 5vw, 66px);
+}
+.workflowGroup h3 {
+  margin: 0 0 5px;
+  color: var(--dm-fg-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.workflowLink {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 77px;
+  padding: 13px 1px;
+  color: var(--dm-fg);
+  text-decoration: none;
+  border-bottom: 1px solid var(--dm-line);
+}
+.workflowLink strong,
+.workflowLink small {
+  display: block;
+}
+.workflowLink strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.workflowLink small {
+  margin-top: 4px;
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.workflowLink > span:last-child {
+  flex: none;
+  color: var(--dm-fg-muted);
+  transition:
+    transform 120ms ease,
+    color 120ms ease;
+}
+.workflowLink:hover > span:last-child {
+  color: var(--dm-primary);
+  transform: translate(2px, -2px);
+}
+.workflowLink:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 3px;
+}
+@media (max-width: 1080px) {
+  .workflowGrid {
+    grid-template-columns: 1fr;
+  }
 }
 .overviewLower h2 {
   font-family: var(--dm-font-display);
@@ -366,9 +449,6 @@
     padding: 27px;
     gap: 12px;
   }
-  .nextStep h2 br {
-    display: none;
-  }
   .stats {
     gap: 20px;
   }
@@ -405,9 +485,30 @@
     gap: 18px;
   }
   .stamp {
-    align-self: flex-end;
-    width: 170px;
-    margin: 0 8px 8px 0;
+    align-self: stretch;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 12px;
+    width: auto;
+    margin: 0;
+    padding: 14px 16px;
+    text-align: left;
+    transform: none;
+  }
+  .stamp strong {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    margin: 0;
+    font-size: 34px;
+  }
+  .stamp > span:not(:first-child) {
+    grid-column: 1;
+  }
+  .stamp small {
+    grid-column: 1 / -1;
+    margin-top: 8px;
+    padding-top: 8px;
   }
   .header h1 {
     font-size: 42px;

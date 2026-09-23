@@ -7,7 +7,28 @@ import { HomeView } from './home-view';
 const action = { label: 'Review senders', href: '/senders' };
 
 describe('HomeView', () => {
-  it('ready: one hero number, its label, the secondary row and one link', () => {
+  it('keeps the complete workspace discoverable with clear plan context', () => {
+    const ready = {
+      kind: 'ready' as const,
+      hero: { label: 'emails cleared', value: 12 },
+      since: null,
+      secondary: [],
+      action,
+    };
+    const { rerender } = render(<HomeView state={ready} tier="plus" />);
+    expect(screen.getByRole('link', { name: /Autopilot/ })).toHaveAttribute('href', '/autopilot');
+    expect(screen.getByRole('link', { name: /Daily Brief Included with Pro/ })).toHaveAttribute(
+      'href',
+      '/brief',
+    );
+    rerender(<HomeView state={ready} tier="pro" />);
+    expect(screen.getByRole('link', { name: /Daily Brief/ })).toHaveAttribute('href', '/brief');
+    expect(screen.getByRole('link', { name: /Follow-ups/ })).toHaveAttribute('href', '/followups');
+    expect(screen.getByRole('link', { name: /Later/ })).toHaveAttribute('href', '/later');
+    expect(screen.getByRole('link', { name: /Quiet Hours/ })).toHaveAttribute('href', '/quiet');
+  });
+
+  it('ready: recorded progress and the primary next step remain intact', () => {
     render(
       <HomeView
         state={{
@@ -26,17 +47,45 @@ describe('HomeView', () => {
     expect(screen.getByText(/emails cleared since Mar 2026/)).toBeInTheDocument();
     expect(screen.getByText('Emails archived')).toBeInTheDocument();
     expect(screen.getByText('34')).toBeInTheDocument();
-    const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(3);
     expect(screen.getByRole('link', { name: /See your activity/ })).toHaveAttribute(
       'href',
       '/activity',
     );
-    expect(links[0]).toHaveAttribute('href', '/triage');
-    expect(links[0]).toHaveTextContent('Review 8 today');
+    expect(screen.getByRole('link', { name: /Review 8 today/ })).toHaveAttribute('href', '/triage');
   });
 
-  it('shows served sender counts with their actual window and both pending tasks', () => {
+  it('shows real, optional status signals without replacing the next action', () => {
+    render(
+      <HomeView
+        tier="pro"
+        workflows={{
+          brief: { ready: true, opened: false, replyCount: 3 },
+          followups: 2,
+          suggestions: 50,
+        }}
+        state={{
+          kind: 'ready',
+          hero: { label: 'emails cleared', value: 100 },
+          since: null,
+          secondary: [],
+          action: { label: 'Review 4 today', href: '/triage' },
+        }}
+      />,
+    );
+    expect(screen.getByRole('link', { name: /Daily Brief 3 replies to consider/ })).toHaveAttribute(
+      'href',
+      '/brief',
+    );
+    expect(
+      screen.getByRole('link', { name: /Follow-ups 2 conversations waiting/ }),
+    ).toHaveAttribute('href', '/followups');
+    expect(
+      screen.getByRole('link', { name: /Autopilot 50\+ suggestions to review/ }),
+    ).toHaveAttribute('href', '/autopilot');
+    expect(screen.getByRole('link', { name: /Review 4 today/ })).toHaveAttribute('href', '/triage');
+  });
+
+  it('shows current Inbox counts and both pending tasks', () => {
     render(
       <HomeView
         state={{
@@ -47,12 +96,13 @@ describe('HomeView', () => {
           action,
           pending: { triagePending: 4, screenerPending: 3 },
           senders: [
-            { id: 'sender/1', name: 'A journal', domain: 'journal.example', recentCount: 21 },
+            { id: 'sender/1', name: 'A journal', domain: 'journal.example', inboxCount: 4 },
           ],
         }}
       />,
     );
-    expect(screen.getByText('Last 90 days')).toBeInTheDocument();
+    expect(screen.getByText('In inbox now')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /A journal/ })).toHaveAttribute(
       'href',
       '/senders?sender=sender%2F1',
@@ -61,7 +111,7 @@ describe('HomeView', () => {
       'href',
       '/triage',
     );
-    expect(screen.getByRole('link', { name: /3 new senders/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /3 unreviewed senders/ })).toHaveAttribute(
       'href',
       '/screener',
     );
@@ -84,7 +134,7 @@ describe('HomeView', () => {
     expect(
       screen.getAllByRole('link').filter((link) => link.getAttribute('href') === '/triage'),
     ).toHaveLength(1);
-    expect(screen.getByRole('link', { name: /2 new senders/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /2 unreviewed senders/ })).toBeInTheDocument();
   });
 
   it('ready without secondary stats renders no stat row', () => {

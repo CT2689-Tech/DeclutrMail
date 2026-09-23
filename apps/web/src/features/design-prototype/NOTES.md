@@ -52,6 +52,12 @@ No Gmail API, billing API, account mutations, mailbox storage, new analytics, or
 
 Pending founder review. No winner selected. Production integration should reimplement the chosen patterns using existing components, real read models and canonical action lifecycle, with appropriate behavior tests and stories. Remove the losing direction and this route after the design question is resolved.
 
+## Homepage and color study (September 2026)
+
+Question: does a richer, more product-forward homepage and a different brand hue improve the first impression without losing the calm editorial feel?
+
+The visual study compared Editorial stage, Product first and Guided story with Plum, Cobalt and Forest palettes in light and dark themes. The founder selected Editorial stage with Plum. The selected direction is now on the public homepage and shared theme, including the brand mark, icons, social previews, sign-in and product shell. The throwaway homepage study route and the unselected variants were retired after the production page was verified.
+
 ## Hybrid layout review
 
 Editorial sender workspace now combines the warm visual system with a sticky right-hand inspector above 760px. Sample search, high-volume (75+ inbox), low marked-read (<20% over 90 days), protected filters, minimum inbox volume, and sorting work locally. Checkboxes preserve selection across filtering and explicitly indicate hidden selections. The bulk toolbar is a placement preview only and opens a labelled explanation, without executing actions. Production screens are untouched. Browser verified filter counts, multi-selection, switching the inspector to Orbit, and mobile overflow at 390px. Awaiting layout review before production integration.

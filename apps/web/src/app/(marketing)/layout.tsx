@@ -15,7 +15,7 @@
 // Server component on purpose: the shell itself cannot accidentally
 // reach for `useAuth()`. Four narrow client islands remain explicit:
 // route-family analytics, cookieless page-view counts, the
-// layout-preserving mobile disclosure, and cookie consent.
+// mobile navigation and theme controls, and cookie consent.
 
 import type { ReactNode } from 'react';
 import { TIER_MANIFEST, tokens } from '@declutrmail/shared';

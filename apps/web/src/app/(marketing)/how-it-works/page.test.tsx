@@ -9,13 +9,18 @@ describe('/how-it-works', () => {
     const copy = container.textContent ?? '';
 
     expect(
-      screen.getByRole('heading', { level: 1, name: 'A sender-control layer for Gmail.' }),
+      screen.getByRole('heading', { level: 1, name: 'See the sender. Know what will change.' }),
     ).toBeInTheDocument();
     expect(copy).toContain('Gmail remains where you read, reply, compose, and search');
     expect(copy).toContain('companion to Gmail, not a replacement email client');
     expect(copy).toContain('Recent subject links return to Gmail');
     expect(copy).toContain('Manual actions affect only the email shown before you confirm');
     expect(copy).toContain('Autopilot rules are separate and must be turned on');
+    const jumps = screen.getByRole('navigation', { name: 'Explore how it works' });
+    expect(within(jumps).getByRole('link', { name: 'Past email' })).toHaveAttribute(
+      'href',
+      '#past-email',
+    );
   });
 
   it('maps every action to honest current-mail and future-mail semantics', () => {
@@ -60,7 +65,7 @@ describe('/how-it-works', () => {
       expect(figure).toHaveAttribute('aria-labelledby');
     }
     expect(container.querySelector('header header')).toBeNull();
-    expect(screen.getByText(/Illustrative inbox/i)).toBeInTheDocument();
+    expect(screen.getByText(/Your inbox by sender/i)).toBeInTheDocument();
   });
 
   it('states each decision once, in one table, with a start-free CTA and the scope disclosure', () => {

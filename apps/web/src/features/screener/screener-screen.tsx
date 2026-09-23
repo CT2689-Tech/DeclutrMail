@@ -6,7 +6,7 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { ErrorState, ScreenIntro, tokens, toast } from '@declutrmail/shared';
 import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
@@ -130,6 +130,23 @@ export function ScreenerScreen({
   const decide = useScreenerDecide();
 
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [queueFilter, setQueueFilter] = useState<'all' | 'multiple' | 'unsubscribe' | 'protected'>(
+    'all',
+  );
+  const [queueSort, setQueueSort] = useState<'queued' | 'most_mail' | 'first_seen'>('queued');
+  const visibleRows = useMemo(() => {
+    if (state.kind !== 'ready') return [];
+    const filtered = state.rows.filter((row) => {
+      if (queueFilter === 'multiple') return row.messageCount > 1;
+      if (queueFilter === 'unsubscribe') return canScreenerUnsubscribe(row);
+      if (queueFilter === 'protected') return row.isProtected;
+      return true;
+    });
+    if (queueSort === 'most_mail') return filtered.sort((a, b) => b.messageCount - a.messageCount);
+    if (queueSort === 'first_seen')
+      return filtered.sort((a, b) => a.firstSeenAt.localeCompare(b.firstSeenAt));
+    return filtered;
+  }, [state, queueFilter, queueSort]);
 
   // D25 `stale_refresh` — same attention-scoped refresh Triage and
   // Sender Detail use (founder decision 2026-08-19). It matters more
@@ -201,6 +218,8 @@ export function ScreenerScreen({
     setPending(null);
     setExpandedRowId(null);
     setMailtoFollowup(null);
+    setQueueFilter('all');
+    setQueueSort('queued');
   }, []);
   useEffect(() => {
     window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, resetScope);
@@ -639,7 +658,7 @@ export function ScreenerScreen({
         gap: 24,
       }}
     >
-      <EditorialKicker>Clean up / New senders</EditorialKicker>
+      <EditorialKicker>Clean up / First decisions</EditorialKicker>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
         <h1 style={editorialTitleStyle}>Screener</h1>
         {/* Only the count query knows the true total — the queue loads a
@@ -657,13 +676,13 @@ export function ScreenerScreen({
       </div>
 
       <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
-        New to review, not necessarily new to your inbox. These senders are waiting for your first
-        decision; their email keeps arriving in Gmail.
+        These senders are waiting for your first decision. Some may have been in your inbox for a
+        while; their email keeps arriving in Gmail until you decide.
       </p>
       <ScreenIntro
         id="screener"
         title="How the Screener works"
-        body="One decision per new sender; their email keeps arriving until you choose."
+        body="Review each undecided sender in context, then choose what should happen."
         learnMore={{
           href: '/methodology#action-method',
           label: 'How action previews protect you',
@@ -686,40 +705,114 @@ export function ScreenerScreen({
         <ScreenerEmptyState readiness={activeMailbox?.readiness} />
       )}
       {state.kind === 'ready' && state.rows.length > 0 && (
-        <div
-          role="list"
-          aria-label="Senders waiting for your decision"
-          className="dm-screener-list"
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          {state.rows.map((row) => (
-            <div key={row.id} role="listitem">
-              <ScreenerRow
-                row={row}
-                expanded={expandedRowId === row.id}
-                busy={busyRowId === row.id || parkedRowId === row.id}
-                pendingVerb={pending?.rowId === row.id ? pending.verb : null}
-                previewInboxCount={previewInboxCount}
-                previewInboxTotal={previewInboxTotal}
-                previewWindowDays={isPendingDelete ? DEFAULT_DELETE_WINDOW_DAYS : null}
-                previewAllMailCount={previewAllMailCount}
-                previewAllMailTotal={previewAllMailTotal}
-                pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}
-                onReachChange={(reach) =>
-                  setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, reach } : cur))
-                }
-                wakeAt={pending?.rowId === row.id ? pending.wakeAt : null}
-                onToggleExpand={() => setExpandedRowId((cur) => (cur === row.id ? null : row.id))}
-                onVerbClick={(verb) => onVerbClick(verb, row)}
-                onConfirm={() => onConfirm(row)}
-                onCancel={() => setPending(null)}
-              />
-            </div>
-          ))}
-        </div>
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                color: color.fgMuted,
+                fontSize: text.sm,
+              }}
+            >
+              Show
+              <select
+                aria-label="Filter loaded senders"
+                value={queueFilter}
+                onChange={(event) => setQueueFilter(event.target.value as typeof queueFilter)}
+                style={{
+                  minHeight: 38,
+                  padding: '6px 10px',
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 7,
+                  color: color.fg,
+                  background: color.card,
+                  font: 'inherit',
+                }}
+              >
+                <option value="all">All loaded</option>
+                <option value="multiple">More than one email</option>
+                <option value="unsubscribe">Can unsubscribe</option>
+                <option value="protected">Protected</option>
+              </select>
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                color: color.fgMuted,
+                fontSize: text.sm,
+              }}
+            >
+              Sort
+              <select
+                aria-label="Sort loaded senders"
+                value={queueSort}
+                onChange={(event) => setQueueSort(event.target.value as typeof queueSort)}
+                style={{
+                  minHeight: 38,
+                  padding: '6px 10px',
+                  border: `1px solid ${color.line}`,
+                  borderRadius: 7,
+                  color: color.fg,
+                  background: color.card,
+                  font: 'inherit',
+                }}
+              >
+                <option value="queued">Recently queued</option>
+                <option value="most_mail">Most email received</option>
+                <option value="first_seen">First seen longest ago</option>
+              </select>
+            </label>
+            <span style={{ color: color.fgMuted, fontSize: text.sm }}>
+              Showing {visibleRows.length} of {state.rows.length} loaded senders
+              {totalPending != null && totalPending > state.rows.length
+                ? ` · ${totalPending.toLocaleString('en-US')} total awaiting review`
+                : ''}
+            </span>
+          </div>
+          {visibleRows.length === 0 && (
+            <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+              No loaded senders match this filter. Choose All loaded to see the queue.
+            </p>
+          )}
+          <div
+            role="list"
+            aria-label="Senders waiting for your decision"
+            className="dm-screener-list"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            {visibleRows.map((row) => (
+              <div key={row.id} role="listitem">
+                <ScreenerRow
+                  row={row}
+                  expanded={expandedRowId === row.id}
+                  busy={busyRowId === row.id || parkedRowId === row.id}
+                  pendingVerb={pending?.rowId === row.id ? pending.verb : null}
+                  previewInboxCount={previewInboxCount}
+                  previewInboxTotal={previewInboxTotal}
+                  previewWindowDays={isPendingDelete ? DEFAULT_DELETE_WINDOW_DAYS : null}
+                  previewAllMailCount={previewAllMailCount}
+                  previewAllMailTotal={previewAllMailTotal}
+                  pendingReach={pending?.rowId === row.id ? pending.reach : 'inbox_only'}
+                  onReachChange={(reach) =>
+                    setPending((cur) => (cur && cur.rowId === row.id ? { ...cur, reach } : cur))
+                  }
+                  wakeAt={pending?.rowId === row.id ? pending.wakeAt : null}
+                  onToggleExpand={() => setExpandedRowId((cur) => (cur === row.id ? null : row.id))}
+                  onVerbClick={(verb) => onVerbClick(verb, row)}
+                  onConfirm={() => onConfirm(row)}
+                  onCancel={() => setPending(null)}
+                />
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

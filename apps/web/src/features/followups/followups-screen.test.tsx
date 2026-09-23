@@ -123,6 +123,38 @@ describe('FollowupsScreen — populated list', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('sets aside feedback-marked false positives and lets the user review them again', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [ROW_HIGH, { ...ROW_LOW, feedbackRating: 'not_followup' }] }),
+      },
+    ]);
+    renderScreen();
+    expect(await screen.findByText('Big Boss')).toBeInTheDocument();
+    expect(screen.queryByText('Peer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show 1 marked not a follow-up' }));
+    expect(screen.getByText('Peer')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Hide 1 marked not a follow-up' }));
+    expect(screen.queryByText('Peer')).not.toBeInTheDocument();
+  });
+
+  it('does not call a fully set-aside queue empty of tracked conversations', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/followups',
+        respond: () => jsonOk({ data: [{ ...ROW_LOW, feedbackRating: 'not_followup' }] }),
+      },
+    ]);
+    renderScreen();
+    expect(
+      await screen.findByRole('heading', { name: 'No follow-ups to review' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/current suggestions were marked not a follow-up/)).toBeInTheDocument();
+  });
+
   it('retains the full subject and exposes expansion without needing a hover tooltip', async () => {
     const subject =
       'A longer conversation subject about the upcoming launch and the final details that need a response';
@@ -166,6 +198,14 @@ describe('FollowupsScreen — populated list', () => {
     // Both priority group headings render, each carrying its count once.
     expect(screen.getByRole('heading', { name: /over a week · 1/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /1.3 days · 1/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /review first 1 over a week/i })).toHaveAttribute(
+      'href',
+      '#followups-overdue',
+    );
+    expect(screen.getByRole('link', { name: /keep an eye on 1 more recent/i })).toHaveAttribute(
+      'href',
+      '#followups-recent',
+    );
 
     // Each row renders recipient + subject + Open-in-Gmail link.
     expect(await screen.findByText('Big Boss')).toBeInTheDocument();
@@ -198,6 +238,7 @@ describe('FollowupsScreen — populated list', () => {
     const note = await screen.findByText(/about every six hours/i);
     expect(note).toHaveTextContent(/recent reply can still show/i);
     expect(note).toHaveTextContent(/nothing changes in Gmail/i);
+    expect(note).toHaveTextContent(/check the thread in Gmail before following up/i);
     expect(
       await screen.findByRole('button', {
         name: /mark resolved in declutrmail — big boss/i,

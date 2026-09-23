@@ -48,7 +48,6 @@ export function PendingSuggestionRow({
   isDismissing: boolean;
 }) {
   const wouldVerb = rule ? describeWouldAction(rule.actionKind) : 'would act';
-  const confidencePct = Math.round(match.confidence * 100);
   const identity = resolveSenderIdentity(match);
   const senderLabel = identity.label;
   const isIdentified = identity.source !== 'unknown';
@@ -147,9 +146,7 @@ export function PendingSuggestionRow({
               <span aria-hidden="true">·</span>
             </>
           )}
-          <span title="How closely this sender matched the rule">{confidencePct}% match</span>
-          <span aria-hidden="true">·</span>
-          <span>{match.reason}</span>
+          <span>Why suggested: {match.reason}</span>
         </div>
       </div>
       <Button

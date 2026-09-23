@@ -1820,7 +1820,7 @@ const VERB_TONE_COLOR: Record<VerbTone, string> = {
   dark: color.fg,
   amber: color.amber,
   danger: color.danger,
-  primary: color.primary,
+  primary: color.emerald,
   neutral: color.fgMuted,
 };
 
@@ -2167,15 +2167,15 @@ function ActivityRow({
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: variant === 'flat' ? 'space-between' : 'flex-end',
-            gap: 12,
+            flexDirection: 'column',
+            alignItems: 'stretch',
+            gap: 8,
             // Under the name, past the logo.
             paddingLeft: variant === 'flat' ? 54 : 0,
           }}
         >
           {variant === 'flat' && result('left')}
-          {actions}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{actions}</div>
         </div>
       )}
       {showFeedback && (

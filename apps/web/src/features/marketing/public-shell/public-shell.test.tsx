@@ -1,5 +1,8 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act } from 'react';
+import { hydrateRoot, type Root } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
 
 const { track } = vi.hoisted(() => ({
   track: vi.fn(async (_event: string, _props: { cta: string; placement: string }) => undefined),
@@ -53,5 +56,33 @@ describe('PublicHeader auth entry', () => {
       expect(event).toBe('landing_cta_clicked');
       expect(props).toMatchObject({ cta: 'connect_gmail' });
     }
+  });
+
+  it('exposes comparison, privacy, and theme choice in the public header', () => {
+    const { container } = render(<PublicHeader />);
+    const desktop = within(container.querySelector('.dm-public-nav') as HTMLElement);
+    for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
+      expect(desktop.getByRole('link', { name: label })).toBeInTheDocument();
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }));
+    const mobile = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
+    for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
+      expect(mobile.getByRole('link', { name: label })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: /Switch to (dark|light) mode/ })).toBeInTheDocument();
+  });
+
+  it('hydrates the public theme control without a server/client mismatch', async () => {
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(<PublicHeader />);
+    const recoverable: Error[] = [];
+    let root: Root | undefined;
+    await act(async () => {
+      root = hydrateRoot(container, <PublicHeader />, {
+        onRecoverableError: (error) => recoverable.push(error as Error),
+      });
+    });
+    expect(recoverable).toEqual([]);
+    await act(async () => root?.unmount());
   });
 });

@@ -9,5 +9,5 @@ export function demoForTopic(topic: string): { href: string; label: string } {
   if (/delete|storage|undo|reversible/.test(topic)) {
     return { href: '/inbox-simulator?step=4', label: 'Explore Delete and recovery' };
   }
-  return { href: '/inbox-simulator?step=1', label: 'Try a sender review' };
+  return { href: '/inbox-simulator?workspace=senders', label: 'Try a sender review' };
 }

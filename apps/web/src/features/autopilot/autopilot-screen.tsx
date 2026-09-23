@@ -245,6 +245,8 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
   // off still offered an enabled Pause-all button, which pauses nothing
   // a user can observe.
   const hasRunningRules = rules.some((r) => r.enabled && r.mode !== 'paused');
+  const watchingCount = rules.filter((rule) => ruleStatus(rule) === 'watching').length;
+  const actingCount = rules.filter((rule) => ruleStatus(rule) === 'acting').length;
 
   useEffect(() => {
     if (patternSuggestion == null) return;
@@ -757,6 +759,88 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
 
       <AutopilotBannerStack banners={banners} />
 
+      {state.kind === 'ready' && (
+        <nav
+          aria-label="Autopilot next steps"
+          style={{
+            display: 'grid',
+            gap: 10,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          }}
+        >
+          {[
+            {
+              href: '#pending-heading',
+              label: 'Review first',
+              count: `${suggestions.length}${pendingBufferTruncated ? '+' : ''} suggestion${suggestions.length === 1 ? '' : 's'}`,
+              detail: 'Preview before approving, or skip',
+              filter: null,
+            },
+            {
+              href: '#rules-heading',
+              label: 'Watch first',
+              count: `${watchingCount} watching`,
+              detail: 'Matches wait for your approval',
+              filter: 'watching' as const,
+            },
+            {
+              href: '#rules-heading',
+              label: 'Acting',
+              count: `${actingCount} running`,
+              detail:
+                actingCount > 0
+                  ? 'Review rules changing mail'
+                  : 'No rules change mail on their own',
+              filter: 'acting' as const,
+            },
+          ].map((card, index) => (
+            <a
+              key={card.label}
+              href={card.href}
+              onClick={() => {
+                if (card.filter) setRuleFilter(card.filter);
+              }}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 7,
+                padding: '18px 20px',
+                border: `1px solid ${color.line}`,
+                borderRadius: 10,
+                background: index === 0 && suggestions.length > 0 ? color.card : color.fill,
+                color: color.fg,
+                textDecoration: 'none',
+              }}
+            >
+              <span
+                style={{
+                  color: color.primary,
+                  fontSize: text.xs,
+                  fontWeight: 700,
+                  letterSpacing: '0.12em',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {card.label}
+              </span>
+              <strong
+                style={{
+                  fontFamily: tokens.font.display,
+                  fontSize: 26,
+                  fontWeight: 400,
+                  lineHeight: 1.1,
+                }}
+              >
+                {card.count}
+              </strong>
+              <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
+                {card.detail} →
+              </span>
+            </a>
+          ))}
+        </nav>
+      )}
+
       {state.kind === 'ready' && rules.length > 0 && (
         <div
           role="group"
@@ -915,6 +999,7 @@ export function AutopilotScreen({ state }: { state: AutopilotScreenState }) {
                       key={group.rule?.id ?? `orphan-${group.matches[0]?.ruleId ?? 'none'}`}
                       rule={group.rule}
                       matches={group.matches}
+                      pendingApproximate={pendingBufferTruncated}
                       selectedIds={selectedIds}
                       onToggleSelect={onToggleSelect}
                       onDismiss={onDismiss}

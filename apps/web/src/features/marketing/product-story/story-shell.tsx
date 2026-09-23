@@ -141,11 +141,18 @@ export interface DocTocItem {
   readonly label: string;
 }
 
+export interface DocHighlight {
+  readonly id: string;
+  readonly label: string;
+  readonly detail: string;
+}
+
 export function DocPage({
   title,
   lede,
   lastUpdated,
   toc,
+  highlights,
   children,
   after,
 }: {
@@ -154,6 +161,7 @@ export function DocPage({
   /** ISO date (YYYY-MM-DD) the page was last materially changed. */
   lastUpdated?: string;
   toc: readonly DocTocItem[];
+  highlights?: readonly DocHighlight[];
   children: ReactNode;
   /** Full-width content after the reading column, e.g. a closing CTA. */
   after?: ReactNode;
@@ -177,6 +185,16 @@ export function DocPage({
             {lede ? <p className="dm-doc-lede">{lede}</p> : null}
             {lastUpdated ? <p className="dm-doc-updated">Last updated: {lastUpdated}</p> : null}
           </header>
+          {highlights && (
+            <nav className="dm-doc-highlights" aria-label="Page highlights">
+              {highlights.map(({ id, label, detail }) => (
+                <a className="dm-doc-highlight" key={id} href={`#${id}`}>
+                  <strong>{label}</strong>
+                  <span>{detail}</span>
+                </a>
+              ))}
+            </nav>
+          )}
           {children}
         </article>
       </div>

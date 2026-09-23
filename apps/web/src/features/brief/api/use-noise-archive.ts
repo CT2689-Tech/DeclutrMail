@@ -203,6 +203,10 @@ export type NoiseArchiveOutcome =
  */
 export const ACTION_OVERDUE_MS = 120_000;
 
+// A long generated list can contain important mail. Require an explicit
+// selection before previewing a large batch instead of arming it on load.
+export const DEFAULT_NOISE_SELECTION_LIMIT = 10;
+
 /** Guard 4xx codes that mean "your mailbox scope moved", not "this failed". */
 const SCOPE_CONFLICT_CODES = new Set(['SELECT_MAILBOX', 'NO_ACTIVE_MAILBOX', 'MAILBOX_NOT_OWNED']);
 
@@ -221,8 +225,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
     [targets],
   );
 
-  // D65 — "default-all checked", applied to senders we have not seen
-  // before rather than to the whole list on every change.
+  // Small lists retain the original quick path. Large generated lists
+  // require an explicit choice, including after a background refresh.
   //
   // Keyed on the joined signature, not the array identity, so a refetch
   // returning an EQUAL list does not re-check boxes the user cleared.
@@ -233,15 +237,22 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   // put a cleared sender back in the selection while the CTA count
   // happened to stay the same, silently swapping WHICH sender was armed.
   const selectableSignature = selectableKeys.join('|');
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(selectableKeys));
+  const [selected, setSelected] = useState<ReadonlySet<string>>(
+    () => new Set(selectableKeys.length <= DEFAULT_NOISE_SELECTION_LIMIT ? selectableKeys : []),
+  );
   const seenSelectableRef = useRef<ReadonlySet<string> | null>(null);
   useEffect(() => {
     const next = selectableSignature === '' ? [] : selectableSignature.split('|');
     const seen = seenSelectableRef.current;
     seenSelectableRef.current = new Set(next);
     setSelected((prev) => {
-      if (seen === null) return new Set(next);
-      return new Set(next.filter((key) => !seen.has(key) || prev.has(key)));
+      if (seen === null) return new Set(next.length <= DEFAULT_NOISE_SELECTION_LIMIT ? next : []);
+      return new Set(
+        next.filter(
+          (key) =>
+            prev.has(key) || (next.length <= DEFAULT_NOISE_SELECTION_LIMIT && !seen.has(key)),
+        ),
+      );
     });
   }, [selectableSignature]);
 
@@ -357,6 +368,8 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
       return next;
     });
   }, []);
+
+  const deselectAll = useCallback(() => setSelected(new Set()), []);
 
   const selectedTargets = useMemo(
     () =>
@@ -880,6 +893,7 @@ export function useNoiseArchive(targets: readonly NoiseTarget[]) {
   return {
     selected,
     toggle,
+    deselectAll,
     selectedTargets,
     archivedKeys,
     outcome,

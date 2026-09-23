@@ -594,7 +594,9 @@ describe('(app) layout — screener badge tier gating (D74/D77)', () => {
 
     renderLayout();
 
-    expect(await screen.findByLabelText('3 new senders waiting in Screener')).toBeInTheDocument();
+    expect(
+      await screen.findByLabelText('3 senders awaiting a first review in Screener'),
+    ).toBeInTheDocument();
   });
 
   it('renders no badge at zero pending — a calm sidebar is the resting state', async () => {

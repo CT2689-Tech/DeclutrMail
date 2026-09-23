@@ -220,7 +220,7 @@ export function legacyVerbFromId(
 /**
  * Lead-button tone derivation for the primary CTA. Tone semantics
  * locked by ADR-0016 A5 (consolidating D26/D31) + ADR-0019: Keep =
- * teal `primary`; Archive = `dark`; Unsubscribe = amber `warn`;
+ * positive `primary`; Archive = `dark`; Unsubscribe = amber `warn`;
  * Later = neutral `default`; Delete = `danger`. Delete is overflow-
  * only today (`canBePrimary: false` in the registry) but stays mapped
  * so no future call site can collide it with Unsubscribe's amber.
@@ -229,7 +229,7 @@ export function legacyVerbFromId(
 const LEAD_TEXT_COLOR: Record<ReturnType<typeof leadButtonTone>, string> = {
   warn: color.amber,
   danger: color.danger,
-  primary: color.primary,
+  primary: color.emerald,
   dark: color.fg,
   default: color.fg,
 };

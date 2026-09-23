@@ -125,6 +125,12 @@ describe('ServerSendersBoundary', () => {
     );
   });
 
+  it('prefetches the same server-wide Inbox filter that the screen reads from a deep link', () => {
+    const query = sendersQueryFromSearchParams({ has_inbox_mail: 'true' });
+    expect(query.hasInboxMail).toBe(true);
+    expect(sendersListPath(query)).toContain('has_inbox_mail=true');
+  });
+
   it('hydrates the exact filtered deep-link list', async () => {
     vi.stubEnv('NEXT_PUBLIC_API_URL', 'http://localhost:4000');
     const query = sendersQueryFromSearchParams({ q: 'amazon.com', activity: 'all' });

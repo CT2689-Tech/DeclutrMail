@@ -11,7 +11,13 @@ const STEPS = ['Inspect', 'Preview', 'Result', 'Undo'] as const;
  * shipping another client runtime or contacting an authenticated API.
  * `id` is provided by the host so two examples never share a radio group.
  */
-export function SenderWalkthrough({ id }: { id: string }) {
+export function SenderWalkthrough({
+  id,
+  showDemoLink = true,
+}: {
+  id: string;
+  showDemoLink?: boolean;
+}) {
   return (
     <fieldset className="dm-walkthrough" aria-describedby={`${id}-disclosure ${id}-undo`}>
       <legend>A cleanup, step by step</legend>
@@ -101,9 +107,11 @@ export function SenderWalkthrough({ id }: { id: string }) {
       <p id={`${id}-undo`} className="dm-walkthrough-note">
         Archive, Later and Delete have {MIN_UNDO_WINDOW_DAYS} days of Activity Undo.
       </p>
-      <Link className="dm-walkthrough-link" href="/inbox-simulator?step=1">
-        Try the interactive demo →
-      </Link>
+      {showDemoLink ? (
+        <Link className="dm-walkthrough-link" href="/inbox-simulator?workspace=senders">
+          Try the Senders workspace →
+        </Link>
+      ) : null}
     </fieldset>
   );
 }

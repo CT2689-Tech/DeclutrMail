@@ -19,9 +19,15 @@ import { measureRequestOperation } from '../observability/request-performance.js
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, gt, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, ne, or, sql } from 'drizzle-orm';
 
-import { activityLog, followupTracker, productFeedback, senderPolicies } from '@declutrmail/db';
+import {
+  activityLog,
+  followupTracker,
+  mailboxAccounts,
+  productFeedback,
+  senderPolicies,
+} from '@declutrmail/db';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { Followup, FollowupDismissResult, FollowupPriority } from './followup.types.js';
@@ -80,6 +86,7 @@ export class FollowupReadService {
   ): Promise<Followup[]> {
     const userId = typeof userIdOrNowMs === 'string' ? userIdOrNowMs : null;
     const nowMs = typeof userIdOrNowMs === 'number' ? userIdOrNowMs : requestedNowMs;
+    const cutoff = new Date(nowMs - 60 * 24 * 60 * 60 * 1000);
     return measureRequestOperation('followups.scan', async () => {
       const PAGE_SIZE = 100;
       const MAX_PAGES = 10;
@@ -94,6 +101,7 @@ export class FollowupReadService {
         }[] = await this.db
           .select({ followup: followupTracker, feedbackRating: productFeedback.rating })
           .from(followupTracker)
+          .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, followupTracker.mailboxAccountId))
           .leftJoin(
             productFeedback,
             userId
@@ -109,6 +117,8 @@ export class FollowupReadService {
             and(
               eq(followupTracker.mailboxAccountId, mailboxAccountId),
               eq(followupTracker.status, 'awaiting'),
+              gte(followupTracker.sentAt, cutoff),
+              ne(followupTracker.recipientEmail, mailboxAccounts.providerAccountId),
               ...(cursor
                 ? [
                     or(

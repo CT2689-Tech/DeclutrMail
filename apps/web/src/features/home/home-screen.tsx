@@ -7,6 +7,7 @@ import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 
 import { useHomePending } from './api/use-home-pending';
 import { useHomeSummary } from './api/use-home-summary';
+import { useHomeWorkflows } from './api/use-home-workflows';
 import { composeHomeAction, composeHomeNumbers, type HomeState } from './home-state';
 import { HomeView } from './home-view';
 
@@ -36,6 +37,7 @@ export function HomeScreen() {
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
   const pending = useHomePending({ tier, enabled: hasActiveMailbox });
+  const workflows = useHomeWorkflows(tier, hasActiveMailbox);
 
   const readiness = me.mailboxes.find((m) => m.id === me.activeMailboxId)?.readiness;
   const syncing = readiness === 'queued' || readiness === 'syncing';
@@ -44,7 +46,7 @@ export function HomeScreen() {
   // chrome renders once `me` agrees.
   if (!hasActiveMailbox || isMailboxScopeConflict(summary.error)) return <NoActiveMailbox />;
 
-  return <HomeView state={resolve()} />;
+  return <HomeView state={resolve()} tier={tier} workflows={workflows} />;
 
   function resolve(): HomeState {
     if (summary.isError) {

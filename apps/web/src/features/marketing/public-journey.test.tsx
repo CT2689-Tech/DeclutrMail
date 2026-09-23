@@ -59,9 +59,9 @@ describe('rendered public promises and product entry', () => {
     expect(
       screen.getByText(/Delivered unsubscribe requests cannot be recalled/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Try the interactive demo/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /Try the Senders workspace/ })).toHaveAttribute(
       'href',
-      '/inbox-simulator?step=1',
+      '/inbox-simulator?workspace=senders',
     );
     expect(screen.getByRole('radio', { name: '1. Inspect' })).toBeChecked();
     expect(screen.getAllByRole('radio')).toHaveLength(4);

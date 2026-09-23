@@ -41,6 +41,7 @@ export function sendersListQueryFromScreen(
     domain: scope.compose.domain ?? undefined,
     isProtected: scope.compose.protectedFlag,
     unsubIgnored: scope.compose.unsubIgnored || undefined,
+    hasInboxMail: scope.compose.hasInboxMail || undefined,
   };
 }
 
@@ -57,6 +58,7 @@ export const DEFAULT_SENDERS_QUERY: SendersQueryOptions = sendersListQueryFromSc
     windowDays: null,
     domain: null,
     unsubIgnored: false,
+    hasInboxMail: false,
   },
 });
 

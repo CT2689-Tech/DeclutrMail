@@ -564,6 +564,24 @@ export function PlanPicker({
         <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
       </div>
 
+      {initialIntent?.promo === 'foundingPro' && grantingSub !== null ? (
+        <p
+          role="status"
+          style={{
+            margin: 0,
+            padding: '12px 14px',
+            border: `1px solid ${color.border}`,
+            borderRadius: radius.md,
+            background: color.card,
+            color: color.fgSoft,
+            fontSize: text.sm,
+          }}
+        >
+          Founding Pro is for new annual Pro subscriptions. Your active paid subscription cannot be
+          converted to the promotional price; your current plan remains unchanged.
+        </p>
+      ) : null}
+
       <div
         style={{
           display: 'flex',

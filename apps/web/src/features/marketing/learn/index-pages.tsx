@@ -174,7 +174,7 @@ export function ChangelogPage() {
   return (
     <ReadingLayout
       title="What changed, and when"
-      lede="DeclutrMail does not use public version numbers yet, so updates are listed by the date they shipped rather than under invented release names. Every entry describes a change you can see in the product — it is not a promise that every account has received a rollout."
+      lede="This archive currently covers updates through July 2026. The product has newer changes; their release notes are still being curated. Entries are dated by when they shipped."
       meta={<Link href="/changelog/rss.xml">RSS feed</Link>}
     >
       <nav className="dm-support-tasks" aria-label="Explore product updates">

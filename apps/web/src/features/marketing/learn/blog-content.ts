@@ -305,11 +305,6 @@ export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
         label: 'Delete with a clear preview',
         description: 'A checked workflow for Gmail Trash.',
       },
-      {
-        href: '/changelog',
-        label: 'Build log',
-        description: 'Evidence-linked product changes from repository history.',
-      },
     ],
   },
 };

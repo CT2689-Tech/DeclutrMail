@@ -66,6 +66,32 @@
   flex-wrap: wrap;
   min-width: 0;
 }
+.inboxFilter {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: 999px;
+  background: var(--dm-card);
+  color: var(--dm-fg);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.inboxFilter:hover,
+.inboxFilter:focus-visible {
+  border-color: var(--dm-primary);
+}
+.inboxFilter:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 2px;
+}
+.inboxFilter[aria-pressed='true'] {
+  border-color: var(--dm-primary);
+  background: var(--dm-primary);
+  color: var(--dm-fg-inverse);
+}
 .summary {
   display: flex;
   align-items: center;

@@ -19,10 +19,10 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Logo } from './logo';
 
-const INK = '#0E1413';
-const TEAL = '#006B5F';
-const MINT = '#79E6DC';
-const PAPER = '#FAFAF7';
+const INK = '#2D2630';
+const PLUM = '#59415F';
+const LILAC = '#D1B8D6';
+const PAPER = '#FAF4ED';
 
 /** The frame path that only the heavy (<=24px) cut draws. */
 const HEAVY_FRAME = 'M7 4H4';
@@ -70,7 +70,7 @@ describe('Logo — colors are brand-locked, never tokenized (ADR-0036)', () => {
   it('emits the literal brand hexes', () => {
     const html = renderToStaticMarkup(<Logo />);
     expect(html).toContain(INK);
-    expect(html).toContain(TEAL);
+    expect(html).toContain(PLUM);
   });
 
   it('never reads a palette custom property', () => {
@@ -88,28 +88,28 @@ describe('Logo — colors are brand-locked, never tokenized (ADR-0036)', () => {
 });
 
 describe('Logo — tone inversion', () => {
-  it('duo auto-inverts to paper + mint under a dark color-scheme', () => {
+  it('duo auto-inverts to paper + lilac under a dark color-scheme', () => {
     const html = renderToStaticMarkup(<Logo tone="duo" />);
     expect(html).toContain(`light-dark(${INK}, ${PAPER})`);
-    expect(html).toContain(`light-dark(${TEAL}, ${MINT})`);
+    expect(html).toContain(`light-dark(${PLUM}, ${LILAC})`);
   });
 
   it('pins reversed and ink through a theme flip', () => {
     const reversed = renderToStaticMarkup(<Logo tone="reversed" />);
     expect(reversed).not.toContain('light-dark(');
     expect(reversed).toContain(PAPER);
-    expect(reversed).toContain(MINT);
+    expect(reversed).toContain(LILAC);
 
     const ink = renderToStaticMarkup(<Logo tone="ink" />);
     expect(ink).not.toContain('light-dark(');
-    expect(ink).not.toContain(TEAL);
-    expect(ink).not.toContain(MINT);
+    expect(ink).not.toContain(PLUM);
+    expect(ink).not.toContain(LILAC);
   });
 
   it('keeps a plain stroke attribute so a browser without light-dark() still draws', () => {
     const html = renderToStaticMarkup(<Logo tone="duo" variant="mark" />);
     expect(html).toContain(`stroke="${INK}"`);
-    expect(html).toContain(`stroke="${TEAL}"`);
+    expect(html).toContain(`stroke="${PLUM}"`);
   });
 });
 
@@ -172,7 +172,7 @@ describe('Logo — wordmark', () => {
 
 // --- Clearance: the defect D255 found, and the one it knowingly ships ---
 //
-// The problem was never "the small cut looks heavy". It was that the teal
+// The problem was never "the small cut looks heavy". It was that the accent
 // tail's stroke INTERSECTED the frame's lower-right cap, fusing two paths
 // into one closed shape. An overlap does not resolve by scaling, so until
 // the geometry changed, no size rendered an open envelope.

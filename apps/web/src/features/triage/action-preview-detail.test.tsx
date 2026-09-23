@@ -116,6 +116,7 @@ describe('Triage preview — verification detail (D226 parity)', () => {
 
   it('keeps the no-body-storage line wherever subjects render (D7)', () => {
     renderPreview();
+    expect(screen.getByText('Recent matches · showing 2 of 17')).toBeInTheDocument();
     expect(screen.getByText('Your weekly digest')).toBeInTheDocument();
     expect(screen.getByText(/we never fetch or store full email contents/i)).toBeInTheDocument();
   });

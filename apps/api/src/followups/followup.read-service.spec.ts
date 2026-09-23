@@ -114,6 +114,24 @@ describe('FollowupReadService', () => {
   });
 
   describe('listAwaiting', () => {
+    it('keeps the stated 60-day window even when old awaiting rows remain stored', async () => {
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 'expired',
+        sentAt: new Date(NOW_MS - 61 * 24 * 60 * 60 * 1000),
+      });
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 'boundary',
+        sentAt: new Date(NOW_MS - 60 * 24 * 60 * 60 * 1000),
+      });
+      await seedFollowup(db, mailboxA.workspaceId, mailboxA.mailboxAccountId, {
+        threadId: 'self',
+        recipientEmail: 'A@EXAMPLE.COM',
+        sentAt: new Date(NOW_MS - 2 * 24 * 60 * 60 * 1000),
+      });
+      const rows = await service.listAwaiting(mailboxA.mailboxAccountId, NOW_MS);
+      expect(rows.map((row) => row.providerThreadId)).toEqual(['boundary']);
+    });
+
     it('walks timestamp ties by id and reuses exclusions only within one request', async () => {
       const blocked = 'blocked@example.com';
       await db.insert(senderPolicies).values({

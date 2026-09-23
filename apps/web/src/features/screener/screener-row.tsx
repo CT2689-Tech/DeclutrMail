@@ -17,24 +17,9 @@ import {
 } from './data';
 import { DecidePreview, type DecidePreviewCount } from './decide-preview';
 import { VERB_KEY_HINT, VERB_LABEL, VERB_ORDER, verdictLabel } from './verbs';
+import './screener-row.css';
 
 const { color, font, motion, radius, shadow, text } = tokens;
-
-/**
- * Flat list row: hairline between rows (inset past the logo), neutral
- * fill on hover, a soft teal wash when open. Pulled 12px into the gutter
- * so the fill has room while the logo stays on the page's left edge.
- */
-const SCREENER_ROW_CSS = `.dm-screener-row { position: relative; margin: 0 -12px; border-radius: ${radius.lg}; transition: background ${motion.fast} ${motion.ease}, opacity ${motion.fast} ${motion.ease}; }
-.dm-screener-list > * + * > .dm-screener-row::before { content: ''; position: absolute; top: 0; left: 68px; right: 12px; height: 1px; background: ${color.lineSoft}; }
-.dm-screener-row:not([data-expanded='true']):hover { background: ${color.fill}; }
-.dm-screener-row[data-expanded='true'] { background: ${color.primaryWash}; }
-.dm-screener-list > * > .dm-screener-row:hover::before,
-.dm-screener-list > * > .dm-screener-row[data-expanded='true']::before,
-.dm-screener-list > *:has(> .dm-screener-row:hover) + * > .dm-screener-row::before,
-.dm-screener-list > *:has(> .dm-screener-row[data-expanded='true']) + * > .dm-screener-row::before { opacity: 0; }
-.dm-screener-verb { transition: background ${motion.fast} ${motion.ease}, transform ${motion.fast} ${motion.ease}; }
-.dm-screener-verb:not(:disabled):active { transform: scale(0.97); }`;
 
 /** Pill tone per engine verdict — matches the Triage row semantics. */
 const VERDICT_TONE: Record<'keep' | 'archive' | 'unsubscribe' | 'later', PillTone> = {
@@ -112,6 +97,9 @@ export function ScreenerRow({
   const scoredAt = row.recommendation?.scoredAt;
   const ageLabel =
     scoredAt !== undefined && now !== null ? scoredAgeLabel(scoredAt, new Date(now)) : null;
+  // The queue is prefetched for SSR. A render-time clock can make the
+  // server's relative age differ from the first browser render.
+  const firstSeenAge = now === null ? null : firstSeenLabel(row.firstSeenAt, new Date(now));
   const isPhone = useIsAtMost('xs');
   const compactHeader = useIsAtMost('sm');
 
@@ -126,7 +114,6 @@ export function ScreenerRow({
         opacity: busy ? 0.6 : 1,
       }}
     >
-      <style>{SCREENER_ROW_CSS}</style>
       {/* Collapsed header — always rendered. */}
       <div
         onClick={onToggleExpand}
@@ -140,7 +127,7 @@ export function ScreenerRow({
         tabIndex={0}
         aria-expanded={expanded}
         aria-controls={`screener-row-body-${row.id}`}
-        aria-label={`${row.senderName} — ${expanded ? 'collapse' : 'expand'} new-sender detail`}
+        aria-label={`${row.senderName} — ${expanded ? 'collapse' : 'expand'} sender detail`}
         style={{
           display: 'grid',
           gridTemplateColumns: compactHeader
@@ -194,7 +181,7 @@ export function ScreenerRow({
             </span>
             {compactHeader && (
               <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-                First seen {firstSeenLabel(row.firstSeenAt)}
+                First seen {firstSeenAge ?? '…'}
               </span>
             )}
           </div>
@@ -224,7 +211,7 @@ export function ScreenerRow({
               whiteSpace: 'nowrap',
             }}
           >
-            {firstSeenLabel(row.firstSeenAt)}
+            {firstSeenAge ?? '…'}
           </span>
         )}
 
@@ -356,8 +343,7 @@ export function ScreenerRow({
           {/* Detail grid — first seen, count so far, engine reasoning. */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <span style={{ fontSize: text.sm, color: color.fgSoft }}>
-              <span style={{ fontWeight: 600 }}>First seen:</span> {firstSeenLabel(row.firstSeenAt)}{' '}
-              ·{' '}
+              <span style={{ fontWeight: 600 }}>First seen:</span> {firstSeenAge ?? '…'} ·{' '}
               {/* `senders.total_received` — every label, not inbox-only.
                   Named so it cannot be read as the denominator of the
                   INBOX-now count in the decide preview below: "40"

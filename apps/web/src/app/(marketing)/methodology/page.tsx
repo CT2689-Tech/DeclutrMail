@@ -35,6 +35,23 @@ export default function MethodologyPage() {
       title="What DeclutrMail can see and change."
       lede="DeclutrMail uses a limited set of Gmail details, shows you each manual change before it happens, and keeps those decisions separate from automatic rules. Gmail remains where you read and reply."
       toc={TOC}
+      highlights={[
+        {
+          id: 'walkthrough',
+          label: 'Limited Gmail details',
+          detail: 'See the exact stored-data list',
+        },
+        {
+          id: 'action-method',
+          label: 'Preview before moving',
+          detail: 'See the count and destination',
+        },
+        {
+          id: 'automation-method',
+          label: 'Rules are separate',
+          detail: 'You choose what runs later',
+        },
+      ]}
       after={
         <FinalStoryCta
           title="See these safeguards in the product."

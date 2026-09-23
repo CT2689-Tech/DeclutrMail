@@ -84,11 +84,11 @@ export function SenderDecisionFigure() {
           </span>
           <div>
             <strong>LinkedIn Updates</strong>
-            <span>47 inbox messages, 8% read</span>
+            <span>47 inbox messages, 8% marked read</span>
           </div>
         </div>
         <p className="dm-story-decision-why">
-          Archive is suggested because of the volume and low read rate.
+          Archive is suggested because of the volume and low marked-read rate.
         </p>
         <div className="dm-story-verbs">
           {DECISION_VERBS.map((id) => {
@@ -170,7 +170,7 @@ export function DecisionsTable() {
             {row('unsubscribe')}
             <td data-label="What changes in Gmail">
               Sends the sender&rsquo;s one-click request, or prepares a Gmail draft for you to send.
-              Existing email stays where it is.
+              Existing email stays where it is unless you choose a separate Archive or Delete.
             </td>
             <td data-label="Future email">
               The sender may stop mailing once it accepts the request.

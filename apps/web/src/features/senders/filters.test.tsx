@@ -53,6 +53,24 @@ describe('FilterPanel · domain field', () => {
   });
 });
 
+describe('Mail in Inbox filter', () => {
+  it('is off by default, can be selected, and remains visible as a removable chip', () => {
+    const { onChange } = renderStrip();
+    fireEvent.click(screen.getByRole('button', { name: 'mail in Inbox' }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ hasInboxMail: true }));
+
+    render(
+      <ActiveFilterChips
+        state={{ ...EMPTY_COMPOSE, hasInboxMail: true }}
+        onChange={onChange}
+        onClear={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Remove filter: Mail in Inbox/i }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ hasInboxMail: false }));
+  });
+});
+
 describe('FilterPanel · activity chip thresholds', () => {
   // QA-senders-20260901-04: active/quiet/dormant filtered a real cutoff
   // (WINDOWS.ACTIVE_DAYS/DORMANT_DAYS) that was stated nowhere on screen.

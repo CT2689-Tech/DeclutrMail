@@ -90,6 +90,7 @@ function stub({ summary, queueLength = 0, screenerPending = 0 }: Stub = {}) {
               senderName: `Journal ${i}`,
               senderDomain: 'journal.example',
               last90dMessages: 25 + i,
+              inboxCount: i + 1,
             })),
             stats: {},
             todaySummary: {},
@@ -138,7 +139,7 @@ describe('HomeScreen', () => {
       'href',
       '/senders?sender=sender-0',
     );
-    expect(screen.getByText('Last 90 days')).toBeInTheDocument();
+    expect(screen.getByText('In inbox now')).toBeInTheDocument();
     expect(calls.triage).toBe(1);
   });
 

@@ -17,6 +17,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { fireEvent, render as renderDom, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { ApiError } from '@/lib/api/client';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
@@ -72,6 +73,31 @@ describe('ScreenerScreen — ready state', () => {
     }
   });
 
+  it('filters and sorts only the loaded queue while stating the true pending total', () => {
+    renderDom(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen state={state} totalPending={3259} />
+      </QueryWrapper>,
+    );
+    expect(screen.getByText(/3,259 total awaiting review/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter loaded senders' }), {
+      target: { value: 'protected' },
+    });
+    const list = screen.getByRole('list', { name: 'Senders waiting for your decision' });
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1);
+    expect(within(list).getByText('Dr. Mehta Clinic')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filter loaded senders' }), {
+      target: { value: 'all' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Sort loaded senders' }), {
+      target: { value: 'most_mail' },
+    });
+    const names = within(list)
+      .getAllByRole('listitem')
+      .map((item) => item.textContent ?? '');
+    expect(names[0]).toContain('Dr. Mehta Clinic');
+  });
+
   it('surfaces the resolved pending count in the header copy', () => {
     const html = render(
       <ScreenerScreen
@@ -118,7 +144,7 @@ describe('ScreenerScreen — empty / loading / error states', () => {
       authState.readiness = readiness;
       const html = renderState({ kind: 'empty' });
       expect(html).toContain('Still syncing your Gmail');
-      expect(html).not.toContain('No new senders');
+      expect(html).not.toContain('No senders awaiting review');
     },
   );
 
@@ -127,12 +153,12 @@ describe('ScreenerScreen — empty / loading / error states', () => {
     const html = renderState({ kind: 'empty' });
     expect(html).toContain('Your Gmail scan needs attention');
     expect(html).toContain('href="/settings"');
-    expect(html).not.toContain('No new senders');
+    expect(html).not.toContain('No senders awaiting review');
   });
 
   it('empty state names the clear queue once', () => {
     const html = renderState({ kind: 'empty' });
-    expect(html.match(/No new senders/g)).toHaveLength(1);
+    expect(html.match(/No senders awaiting review/g)).toHaveLength(1);
     assertNoScreenVerb(html);
   });
 

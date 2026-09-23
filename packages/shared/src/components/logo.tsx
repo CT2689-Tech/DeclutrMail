@@ -21,20 +21,20 @@
 export type LogoVariant = 'horizontal' | 'stacked' | 'mark';
 
 /**
- * `duo` — ink frame + teal accent on light, auto-inverting to paper +
- * mint under `[data-theme='dark']`. This is the default and the right
+ * `duo` — ink frame + plum accent on light, auto-inverting to paper +
+ * lilac under `[data-theme='dark']`. This is the default and the right
  * answer for any surface that themes.
  *
  * `reversed` / `ink` PIN the pair regardless of theme. Use them only
  * where the background is fixed independently of the user's theme —
- * an always-teal card, a one-colour print/email export.
+ * an always-plum card, a one-colour print/email export.
  */
 export type LogoTone = 'duo' | 'reversed' | 'ink';
 
-const INK = '#0E1413';
-const TEAL = '#006B5F';
-const MINT = '#79E6DC';
-const PAPER = '#FAFAF7';
+const INK = '#2D2630';
+const PLUM = '#59415F';
+const LILAC = '#D1B8D6';
+const PAPER = '#FAF4ED';
 
 /**
  * Each tone resolves to a `[light, dark]` pair. `duo` differs between
@@ -48,8 +48,8 @@ const PAPER = '#FAFAF7';
  * flash before hydration on the statically-rendered marketing shell.
  */
 const TONES: Record<LogoTone, { frame: [string, string]; accent: [string, string] }> = {
-  duo: { frame: [INK, PAPER], accent: [TEAL, MINT] },
-  reversed: { frame: [PAPER, PAPER], accent: [MINT, MINT] },
+  duo: { frame: [INK, PAPER], accent: [PLUM, LILAC] },
+  reversed: { frame: [PAPER, PAPER], accent: [LILAC, LILAC] },
   ink: { frame: [INK, INK], accent: [INK, INK] },
 };
 

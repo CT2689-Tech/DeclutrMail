@@ -58,6 +58,19 @@ export default function SecurityPage() {
       lede="The strongest security control is not holding the data at all."
       lastUpdated={LAST_UPDATED}
       toc={TOC}
+      highlights={[
+        {
+          id: 'the-boundary',
+          label: 'Data boundary',
+          detail: 'What is stored and what stays in Gmail',
+        },
+        {
+          id: 'encryption',
+          label: 'Token protection',
+          detail: 'How Gmail access tokens are encrypted',
+        },
+        { id: 'deletion', label: 'Your exit', detail: 'Revoke, disconnect or delete' },
+      ]}
     >
       <PageViewTracker page="security" />
       <DocSection id="the-boundary" title="What we store, and what we never store">

@@ -23,6 +23,7 @@ describe('ComparisonIndexScreen', () => {
       screen.getByText(comparisonVerifiedLabel(COMPARISONS_VERIFIED_FLOOR_ISO), { exact: false }),
     ).toBeInTheDocument();
     expect(screen.getByText(/No affiliate rankings/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Open the full comparison matrix'));
     expect(
       screen.getByRole('region', { name: 'Scrollable side-by-side comparison matrix' }),
     ).toHaveAttribute('tabindex', '0');
@@ -33,7 +34,7 @@ describe('ComparisonIndexScreen', () => {
     }
   });
 
-  it('is a simple list with one line per comparison, not a card grid', () => {
+  it('keeps every direct comparison in the index', () => {
     const { container } = render(<ComparisonIndexScreen />);
     for (const comparison of COMPARISONS) {
       expect(screen.getByText(comparison.indexSummary)).toBeInTheDocument();

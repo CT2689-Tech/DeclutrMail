@@ -65,7 +65,8 @@ describe('<AppShell /> — top bar and tab bar', () => {
     const tabbar = html.slice(start, html.indexOf('</nav>', start) + '</nav>'.length);
     expect(tabbar.startsWith('<nav class="dm-tabbar" aria-label="Primary"')).toBe(true);
     for (const label of ['Overview', 'Clean up', 'Automations', 'Catch up', 'Activity']) {
-      expect(tabbar, `tab bar must offer "${label}"`).toContain(`${label}</button>`);
+      expect(tabbar, `tab bar must offer "${label}"`).toContain(`aria-label="${label}"`);
+      expect(tabbar).toContain(`<span class="dm-tabbar-label">${label}</span>`);
     }
     expect(tabbar.match(/<button/g)).toHaveLength(5);
     expect(tabbar).toContain('order:-1');

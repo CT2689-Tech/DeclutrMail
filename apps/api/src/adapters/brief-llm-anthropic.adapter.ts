@@ -18,7 +18,8 @@
 //     the noise sender counts. The adapter NEVER sees message bodies,
 //     attachments, non-allowlisted headers, or anything outside D7's
 //     storage + read allowlist.
-//   - Output is the LLM's 2-4 sentence executive-assistant briefing.
+//   - Output is a short optional note, never a replacement for the
+//     source-linked message list.
 //     The worker trims + stores it verbatim into
 //     `brief_payload.narrative`.
 //
@@ -48,41 +49,21 @@ import type {
 const HAIKU_MODEL_ID = 'claude-haiku-4-5';
 
 /**
- * The narrative is short (1-2 sentences, ≤40 words). 384 tokens is far
+ * The narrative is short (at most two sentences, ≤55 words). 192 tokens is far
  * more than that needs; the headroom is kept deliberately so a model
  * that runs slightly long still returns a COMPLETE sentence rather than
  * a truncated one. The prompt, not the token cap, is what keeps it
  * brief — a cap tight enough to enforce length would cut mid-word.
  */
-const MAX_OUTPUT_TOKENS = 384;
+const MAX_OUTPUT_TOKENS = 192;
 
 /**
  * D62 system prompt — "sharp executive assistant" voice.
  *
- * REWRITTEN 2026-08-25. The previous prompt said "reference the three
- * sections" and "mention specific senders by name", which produced a
- * ~100-word paragraph recapping the exact rows rendered directly
- * beneath it — including the Noise counts the section header already
- * states verbatim. The only clause a reader could not reconstruct from
- * the lists was the one piece of synthesis ("this came after a failed
- * phone attempt"), and it was buried mid-paragraph.
- *
- * So the job is narrowed: the lists are the inventory, this is the
- * judgment. Say what the rows cannot, briefly, or say that nothing
- * stands out.
- *
- * The gate is SUBSTANCE, not a count. An earlier draft of this prompt
- * capped it at "at most one sender", which was the same mistake as the
- * "6 OF 6" section header it was written alongside — a fixed constant
- * presented as if it described the day. A morning with three real
- * deadlines across three senders is exactly the morning the narrative
- * exists for, and a cap of one under-serves it. So the rule is now
- * "name every item you have a reason for, and none you don't"; the
- * word budget is what keeps that honest, because you cannot state four
- * reasons in 60 words and the model has to choose.
- *
- * The budget is stated per-day in the user prompt rather than fixed
- * here — see `narrativeWordBudget`.
+ * The Brief already shows its source-linked rows. The note may add a
+ * small, well-supported observation, but cannot promote a subject or
+ * snippet into an unverified security or financial claim. Long or
+ * unfocused responses are discarded in `generateNarrative`.
  */
 const SYSTEM_PROMPT = [
   'You are a sharp executive assistant. Below your text the reader already sees every Reply and FYI item with its sender and subject, and every Noise sender with a message count.',
@@ -90,48 +71,29 @@ const SYSTEM_PROMPT = [
   'Your job is to say what that list cannot.',
   '',
   'Rules:',
-  '- Plain English prose, within the word budget stated at the end of the user message. No lists, no headings, no markdown.',
-  '- Name a sender ONLY when you can say something its row does not already show — a deadline, an escalation, a second attempt after no reply, a consequence of not acting. The reason is the whole point.',
-  '- Name every item that has such a reason. If three do, name three. If one does, name one. If none does, name none.',
+  '- Plain English prose, at most two sentences, within the word budget stated at the end of the user message. No lists, no headings, no markdown.',
+  '- Name at most two senders, and only when a useful fact is explicitly stated in their subject or snippet.',
+  '- Do not infer a sign-in attempt, unfamiliar device, fraud, deadline, purchase, subscription term, or required action from a sender name or a one-time-code subject.',
+  '- If evidence is ambiguous, say that the message mentions a topic and invite the reader to check the message. Never assert an unstated event or consequence.',
   '- A sender whose subject line already says everything does not belong in your text. That is walking the list, not briefing.',
   '- Lead with the item that matters most.',
   '- Never state counts. The section headers already carry them.',
   '- Do not summarize the FYI or Noise sections. They are visible and self-explanatory.',
-  '- Stay grounded in the senders, subjects, and snippets provided. Never invent details.',
+  '- Stay grounded in the senders, subjects, and snippets provided. Never invent details or urgency.',
   '- Never repeat figures from a snippet — no balances, amounts, or account numbers.',
   '- If nothing genuinely stands out, say exactly that in one short sentence.',
   '- Do not address the user directly. Calm and direct. No exclamation marks, no hype.',
 ].join('\n');
 
 /**
- * Word budget for the narrative, scaled to the number of Reply items.
- *
- * 60 words is about three properly stated reasons, and three is what a
- * normal morning holds. A day carrying six items that each have a real
- * reason is the day the narrative exists for, and squeezing six reasons
- * into 60 words produces exactly the list-walking the rules above spend
- * ten lines forbidding.
- *
- * The trigger is COMPUTED, never model-judged. "Go longer when it
- * matters" is self-granting as an instruction — the model finds
- * something that matters most mornings, and the ceiling quietly becomes
- * the default. `reply.length` is the engine's own count of what needs
- * the user, so the room to explain scales with the thing being
- * explained while the model still cannot vote itself more.
- *
- * ~25 words buys one stated reason ("Ridge's invoice is 14 days overdue
- * and they have now called twice"), so the slope is one reason per item
- * past the second. Reply is capped at 6 (D63), so 150 is reached
- * exactly at a full section and never exceeded.
+ * The message list handles volume. A note above it should stay short
+ * even on a busy day, or it recreates the unreadable wall of prose it
+ * was meant to replace.
  */
-const NARRATIVE_BASE_WORDS = 60;
-const NARRATIVE_MAX_WORDS = 150;
-const WORDS_PER_REASON = 25;
-const REASONS_WITHIN_BASE = 2;
+const NARRATIVE_MAX_WORDS = 55;
 
-export function narrativeWordBudget(replyCount: number): number {
-  const extra = Math.max(0, replyCount - REASONS_WITHIN_BASE) * WORDS_PER_REASON;
-  return Math.min(NARRATIVE_BASE_WORDS + extra, NARRATIVE_MAX_WORDS);
+export function narrativeWordBudget(_replyCount: number): number {
+  return NARRATIVE_MAX_WORDS;
 }
 
 /**
@@ -174,7 +136,9 @@ export class BriefLlmAnthropicAdapter implements BriefLlmPort {
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],
       });
-      return extractText(response);
+      const narrative = extractText(response);
+      if (narrative === null || narrative.split(/\s+/).length > NARRATIVE_MAX_WORDS) return null;
+      return narrative;
     } catch (err) {
       // No throws — the port's contract is "soft path". Structured log
       // so observability can correlate fallbacks with API health.

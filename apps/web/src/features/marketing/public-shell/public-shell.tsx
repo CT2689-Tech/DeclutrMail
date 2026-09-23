@@ -1,17 +1,21 @@
 import Link from 'next/link';
 
 import { Logo } from '@declutrmail/shared';
+import { ThemeToggle } from '@/features/theme/theme-toggle';
+import { isFeatureEnabled } from '@/lib/flags';
 
 import { permissionEntryUrl } from '../landing/urls';
 import { TrackedCta } from '../landing/tracked-cta';
 import { PublicMobileMenu } from './public-mobile-menu';
 import { PublicNavLinks } from './public-nav-links';
 
-// Three links. Learn and trust routes stay reachable from the footer; both auth CTAs use the permission checkpoint.
+// Keep the main decision routes visible; the footer remains the full site directory.
 const PRODUCT_LINKS = [
   { href: '/how-it-works', label: 'How it works' },
   { href: '/pricing', label: 'Pricing' },
   { href: '/inbox-simulator', label: 'Demo' },
+  { href: '/compare', label: 'Compare' },
+  { href: '/methodology', label: 'Privacy & control' },
 ] as const;
 
 const FOOTER_GROUPS = [
@@ -22,7 +26,6 @@ const FOOTER_GROUPS = [
       { href: '/inbox-simulator', label: 'Inbox simulator' },
       { href: '/pricing', label: 'Pricing' },
       { href: '/beta', label: 'Open beta' },
-      { href: '/changelog', label: 'Changelog' },
     ],
   },
   {
@@ -90,6 +93,9 @@ export function PublicHeader() {
             </TrackedCta>
           </div>
 
+          {isFeatureEnabled('darkMode') ? (
+            <ThemeToggle className="dm-public-theme-toggle" showLabel />
+          ) : null}
           <PublicMobileMenu links={PRODUCT_LINKS} startUrl={permissionEntryUrl()} />
         </div>
       </header>

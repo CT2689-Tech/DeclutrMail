@@ -24,6 +24,7 @@ export interface SendersScreenScope {
     windowDays: number | null;
     domain: string | null;
     unsubIgnored: boolean;
+    hasInboxMail?: boolean;
   };
 }
 
@@ -99,6 +100,7 @@ export function parseSendersScope(params: Pick<URLSearchParams, 'get'>): Senders
       windowDays: parseWindow(params.get('window')),
       domain: params.get('domain')?.trim() || null,
       unsubIgnored: params.get('unsub_ignored') === 'true',
+      hasInboxMail: params.get('has_inbox_mail') === 'true',
     },
     // Trimmed to match the screen's `query.trim()` before hashing — an
     // untrimmed `?q=%20acme` would hydrate a key no observer ever reads.

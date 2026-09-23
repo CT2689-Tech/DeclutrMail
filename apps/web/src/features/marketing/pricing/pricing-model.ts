@@ -175,12 +175,12 @@ export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefi
  * manifest.
  */
 export const TIER_JOBS: Readonly<Record<TierId, string>> = {
-  free: 'Review and act on senders yourself.',
-  plus: 'Remove the monthly limit and let rules keep it clean.',
+  free: 'Review and clean up senders in one Gmail inbox.',
+  plus: 'Clear a larger backlog and set rules for future mail.',
   // QA-billing-20260901-10: "every account" overclaimed against the
   // manifest's actual inboxLimit (5) — the /pricing Pro card already
   // prints "5 connected inboxes" directly beneath this same sentence.
-  pro: 'Get the Daily Brief and Follow-ups, across your connected inboxes.',
+  pro: 'Stay on top of your Gmail inboxes with Brief and Follow-ups.',
   team: 'Review and manage email together.',
   enterprise: 'Manage more inboxes with organizational controls.',
 };

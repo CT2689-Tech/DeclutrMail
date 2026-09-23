@@ -157,6 +157,12 @@ export interface TriageDecisionRow {
    */
   last90dMessages: number;
   /**
+   * Inbound messages currently in the Inbox. The API includes this live
+   * count; optional so illustrative fixtures and older API deployments do
+   * not make a claim about the current mailbox state.
+   */
+  inboxCount?: number;
+  /**
    * Read rate in `[0, 1]`, or `null` when the sender sent nothing in
    * the 90-day window — NOT 0.
    *

@@ -138,6 +138,37 @@ const INDEX_JSON_LD = {
 
 const capitalized = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
 
+const QUICK_FITS = [
+  {
+    href: '/vs/trimbox',
+    job: 'Subscriptions first',
+    tool: 'Trimbox',
+    description: 'A focused way to unsubscribe and clear old mail from a list.',
+    action: 'Compare opt-out tools',
+  },
+  {
+    href: '/vs/sanebox',
+    job: 'Less incoming noise',
+    tool: 'SaneBox',
+    description: 'Learned sorting moves lower-priority mail into folders.',
+    action: 'Compare ongoing sorting',
+  },
+  {
+    href: '/vs/clean-email',
+    job: 'Several email providers',
+    tool: 'Clean Email',
+    description: 'A broad cleanup suite with filters and automation.',
+    action: 'Compare broader coverage',
+  },
+  {
+    href: '/vs/gmail',
+    job: 'Stay inside Gmail',
+    tool: 'Gmail',
+    description: 'Use native search, bulk actions, and subscription controls.',
+    action: 'Compare the native path',
+  },
+] as const;
+
 export function ComparisonIndexScreen() {
   return (
     <div className="dm-story dm-comparison">
@@ -160,20 +191,35 @@ export function ComparisonIndexScreen() {
         className="dm-compare-section dm-compare-narrow"
         aria-labelledby="comparison-intent-title"
       >
-        <h2 id="comparison-intent-title">What are you trying to do?</h2>
-        <div className="dm-compare-intents">
-          <a href="/vs/leave-me-alone">
-            Reduce subscriptions<small>Compare unsubscribe workflows</small>
-          </a>
-          <a href="/vs/gmail">
-            Clear an existing backlog<small>Start with Gmail’s native tools</small>
-          </a>
-          <a href="/vs/gmail-filters">
-            Manage future email<small>Compare filters and automation</small>
-          </a>
-          <a href="/vs/clean-email">
-            Use more than Gmail<small>Check provider compatibility</small>
-          </a>
+        <h2 id="comparison-intent-title">Which job matters most?</h2>
+        <p className="dm-compare-section-lede">
+          Start with the kind of change you want. The detailed pages show where each tool is
+          stronger and link to the sources behind the claims.
+        </p>
+        <div className="dm-compare-fit-grid">
+          <div className="dm-compare-fit-feature">
+            <span className="dm-compare-fit-kicker">Existing Gmail backlog</span>
+            <h3>See the scope before you move mail.</h3>
+            <p>
+              DeclutrMail lets you review a sender, preview the current match and planned Gmail
+              change, then check the outcome in Activity.
+            </p>
+            <a href="/inbox-simulator?workspace=senders">
+              Try a sender review <span aria-hidden="true">→</span>
+            </a>
+          </div>
+          <div className="dm-compare-fit-options">
+            {QUICK_FITS.map((fit) => (
+              <a key={fit.href} href={fit.href} aria-label={`${fit.action}: ${fit.tool}`}>
+                <span className="dm-compare-fit-kicker">{fit.job}</span>
+                <strong>{fit.tool}</strong>
+                <span className="dm-compare-fit-description">{fit.description}</span>
+                <span className="dm-compare-fit-action">
+                  {fit.action} <span aria-hidden="true">→</span>
+                </span>
+              </a>
+            ))}
+          </div>
         </div>
       </section>
       <section
@@ -181,14 +227,15 @@ export function ComparisonIndexScreen() {
         aria-labelledby="compare-list-title"
       >
         <h2 id="compare-list-title">Head to head</h2>
-        <ul className="dm-compare-list">
+        <ul className="dm-compare-list dm-compare-index-list">
           {COMPARISONS.map((comparison) => (
             <li key={comparison.slug}>
+              <span className="dm-compare-list-category">{comparison.category}</span>
               <a
                 href={`/vs/${comparison.slug}`}
                 aria-label={`Compare DeclutrMail and ${comparison.name}`}
               >
-                DeclutrMail vs {comparison.name}
+                DeclutrMail vs {comparison.name} <span aria-hidden="true">→</span>
               </a>
               <p>{comparison.indexSummary}</p>
             </li>
@@ -252,61 +299,69 @@ function MatrixSection() {
           full page and the official sources behind it.
         </p>
       </div>
-      <div
-        className="dm-compare-table-wrap"
-        role="region"
-        aria-label="Scrollable side-by-side comparison matrix"
-        tabIndex={0}
-      >
-        <table className="dm-compare-table dm-compare-matrix">
-          <caption className="dm-story-sr-only">
-            DeclutrMail compared with {COMPARISON_COUNT_WORD} alternatives across{' '}
-            {ROUNDUP_DIMENSIONS.length} dimensions. Cells marked not compared were not assessed on
-            that alternative&rsquo;s page.
-          </caption>
-          <thead>
-            <tr>
-              <th scope="col">Dimension</th>
-              <th scope="col">DeclutrMail</th>
-              {COMPARISONS.map((comparison) => (
-                <th scope="col" key={comparison.slug}>
-                  <a href={`/vs/${comparison.slug}`}>{comparison.name}</a>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ROUNDUP_DIMENSIONS.map((dimension) => (
-              <tr key={dimension.label}>
-                <th scope="row">{dimension.label}</th>
-                <td data-col="DeclutrMail">
-                  <span
-                    className={`dm-compare-state dm-compare-state-${dimension.declutrMail.state}`}
-                  >
-                    {STATE_LABEL[dimension.declutrMail.state]}
-                  </span>
-                  <strong>{dimension.declutrMail.summary}</strong>
-                </td>
-                {dimension.competitors.map(([slug, cell]) => (
-                  <td key={slug} data-col={COMPARISON_NAME_BY_SLUG[slug]}>
-                    {cell ? (
-                      <>
-                        <span className={`dm-compare-state dm-compare-state-${cell.state}`}>
-                          {STATE_LABEL[cell.state]}
-                        </span>
-                        <strong>{cell.summary}</strong>
-                      </>
-                    ) : (
-                      <span aria-hidden="true">&mdash;</span>
-                    )}
-                    {cell ? null : <span className="dm-story-sr-only">Not compared</span>}
-                  </td>
+      <details className="dm-compare-matrix-details">
+        <summary>
+          <span>Open the full comparison matrix</span>
+          <small>
+            {ROUNDUP_DIMENSIONS.length} dimensions · {COMPARISONS.length + 1} tools
+          </small>
+        </summary>
+        <div
+          className="dm-compare-table-wrap"
+          role="region"
+          aria-label="Scrollable side-by-side comparison matrix"
+          tabIndex={0}
+        >
+          <table className="dm-compare-table dm-compare-matrix">
+            <caption className="dm-story-sr-only">
+              DeclutrMail compared with {COMPARISON_COUNT_WORD} alternatives across{' '}
+              {ROUNDUP_DIMENSIONS.length} dimensions. Cells marked not compared were not assessed on
+              that alternative&rsquo;s page.
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Dimension</th>
+                <th scope="col">DeclutrMail</th>
+                {COMPARISONS.map((comparison) => (
+                  <th scope="col" key={comparison.slug}>
+                    <a href={`/vs/${comparison.slug}`}>{comparison.name}</a>
+                  </th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {ROUNDUP_DIMENSIONS.map((dimension) => (
+                <tr key={dimension.label}>
+                  <th scope="row">{dimension.label}</th>
+                  <td data-col="DeclutrMail">
+                    <span
+                      className={`dm-compare-state dm-compare-state-${dimension.declutrMail.state}`}
+                    >
+                      {STATE_LABEL[dimension.declutrMail.state]}
+                    </span>
+                    <strong>{dimension.declutrMail.summary}</strong>
+                  </td>
+                  {dimension.competitors.map(([slug, cell]) => (
+                    <td key={slug} data-col={COMPARISON_NAME_BY_SLUG[slug]}>
+                      {cell ? (
+                        <>
+                          <span className={`dm-compare-state dm-compare-state-${cell.state}`}>
+                            {STATE_LABEL[cell.state]}
+                          </span>
+                          <strong>{cell.summary}</strong>
+                        </>
+                      ) : (
+                        <span aria-hidden="true">&mdash;</span>
+                      )}
+                      {cell ? null : <span className="dm-story-sr-only">Not compared</span>}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </section>
   );
 }

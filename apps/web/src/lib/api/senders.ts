@@ -520,6 +520,8 @@ export interface ListSendersParams {
    * negated form (not a surface). Maps to wire `?unsub_ignored=true`.
    */
   unsubIgnored?: boolean | undefined;
+  /** Only senders with inbound messages currently carrying INBOX. */
+  hasInboxMail?: boolean | undefined;
   /** Exclude senders whose inbound mail is entirely outside Inbox + archived. */
   currentMailOnly?: boolean | undefined;
 }
@@ -627,6 +629,7 @@ export function sendersListRequestQuery(
     window: params.windowDays !== undefined ? String(params.windowDays) : undefined,
     domain: params.domain ? params.domain : undefined,
     unsub_ignored: params.unsubIgnored === true ? 'true' : undefined,
+    has_inbox_mail: params.hasInboxMail === true ? 'true' : undefined,
     current_mail_only: params.currentMailOnly === true ? 'true' : undefined,
   };
 }

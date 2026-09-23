@@ -1,17 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 
 import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
-import type { TierDefinition } from '@declutrmail/shared/entitlements';
+import { TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
 
 import { useRegionProvider } from '@/features/billing/billing-currency';
-import { navigateToCheckout } from './cta';
 import {
-  currencyForPricePoint,
-  foundingProPromo,
-  formatMoney,
   pricingTiers,
   sharedAnnualMonthsFree,
   TIER_JOBS,
@@ -22,7 +17,6 @@ import { TierCard } from './tier-card';
 import { WaitlistForm } from './waitlist-form';
 import { FAQ_ENTRIES } from '../learn/faq-content';
 import { useConsentedPageView } from '../use-consented-page-view';
-import { track } from '@/lib/posthog';
 
 // The shared safety summary, one fact per line. Split, never reworded:
 // the sentence text stays the shared constant's.
@@ -45,10 +39,8 @@ const REFUND_FACT = (() => {
  * all derive from `TIER_MANIFEST` (packages/shared/src/entitlements)
  * through the pricing model: a manifest re-price re-prices this page.
  *
- * Layout: nav → hero → Founding Pro banner → interval toggle →
- * purchasable-tier cards → non-purchasable rows (Team waitlist /
- * Enterprise contact, driven by `nonPurchasableRow.kind`) → comparison
- * table → "Good to know" facts → footer. Styles: ./pricing.css.
+ * Layout: hero → interval toggle → purchasable-tier cards → comparison
+ * table → Team/Enterprise → facts. The Pro card owns its launch offer.
  */
 
 // Enterprise row contact (D19 "Contact sales").
@@ -75,11 +67,13 @@ export function PricingScreen() {
   return (
     <div className="dm-pricing">
       <header className="dm-pricing-head">
-        <h1>Start free. Add automation when you need it.</h1>
-        <p>Every plan gets the same Keep, Archive, Unsubscribe, Later, and Delete.</p>
+        <h1>Start free. Choose how to keep Gmail clear.</h1>
+        <p>
+          Free includes {TIER_MANIFEST.free.cleanupActionsPerMonth} cleanup actions each month. Plus
+          adds unlimited actions and rules you preview before enabling. Pro adds Daily Brief,
+          Follow-ups, and up to {TIER_MANIFEST.pro.inboxLimit} Gmail inboxes.
+        </p>
       </header>
-
-      <FoundingProBanner />
 
       <div className="dm-pricing-toggle-wrap">
         <IntervalToggle interval={interval} onChange={setInterval} />
@@ -98,15 +92,15 @@ export function PricingScreen() {
         {OAUTH_SCOPE_DISCLOSURE} <a href="/sign-in">Review Gmail permissions</a>
       </p>
 
+      <section aria-label="Compare plans" className="dm-pricing-section">
+        <h2>Compare plans</h2>
+        <CompareTable />
+      </section>
+
       <section aria-label="Team and Enterprise" className="dm-pricing-more">
         {rows.map((tier) => (
           <NonPurchasableRow key={tier.id} tier={tier} />
         ))}
-      </section>
-
-      <section aria-label="Compare plans" className="dm-pricing-section">
-        <h2>Compare plans</h2>
-        <CompareTable />
       </section>
 
       <section aria-labelledby="dm-pricing-facts-title" className="dm-pricing-section">
@@ -128,60 +122,6 @@ export function PricingScreen() {
         </ul>
       </section>
     </div>
-  );
-}
-
-/**
- * D19 launch offer strip. Renders only while the manifest carries a
- * promo — delete `pro.promo` from the manifest and this disappears.
- */
-function FoundingProBanner() {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  // The promo and the standard annual it is compared against are
-  // SEPARATE price points with separate catalog ids — each clamps
-  // against its own, so "₹10,999 instead of $190" can never render.
-  const regionProvider = useRegionProvider();
-  const found = foundingProPromo();
-  if (!found) return null;
-  const { hostTier, promo } = found;
-  const standardAnnual = hostTier.prices.annual;
-  const promoCurrency = currencyForPricePoint(promo.annual, regionProvider);
-
-  return (
-    <aside aria-label={promo.name} className="dm-pricing-promo">
-      <div className="dm-pricing-promo-copy">
-        <strong>
-          {promo.name} — {formatMoney(promo.annual, promoCurrency)}/yr for the first{' '}
-          {promo.maxRedemptions} subscriptions
-        </strong>
-        <span>
-          {standardAnnual ? `Instead of ${formatMoney(standardAnnual, promoCurrency)}/yr. ` : ''}
-          Full {hostTier.name}, price locked while your subscription stays active. Availability is
-          confirmed at checkout; no spot is reserved until payment succeeds.
-        </span>
-      </div>
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => {
-          if (busy) return;
-          setBusy(true);
-          void track('pricing_plan_selected', {
-            tier: 'pro',
-            cycle: 'annual',
-            promo: 'foundingPro',
-          });
-          void navigateToCheckout((path) => router.push(path), {
-            plan: 'pro',
-            cycle: 'annual',
-            promo: 'foundingPro',
-          }).finally(() => setBusy(false));
-        }}
-      >
-        {busy ? 'One moment…' : 'Check availability'}
-      </button>
-    </aside>
   );
 }
 

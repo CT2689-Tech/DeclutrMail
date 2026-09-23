@@ -154,7 +154,9 @@ export function ActionPreviewDetailBlock({
 
       {hasSample && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: space[2], minWidth: 0 }}>
-          <span style={{ fontSize: text.sm, color: color.fgMuted }}>Latest matching email</span>
+          <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+            Recent matches · showing {sample.rows.length} of {sample.total.toLocaleString('en-US')}
+          </span>
           {sample.rows.map((row, i) => (
             <div
               key={i}

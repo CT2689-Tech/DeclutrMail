@@ -39,7 +39,7 @@ const meta: StoryMeta<typeof Logo> = {
     docs: {
       description: {
         component:
-          'DeclutrMail identity: an envelope whose frame breaks at the top right, with one unbroken stroke through the gap. Geometry and colour are specification, not theme — see ADR-0036. Colours are literal hexes and do NOT follow the palette; `duo` auto-inverts to paper + mint under `[data-theme="dark"]` via `light-dark()`.',
+          'DeclutrMail identity: an envelope whose frame breaks at the top right, with one unbroken stroke through the gap. Geometry and colour are specification — see ADR-0036 and ADR-0037. Colours are literal hexes; `duo` auto-inverts to paper + lilac under `[data-theme="dark"]` via `light-dark()`.',
       },
     },
   },
@@ -207,15 +207,15 @@ export const PinnedTones: Story<typeof Logo> = {
           data-theme={theme}
           style={{ background: color.bg, padding: 24, display: 'flex', gap: 20, flexWrap: 'wrap' }}
         >
-          <div style={{ background: '#006B5F', padding: 24, textAlign: 'center' }}>
+          <div style={{ background: '#59415F', padding: 24, textAlign: 'center' }}>
             <Logo tone="reversed" size={32} label={null} />
-            <div style={{ fontSize: 11, color: '#FAFAF7', opacity: 0.7, marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#FAF4ED', opacity: 0.7, marginTop: 8 }}>
               reversed · pinned
             </div>
           </div>
-          <div style={{ background: '#FAFAF7', padding: 24, textAlign: 'center' }}>
+          <div style={{ background: '#FAF4ED', padding: 24, textAlign: 'center' }}>
             <Logo tone="ink" size={32} label={null} />
-            <div style={{ fontSize: 11, color: '#0E1413', opacity: 0.6, marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#2D2630', opacity: 0.6, marginTop: 8 }}>
               ink · pinned
             </div>
           </div>

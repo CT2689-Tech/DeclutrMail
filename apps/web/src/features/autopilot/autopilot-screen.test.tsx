@@ -36,6 +36,7 @@ import {
   AUTO_ARCHIVE_LOW_ENGAGEMENT,
   AUTO_UNSUBSCRIBE_NOISY,
   LONG_DORMANT_UNSUBSCRIBE,
+  NEWSLETTER_GRAVEYARD,
   PENDING_SUGGESTIONS,
   PRESET_RULES_ALL_FIVE,
   PRESET_RULES_ALL_PAUSED,
@@ -197,6 +198,10 @@ describe('AutopilotScreen — edge states', () => {
 
   it('groups pending suggestions under their rule (D104)', () => {
     renderScreen(ready());
+    const nextSteps = screen.getByRole('navigation', { name: 'Autopilot next steps' });
+    expect(
+      within(nextSteps).getByRole('link', { name: /review first 3 suggestions/i }),
+    ).toHaveAttribute('href', '#pending-heading');
     // Two groups — auto-archive (2 rows) + newsletter graveyard (1 row).
     const archiveGroup = screen.getByRole('list', {
       name: /pending suggestions from auto-archive low-engagement — rows/i,
@@ -215,6 +220,12 @@ describe('AutopilotScreen — edge states', () => {
       rule: PRESET_RULES_OBSERVE[0]!,
     }));
     renderScreen({ kind: 'ready', rules: PRESET_RULES_OBSERVE, suggestions });
+    const group = screen.getByRole('list', {
+      name: /pending suggestions from auto-archive low-engagement — rows/i,
+    });
+    expect(within(group).getAllByRole('listitem')).toHaveLength(8);
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 50 suggestions' }));
+    expect(within(group).getAllByRole('listitem')).toHaveLength(50);
     // Section header says 50+ — a page count, not a total claim.
     expect(screen.getByText(/^50\+$/)).toBeInTheDocument();
     // Rule details mark a capped per-rule count with "+".
@@ -1327,6 +1338,27 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
   beforeEach(() => installFetchStub([]));
   afterEach(() => resetFetchStub());
 
+  it('starts a bulk unsubscribe preview on Cancel, not the irreversible approval', async () => {
+    render(
+      <ApproveConfirmModal
+        rule={NEWSLETTER_GRAVEYARD}
+        matches={[PENDING_SUGGESTIONS[2]!]}
+        kind="all"
+        pendingTotal={1}
+        pendingApproximate={false}
+        isApproving={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus(),
+    );
+    expect(within(dialog).getByRole('button', { name: 'Approve 1' })).toBeEnabled();
+  });
+
   it('never describes a many-sender Unsubscribe rule as one unchecked sender', () => {
     render(
       <ApproveConfirmModal
@@ -1386,7 +1418,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     renderScreen(ready());
     await userEvent.click(
       screen.getByRole('button', {
-        name: /approve all suggestions from rule auto-archive low-engagement/i,
+        name: /review all suggestions from rule auto-archive low-engagement/i,
       }),
     );
 
@@ -1430,9 +1462,10 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     ]);
 
     renderScreen({ kind: 'ready', rules: [rule], suggestions });
+    expect(screen.getByText('Review all ~214')).toBeInTheDocument();
     await userEvent.click(
       screen.getByRole('button', {
-        name: /approve all suggestions from rule auto-archive low-engagement/i,
+        name: /review all suggestions from rule auto-archive low-engagement/i,
       }),
     );
 
@@ -1461,7 +1494,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     renderScreen(ready());
     // "Approve selected" is disabled until something is checked.
     const approveSelected = screen.getByRole('button', {
-      name: /approve selected suggestions from rule auto-archive low-engagement/i,
+      name: /review selected suggestions from rule auto-archive low-engagement/i,
     });
     expect(approveSelected).toBeDisabled();
 
@@ -1497,7 +1530,7 @@ describe('AutopilotScreen — approve flow (D104 + D226)', () => {
     renderScreen(ready());
     await userEvent.click(
       screen.getByRole('button', {
-        name: /approve all suggestions from rule auto-archive low-engagement/i,
+        name: /review all suggestions from rule auto-archive low-engagement/i,
       }),
     );
     const dialog = screen.getByRole('dialog', { name: /approve 2 suggestions/i });

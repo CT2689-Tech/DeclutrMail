@@ -38,6 +38,7 @@ import { useMarkBriefOpened } from './api/use-mark-brief-opened';
 import {
   blockedReason,
   buildNoiseTargets,
+  DEFAULT_NOISE_SELECTION_LIMIT,
   useNoiseArchive,
   type NoiseArchiveOutcome,
   type NoiseTarget,
@@ -67,11 +68,11 @@ const H1_STYLE = editorialTitleStyle;
  *
  * Layout (D61 + D63):
  *   1. One-line header — "Daily Brief" + the local-date the snapshot covers.
- *   2. Narrative — the D62 "sharp executive assistant" pre-amble.
- *   3. Reply section (max 6 per D63).
+ *   2. Scan-friendly section links; the generated narrative is optional.
+ *   3. Review section (the payload's `reply` candidates, max 6 per D63).
  *   4. FYI section (max 4 per D63).
- *   5. Noise section (uncapped) — per-sender checkboxes, default-all
- *      checked, over one bulk Archive (D65). See
+ *   5. Noise section (uncapped) — per-sender checkboxes, with a deliberate
+ *      selection for long generated lists, over one bulk Archive (D65). See
  *      `api/use-noise-archive.ts` for the lifecycle and the exact scope
  *      of the mutation.
  *
@@ -267,8 +268,8 @@ function BriefBody({
           // switcher reaches back, the same sentence over Saturday's
           // mail is simply wrong, so past days name the day instead.
           isToday
-            ? `Yesterday's email in three lists: Reply first, FYI for context, Noise to clear.`
-            : `Email from ${dateLabel} in three lists: Reply first, FYI for context, Noise to clear.`
+            ? `Yesterday's email in three lists: review first, FYI for context, possible noise to assess.`
+            : `Email from ${dateLabel} in three lists: review first, FYI for context, possible noise to assess.`
         }
       />
       <BriefReturnLinks />
@@ -277,24 +278,17 @@ function BriefBody({
         <QuietInboxState />
       ) : (
         <>
-          {narrative.trim().length > 0 && <Narrative narrative={narrative} />}
-          <EditorialContents
-            label="Brief sections"
-            items={[
-              ...(reply.length
-                ? [{ href: '#brief-reply', label: `Reply · ${replyTotal ?? reply.length}` }]
-                : []),
-              ...(fyi.length
-                ? [{ href: '#brief-fyi', label: `FYI · ${fyiTotal ?? fyi.length}` }]
-                : []),
-              ...(noise.length
-                ? [{ href: '#brief-noise', label: `Noise · ${noise.length} senders` }]
-                : []),
-            ]}
+          <BriefOverview
+            reviewShown={reply.length}
+            reviewTotal={replyTotal}
+            fyiShown={fyi.length}
+            fyiTotal={fyiTotal}
+            noiseSenders={noise.length}
           />
+          {narrative.trim().length > 0 && <Narrative narrative={narrative} />}
           {reply.length > 0 && (
             <ReplyFyiSection
-              label="Reply"
+              label="Review"
               rows={reply}
               total={replyTotal}
               isMobile={isMobile}
@@ -430,26 +424,166 @@ function BriefReturnLinks() {
 
 // ── Narrative ─────────────────────────────────────────────────────────
 
-function Narrative({ narrative }: { narrative: string }) {
+function BriefOverview({
+  reviewShown,
+  reviewTotal,
+  fyiShown,
+  fyiTotal,
+  noiseSenders,
+}: {
+  reviewShown: number;
+  reviewTotal?: number | undefined;
+  fyiShown: number;
+  fyiTotal?: number | undefined;
+  noiseSenders: number;
+}) {
+  const sections = [
+    ...(reviewShown > 0
+      ? [
+          {
+            href: '#brief-reply',
+            label: 'Start here',
+            count: `${reviewShown} to review`,
+            detail:
+              reviewTotal != null && reviewTotal > reviewShown
+                ? `${reviewShown} shown from ${reviewTotal} candidates · check each message`
+                : 'Check each message before responding',
+          },
+        ]
+      : []),
+    ...(fyiShown > 0
+      ? [
+          {
+            href: '#brief-fyi',
+            label: 'For your information',
+            count: `${fyiShown} highlight${fyiShown === 1 ? '' : 's'}`,
+            detail:
+              fyiTotal != null && fyiTotal > fyiShown
+                ? `Selected from ${fyiTotal} candidates`
+                : 'Worth a glance when you have time',
+          },
+        ]
+      : []),
+    ...(noiseSenders > 0
+      ? [
+          {
+            href: '#brief-noise',
+            label: 'Review possible noise',
+            count: `${noiseSenders} sender${noiseSenders === 1 ? '' : 's'}`,
+            detail: 'Review the selection before archiving',
+          },
+        ]
+      : []),
+  ];
   return (
-    <p
+    <nav
+      aria-label="Brief sections"
       style={{
-        margin: 0,
-        fontFamily: font.display,
-        fontSize: 'clamp(21px, 2.2vw, 27px)',
-        padding: '18px 0 22px',
-        borderBottom: `1px solid ${color.line}`,
-        letterSpacing: '-0.015em',
-        lineHeight: 1.55,
-        color: color.fg,
-        // Cap the reading measure at the ~65-75 characters the eye
-        // tracks comfortably, so the narrative doesn't read as a wall
-        // above the lists.
-        maxWidth: '68ch',
+        display: 'grid',
+        gap: 10,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
       }}
     >
-      {narrative}
-    </p>
+      {sections.map((section, index) => (
+        <a
+          key={section.href}
+          href={section.href}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 7,
+            padding: '18px 20px',
+            border: `1px solid ${color.line}`,
+            borderRadius: 10,
+            background: index === 0 ? color.card : color.fill,
+            color: color.fg,
+            textDecoration: 'none',
+          }}
+        >
+          <span
+            style={{
+              color: color.primary,
+              fontSize: text.xs,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {section.label}
+          </span>
+          <strong
+            style={{ fontFamily: font.display, fontSize: 26, fontWeight: 400, lineHeight: 1.1 }}
+          >
+            {section.count}
+          </strong>
+          <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
+            {section.detail} →
+          </span>
+        </a>
+      ))}
+    </nav>
+  );
+}
+
+function Narrative({ narrative }: { narrative: string }) {
+  // Brief snapshots are frozen. Notes generated before the current short,
+  // grounded prompt can remain in history indefinitely; the old long-form
+  // output sometimes asserted events that limited metadata did not prove.
+  if (narrative.trim().split(/\s+/).length > 55) {
+    return (
+      <p
+        style={{
+          margin: 0,
+          padding: '4px 0 16px',
+          borderBottom: `1px solid ${color.lineSoft}`,
+          color: color.fgMuted,
+          fontSize: text.sm,
+          lineHeight: 1.5,
+        }}
+      >
+        An earlier generated note was retired because it may overstate limited email details. Use
+        the linked Review and FYI items below.
+      </p>
+    );
+  }
+  const points = narrative
+    .trim()
+    .split(/\n+|(?<=[.!?])\s+(?=[A-Z])/)
+    .map((point) => point.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean);
+  return (
+    <details
+      style={{
+        padding: '4px 0 16px',
+        borderBottom: `1px solid ${color.lineSoft}`,
+      }}
+    >
+      <summary
+        style={{ cursor: 'pointer', color: color.fgSoft, fontSize: text.sm, fontWeight: 600 }}
+      >
+        Read generated note
+      </summary>
+      <ul
+        style={{
+          maxWidth: '68ch',
+          margin: '14px 0 0',
+          paddingLeft: 22,
+          color: color.fgSoft,
+          fontSize: text.md,
+          lineHeight: 1.6,
+        }}
+      >
+        {points.map((point, index) => (
+          <li key={index} style={{ marginBottom: 10, paddingLeft: 4 }}>
+            {point}
+          </li>
+        ))}
+      </ul>
+      <p style={{ margin: '10px 0 0', color: color.fgMuted, fontSize: text.sm }}>
+        Generated from limited email details. These are observations, not confirmed actions; check
+        important details in Gmail.
+      </p>
+    </details>
   );
 }
 
@@ -467,7 +601,7 @@ function ReplyFyiSection({
   isMobile,
   mailboxEmail,
 }: {
-  label: 'Reply' | 'FYI';
+  label: 'Review' | 'FYI';
   rows: BriefItemWire[];
   /** Pre-cap candidate count from the payload; undefined on older rows. */
   total?: number | undefined;
@@ -476,12 +610,17 @@ function ReplyFyiSection({
 }) {
   return (
     <section
-      id={`brief-${label.toLowerCase()}`}
+      id={label === 'Review' ? 'brief-reply' : 'brief-fyi'}
       aria-label={`${label} (${rows.length})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 24 }}
     >
       <style>{flatRowCss('dm-brief-row', 70)}</style>
       <SectionHeading label={label} count={rows.length} total={total} />
+      {label === 'Review' && (
+        <p style={{ margin: '0 0 8px', color: color.fgMuted, fontSize: text.sm }}>
+          These may need attention. Read the message before deciding whether to reply.
+        </p>
+      )}
       <ul
         style={{
           listStyle: 'none',
@@ -507,7 +646,8 @@ function ReplyFyiSection({
 /**
  * Noise section (D63) with the D65 bulk-archive control.
  *
- * Every sender is a checkbox row, checked by default. Protected senders
+ * Every sender is a checkbox row. Short lists are checked by default;
+ * longer generated lists require explicit selection. Protected senders
  * (D245) and senders we can no longer address render as rows the user
  * can read but not select, each stating why — the exclusion is visible,
  * never a silent omission from the count.
@@ -541,6 +681,9 @@ function NoiseSection({
 
   const excludedCount = targets.filter((t) => blockedReason(t) !== null).length;
   const selectedCount = archive.selectedTargets.length;
+  const eligibleCount = targets.filter(
+    (t) => blockedReason(t) === null && !archive.archivedKeys.has(t.senderKey),
+  ).length;
 
   return (
     <section
@@ -556,6 +699,36 @@ function NoiseSection({
         label="Noise"
         count={groups.length}
         subline={`${totalMessages} messages ${dayWord}`}
+      />
+      <p style={{ margin: '0 0 4px', color: color.fgMuted, fontSize: text.sm }}>
+        {eligibleCount > DEFAULT_NOISE_SELECTION_LIMIT
+          ? 'This is a suggested list and may include important mail. Choose senders one by one, then inspect the live Inbox preview before anything moves.'
+          : 'Selected senders are ready for one Archive preview. The preview shows what is in your Inbox now before anything moves.'}
+      </p>
+      {eligibleCount > DEFAULT_NOISE_SELECTION_LIMIT && (
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: text.sm }}>
+          <Link
+            href="/senders"
+            style={{ color: color.fgSoft, fontWeight: 600, textDecoration: 'underline' }}
+          >
+            Explore all senders
+          </Link>
+          <Button
+            tone="ghost"
+            size="sm"
+            disabled={archive.busy || selectedCount === 0}
+            onClick={archive.deselectAll}
+          >
+            Clear selection
+          </Button>
+        </div>
+      )}
+      <NoiseArchiveBar
+        selectedCount={selectedCount}
+        excludedCount={excludedCount}
+        busy={archive.busy}
+        outcome={archive.outcome}
+        onArchive={archive.openSheet}
       />
       <ul
         style={{
@@ -580,14 +753,6 @@ function NoiseSection({
           />
         ))}
       </ul>
-
-      <NoiseArchiveBar
-        selectedCount={selectedCount}
-        excludedCount={excludedCount}
-        busy={archive.busy}
-        outcome={archive.outcome}
-        onArchive={archive.openSheet}
-      />
 
       <NoiseArchiveSheet
         open={archive.sheetOpen}
@@ -896,6 +1061,10 @@ function ReplyFyiRow({
             style={{
               fontSize: text.sm,
               color: color.primary,
+              background: color.primarySoft,
+              borderRadius: 6,
+              padding: '8px 10px',
+              fontWeight: 650,
               textDecoration: 'none',
               whiteSpace: 'nowrap',
             }}

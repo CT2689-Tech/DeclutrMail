@@ -298,7 +298,7 @@ function AppChrome({ children }: { children: ReactNode }) {
                 : {
                     screener: {
                       text: screenerPending > 99 ? '99+' : screenerPending,
-                      label: `${screenerPending} new sender${screenerPending === 1 ? '' : 's'} waiting in Screener`,
+                      label: `${screenerPending} sender${screenerPending === 1 ? '' : 's'} awaiting a first review in Screener`,
                     },
                   }),
             }}

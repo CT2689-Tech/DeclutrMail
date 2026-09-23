@@ -7,6 +7,7 @@ import {
 } from '@/features/editorial/page';
 
 import { useEffect, useId, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNow } from '@/lib/use-now';
 
 import {
@@ -25,6 +26,7 @@ import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 
 import { useDismissFollowup } from './api/use-dismiss-followup';
 import { useFollowups } from './api/use-followups';
+import { followupsKeys } from './api/query-keys';
 import { flatRowCss } from '@/features/settings/flat-list';
 
 const { color, font, motion, radius, text } = tokens;
@@ -61,6 +63,8 @@ export function FollowupsScreen() {
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
   const query = useFollowups();
   const dismiss = useDismissFollowup();
+  const qc = useQueryClient();
+  const [showExcluded, setShowExcluded] = useState(false);
 
   // `mailbox_id: null` keeps the historical event contract. The nullable
   // auth hook above binds Gmail links in production without making isolated
@@ -71,13 +75,22 @@ export function FollowupsScreen() {
 
   // Group BEFORE early-returning so the hook list is stable across
   // every render branch.
-  const grouped = useMemo<GroupedFollowups>(() => groupByPriority(query.data ?? []), [query.data]);
+  const rows = useMemo(
+    () => (query.data ?? []).filter((row) => showExcluded || row.feedbackRating !== 'not_followup'),
+    [query.data, showExcluded],
+  );
+  const grouped = useMemo<GroupedFollowups>(() => groupByPriority(rows), [rows]);
   // Below `sm` (D60 mobile treatment) the 5-track row grid overflows a
   // phone viewport — resolve the breakpoint once and thread it to the
   // rows so each restacks to a single-column card with wrapped actions.
   const isMobile = useIsAtMost('sm');
 
-  const rows = query.data ?? [];
+  const excludedCount = (query.data ?? []).filter(
+    (row) => row.feedbackRating === 'not_followup',
+  ).length;
+  const refreshFeedback = () => {
+    void qc.invalidateQueries({ queryKey: followupsKeys.all });
+  };
 
   return (
     <div
@@ -97,51 +110,90 @@ export function FollowupsScreen() {
       />
 
       <FollowupsScopeNote />
+      {excludedCount > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowExcluded((value) => !value)}
+          style={{
+            alignSelf: 'flex-start',
+            border: `1px solid ${color.line}`,
+            borderRadius: radius.pill,
+            background: color.card,
+            color: color.fg,
+            padding: '9px 14px',
+            font: 'inherit',
+            fontSize: text.sm,
+            cursor: 'pointer',
+          }}
+        >
+          {showExcluded ? 'Hide' : 'Show'} {excludedCount} marked not a follow-up
+        </button>
+      )}
       {query.isLoading ? (
         <LoadingState />
       ) : query.isError ? (
         <FollowupsErrorState onRetry={() => query.refetch()} />
       ) : rows.length === 0 ? (
         <EmptyState
-          title="No follow-ups"
-          description="No tracked conversation is waiting on a reply."
+          title={excludedCount > 0 ? 'No follow-ups to review' : 'No follow-ups'}
+          description={
+            excludedCount > 0
+              ? 'The current suggestions were marked not a follow-up. Show them above to review or change that feedback.'
+              : 'No tracked conversation is waiting on a reply.'
+          }
         />
       ) : (
         <>
+          <FollowupsOverview
+            overdue={grouped.high.length}
+            recent={rows.length - grouped.high.length}
+          />
           {grouped.high.length > 0 && (
             <PriorityGroup
+              id="followups-overdue"
               label="Over a week"
               rows={grouped.high}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
               mailboxEmail={activeMailboxEmail}
+              onFeedbackSaved={refreshFeedback}
             />
           )}
           {grouped.medium.length > 0 && (
             <PriorityGroup
+              id="followups-recent"
               label="3–7 days"
               rows={grouped.medium}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
               mailboxEmail={activeMailboxEmail}
+              onFeedbackSaved={refreshFeedback}
             />
           )}
           {grouped.low.length > 0 && (
             <PriorityGroup
+              id={grouped.medium.length === 0 ? 'followups-recent' : undefined}
               label="1–3 days"
               rows={grouped.low}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
               mailboxEmail={activeMailboxEmail}
+              onFeedbackSaved={refreshFeedback}
             />
           )}
           {grouped.fresh.length > 0 && (
             <PriorityGroup
+              id={
+                grouped.medium.length === 0 && grouped.low.length === 0
+                  ? 'followups-recent'
+                  : undefined
+              }
               label="Less than a day"
               rows={grouped.fresh}
               onDismiss={dismiss.mutate}
               isMobile={isMobile}
               mailboxEmail={activeMailboxEmail}
+              onFeedbackSaved={refreshFeedback}
             />
           )}
         </>
@@ -174,27 +226,106 @@ function groupByPriority(rows: readonly FollowupRow[]): GroupedFollowups {
 function FollowupsScopeNote() {
   return (
     <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
-      Sent in the last 60 days. Checked about every six hours, so a recent reply can still show.
-      Mark resolved only hides a thread here — nothing changes in Gmail.
+      Possible follow-ups from email sent in the last 60 days. Checked about every six hours, so a
+      recent reply can still show. Check the thread in Gmail before following up. Mark resolved only
+      hides it here — nothing changes in Gmail.
     </p>
   );
 }
 
+function FollowupsOverview({ overdue, recent }: { overdue: number; recent: number }) {
+  const cards = [
+    ...(overdue > 0
+      ? [
+          {
+            href: '#followups-overdue',
+            title: 'Review first',
+            count: `${overdue} over a week`,
+            detail: 'Open the conversation before nudging',
+          },
+        ]
+      : []),
+    ...(recent > 0
+      ? [
+          {
+            href: '#followups-recent',
+            title: 'Keep an eye on',
+            count: `${recent} more recent`,
+            detail: 'They may still reply without a nudge',
+          },
+        ]
+      : []),
+  ];
+  return (
+    <nav
+      aria-label="Follow-up sections"
+      style={{
+        display: 'grid',
+        gap: 10,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      }}
+    >
+      {cards.map((card, index) => (
+        <a
+          key={card.href}
+          href={card.href}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 7,
+            padding: '18px 20px',
+            border: `1px solid ${color.line}`,
+            borderRadius: 10,
+            background: index === 0 ? color.card : color.fill,
+            color: color.fg,
+            textDecoration: 'none',
+          }}
+        >
+          <span
+            style={{
+              color: color.primary,
+              fontSize: text.xs,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {card.title}
+          </span>
+          <strong
+            style={{ fontFamily: font.display, fontSize: 26, fontWeight: 400, lineHeight: 1.1 }}
+          >
+            {card.count}
+          </strong>
+          <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
+            {card.detail} →
+          </span>
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 function PriorityGroup({
+  id,
   label,
   rows,
   onDismiss,
   isMobile,
   mailboxEmail,
+  onFeedbackSaved,
 }: {
+  id?: string | undefined;
   label: string;
   rows: FollowupRow[];
   onDismiss?: (row: FollowupRow) => void;
   isMobile: boolean;
   mailboxEmail: string | null;
+  onFeedbackSaved?: (() => void) | undefined;
 }) {
   return (
     <section
+      id={id}
       aria-label={`${label} (${rows.length})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
@@ -216,6 +347,7 @@ function PriorityGroup({
             onDismiss={onDismiss}
             isMobile={isMobile}
             mailboxEmail={mailboxEmail}
+            onFeedbackSaved={onFeedbackSaved}
           />
         ))}
       </ul>
@@ -263,6 +395,7 @@ export function FollowupListItem({
   onDismiss,
   isMobile = false,
   mailboxEmail,
+  onFeedbackSaved,
 }: {
   row: FollowupRow;
   onDismiss?: ((row: FollowupRow) => void) | undefined;
@@ -270,6 +403,7 @@ export function FollowupListItem({
   isMobile?: boolean;
   /** Active Gmail account. Null in isolated stories, where links fail closed. */
   mailboxEmail: string | null;
+  onFeedbackSaved?: (() => void) | undefined;
 }) {
   const recipient = recipientLine(row);
   const subject = row.subject;
@@ -394,6 +528,7 @@ export function FollowupListItem({
           surface="followups"
           referenceId={row.id}
           initialRating={row.feedbackRating}
+          onSaved={onFeedbackSaved}
         />
       </div>
     </li>

@@ -2,14 +2,29 @@
 
 import Link from 'next/link';
 import { ErrorState, ScreenIntro, Skeleton } from '@declutrmail/shared';
+import {
+  hasCapability,
+  minimumTierForCapability,
+  TIER_MANIFEST,
+  type TierId,
+} from '@declutrmail/shared/entitlements';
 import { EditorialKicker } from '@/features/editorial/page';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeStat, type HomeState } from './home-state';
 import type { HomeSenderPreview } from './api/use-home-pending';
+import type { HomeWorkflows } from './api/use-home-workflows';
 import styles from './home-view.module.css';
 
 /** Real cleanup history and the next available task, with no inferred savings or inbox score. */
-export function HomeView({ state }: { state: HomeState }) {
+export function HomeView({
+  state,
+  tier = 'free',
+  workflows,
+}: {
+  state: HomeState;
+  tier?: TierId;
+  workflows?: HomeWorkflows | undefined;
+}) {
   return (
     <div className={styles.page}>
       <ScreenIntro id="home" title="How Home works" body="Undone actions are not counted." />
@@ -39,12 +54,20 @@ export function HomeView({ state }: { state: HomeState }) {
           </section>
         )}
       </header>
-      <HomeBody state={state} />
+      <HomeBody state={state} tier={tier} workflows={workflows} />
     </div>
   );
 }
 
-function HomeBody({ state }: { state: HomeState }) {
+function HomeBody({
+  state,
+  tier,
+  workflows,
+}: {
+  state: HomeState;
+  tier: TierId;
+  workflows?: HomeWorkflows | undefined;
+}) {
   const hasAttention =
     state.kind === 'ready' &&
     (state.action.href !== '/senders' ||
@@ -109,14 +132,13 @@ function HomeBody({ state }: { state: HomeState }) {
             <div className={styles.nextStep}>
               <span className={styles.eyebrow}>A good place to start</span>
               <h2>
-                A few decisions.
-                <br />A little more space.
+                A few decisions.<span className={styles.nextLine}>A little more space.</span>
               </h2>
               <p>
                 {state.action.href === '/triage'
                   ? 'Your daily review is ready. Take a look at these senders and decide what still belongs.'
                   : state.action.href === '/screener'
-                    ? 'New senders are ready for your attention. Their email keeps arriving until you choose what to do.'
+                    ? 'Senders awaiting a first decision are ready for your attention. Their email keeps arriving until you choose what to do.'
                     : 'Explore your senders, look at their activity, and decide what still belongs in your inbox.'}
               </p>
               <PrimaryLink action={state.action} />
@@ -164,8 +186,8 @@ function HomeBody({ state }: { state: HomeState }) {
                   state.pending.screenerPending > 0 && (
                     <AttentionLink
                       href="/screener"
-                      title={`${state.pending.screenerPending.toLocaleString('en-US')} new senders`}
-                      description="Review unfamiliar senders on your terms."
+                      title={`${state.pending.screenerPending.toLocaleString('en-US')} unreviewed senders`}
+                      description="Give each sender a first decision on your terms."
                     />
                   )}
                 {state.action.href !== '/senders' && (
@@ -196,6 +218,7 @@ function HomeBody({ state }: { state: HomeState }) {
               </Link>
             </div>
           </section>
+          <WorkspaceOverview tier={tier} workflows={workflows} />
           {state.senders && state.senders.length > 0 && state.secondary.length > 0 && (
             <SecondaryRow stats={state.secondary} />
           )}
@@ -205,12 +228,119 @@ function HomeBody({ state }: { state: HomeState }) {
   }
 }
 
+function WorkspaceOverview({
+  tier,
+  workflows,
+}: {
+  tier: TierId;
+  workflows?: HomeWorkflows | undefined;
+}) {
+  const access = (capability: 'brief' | 'followups' | 'snoozed' | 'autopilot' | 'quiet') =>
+    hasCapability(tier, capability)
+      ? undefined
+      : `Included with ${TIER_MANIFEST[minimumTierForCapability(capability)].name}`;
+  const briefStatus = workflows?.brief
+    ? workflows.brief.opened
+      ? "Today's edition read"
+      : workflows.brief.replyCount > 0
+        ? `${workflows.brief.replyCount} ${workflows.brief.replyCount === 1 ? 'reply' : 'replies'} to consider`
+        : "Today's edition is ready"
+    : 'Open the latest edition';
+  const followupStatus =
+    workflows?.followups === null || workflows?.followups === undefined
+      ? 'See conversations awaiting a reply'
+      : workflows.followups === 0
+        ? 'No conversations waiting'
+        : `${workflows.followups} ${workflows.followups === 1 ? 'conversation' : 'conversations'} waiting`;
+  const suggestionStatus =
+    workflows?.suggestions === null || workflows?.suggestions === undefined
+      ? 'Inspect rules and suggestions'
+      : workflows.suggestions === 0
+        ? 'No suggestions waiting'
+        : `${workflows.suggestions === 50 ? '50+' : workflows.suggestions} suggestions to review`;
+
+  return (
+    <section className={styles.workflows} aria-labelledby="workflows-title">
+      <div className={styles.workflowsHeading}>
+        <span className={styles.eyebrow}>Your workspace</span>
+        <h2 id="workflows-title">The rest of your day, in view.</h2>
+        <p>Pick up a conversation, check what will return, or let a rule handle the repeat work.</p>
+      </div>
+      <div className={styles.workflowGrid}>
+        <div className={styles.workflowGroup}>
+          <h3>Catch up</h3>
+          <WorkflowLink
+            href="/brief"
+            title="Daily Brief"
+            detail={briefStatus}
+            locked={access('brief')}
+          />
+          <WorkflowLink
+            href="/followups"
+            title="Follow-ups"
+            detail={followupStatus}
+            locked={access('followups')}
+          />
+          <WorkflowLink
+            href="/later"
+            title="Later"
+            detail="See what is set to return"
+            locked={access('snoozed')}
+          />
+        </div>
+        <div className={styles.workflowGroup}>
+          <h3>Keep it clear</h3>
+          <WorkflowLink
+            href="/autopilot"
+            title="Autopilot"
+            detail={suggestionStatus}
+            locked={access('autopilot')}
+          />
+          <WorkflowLink
+            href="/quiet"
+            title="Quiet Hours"
+            detail="Choose when the inbox can wait"
+            locked={access('quiet')}
+          />
+          <WorkflowLink
+            href="/activity"
+            title="Activity & Undo"
+            detail="See decisions and recover supported actions"
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function WorkflowLink({
+  href,
+  title,
+  detail,
+  locked,
+}: {
+  href: string;
+  title: string;
+  detail: string;
+  locked?: string | undefined;
+}) {
+  return (
+    <Link href={href} className={styles.workflowLink}>
+      <span>
+        <strong>{title}</strong>
+        <small>{locked ?? detail}</small>
+      </span>
+      <span aria-hidden="true">↗</span>
+    </Link>
+  );
+}
+
 function SenderPreviews({ senders }: { senders: HomeSenderPreview[] }) {
   return (
     <>
       <div className={styles.listLabel}>
         <span>Sender</span>
-        <span>Last 90 days</span>
+        <span>In inbox now</span>
       </div>
       {senders.map((sender) => (
         <Link
@@ -226,14 +356,14 @@ function SenderPreviews({ senders }: { senders: HomeSenderPreview[] }) {
             <small>{sender.domain}</small>
           </span>
           <span className={styles.senderCount}>
-            {sender.recentCount.toLocaleString('en-US')}
+            {sender.inboxCount.toLocaleString('en-US')}
             <small>emails</small>
           </span>
           <span aria-hidden="true">↗</span>
         </Link>
       ))}
       <p className={styles.footnote}>
-        From your daily review queue. Counts cover the last 90 days.
+        From your daily review queue. Preview confirms the exact scope.
       </p>
     </>
   );

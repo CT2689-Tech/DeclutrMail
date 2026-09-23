@@ -33,13 +33,15 @@ export const color = {
   fillHover: 'var(--dm-fill-hover)',
   scrim: 'var(--dm-scrim)',
 
-  /** Forest accent. */
+  /** Muted-plum brand accent. */
   primary: 'var(--dm-primary)',
   primaryDeep: 'var(--dm-primary-deep)',
   primarySoft: 'var(--dm-primary-soft)',
   primaryBorder: 'var(--dm-primary-border)',
-  /** Pale forest wash — informational banner backgrounds. */
+  /** Pale plum wash — informational banner backgrounds. */
   primaryWash: 'var(--dm-primary-wash)',
+  lilac: 'var(--dm-lilac)',
+  /** Legacy alias for existing consumers. */
   mint: 'var(--dm-mint)',
 
   /** Semantic hues. */
@@ -92,7 +94,7 @@ export const color = {
   fgInverseMuted: 'var(--dm-fg-inverse-muted)',
   lineInverse: 'var(--dm-line-inverse)',
 
-  /** Dashboard emphasis. Warm forest hues from the approved Editorial
+  /** Dashboard emphasis. Warm plum hues from the approved Editorial
    * redesign (2026-09-22), reserved for navigation and evidence filters.
    * Action tones remain independently semantic: danger, warning, primary.
    */

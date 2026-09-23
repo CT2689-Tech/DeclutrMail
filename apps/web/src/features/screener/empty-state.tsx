@@ -8,7 +8,7 @@ const { color, font, text } = tokens;
 function screenerEmptyTitle(readiness?: string | null): string {
   if (readiness === 'queued' || readiness === 'syncing') return 'Still syncing your Gmail';
   if (readiness === 'failed') return 'Your Gmail scan needs attention';
-  return 'No new senders';
+  return 'No senders awaiting review';
 }
 
 /**
@@ -35,13 +35,13 @@ export function ScreenerEmptyState({ readiness }: { readiness?: string | null | 
       </span>
       <span style={{ fontSize: text.md, color: color.fgMuted }}>
         {syncing ? (
-          'New senders appear here as the scan progresses.'
+          'Senders awaiting a first decision appear here as the scan progresses.'
         ) : failed ? (
           <Link href="/settings" style={{ color: color.primary }}>
             Check your Gmail connection
           </Link>
         ) : (
-          'New senders appear here for one decision each.'
+          'Senders needing a first decision will appear here.'
         )}
       </span>
     </div>

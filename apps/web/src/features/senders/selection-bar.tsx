@@ -135,10 +135,14 @@ export function SelectionBar({
     // visible instead of reading like a different count of the same
     // thing.
     const countLabel = n === senders.length ? `${n}` : `${n} of ${senders.length}`;
+    const exclusionReason =
+      verb === 'Unsubscribe'
+        ? 'protected senders and senders without an unsubscribe option are excluded'
+        : 'protected senders are excluded from bulk actions';
     const unitTitle =
       n === senders.length
         ? `${label} ${n} sender${n === 1 ? '' : 's'}`
-        : `${label} ${n} of ${senders.length} selected senders (protected senders are excluded from bulk actions)`;
+        : `${label} ${n} of ${senders.length} selected senders (${exclusionReason})`;
     return (
       <button
         key={verb}

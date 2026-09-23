@@ -235,6 +235,46 @@ describe('Brief Noise bulk archive (D65)', () => {
     expect(archiveButton()).toHaveAccessibleName('Archive 2 senders');
   });
 
+  it('requires a deliberate selection for a long generated Noise list', async () => {
+    const noise = Array.from({ length: 12 }, (_, index) => ({
+      senderKey: `sk-long-${index}`,
+      senderName: `Sender ${index + 1}`,
+      messageCount: 1,
+      messageIds: [`m-${index}`],
+    }));
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/briefs/today',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...BRIEF,
+              briefPayload: { ...BRIEF.briefPayload, noise },
+              noiseSenders: noise.map((sender, index) => ({
+                senderKey: sender.senderKey,
+                senderId: `aaaaaaaa-0000-4000-8000-${String(index + 10).padStart(12, '0')}`,
+                isProtected: false,
+              })),
+            },
+          }),
+      },
+    ]);
+    renderScreen();
+
+    const firstSender = await screen.findByRole('checkbox', {
+      name: 'Include Sender 1 in the archive',
+    });
+    expect(archiveButton()).toBeDisabled();
+    expect(archiveButton()).toHaveAccessibleName('Archive 0 senders');
+    expect(screen.getByText(/may include important mail/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Explore all senders' })).toBeInTheDocument();
+    fireEvent.click(firstSender);
+    expect(archiveButton()).toHaveAccessibleName('Archive 1 sender');
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(archiveButton()).toBeDisabled();
+  });
+
   it('excludes a Protected sender visibly, with the reason on the row (D245)', async () => {
     installFetchStub([briefHandler()]);
     renderScreen();
