@@ -103,6 +103,10 @@ test('finance refresh cannot invoke vendor checks and uses main-only same-repo a
   assert.match(job, /github.ref == 'refs\/heads\/main'/);
   assert.match(job, /repository: CT2689-Tech\/DeclutrMail/);
   assert.match(job, /actions: read/);
+  assert.ok(
+    job.indexOf('validate-finance-snapshot-source.mjs') < job.indexOf('actions/download-artifact'),
+  );
+  assert.match(job, /GH_TOKEN: \$\{\{ github.token \}\}/);
   assert.match(job, /SNAPSHOT_RUN_ID: \$\{\{ inputs.snapshot_run_id \}\}/);
   assert.ok(!/check-vendor-limits|PADDLE|RAZORPAY|upload-artifact/.test(job));
   assert.match(job, /run: node scripts\/private-finance-report.mjs/);

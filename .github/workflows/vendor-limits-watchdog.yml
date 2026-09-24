@@ -183,14 +183,11 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
-      - name: Validate existing snapshot run ID
+      - name: Verify existing snapshot provenance
         env:
           SNAPSHOT_RUN_ID: ${{ inputs.snapshot_run_id }}
-        run: |
-          if [[ ! "$SNAPSHOT_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
-            echo 'A numeric existing snapshot run ID is required.' >&2
-            exit 1
-          fi
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/validate-finance-snapshot-source.mjs
       - name: Download existing operational snapshot only
         uses: actions/download-artifact@v4
         with:
