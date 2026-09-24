@@ -663,6 +663,7 @@ describe('SendersController', () => {
     it('returns the envelope when the read service finds the sender', async () => {
       const detail: SenderDetailFacts = {
         ...makeSenderRow(),
+        archivedCount: 7,
         recommendation: null,
         protectionFlags: {
           isProtected: false,

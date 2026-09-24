@@ -1301,7 +1301,7 @@ function ReadyState({
           />
         </header>
 
-        {/* 2. Current inbox scope beside email received in the engine's 90-day window
+        {/* 2. Current Inbox and Archive counts beside email received in the engine's 90-day window
           (`monthlyVolume` is `last90dMsgs` server-side, the same count the
           read rate below is computed over) — and one sentence that adds
           only the lifetime total (`totalReceived`). No averages, no
@@ -1311,13 +1311,21 @@ function ReadyState({
           `totalReceived`, never on an empty recent window. */}
         {sender.totalReceived > 0 ? (
           <section aria-label="Now">
-            <div className={styles.eyebrow}>Now · Current inbox</div>
+            <div className={styles.eyebrow}>Now · Current mail</div>
             <div className={styles.volumeSummary}>
               <div>
                 <span className={styles.volumeNumber} data-testid="sender-detail-inbox-count">
                   {sender.inboxCount != null ? sender.inboxCount.toLocaleString('en-US') : '—'}
                 </span>
                 <p className={styles.volumeLabel}>Currently in your inbox</p>
+              </div>
+              <div>
+                <span className={styles.volumeNumber} data-testid="sender-detail-archived-count">
+                  {detail.archivedCount != null
+                    ? detail.archivedCount.toLocaleString('en-US')
+                    : '—'}
+                </span>
+                <p className={styles.volumeLabel}>Currently archived</p>
               </div>
             </div>
           </section>

@@ -203,7 +203,11 @@ export const Pane: Story<typeof SenderDetailPage> = {
   args: {
     state: {
       kind: 'ready',
-      detail: { ...paneDetail, sender: { ...paneDetail.sender, inboxCount: 128 } },
+      detail: {
+        ...paneDetail,
+        archivedCount: 247,
+        sender: { ...paneDetail.sender, inboxCount: 128 },
+      },
     },
     layout: 'pane',
   },

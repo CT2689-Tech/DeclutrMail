@@ -115,6 +115,7 @@ export function adaptSenderDetail(args: {
 
   return {
     sender,
+    archivedCount: args.detail.archivedCount ?? null,
     // Wire email address — drives the "Open all in Gmail" deep link.
     // Sender.name may be the display name ("Robinhood") so we keep the
     // raw email separate (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2).

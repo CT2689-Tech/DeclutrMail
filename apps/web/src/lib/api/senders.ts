@@ -226,6 +226,8 @@ export type ProtectionReasonWire = 'user_defined' | 'replied' | 'starred' | 'gma
  * non-existent field — keep them in lockstep.
  */
 export interface SenderDetailDto extends SenderListRow {
+  /** Current archived inbound mail; absent on older API versions. */
+  archivedCount?: number | null;
   protectionFlags: {
     isProtected: boolean;
     /** Why the sender is protected — null when `isProtected` is false. */

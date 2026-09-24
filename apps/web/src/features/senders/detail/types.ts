@@ -195,6 +195,8 @@ export interface SenderStats {
  */
 export interface SenderDetail {
   sender: Sender;
+  /** Exact current archived count from the detail endpoint, when available. */
+  archivedCount?: number | null;
   /**
    * Sender email address from the wire DTO. Used by the "Open all in
    * Gmail" deep link (FOUNDER-FOLLOWUPS 2026-06-06 Q3.2). Kept on the

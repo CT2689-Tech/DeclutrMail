@@ -440,6 +440,14 @@ describe('SendersReadService', () => {
         internalDate: new Date('2026-07-20T00:00:00Z'),
         labelIds: ['Label_29', 'CATEGORY_UPDATES'],
       });
+      for (const label of ['TRASH', 'SPAM', 'DRAFT', 'CHAT']) {
+        await seedMessage(db, {
+          mailboxAccountId: mailboxId,
+          senderKey: filtered.senderKey,
+          internalDate: new Date('2026-07-19T00:00:00Z'),
+          labelIds: [label],
+        });
+      }
       const inboxy = await seedSender(db, {
         mailboxAccountId: mailboxId,
         email: 'news@inboxy.example',
@@ -479,6 +487,10 @@ describe('SendersReadService', () => {
 
       const detail = await svc.getSenderDetail(mailboxId, inboxy.id);
       expect(detail!.inboxCount).toBe(2);
+      expect(detail!.archivedCount).toBe(0);
+      const archivedDetail = await svc.getSenderDetail(mailboxId, filtered.id);
+      expect(archivedDetail!.inboxCount).toBe(0);
+      expect(archivedDetail!.archivedCount).toBe(1);
     });
 
     it('filters across the mailbox by live inbound Inbox membership without hiding unsubscribe-only senders by default', async () => {

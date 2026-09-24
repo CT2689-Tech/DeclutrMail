@@ -1526,6 +1526,19 @@ export class SendersReadService {
       inboxCount: inboxCountSql,
       unreadInboxCount: unreadInboxCountSql,
     } = buildRollingWindowSubqueries(mailboxAccountId);
+    // Detail-only current Archive count. Lifetime `totalReceived` cannot be
+    // used here: it includes mail now in Trash/Spam and is reconciled on a
+    // different cadence. Keep this predicate aligned with the archived
+    // messages scope and the Inbox + archived action preview.
+    const archivedCountSql = sql<number | string>`(
+      SELECT COUNT(*)::int
+      FROM ${mailMessages}
+      WHERE ${mailMessages.mailboxAccountId} = ${outerMailboxId}
+        AND ${mailMessages.senderKey} = ${outerSenderKey}
+        AND ${mailMessages.isOutbound} = false
+        AND NOT ('INBOX' = ANY(${mailMessages.labelIds}))
+        AND NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])
+    )`;
     // ADR-0008 §3 ratification: direct triage_decisions read in the
     // senders read service (one of several sites — grep this marker to
     // find them all when ratifying the ADR).
@@ -1617,6 +1630,7 @@ export class SendersReadService {
         last90dSweeperReadCount: last90dSweeperReadCountSql,
         baselineMsgs: baselineMsgsSql,
         inboxCount: inboxCountSql,
+        archivedCount: archivedCountSql,
         unreadInboxCount: unreadInboxCountSql,
         lastDecisionAt: lastDecisionAtSql,
         lastDecisionVerdict: lastDecisionVerdictSql,
@@ -1693,6 +1707,7 @@ export class SendersReadService {
       // own recent-vs-baseline split.
       monthlyVolume: last90dMsgs,
       inboxCount: ensureSafeIntegerNumber(row.inboxCount, 'senders.inboxCount'),
+      archivedCount: ensureSafeIntegerNumber(row.archivedCount, 'senders.archivedCount'),
       unreadInboxCount: ensureSafeIntegerNumber(row.unreadInboxCount, 'senders.unreadInboxCount'),
       readRate: computeReadRate(last90dMsgs, last90dReadCount),
       readRateSweeperMarked: ensureSafeIntegerNumber(

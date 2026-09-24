@@ -329,6 +329,8 @@ export interface ProtectionFlags {
 export type SenderFacts = Omit<SenderListRow, 'brandMark'>;
 
 export interface SenderDetail extends SenderListRow {
+  /** Live inbound mail outside Inbox, excluding Trash, Spam, Drafts, and Chat. */
+  archivedCount: number;
   protectionFlags: ProtectionFlags;
   /**
    * Raw `mailto:` URL from the sender's List-Unsubscribe header —

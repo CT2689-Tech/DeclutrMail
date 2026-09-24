@@ -173,14 +173,16 @@ describe('SenderDetailPane', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps current inbox scope separate from received history', async () => {
-    install(() => jsonOk({ data: { ...DETAIL, inboxCount: 12 } }));
+  it('shows current inbox and archived counts separately from received history', async () => {
+    install(() => jsonOk({ data: { ...DETAIL, inboxCount: 0, archivedCount: 137 } }));
     renderPane();
     await screen.findByRole('heading', { level: 2, name: 'LinkedIn' });
-    expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent('12');
+    expect(screen.getByTestId('sender-detail-inbox-count')).toHaveTextContent('0');
+    expect(screen.getByTestId('sender-detail-archived-count')).toHaveTextContent('137');
     expect(screen.getByTestId('sender-detail-window-count')).toHaveTextContent('64');
     expect(screen.getByText(/2,048 received · all time/)).toBeInTheDocument();
     expect(screen.getByLabelText('Now')).toHaveTextContent('Currently in your inbox');
+    expect(screen.getByLabelText('Now')).toHaveTextContent('Currently archived');
     expect(screen.getByLabelText('Now')).not.toHaveTextContent('2,048');
   });
 
