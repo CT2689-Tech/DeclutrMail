@@ -77,14 +77,14 @@ test.beforeAll(async () => {
 });
 
 /**
- * Decode a posthog-js capture body. The SDK gzips by default
- * (`compression=gzip-js` in the query string); older/fallback paths
- * send form-encoded `data=<base64>` or plain JSON. Return SOMETHING
- * text-searchable in all three cases.
+ * Decode a posthog-js capture body. Current SDKs gzip the payload
+ * without a compression query parameter; older/fallback paths send
+ * form-encoded `data=<base64>` or plain JSON. Detect gzip from its
+ * magic bytes so the assertion reads the event actually sent.
  */
-function decodePosthogBody(buf: Buffer | null, url: string): string {
+function decodePosthogBody(buf: Buffer | null): string {
   if (!buf) return '';
-  if (url.includes('compression=gzip-js')) {
+  if (buf[0] === 0x1f && buf[1] === 0x8b) {
     try {
       return gunzipSync(buf).toString('utf8');
     } catch {
@@ -121,7 +121,7 @@ async function interceptPosthog(page: Page): Promise<{ url: string; body: string
       const req = route.request();
       collected.push({
         url: req.url(),
-        body: decodePosthogBody(req.postDataBuffer() ?? null, req.url()),
+        body: decodePosthogBody(req.postDataBuffer() ?? null),
       });
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
     },
