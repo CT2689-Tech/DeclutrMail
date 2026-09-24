@@ -176,9 +176,14 @@ export function useComposeState(): {
       writeScope(out, next);
       urlRef.current = out;
       const queryString = out.toString();
-      appRouter.router.replace(`${appRouter.pathname}${queryString ? `?${queryString}` : ''}`, {
-        scroll: false,
-      });
+      // Client queries already own this filter change (including debounce and
+      // cancellation). A router navigation duplicated those reads on the
+      // server and could replace newer typing with an older response.
+      window.history.replaceState(
+        null,
+        '',
+        `${appRouter.pathname}${queryString ? `?${queryString}` : ''}${window.location.hash}`,
+      );
     },
     [appRouter],
   );

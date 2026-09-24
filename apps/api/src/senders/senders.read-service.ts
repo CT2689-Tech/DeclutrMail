@@ -773,7 +773,11 @@ export class SendersReadService {
     // Without outbound mail indexed, "you wrote to them" is unmeasurable
     // and every `replied` protection would otherwise read as
     // unsupported — see `evaluateProtectionEvidence`.
-    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(args.mailboxAccountId);
+    const mailboxHasOutbound = rows.some(
+      (row) => row.isProtected && row.protectionReason === 'replied',
+    )
+      ? await this.mailboxHasOutboundIndexed(args.mailboxAccountId)
+      : false;
 
     return rows.map((row) => {
       // Scalar `sql<number | string>` subqueries (last30dMsgs,
@@ -1666,7 +1670,12 @@ export class SendersReadService {
       return null;
     }
 
-    const mailboxHasOutbound = await this.mailboxHasOutboundIndexed(mailboxAccountId);
+    // Only correspondence protection consumes this evidence. Avoid a second
+    // database round trip for ordinary and manually protected senders.
+    const mailboxHasOutbound =
+      row.isProtected && row.protectionReason === 'replied'
+        ? await this.mailboxHasOutboundIndexed(mailboxAccountId)
+        : false;
     const protectionFlags: ProtectionFlags = {
       isProtected: row.isProtected ?? false,
       protectionReason: normalizeProtectionReason(row.protectionReason),

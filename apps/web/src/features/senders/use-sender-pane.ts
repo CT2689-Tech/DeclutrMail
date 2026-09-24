@@ -53,15 +53,26 @@ export function useSenderPane(): {
       setLocalId(id);
       return;
     }
-    const out = new URLSearchParams(r.params.toString());
+    const out = new URLSearchParams(window.location.search);
     if (id === null) out.delete(SENDER_PANE_PARAM);
     else out.set(SENDER_PANE_PARAM, id);
     const qs = out.toString();
-    r.router[mode](`${r.pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+    // Selection is client state. Next's native-history integration updates
+    // useSearchParams without rerunning the server's list/summary prefetch.
+    window.history[mode === 'push' ? 'pushState' : 'replaceState'](
+      null,
+      '',
+      `${r.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`,
+    );
   }, []);
 
   const open = useCallback(
-    (id: string) => write(id, latest.current.senderId === null ? 'push' : 'replace'),
+    (id: string) => {
+      const current = latest.current.appRouter
+        ? new URLSearchParams(window.location.search).get(SENDER_PANE_PARAM)
+        : latest.current.senderId;
+      write(id, current === null ? 'push' : 'replace');
+    },
     [write],
   );
   const close = useCallback(() => write(null, 'replace'), [write]);

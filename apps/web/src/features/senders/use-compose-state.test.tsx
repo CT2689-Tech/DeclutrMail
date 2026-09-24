@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EMPTY_COMPOSE } from './filters';
 import { useComposeState } from './use-compose-state';
@@ -17,15 +17,19 @@ vi.mock('next/navigation', () => ({
 }));
 
 function lastReplacement(): URL {
-  const href = navigation.replace.mock.calls.at(-1)?.[0];
+  const href = vi.mocked(window.history.replaceState).mock.calls.at(-1)?.[2];
+  expect(navigation.replace).not.toHaveBeenCalled();
   expect(typeof href).toBe('string');
   return new URL(href as string, 'https://declutr.test');
 }
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('useComposeState — shareable Senders scope', () => {
   beforeEach(() => {
     navigation.params = new URLSearchParams();
     navigation.replace.mockReset();
+    vi.spyOn(window.history, 'replaceState');
     useSendersStore.setState({ sort: 'total', direction: 'desc' });
   });
 

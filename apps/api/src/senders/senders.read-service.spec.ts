@@ -16,7 +16,7 @@ import {
 import { freshTestDb } from '@declutrmail/db/testing';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { NEEDS_REVIEW_VERDICTS, SendersReadService } from './senders.read-service.js';
 
@@ -202,6 +202,57 @@ describe('SendersReadService', () => {
     db = await freshDb();
     mailboxId = await seedMailbox(db, 'a');
     svc = new SendersReadService(db as never);
+  });
+
+  it('does not probe outbound mail when list/detail have no correspondence protection', async () => {
+    const sender = await seedSender(db, {
+      mailboxAccountId: mailboxId,
+      email: 'fast@example.com',
+      lastSeenAt: new Date(),
+    });
+    const select = vi.spyOn(db, 'select');
+    const detail = await svc.getSenderDetail(mailboxId, sender.id);
+    expect(detail?.protectionFlags.protectionEvidenceCurrent).toBe(true);
+    expect(select).toHaveBeenCalledTimes(1);
+    select.mockClear();
+    await svc.listSenders({ mailboxAccountId: mailboxId, category: null, cursor: null, limit: 10 });
+    expect(select).toHaveBeenCalledTimes(1);
+    select.mockRestore();
+  });
+
+  it('still distinguishes unknown from unsupported correspondence protection', async () => {
+    const sender = await seedSender(db, {
+      mailboxAccountId: mailboxId,
+      email: 'protected@example.com',
+      lastSeenAt: new Date(),
+    });
+    await db.insert(senderPolicies).values({
+      mailboxAccountId: mailboxId,
+      senderKey: sender.senderKey,
+      isProtected: true,
+      protectionReason: 'replied',
+      protectionSetAt: new Date(),
+    });
+    expect(
+      (await svc.getSenderDetail(mailboxId, sender.id))?.protectionFlags.protectionEvidenceCurrent,
+    ).toBeNull();
+    await seedMessage(db, {
+      mailboxAccountId: mailboxId,
+      senderKey: sender.senderKey,
+      internalDate: new Date(),
+      isOutbound: true,
+      labelIds: ['SENT'],
+    });
+    expect(
+      (await svc.getSenderDetail(mailboxId, sender.id))?.protectionFlags.protectionEvidenceCurrent,
+    ).toBe(false);
+    const rows = await svc.listSenders({
+      mailboxAccountId: mailboxId,
+      category: null,
+      cursor: null,
+      limit: 10,
+    });
+    expect(rows[0]?.protectionFlags.protectionEvidenceCurrent).toBe(false);
   });
 
   it('removes cleared senders from cleanup rows and counts, and restores them on Undo or new mail', async () => {
