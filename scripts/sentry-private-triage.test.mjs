@@ -23,10 +23,10 @@ test('Sentry dispatch skips vendor work and uploads only a short-lived encrypted
   );
   assert.ok(
     workflow.includes(
-      "if: github.event_name != 'workflow_dispatch' || inputs.mode != 'sentry-triage'",
+      "if: github.event_name != 'workflow_dispatch' || inputs.mode == 'vendor-limits'",
     ),
   );
-  const job = workflow.split('\n  sentry-triage:\n')[1];
+  const job = workflow.split('\n  sentry-triage:\n')[1].split('\n  finance-refresh:')[0];
   assert.ok(
     job.includes("if: github.event_name == 'workflow_dispatch' && inputs.mode == 'sentry-triage'"),
   );

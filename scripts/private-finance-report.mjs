@@ -56,7 +56,7 @@ export function financeReport(ledger, registry, snapshot, now = new Date()) {
     '',
     `Generated ${now.toISOString()}. Usage snapshot ${snapshot.observedAt} (${age.toFixed(1)}h old).`,
     '',
-    '**Coverage is partial. Paid documents, accrued usage and estimates are separate; no combined total is implied. Currency and account/project scope are never merged. Missing values are unknown.**',
+    'Coverage is partial. Paid documents, accrued usage and estimates are separate; no combined total is implied. Currency and account/project scope are never merged. Missing values are unknown.',
     '',
     '| Vendor | Accrued MTD USD (usage only) | Month-end estimate | Coverage |',
     '|---|---:|---:|---|',
@@ -77,13 +77,14 @@ export function financeReport(ledger, registry, snapshot, now = new Date()) {
   lines.push(
     '',
     '## Historical documents',
+    'Source links may require the original billing account login.',
     '',
-    '| Vendor | Document date / recorded period | Scope | Currency | Document charges | Payment verified |',
-    '|---|---|---|---|---:|---|',
+    '| Vendor | Document date / recorded period | Scope | Currency | Document charges | Payment verified | Source |',
+    '|---|---|---|---|---:|---|---|',
   );
   for (const e of entries)
     lines.push(
-      `| ${text(e.vendor)} | ${e.issuedDateBasis ? e.issuedOn.slice(0, 7) + ' (month only)' : e.issuedOn} | ${text(e.scope)}: ${text(e.scopeId)} | ${e.currency} | ${e.kind === 'refund' ? '-' : ''}${e.amount.toFixed(2)} | ${e.paidOn ?? 'Unknown'} |`,
+      `| ${text(e.vendor)} | ${e.issuedDateBasis ? e.issuedOn.slice(0, 7) + ' (month only)' : e.issuedOn} | ${text(e.scope)}: ${e.scopeId === 'legacy-import-unverified-account' ? 'Account not yet verified' : text(e.scopeId)} | ${e.currency} | ${e.kind === 'refund' ? '-' : ''}${e.amount.toFixed(2)} | ${e.paidOn ?? 'Unknown'} | [Original document](${new URL(e.sourceUrl).href.replaceAll('|', '%7C').replaceAll('(', '%28').replaceAll(')', '%29')}) |`,
     );
   if (!entries.length) lines.push('| No imported documents | — | — | — | Unknown | Unknown |');
   const paid = new Map();
@@ -110,7 +111,8 @@ export function financeReport(ledger, registry, snapshot, now = new Date()) {
       `| ${text(vendor)} | ${text(scope)}: ${text(scopeId)} | ${currency} | ${amount.toFixed(2)} |`,
     );
   }
-  if (!paid.size) lines.push('| Unknown | — | — | No verified payments imported |');
+  if (!paid.size)
+    lines.push('| Unknown | — | — | Totals awaiting document/account reconciliation |');
   lines.push(
     '',
     '## Recurring commitments and next 90 days',
@@ -183,7 +185,16 @@ export function reportHtml(markdown) {
         const cells = line
           .split('|')
           .slice(1, -1)
-          .map((c) => `<td>${escape(c.trim())}</td>`)
+          .map((c) => {
+            const cell = c.trim();
+            const link = /^\[Original document\]\((https:\/\/[^\s]+)\)$/.exec(cell);
+            if (link) {
+              const url = new URL(link[1]);
+              if (url.protocol === 'https:' && !url.username && !url.password)
+                return `<td><a href="${escape(url.href)}" rel="noreferrer noopener">Original document</a></td>`;
+            }
+            return `<td>${escape(cell)}</td>`;
+          })
           .join('');
         const open = table ? '' : '<table>';
         table = true;

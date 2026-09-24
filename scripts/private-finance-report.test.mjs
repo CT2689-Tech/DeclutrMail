@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -91,4 +92,32 @@ test('legacy import keeps unverified payments and HTML escapes source text', () 
   assert.equal(result.entries[0].paidOn, null);
   assert.match(result.entries[0].issuedDateBasis, /placeholder/);
   assert.ok(!reportHtml('# <script>alert(1)</script>').includes('<script>'));
+});
+
+test('finance refresh cannot invoke vendor checks and uses main-only same-repo artifact', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/vendor-limits-watchdog.yml', import.meta.url),
+    'utf8',
+  );
+  const job = workflow.split('\n  finance-refresh:\n')[1];
+  assert.match(job, /github.ref == 'refs\/heads\/main'/);
+  assert.match(job, /repository: CT2689-Tech\/DeclutrMail/);
+  assert.match(job, /actions: read/);
+  assert.match(job, /SNAPSHOT_RUN_ID: \$\{\{ inputs.snapshot_run_id \}\}/);
+  assert.ok(!/check-vendor-limits|PADDLE|RAZORPAY|upload-artifact/.test(job));
+  assert.match(job, /run: node scripts\/private-finance-report.mjs/);
+});
+test('source links are escaped HTTPS and unverified accounts remain readable', () => {
+  const report = financeReport(
+    ledger([{ ...e, kind: 'unclassified', scopeId: 'legacy-import-unverified-account' }]),
+    registry,
+    snapshot,
+    new Date('2026-09-24T13:00:00Z'),
+  );
+  const html = reportHtml(report);
+  assert.match(html, /href="https:\/\/example.com\/invoice"/);
+  assert.match(html, /Account not yet verified/);
+  assert.match(html, /Totals awaiting document\/account reconciliation/);
+  assert.ok(!html.includes('**Coverage'));
+  assert.ok(!reportHtml('| [Original document](javascript:alert(1)) |').includes('<a '));
 });
