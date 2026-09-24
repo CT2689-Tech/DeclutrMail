@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "subscriptions": [
+    {
+      "vendor": "Google Cloud",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Supabase",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Vercel",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Upstash",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Sentry",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "PostHog",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Anthropic",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "GitHub",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Resend",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Google Workspace",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    },
+    {
+      "vendor": "Domain registrar",
+      "scope": null,
+      "amount": null,
+      "currency": null,
+      "frequency": null,
+      "nextRenewal": null
+    }
+  ]
+}

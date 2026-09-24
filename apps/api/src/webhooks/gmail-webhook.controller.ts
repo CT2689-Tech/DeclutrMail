@@ -7,7 +7,6 @@ import {
   HttpStatus,
   Inject,
   Logger,
-  NotFoundException,
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -43,9 +42,9 @@ export const PUBSUB_OIDC_VERIFIER = 'PUBSUB_OIDC_VERIFIER';
  *   - 200 on successful processing (including silent-200 for
  *     dedup hits or out-of-order historyId — those are valid
  *     terminal outcomes per Pub/Sub at-least-once semantics)
- *   - 404 only when the resolved `emailAddress` does not map to a
- *     known mailbox (Pub/Sub treats 4xx as a permanent failure so
- *     this stops the retry loop for a deleted mailbox)
+ *   - 200 for an authenticated notification with no active mailbox;
+ *     a disconnected/deleted mailbox has no remaining work. Pub/Sub
+ *     retries non-acknowledgement statuses, including 404.
  *   - 400 on a malformed envelope (cannot decode base64 / JSON)
  *
  * The handler returns within milliseconds: dedup INSERT, monotonic
@@ -167,11 +166,8 @@ export class GmailWebhookController {
     const outcome = await this.service.processVerifiedPush({ messageId, payload });
     this.logOutcome(outcome);
 
-    if (outcome.kind === 'unknown_mailbox') {
-      // 4xx so Pub/Sub stops retrying.
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Mailbox not found.' });
-    }
-
+    // A resolved no-op is terminal. Exceptions from the database/service
+    // still propagate so temporary failures remain eligible for redelivery.
     return { status: outcome.kind };
   }
 
@@ -192,7 +188,7 @@ export class GmailWebhookController {
         this.logger.log(`pubsub.dedup_hit messageId=${outcome.messageId}`);
         break;
       case 'unknown_mailbox':
-        this.logger.warn(`pubsub.unknown_mailbox emailAddress=${outcome.emailAddress}`);
+        this.logger.log('pubsub.unknown_mailbox');
         break;
       case 'sync_state_uninitialized':
         // Service already warn-logged with mailbox id; nothing to add here.

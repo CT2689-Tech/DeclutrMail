@@ -120,6 +120,15 @@ jobs:
         if: always() && steps.collect.outcome != 'skipped' && env.GCP_WIF_PROVIDER != ''
         run: node scripts/infra-observability.mjs "$RUNNER_TEMP/infra-snapshot.json" declutrmail-ai-prod
 
+      # Private source documents and reports never enter GitHub artifacts/summaries.
+      # Opt-in only after a private bucket and read/write-scoped identity are ready.
+      - name: Update private finance report
+        if: always() && steps.collect.outcome != 'skipped' && vars.PRIVATE_FINANCE_BUCKET != '' && env.GCP_WIF_PROVIDER != ''
+        env:
+          PRIVATE_FINANCE_BUCKET: ${{ vars.PRIVATE_FINANCE_BUCKET }}
+          INFRA_SNAPSHOT_PATH: ${{ runner.temp }}/infra-snapshot.json
+        run: node scripts/private-finance-report.mjs
+
       - name: Retain daily snapshot even when a vendor fails
         if: always()
         uses: actions/upload-artifact@v4
