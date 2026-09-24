@@ -82,10 +82,8 @@ export async function deployApi({
   const rollback = trafficAssignment(before);
   log(`Previous API traffic (manual recovery if runner is terminated): ${rollback}`);
   let promotionAttempted = false;
-  let deploymentAttempted = false;
   let failure;
   try {
-    deploymentAttempted = true;
     await run(['run', 'deploy', SERVICE, ...args, '--no-traffic', `--tag=${tag}`]);
     const staged = await describe();
     if (trafficAssignment(staged) !== rollback)
@@ -123,14 +121,12 @@ export async function deployApi({
       }
     }
   } finally {
-    if (deploymentAttempted) {
-      try {
-        await update(`--remove-tags=${tag}`);
-      } catch {
-        failure ??= new Error(
-          'Deployment finished but candidate tag cleanup failed; inspect retained candidate',
-        );
-      }
+    try {
+      await update(`--remove-tags=${tag}`);
+    } catch {
+      failure ??= new Error(
+        'Deployment finished but candidate tag cleanup failed; inspect retained candidate',
+      );
     }
   }
   if (failure) throw failure;
