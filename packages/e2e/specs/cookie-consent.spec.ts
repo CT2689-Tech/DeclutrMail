@@ -111,8 +111,12 @@ function decodePosthogBody(buf: Buffer | null, url: string): string {
 async function interceptPosthog(page: Page): Promise<{ url: string; body: string }[]> {
   const collected: { url: string; body: string }[] = [];
   const customHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
+  const customOrigin = customHost ? new URL(customHost).origin : undefined;
   await page.route(
-    (url) => url.href.includes('posthog.com') || (!!customHost && url.href.startsWith(customHost)),
+    (url) =>
+      url.hostname === 'posthog.com' ||
+      url.hostname.endsWith('.posthog.com') ||
+      (customOrigin !== undefined && url.origin === customOrigin),
     async (route) => {
       const req = route.request();
       collected.push({

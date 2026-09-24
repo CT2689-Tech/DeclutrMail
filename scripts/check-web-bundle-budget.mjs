@@ -125,6 +125,9 @@ const OVERRIDES_KB = {
   // while keeping the general 180 kB ratchet and other routes unchanged.
   '/(app)/billing/page': 187, // checkout + invoices + plan controls + editorial shell
   '/(app)/screener/page': 181, // queue + decision controls + editorial shell
+  // The scannable Brief and optional generated-note view measure 180.2 kB.
+  // Keep a route-specific ceiling instead of relaxing the 180 kB app default.
+  '/(app)/brief/page': 184,
 
   // Was riding the AUTHED_DEFAULT_KB ceiling with 0 kB headroom (180.0
   // against 180 — "ok" by the barest possible margin, same shape the

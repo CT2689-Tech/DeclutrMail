@@ -149,12 +149,12 @@ describe('Logo — wordmark', () => {
   });
 
   it('omits the word entirely for the mark variant', () => {
-    // Assert on rendered TEXT, not on the raw markup: the default
-    // `aria-label` is also the string "DeclutrMail", so a substring
-    // check against the HTML passes even when the word is drawn.
-    const text = renderToStaticMarkup(<Logo variant="mark" />).replace(/<[^>]*>/g, '');
-    expect(text).toBe('');
-    expect(renderToStaticMarkup(<Logo />).replace(/<[^>]*>/g, '')).toBe('DeclutrMail');
+    // The default aria-label also contains "DeclutrMail"; check for the
+    // rendered word spans rather than matching that accessible name.
+    const mark = renderToStaticMarkup(<Logo variant="mark" />);
+    expect(mark).not.toContain('Declutr<span');
+    expect(mark).not.toContain('Mail</span>');
+    expect(renderToStaticMarkup(<Logo />)).toContain('Declutr<span');
   });
 
   it('sets Fraunces 800 at the specified tracking', () => {

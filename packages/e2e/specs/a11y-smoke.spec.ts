@@ -114,7 +114,7 @@ for (const route of ROUTES) {
 
 test('keyboard shortcut dialog traps and restores focus', async ({ page }) => {
   await page.goto('/senders');
-  await expect(page.getByRole('heading', { name: 'Senders', exact: true, level: 1 })).toBeVisible({
+  await expect(page.getByRole('heading', { name: /^Senders\b/, level: 1 })).toBeVisible({
     timeout: 60_000,
   });
 

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Me } from './api/use-me';
@@ -44,9 +45,11 @@ describe('MailboxActionContext', () => {
 
   it('shows the active account from AuthProvider before a mutation', () => {
     render(
-      <AuthProvider>
-        <MailboxActionContext />
-      </AuthProvider>,
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthProvider>
+          <MailboxActionContext />
+        </AuthProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByRole('note', { name: 'Gmail account: active@gmail.com' })).toBeVisible();
