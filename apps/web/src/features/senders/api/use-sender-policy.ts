@@ -14,9 +14,9 @@
  * Sender Detail header chips, the Keep verb on Detail AND the Senders
  * screen — refreshes the same caches:
  *
- *   - `sendersKeys.all` — detail (+ its child queries), list pages, and
- *     summary all carry `protectionFlags` / `policyType` / the Protect
- *     intent-bucket + KPI counts.
+ *   - Sender list/summary, the changed sender's detail and history.
+ *     Policy-only writes do not change messages, volume charts or other
+ *     senders; preserving those caches avoids redundant reads on each click.
  *   - `activityKeys.all` — the BE appends audit rows (`keep` /
  *     `marked_protected` / `unmarked_protected`) on actual changes.
  *
@@ -63,7 +63,13 @@ export function useSetSenderPolicy() {
       return env.data;
     },
     onSuccess: (_data, variables) => {
-      void qc.invalidateQueries({ queryKey: sendersKeys.all });
+      // Keep/Protect only update policy and audit rows. Invalidate all list
+      // scopes (including inactive filters), but only this sender's facts
+      // and history; message membership and received-volume are unchanged.
+      void qc.invalidateQueries({ queryKey: ['senders', 'list'] });
+      void qc.invalidateQueries({ queryKey: ['senders', 'summary'] });
+      void qc.invalidateQueries({ queryKey: sendersKeys.detail(variables.senderId), exact: true });
+      void qc.invalidateQueries({ queryKey: sendersKeys.history(variables.senderId) });
       void qc.invalidateQueries({ queryKey: activityKeys.all });
       // Triage rows carry `protectionReason`, and onboarding's step-5
       // read extends this same prefix. Without this, a row keeps

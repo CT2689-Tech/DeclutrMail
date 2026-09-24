@@ -10,6 +10,7 @@
 // the next surface added to the union has a test to fail.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { QueryObserver, type QueryKey } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 
 const trackSpy = vi.hoisted(() => vi.fn());
@@ -66,12 +67,62 @@ describe('useSetSenderPolicy', () => {
     // asserting stale protection state somewhere.
     expect(invalidated).toEqual(
       expect.arrayContaining([
-        sendersKeys.all,
+        ['senders', 'list'],
+        ['senders', 'summary'],
+        sendersKeys.detail('s1'),
+        sendersKeys.history('s1'),
         activityKeys.all,
         TRIAGE_BOOTSTRAP_KEY,
         SCREENER_QUEUE_KEY,
       ]),
     );
+  });
+
+  it('refreshes changed policy/history and aggregate views without refetching unchanged mail or other senders', async () => {
+    const client = createTestQueryClient();
+    const readers = new Map<string, ReturnType<typeof vi.fn>>();
+    const subscriptions: Array<() => void> = [];
+    const keys: QueryKey[] = [
+      sendersKeys.detail('s1'),
+      sendersKeys.history('s1'),
+      sendersKeys.messages('s1'),
+      sendersKeys.timeseries('s1'),
+      sendersKeys.detail('s2'),
+      sendersKeys.list(),
+      sendersKeys.summary(),
+      activityKeys.list({}),
+      TRIAGE_BOOTSTRAP_KEY,
+      SCREENER_QUEUE_KEY,
+    ];
+    for (const queryKey of keys) {
+      const reader = vi.fn().mockResolvedValue({ version: 1 });
+      readers.set(JSON.stringify(queryKey), reader);
+      await client.fetchQuery({ queryKey, queryFn: reader, staleTime: Infinity });
+      const observer = new QueryObserver(client, {
+        queryKey,
+        queryFn: reader,
+        staleTime: Infinity,
+      });
+      subscriptions.push(observer.subscribe(() => undefined));
+    }
+    const { result, unmount } = renderHook(() => useSetSenderPolicy(), {
+      wrapper: ({ children }) => <QueryWrapper client={client}>{children}</QueryWrapper>,
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ senderId: 's1', patch: { isProtected: false } });
+    });
+    await waitFor(() => expect(client.isFetching()).toBe(0));
+    const unchanged = new Set(
+      [sendersKeys.messages('s1'), sendersKeys.timeseries('s1'), sendersKeys.detail('s2')].map(
+        (key) => JSON.stringify(key),
+      ),
+    );
+    for (const [key, reader] of readers) {
+      expect(reader, key).toHaveBeenCalledTimes(unchanged.has(key) ? 1 : 2);
+    }
+    subscriptions.forEach((stop) => stop());
+    unmount();
+    client.clear();
   });
 
   it('emits sender_unprotected only when told the unprotect context', async () => {

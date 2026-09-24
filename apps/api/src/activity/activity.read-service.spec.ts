@@ -235,6 +235,35 @@ describe('ActivityReadService', () => {
     mailboxB = await seedMailbox(db, 'b@example.com');
   });
 
+  it('starts counters before row hydration finishes and reuses unbounded counters', async () => {
+    const internals = svc as unknown as {
+      loadPagedExecutionLineages: () => Promise<never[]>;
+      aggregateStats: () => Promise<unknown>;
+    };
+    let release!: (value: never[]) => void;
+    const blocked = new Promise<never[]>((resolve) => {
+      release = resolve;
+    });
+    const lineageSpy = vi.spyOn(internals, 'loadPagedExecutionLineages').mockReturnValue(blocked);
+    const statsSpy = vi.spyOn(internals, 'aggregateStats');
+    const pending = svc.listActivity({
+      mailboxAccountId: mailboxA.mailboxAccountId,
+      window: 'all',
+      source: null,
+      nowMs: NOW_MS,
+      limit: 50,
+      cursor: null,
+    });
+    try {
+      expect(lineageSpy).toHaveBeenCalledOnce();
+      expect(statsSpy).toHaveBeenCalledOnce();
+    } finally {
+      release([]);
+    }
+    const result = await pending;
+    expect(result.stats).toEqual(result.allTimeStats);
+  });
+
   it('returns only rows for the requested mailbox (tenant isolation)', async () => {
     await seedActivity(db, {
       mailboxAccountId: mailboxA.mailboxAccountId,

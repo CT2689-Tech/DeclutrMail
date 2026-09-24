@@ -81,6 +81,7 @@ export function SenderList({
   compact,
   followKeys,
 }: SenderListProps) {
+  const listRef = useRef<HTMLDivElement>(null);
   const [expandedDomains, setExpandedDomains] = useState<Set<string>>(() => new Set());
   const toggleDomain = (domain: string) =>
     setExpandedDomains((prev) => {
@@ -136,8 +137,8 @@ export function SenderList({
       e.preventDefault();
       if (nextId === activeId) return;
       onOpen(nextId);
-      Array.from(document.querySelectorAll<HTMLElement>('[data-sender-id]'))
-        .find((el) => el.dataset.senderId === nextId)
+      listRef.current
+        ?.querySelector<HTMLElement>(`[data-sender-id="${CSS.escape(nextId)}"]`)
         ?.scrollIntoView?.({ block: 'nearest' });
     };
     window.addEventListener('keydown', onKey);
@@ -181,6 +182,7 @@ export function SenderList({
 
   return (
     <div
+      ref={listRef}
       onMouseOver={(event) => scheduleIntent(event.target)}
       onMouseLeave={cancelIntent}
       onFocus={(event) => scheduleIntent(event.target)}

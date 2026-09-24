@@ -198,17 +198,39 @@ export function SenderDetailRoute({
   // non-null with the WRONG mailbox's sender. Track the reset event
   // locally and refuse to trust `adapted` for the error-bypass until a
   // fetch has genuinely SUCCEEDED since the last reset.
-  const mailboxResetAtRef = useRef<number | null>(null);
+  const routeQueryClient = useQueryClient();
+  const [resetVersions, setResetVersions] = useState<Record<
+    string,
+    { data: number; error: number }
+  > | null>(null);
   useEffect(() => {
     const onReset = () => {
-      mailboxResetAtRef.current = Date.now();
+      const versions: Record<string, { data: number; error: number }> = {};
+      for (const key of [
+        sendersKeys.detail(id),
+        sendersKeys.messages(id),
+        sendersKeys.timeseries(id),
+        sendersKeys.history(id),
+      ]) {
+        const state = routeQueryClient.getQueryState(key);
+        versions[JSON.stringify(key)] = {
+          data: state?.dataUpdateCount ?? 0,
+          error: state?.errorUpdateCount ?? 0,
+        };
+      }
+      setResetVersions(versions);
     };
     window.addEventListener(MAILBOX_SCOPE_RESET_EVENT, onReset);
     return () => window.removeEventListener(MAILBOX_SCOPE_RESET_EVENT, onReset);
-  }, []);
-  const cachedDataIsTrustworthy =
-    mailboxResetAtRef.current == null ||
-    (detail.dataUpdatedAt > 0 && detail.dataUpdatedAt >= mailboxResetAtRef.current);
+  }, [id, routeQueryClient]);
+  const freshSinceReset = (key: readonly unknown[], kind: 'data' | 'error') => {
+    const previous = resetVersions?.[JSON.stringify(key)];
+    if (!previous) return true;
+    const state = routeQueryClient.getQueryState(key);
+    const version = kind === 'data' ? state?.dataUpdateCount : state?.errorUpdateCount;
+    return (version ?? 0) > previous[kind];
+  };
+  const cachedDataIsTrustworthy = freshSinceReset(sendersKeys.detail(id), 'data');
   // Opening a sender whose read has aged out asks for a fresh one
   // (D25 `stale_refresh`, founder decision 2026-08-19). Nothing on
   // screen waits for it: the old read stays, with its age, until a
@@ -249,20 +271,38 @@ export function SenderDetailRoute({
     });
   }, [id, fromParam, layout]);
 
-  const isLoading =
-    detail.isLoading || messages.isLoading || timeseries.isLoading || history.isLoading;
+  // Each section must independently cross the mailbox reset boundary. A fresh
+  // identity response cannot make a previous mailbox's cached history safe.
+  // Track fetch completion even when the response is structurally equal and
+  // Date.now() has not advanced; cache update counters still advance then.
+  void detail.isFetching;
+  void messages.isFetching;
+  void timeseries.isFetching;
+  void history.isFetching;
+  const messagesReady = !!messages.data && freshSinceReset(sendersKeys.messages(id), 'data');
+  const timeseriesReady = !!timeseries.data && freshSinceReset(sendersKeys.timeseries(id), 'data');
+  const historyReady = !!history.data && freshSinceReset(sendersKeys.history(id), 'data');
 
   const adapted = useMemo(() => {
-    if (!detail.data || !messages.data || !timeseries.data || !history.data) {
+    if (!detail.data || !cachedDataIsTrustworthy) {
       return null;
     }
     return adaptSenderDetail({
       detail: detail.data.data,
-      messages: messages.data.pages.flatMap((p) => p.data),
-      timeseries: timeseries.data.data,
-      history: history.data.pages.flatMap((p) => p.data),
+      messages: messagesReady ? messages.data!.pages.flatMap((p) => p.data) : [],
+      timeseries: timeseriesReady ? timeseries.data!.data : [],
+      history: historyReady ? history.data!.pages.flatMap((p) => p.data) : [],
     });
-  }, [detail.data, messages.data, timeseries.data, history.data]);
+  }, [
+    detail.data,
+    messages.data,
+    timeseries.data,
+    history.data,
+    cachedDataIsTrustworthy,
+    messagesReady,
+    timeseriesReady,
+    historyReady,
+  ]);
 
   // QA-sender-detail-20260903-01: checking ONLY `detail.error` here raced
   // the sibling `messages`/`timeseries`/`history` queries — all four hit
@@ -272,7 +312,7 @@ export function SenderDetailRoute({
   // settles first on a given render could be `messages` or `timeseries`,
   // not `detail` — and while `detail` was still mid-flight, this branch's
   // narrower check missed the 404 entirely and fell through to the
-  // generic `anyChildError` error state below, live-reproduced twice on
+  // generic error state in the earlier implementation, reproduced twice on
   // an identical URL (first load: generic error; a second, separate
   // navigation: correct `NotFoundState`). Checking all four make this
   // order-independent: ANY of them reporting the identical 404 is exactly
@@ -284,15 +324,22 @@ export function SenderDetailRoute({
   // sitting on it while it refetches in the background after a switch
   // back. Checking four queries instead of one widens that same
   // pre-existing exposure (any one of the four can carry a stale 404
-  // instead of just `detail`). Reuse the identical `mailboxResetAtRef`
+  // instead of just `detail`). Reuse the identical cache-version
   // generation guard the `cachedDataIsTrustworthy` check below already
   // uses for stale DATA — an error is only authoritative if it was set at
   // or after the last mailbox-scope reset.
-  const notFound = [detail, messages, timeseries, history].some(
-    (q) =>
+  const queryResults = [detail, messages, timeseries, history];
+  const queryKeys = [
+    sendersKeys.detail(id),
+    sendersKeys.messages(id),
+    sendersKeys.timeseries(id),
+    sendersKeys.history(id),
+  ];
+  const notFound = queryResults.some(
+    (q, index) =>
       q.error instanceof ApiError &&
       q.error.status === 404 &&
-      (mailboxResetAtRef.current == null || q.errorUpdatedAt >= mailboxResetAtRef.current),
+      freshSinceReset(queryKeys[index]!, 'error'),
   );
   if (notFound) {
     return <NotFoundState layout={layout} {...(onClose ? { onClose } : {})} />;
@@ -307,7 +354,7 @@ export function SenderDetailRoute({
   // still the prior successful value, and the page tore ReadyState down
   // for the full-page "Nothing in your mailbox changed" takeover right
   // after something genuinely did change. `adapted == null` (already
-  // computed above, requiring ALL four queries' data) is the same
+  // computed above, requiring trusted identity data) is the same
   // "nothing to show" gate the sibling `anyChildError` branch below
   // already uses — this just brings the two branches into agreement.
   if (detail.isError && (adapted == null || !cachedDataIsTrustworthy)) {
@@ -324,40 +371,80 @@ export function SenderDetailRoute({
     );
   }
 
-  const anyChildError = messages.isError || timeseries.isError || history.isError;
-  // Same mailbox-scope guard as the `detail.isError` branch above — this
-  // branch already had the `adapted == null` half of the check (which is
-  // what suggested the fix above), but shares the identical stale-cross-
-  // mailbox exposure since `messages`/`timeseries`/`history` are equally
-  // unpartitioned by mailbox.
-  if (anyChildError && (adapted == null || !cachedDataIsTrustworthy)) {
-    return (
-      <SenderDetailErrorState
-        layout={layout}
-        onRetry={() => {
-          detail.refetch();
-          messages.refetch();
-          timeseries.refetch();
-          history.refetch();
-        }}
-      />
-    );
-  }
-
-  if (isLoading || adapted == null) {
+  if (adapted == null) {
     return <LoadingState layout={layout} />;
   }
 
-  return <ReadyState initial={adapted} layout={layout} onAction={onAction} />;
+  return (
+    <ReadyState
+      initial={adapted}
+      layout={layout}
+      onAction={onAction}
+      sections={{
+        messages: {
+          ready: messagesReady,
+          failed: messages.isError && freshSinceReset(sendersKeys.messages(id), 'error'),
+          retry: () => {
+            void messages.refetch();
+          },
+        },
+        timeseries: {
+          ready: timeseriesReady,
+          failed: timeseries.isError && freshSinceReset(sendersKeys.timeseries(id), 'error'),
+          retry: () => {
+            void timeseries.refetch();
+          },
+        },
+        history: {
+          ready: historyReady,
+          failed: history.isError && freshSinceReset(sendersKeys.history(id), 'error'),
+          retry: () => {
+            void history.refetch();
+          },
+        },
+      }}
+    />
+  );
+}
+
+type DetailSectionStatus = { ready: boolean; failed: boolean; retry: () => void };
+type DetailSections = Record<'messages' | 'timeseries' | 'history', DetailSectionStatus>;
+
+function DetailSection({
+  name,
+  status,
+  children,
+}: {
+  name: string;
+  status: DetailSectionStatus | undefined;
+  children: ReactNode;
+}) {
+  if (!status || status.ready) return children;
+  return (
+    <div role={status.failed ? 'alert' : 'status'}>
+      {status.failed ? (
+        <>
+          <p>Could not load {name}.</p>
+          <button type="button" onClick={status.retry}>
+            Retry {name}
+          </button>
+        </>
+      ) : (
+        <p>Loading {name}…</p>
+      )}
+    </div>
+  );
 }
 
 function ReadyState({
   initial,
   layout,
   onAction,
+  sections,
 }: {
   initial: SenderDetail;
   layout: DetailLayout;
+  sections?: DetailSections;
   onAction?: ((request: ActionRequest) => void) | undefined;
 }) {
   const auth = useOptionalAuth();
@@ -514,7 +601,10 @@ function ReadyState({
     setDetail(initial);
   }, [initial, setPolicy.isPending]);
 
-  const { sender, recommendation, recentMessages, stats, timeseries, history } = detail;
+  const { sender, recommendation, stats } = detail;
+  // Secondary reads have no optimistic local edits. Render their current
+  // query snapshot directly, without one effect-frame of previous data.
+  const { recentMessages, timeseries, history } = initial;
   // D245 requires the EXACT protection reason, visibly (QA-sender-detail-
   // 20260902-15: it lived only in a `title=` tooltip, which never opens
   // on touch). One short line beside the switch; with no recorded reason
@@ -1384,36 +1474,38 @@ function ReadyState({
               )}
             </Stat>
             <Stat label="12-month trend">
-              {volumes.length > 0 ? (
-                <>
-                  <Spark values={volumes} width={72} height={20} />
-                  <details style={{ fontSize: text.sm }}>
-                    <summary style={{ cursor: 'pointer', padding: '12px 0', minHeight: 44 }}>
-                      Monthly values
-                    </summary>
-                    <dl style={{ margin: 0 }}>
-                      {timeseries.map((point) => (
-                        <div
-                          key={point.yearMonth}
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            flexWrap: 'wrap',
-                            gap: '2px 12px',
-                          }}
-                        >
-                          <dt>{point.yearMonth}</dt>
-                          <dd style={{ margin: 0, overflowWrap: 'anywhere' }}>
-                            {point.volume.toLocaleString('en-US')} emails
-                          </dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </details>
-                </>
-              ) : (
-                '—'
-              )}
+              <DetailSection name="monthly trend" status={sections?.timeseries}>
+                {volumes.length > 0 ? (
+                  <>
+                    <Spark values={volumes} width={72} height={20} />
+                    <details style={{ fontSize: text.sm }}>
+                      <summary style={{ cursor: 'pointer', padding: '12px 0', minHeight: 44 }}>
+                        Monthly values
+                      </summary>
+                      <dl style={{ margin: 0 }}>
+                        {timeseries.map((point) => (
+                          <div
+                            key={point.yearMonth}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              flexWrap: 'wrap',
+                              gap: '2px 12px',
+                            }}
+                          >
+                            <dt>{point.yearMonth}</dt>
+                            <dd style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                              {point.volume.toLocaleString('en-US')} emails
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </details>
+                  </>
+                ) : (
+                  '—'
+                )}
+              </DetailSection>
             </Stat>
             <Stat label="Last seen">{relTime(stats.lastSeenDays)}</Stat>
             <Stat label="You wrote">
@@ -1434,44 +1526,48 @@ function ReadyState({
         </div>
 
         {/* 5. Recent messages */}
-        <RecentMessages
-          key={sender.id}
-          senderId={sender.id}
-          messages={recentMessages}
-          mailboxEmail={activeMailboxEmail}
-          senderEmail={detail.email}
-        />
+        <DetailSection name="recent messages" status={sections?.messages}>
+          <RecentMessages
+            key={sender.id}
+            senderId={sender.id}
+            messages={recentMessages}
+            mailboxEmail={activeMailboxEmail}
+            senderEmail={detail.email}
+          />
+        </DetailSection>
 
         {/* 6. Decision timeline. Rows are actions taken on this sender
           (`activity_log`), so this list and the Activity feed can never
           disagree. */}
-        <DecisionTimeline
-          heading="Decision timeline"
-          empty={
-            <EmptyState
-              title="Nothing decided yet"
-              description="Your decisions will appear here."
-            />
-          }
-          // Cross-link into the Activity feed pre-filtered to this sender.
-          // `sender_q` is Activity's substring filter over name/email —
-          // the full address is the collision-safe query.
-          action={
-            <a
-              href={`/activity?sender_q=${encodeURIComponent(detail.email)}`}
-              style={{
-                fontSize: text.sm,
-                color: color.fgSoft,
-                textDecoration: 'none',
-                fontWeight: 500,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              View in Activity →
-            </a>
-          }
-          items={timelineItems}
-        />
+        <DetailSection name="decision history" status={sections?.history}>
+          <DecisionTimeline
+            heading="Decision timeline"
+            empty={
+              <EmptyState
+                title="Nothing decided yet"
+                description="Your decisions will appear here."
+              />
+            }
+            // Cross-link into the Activity feed pre-filtered to this sender.
+            // `sender_q` is Activity's substring filter over name/email —
+            // the full address is the collision-safe query.
+            action={
+              <a
+                href={`/activity?sender_q=${encodeURIComponent(detail.email)}`}
+                style={{
+                  fontSize: text.sm,
+                  color: color.fgSoft,
+                  textDecoration: 'none',
+                  fontWeight: 500,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                View in Activity →
+              </a>
+            }
+            items={timelineItems}
+          />
+        </DetailSection>
       </div>
       {layout === 'pane' && (
         <div className={styles.paneActions} role="group" aria-label="Sender actions">
