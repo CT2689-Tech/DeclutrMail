@@ -171,10 +171,27 @@ secrets_state() {
 # conservative Gmail pace. A missing permission is `null`, not an empty
 # quota list. Quota metadata contains no credentials or mailbox data.
 gmail_quota_state() {
-  safe_gcloud gcloud alpha services quota list \
+  local out err reason
+  err=$(mktemp)
+  if out=$(gcloud alpha services quota list \
     --service=gmail.googleapis.com \
     --consumer="projects/$PROJECT" \
-    --format='json(metric,consumerQuotaLimits)'
+    --format='json(metric,consumerQuotaLimits)' 2>"$err"); then
+    rm -f "$err"
+    json_or "$out" '[]'
+    return
+  fi
+  if grep -qiE 'PERMISSION_DENIED|does not have permission|permission denied' "$err"; then
+    reason=permission_denied
+  elif grep -qiE 'UNAUTHENTICATED|Reauthentication failed' "$err"; then
+    reason=authentication_failed
+  elif grep -qiE 'Invalid choice|Unknown command|not installed' "$err"; then
+    reason=command_unavailable
+  else
+    reason=query_failed
+  fi
+  rm -f "$err"
+  jq -n --arg reason "$reason" '{available: false, reason: $reason}'
 }
 
 # ─── Atlas migration head ───────────────────────────────────────────
