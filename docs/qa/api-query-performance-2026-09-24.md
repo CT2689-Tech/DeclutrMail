@@ -53,3 +53,9 @@ The final plan has four mail-message scan nodes (rolling aggregate, Inbox, unrea
 A separate smoke exercised the changed service methods using the actual `postgres-js` driver against `localhost:5432/declutrmail`, with synthetic fixtures enclosed in a transaction that was deliberately rolled back. The existing port-4000 API and its owning worktree were not changed. This was a direct service/driver harness, not an HTTP endpoint smoke.
 
 Verified all four list sorts, detail Inbox **1**, archived **2**, rolling volume **3**, user read rate **2/3**, decimal confidence **0.87**, exact normalized ISO decision timestamp, non-stale future expiry, null missing decision, and foreign-mailbox isolation. Activity returned the expected `rows`, `stats`, and `allTimeStats` service envelopes for both `all` and `7d`; the empty synthetic mailbox had equal counter objects. A post-rollback query verified that no synthetic workspace row remained. This confirms JSON scalar decoding and timestamp/numeric handling with the production driver as well as PGlite.
+
+### Isolated HTTP smoke
+
+Started the changed API from `/private/tmp/declutr-perf-api/apps/api` on port **4005** (PID/cwd verified), reusing local development configuration. The existing API on port 4000 was untouched. The allowlisted D206 login returned **302**. Authenticated read-only requests returned **200** for sender list (`data`, `meta`), sender detail (`data`, including numeric Inbox and archived counts), and Activity (`data`, `meta`). No Gmail actions were requested.
+
+Downstream structured `http.request` logs recorded route templates and matching statuses: `GET /api/senders` **113.1ms**, `GET /api/senders/:id` **38.7ms**, `GET /api/activity` **47.3ms**. These are individual local smoke observations, not production percentiles or controlled before/after latency results. No mailbox content, identifiers, session cookies, or secrets are included in this evidence.
