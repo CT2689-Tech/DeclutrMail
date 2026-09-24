@@ -670,11 +670,18 @@ jobs:
           for migration in packages/db/migrations/*.sql; do
             psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -q -f "$migration"
           done
+      # A long-lived Next dev process accumulates every public/authenticated
+      # route compiler. Its memory-threshold restart severed a valid sender
+      # navigation in run 35972390743. Exercise the shipped rendering instead
+      # of weakening navigation assertions or retrying an interrupted page.
+      # The API remains in development mode for the isolated login harness.
+      - name: Build the web app for browser verification
+        run: pnpm --filter @declutrmail/web build
       - name: Start the API and web app
         run: |
           PORT=4104 pnpm --filter @declutrmail/api start > api-e2e.log 2>&1 &
           API_PID=$!
-          PORT=3104 pnpm --filter @declutrmail/web dev > web-e2e.log 2>&1 &
+          PORT=3104 pnpm --filter @declutrmail/web start > web-e2e.log 2>&1 &
           WEB_PID=$!
 
           for attempt in $(seq 1 90); do
