@@ -2,11 +2,10 @@ import { abortableDelay } from './abortable-delay.js';
 /**
  * Sliding-window rate limiter (D5 — Gmail API throttle).
  *
- * Gmail enforces a per-user quota: 15,000 quota units / user / minute
- * (`messages.get` and `messages.list` each cost 5 units). A backfill that
- * bursts past that gets 403 "Quota exceeded" and — without this limiter
- * — fails. This caps consumption to `maxUnits` per `windowMs`, pacing
- * the worker under the ceiling.
+ * Gmail enforces a per-user quota. Callers pass the documented cost of
+ * each method; `messages.get` costs more than `messages.list`. A backfill
+ * that bursts past the quota gets 403 "Quota exceeded" and fails. This
+ * caps consumption to `maxUnits` per `windowMs`.
  *
  * One limiter instance gates one mailbox's sync (the quota is per-user,
  * and `perMailboxPolicy` runs one job per mailbox).

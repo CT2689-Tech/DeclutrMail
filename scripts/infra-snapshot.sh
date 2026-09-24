@@ -11,6 +11,7 @@
 #     (names only, not values), allocated CPU/memory, traffic split.
 #   * GCP Secret Manager — secret names + latest version numbers
 #     (NOT values).
+#   * Gmail API quota metrics — effective limits, never usage or mail data.
 #   * Atlas migration head — DB's current revision per Atlas.
 #   * IAM policy on the two runtime SAs (declutrmail-api,
 #     declutrmail-worker) — bindings only.
@@ -163,6 +164,19 @@ secrets_state() {
   | jq 'if type == "array" then [.[] | {name: (.name | split("/") | last), createTime}] else . end'
 }
 
+# ─── Gmail API quota — effective per-project limits ─────────────────
+# Google changed the public per-user limit and messages.get cost in 2026,
+# while qualifying older projects may retain their previous quota. The
+# effective project limit is the only safe basis for increasing our
+# conservative Gmail pace. A missing permission is `null`, not an empty
+# quota list. Quota metadata contains no credentials or mailbox data.
+gmail_quota_state() {
+  safe_gcloud gcloud alpha services quota list \
+    --service=gmail.googleapis.com \
+    --consumer="projects/$PROJECT" \
+    --format='json(metric,consumerQuotaLimits)'
+}
+
 # ─── Atlas migration head ───────────────────────────────────────────
 atlas_state() {
   if [ -z "${SUPABASE_SESSION_DSN:-}" ] || ! command -v atlas >/dev/null 2>&1; then
@@ -233,6 +247,7 @@ jq -n \
   --argjson api "$(json_or "$(cloud_run_state declutrmail-api)" null)" \
   --argjson worker "$(json_or "$(cloud_run_state declutrmail-worker)" null)" \
   --argjson secrets "$(json_or "$(secrets_state)" null)" \
+  --argjson gmail_quota "$(json_or "$(gmail_quota_state)" null)" \
   --argjson atlas "$(json_or "$(atlas_state)" null)" \
   --argjson api_sa "$(json_or "$(sa_iam_state declutrmail-api@declutrmail-ai-prod.iam.gserviceaccount.com)" null)" \
   --argjson worker_sa "$(json_or "$(sa_iam_state declutrmail-worker@declutrmail-ai-prod.iam.gserviceaccount.com)" null)" \
@@ -246,6 +261,7 @@ jq -n \
       worker: $worker
     },
     secret_manager: $secrets,
+    gmail_api_quota: $gmail_quota,
     atlas_migration: $atlas,
     iam: {
       declutrmail_api_sa: $api_sa,

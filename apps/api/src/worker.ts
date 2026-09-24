@@ -226,12 +226,12 @@ import { buildOutboxConsumer } from './outbox/outbox-consumer-router.js';
  */
 
 /**
- * Gmail quota throttle (D5). Gmail meters 15,000 quota units / user /
- * minute; we pace to 12,000 (20% headroom) — `messages.get` is 5 units,
- * so ~2,400 messages/min SUSTAINED. One limiter per mailbox (the quota
- * is per-user).
+ * Gmail quota throttle (D5). The current quota table gives newer projects
+ * 6,000 units/user/minute and charges 20 units for `messages.get`; pace
+ * to 4,800 (20% headroom). Older projects may retain their old ceilings,
+ * but the lower budget is safe for either tier. One limiter per mailbox.
  */
-const GMAIL_QUOTA_UNITS_PER_MIN = 12_000;
+const GMAIL_QUOTA_UNITS_PER_MIN = 4_800;
 const GMAIL_QUOTA_WINDOW_MS = 60_000;
 
 /**
@@ -243,17 +243,14 @@ const GMAIL_QUOTA_WINDOW_MS = 60_000;
  * ~2,400 `messages.get` calls with zero pacing before either limiter
  * ever introduced a delay.
  *
- * 1,000 units (200 calls — 10 `FETCH_CONCURRENCY` chunks) caps that
- * instant burst while the refill rate keeps the exact same long-run
- * throughput: a large mailbox's backfill takes the same total time, it
- * just can no longer open with a multi-thousand-call spike. Paired with
- * `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME 200-units/sec average as the
- * sustained pair above (1,000 / 5,000 = 12,000 / 60,000), so the
+ * 400 units (20 `messages.get` calls) caps that instant burst. Paired
+ * with `GMAIL_QUOTA_BURST_WINDOW_MS` at the SAME 80-units/sec average as
+ * the sustained pair above (400 / 5,000 = 4,800 / 60,000), so the
  * in-process `RateLimiter` fallback paces identically to the primary
  * Redis-backed bucket instead of reverting to the old full-burst
  * behavior the moment Redis degrades.
  */
-const GMAIL_QUOTA_BURST_CAPACITY = 1_000;
+const GMAIL_QUOTA_BURST_CAPACITY = 400;
 const GMAIL_QUOTA_BURST_WINDOW_MS = 5_000;
 
 /** Read a required env var or fail loudly at boot. */

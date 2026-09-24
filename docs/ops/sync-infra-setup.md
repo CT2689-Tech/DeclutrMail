@@ -287,36 +287,23 @@ when `apps/api` first ships to Cloud Run.
 
 ## Gmail API quota — `declutrmail-ai-prod`
 
-Confirmed in **GCP Console → APIs & Services → Gmail API → Quotas** (2026-05-22):
+The project console showed 15,000 units/user/minute in May 2026, and
+an earlier test observed `messages.get` consuming 5 units. **Do not use
+that historical observation to configure a new deployment.** Google's
+[current quota table](https://developers.google.com/workspace/gmail/api/reference/quota)
+(updated 2026-09-10) lists 6,000 units/user/minute for newer projects
+and 20 units for `messages.get`; projects with qualifying pre-May usage
+may retain older quotas. The effective quota for `declutrmail-ai-prod`
+must be rechecked in Google Cloud before raising the conservative pace.
 
-| Limit                          | Value         |
-| ------------------------------ | ------------- |
-| Queries / minute (per project) | **1,200,000** |
-| Queries / minute / user        | **15,000**    |
-
-Per-method costs (effective; the public docs page lists `messages.get`
-= 20 but Gmail cut per-method costs 10× in a 2026 release note — some
-cells are stale; the founder's project shows the post-reduction
-numbers, confirmed empirically by PR-C failing at exactly 3,000
-messages = 3,000 × 5):
-
-- `messages.list` = 5 units / call
-- `messages.get` = 5 units / call
-
-**Derived ceiling — `messages.get`:**
-
-- Per user: 15,000 / 5 = **3,000 calls / minute** (the wall PR-C hit).
-- Per project: 1,200,000 / 5 = 240,000 calls / minute → with 20 concurrent
-  syncs at 2,400 / min each, 48,000 / min — well under, so 20 concurrent
-  mailboxes fit.
-
-`RateLimiter` (`packages/workers/src/rate-limiter.ts`) paces each sync
-to **2,400 calls/min/user** (80% of the per-user ceiling). Verified by
-the 20K-message run (0 quota errors).
-
-Plan: request a quota increase in GCP Console at ~100 connected users
-(D5). The per-user ceiling is the hard floor on sync wall-clock: 250K
-mailbox ≈ 250,000 / 3,000 = ~83 minutes minimum.
+Until that check, the worker budgets each API method at its current
+published cost and paces to **4,800 units/user/minute** with a 400-unit
+burst ceiling. At 20 units per `messages.get`, that is approximately
+240 metadata reads/minute after the burst. Large first scans will take
+longer; show progress and allow the resumable backfill to complete.
+The API-side watch/stop path uses the same conservative budget. A
+quota error remains retryable with backoff, while an insufficient-scope
+403 requires reconnect rather than another scan.
 
 ---
 
