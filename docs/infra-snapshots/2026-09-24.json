@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-09-24",
-  "snapshot_ts": "2026-09-24T06:16:58Z",
+  "snapshot_ts": "2026-09-24T11:00:01Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,13 +8,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-09-21T08:10:58.053976Z",
-            "name": "declutrmail-api-00323-5vv"
+            "creationTimestamp": "2026-09-24T08:39:31.468281Z",
+            "name": "declutrmail-api-00325-mbc"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:21435d561fd3cbcb33ea07512b63d14c2ed2bc3c6fb3d910bf015dcfce42d3cd"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:03e3e6bd2f870aa2dc103a852bf4f1adbad063362558cbe3d7453b81134775ac"
               }
             ]
           },
@@ -86,6 +86,12 @@
                       "name": "NODE_ENV"
                     },
                     {
+                      "name": "API_DB_POOL_MAX"
+                    },
+                    {
+                      "name": "HTTP_PERFORMANCE_SAMPLE_RATE"
+                    },
+                    {
                       "name": "WEB_URL"
                     },
                     {
@@ -148,7 +154,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00323-5vv"
+              "revisionName": "declutrmail-api-00325-mbc"
             }
           ]
         }
@@ -159,13 +165,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-09-21T08:09:58.200546Z",
-            "name": "declutrmail-worker-00064-x2q"
+            "creationTimestamp": "2026-09-24T08:38:33.128321Z",
+            "name": "declutrmail-worker-00066-bcc"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:21435d561fd3cbcb33ea07512b63d14c2ed2bc3c6fb3d910bf015dcfce42d3cd"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:03e3e6bd2f870aa2dc103a852bf4f1adbad063362558cbe3d7453b81134775ac"
               }
             ]
           },
@@ -243,6 +249,9 @@
                       "name": "GMAIL_PUBSUB_TOPIC"
                     },
                     {
+                      "name": "GMAIL_QUOTA_UNITS_PER_MIN"
+                    },
+                    {
                       "name": "SENTRY_RELEASE"
                     },
                     {
@@ -256,6 +265,15 @@
                     },
                     {
                       "name": "WORKER_SENTRY_ENABLED"
+                    },
+                    {
+                      "name": "WORKER_DB_POOL_MAX"
+                    },
+                    {
+                      "name": "WORKER_LOCK_POOL_MAX"
+                    },
+                    {
+                      "name": "WORKER_SWEEP_STATEMENT_TIMEOUT_MS"
                     },
                     {
                       "name": "WORKER_DRAIN_DELAY_SEC"
@@ -293,7 +311,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00064-x2q"
+              "revisionName": "declutrmail-worker-00066-bcc"
             }
           ]
         }
