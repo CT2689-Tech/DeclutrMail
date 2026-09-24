@@ -22,6 +22,7 @@ import { ACTION_OVERDUE_MS, SenderDetailRoute } from './sender-detail-page';
 import { sendersKeys } from '../api/query-keys';
 import { activityKeys } from '@/features/activity/api/query-keys';
 import { UNDO_DONE_TOAST } from '@/lib/action-error-copy';
+import { UNSUB_SEND_DISABLED_MESSAGE } from '@/features/triage/unsub-send-disabled';
 import { useRevertUndo } from '@/lib/api/use-action';
 import {
   addFetchHandlers,
@@ -1578,6 +1579,32 @@ describe('SenderDetailRoute', () => {
           'aria-disabled',
           'true',
         );
+      });
+
+      it('explains an environment-disabled unsubscribe without reporting an exception', async () => {
+        installHappyPath();
+        addFetchHandlers([
+          detailPreviewHandler(),
+          {
+            method: 'POST',
+            path: '/api/actions/unsubscribe-intent',
+            respond: () =>
+              new Response(JSON.stringify({ error: { code: 'UNSUB_SEND_DISABLED' } }), {
+                status: 409,
+                headers: { 'content-type': 'application/json' },
+              }),
+          },
+        ]);
+        renderDetail();
+        fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe (U)' }));
+        const dialog = await screen.findByRole('dialog');
+        const confirm = await within(dialog).findByRole('button', { name: /Unsubscribe/ });
+        await waitFor(() => expect(confirm).toBeEnabled());
+        fireEvent.click(confirm);
+        await waitFor(() =>
+          expect(h.toast).toHaveBeenCalledWith(UNSUB_SEND_DISABLED_MESSAGE, 'warn'),
+        );
+        expect(captureFeatureExceptionMock).not.toHaveBeenCalled();
       });
 
       it('marks the past-email half as failed when it never enqueues after an unsubscribe', async () => {

@@ -56,6 +56,10 @@ import { unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
+import {
+  isUnsubSendDisabled,
+  UNSUB_SEND_DISABLED_MESSAGE,
+} from '@/features/triage/unsub-send-disabled';
 import { formatReadRatePct } from '../fact-language';
 import { relTime } from './data';
 import { trackActionConfirmed } from '@/lib/action-analytics';
@@ -848,6 +852,10 @@ function ReadyState({
             },
             onError: (err) => {
               closeSubmitted();
+              if (isUnsubSendDisabled(err)) {
+                toast(UNSUB_SEND_DISABLED_MESSAGE, 'warn');
+                return;
+              }
               captureFeatureException(err, { surface: 'senders', reason: 'record_unsub' });
               toast(`Couldn't request the unsubscribe from ${sender.name}`, 'warn');
             },
